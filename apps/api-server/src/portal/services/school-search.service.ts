@@ -8,7 +8,7 @@
  * ============================================================================
  */
 
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 
 @Injectable()
@@ -33,8 +33,9 @@ export class SchoolSearchService {
     // Pour l'instant, on log juste
     this.logger.log(`School search: "${searchTerm}" from IP: ${ipAddress}`);
 
-    // Recherche dans les tenants actifs de type SCHOOL
-    const tenants = await this.prisma.tenant.findMany({
+    try {
+      // Recherche dans les tenants actifs de type SCHOOL
+      const tenants = await this.prisma.tenant.findMany({
       where: {
         status: 'active',
         type: 'SCHOOL',
@@ -63,26 +64,106 @@ export class SchoolSearchService {
       take: 20, // Limiter à 20 résultats
     });
 
-    // Formater les résultats
-    const results = tenants.map((tenant) => {
-      const school = tenant.schools?.[0];
-      const address = school?.address || '';
-      const city = this.extractCityFromAddress(address);
+      // Formater les résultats
+      const results = tenants.map((tenant) => {
+        const school = tenant.schools?.[0];
+        const address = school?.address || '';
+        const city = this.extractCityFromAddress(address);
 
-      return {
-        id: tenant.id,
-        name: tenant.name,
-        slug: tenant.slug,
-        logoUrl: school?.logo || null,
-        city: city || null,
-        schoolType: this.getSchoolTypeFromLevels(school?.educationLevels || []),
-      };
+        return {
+          id: tenant.id,
+          name: tenant.name,
+          slug: tenant.slug,
+          logoUrl: school?.logo || null,
+          city: city || null,
+          schoolType: this.getSchoolTypeFromLevels(school?.educationLevels || []),
+        };
+      });
+
+      // Logger la recherche (non-bloquant)
+      this.logSearch(searchTerm, ipAddress, results.length).catch((err) => {
+        this.logger.warn('Failed to log search (non-blocking):', err?.message);
+      });
+
+      return results;
+    } catch (error: any) {
+      // ✅ Gestion d'erreur Prisma avec message clair
+      if (error?.code === 'P1001' || error?.message?.includes('Can\'t reach database server')) {
+        this.logger.error('Database connection failed:', error.message);
+        throw new ServiceUnavailableException(
+          'Service temporairement indisponible. Veuillez réessayer plus tard.'
+        );
+      }
+      // Propager les autres erreurs
+      throw error;
+    }
+  }
+
+  /**
+   * Liste tous les établissements actifs (pour sélecteur)
+   */
+  async listAllSchools(): Promise<any[]> {
+    this.logger.log('Listing all active schools');
+
+    try {
+      // Récupérer tous les tenants actifs de type SCHOOL
+      const tenants = await this.prisma.tenant.findMany({
+      where: {
+        status: 'active',
+        type: 'SCHOOL',
+      },
+      include: {
+        schools: {
+          select: {
+            name: true,
+            logo: true,
+            address: true,
+            educationLevels: true,
+          },
+          take: 1,
+        },
+        country: {
+          select: {
+            name: true,
+            code: true,
+          },
+        },
+      },
+      orderBy: {
+        name: 'asc',
+      },
     });
 
-    // Logger la recherche
-    await this.logSearch(searchTerm, ipAddress, results.length);
+      // Formater les résultats
+      const results = tenants.map((tenant) => {
+        const school = tenant.schools?.[0];
+        const address = school?.address || '';
+        const city = this.extractCityFromAddress(address);
 
-    return results;
+        return {
+          id: tenant.id,
+          name: tenant.name,
+          slug: tenant.slug,
+          subdomain: tenant.subdomain || null,
+          logoUrl: school?.logo || null,
+          city: city || null,
+          schoolType: this.getSchoolTypeFromLevels(school?.educationLevels || []),
+          country: tenant.country?.name || null,
+        };
+      });
+
+      return results;
+    } catch (error: any) {
+      // ✅ Gestion d'erreur Prisma avec message clair
+      if (error?.code === 'P1001' || error?.message?.includes('Can\'t reach database server')) {
+        this.logger.error('Database connection failed:', error.message);
+        throw new ServiceUnavailableException(
+          'Service temporairement indisponible. Veuillez réessayer plus tard.'
+        );
+      }
+      // Propager les autres erreurs
+      throw error;
+    }
   }
 
   /**

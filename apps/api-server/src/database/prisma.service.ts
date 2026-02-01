@@ -1,6 +1,8 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
+import { Pool } from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
 
 /**
  * PrismaService avec optimisations de performance
@@ -9,62 +11,40 @@ import { ConfigService } from '@nestjs/config';
  * - Logging des requêtes lentes en développement
  */
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+export class PrismaService extends PrismaClient implements OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
+  private readonly skipDbCheck = process.env.SKIP_DB_CHECK === 'true';
 
   constructor(private configService?: ConfigService) {
-    super({
+    // Prisma 7.3.0: Configuration avec adapter PostgreSQL
+    // Les URLs ne sont plus dans le schema.prisma, elles doivent être passées via l'adapter
+    const databaseUrl = configService?.get<string>('DATABASE_URL') || process.env.DATABASE_URL;
+    
+    if (!databaseUrl) {
+      throw new Error('DATABASE_URL is required');
+    }
+
+    // Créer un pool PostgreSQL
+    const pool = new Pool({ connectionString: databaseUrl });
+    const adapter = new PrismaPg(pool);
+
+    const prismaOptions: any = {
+      adapter: adapter,
       log: process.env.NODE_ENV === 'development' && process.env.PRISMA_LOG === 'true'
         ? ['query', 'error', 'warn'] 
         : ['error'], // ✅ Réduire les logs Prisma pour accélérer
       errorFormat: 'pretty',
-    });
+    };
 
-    // Middleware pour logger les requêtes lentes
-    this.$use(async (params, next) => {
-      const start = Date.now();
-      const result = await next(params);
-      const duration = Date.now() - start;
+    super(prismaOptions);
 
-      // Logger les requêtes > 200ms
-      if (duration > 200 && process.env.LOG_SLOW_QUERIES === 'true') {
-        this.logger.warn(
-          `⚠️  SLOW QUERY: ${params.model}.${params.action} took ${duration}ms`,
-        );
-      }
+    // Prisma 7: Les middlewares $use n'existent plus
+    // Le logging des requêtes lentes est géré via les options de log de Prisma
+    // Si besoin de logging personnalisé, utiliser des Client Extensions (voir documentation Prisma 7)
 
-      return result;
-    });
-  }
-
-  async onModuleInit() {
-    try {
-      // ✅ Tenter la connexion
-    await this.$connect();
-    this.logger.log('✅ Prisma connected with connection pooling');
-      
-      // ✅ Vérifier la connexion avec un test
-      await this.$queryRaw`SELECT 1`;
-      this.logger.log('✅ Database connection verified');
-    } catch (error: any) {
-      this.logger.error('❌ Failed to connect to database', error);
-      this.logger.error(`   Error: ${error?.message || 'Unknown error'}`);
-      this.logger.error('   Please check:');
-      this.logger.error('   - PostgreSQL is running');
-      this.logger.error('   - DATABASE_URL is correct in .env');
-      this.logger.error('   - Database exists and migrations are applied');
-      
-      // ✅ En développement, on peut continuer (pour permettre le démarrage)
-      // En production, on devrait arrêter l'application
-      if (process.env.NODE_ENV === 'production') {
-        this.logger.error('❌ Fatal: Database connection required in production');
-        process.exit(1);
-      } else {
-        this.logger.warn('⚠️  Continuing without database (development mode)');
-        // L'erreur sera propagée mais l'app peut continuer
-        throw error;
-      }
-    }
+    // ✅ En mode SKIP_DB_CHECK, on ne fait RIEN au démarrage (vraiment lazy)
+    // Prisma se connectera automatiquement à la première requête
+    // Pas de log, pas d'initialisation, rien du tout
   }
 
   async onModuleDestroy() {

@@ -9,7 +9,11 @@ import { AuditLog } from './entities/audit-log.entity';
   imports: [TypeOrmModule.forFeature([AuditLog])],
   controllers: [AuditLogsController],
   providers: [AuditLogsService, AuditLogsRepository],
-  exports: [AuditLogsService, AuditLogsRepository],
+  exports: [
+    AuditLogsService,
+    AuditLogsRepository,
+    TypeOrmModule.forFeature([AuditLog]), // ✅ Exporter le repository pour les interceptors globaux
+  ],
 })
 export class AuditLogsModule {}
 

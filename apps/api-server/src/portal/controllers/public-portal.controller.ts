@@ -17,9 +17,21 @@ export class PublicPortalController {
   ) {}
 
   /**
+   * Liste tous les établissements actifs (pour sélecteur)
+   */
+  @Public() // ✅ Décorateur au niveau méthode pour garantir la détection
+  @Get('list')
+  @Throttle({ medium: { limit: 10, ttl: 60000 } }) // 10 requêtes par minute
+  async listAllSchools() {
+    console.log('[PublicPortalController] listAllSchools called - Route is public');
+    return this.schoolSearchService.listAllSchools();
+  }
+
+  /**
    * Recherche publique d'établissements
    * Rate-limited, sécurisé
    */
+  @Public() // ✅ Décorateur au niveau méthode pour garantir la détection
   @Get('search')
   @Throttle({ medium: { limit: 20, ttl: 60000 } }) // 20 requêtes par minute
   async searchSchools(

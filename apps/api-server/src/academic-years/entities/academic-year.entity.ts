@@ -10,7 +10,8 @@ import {
 } from 'typeorm';
 import { Tenant } from '../../tenants/entities/tenant.entity';
 import { User } from '../../users/entities/user.entity';
-import { Quarter } from '../../quarters/entities/quarter.entity';
+// ✅ Import de type uniquement pour éviter la référence circulaire
+import type { Quarter } from '../../quarters/entities/quarter.entity';
 
 @Entity('academic_years')
 export class AcademicYear {
@@ -43,7 +44,11 @@ export class AcademicYear {
   @JoinColumn({ name: 'createdBy' })
   creator: User;
 
-  @OneToMany(() => Quarter, (quarter) => quarter.academicYear)
+  @OneToMany(() => {
+    // ✅ Lazy import pour éviter la référence circulaire
+    const { Quarter } = require('../../quarters/entities/quarter.entity');
+    return Quarter;
+  }, (quarter) => quarter.academicYear)
   quarters: Quarter[];
 
   @CreateDateColumn()

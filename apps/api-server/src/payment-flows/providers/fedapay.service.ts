@@ -44,7 +44,12 @@ export class FedapayService {
     this.baseUrl = process.env.FEDAPAY_BASE_URL || 'https://api.fedapay.com';
 
     if (!this.apiKey || !this.apiSecret) {
-      console.warn('Fedapay credentials not configured. Payment flows will fail.');
+      // Message moins alarmant - Fedapay est optionnel en développement
+      if (process.env.NODE_ENV === 'production') {
+        console.warn('⚠️  Fedapay credentials not configured. Payment flows will fail in production.');
+      } else {
+        console.log('ℹ️  Fedapay not configured (optional in development). Configure FEDAPAY_API_KEY and FEDAPAY_API_SECRET to enable payments.');
+      }
     }
   }
 

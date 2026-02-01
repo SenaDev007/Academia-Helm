@@ -13,6 +13,7 @@ import { UsersModule } from '../users/users.module';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { LocalStrategy } from './strategies/local.strategy';
+import { JwtStrategy } from './strategies/jwt.strategy';
 import { OtpService } from './services/otp.service';
 import { DeviceTrackingService } from './services/device-tracking.service';
 import { DeviceSessionService } from './services/device-session.service';
@@ -25,10 +26,11 @@ import { RolesGuard } from './guards/roles.guard';
 
 @Module({
   imports: [
+    // ConfigModule est déjà global dans AppModule, pas besoin de l'importer ici
     PassportModule,
     UsersModule,
     JwtModule.registerAsync({
-      imports: [ConfigModule],
+      imports: [ConfigModule], // Nécessaire pour JwtModule.registerAsync
       useFactory: async (configService: ConfigService) => ({
         secret: configService.get<string>('JWT_SECRET', 'your-secret-key-change-in-production'),
         signOptions: {
@@ -42,6 +44,7 @@ import { RolesGuard } from './guards/roles.guard';
     PrismaService,
     AuthService,
     LocalStrategy,
+    JwtStrategy, // Ajout de la stratégie JWT
     SmsService,
     OtpService,
     DeviceTrackingService,

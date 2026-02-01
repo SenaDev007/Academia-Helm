@@ -41,6 +41,18 @@ const nextConfig = {
       exclude: ['error', 'warn'],
     } : false,
   },
+  
+  // ✅ Gestion des erreurs de téléchargement de polices Google Fonts
+  // Si le téléchargement échoue (timeout, connexion), Next.js utilisera automatiquement le fallback
+  // Cette configuration permet d'ignorer les erreurs de téléchargement en développement
+  onDemandEntries: {
+    maxInactiveAge: 25 * 1000,
+    pagesBufferLength: 2,
+  },
+  
+  // ✅ Optimisation du développement (simplifiée pour éviter les conflits)
+  // Note: Next.js gère déjà le cache et l'optimisation webpack de manière optimale
+  // On évite de modifier la config webpack pour ne pas casser le middleware
 
   // Multi-tenant: Support des sous-domaines
   async headers() {

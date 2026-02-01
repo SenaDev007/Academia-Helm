@@ -26,6 +26,7 @@ import { Request } from 'express';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../../auth/decorators/public.decorator';
 import { ALLOW_CROSS_LEVEL_KEY } from '../decorators/allow-cross-level.decorator';
+import { REQUIRE_TENANT_KEY } from '../decorators/require-tenant.decorator';
 import { AuditLogsService } from '../../audit-logs/audit-logs.service';
 
 @Injectable()
@@ -36,7 +37,9 @@ export class SchoolLevelIsolationGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    // Ignorer les routes publiques
+    const request = context.switchToHttp().getRequest<Request>();
+    
+    // ✅ Ignorer les routes publiques
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -46,13 +49,23 @@ export class SchoolLevelIsolationGuard implements CanActivate {
       return true;
     }
 
+    // ✅ Vérifier si le tenant est requis (via @RequireTenant())
+    // Si pas requis, on laisse passer (route authentifiée mais sans tenant)
+    const requireTenant = this.reflector.getAllAndOverride<boolean>(REQUIRE_TENANT_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (!requireTenant) {
+      return true; // Route authentifiée mais sans tenant requis
+    }
+
     // Vérifier si cross-level est explicitement autorisé (Module Général uniquement)
     const allowCrossLevel = this.reflector.getAllAndOverride<boolean>(ALLOW_CROSS_LEVEL_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
 
-    const request = context.switchToHttp().getRequest<Request>();
     const user = request['user'] as any;
     const tenantId = request['tenantId'] || user?.tenantId;
     const userId = user?.id;

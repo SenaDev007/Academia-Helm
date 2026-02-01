@@ -181,7 +181,12 @@ export class AuditLogInterceptor implements NestInterceptor {
     userAgent: string | null;
   }): Promise<void> {
     try {
-      await this.auditLogRepository.save({
+      // ✅ Timeout pour éviter de bloquer la requête si la DB est lente
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Audit log timeout')), 2000);
+      });
+
+      const savePromise = this.auditLogRepository.save({
         tenantId: data.tenantId || 'system',
         userId: data.userId,
         action: data.action,
@@ -191,9 +196,15 @@ export class AuditLogInterceptor implements NestInterceptor {
         ipAddress: data.ipAddress,
         userAgent: data.userAgent,
       });
-    } catch (error) {
-      // Ne pas faire échouer la requête si le log échoue
-      console.error('Failed to create audit log:', error);
+
+      await Promise.race([savePromise, timeoutPromise]);
+    } catch (error: any) {
+      // ✅ Ne pas faire échouer la requête si le log échoue
+      // Logger seulement en mode développement pour éviter le spam
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('⚠️  Failed to create audit log (non-blocking):', error?.message || error);
+      }
+      // En production, on ignore silencieusement pour ne pas polluer les logs
     }
   }
 }

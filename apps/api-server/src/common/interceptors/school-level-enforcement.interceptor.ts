@@ -26,6 +26,8 @@ import { Observable } from 'rxjs';
 import { Request } from 'express';
 import { Reflector } from '@nestjs/core';
 import { ALLOW_CROSS_LEVEL_KEY } from '../decorators/allow-cross-level.decorator';
+import { IS_PUBLIC_KEY } from '../../auth/decorators/public.decorator';
+import { REQUIRE_TENANT_KEY } from '../decorators/require-tenant.decorator';
 
 @Injectable()
 export class SchoolLevelEnforcementInterceptor implements NestInterceptor {
@@ -33,6 +35,43 @@ export class SchoolLevelEnforcementInterceptor implements NestInterceptor {
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const request = context.switchToHttp().getRequest<Request>();
+    const path = request.url || request.route?.path || '';
+
+    // ✅ Ignorer les routes publiques
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (isPublic) {
+      return next.handle();
+    }
+
+    // ✅ Exclure explicitement les routes d'authentification et de portail
+    if (
+      path.includes('/auth/login') ||
+      path.includes('/auth/register') ||
+      path.includes('/auth/select-tenant') ||
+      path.includes('/auth/dev-login') ||
+      path.includes('/auth/available-tenants') ||
+      path.includes('/portal/auth') ||
+      path.includes('/portal/search') ||
+      path.includes('/portal/list') ||
+      path.includes('/public/schools')
+    ) {
+      return next.handle();
+    }
+
+    // ✅ Vérifier si le tenant est requis pour cette route
+    const requireTenant = this.reflector.getAllAndOverride<boolean>(REQUIRE_TENANT_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    // 🚨 Si le tenant n'est PAS requis → on laisse passer
+    if (!requireTenant) {
+      return next.handle();
+    }
 
     // Ignorer si cross-level autorisé (Module Général uniquement)
     const allowCrossLevel = this.reflector.getAllAndOverride<boolean>(ALLOW_CROSS_LEVEL_KEY, [

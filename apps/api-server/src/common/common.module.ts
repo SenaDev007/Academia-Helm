@@ -9,6 +9,7 @@ import { PermissionsService } from './services/permissions.service';
 import { DashboardService } from './services/dashboard.service';
 import { StrictPermissionsService } from './services/strict-permissions.service';
 import { AccessDeniedLogService } from './services/access-denied-log.service';
+import { SubdomainService } from './services/subdomain.service';
 import { PermissionsController } from './controllers/permissions.controller';
 import { DashboardController } from './controllers/dashboard.controller';
 import { DatabaseModule } from '../database/database.module';
@@ -26,12 +27,14 @@ import { SecurityModule } from '../security/security.module';
     DashboardService,
     StrictPermissionsService,
     AccessDeniedLogService,
+    SubdomainService,
   ],
   exports: [
     PermissionsService,
     DashboardService,
     StrictPermissionsService,
     AccessDeniedLogService,
+    SubdomainService,
   ],
 })
 export class CommonModule {}

@@ -14,7 +14,7 @@ import { PrismaService } from '@/database/prisma.service';
 import { ReceiptNotificationService } from './receipt-notification.service';
 import { AdministrativeSealsService } from '../settings/services/administrative-seals.service';
 import { ElectronicSignaturesService } from '../settings/services/electronic-signatures.service';
-import { Decimal } from '@prisma/client/runtime/library';
+import { Decimal } from '@prisma/client';
 import * as crypto from 'crypto';
 import * as puppeteer from 'puppeteer';
 import * as path from 'path';

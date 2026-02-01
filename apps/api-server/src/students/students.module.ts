@@ -5,6 +5,10 @@ import { StudentsService } from './students.service';
 import { Student } from './entities/student.entity';
 import { StudentsRepository } from './students.repository';
 import { DatabaseModule } from '../database/database.module';
+import { TenantsModule } from '../tenants/tenants.module'; // ✅ Import pour TenantValidationGuard
+import { AuditLogsModule } from '../audit-logs/audit-logs.module'; // ✅ Import pour AuditLogInterceptor
+import { UsersModule } from '../users/users.module'; // ✅ Import pour PermissionsGuard
+import { ModulesModule } from '../modules/modules.module'; // ✅ Import pour ModuleAccessGuard
 import { StudentsPrismaService } from './students-prisma.service';
 import { StudentsPrismaController } from './students-prisma.controller';
 import { GuardiansPrismaService } from './guardians-prisma.service';
@@ -34,6 +38,10 @@ import { StudentDossierController } from './controllers/student-dossier.controll
   imports: [
     TypeOrmModule.forFeature([Student]),
     DatabaseModule, // Pour PrismaService
+    TenantsModule, // ✅ Import pour que TenantValidationGuard puisse résoudre TenantRepository
+    AuditLogsModule, // ✅ Import pour que AuditLogInterceptor puisse résoudre AuditLogRepository
+    UsersModule, // ✅ Import pour que PermissionsGuard puisse résoudre UserRepository
+    ModulesModule, // ✅ Import pour que ModuleAccessGuard puisse résoudre ModulesService
   ],
   controllers: [
     StudentsController,

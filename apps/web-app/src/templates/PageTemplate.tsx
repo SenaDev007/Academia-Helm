@@ -3,24 +3,6 @@
  * 
  * Utilisez ce template pour créer de nouvelles pages publiques
  * Les métadonnées SEO sont automatiquement générées
- * 
- * @example
- * ```tsx
- * import { PageTemplate } from '@/templates/PageTemplate';
- * 
- * export default function MaNouvellePage() {
- *   return (
- *     <PageTemplate
- *       title="Titre de la Page"
- *       description="Description optimisée pour le SEO"
- *       keywords={['mot-clé 1', 'mot-clé 2']}
- *       path="/ma-page"
- *     >
- *       {/* Contenu de la page */}
- *     </PageTemplate>
- *   );
- * }
- * ```
  */
 
 import { Metadata } from 'next';

@@ -43,23 +43,46 @@ export async function POST(request: NextRequest) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 secondes
     
-    const backendResponse = await fetch(loginUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        email: body.email,
-        password: body.password,
-      }),
-      signal: controller.signal,
-    });
-    
-    clearTimeout(timeoutId);
+    let backendResponse;
+    try {
+      backendResponse = await fetch(loginUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: body.email,
+          password: body.password,
+        }),
+        signal: controller.signal,
+      });
+      
+      clearTimeout(timeoutId);
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+      console.error('[Login API] Fetch error:', fetchError);
+      
+      // Gérer les erreurs de connexion
+      if (fetchError.code === 'EACCES' || fetchError.name === 'AggregateError') {
+        throw new Error(
+          'Impossible de se connecter au serveur backend. ' +
+          'Vérifiez que l\'API est démarrée sur le port 3000.'
+        );
+      }
+      
+      if (fetchError.name === 'AbortError') {
+        throw new Error('Le serveur backend ne répond pas dans les temps impartis.');
+      }
+      
+      throw fetchError;
+    }
 
     if (!backendResponse.ok) {
-      const errorData = await backendResponse.json().catch(() => ({}));
-      throw new Error(errorData.message || 'Erreur lors de la connexion');
+      const errorData = await backendResponse.json().catch(() => ({
+        message: `Erreur HTTP ${backendResponse.status}: ${backendResponse.statusText}`,
+      }));
+      console.error('[Login API] Backend error:', errorData);
+      throw new Error(errorData.message || `Erreur ${backendResponse.status} lors de la connexion`);
     }
 
     const backendData: BackendLoginResponse = await backendResponse.json();

@@ -16,21 +16,68 @@ import {
   UnauthorizedException,
   NotFoundException,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Tenant } from '../../tenants/entities/tenant.entity';
 import { Request } from 'express';
+import { IS_PUBLIC_KEY } from '../../auth/decorators/public.decorator';
+import { REQUIRE_TENANT_KEY } from '../decorators/require-tenant.decorator';
+
+/**
+ * Vérifie si l'utilisateur est PLATFORM_OWNER
+ */
+function isPlatformOwner(user: any): boolean {
+  if (!user) return false;
+  if (user.role === 'PLATFORM_OWNER' || user.role === 'SUPER_ADMIN') return true;
+  const platformOwnerEmail = process.env.PLATFORM_OWNER_EMAIL;
+  if (platformOwnerEmail && user.email === platformOwnerEmail) return true;
+  return false;
+}
 
 @Injectable()
 export class TenantValidationGuard implements CanActivate {
   constructor(
     @InjectRepository(Tenant)
     private tenantsRepository: Repository<Tenant>,
+    private reflector: Reflector,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
-    const tenantId = request['tenantId'];
+    
+    // ✅ Ignorer les routes publiques
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (isPublic) {
+      return true;
+    }
+
+    // ✅ Vérifier si le tenant est requis pour cette route
+    const requireTenant = this.reflector.getAllAndOverride<boolean>(REQUIRE_TENANT_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    // 🚨 Si le tenant n'est PAS requis → on laisse passer
+    if (!requireTenant) {
+      return true;
+    }
+
+    const user = request['user'] as any;
+    
+    // ✅ PLATFORM_OWNER peut bypasser le guard tenant
+    if (isPlatformOwner(user)) {
+      return true;
+    }
+
+    const tenantId = request['tenantId'] || 
+                     request.headers['x-tenant-id'] ||
+                     request.query?.tenantId ||
+                     user?.tenantId;
 
     if (!tenantId) {
       throw new UnauthorizedException('Tenant ID not found');
@@ -53,7 +100,6 @@ export class TenantValidationGuard implements CanActivate {
     }
 
     // Vérifier que l'utilisateur appartient bien à ce tenant
-    const user = request['user'] as any;
     if (user && user.tenantId && user.tenantId !== tenantId) {
       throw new UnauthorizedException(
         'User does not belong to the specified tenant'

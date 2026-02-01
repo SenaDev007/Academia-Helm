@@ -3,24 +3,6 @@
  * 
  * Utilisez ce template pour créer de nouveaux modals
  * Optimisé pour l'accessibilité et le SEO
- * 
- * @example
- * ```tsx
- * import { ModalTemplate } from '@/templates/ModalTemplate';
- * 
- * export function MonModal({ isOpen, onClose }) {
- *   return (
- *     <ModalTemplate
- *       isOpen={isOpen}
- *       onClose={onClose}
- *       title="Titre du Modal"
- *       ariaLabel="Description accessible du modal"
- *     >
- *       {/* Contenu du modal */}
- *     </ModalTemplate>
- *   );
- * }
- * ```
  */
 
 'use client';

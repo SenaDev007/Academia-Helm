@@ -13,6 +13,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Building2, GraduationCap, Users, Search, ArrowRight, Shield, CheckCircle, Code2 } from 'lucide-react';
 import PremiumHeader from '@/components/layout/PremiumHeader';
 import SchoolSearch from '@/components/portal/SchoolSearch';
@@ -34,7 +35,9 @@ export default function PortalPage() {
   const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  const [isDevLoggingIn, setIsDevLoggingIn] = useState(false);
   const { redirectToTenant } = useTenantRedirect();
+  const router = useRouter();
 
   const handlePortalSelect = (portal: PortalType) => {
     setSelectedPortal(portal);
@@ -65,6 +68,33 @@ export default function PortalPage() {
     setSearchQuery('');
   };
 
+  const handleDevLogin = async () => {
+    setIsDevLoggingIn(true);
+    try {
+      // Récupérer les informations du tenant de test
+      const tenantResponse = await fetch('/api/dev/test-tenant', {
+        method: 'GET',
+      });
+
+      const tenantData = await tenantResponse.json();
+
+      if (!tenantResponse.ok || !tenantData.success) {
+        throw new Error(tenantData.message || 'Impossible de récupérer les informations du tenant de test');
+      }
+
+      const testTenant = tenantData.tenant;
+
+      // Rediriger vers la page de login avec le tenant de test
+      // L'utilisateur pourra utiliser les identifiants PLATFORM_OWNER
+      const loginUrl = `/login?tenant=${encodeURIComponent(testTenant.id || testTenant.slug)}&redirect=/app`;
+      router.push(loginUrl);
+    } catch (error: any) {
+      console.error('[Dev Login] Error:', error);
+      alert(`Erreur: ${error.message || 'Impossible de se connecter en mode développement'}`);
+      setIsDevLoggingIn(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
       <PremiumHeader />
@@ -83,18 +113,18 @@ export default function PortalPage() {
 
           {/* Bouton spécial pour développement et tests */}
           <div className="mb-8 flex justify-center">
-            <Link
-              href="/login?tenant=default-tenant&redirect=/app"
-              prefetch={true}
-              className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-6 py-3 rounded-lg font-semibold hover:from-amber-600 hover:to-orange-600 transition-all duration-300 inline-flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:scale-105 border-2 border-amber-400 relative group"
-              title="Accès direct à l'application pour développement et tests"
+            <button
+              onClick={handleDevLogin}
+              disabled={isDevLoggingIn}
+              className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-6 py-3 rounded-lg font-semibold hover:from-amber-600 hover:to-orange-600 transition-all duration-300 inline-flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:scale-105 border-2 border-amber-400 relative group disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Connexion automatique avec les identifiants PLATFORM_OWNER (développement uniquement)"
             >
-              <Code2 className="w-5 h-5 group-hover:rotate-12 transition-transform duration-300" />
-              <span>Mode Développement</span>
+              <Code2 className={`w-5 h-5 group-hover:rotate-12 transition-transform duration-300 ${isDevLoggingIn ? 'animate-spin' : ''}`} />
+              <span>{isDevLoggingIn ? 'Connexion...' : 'Mode Développement'}</span>
               <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow-md animate-pulse">
                 DEV
               </span>
-            </Link>
+            </button>
           </div>
 
           {/* Portal Cards */}

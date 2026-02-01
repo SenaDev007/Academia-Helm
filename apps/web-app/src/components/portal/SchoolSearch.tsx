@@ -1,26 +1,28 @@
 /**
  * ============================================================================
- * SCHOOL SEARCH COMPONENT - RECHERCHE INTELLIGENTE D'ÉTABLISSEMENT
+ * SCHOOL SEARCH COMPONENT - SÉLECTEUR INTELLIGENT D'ÉTABLISSEMENT
  * ============================================================================
  * 
- * Composant de recherche d'établissement avec autocomplete
+ * Composant sélecteur avec recherche intelligente et liste complète
  * 
  * ============================================================================
  */
 
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { Search, Building2, MapPin, GraduationCap, Loader, CheckCircle } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Search, Building2, MapPin, GraduationCap, Loader, CheckCircle, ChevronDown, X } from 'lucide-react';
 import Image from 'next/image';
 
 interface School {
   id: string;
   name: string;
   slug: string;
+  subdomain?: string;
   logoUrl?: string;
   city?: string;
   schoolType?: string;
+  country?: string;
 }
 
 interface SchoolSearchProps {
@@ -35,41 +37,49 @@ export default function SchoolSearch({
   portalType,
 }: SchoolSearchProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [schools, setSchools] = useState<School[]>([]);
+  const [allSchools, setAllSchools] = useState<School[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
-  const [showResults, setShowResults] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const resultsRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  // Recherche avec debounce
+  // Charger la liste complète des écoles au montage
+  useEffect(() => {
+    const loadAllSchools = async () => {
+      setIsLoading(true);
+      try {
+        const response = await fetch('/api/public/schools/list');
+        if (response.ok) {
+          const data = await response.json();
+          setAllSchools(data);
+        } else {
+          console.error('Failed to load schools list');
+        }
+      } catch (error) {
+        console.error('Error loading schools list:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadAllSchools();
+  }, []);
+
+  // Recherche intelligente avec debounce
   useEffect(() => {
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
 
-    if (searchQuery.length < 2) {
-      setSchools([]);
-      setShowResults(false);
-      return;
-    }
-
-    searchTimeoutRef.current = setTimeout(async () => {
+    if (searchQuery.length > 0) {
       setIsSearching(true);
-      try {
-        const params = new URLSearchParams({ q: searchQuery });
-        const response = await fetch(`/api/public/schools/search?${params}`);
-        
-        if (response.ok) {
-          const data = await response.json();
-          setSchools(data);
-          setShowResults(true);
-        }
-      } catch (error) {
-        console.error('Failed to search schools:', error);
-      } finally {
+      searchTimeoutRef.current = setTimeout(() => {
         setIsSearching(false);
-      }
-    }, 300);
+      }, 300);
+    }
 
     return () => {
       if (searchTimeoutRef.current) {
@@ -78,11 +88,30 @@ export default function SchoolSearch({
     };
   }, [searchQuery]);
 
-  // Fermer les résultats en cliquant à l'extérieur
+  // Filtrer les écoles selon la recherche
+  const filteredSchools = useMemo(() => {
+    if (!searchQuery || searchQuery.trim().length === 0) {
+      return allSchools;
+    }
+
+    const query = searchQuery.toLowerCase().trim();
+    return allSchools.filter((school) => {
+      const nameMatch = school.name?.toLowerCase().includes(query);
+      const cityMatch = school.city?.toLowerCase().includes(query);
+      const slugMatch = school.slug?.toLowerCase().includes(query);
+      const subdomainMatch = school.subdomain?.toLowerCase().includes(query);
+      const countryMatch = school.country?.toLowerCase().includes(query);
+      
+      return nameMatch || cityMatch || slugMatch || subdomainMatch || countryMatch;
+    });
+  }, [allSchools, searchQuery]);
+
+  // Fermer le dropdown en cliquant à l'extérieur
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (resultsRef.current && !resultsRef.current.contains(event.target as Node)) {
-        setShowResults(false);
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowDropdown(false);
+        setIsOpen(false);
       }
     };
 
@@ -90,10 +119,33 @@ export default function SchoolSearch({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Ouvrir/fermer le dropdown
+  const handleToggleDropdown = () => {
+    if (selectedSchool && !isOpen) {
+      // Si une école est sélectionnée, réinitialiser
+      setSearchQuery('');
+      onSchoolSelect(null);
+    }
+    setIsOpen(!isOpen);
+    setShowDropdown(!showDropdown);
+    if (!isOpen && inputRef.current) {
+      inputRef.current.focus();
+    }
+  };
+
   const handleSchoolClick = (school: School) => {
     onSchoolSelect(school);
-    setShowResults(false);
-    setSearchQuery(school.name);
+    setShowDropdown(false);
+    setIsOpen(false);
+    setSearchQuery('');
+  };
+
+  const handleClearSelection = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onSchoolSelect(null);
+    setSearchQuery('');
+    setIsOpen(false);
+    setShowDropdown(false);
   };
 
   const getSchoolTypeLabel = (type?: string) => {
@@ -110,119 +162,176 @@ export default function SchoolSearch({
   };
 
   return (
-    <div className="relative" ref={resultsRef}>
-      {/* Search Input */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Rechercher votre établissement..."
-          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          autoComplete="off"
-        />
-        {isSearching && (
-          <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-            <Loader className="w-5 h-5 text-gray-400 animate-spin" />
-          </div>
-        )}
-      </div>
-
-      {/* Selected School Display */}
-      {selectedSchool && !showResults && (
-        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <div className="flex items-center space-x-3">
-            {selectedSchool.logoUrl ? (
-              <Image
-                src={selectedSchool.logoUrl}
-                alt={selectedSchool.name}
-                width={48}
-                height={48}
-                className="rounded-lg"
+    <div className="relative" ref={dropdownRef}>
+      {/* Sélecteur avec recherche */}
+      {!selectedSchool ? (
+        <div className="relative">
+          <div
+            onClick={handleToggleDropdown}
+            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg cursor-pointer hover:border-blue-500 transition-colors flex items-center justify-between bg-white"
+          >
+            <div className="flex items-center space-x-3 flex-1 min-w-0">
+              <Search className="w-5 h-5 text-gray-400 flex-shrink-0" />
+              <input
+                ref={inputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setShowDropdown(true);
+                  setIsOpen(true);
+                }}
+                onFocus={() => {
+                  setShowDropdown(true);
+                  setIsOpen(true);
+                }}
+                placeholder="Rechercher ou sélectionner un établissement..."
+                className="flex-1 outline-none bg-transparent text-gray-700 placeholder-gray-400"
+                autoComplete="off"
               />
+            </div>
+            {isLoading ? (
+              <Loader className="w-5 h-5 text-gray-400 animate-spin flex-shrink-0" />
             ) : (
-              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                <Building2 className="w-6 h-6 text-blue-600" />
-              </div>
+              <ChevronDown className={`w-5 h-5 text-gray-400 flex-shrink-0 transition-transform ${isOpen ? 'transform rotate-180' : ''}`} />
             )}
-            <div className="flex-1">
-              <div className="flex items-center space-x-2">
-                <p className="font-semibold text-gray-900">{selectedSchool.name}</p>
-                <CheckCircle className="w-5 h-5 text-green-600" />
-              </div>
-              <div className="flex items-center space-x-4 mt-1 text-sm text-gray-600">
-                {selectedSchool.city && (
-                  <div className="flex items-center space-x-1">
-                    <MapPin className="w-4 h-4" />
-                    <span>{selectedSchool.city}</span>
-                  </div>
+          </div>
+
+          {/* Dropdown avec résultats */}
+          {showDropdown && (
+            <div className="absolute z-50 w-full mt-2 bg-white border-2 border-gray-200 rounded-lg shadow-xl max-h-96 overflow-hidden flex flex-col">
+              {/* Header avec compteur */}
+              <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-700">
+                  {searchQuery ? (
+                    <>
+                      {filteredSchools.length} résultat{filteredSchools.length > 1 ? 's' : ''} trouvé{filteredSchools.length > 1 ? 's' : ''}
+                    </>
+                  ) : (
+                    <>
+                      {allSchools.length} établissement{allSchools.length > 1 ? 's' : ''} disponible{allSchools.length > 1 ? 's' : ''}
+                    </>
+                  )}
+                </span>
+                {isSearching && (
+                  <Loader className="w-4 h-4 text-gray-400 animate-spin" />
                 )}
-                {selectedSchool.schoolType && (
-                  <div className="flex items-center space-x-1">
-                    <GraduationCap className="w-4 h-4" />
-                    <span>{getSchoolTypeLabel(selectedSchool.schoolType)}</span>
+              </div>
+
+              {/* Liste des résultats */}
+              <div className="overflow-y-auto max-h-80">
+                {filteredSchools.length > 0 ? (
+                  filteredSchools.map((school) => (
+                    <button
+                      key={school.id}
+                      onClick={() => handleSchoolClick(school)}
+                      className="w-full px-4 py-3 hover:bg-blue-50 flex items-center space-x-3 text-left border-b border-gray-100 last:border-b-0 transition-colors group"
+                    >
+                      {school.logoUrl ? (
+                        <Image
+                          src={school.logoUrl}
+                          alt={school.name}
+                          width={48}
+                          height={48}
+                          className="rounded-lg flex-shrink-0 object-cover"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 bg-gradient-to-br from-blue-100 to-blue-200 rounded-lg flex items-center justify-center flex-shrink-0 group-hover:from-blue-200 group-hover:to-blue-300 transition-colors">
+                          <Building2 className="w-6 h-6 text-blue-600" />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-gray-900 truncate group-hover:text-blue-700 transition-colors">
+                          {school.name}
+                        </p>
+                        <div className="flex items-center space-x-3 mt-1 text-sm text-gray-600">
+                          {school.city && (
+                            <span className="flex items-center space-x-1">
+                              <MapPin className="w-3 h-3" />
+                              <span>{school.city}</span>
+                            </span>
+                          )}
+                          {school.schoolType && (
+                            <span className="flex items-center space-x-1">
+                              <GraduationCap className="w-3 h-3" />
+                              <span>{getSchoolTypeLabel(school.schoolType)}</span>
+                            </span>
+                          )}
+                          {school.country && (
+                            <span className="text-gray-500">• {school.country}</span>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-4 py-8 text-center">
+                    <p className="text-sm text-gray-600">
+                      {searchQuery ? (
+                        <>
+                          Aucun établissement trouvé pour &quot;{searchQuery}&quot;
+                        </>
+                      ) : (
+                        <>
+                          Aucun établissement disponible
+                        </>
+                      )}
+                    </p>
                   </div>
                 )}
               </div>
             </div>
-          </div>
+          )}
         </div>
-      )}
-
-      {/* Search Results */}
-      {showResults && schools.length > 0 && (
-        <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg max-h-96 overflow-y-auto">
-          {schools.map((school) => (
-            <button
-              key={school.id}
-              onClick={() => handleSchoolClick(school)}
-              className="w-full px-4 py-3 hover:bg-gray-50 flex items-center space-x-3 text-left border-b border-gray-100 last:border-b-0 transition-colors"
-            >
-              {school.logoUrl ? (
+      ) : (
+        /* École sélectionnée */
+        <div className="p-4 bg-gradient-to-r from-blue-50 to-blue-100 border-2 border-blue-300 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3 flex-1 min-w-0">
+              {selectedSchool.logoUrl ? (
                 <Image
-                  src={school.logoUrl}
-                  alt={school.name}
-                  width={40}
-                  height={40}
-                  className="rounded-lg flex-shrink-0"
+                  src={selectedSchool.logoUrl}
+                  alt={selectedSchool.name}
+                  width={56}
+                  height={56}
+                  className="rounded-lg flex-shrink-0 object-cover"
                 />
               ) : (
-                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <Building2 className="w-5 h-5 text-gray-400" />
+                <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Building2 className="w-7 h-7 text-white" />
                 </div>
               )}
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-gray-900 truncate">{school.name}</p>
-                <div className="flex items-center space-x-3 mt-1 text-sm text-gray-600">
-                  {school.city && (
-                    <span className="flex items-center space-x-1">
-                      <MapPin className="w-3 h-3" />
-                      <span>{school.city}</span>
-                    </span>
+                <div className="flex items-center space-x-2">
+                  <p className="font-bold text-gray-900 truncate">{selectedSchool.name}</p>
+                  <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+                </div>
+                <div className="flex items-center space-x-4 mt-1 text-sm text-gray-700">
+                  {selectedSchool.city && (
+                    <div className="flex items-center space-x-1">
+                      <MapPin className="w-4 h-4" />
+                      <span>{selectedSchool.city}</span>
+                    </div>
                   )}
-                  {school.schoolType && (
-                    <span className="flex items-center space-x-1">
-                      <GraduationCap className="w-3 h-3" />
-                      <span>{getSchoolTypeLabel(school.schoolType)}</span>
-                    </span>
+                  {selectedSchool.schoolType && (
+                    <div className="flex items-center space-x-1">
+                      <GraduationCap className="w-4 h-4" />
+                      <span>{getSchoolTypeLabel(selectedSchool.schoolType)}</span>
+                    </div>
                   )}
                 </div>
               </div>
+            </div>
+            <button
+              onClick={handleClearSelection}
+              className="ml-4 p-2 hover:bg-blue-200 rounded-lg transition-colors flex-shrink-0"
+              title="Changer d'établissement"
+            >
+              <X className="w-5 h-5 text-gray-600 hover:text-gray-900" />
             </button>
-          ))}
-        </div>
-      )}
-
-      {/* No Results */}
-      {showResults && !isSearching && schools.length === 0 && searchQuery.length >= 2 && (
-        <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg p-4">
-          <p className="text-sm text-gray-600 text-center">
-            Aucun établissement trouvé pour "{searchQuery}"
-          </p>
+          </div>
         </div>
       )}
     </div>
   );
 }
-

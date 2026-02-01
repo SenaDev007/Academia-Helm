@@ -21,12 +21,16 @@ import { DataConsent } from './entities/data-consent.entity';
 import { DataExport } from './entities/data-export.entity';
 import { UsersModule } from '../users/users.module';
 import { StudentsModule } from '../students/students.module';
+import { TenantsModule } from '../tenants/tenants.module'; // ✅ Import pour TenantValidationGuard
+import { AuditLogsModule } from '../audit-logs/audit-logs.module'; // ✅ Import pour AuditLogInterceptor
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([DataConsent, DataExport]),
     UsersModule,
     StudentsModule,
+    TenantsModule, // ✅ Import pour que TenantValidationGuard puisse résoudre TenantRepository
+    AuditLogsModule, // ✅ Import pour que AuditLogInterceptor puisse résoudre AuditLogRepository
   ],
   controllers: [ComplianceController],
   providers: [ComplianceService],

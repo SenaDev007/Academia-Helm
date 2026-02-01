@@ -5,6 +5,7 @@
  * dans tous les composants et pages
  */
 
+import React from 'react';
 import Image from 'next/image';
 import type { ImageProps } from 'next/image';
 

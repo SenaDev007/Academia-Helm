@@ -15,7 +15,7 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/database/prisma.service';
 import { StudentArrearService } from './student-arrear.service';
-import { Decimal } from '@prisma/client/runtime/library';
+import { Decimal } from '@prisma/client';
 
 @Injectable()
 export class PaymentAllocationService {

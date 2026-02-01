@@ -50,6 +50,7 @@ export default function AdminLayout({ children, user }: AdminLayoutProps) {
   const menuItems: Array<{ path: string; label: string; icon: IconName }> = [
     { path: '/admin', label: 'Dashboard', icon: 'dashboard' },
     { path: '/admin/tenants', label: 'Établissements', icon: 'classes' },
+    { path: '/admin/pricing', label: 'Pricing & Billing', icon: 'reports' },
     { path: '/admin/devices', label: 'Appareils', icon: 'dashboard' },
     { path: '/admin/testimonials', label: 'Témoignages', icon: 'communication' },
     { path: '/admin/audit', label: 'Journal d\'audit', icon: 'reports' },

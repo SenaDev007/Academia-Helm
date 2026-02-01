@@ -6,6 +6,8 @@
  * ✅ Utilitaires pour optimiser les imports et réduire la taille des bundles
  */
 
+import React from 'react';
+
 /**
  * ✅ Import optimisé de lucide-react
  * Utilise tree-shaking pour ne charger que les icônes nécessaires
@@ -24,10 +26,10 @@ export function lazyLoadComponent<T = any>(
   return import('next/dynamic').then(({ default: dynamic }) =>
     dynamic(importFn, {
       loading: () => (
-        <div className="flex items-center justify-center p-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-          <span className="ml-3 text-gray-600">{loadingMessage}</span>
-        </div>
+        React.createElement('div', { className: 'flex items-center justify-center p-8' },
+          React.createElement('div', { className: 'animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600' }),
+          React.createElement('span', { className: 'ml-3 text-gray-600' }, loadingMessage)
+        )
       ),
       ssr: false, // ✅ Désactiver SSR pour les composants lourds
     })

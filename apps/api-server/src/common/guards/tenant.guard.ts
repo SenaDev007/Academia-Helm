@@ -4,7 +4,9 @@ import {
   ExecutionContext,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
+import { IS_PUBLIC_KEY } from '../../auth/decorators/public.decorator';
 
 /**
  * Guard to extract and validate tenant_id from request
@@ -13,11 +15,48 @@ import { Request } from 'express';
  * 1. Subdomain (e.g., school-a.academiahub.com)
  * 2. X-Tenant-ID header
  * 3. JWT token payload (after authentication)
+ * 
+ * ⚠️ IMPORTANT: Ce guard ne doit JAMAIS être appliqué sur les routes d'authentification
  */
 @Injectable()
 export class TenantGuard implements CanActivate {
+  constructor(private reflector: Reflector) {}
+
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<Request>();
+    const path = request.url || request.route?.path || '';
+
+    // ✅ Ignorer les routes publiques
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (isPublic) {
+      return true;
+    }
+
+    // ✅ Exclure explicitement les routes d'authentification et de portail
+    if (
+      path.includes('/auth/login') ||
+      path.includes('/auth/register') ||
+      path.includes('/auth/select-tenant') ||
+      path.includes('/auth/dev-login') ||
+      path.includes('/auth/available-tenants') ||
+      path.includes('/portal/auth') ||
+      path.includes('/portal/search') ||
+      path.includes('/portal/list') ||
+      path.includes('/public/schools')
+    ) {
+      return true;
+    }
+
+    // ✅ PLATFORM_OWNER peut bypasser
+    const user = request['user'] as any;
+    if (user && (user.role === 'PLATFORM_OWNER' || user.role === 'SUPER_ADMIN')) {
+      return true;
+    }
+
     const tenantId = this.extractTenantId(request);
 
     if (!tenantId) {

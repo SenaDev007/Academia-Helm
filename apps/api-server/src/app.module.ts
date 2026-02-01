@@ -47,9 +47,13 @@ import { FinanceModule } from './finance/finance.module';
 import { HRModule } from './hr/hr.module';
 import { CommunicationModule } from './communication/communication.module';
 import { PortalModule } from './portal/portal.module';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { BillingModule } from './billing/billing.module';
+import { OnboardingModule } from './onboarding/onboarding.module';
 import { GeneralModule } from './modules/general/general.module';
 import { ModulesModule } from './modules/modules.module';
 import { ContextModule } from './common/context/context.module';
+import { ContextModule as TenantContextModule } from './context/context.module';
 import { SynthesisModule } from './modules/synthesis/synthesis.module';
 import { SyncModule } from './sync/sync.module';
 import { CommonModule } from './common/common.module';
@@ -195,6 +199,9 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     // Context module (DOIT être après ModulesModule, SchoolLevelsModule, TenantsModule)
     ContextModule,
     
+    // Tenant Context module (Bootstrap du contexte tenant pour dashboards)
+    TenantContextModule,
+    
     // Common module (Permissions, services communs)
     CommonModule,
     
@@ -212,33 +219,39 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     
     // Sync & Offline
     SyncModule,
+    
+    // Portal module (Multi-portal access)
+    PortalModule,
+    
+    // Dashboard module
+    DashboardModule,
+    
+    // Billing module (Subscription & Billing)
+    BillingModule,
+    
+    // Onboarding module (School onboarding)
+    OnboardingModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
     {
       provide: APP_GUARD,
-      useClass: JwtAuthGuard, // Authentification JWT
+      useClass: JwtAuthGuard, // ✅ Authentification JWT (seul guard global)
+    },
+    // ✅ TenantValidationGuard et TenantIsolationGuard retirés des guards globaux
+    // Ils seront appliqués uniquement sur les routes marquées avec @RequireTenant()
+    {
+      provide: APP_GUARD,
+      useClass: ContextValidationGuard, // Validation du contexte (tenant + school_level + module) - seulement si tenant requis
     },
     {
       provide: APP_GUARD,
-      useClass: TenantValidationGuard, // Validation du tenant
+      useClass: SchoolLevelIsolationGuard, // Isolation stricte des niveaux scolaires - seulement si tenant requis
     },
     {
       provide: APP_GUARD,
-      useClass: TenantIsolationGuard, // Isolation par tenant
-    },
-    {
-      provide: APP_GUARD,
-      useClass: ContextValidationGuard, // Validation du contexte (tenant + school_level + module)
-    },
-    {
-      provide: APP_GUARD,
-      useClass: SchoolLevelIsolationGuard, // Isolation stricte des niveaux scolaires (RÈGLE STRUCTURANTE)
-    },
-    {
-      provide: APP_GUARD,
-      useClass: AcademicYearEnforcementGuard, // Enforcement academic_year_id obligatoire (DIMENSION OBLIGATOIRE)
+      useClass: AcademicYearEnforcementGuard, // Enforcement academic_year_id - seulement si tenant requis
     },
     {
       provide: APP_GUARD,

@@ -10,7 +10,8 @@ import {
 import { Tenant } from '../../tenants/entities/tenant.entity';
 import { User } from '../../users/entities/user.entity';
 import { AcademicYear } from '../../academic-years/entities/academic-year.entity';
-import { SchoolLevel } from '../../school-levels/entities/school-level.entity';
+// ✅ Import de type uniquement pour éviter la référence circulaire
+import type { SchoolLevel } from '../../school-levels/entities/school-level.entity';
 import { AcademicTrack } from '../../academic-tracks/entities/academic-track.entity';
 
 @Entity('subjects')
@@ -34,7 +35,11 @@ export class Subject {
   @Column({ type: 'uuid', nullable: false })
   schoolLevelId: string;
 
-  @ManyToOne(() => SchoolLevel, { nullable: false, onDelete: 'RESTRICT' })
+  @ManyToOne(() => {
+    // ✅ Lazy import pour éviter la référence circulaire
+    const { SchoolLevel } = require('../../school-levels/entities/school-level.entity');
+    return SchoolLevel;
+  }, { nullable: false, onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'school_level_id' })
   schoolLevel: SchoolLevel;
 

@@ -17,7 +17,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/database/prisma.service';
-import { Decimal } from '@prisma/client/runtime/library';
+import { Decimal } from '@prisma/client';
 import * as puppeteer from 'puppeteer';
 import * as path from 'path';
 import * as fs from 'fs/promises';

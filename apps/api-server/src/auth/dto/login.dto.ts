@@ -1,4 +1,11 @@
-import { IsEmail, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsString, MinLength, IsOptional, IsEnum } from 'class-validator';
+
+export enum PortalType {
+  PLATFORM = 'PLATFORM',
+  SCHOOL = 'SCHOOL',
+  TEACHER = 'TEACHER',
+  PARENT = 'PARENT',
+}
 
 export class LoginDto {
   @IsEmail()
@@ -7,5 +14,13 @@ export class LoginDto {
   @IsString()
   @MinLength(6)
   password: string;
+
+  @IsOptional()
+  @IsString()
+  tenant_id?: string;
+
+  @IsOptional()
+  @IsEnum(PortalType)
+  portal_type?: PortalType;
 }
 

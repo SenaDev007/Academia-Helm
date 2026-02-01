@@ -24,13 +24,28 @@ import {
 import { Request } from 'express';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../../auth/decorators/public.decorator';
+import { REQUIRE_TENANT_KEY } from '../decorators/require-tenant.decorator';
+
+/**
+ * Vérifie si l'utilisateur est PLATFORM_OWNER
+ */
+function isPlatformOwner(user: any): boolean {
+  if (!user) return false;
+  if (user.role === 'PLATFORM_OWNER' || user.role === 'SUPER_ADMIN') return true;
+  const platformOwnerEmail = process.env.PLATFORM_OWNER_EMAIL;
+  if (platformOwnerEmail && user.email === platformOwnerEmail) return true;
+  return false;
+}
 
 @Injectable()
 export class ContextValidationGuard implements CanActivate {
   constructor(private reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    // Ignorer les routes publiques
+    const request = context.switchToHttp().getRequest<Request>();
+    const path = request.url || request.route?.path || '';
+    
+    // ✅ Ignorer les routes publiques
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -40,7 +55,38 @@ export class ContextValidationGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest<Request>();
+    // ✅ Exclure explicitement les routes d'authentification et de portail
+    // Ces routes ne nécessitent PAS de tenant avant l'authentification
+    if (
+      path.includes('/auth/login') ||
+      path.includes('/auth/register') ||
+      path.includes('/auth/select-tenant') ||
+      path.includes('/auth/dev-login') ||
+      path.includes('/portal/auth') ||
+      path.includes('/portal/search') ||
+      path.includes('/portal/list') ||
+      path.includes('/public/schools')
+    ) {
+      return true;
+    }
+
+    // ✅ Vérifier si le tenant est requis pour cette route
+    const requireTenant = this.reflector.getAllAndOverride<boolean>(REQUIRE_TENANT_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    // 🚨 Si le tenant n'est PAS requis → on laisse passer
+    if (!requireTenant) {
+      return true;
+    }
+
+    const user = request['user'] as any;
+    
+    // ✅ PLATFORM_OWNER peut bypasser le guard tenant
+    if (isPlatformOwner(user)) {
+      return true;
+    }
 
     // Vérifier que le contexte a été résolu par ContextInterceptor
     const contextData = request['context'];

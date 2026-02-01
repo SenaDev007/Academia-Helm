@@ -27,9 +27,12 @@ import {
 } from 'typeorm';
 import { Tenant } from '../../tenants/entities/tenant.entity';
 import { Student } from '../../students/entities/student.entity';
-import { Class } from '../../classes/entities/class.entity';
-import { Teacher } from '../../teachers/entities/teacher.entity';
-import { Subject } from '../../subjects/entities/subject.entity';
+// ✅ Import de type uniquement pour éviter la référence circulaire
+import type { Class } from '../../classes/entities/class.entity';
+// ✅ Import de type uniquement pour éviter la référence circulaire
+import type { Teacher } from '../../teachers/entities/teacher.entity';
+// ✅ Import de type uniquement pour éviter la référence circulaire
+import type { Subject } from '../../subjects/entities/subject.entity';
 
 export enum SchoolLevelType {
   MATERNELLE = 'MATERNELLE',
@@ -78,13 +81,25 @@ export class SchoolLevel {
   @OneToMany(() => Student, (student) => student.schoolLevel)
   students: Student[];
 
-  @OneToMany(() => Class, (classEntity) => classEntity.schoolLevel)
+  @OneToMany(() => {
+    // ✅ Lazy import pour éviter la référence circulaire
+    const { Class } = require('../../classes/entities/class.entity');
+    return Class;
+  }, (classEntity) => classEntity.schoolLevel)
   classes: Class[];
 
-  @OneToMany(() => Teacher, (teacher) => teacher.schoolLevel)
+  @OneToMany(() => {
+    // ✅ Lazy import pour éviter la référence circulaire
+    const { Teacher } = require('../../teachers/entities/teacher.entity');
+    return Teacher;
+  }, (teacher) => teacher.schoolLevel)
   teachers: Teacher[];
 
-  @OneToMany(() => Subject, (subject) => subject.schoolLevel)
+  @OneToMany(() => {
+    // ✅ Lazy import pour éviter la référence circulaire
+    const { Subject } = require('../../subjects/entities/subject.entity');
+    return Subject;
+  }, (subject) => subject.schoolLevel)
   subjects: Subject[];
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })

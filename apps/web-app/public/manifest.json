@@ -1,0 +1,26 @@
+{
+  "name": "Academia Hub - Plateforme de gestion scolaire",
+  "short_name": "Academia Hub",
+  "description": "La plateforme de gestion scolaire qui structure, contrôle et sécurise vos établissements",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0A2A5E",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/images/logo-Academia Hub.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/images/logo-Academia-Hub.ico",
+      "sizes": "any",
+      "type": "image/x-icon"
+    }
+  ],
+  "categories": ["education", "productivity"],
+  "lang": "fr-FR",
+  "dir": "ltr"
+}

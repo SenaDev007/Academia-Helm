@@ -9,10 +9,12 @@ import {
 } from 'typeorm';
 import { Tenant } from '../../tenants/entities/tenant.entity';
 import { User } from '../../users/entities/user.entity';
-import { Department } from '../../departments/entities/department.entity';
+// ✅ Import de type uniquement pour éviter la référence circulaire
+import type { Department } from '../../departments/entities/department.entity';
 import { Subject } from '../../subjects/entities/subject.entity';
 import { AcademicYear } from '../../academic-years/entities/academic-year.entity';
-import { SchoolLevel } from '../../school-levels/entities/school-level.entity';
+// ✅ Import de type uniquement pour éviter la référence circulaire
+import type { SchoolLevel } from '../../school-levels/entities/school-level.entity';
 
 @Entity('teachers')
 export class Teacher {
@@ -29,7 +31,11 @@ export class Teacher {
   @Column({ type: 'uuid', nullable: false })
   schoolLevelId: string;
 
-  @ManyToOne(() => SchoolLevel, { nullable: false, onDelete: 'RESTRICT' })
+  @ManyToOne(() => {
+    // ✅ Lazy import pour éviter la référence circulaire
+    const { SchoolLevel } = require('../../school-levels/entities/school-level.entity');
+    return SchoolLevel;
+  }, { nullable: false, onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'school_level_id' })
   schoolLevel: SchoolLevel;
 
@@ -60,7 +66,11 @@ export class Teacher {
   @Column({ nullable: true })
   departmentId: string;
 
-  @ManyToOne(() => Department, { nullable: true })
+  @ManyToOne(() => {
+    // ✅ Lazy import pour éviter la référence circulaire
+    const { Department } = require('../../departments/entities/department.entity');
+    return Department;
+  }, { nullable: true })
   @JoinColumn({ name: 'departmentId' })
   department: Department;
 

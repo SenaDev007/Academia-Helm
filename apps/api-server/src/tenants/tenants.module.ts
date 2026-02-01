@@ -13,7 +13,10 @@ import { CountriesModule } from '../countries/countries.module';
   ],
   controllers: [TenantsController],
   providers: [TenantsService, TenantsRepository],
-  exports: [TenantsService],
+  exports: [
+    TenantsService,
+    TypeOrmModule.forFeature([Tenant]), // ✅ Exporter le repository pour les guards globaux
+  ],
 })
 export class TenantsModule {}
 

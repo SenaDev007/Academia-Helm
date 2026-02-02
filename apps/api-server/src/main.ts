@@ -41,7 +41,8 @@ async function bootstrap() {
   });
 
   const port = process.env.PORT || 3000;
-  await app.listen(port);
+  // Écouter sur toutes les interfaces (0.0.0.0) pour permettre les connexions depuis Next.js
+  await app.listen(port, '0.0.0.0');
 
   // Logger l'URL sans hardcoder localhost
   const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';

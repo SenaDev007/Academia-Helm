@@ -17,14 +17,32 @@ export async function POST(request: NextRequest) {
     const apiBaseUrl = getApiBaseUrlForRoutes();
     // getApiBaseUrl() retourne déjà l'URL avec /api à la fin
     const draftUrl = `${apiBaseUrl}/onboarding/draft`;
+    
+    console.log('🔍 [Onboarding Draft] API URL:', draftUrl);
 
-    const response = await fetch(draftUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
+    let response: Response;
+    try {
+      response = await fetch(draftUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30000), // 30 secondes
+      });
+    } catch (fetchError: any) {
+      console.error('❌ [Onboarding Draft] Fetch error:', fetchError);
+      if (fetchError.code === 'EACCES' || fetchError.message?.includes('ECONNREFUSED') || fetchError.message?.includes('fetch failed')) {
+        return NextResponse.json(
+          { 
+            error: 'Backend server not accessible',
+            message: `Impossible de se connecter au serveur backend. Vérifiez que le serveur API est démarré sur ${apiBaseUrl}`,
+          },
+          { status: 503 }
+        );
+      }
+      throw fetchError;
+    }
 
     const data = await response.json();
 

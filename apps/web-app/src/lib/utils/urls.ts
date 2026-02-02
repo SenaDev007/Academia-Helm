@@ -161,8 +161,9 @@ export function getApiBaseUrl(): string {
     
     // Dernier recours : utiliser le port par défaut API
     // ⚠️ Ceci est un fallback de développement uniquement
+    // Utiliser 127.0.0.1 au lieu de localhost pour éviter les problèmes DNS/IPv6
     const port = process.env.API_PORT || '3000';
-    return `http://localhost:${port}/api`;
+    return `http://127.0.0.1:${port}/api`;
   }
   
   // Ne devrait jamais arriver ici

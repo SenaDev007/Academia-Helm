@@ -34,8 +34,7 @@
     "migrate:validate": "ts-node scripts/validate-migrations.ts",
     "migrate:status": "npx prisma migrate status --schema=prisma/schema.prisma",
     "migrate:deploy": "npx prisma migrate deploy --schema=prisma/schema.prisma",
-    "migrate:dev": "npx prisma migrate dev --schema=prisma/schema.prisma",
-    "prisma:generate": "prisma generate --schema=prisma/schema.prisma"
+    "migrate:dev": "npx prisma migrate dev --schema=prisma/schema.prisma"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.0",
@@ -48,7 +47,6 @@
     "@nestjs/schedule": "^6.1.0",
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/typeorm": "^10.0.1",
-    "@prisma/adapter-pg": "^7.3.0",
     "@prisma/client": "^7.3.0",
     "@prisma/internals": "^7.3.0",
     "@types/nodemailer": "^7.0.9",

@@ -120,6 +120,65 @@ export default function OnboardingWizard() {
     }
   }, [data.schoolsCount, data.bilingual, data.billingPeriod, step]);
 
+  // Calculer la force du mot de passe
+  const calculatePasswordStrength = (password: string) => {
+    if (!password) {
+      setPasswordStrength({ score: 0, label: '', color: 'gray' });
+      return;
+    }
+
+    let score = 0;
+    
+    // Longueur minimale (8 caractères)
+    if (password.length >= 8) score++;
+    if (password.length >= 12) score++;
+    
+    // Contient des minuscules
+    if (/[a-z]/.test(password)) score++;
+    
+    // Contient des majuscules
+    if (/[A-Z]/.test(password)) score++;
+    
+    // Contient des chiffres
+    if (/[0-9]/.test(password)) score++;
+    
+    // Contient des caractères spéciaux
+    if (/[^a-zA-Z0-9]/.test(password)) score++;
+    
+    // Limiter le score à 4 (0-4)
+    score = Math.min(score, 4);
+    
+    // Déterminer le label et la couleur
+    let label = '';
+    let color = 'gray';
+    
+    if (score === 0) {
+      label = '';
+      color = 'gray';
+    } else if (score === 1) {
+      label = 'Très faible';
+      color = 'red';
+    } else if (score === 2) {
+      label = 'Faible';
+      color = 'orange';
+    } else if (score === 3) {
+      label = 'Moyen';
+      color = 'yellow';
+    } else if (score === 4) {
+      label = 'Fort';
+      color = 'green';
+    }
+    
+    setPasswordStrength({ score, label, color });
+  };
+
+  // Mettre à jour la force du mot de passe quand il change
+  useEffect(() => {
+    if (step === 2) {
+      calculatePasswordStrength(data.password);
+    }
+  }, [data.password, step]);
+
   // Fonction pour obtenir le code téléphonique selon le pays
   const getCountryPhoneCode = (country: string): string => {
     const countryCodes: { [key: string]: string } = {
@@ -757,7 +816,7 @@ export default function OnboardingWizard() {
                       className={`w-full px-4 py-3 border rounded-md focus:ring-2 focus:ring-blue-600 ${
                         errors.firstName ? 'border-red-500' : 'border-gray-300'
                       }`}
-                      placeholder="Jean"
+                      placeholder="Koffi"
                     />
                     {errors.firstName && (
                       <p className="mt-1 text-sm text-red-600">{errors.firstName}</p>
@@ -775,7 +834,7 @@ export default function OnboardingWizard() {
                       className={`w-full px-4 py-3 border rounded-md focus:ring-2 focus:ring-blue-600 ${
                         errors.lastName ? 'border-red-500' : 'border-gray-300'
                       }`}
-                      placeholder="DUPONT"
+                      placeholder="ADÉKAMBI"
                     />
                     {errors.lastName && (
                       <p className="mt-1 text-sm text-red-600">{errors.lastName}</p>
@@ -795,7 +854,7 @@ export default function OnboardingWizard() {
                       className={`w-full px-4 py-3 border rounded-md focus:ring-2 focus:ring-blue-600 ${
                         errors.promoterEmail ? 'border-red-500' : 'border-gray-300'
                       }`}
-                      placeholder="jean.dupont@ecole.com"
+                      placeholder="koffi.adekambi@ecole.bj"
                     />
                     {errors.promoterEmail && (
                       <p className="mt-1 text-sm text-red-600">{errors.promoterEmail}</p>

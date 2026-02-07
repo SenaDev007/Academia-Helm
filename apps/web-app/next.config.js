@@ -96,5 +96,29 @@ const nextConfig = {
   output: 'standalone', // Optimisé pour Vercel
 };
 
-module.exports = nextConfig;
+// Configuration PWA uniquement en production
+if (process.env.NODE_ENV === 'production') {
+  const withPWA = require('next-pwa')({
+    dest: 'public',
+    register: true,
+    skipWaiting: true,
+    runtimeCaching: [
+      {
+        urlPattern: /^https?.*/,
+        handler: 'NetworkFirst',
+        options: {
+          cacheName: 'offlineCache',
+          expiration: {
+            maxEntries: 200,
+            maxAgeSeconds: 24 * 60 * 60, // 24 heures
+          },
+          networkTimeoutSeconds: 10,
+        },
+      },
+    ],
+  });
+  module.exports = withPWA(nextConfig);
+} else {
+  module.exports = nextConfig;
+}
 

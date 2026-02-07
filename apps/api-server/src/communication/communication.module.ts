@@ -13,10 +13,11 @@ import { ConfigModule } from '@nestjs/config';
 import { EmailService } from './services/email.service';
 import { WhatsAppService } from './services/whatsapp.service';
 import { SmsService } from './services/sms.service';
+import { VoiceService } from './services/voice.service';
 
 @Module({
   imports: [ConfigModule],
-  providers: [EmailService, WhatsAppService, SmsService],
-  exports: [EmailService, WhatsAppService, SmsService],
+  providers: [EmailService, WhatsAppService, SmsService, VoiceService],
+  exports: [EmailService, WhatsAppService, SmsService, VoiceService],
 })
 export class CommunicationModule {}

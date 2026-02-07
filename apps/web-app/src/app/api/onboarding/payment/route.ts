@@ -9,7 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,7 +27,9 @@ export async function POST(request: NextRequest) {
     // getApiBaseUrl() retourne déjà l'URL avec /api à la fin
     const paymentUrl = `${apiBaseUrl}/onboarding/draft/${draftId}/payment`;
 
-    const response = await fetch(paymentUrl, {
+    // Normaliser l'URL pour utiliser 127.0.0.1 au lieu de localhost
+    const finalUrl = normalizeApiUrl(paymentUrl);
+    const response = await fetch(finalUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

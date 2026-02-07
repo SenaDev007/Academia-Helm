@@ -34,6 +34,19 @@ import {
   Languages,
   School,
   Calendar,
+  Clock,
+  Upload,
+  X as XIcon,
+  AlertTriangle,
+  Trash2,
+  RotateCcw,
+  MessageSquare,
+  Phone,
+  MessageCircle,
+  Briefcase,
+  DollarSign,
+  Sparkles,
+  TrendingDown,
 } from 'lucide-react';
 
 interface OnboardingData {
@@ -54,12 +67,12 @@ interface OnboardingData {
   promoterPhone: string;
   promoterEmail: string;
   password: string;
+  confirmPassword: string;
   otp: string;
 
   // Phase 3: Plan
   planCode: string;
   billingPeriod: 'monthly' | 'yearly';
-  bilingualEnabled: boolean;
 
   // Draft ID
   draftId?: string;
@@ -79,7 +92,10 @@ export default function OnboardingWizard() {
   const [otpSent, setOtpSent] = useState(false);
   const [otpVerified, setOtpVerified] = useState(false);
   const [otpCode, setOtpCode] = useState<string | null>(null); // Code OTP affiché en dev
+  const [otpMethod, setOtpMethod] = useState<'sms' | 'voice' | 'whatsapp'>('sms'); // Méthode d'envoi OTP
   const [otpExpiresAt, setOtpExpiresAt] = useState<Date | null>(null); // Expiration OTP
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false); // État de l'upload du logo
+  const [logoPreview, setLogoPreview] = useState<string | null>(null); // Aperçu du logo
   const [passwordStrength, setPasswordStrength] = useState<{
     score: number; // 0-4
     label: string; // 'Très faible', 'Faible', 'Moyen', 'Fort', 'Très fort'
@@ -87,11 +103,39 @@ export default function OnboardingWizard() {
   }>({ score: 0, label: '', color: 'gray' });
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [priceCalculation, setPriceCalculation] = useState<{
-    basePrice: number;
-    bilingualPrice: number;
-    total: number;
+    monthly: {
+      basePrice: number;
+      bilingualPrice: number;
+      total: number;
+    } | null;
+    yearly: {
+      basePrice: number;
+      bilingualPrice: number;
+      total: number;
+    } | null;
+    isLoading: boolean;
+    error: string | null;
+  }>({
+    monthly: null,
+    yearly: null,
+    isLoading: false,
+    error: null,
+  });
+  const [initialPayment, setInitialPayment] = useState<number | null>(null);
+  const [showDraftChoiceModal, setShowDraftChoiceModal] = useState(false);
+  const [existingDraftInfo, setExistingDraftInfo] = useState<{
+    id: string;
+    status: string;
+    data?: any;
+  } | null>(null);
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [showDraftRestoreBanner, setShowDraftRestoreBanner] = useState(false);
+  const [pendingDraftInfo, setPendingDraftInfo] = useState<{
+    id: string;
+    data?: any;
   } | null>(null);
 
+  // État initial vide - ne pas charger automatiquement les données
   const [data, setData] = useState<OnboardingData>({
     schoolName: '',
     schoolType: '',
@@ -108,17 +152,127 @@ export default function OnboardingWizard() {
     password: '',
     confirmPassword: '',
     otp: '',
-    planCode: 'MONTHLY_1_SCHOOL',
+    planCode: 'BASIC_MONTHLY',
     billingPeriod: 'monthly',
-    bilingualEnabled: false,
   });
 
-  // Calculer le prix dynamiquement
+  // Sauvegarder les données dans localStorage à chaque changement
   useEffect(() => {
-    if (step >= 3) {
-      calculatePrice();
+    if (typeof window !== 'undefined' && data.draftId) {
+      try {
+        localStorage.setItem('onboarding-draft', JSON.stringify({
+          data,
+          timestamp: Date.now(),
+        }));
+      } catch (error) {
+        console.error('Error saving onboarding data:', error);
+      }
     }
-  }, [data.schoolsCount, data.bilingual, data.billingPeriod, step]);
+  }, [data]);
+
+  // Vérifier si un draft existe pour l'email quand l'utilisateur saisit l'email
+  useEffect(() => {
+    // Ne vérifier que si on est à l'étape 1 et que l'email est valide
+    if (step !== 1 || !data.email || !data.email.includes('@')) {
+      // Si l'email n'est plus valide, cacher la bannière
+      if (!data.email || !data.email.includes('@')) {
+        setShowDraftRestoreBanner(false);
+        setPendingDraftInfo(null);
+      }
+      return;
+    }
+
+    // Ne pas vérifier si on a déjà un draftId (pour éviter les vérifications inutiles)
+    if (data.draftId) {
+      return;
+    }
+
+    // Debounce : attendre 1 seconde après la dernière modification
+    const timeoutId = setTimeout(async () => {
+      try {
+        // Encoder l'email pour l'URL
+        const encodedEmail = encodeURIComponent(data.email);
+        const response = await fetch(`/api/onboarding/draft/check/${encodedEmail}`);
+        
+        if (response.ok) {
+          const result = await response.json();
+          
+          if (result.exists && result.draft) {
+            // Un draft existe pour cet email
+            setPendingDraftInfo({
+              id: result.draft.id,
+              data: result.draft,
+            });
+            setShowDraftRestoreBanner(true);
+          } else {
+            // Aucun draft pour cet email
+            setShowDraftRestoreBanner(false);
+            setPendingDraftInfo(null);
+          }
+        }
+      } catch (error) {
+        console.error('Erreur lors de la vérification du draft:', error);
+        // En cas d'erreur, ne pas afficher la bannière
+        setShowDraftRestoreBanner(false);
+        setPendingDraftInfo(null);
+      }
+    }, 1000); // Debounce de 1 seconde
+
+    // Nettoyer le timeout si l'email change avant la fin du délai
+    return () => clearTimeout(timeoutId);
+  }, [data.email, step, data.draftId]); // Vérifier quand l'email change
+
+  // Générer le planCode dynamiquement basé sur schoolsCount et billingPeriod
+  useEffect(() => {
+    const generatePlanCode = () => {
+      const period = data.billingPeriod === 'monthly' ? 'MONTHLY' : 'YEARLY';
+      if (data.schoolsCount === 1) {
+        return `BASIC_${period}`;
+      } else if (data.schoolsCount === 2) {
+        return `GROUP_2_${period}`;
+      } else if (data.schoolsCount === 3) {
+        return `GROUP_3_${period}`;
+      } else {
+        return `GROUP_4_${period}`;
+      }
+    };
+    
+    const newPlanCode = generatePlanCode();
+    if (newPlanCode !== data.planCode) {
+      setData({ ...data, planCode: newPlanCode });
+    }
+  }, [data.schoolsCount, data.billingPeriod]);
+
+  // Charger le prix initial au montage
+  useEffect(() => {
+    const loadInitialPayment = async () => {
+      try {
+        const response = await fetch('/api/public/pricing/initial');
+        if (response.ok) {
+          const result = await response.json();
+          setInitialPayment(result.amount || 100000);
+        }
+      } catch (error) {
+        console.error('Error loading initial payment:', error);
+        setInitialPayment(100000); // Fallback
+      }
+    };
+    loadInitialPayment();
+  }, []);
+
+  // Calculer les prix dynamiquement depuis l'API (mensuel ET annuel)
+  useEffect(() => {
+    if (step >= 3 && data.planCode) {
+      calculatePrices();
+    }
+  }, [data.schoolsCount, data.bilingual, data.planCode, step]);
+
+  // Mettre à jour le code téléphonique quand le pays change
+  useEffect(() => {
+    // Le placeholder des champs téléphone sera automatiquement mis à jour
+    // car il utilise getCountryPhoneCode(data.country)
+    // Pas besoin de forcer un re-render, React le fait automatiquement
+  }, [data.country]);
 
   // Calculer la force du mot de passe
   const calculatePasswordStrength = (password: string) => {
@@ -215,22 +369,86 @@ export default function OnboardingWizard() {
     return countryCode + cleaned;
   };
 
-  const calculatePrice = async () => {
-    // Pricing basé sur le nombre d'écoles
-    const basePrices: { [key: number]: { monthly: number; yearly: number } } = {
-      1: { monthly: 15000, yearly: 150000 },
-      2: { monthly: 25000, yearly: 250000 },
-      3: { monthly: 35000, yearly: 350000 },
-      4: { monthly: 45000, yearly: 450000 },
-    };
+  const calculatePrices = async () => {
+    if (!data.planCode) {
+      return;
+    }
 
-    const schoolsCount = Math.min(data.schoolsCount, 4);
-    const prices = basePrices[schoolsCount] || basePrices[1];
-    const basePrice = data.billingPeriod === 'monthly' ? prices.monthly : prices.yearly;
-    const bilingualPrice = data.bilingual && data.billingPeriod === 'monthly' ? 5000 : 0;
-    const total = basePrice + bilingualPrice;
+    setPriceCalculation(prev => ({ ...prev, isLoading: true, error: null }));
 
-    setPriceCalculation({ basePrice, bilingualPrice, total });
+    try {
+      // Calculer les prix pour les deux périodes en parallèle
+      const [monthlyResponse, yearlyResponse] = await Promise.all([
+        fetch('/api/public/pricing/calculate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            planCode: data.planCode,
+            schoolsCount: data.schoolsCount,
+            bilingual: data.bilingual,
+            cycle: 'MONTHLY',
+          }),
+        }),
+        fetch('/api/public/pricing/calculate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            planCode: data.planCode,
+            schoolsCount: data.schoolsCount,
+            bilingual: data.bilingual,
+            cycle: 'YEARLY',
+          }),
+        }),
+      ]);
+
+      // Traiter la réponse mensuelle
+      let monthlyData = null;
+      if (monthlyResponse.ok) {
+        const monthlyResult = await monthlyResponse.json();
+        const monthlyBreakdown = monthlyResult.breakdown || {};
+        monthlyData = {
+          basePrice: monthlyBreakdown.basePrice || 0,
+          bilingualPrice: monthlyBreakdown.bilingualPrice || 0,
+          total: monthlyResult.amount || 0,
+        };
+      }
+
+      // Traiter la réponse annuelle
+      let yearlyData = null;
+      if (yearlyResponse.ok) {
+        const yearlyResult = await yearlyResponse.json();
+        const yearlyBreakdown = yearlyResult.breakdown || {};
+        yearlyData = {
+          basePrice: yearlyBreakdown.basePrice || 0,
+          bilingualPrice: yearlyBreakdown.bilingualPrice || 0,
+          total: yearlyResult.amount || 0,
+        };
+      }
+
+      // Vérifier les erreurs
+      if (!monthlyResponse.ok || !yearlyResponse.ok) {
+        const error = await (monthlyResponse.ok ? yearlyResponse : monthlyResponse).json();
+        throw new Error(error.message || 'Erreur lors du calcul des prix');
+      }
+
+      setPriceCalculation({
+        monthly: monthlyData,
+        yearly: yearlyData,
+        isLoading: false,
+        error: null,
+      });
+    } catch (error: any) {
+      console.error('Error calculating prices:', error);
+      setPriceCalculation(prev => ({
+        ...prev,
+        isLoading: false,
+        error: error.message || 'Erreur lors du calcul des prix',
+      }));
+    }
   };
 
   const validateStep = (stepNumber: number): boolean => {
@@ -270,8 +488,8 @@ export default function OnboardingWizard() {
       if (data.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
         newErrors.email = 'Format d\'email invalide';
       }
-      if (data.schoolsCount < 1 || data.schoolsCount > 2) {
-        newErrors.schoolsCount = 'Le nombre d\'écoles doit être 1 ou 2';
+      if (data.schoolsCount < 1 || data.schoolsCount > 4) {
+        newErrors.schoolsCount = 'Le nombre d\'écoles doit être entre 1 et 4';
       }
     }
 
@@ -325,12 +543,83 @@ export default function OnboardingWizard() {
     }
   };
 
+  const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Vérifier la taille (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setErrors({ logo: 'Le fichier est trop volumineux. Taille maximale : 5MB' });
+      return;
+    }
+
+    // Vérifier le type
+    if (!file.type.startsWith('image/')) {
+      setErrors({ logo: 'Format invalide. Seules les images sont acceptées' });
+      return;
+    }
+
+    setIsUploadingLogo(true);
+    setErrors({ logo: '' });
+
+    try {
+      // Créer un aperçu du logo
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setLogoPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+
+      // Si on a déjà un draftId, uploader immédiatement
+      if (data.draftId) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('draftId', data.draftId);
+
+        const response = await fetch('/api/onboarding/upload-logo', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || 'Erreur lors de l\'upload du logo');
+        }
+
+        const result = await response.json();
+        handleChange('logoUrl', result.logoUrl);
+      }
+      // Sinon, le logo sera uploadé après la création du draft dans handleNext
+    } catch (error: any) {
+      setErrors({ logo: error.message || 'Erreur lors de l\'upload du logo' });
+      setLogoPreview(null);
+    } finally {
+      setIsUploadingLogo(false);
+    }
+  };
+
+  const handleRemoveLogo = () => {
+    setLogoPreview(null);
+    handleChange('logoUrl', undefined);
+    // Réinitialiser l'input file
+    const fileInput = document.getElementById('logo-upload') as HTMLInputElement;
+    if (fileInput) {
+      fileInput.value = '';
+    }
+  };
+
   const handleNext = async () => {
     if (!validateStep(step)) {
       return;
     }
 
     if (step === 1) {
+      // Si un draft existe déjà, passer directement à l'étape suivante
+      if (data.draftId) {
+        setStep(2);
+        return;
+      }
+
       // Créer le draft
       setIsSubmitting(true);
       try {
@@ -349,17 +638,94 @@ export default function OnboardingWizard() {
             email: data.email,
             bilingual: data.bilingual,
             schoolsCount: data.schoolsCount,
-            logoUrl: data.logoUrl,
+            // logoUrl n'est pas envoyé ici car il n'est pas dans le modèle OnboardingDraft
+            // Le logo sera associé à l'établissement lors de la création finale du tenant
           }),
         });
 
         if (!response.ok) {
           const error = await response.json();
-          throw new Error(error.message || 'Erreur lors de la création du draft');
+          console.error('❌ [Onboarding Draft] Error response:', error);
+          
+          // Si un draft existe déjà, afficher une modal de choix
+          const errorMsg = error.message || error.data?.message || '';
+          if (errorMsg.includes('déjà en cours')) {
+            // Vérifier si l'ID du draft existant est dans l'erreur
+            const existingDraftId = error.existingDraftId || error.data?.existingDraftId;
+            const existingDraftStatus = error.status || error.data?.status;
+            
+            if (existingDraftId) {
+              console.log('📝 [Onboarding Draft] Draft existant trouvé, affichage de la modal de choix...', existingDraftId);
+              try {
+                // Charger les données du draft existant pour les afficher dans la modal
+                const existingDraftResponse = await fetch(`/api/onboarding/draft?draftId=${existingDraftId}`);
+                if (existingDraftResponse.ok) {
+                  const existingDraft = await existingDraftResponse.json();
+                  setExistingDraftInfo({
+                    id: existingDraftId,
+                    status: existingDraftStatus || existingDraft.status,
+                    data: existingDraft,
+                  });
+                  setShowDraftChoiceModal(true);
+                  setIsSubmitting(false);
+                  return; // Ne pas lancer d'erreur, afficher la modal
+                }
+              } catch (loadError) {
+                console.error('❌ [Onboarding Draft] Erreur lors du chargement du draft existant:', loadError);
+              }
+            }
+          }
+          
+          // Afficher le message d'erreur du backend ou un message par défaut
+          const errorMessage = error.message || error.error || 'Erreur lors de la création du draft';
+          throw new Error(errorMessage);
         }
 
         const result = await response.json();
-        setData({ ...data, draftId: result.id });
+        const newDraftId = result.id;
+        const updatedData = { ...data, draftId: newDraftId };
+        setData(updatedData);
+        
+        // Si un logo a été sélectionné mais pas encore uploadé, l'uploader maintenant
+        if (logoPreview && !data.logoUrl) {
+          const fileInput = document.getElementById('logo-upload') as HTMLInputElement;
+          const file = fileInput?.files?.[0];
+          if (file) {
+            try {
+              const formData = new FormData();
+              formData.append('file', file);
+              formData.append('draftId', newDraftId);
+
+              const logoResponse = await fetch('/api/onboarding/upload-logo', {
+                method: 'POST',
+                body: formData,
+              });
+
+              if (logoResponse.ok) {
+                const logoResult = await logoResponse.json();
+                const finalData = { ...updatedData, logoUrl: logoResult.logoUrl };
+                setData(finalData);
+                updatedData.logoUrl = logoResult.logoUrl;
+              }
+            } catch (logoError) {
+              console.error('Erreur lors de l\'upload du logo:', logoError);
+              // Ne pas bloquer le workflow si l'upload du logo échoue
+            }
+          }
+        }
+        
+        // Sauvegarder dans localStorage
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('onboarding-draft', JSON.stringify({
+              data: updatedData,
+              timestamp: Date.now(),
+            }));
+          } catch (error) {
+            console.error('Error saving draft to localStorage:', error);
+          }
+        }
+        
         setStep(2);
       } catch (error: any) {
         setErrors({ submit: error.message });
@@ -420,7 +786,6 @@ export default function OnboardingWizard() {
             planCode: data.planCode,
             billingPeriod: data.billingPeriod, // Ajouté pour conversion planCode -> planId
             schoolsCount: data.schoolsCount, // Ajouté pour conversion planCode -> planId
-            bilingualEnabled: data.bilingualEnabled, // Non utilisé côté backend (déjà dans draft.bilingual)
           }),
         });
 
@@ -444,15 +809,54 @@ export default function OnboardingWizard() {
       return;
     }
 
+    if (!data.draftId) {
+      setErrors({ submit: 'Draft ID manquant. Veuillez compléter l\'étape précédente.' });
+      return;
+    }
+
     setIsSubmitting(true);
+    setErrors({});
+    
     try {
-      // TODO: Appeler l'API OTP
-      // Pour l'instant, simuler l'envoi
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // Normaliser le numéro de téléphone
+      const normalizedPhone = normalizePhoneNumber(data.promoterPhone, data.country);
+      
+      const response = await fetch('/api/onboarding/otp/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          draftId: data.draftId,
+          phone: normalizedPhone,
+          method: otpMethod,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Erreur lors de l\'envoi du code OTP');
+      }
+
+      const result = await response.json();
+      
+      // En mode développement, afficher le code OTP
+      if (result.code) {
+        setOtpCode(result.code);
+      }
+      
+      // Définir l'expiration depuis la réponse du backend
+      if (result.expiresAt) {
+        setOtpExpiresAt(new Date(result.expiresAt));
+      } else {
+        // Fallback : 3 minutes par défaut
+        setOtpExpiresAt(new Date(Date.now() + 3 * 60 * 1000));
+      }
+      
       setOtpSent(true);
+      setOtpVerified(false); // Réinitialiser la vérification
+      setData({ ...data, otp: '' }); // Réinitialiser le champ OTP
       setErrors({});
     } catch (error: any) {
-      setErrors({ otp: 'Erreur lors de l\'envoi du code OTP' });
+      setErrors({ otp: error.message || 'Erreur lors de l\'envoi du code OTP' });
     } finally {
       setIsSubmitting(false);
     }
@@ -464,15 +868,52 @@ export default function OnboardingWizard() {
       return;
     }
 
+    if (!data.draftId) {
+      setErrors({ submit: 'Draft ID manquant' });
+      return;
+    }
+
+    // Vérifier si l'OTP n'a pas expiré
+    if (otpExpiresAt && new Date() > otpExpiresAt) {
+      setErrors({ otp: 'Le code OTP a expiré. Veuillez en demander un nouveau.' });
+      setOtpSent(false);
+      setOtpExpiresAt(null);
+      return;
+    }
+
     setIsSubmitting(true);
+    setErrors({});
+    
     try {
-      // TODO: Vérifier l'OTP via l'API
-      // Pour l'instant, simuler la vérification
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      setOtpVerified(true);
-      setErrors({});
+      // Normaliser le numéro de téléphone
+      const normalizedPhone = normalizePhoneNumber(data.promoterPhone, data.country);
+      
+      const response = await fetch('/api/onboarding/otp/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          draftId: data.draftId,
+          phone: normalizedPhone,
+          code: data.otp,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Code OTP invalide');
+      }
+
+      const result = await response.json();
+      
+      if (result.valid) {
+        setOtpVerified(true);
+        setErrors({});
+      } else {
+        throw new Error(result.message || 'Code OTP invalide ou expiré');
+      }
     } catch (error: any) {
-      setErrors({ otp: 'Code OTP invalide' });
+      setErrors({ otp: error.message || 'Code OTP invalide' });
+      setOtpVerified(false);
     } finally {
       setIsSubmitting(false);
     }
@@ -517,6 +958,276 @@ export default function OnboardingWizard() {
     if (step > 1) {
       setStep(step - 1);
       setErrors({});
+    }
+  };
+
+  // Fonction helper pour obtenir les infos de progression
+  const getProgressInfo = (draft: any) => {
+    if (draft.promoterEmail && draft.selectedPlanId) {
+      return { step: 4, label: 'Prêt pour le paiement', progress: 100 };
+    } else if (draft.promoterEmail) {
+      return { step: 3, label: 'Plan à sélectionner', progress: 75 };
+    } else if (draft.promoterFirstName) {
+      return { step: 2, label: 'Informations promoteur incomplètes', progress: 50 };
+    } else {
+      return { step: 1, label: 'Informations établissement', progress: 25 };
+    }
+  };
+
+  // Fonction helper pour vérifier si le draft expire bientôt
+  const isExpiringSoon = (createdAt: string) => {
+    if (!createdAt) return false;
+    const hoursSinceCreation = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60);
+    return hoursSinceCreation > 20; // Avertir si moins de 4h restantes
+  };
+
+  // Restaurer le draft depuis la bannière
+  const handleRestoreDraft = async () => {
+    if (!pendingDraftInfo) return;
+    
+    try {
+      // Recharger le draft depuis l'API pour avoir les données à jour
+      const response = await fetch(`/api/onboarding/draft?draftId=${pendingDraftInfo.id}`);
+      if (!response.ok) {
+        throw new Error('Erreur lors du chargement du draft');
+      }
+      
+      const existingDraft = await response.json();
+      
+      // Charger toutes les données du draft existant
+      const updatedData = {
+        ...data,
+        draftId: existingDraft.id,
+        // Phase 1: Établissement
+        schoolName: existingDraft.schoolName || '',
+        schoolType: existingDraft.schoolType || '',
+        city: existingDraft.city || '',
+        country: existingDraft.country || 'Bénin',
+        phone: existingDraft.phone || '',
+        email: existingDraft.email || '',
+        bilingual: existingDraft.bilingual ?? false,
+        schoolsCount: existingDraft.schoolsCount || 1,
+        // Phase 2: Promoteur
+        firstName: existingDraft.promoterFirstName || '',
+        lastName: existingDraft.promoterLastName || '',
+        promoterPhone: existingDraft.promoterPhone || '',
+        promoterEmail: existingDraft.promoterEmail || '',
+        // Phase 3: Plan (si disponible dans priceSnapshot)
+        planCode: data.planCode,
+        billingPeriod: data.billingPeriod,
+      };
+      
+      // Si un plan a été sélectionné, extraire les infos du priceSnapshot
+      if (existingDraft.selectedPlanId && existingDraft.priceSnapshot) {
+        const priceSnapshot = existingDraft.priceSnapshot as any;
+        if (priceSnapshot.periodType) {
+          updatedData.billingPeriod = priceSnapshot.periodType === 'MONTHLY' ? 'monthly' : 'yearly';
+        }
+      }
+      
+      setData(updatedData);
+      
+      // Déterminer l'étape à afficher selon l'état du draft
+      let targetStep = 1;
+      if (existingDraft.promoterEmail && existingDraft.selectedPlanId) {
+        targetStep = 4; // Promoteur + Plan sélectionné = Étape 4 (Paiement)
+      } else if (existingDraft.promoterEmail) {
+        targetStep = 3; // Promoteur renseigné = Étape 3 (Plan)
+      } else if (existingDraft.promoterFirstName) {
+        targetStep = 2; // Promoteur partiellement renseigné = Étape 2
+      }
+      
+      setStep(targetStep);
+      
+      // Sauvegarder dans localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('onboarding-draft', JSON.stringify({
+          data: updatedData,
+          timestamp: Date.now(),
+        }));
+      }
+      
+      // Fermer la bannière
+      setShowDraftRestoreBanner(false);
+      setPendingDraftInfo(null);
+      
+      // Afficher un message informatif
+      setErrors({
+        info: `✅ Votre brouillon a été restauré. Vous êtes à l'étape ${targetStep} sur 4.`,
+      });
+    } catch (error) {
+      console.error('Erreur lors de la restauration du draft:', error);
+      setErrors({ submit: 'Erreur lors de la restauration du draft' });
+    }
+  };
+
+  // Ignorer le draft et commencer une nouvelle inscription
+  const handleStartNewDraft = () => {
+    // Nettoyer localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('onboarding-draft');
+    }
+    
+    // Réinitialiser le formulaire
+    setData({
+      schoolName: '',
+      schoolType: '',
+      city: '',
+      country: 'Bénin',
+      phone: '',
+      email: '',
+      bilingual: false,
+      schoolsCount: 1,
+      firstName: '',
+      lastName: '',
+      promoterPhone: '',
+      promoterEmail: '',
+      password: '',
+      confirmPassword: '',
+      otp: '',
+      planCode: 'BASIC_MONTHLY',
+      billingPeriod: 'monthly',
+    });
+    
+    setStep(1);
+    setErrors({});
+    setShowDraftRestoreBanner(false);
+    setPendingDraftInfo(null);
+  };
+
+  // Gérer le choix de l'utilisateur pour le draft existant
+  const handleContinueWithExistingDraft = async () => {
+    if (!existingDraftInfo) return;
+    
+    try {
+      // Recharger le draft depuis l'API pour avoir les données à jour
+      const response = await fetch(`/api/onboarding/draft?draftId=${existingDraftInfo.id}`);
+      if (!response.ok) {
+        throw new Error('Erreur lors du chargement du draft');
+      }
+      
+      const existingDraft = await response.json();
+      
+      // Charger toutes les données du draft existant
+      const updatedData = {
+        ...data,
+        draftId: existingDraft.id,
+        // Phase 1: Établissement
+        schoolName: existingDraft.schoolName || data.schoolName,
+        schoolType: existingDraft.schoolType || data.schoolType,
+        city: existingDraft.city || data.city,
+        country: existingDraft.country || data.country,
+        phone: existingDraft.phone || data.phone,
+        email: existingDraft.email || data.email,
+        bilingual: existingDraft.bilingual ?? data.bilingual,
+        schoolsCount: existingDraft.schoolsCount || data.schoolsCount,
+        // Phase 2: Promoteur
+        firstName: existingDraft.promoterFirstName || data.firstName,
+        lastName: existingDraft.promoterLastName || data.lastName,
+        promoterPhone: existingDraft.promoterPhone || data.promoterPhone,
+        promoterEmail: existingDraft.promoterEmail || data.promoterEmail,
+        // Phase 3: Plan (si disponible dans priceSnapshot)
+        planCode: data.planCode, // Garder le planCode actuel ou le calculer
+        billingPeriod: data.billingPeriod, // Garder la période actuelle
+      };
+      
+      // Si un plan a été sélectionné, extraire les infos du priceSnapshot
+      if (existingDraft.selectedPlanId && existingDraft.priceSnapshot) {
+        const priceSnapshot = existingDraft.priceSnapshot as any;
+        if (priceSnapshot.cycle) {
+          updatedData.billingPeriod = priceSnapshot.cycle === 'MONTHLY' ? 'monthly' : 'yearly';
+        }
+      }
+      
+      setData(updatedData);
+      
+      // Déterminer l'étape à afficher selon l'état du draft
+      let targetStep = 1;
+      if (existingDraft.promoterEmail && existingDraft.selectedPlanId) {
+        targetStep = 4; // Promoteur + Plan sélectionné = Étape 4 (Paiement)
+      } else if (existingDraft.promoterEmail) {
+        targetStep = 3; // Promoteur renseigné = Étape 3 (Plan)
+      } else if (existingDraft.promoterFirstName) {
+        targetStep = 2; // Promoteur partiellement renseigné = Étape 2
+      }
+      
+      setStep(targetStep);
+      
+      // Sauvegarder dans localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('onboarding-draft', JSON.stringify({
+          data: updatedData,
+          timestamp: Date.now(),
+        }));
+      }
+      
+      // Afficher un message informatif
+      setErrors({
+        info: `✅ Votre brouillon a été restauré. Vous êtes à l'étape ${targetStep} sur 4.`,
+      });
+      
+      setShowDraftChoiceModal(false);
+      setExistingDraftInfo(null);
+    } catch (error) {
+      console.error('Erreur lors du chargement du draft existant:', error);
+      setErrors({ submit: 'Erreur lors du chargement du draft existant' });
+    }
+  };
+
+  const handleCancelExistingDraft = () => {
+    if (!existingDraftInfo) return;
+    // Afficher la modal de confirmation au lieu de window.confirm()
+    setShowDeleteConfirmModal(true);
+  };
+
+  const handleConfirmDeleteDraft = async () => {
+    if (!existingDraftInfo) return;
+    
+    setShowDeleteConfirmModal(false);
+    setIsSubmitting(true);
+    try {
+      // Supprimer le draft existant
+      const deleteResponse = await fetch(`/api/onboarding/draft/${existingDraftInfo.id}`, {
+        method: 'POST',
+      });
+
+      if (!deleteResponse.ok) {
+        throw new Error('Erreur lors de la suppression du draft existant');
+      }
+
+      // Créer un nouveau draft avec les données actuelles
+      const normalizedPhone = normalizePhoneNumber(data.phone, data.country);
+      const response = await fetch('/api/onboarding/draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          schoolName: data.schoolName,
+          schoolType: data.schoolType,
+          city: data.city,
+          country: data.country,
+          phone: normalizedPhone,
+          email: data.email,
+          bilingual: data.bilingual,
+          schoolsCount: data.schoolsCount,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Erreur lors de la création du draft');
+      }
+
+      const result = await response.json();
+      const updatedData = { ...data, draftId: result.id };
+      setData(updatedData);
+      
+      setShowDraftChoiceModal(false);
+      setExistingDraftInfo(null);
+    } catch (error: any) {
+      console.error('Erreur lors de l\'annulation du draft:', error);
+      setErrors({ submit: error.message || 'Erreur lors de l\'annulation du draft existant' });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -708,6 +1419,62 @@ export default function OnboardingWizard() {
                   </div>
                 </div>
 
+                {/* Upload Logo */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-900 mb-2">
+                    Logo de l'établissement <span className="text-gray-500 text-xs">(optionnel)</span>
+                  </label>
+                  <div className="space-y-3">
+                    {logoPreview || data.logoUrl ? (
+                      <div className="relative inline-block">
+                        <img
+                          src={logoPreview || data.logoUrl}
+                          alt="Logo preview"
+                          className="h-32 w-32 object-contain border-2 border-gray-300 rounded-lg p-2 bg-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleRemoveLogo}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+                          aria-label="Supprimer le logo"
+                        >
+                          <XIcon className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <label
+                        htmlFor="logo-upload"
+                        className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors"
+                      >
+                        <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                          <Upload className="w-8 h-8 text-gray-400 mb-2" />
+                          <p className="mb-2 text-sm text-gray-500">
+                            <span className="font-semibold">Cliquez pour uploader</span> ou glissez-déposez
+                          </p>
+                          <p className="text-xs text-gray-500">PNG, JPG, GIF jusqu'à 5MB</p>
+                        </div>
+                        <input
+                          id="logo-upload"
+                          type="file"
+                          className="hidden"
+                          accept="image/*"
+                          onChange={handleLogoUpload}
+                          disabled={isUploadingLogo}
+                        />
+                      </label>
+                    )}
+                    {isUploadingLogo && (
+                      <div className="flex items-center gap-2 text-sm text-blue-600">
+                        <Loader className="w-4 h-4 animate-spin" />
+                        Upload en cours...
+                      </div>
+                    )}
+                    {errors.logo && (
+                      <p className="text-sm text-red-600">{errors.logo}</p>
+                    )}
+                  </div>
+                </div>
+
                 <div className="border-t pt-6">
                   <div className="flex items-center justify-between mb-4">
                     <label className="flex items-center text-sm font-medium text-gray-900">
@@ -759,6 +1526,8 @@ export default function OnboardingWizard() {
                   >
                     <option value={1}>1 école</option>
                     <option value={2}>2 écoles</option>
+                    <option value={3}>3 écoles</option>
+                    <option value={4}>4 écoles</option>
                   </select>
                   {errors.schoolsCount && (
                     <p className="mt-1 text-sm text-red-600">{errors.schoolsCount}</p>
@@ -766,6 +1535,12 @@ export default function OnboardingWizard() {
                 </div>
               </div>
 
+              {errors.info && (
+                <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-md flex items-start">
+                  <CheckCircle className="w-5 h-5 text-blue-600 mr-2 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-blue-800">{errors.info}</p>
+                </div>
+              )}
               {errors.submit && (
                 <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-md flex items-start">
                   <AlertCircle className="w-5 h-5 text-red-600 mr-2 flex-shrink-0 mt-0.5" />
@@ -791,6 +1566,56 @@ export default function OnboardingWizard() {
                   )}
                 </button>
               </div>
+
+              {/* Bannière de restauration du draft - Affichée en bas après le bouton Continuer */}
+              {showDraftRestoreBanner && pendingDraftInfo && step === 1 && (
+                <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg shadow-sm">
+                  <div className="p-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                      <div className="flex items-start gap-3 flex-1 min-w-0">
+                        <RotateCcw className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-blue-900 mb-1">
+                            Un brouillon d'inscription a été trouvé
+                          </p>
+                          <div className="text-xs text-blue-700 space-y-1">
+                            {pendingDraftInfo.data?.schoolName && (
+                              <p className="break-words">
+                                <span className="font-medium">Établissement :</span>{' '}
+                                <strong className="break-all">{pendingDraftInfo.data.schoolName}</strong>
+                              </p>
+                            )}
+                            {pendingDraftInfo.data?.createdAt && (
+                              <p>
+                                <span className="font-medium">Créé le</span>{' '}
+                                {new Date(pendingDraftInfo.data.createdAt).toLocaleDateString('fr-FR', {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  year: 'numeric',
+                                })}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                          onClick={handleRestoreDraft}
+                          className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-md hover:bg-blue-700 transition-colors whitespace-nowrap"
+                        >
+                          Restaurer
+                        </button>
+                        <button
+                          onClick={handleStartNewDraft}
+                          className="px-4 py-2 bg-white text-blue-600 text-sm font-semibold rounded-md border border-blue-300 hover:bg-blue-50 transition-colors whitespace-nowrap"
+                        >
+                          Nouveau
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -978,6 +1803,97 @@ export default function OnboardingWizard() {
                   <label className="block text-sm font-medium text-gray-900 mb-2">
                     Code OTP <span className="text-red-600">*</span>
                   </label>
+                  
+                  {/* Sélecteur de méthode d'envoi */}
+                  {!otpSent && (
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-3">
+                        Méthode d'envoi
+                      </label>
+                      <div className="grid grid-cols-3 gap-3">
+                        {/* Option SMS */}
+                        <button
+                          type="button"
+                          onClick={() => setOtpMethod('sms')}
+                          className={`flex flex-col items-center justify-center p-4 border-2 rounded-lg transition-all duration-200 ${
+                            otpMethod === 'sms'
+                              ? 'border-blue-600 bg-blue-50 shadow-md'
+                              : 'border-gray-300 bg-white hover:border-blue-400 hover:bg-blue-50'
+                          }`}
+                          aria-label="Envoyer le code par SMS"
+                        >
+                          <MessageSquare
+                            className={`w-6 h-6 mb-2 ${
+                              otpMethod === 'sms' ? 'text-blue-600' : 'text-gray-600'
+                            }`}
+                          />
+                          <span
+                            className={`text-sm font-medium ${
+                              otpMethod === 'sms' ? 'text-blue-900' : 'text-gray-700'
+                            }`}
+                          >
+                            SMS
+                          </span>
+                        </button>
+
+                        {/* Option Appel vocal */}
+                        <button
+                          type="button"
+                          onClick={() => setOtpMethod('voice')}
+                          className={`flex flex-col items-center justify-center p-4 border-2 rounded-lg transition-all duration-200 ${
+                            otpMethod === 'voice'
+                              ? 'border-blue-600 bg-blue-50 shadow-md'
+                              : 'border-gray-300 bg-white hover:border-blue-400 hover:bg-blue-50'
+                          }`}
+                          aria-label="Envoyer le code par appel vocal"
+                        >
+                          <Phone
+                            className={`w-6 h-6 mb-2 ${
+                              otpMethod === 'voice' ? 'text-blue-600' : 'text-gray-600'
+                            }`}
+                          />
+                          <span
+                            className={`text-sm font-medium ${
+                              otpMethod === 'voice' ? 'text-blue-900' : 'text-gray-700'
+                            }`}
+                          >
+                            Appel
+                          </span>
+                        </button>
+
+                        {/* Option WhatsApp */}
+                        <button
+                          type="button"
+                          onClick={() => setOtpMethod('whatsapp')}
+                          className={`flex flex-col items-center justify-center p-4 border-2 rounded-lg transition-all duration-200 ${
+                            otpMethod === 'whatsapp'
+                              ? 'border-blue-600 bg-blue-50 shadow-md'
+                              : 'border-gray-300 bg-white hover:border-blue-400 hover:bg-blue-50'
+                          }`}
+                          aria-label="Envoyer le code par WhatsApp"
+                        >
+                          <MessageCircle
+                            className={`w-6 h-6 mb-2 ${
+                              otpMethod === 'whatsapp' ? 'text-blue-600' : 'text-gray-600'
+                            }`}
+                          />
+                          <span
+                            className={`text-sm font-medium ${
+                              otpMethod === 'whatsapp' ? 'text-blue-900' : 'text-gray-700'
+                            }`}
+                          >
+                            WhatsApp
+                          </span>
+                        </button>
+                      </div>
+                      <p className="mt-2 text-xs text-gray-500 text-center">
+                        {otpMethod === 'sms' && 'Le code sera envoyé par SMS'}
+                        {otpMethod === 'voice' && 'Le code sera dicté lors d\'un appel vocal'}
+                        {otpMethod === 'whatsapp' && 'Le code sera envoyé par WhatsApp'}
+                      </p>
+                    </div>
+                  )}
+
                   <div className="flex gap-3">
                     <input
                       type="text"
@@ -1020,7 +1936,9 @@ export default function OnboardingWizard() {
                   {otpSent && !otpVerified && (
                     <div className="mt-2 space-y-2">
                       <p className="text-sm text-slate-600">
-                        Code OTP envoyé par SMS/WhatsApp. Vérifiez votre téléphone.
+                        {otpMethod === 'sms' && 'Code OTP envoyé par SMS. Vérifiez votre téléphone.'}
+                        {otpMethod === 'voice' && 'Appel vocal en cours. Répondez à l\'appel pour entendre le code.'}
+                        {otpMethod === 'whatsapp' && 'Code OTP envoyé par WhatsApp. Vérifiez votre téléphone.'}
                       </p>
                       {/* Afficher le code OTP en développement */}
                       {otpCode && process.env.NODE_ENV === 'development' && (
@@ -1038,16 +1956,21 @@ export default function OnboardingWizard() {
                       )}
                       {/* Timer d'expiration */}
                       {otpExpiresAt && (
-                        <p className="text-xs text-slate-500">
-                          Le code expire dans{' '}
-                          {Math.max(0, Math.floor((otpExpiresAt.getTime() - new Date().getTime()) / 1000 / 60))} minutes
-                        </p>
+                        <div className="text-sm text-slate-600">
+                          Code valide jusqu'à {new Date(otpExpiresAt).toLocaleTimeString('fr-FR')}
+                        </div>
                       )}
                     </div>
                   )}
                 </div>
               </div>
 
+              {errors.info && (
+                <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-md flex items-start">
+                  <CheckCircle className="w-5 h-5 text-blue-600 mr-2 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-blue-800">{errors.info}</p>
+                </div>
+              )}
               {errors.submit && (
                 <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-md flex items-start">
                   <AlertCircle className="w-5 h-5 text-red-600 mr-2 flex-shrink-0 mt-0.5" />
@@ -1084,93 +2007,238 @@ export default function OnboardingWizard() {
 
           {/* PHASE 3: Plan & Options */}
           {step === 3 && (
-            <div className="bg-white rounded-lg shadow-lg p-8">
-              <div className="flex items-center mb-6">
-                <CreditCard className="w-8 h-8 text-blue-900 mr-3" />
-                <h2 className="text-3xl font-bold text-blue-900">Plan & Options</h2>
-              </div>
-              <p className="text-slate-600 mb-8">Choisissez votre plan d'abonnement</p>
-              
-              <div className="space-y-6">
+            <div className="bg-white rounded-xl shadow-xl border border-gray-100 p-8">
+              {/* En-tête avec icône et titre */}
+              <div className="flex items-center mb-2">
+                <div className="p-3 bg-blue-900 rounded-lg mr-4">
+                  <Briefcase className="w-6 h-6 text-white" />
+                </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-900 mb-4">
-                    Période de facturation
-                  </label>
+                  <h2 className="text-3xl font-bold text-blue-900">Plan & Options</h2>
+                  <p className="text-sm text-graphite-700 mt-1">Choisissez votre plan d'abonnement</p>
+                </div>
+              </div>
+              
+              <div className="mt-8 space-y-8">
+                {/* Section 1: Période de facturation - Design premium avec cartes */}
+                <div className="bg-gradient-to-br from-blue-50 to-mist rounded-xl p-6 border border-blue-200">
+                  <div className="flex items-center mb-5">
+                    <Calendar className="w-5 h-5 text-blue-700 mr-2" />
+                    <label className="text-base font-semibold text-blue-900">
+                      Période de facturation
+                    </label>
+                  </div>
                   <div className="grid grid-cols-2 gap-4">
                     <button
                       type="button"
                       onClick={() => handleChange('billingPeriod', 'monthly')}
-                      className={`p-6 border-2 rounded-lg text-left transition-all ${
+                      className={`relative p-6 border-2 rounded-xl text-left transition-all duration-300 transform ${
                         data.billingPeriod === 'monthly'
-                          ? 'border-blue-900 bg-blue-50'
-                          : 'border-gray-300 hover:border-gray-400'
+                          ? 'border-blue-700 bg-white shadow-lg scale-105'
+                          : 'border-gray-300 bg-white hover:border-blue-400 hover:shadow-md'
                       }`}
                     >
-                      <div className="font-semibold text-lg mb-2">Mensuel</div>
-                      <div className="text-2xl font-bold text-blue-900">
-                        {priceCalculation?.basePrice.toLocaleString()} FCFA
+                      {data.billingPeriod === 'monthly' && (
+                        <div className="absolute -top-2 -right-2 bg-blue-700 text-white text-xs font-semibold px-2 py-1 rounded-full">
+                          Sélectionné
+                        </div>
+                      )}
+                      <div className="flex items-center mb-3">
+                        <div className={`p-2 rounded-lg mr-3 ${
+                          data.billingPeriod === 'monthly' ? 'bg-blue-100' : 'bg-gray-100'
+                        }`}>
+                          <Calendar className={`w-4 h-4 ${
+                            data.billingPeriod === 'monthly' ? 'text-blue-700' : 'text-gray-600'
+                          }`} />
+                        </div>
+                        <div className="font-semibold text-lg text-blue-900">Mensuel</div>
                       </div>
-                      <div className="text-sm text-slate-600 mt-2">/ mois</div>
+                      {priceCalculation.isLoading ? (
+                        <div className="flex items-center gap-2">
+                          <Loader className="w-4 h-4 animate-spin text-blue-600" />
+                          <span className="text-sm text-graphite-600">Calcul en cours...</span>
+                        </div>
+                      ) : priceCalculation.error ? (
+                        <div className="text-sm text-red-600">{priceCalculation.error}</div>
+                      ) : priceCalculation.monthly ? (
+                        <>
+                          <div className="text-3xl font-bold text-blue-900 mb-1">
+                            {priceCalculation.monthly.basePrice.toLocaleString()} FCFA
+                          </div>
+                          <div className="text-sm text-graphite-600">/ mois</div>
+                        </>
+                      ) : (
+                        <div className="text-sm text-graphite-600">Chargement...</div>
+                      )}
                     </button>
 
                     <button
                       type="button"
                       onClick={() => handleChange('billingPeriod', 'yearly')}
-                      className={`p-6 border-2 rounded-lg text-left transition-all ${
+                      className={`relative p-6 border-2 rounded-xl text-left transition-all duration-300 transform ${
                         data.billingPeriod === 'yearly'
-                          ? 'border-blue-900 bg-blue-50'
-                          : 'border-gray-300 hover:border-gray-400'
+                          ? 'border-blue-700 bg-white shadow-lg scale-105'
+                          : 'border-gray-300 bg-white hover:border-blue-400 hover:shadow-md'
                       }`}
                     >
-                      <div className="font-semibold text-lg mb-2">Annuel</div>
-                      <div className="text-2xl font-bold text-blue-900">
-                        {priceCalculation?.basePrice.toLocaleString()} FCFA
+                      {data.billingPeriod === 'yearly' && (
+                        <div className="absolute -top-2 -right-2 bg-blue-700 text-white text-xs font-semibold px-2 py-1 rounded-full">
+                          Sélectionné
+                        </div>
+                      )}
+                      <div className="flex items-center mb-3">
+                        <div className={`p-2 rounded-lg mr-3 ${
+                          data.billingPeriod === 'yearly' ? 'bg-blue-100' : 'bg-gray-100'
+                        }`}>
+                          <Calendar className={`w-4 h-4 ${
+                            data.billingPeriod === 'yearly' ? 'text-blue-700' : 'text-gray-600'
+                          }`} />
+                        </div>
+                        <div className="font-semibold text-lg text-blue-900">Annuel</div>
                       </div>
-                      <div className="text-sm text-slate-600 mt-2">/ an (-17%)</div>
+                      {priceCalculation.isLoading ? (
+                        <div className="flex items-center gap-2">
+                          <Loader className="w-4 h-4 animate-spin text-blue-600" />
+                          <span className="text-sm text-graphite-600">Calcul en cours...</span>
+                        </div>
+                      ) : priceCalculation.error ? (
+                        <div className="text-sm text-red-600">{priceCalculation.error}</div>
+                      ) : priceCalculation.yearly ? (
+                        <>
+                          <div className="text-3xl font-bold text-blue-900 mb-1">
+                            {priceCalculation.yearly.basePrice.toLocaleString()} FCFA
+                          </div>
+                          <div className="text-sm text-graphite-600 mb-2">/ an</div>
+                          {priceCalculation.monthly && (
+                            <div className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-50 px-2 py-1 rounded-md">
+                              <TrendingDown className="w-3 h-3" />
+                              Économisez {((priceCalculation.monthly.basePrice * 12 - priceCalculation.yearly.basePrice) / (priceCalculation.monthly.basePrice * 12) * 100).toFixed(0)}%
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="text-sm text-graphite-600">Chargement...</div>
+                      )}
                     </button>
                   </div>
                 </div>
 
+                {/* Section 2: Option bilingue - Design distinctif avec icône */}
                 {data.bilingual && (
-                  <div className="border-t pt-6">
+                  <div className="bg-gradient-to-r from-gold-50 to-yellow-50 rounded-xl p-6 border-2 border-gold-400 shadow-md">
                     <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium text-gray-900">Option bilingue</div>
-                        <div className="text-sm text-slate-600">Français + Anglais</div>
+                      <div className="flex items-center">
+                        <div className="p-3 bg-gold-500 rounded-lg mr-4">
+                          <Languages className="w-5 h-5 text-white" />
+                        </div>
+                        <div>
+                          <div className="font-semibold text-lg text-blue-900 flex items-center gap-2">
+                            Option bilingue
+                            <Sparkles className="w-4 h-4 text-gold-600" />
+                          </div>
+                          <div className="text-sm text-graphite-700 mt-1">Français + Anglais</div>
+                        </div>
                       </div>
-                      <div className="text-lg font-semibold text-blue-900">
-                        +{priceCalculation?.bilingualPrice.toLocaleString()} FCFA
+                      <div className="text-right">
+                        <div className="text-2xl font-bold text-blue-900">
+                          {priceCalculation.isLoading ? (
+                            <Loader className="w-5 h-5 animate-spin text-blue-600" />
+                          ) : data.billingPeriod === 'monthly' && priceCalculation.monthly ? (
+                            <>+{priceCalculation.monthly.bilingualPrice.toLocaleString()} FCFA</>
+                          ) : data.billingPeriod === 'yearly' && priceCalculation.yearly ? (
+                            <>+{priceCalculation.yearly.bilingualPrice.toLocaleString()} FCFA</>
+                          ) : (
+                            <>+0 FCFA</>
+                          )}
+                        </div>
+                        <div className="text-xs text-graphite-600 mt-1">
+                          {data.billingPeriod === 'monthly' ? '/ mois' : '/ an'}
+                        </div>
                       </div>
                     </div>
                   </div>
                 )}
 
-                <div className="bg-blue-50 rounded-lg p-6 border-2 border-blue-900">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="text-lg font-semibold text-gray-900">Paiement initial</div>
-                    <div className="text-2xl font-bold text-blue-900">100 000 FCFA</div>
-                  </div>
-                  <p className="text-sm text-slate-600">
-                    Paiement unique pour activer votre compte et démarrer la période d'essai de 30 jours.
-                  </p>
-                </div>
-
-                <div className="bg-green-50 rounded-lg p-6 border border-green-200">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-semibold text-gray-900">Total mensuel après essai</div>
-                      <div className="text-sm text-slate-600 mt-1">
-                        {data.schoolsCount} école{data.schoolsCount > 1 ? 's' : ''}
-                        {data.bilingual && ' • Bilingue'}
+                {/* Section 3: Paiement initial - Design premium avec accent bleu */}
+                <div className="bg-gradient-to-br from-blue-900 to-blue-800 rounded-xl p-6 border-2 border-blue-700 shadow-xl">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center">
+                      <div className="p-3 bg-white/20 rounded-lg mr-4">
+                        <DollarSign className="w-6 h-6 text-white" />
+                      </div>
+                      <div>
+                        <div className="text-lg font-semibold text-white mb-1">Paiement initial</div>
+                        <p className="text-sm text-blue-100 max-w-md">
+                          Paiement unique pour activer votre compte et démarrer la période d'essai de 30 jours.
+                        </p>
                       </div>
                     </div>
-                    <div className="text-2xl font-bold text-green-700">
-                      {priceCalculation?.total.toLocaleString()} FCFA
+                    <div className="text-right">
+                      <div className="text-3xl font-bold text-white">
+                        {initialPayment ? initialPayment.toLocaleString() : '100 000'} FCFA
+                      </div>
+                      <div className="text-xs text-blue-200 mt-1">Paiement unique</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 4: Total après essai - Design distinctif avec accent vert */}
+                <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-6 border-2 border-green-300 shadow-lg">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <div className="p-3 bg-green-600 rounded-lg mr-4">
+                        <CheckCircle className="w-6 h-6 text-white" />
+                      </div>
+                      <div>
+                        <div className="font-bold text-lg text-blue-900 mb-1">
+                          Total {data.billingPeriod === 'monthly' ? 'mensuel' : 'annuel'} après essai
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-graphite-700 mt-2">
+                          <School className="w-4 h-4" />
+                          <span>
+                            {data.schoolsCount} école{data.schoolsCount > 1 ? 's' : ''}
+                            {data.bilingual && ' • Bilingue'}
+                            {data.billingPeriod === 'yearly' && ' • Paiement annuel'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      {priceCalculation.isLoading ? (
+                        <div className="flex items-center gap-2">
+                          <Loader className="w-5 h-5 animate-spin text-green-600" />
+                        </div>
+                      ) : (
+                        <>
+                          <div className="text-3xl font-bold text-green-700">
+                            {data.billingPeriod === 'monthly' && priceCalculation.monthly
+                              ? priceCalculation.monthly.total.toLocaleString()
+                              : data.billingPeriod === 'yearly' && priceCalculation.yearly
+                              ? priceCalculation.yearly.total.toLocaleString()
+                              : '0'}{' '}
+                            FCFA
+                          </div>
+                          {data.billingPeriod === 'yearly' && priceCalculation.monthly && priceCalculation.yearly && (
+                            <div className="text-xs text-green-600 mt-1 font-medium">
+                              Équivalent {Math.round(priceCalculation.yearly.total / 12).toLocaleString()} FCFA/mois
+                            </div>
+                          )}
+                          <div className="text-xs text-graphite-600 mt-1">
+                            {data.billingPeriod === 'monthly' ? '/ mois' : '/ an'}
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
               </div>
 
+              {errors.info && (
+                <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-md flex items-start">
+                  <CheckCircle className="w-5 h-5 text-blue-600 mr-2 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-blue-800">{errors.info}</p>
+                </div>
+              )}
               {errors.submit && (
                 <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-md flex items-start">
                   <AlertCircle className="w-5 h-5 text-red-600 mr-2 flex-shrink-0 mt-0.5" />
@@ -1207,72 +2275,127 @@ export default function OnboardingWizard() {
 
           {/* PHASE 4: Paiement */}
           {step === 4 && (
-            <div className="bg-white rounded-lg shadow-lg p-8">
-              <div className="flex items-center mb-6">
-                <CreditCard className="w-8 h-8 text-blue-900 mr-3" />
-                <h2 className="text-3xl font-bold text-blue-900">Paiement initial</h2>
+            <div className="bg-white rounded-xl shadow-xl border border-gray-100 p-8">
+              {/* En-tête avec icône et titre */}
+              <div className="flex items-center mb-2">
+                <div className="p-3 bg-blue-900 rounded-lg mr-4">
+                  <CreditCard className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-3xl font-bold text-blue-900">Paiement initial</h2>
+                  <p className="text-sm text-graphite-700 mt-1">Finalisez votre inscription en effectuant le paiement</p>
+                </div>
               </div>
-              <p className="text-slate-600 mb-8">Finalisez votre inscription en effectuant le paiement</p>
               
-              <div className="space-y-6">
-                <div className="bg-gray-50 rounded-lg p-6">
-                  <div className="text-center mb-6">
-                    <div className="text-4xl font-bold text-blue-900 mb-2">
-                      100 000 FCFA
+              <div className="mt-8 space-y-6">
+                {/* Section 1: Montant du paiement - Design premium */}
+                <div className="bg-gradient-to-br from-blue-900 to-blue-800 rounded-xl p-8 border-2 border-blue-700 shadow-xl">
+                  <div className="text-center">
+                    <div className="flex items-center justify-center mb-4">
+                      <div className="p-3 bg-white/20 rounded-lg mr-3">
+                        <DollarSign className="w-8 h-8 text-white" />
+                      </div>
+                      <div>
+                        <p className="text-sm text-blue-200 mb-1">Montant à payer</p>
+                        <div className="text-5xl font-bold text-white">
+                          {initialPayment ? initialPayment.toLocaleString() : '100 000'} FCFA
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-slate-600">Paiement unique pour activation</p>
+                    <p className="text-sm text-blue-100 mt-3">
+                      Paiement unique pour activer votre compte et démarrer la période d'essai de 30 jours
+                    </p>
                   </div>
+                </div>
 
-                  <div className="space-y-3 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-slate-600">Période d'essai</span>
-                      <span className="font-semibold">30 jours</span>
+                {/* Section 2: Détails de l'offre - Design distinctif */}
+                <div className="bg-gradient-to-br from-mist to-cloud rounded-xl p-6 border border-blue-200 shadow-md">
+                  <div className="flex items-center mb-5">
+                    <CheckCircle className="w-5 h-5 text-blue-700 mr-2" />
+                    <h3 className="text-base font-semibold text-blue-900">Ce qui est inclus</h3>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
+                      <div className="flex items-center">
+                        <div className="p-2 bg-blue-100 rounded-lg mr-3">
+                          <Calendar className="w-4 h-4 text-blue-700" />
+                        </div>
+                        <span className="text-sm font-medium text-graphite-900">Période d'essai</span>
+                      </div>
+                      <span className="text-sm font-semibold text-blue-900">30 jours</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-600">Accès complet</span>
-                      <span className="font-semibold">Tous les modules</span>
+                    <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
+                      <div className="flex items-center">
+                        <div className="p-2 bg-blue-100 rounded-lg mr-3">
+                          <School className="w-4 h-4 text-blue-700" />
+                        </div>
+                        <span className="text-sm font-medium text-graphite-900">Accès complet</span>
+                      </div>
+                      <span className="text-sm font-semibold text-blue-900">Tous les modules</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-600">Support</span>
-                      <span className="font-semibold">Inclus</span>
+                    <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
+                      <div className="flex items-center">
+                        <div className="p-2 bg-blue-100 rounded-lg mr-3">
+                          <CheckCircle className="w-4 h-4 text-blue-700" />
+                        </div>
+                        <span className="text-sm font-medium text-graphite-900">Support technique</span>
+                      </div>
+                      <span className="text-sm font-semibold text-blue-900">Inclus</span>
                     </div>
                   </div>
                 </div>
 
+                {/* Section 3: Bouton de paiement avec logo FedaPay */}
                 {errors.submit && (
-                  <div className="p-4 bg-red-50 border border-red-200 rounded-md flex items-start">
+                  <div className="p-4 bg-red-50 border-2 border-red-300 rounded-xl flex items-start shadow-md">
                     <AlertCircle className="w-5 h-5 text-red-600 mr-2 flex-shrink-0 mt-0.5" />
-                    <p className="text-sm text-red-800">{errors.submit}</p>
+                    <p className="text-sm text-red-800 font-medium">{errors.submit}</p>
                   </div>
                 )}
 
-                <button
-                  onClick={handlePayment}
-                  disabled={isSubmitting}
-                  className="w-full px-6 py-3 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700 transition-all duration-300 flex items-center justify-center disabled:opacity-50"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader className="w-5 h-5 mr-2 animate-spin" />
-                      Redirection vers FedaPay...
-                    </>
-                  ) : (
-                    <>
-                      <CreditCard className="w-5 h-5 mr-2" />
-                      Payer 100 000 FCFA via FedaPay
-                    </>
-                  )}
-                </button>
+                <div className="space-y-3">
+                  <button
+                    onClick={handlePayment}
+                    disabled={isSubmitting}
+                    className="w-full px-6 py-4 bg-gradient-to-r from-blue-900 to-blue-800 text-white rounded-xl font-semibold hover:from-blue-800 hover:to-blue-700 transition-all duration-300 flex items-center justify-center disabled:opacity-50 shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader className="w-5 h-5 mr-2 animate-spin" />
+                        Redirection vers FedaPay...
+                      </>
+                    ) : (
+                      <>
+                        <img 
+                          src="/images/fedapay.png" 
+                          alt="FedaPay" 
+                          className="w-8 h-8 mr-3 object-contain"
+                        />
+                        Payer {initialPayment ? initialPayment.toLocaleString() : '100 000'} FCFA
+                      </>
+                    )}
+                  </button>
 
-                <p className="text-xs text-slate-500 text-center">
-                  Paiement sécurisé via FedaPay. Vous serez redirigé vers la page de paiement.
-                </p>
+                  <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                    <div className="flex items-start">
+                      <div className="p-2 bg-blue-100 rounded-lg mr-3 flex-shrink-0">
+                        <CheckCircle className="w-4 h-4 text-blue-700" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-blue-900 mb-1">Paiement sécurisé</p>
+                        <p className="text-xs text-graphite-700">
+                          Votre paiement est traité de manière sécurisée via FedaPay. Vous serez redirigé vers la page de paiement sécurisée.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="flex justify-start mt-8">
                 <button
                   onClick={handleBack}
-                  className="flex items-center text-slate-600 hover:text-blue-900"
+                  className="flex items-center text-graphite-700 hover:text-blue-900 transition-colors font-medium"
                 >
                   <ArrowLeft className="w-5 h-5 mr-2" /> Retour
                 </button>
@@ -1281,6 +2404,210 @@ export default function OnboardingWizard() {
           )}
         </div>
       </section>
+
+      {/* Modal de choix pour le draft existant */}
+      {showDraftChoiceModal && existingDraftInfo && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center mb-4">
+              <AlertTriangle className="w-6 h-6 text-amber-500 mr-3" />
+              <h3 className="text-xl font-bold text-gray-900">Onboarding déjà en cours</h3>
+            </div>
+            
+            <p className="text-gray-700 mb-4">
+              Un onboarding est déjà en cours pour l'adresse email <strong>{data.email}</strong>.
+            </p>
+
+            {/* Avertissement expiration */}
+            {existingDraftInfo.data?.createdAt && isExpiringSoon(existingDraftInfo.data.createdAt) && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                <div className="flex items-start">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 mr-2 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-amber-900">Expiration proche</p>
+                    <p className="text-xs text-amber-800 mt-1">
+                      Ce brouillon expirera dans moins de 4 heures. Complétez votre inscription rapidement.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Indicateur de progression */}
+            {existingDraftInfo.data && (
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-gray-700">Progression</span>
+                  <span className="text-sm text-gray-600">{getProgressInfo(existingDraftInfo.data).progress}%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className="bg-blue-600 h-2 rounded-full transition-all"
+                    style={{ width: `${getProgressInfo(existingDraftInfo.data).progress}%` }}
+                  />
+                </div>
+                <p className="text-xs text-gray-600 mt-1">{getProgressInfo(existingDraftInfo.data).label}</p>
+              </div>
+            )}
+
+            {/* Résumé complet du draft */}
+            {existingDraftInfo.data && (
+              <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                <p className="text-sm font-medium text-gray-900 mb-3">Résumé du brouillon :</p>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600"><strong>Établissement :</strong></span>
+                    <span className="text-gray-900">{existingDraftInfo.data.schoolName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600"><strong>Type :</strong></span>
+                    <span className="text-gray-900">{existingDraftInfo.data.schoolType}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600"><strong>Ville :</strong></span>
+                    <span className="text-gray-900">{existingDraftInfo.data.city}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600"><strong>Email :</strong></span>
+                    <span className="text-gray-900">{existingDraftInfo.data.email}</span>
+                  </div>
+                  {existingDraftInfo.data.promoterFirstName && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600"><strong>Promoteur :</strong></span>
+                      <span className="text-gray-900">
+                        {existingDraftInfo.data.promoterFirstName} {existingDraftInfo.data.promoterLastName || ''}
+                      </span>
+                    </div>
+                  )}
+                  {existingDraftInfo.data.selectedPlanId && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600"><strong>Plan sélectionné :</strong></span>
+                      <span className="text-green-600 font-semibold">✓ Oui</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-gray-600"><strong>Statut :</strong></span>
+                    <span className={existingDraftInfo.status === 'DRAFT' ? 'text-blue-600 font-semibold' : 'text-amber-600 font-semibold'}>
+                      {existingDraftInfo.status === 'DRAFT' ? 'Brouillon' : 'En attente de paiement'}
+                    </span>
+                  </div>
+                  {existingDraftInfo.data.createdAt && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600"><strong>Créé le :</strong></span>
+                      <span className="text-gray-900">
+                        {new Date(existingDraftInfo.data.createdAt).toLocaleString('fr-FR', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <button
+                onClick={handleContinueWithExistingDraft}
+                className="w-full px-4 py-3 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700 transition-all duration-300 flex items-center justify-center"
+              >
+                <RotateCcw className="w-5 h-5 mr-2" />
+                Continuer avec le draft existant
+              </button>
+              
+              <button
+                onClick={handleCancelExistingDraft}
+                disabled={isSubmitting}
+                className="w-full px-4 py-3 bg-red-600 text-white rounded-md font-semibold hover:bg-red-700 transition-all duration-300 flex items-center justify-center disabled:opacity-50"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader className="w-5 h-5 mr-2 animate-spin" />
+                    Suppression...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-5 h-5 mr-2" />
+                    Annuler et créer un nouveau
+                  </>
+                )}
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-500 mt-4 text-center">
+              En continuant, vous reprendrez où vous vous êtes arrêté. En annulant, le draft existant sera supprimé et vous pourrez recommencer.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmation de suppression moderne */}
+      {showDeleteConfirmModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[60] p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 transform transition-all animate-in fade-in zoom-in">
+            <div className="flex flex-col items-center mb-6">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                <AlertTriangle className="w-8 h-8 text-red-600" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-2 text-center">
+                Confirmer la suppression
+              </h3>
+            </div>
+            
+            <div className="text-center mb-6">
+              <p className="text-gray-700 mb-2 leading-relaxed">
+                Attention : Annuler ce brouillon le supprimera <strong className="text-red-600">définitivement</strong>.
+              </p>
+              <p className="text-gray-600 text-sm">
+                Vous devrez recommencer depuis le début.
+              </p>
+            </div>
+
+            <div className="bg-amber-50 border-l-4 border-amber-400 p-4 mb-6 rounded-r-lg">
+              <div className="flex items-start">
+                <AlertTriangle className="w-5 h-5 text-amber-600 mr-3 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-900 mb-1">
+                    Cette action est irréversible
+                  </p>
+                  <p className="text-xs text-amber-800">
+                    Toutes les données saisies dans ce brouillon seront perdues.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteConfirmModal(false)}
+                className="flex-1 px-4 py-3 bg-gray-100 text-gray-700 rounded-lg font-semibold hover:bg-gray-200 transition-all duration-200 flex items-center justify-center"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleConfirmDeleteDraft}
+                disabled={isSubmitting}
+                className="flex-1 px-4 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-all duration-200 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader className="w-5 h-5 mr-2 animate-spin" />
+                    Suppression...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-5 h-5 mr-2" />
+                    Supprimer
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -10,6 +10,7 @@
 import type { Metadata } from 'next';
 import localFont from 'next/font/local';
 import './globals.css';
+import { InstallPromptWrapper } from '@/components/pwa/InstallPromptWrapper';
 
 // ✅ POLICES LOCALES - Téléchargées depuis Google Fonts et stockées localement
 // 
@@ -128,6 +129,7 @@ export default function RootLayout({
     <html lang="fr">
       <body className={inter.className}>
         {children}
+        <InstallPromptWrapper />
       </body>
     </html>
   );

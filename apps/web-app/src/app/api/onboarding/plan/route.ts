@@ -9,7 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 
 export async function POST(request: NextRequest) {
   try {
@@ -34,7 +34,8 @@ export async function POST(request: NextRequest) {
       try {
         // Récupérer tous les plans avec pricing depuis l'API publique
         const plansUrl = `${apiBaseUrl}/public/pricing`;
-        const plansResponse = await fetch(plansUrl);
+        const normalizedPlansUrl = normalizeApiUrl(plansUrl);
+        const plansResponse = await fetch(normalizedPlansUrl);
         
         if (plansResponse.ok) {
           const plans = await plansResponse.json();
@@ -85,7 +86,9 @@ export async function POST(request: NextRequest) {
       periodType: body.billingPeriod === 'monthly' ? 'MONTHLY' : 'YEARLY', // Convertir 'monthly' -> 'MONTHLY'
     };
 
-    const response = await fetch(planUrl, {
+    // Normaliser l'URL pour utiliser 127.0.0.1 au lieu de localhost
+    const finalUrl = normalizeApiUrl(planUrl);
+    const response = await fetch(finalUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

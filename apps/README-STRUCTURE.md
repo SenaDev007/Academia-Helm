@@ -2,38 +2,57 @@
 
 ## 🎯 Clarification de l'Architecture
 
-### `apps/web-app/` - **FRONTEND WEB (PRODUCTION)**
+### `apps/web-app/` - **FRONTEND WEB (PRODUCTION) - PWA**
 
-**Type** : Next.js App Router  
-**Usage** : Application Web SaaS déployée sur Vercel  
-**Public** : Oui (accessible via navigateur)  
-**Base de données** : API REST uniquement (PostgreSQL via backend)
+**Type** : Next.js App Router + PWA  
+**Usage** : Application Web SaaS installable (Progressive Web App)  
+**Public** : Oui (accessible via navigateur, installable)  
+**Base de données** : API REST uniquement (PostgreSQL via backend) + IndexedDB pour offline
 
 **Fichiers** : `apps/web-app/src/`
 
+**Fonctionnalités PWA** :
+- ✅ Service Worker pour cache offline
+- ✅ Installation native (bouton d'installation)
+- ✅ Mode standalone
+- ✅ Page offline dédiée
+
 **Déploiement** : Vercel (production)
+
+**Documentation** :
+- `apps/web-app/MIGRATION-DESKTOP-TO-PWA.md` : Checklist de migration
+- `STRATEGIE-PWA-WEB-MOBILE.md` : Stratégie PWA
 
 ---
 
-### `apps/desktop-app/` - **VERSION DESKTOP (MODÈLE)**
+### `apps/mobile-app/` - **APPLICATION MOBILE NATIVE**
 
-**Type** : Vite + React  
-**Usage** : Application Desktop Electron (référence/modèle)  
-**Public** : Non (application locale)  
-**Base de données** : SQLite local + API REST
+**Type** : Flutter (Android & iOS)  
+**Usage** : Application mobile native pour parents et élèves  
+**Public** : Oui (App Store & Play Store)  
+**Base de données** : API REST + Cache local (Hive/SQLite)
 
-**Fichiers** : `apps/desktop-app/src/`
+**Fichiers** : `apps/mobile-app/lib/`
 
-**Déploiement** : Electron (packaging desktop)
+**Fonctionnalités** :
+- Consultation des notes
+- Suivi des paiements
+- Messages de l'école
+- Notifications push
 
-**⚠️ NOTE** : Cette application sert de **modèle de référence** pour certaines fonctionnalités, mais **N'EST PAS** l'application Web de production.
+**Déploiement** : App Store & Google Play Store
+
+**Documentation** :
+- `apps/mobile-app/README.md` : Vue d'ensemble
+- `apps/mobile-app/docs/MOBILE-SPECIFICATION.md` : Spécification complète
+- `apps/mobile-app/docs/USER-JOURNEYS.md` : Parcours utilisateur
 
 ---
 
 ### `apps/api-server/` - **BACKEND API**
 
 **Type** : NestJS  
-**Usage** : API REST pour toutes les applications  
+**Usage** : API REST pour toutes les applications (Web, Mobile)  
 **Base de données** : PostgreSQL
 
 **Déploiement** : Serveur dédié / Railway / Supabase
@@ -42,19 +61,35 @@
 
 ## 🔄 Workflow de Développement
 
-### Pour le Frontend Web (Production)
+### Pour le Frontend Web (Production - PWA)
 
 1. **Modifier** : `apps/web-app/src/`
 2. **Tester** : `cd apps/web-app && npm run dev`
-3. **Déployer** : Vercel (automatique via Git)
+3. **Build PWA** : `cd apps/web-app && npm run build` (génère Service Worker)
+4. **Déployer** : Vercel (automatique via Git)
 
-### Pour la Version Desktop (Référence)
+### Pour l'Application Mobile
 
-1. **Consulter** : `apps/desktop-app/src/` (modèle)
-2. **Reproduire** : Fonctionnalités utiles dans `apps/web-app/src/`
-3. **Adapter** : Code Electron → API REST
+1. **Modifier** : `apps/mobile-app/lib/`
+2. **Tester** : `cd apps/mobile-app && flutter run`
+3. **Build** : `flutter build apk` (Android) ou `flutter build ios` (iOS)
+4. **Déployer** : App Store & Play Store
 
 ---
 
-**Dernière mise à jour** : 2025-01-07
+## 📱 Migration Desktop → PWA
+
+L'application Desktop (Electron) a été remplacée par une Progressive Web App (PWA) installable.
+
+**Avantages** :
+- ✅ Pas d'installation système requise
+- ✅ Mise à jour automatique
+- ✅ Multi-plateforme (Windows, Mac, Linux)
+- ✅ Déploiement simplifié
+
+**Voir** : `apps/web-app/MIGRATION-DESKTOP-TO-PWA.md` pour la checklist complète.
+
+---
+
+**Dernière mise à jour** : 2025-01-XX
 

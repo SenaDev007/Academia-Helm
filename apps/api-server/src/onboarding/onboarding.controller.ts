@@ -71,11 +71,32 @@ export class OnboardingController {
   }
 
   /**
+   * Vérifier si un draft existe pour un email
+   */
+  @Get('draft/check/:email')
+  async checkDraftByEmail(@Param('email') email: string) {
+    const draft = await this.onboardingService.checkDraftByEmail(email);
+    return {
+      exists: !!draft,
+      draft: draft || null,
+    };
+  }
+
+  /**
    * Récupérer un draft
    */
   @Get('draft/:draftId')
   async getDraft(@Param('draftId') draftId: string) {
     return this.onboardingService.getDraft(draftId);
+  }
+
+  /**
+   * Supprimer un draft
+   */
+  @Post('draft/:draftId/delete')
+  @HttpCode(HttpStatus.OK)
+  async deleteDraft(@Param('draftId') draftId: string) {
+    return this.onboardingService.deleteDraft(draftId);
   }
 
   /**
@@ -85,9 +106,10 @@ export class OnboardingController {
   @HttpCode(HttpStatus.OK)
   async generateOTP(
     @Param('draftId') draftId: string,
-    @Body() body: { phone: string },
+    @Body() body: { phone: string; method?: 'sms' | 'voice' | 'whatsapp' },
   ) {
-    return this.otpService.generateAndSendOTP(draftId, body.phone);
+    const method = body.method || 'sms';
+    return this.otpService.generateAndSendOTP(draftId, body.phone, method);
   }
 
   /**

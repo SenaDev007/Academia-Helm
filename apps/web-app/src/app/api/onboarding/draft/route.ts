@@ -9,7 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,10 +19,13 @@ export async function POST(request: NextRequest) {
     const draftUrl = `${apiBaseUrl}/onboarding/draft`;
     
     console.log('🔍 [Onboarding Draft] API URL:', draftUrl);
+    console.log('🔍 [Onboarding Draft] Request body:', JSON.stringify(body, null, 2));
 
     let response: Response;
     try {
-      response = await fetch(draftUrl, {
+      // Normaliser l'URL pour utiliser 127.0.0.1 au lieu de localhost
+      const finalUrl = normalizeApiUrl(draftUrl);
+      response = await fetch(finalUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -47,6 +50,11 @@ export async function POST(request: NextRequest) {
     const data = await response.json();
 
     if (!response.ok) {
+      console.error('❌ [Onboarding Draft] Backend error:', {
+        status: response.status,
+        statusText: response.statusText,
+        data,
+      });
       return NextResponse.json(data, { status: response.status });
     }
 
@@ -78,8 +86,11 @@ export async function GET(request: NextRequest) {
     const apiBaseUrl = getApiBaseUrlForRoutes();
     // getApiBaseUrl() retourne déjà l'URL avec /api à la fin
     const draftUrl = `${apiBaseUrl}/onboarding/draft/${draftId}`;
+    
+    // Normaliser l'URL pour utiliser 127.0.0.1 au lieu de localhost
+    const finalUrl = normalizeApiUrl(draftUrl);
 
-    const response = await fetch(draftUrl, {
+    const response = await fetch(finalUrl, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',

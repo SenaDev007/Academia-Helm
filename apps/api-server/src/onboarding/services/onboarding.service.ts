@@ -63,9 +63,13 @@ export class OnboardingService {
     });
 
     if (existingDraft) {
-      throw new BadRequestException(
-        'Un onboarding est déjà en cours pour cet email'
-      );
+      // Retourner l'ID du draft existant dans l'erreur pour permettre au frontend de le charger
+      const errorResponse = {
+        message: 'Un onboarding est déjà en cours pour cet email',
+        existingDraftId: existingDraft.id,
+        status: existingDraft.status,
+      };
+      throw new BadRequestException(errorResponse);
     }
 
     const draft = await this.prisma.onboardingDraft.create({
@@ -118,17 +122,33 @@ export class OnboardingService {
     // Vérifier l'OTP si fourni
     let otpVerified = false;
     if (data.otpCode) {
-      otpVerified = await this.otpService.verifyOTP(draftId, data.phone, data.otpCode);
-      if (!otpVerified) {
-        throw new BadRequestException('Code OTP invalide ou expiré');
+      // D'abord, vérifier si un OTP a déjà été vérifié pour ce draft et ce téléphone
+      const hasValidOTP = await this.otpService.hasValidOTP(draftId, data.phone);
+      if (hasValidOTP) {
+        // L'OTP a déjà été vérifié via l'endpoint /otp/verify
+        otpVerified = true;
+        this.logger.log(`✅ OTP already verified for draft ${draftId} - Phone: ${data.phone}`);
+      } else {
+        // Sinon, vérifier l'OTP fourni
+        otpVerified = await this.otpService.verifyOTP(draftId, data.phone, data.otpCode);
+        if (!otpVerified) {
+          throw new BadRequestException('Code OTP invalide ou expiré');
+        }
       }
     } else {
-      // En développement, on peut accepter sans OTP (mais ce n'est pas recommandé)
-      if (process.env.NODE_ENV === 'development') {
-        this.logger.warn(`⚠️  DEV MODE: OTP verification skipped for draft ${draftId}`);
+      // Si aucun code OTP n'est fourni, vérifier si un OTP a déjà été vérifié
+      const hasValidOTP = await this.otpService.hasValidOTP(draftId, data.phone);
+      if (hasValidOTP) {
         otpVerified = true;
+        this.logger.log(`✅ Using previously verified OTP for draft ${draftId} - Phone: ${data.phone}`);
       } else {
-        throw new BadRequestException('Code OTP requis pour valider le numéro de téléphone');
+        // En développement, on peut accepter sans OTP (mais ce n'est pas recommandé)
+        if (process.env.NODE_ENV === 'development') {
+          this.logger.warn(`⚠️  DEV MODE: OTP verification skipped for draft ${draftId}`);
+          otpVerified = true;
+        } else {
+          throw new BadRequestException('Code OTP requis pour valider le numéro de téléphone');
+        }
       }
     }
 
@@ -728,7 +748,51 @@ export class OnboardingService {
   }
 
   /**
+   * Vérifie si un draft existe pour un email
+   * Supprime automatiquement les drafts expirés (plus de 24h)
+   */
+  async checkDraftByEmail(email: string) {
+    // Nettoyer les drafts expirés pour cet email avant de vérifier
+    await this.deleteExpiredDraftsForEmail(email);
+
+    const existingDraft = await this.prisma.onboardingDraft.findFirst({
+      where: {
+        email,
+        status: { in: ['DRAFT', 'PENDING_PAYMENT'] },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    return existingDraft;
+  }
+
+  /**
+   * Supprime les drafts expirés (plus de 24 heures) pour un email spécifique
+   */
+  private async deleteExpiredDraftsForEmail(email: string) {
+    const twentyFourHoursAgo = new Date();
+    twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
+
+    const deleted = await this.prisma.onboardingDraft.deleteMany({
+      where: {
+        email,
+        createdAt: {
+          lt: twentyFourHoursAgo,
+        },
+        status: { in: ['DRAFT', 'PENDING_PAYMENT'] },
+      },
+    });
+
+    if (deleted.count > 0) {
+      this.logger.log(`🗑️  Deleted ${deleted.count} expired draft(s) for email: ${email}`);
+    }
+  }
+
+  /**
    * Récupère un draft par ID
+   * Vérifie automatiquement si le draft est expiré (plus de 24h) et le supprime si nécessaire
    */
   async getDraft(draftId: string) {
     const draft = await this.prisma.onboardingDraft.findUnique({
@@ -740,6 +804,41 @@ export class OnboardingService {
       throw new NotFoundException(`Onboarding draft not found: ${draftId}`);
     }
 
+    // Vérifier si le draft est expiré (plus de 24 heures)
+    const twentyFourHoursAgo = new Date();
+    twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
+
+    if (draft.createdAt < twentyFourHoursAgo && draft.status !== 'COMPLETED') {
+      // Supprimer le draft expiré
+      await this.deleteDraft(draftId);
+      throw new NotFoundException(`Onboarding draft expired and has been deleted: ${draftId}`);
+    }
+
     return draft;
+  }
+
+  /**
+   * Supprime un draft
+   */
+  async deleteDraft(draftId: string) {
+    const draft = await this.prisma.onboardingDraft.findUnique({
+      where: { id: draftId },
+    });
+
+    if (!draft) {
+      throw new NotFoundException(`Onboarding draft not found: ${draftId}`);
+    }
+
+    // Supprimer le draft et toutes ses relations
+    await this.prisma.onboardingDraft.delete({
+      where: { id: draftId },
+    });
+
+    this.logger.log(`🗑️  Onboarding draft deleted: ${draftId}`);
+
+    return {
+      message: 'Draft supprimé avec succès',
+      draftId,
+    };
   }
 }

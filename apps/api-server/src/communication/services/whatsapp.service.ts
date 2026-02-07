@@ -11,6 +11,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import twilio from 'twilio';
 
 export interface WhatsAppRequest {
   to: string; // Numéro au format international (ex: +22961234567)
@@ -149,21 +150,41 @@ export class WhatsAppService {
       throw new Error('Twilio configuration incomplete. Check TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN');
     }
 
-    const twilio = require('twilio');
+    if (!fromNumber) {
+      throw new Error('TWILIO_WHATSAPP_NUMBER is required for WhatsApp messages');
+    }
+
+    // Client Twilio
     const client = twilio(accountSid, authToken);
 
-    const result = await client.messages.create({
-      body: request.message,
-      from: fromNumber,
-      to: `whatsapp:${request.to}`,
-    });
+    try {
+      const result = await client.messages.create({
+        body: request.message,
+        from: fromNumber,
+        to: `whatsapp:${request.to}`,
+      });
 
-    this.logger.log(`WhatsApp sent via Twilio to ${request.to}: ${result.sid}`);
+      this.logger.log(`✅ WhatsApp sent via Twilio to ${request.to}: ${result.sid}`);
+      this.logger.debug(`💬 Twilio Message SID: ${result.sid}, Status: ${result.status}, Account SID: ${result.accountSid}`);
 
-    return {
-      success: true,
-      messageId: result.sid,
-    };
+      return {
+        success: true,
+        messageId: result.sid,
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ Failed to send WhatsApp via Twilio to ${request.to}:`, error);
+      
+      // Gestion des erreurs spécifiques Twilio
+      if (error.code === 21211) {
+        throw new Error('Numéro de téléphone invalide. Vérifiez le format (ex: +22961234567)');
+      } else if (error.code === 21614) {
+        throw new Error('Numéro WhatsApp Twilio invalide. Vérifiez TWILIO_WHATSAPP_NUMBER');
+      } else if (error.code === 20003) {
+        throw new Error('Identifiants Twilio invalides. Vérifiez TWILIO_ACCOUNT_SID et TWILIO_AUTH_TOKEN');
+      }
+      
+      throw new Error(`Erreur Twilio WhatsApp: ${error.message || 'Échec d\'envoi WhatsApp'}`);
+    }
   }
 
   /**

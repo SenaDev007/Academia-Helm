@@ -9,7 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 
 export async function POST(request: NextRequest) {
   try {
@@ -42,7 +42,11 @@ export async function POST(request: NextRequest) {
 
     let response: Response;
     try {
-      response = await fetch(promoterUrl, {
+      // ⚠️ IMPORTANT : Normaliser l'URL pour utiliser 127.0.0.1 au lieu de localhost
+      // pour éviter les erreurs EACCES dans les routes API Next.js
+      const finalUrl = normalizeApiUrl(promoterUrl);
+      
+      response = await fetch(finalUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

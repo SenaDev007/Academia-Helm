@@ -1,0 +1,229 @@
+# ============================================================================
+# ACADEMIA HUB API SERVER - VARIABLES D'ENVIRONNEMENT (COMPLET)
+# ============================================================================
+# 
+# ⚠️ INSTRUCTIONS :
+# 1. Copiez ce fichier en .env : cp ENV-COMPLETE.txt .env
+# 2. Remplissez les valeurs selon votre environnement
+# 3. Ne jamais commiter le fichier .env dans Git
+# 
+# ============================================================================
+
+# ============================================================================
+# BASE DE DONNÉES
+# ============================================================================
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/academia_hub
+DIRECT_URL=postgresql://postgres:postgres@localhost:5432/academia_hub
+DB_HOST=localhost
+DB_PORT=5432
+DB_USERNAME=postgres
+DB_PASSWORD=postgres
+DB_DATABASE=academia_hub
+DB_SSL=false
+
+# ============================================================================
+# API SERVER
+# ============================================================================
+PORT=3000
+NODE_ENV=development
+FRONTEND_URL=http://localhost:3001
+HOST=localhost
+
+# ============================================================================
+# JWT AUTHENTIFICATION
+# ============================================================================
+JWT_SECRET=your-secret-key-change-in-production-minimum-32-characters
+JWT_EXPIRES_IN=7d
+
+# ============================================================================
+# PLATFORM OWNER (Développement uniquement)
+# ============================================================================
+PLATFORM_OWNER_EMAIL=dev@academia-hub.local
+PLATFORM_OWNER_SECRET=C@ptain.Yehioracadhub2021
+
+# ============================================================================
+# IDENTIFIANTS DE TEST - SYSTEM (DEV only)
+# ============================================================================
+TEST_SUPER_ADMIN_EMAIL=yehiortech@gmail.com
+TEST_SUPER_ADMIN_PASSWORD=C@ptain.Superadmin1
+
+# ============================================================================
+# IDENTIFIANTS DE TEST - ÉCOLE (CSPEB-EVEIL D'AFRIQUE EDUCATION)
+# ============================================================================
+# Promoteur
+TEST_PROMOTEUR_EMAIL=promoteur@cspeb.bj
+TEST_PROMOTEUR_PASSWORD=promoteur123
+
+# Directeur
+TEST_DIRECTEUR_EMAIL=s.akpovitohou@gmail.com
+TEST_DIRECTEUR_PASSWORD=C@ptain.Yehioracadhub2021
+
+# Secrétaire
+TEST_SECRETAIRE_EMAIL=secretaire@cspeb.bj
+TEST_SECRETAIRE_PASSWORD=secretaire123
+
+# Comptable
+TEST_COMPTABLE_EMAIL=comptable@cspeb.bj
+TEST_COMPTABLE_PASSWORD=comptable123
+
+# Secrétaire-Comptable
+TEST_SECRETAIRE_COMPTABLE_EMAIL=secretaire.comptable@cspeb.bj
+TEST_SECRETAIRE_COMPTABLE_PASSWORD=seccompta123
+
+# Censeur (Secondaire)
+TEST_CENSEUR_EMAIL=censeur@cspeb.bj
+TEST_CENSEUR_PASSWORD=censeur123
+
+# Surveillant(e) (Secondaire)
+TEST_SURVEILLANT_EMAIL=surveillant@cspeb.bj
+TEST_SURVEILLANT_PASSWORD=surveillant123
+
+# Enseignant / Instituteur / Professeur
+TEST_ENSEIGNANT_MATRICULE_1=EMP001
+TEST_ENSEIGNANT_EMAIL_1=enseignant1@cspeb.bj
+TEST_ENSEIGNANT_PASSWORD_1=enseignant123
+
+TEST_ENSEIGNANT_MATRICULE_2=EMP002
+TEST_ENSEIGNANT_EMAIL_2=enseignant2@cspeb.bj
+TEST_ENSEIGNANT_PASSWORD_2=enseignant456
+
+# ============================================================================
+# IDENTIFIANTS DE TEST - EXTERNES
+# ============================================================================
+# Parent
+TEST_PARENT_PHONE_1=+22912345678
+TEST_PARENT_EMAIL_1=parent1@example.com
+TEST_PARENT_OTP_1=123456
+
+TEST_PARENT_PHONE_2=+22987654321
+TEST_PARENT_EMAIL_2=parent2@example.com
+TEST_PARENT_OTP_2=654321
+
+# Élève
+TEST_ELEVE_CODE_1=ELEVE001
+TEST_ELEVE_EMAIL_1=eleve1@cspeb.bj
+TEST_ELEVE_PASSWORD_1=eleve123
+
+TEST_ELEVE_CODE_2=ELEVE002
+TEST_ELEVE_EMAIL_2=eleve2@cspeb.bj
+TEST_ELEVE_PASSWORD_2=eleve456
+
+# ============================================================================
+# INFORMATIONS ÉCOLE DE TEST (CSPEB)
+# ============================================================================
+TEST_SCHOOL_NAME=Complexe Scolaire Privé Entrepreneurial et Bilingue - Eveil d'Afrique Education
+TEST_SCHOOL_NAME_SHORT=CSPEB-Eveil d'Afrique Education
+TEST_SCHOOL_SLUG=cspeb-eveil-afrique
+TEST_SCHOOL_SUBDOMAIN=cspeb
+TEST_SCHOOL_ADDRESS=A 500m de la RNIE 2, 1ère Von apres EPP Bèyarou
+TEST_SCHOOL_CONTACT=+229 0195722234
+TEST_SCHOOL_EMAIL=cspeb-eveildafriqueeducation@gmail.com
+TEST_SCHOOL_CITY=Parakou
+TEST_SCHOOL_COUNTRY=Bénin
+
+# ============================================================================
+# LOGGING
+# ============================================================================
+LOG_SLOW_QUERIES=true
+LOG_LEVEL=info
+PRISMA_LOG=false
+SKIP_DB_CHECK=false
+
+# ============================================================================
+# INTÉGRATIONS - FEDAPAY (Paiements)
+# ============================================================================
+# Clé API FedaPay (obligatoire)
+# Format : sk_live_... (production) ou sk_test_... (sandbox)
+# Trouvée dans : Dashboard FedaPay > Paramètres > API Keys
+FEDAPAY_API_KEY=sk_test_votre_cle_api_fedapay
+
+# Clé secrète API FedaPay (obligatoire pour certaines opérations)
+# Format : sk_live_... (production) ou sk_test_... (sandbox)
+# Trouvée dans : Dashboard FedaPay > Paramètres > API Keys
+FEDAPAY_SECRET_KEY=sk_test_votre_cle_secrete_fedapay
+
+# Secret pour vérifier les webhooks FedaPay (obligatoire)
+# Trouvé dans : Dashboard FedaPay > Paramètres > Webhooks
+FEDAPAY_WEBHOOK_SECRET=votre_webhook_secret_fedapay
+
+# Mode d'environnement (sandbox ou production)
+# Par défaut : sandbox
+FEDAPAY_MODE=sandbox
+
+# URL de base de l'API FedaPay
+# Par défaut : https://api.fedapay.com
+FEDAPAY_BASE_URL=https://api.fedapay.com
+# OU (alternative)
+FEDAPAY_API_URL=https://api.fedapay.com
+
+# URL de votre API pour les webhooks (obligatoire pour les webhooks)
+# Format : https://votre-domaine.com/api/billing/fedapay/webhook
+API_URL=http://localhost:3000
+
+# ============================================================================
+# INTÉGRATIONS - TWILIO (SMS, Voice, WhatsApp)
+# ============================================================================
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+# Pour SMS : Utilisez soit MessagingServiceSid (recommandé) soit Phone Number
+TWILIO_MESSAGING_SERVICE_SID=  # Recommandé : Service de messagerie Twilio (ex: MG8c5ea44165a9e5a23219b74a66009730)
+TWILIO_PHONE_NUMBER=  # Alternative : Numéro de téléphone direct (ex: +22961234567)
+# Pour WhatsApp
+TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886  # Format: whatsapp:+numéro
+
+# ============================================================================
+# INTÉGRATIONS - EMAIL (SMTP)
+# ============================================================================
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=
+SMTP_PASSWORD=
+SMTP_FROM=noreply@academia-hub.com
+SMTP_FROM_NAME=Academia Hub
+
+# ============================================================================
+# INTÉGRATIONS - WHATSAPP (Optionnel)
+# ============================================================================
+WHATSAPP_API_URL=
+WHATSAPP_API_TOKEN=
+
+# ============================================================================
+# SÉCURITÉ
+# ============================================================================
+BCRYPT_ROUNDS=10
+SESSION_SECRET=your-session-secret-change-in-production
+
+# ============================================================================
+# UPLOADS & FICHIERS
+# ============================================================================
+UPLOAD_DIR=./uploads
+MAX_FILE_SIZE=10485760
+ALLOWED_FILE_TYPES=jpg,jpeg,png,pdf,doc,docx,xls,xlsx
+
+# ============================================================================
+# ORION (IA de Direction) - Configuration
+# ============================================================================
+ORION_ENABLED=true
+ORION_API_KEY=
+ORION_API_URL=
+
+# ============================================================================
+# ATLAS (IA Conversationnelle) - Configuration
+# ============================================================================
+ATLAS_ENABLED=false
+ATLAS_API_KEY=
+ATLAS_API_URL=
+
+# ============================================================================
+# PRODUCTION - Variables à configurer pour la production
+# ============================================================================
+# Décommentez et configurez ces variables pour la production :
+#
+# DATABASE_URL=postgresql://user:password@production-host:5432/academia_hub
+# DIRECT_URL=postgresql://user:password@production-host:5432/academia_hub
+# DB_SSL=true
+# NODE_ENV=production
+# FRONTEND_URL=https://your-frontend-domain.com
+# JWT_SECRET=very-secure-random-secret-minimum-32-characters-for-production
+# HOST=0.0.0.0

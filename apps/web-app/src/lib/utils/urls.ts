@@ -161,8 +161,10 @@ export function getApiBaseUrl(): string {
     
     // Dernier recours : utiliser le port par défaut API
     // ⚠️ Ceci est un fallback de développement uniquement
-    // Utiliser 127.0.0.1 au lieu de localhost pour éviter les problèmes DNS/IPv6
+    // ⚠️ IMPORTANT : Utiliser 127.0.0.1 au lieu de localhost pour éviter les problèmes DNS/IPv6/EACCES
+    // En particulier dans les routes API Next.js (côté serveur), localhost peut causer des erreurs EACCES
     const port = process.env.API_PORT || '3000';
+    // Forcer l'utilisation de 127.0.0.1 pour les connexions serveur-à-serveur
     return `http://127.0.0.1:${port}/api`;
   }
   

@@ -9,7 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 
 export async function POST(request: NextRequest) {
   try {
@@ -44,7 +44,9 @@ export async function POST(request: NextRequest) {
 
     let response: Response;
     try {
-      response = await fetch(otpUrl, {
+      // Normaliser l'URL pour utiliser 127.0.0.1 au lieu de localhost
+      const finalUrl = normalizeApiUrl(otpUrl);
+      response = await fetch(finalUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

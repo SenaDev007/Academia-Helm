@@ -37,3 +37,15 @@ export function getApiUrlForRoutes(path: string): string {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   return new URL(normalizedPath, baseUrl).toString();
 }
+
+/**
+ * Normalise une URL pour utiliser 127.0.0.1 au lieu de localhost
+ * Évite les erreurs EACCES dans les routes API Next.js (côté serveur)
+ * 
+ * @param url - URL à normaliser
+ * @returns URL normalisée avec 127.0.0.1
+ */
+export function normalizeApiUrl(url: string): string {
+  // Remplacer localhost par 127.0.0.1 pour éviter les problèmes DNS/IPv6/EACCES
+  return url.replace(/http:\/\/localhost:/g, 'http://127.0.0.1:');
+}

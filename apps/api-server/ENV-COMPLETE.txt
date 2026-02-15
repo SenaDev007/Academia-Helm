@@ -132,10 +132,21 @@ SKIP_DB_CHECK=false
 # ============================================================================
 # INTÉGRATIONS - FEDAPAY (Paiements)
 # ============================================================================
-# Clé API FedaPay (obligatoire)
-# Format : sk_live_... (production) ou sk_test_... (sandbox)
-# Trouvée dans : Dashboard FedaPay > Paramètres > API Keys
-FEDAPAY_API_KEY=sk_test_votre_cle_api_fedapay
+# Clé API FedaPay (obligatoire pour créer des transactions)
+# Format : sk_sandbox_... ou sk_test_... (sandbox) ou sk_live_... (production)
+# IMPORTANT : Utilisez la clé SECRÈTE (sk_...) pour les appels API serveur
+# La clé PUBLIQUE (pk_...) est uniquement pour le frontend/checkout intégré
+# Trouvée dans : Dashboard FedaPay > Paramètres > API Keys > Secret Key
+# ⚠️  Si vous obtenez une erreur 401 (Unauthorized), vérifiez :
+#   1. Que la clé commence par "sk_sandbox_", "sk_test_" (sandbox) ou "sk_live_" (production)
+#   2. Que la clé est complète (pas de troncature)
+#   3. Que vous utilisez la bonne clé pour l'environnement (sandbox vs production)
+FEDAPAY_API_KEY=sk_sandbox_votre_cle_api_fedapay
+
+# Clé publique FedaPay (obligatoire pour le checkout intégré)
+# Format : pk_live_... (production) ou pk_test_... (sandbox)
+# Trouvée dans : Dashboard FedaPay > Paramètres > API Keys > Public Key
+FEDAPAY_PUBLIC_KEY=pk_test_votre_cle_publique_fedapay
 
 # Clé secrète API FedaPay (obligatoire pour certaines opérations)
 # Format : sk_live_... (production) ou sk_test_... (sandbox)
@@ -151,14 +162,21 @@ FEDAPAY_WEBHOOK_SECRET=votre_webhook_secret_fedapay
 FEDAPAY_MODE=sandbox
 
 # URL de base de l'API FedaPay
-# Par défaut : https://api.fedapay.com
-FEDAPAY_BASE_URL=https://api.fedapay.com
-# OU (alternative)
+# Pour SANDBOX (test) - Format recommandé selon documentation :
+# FEDAPAY_API_URL=https://sandbox-api.fedapay.com
+# Format alternatif (sera automatiquement converti) :
+# FEDAPAY_API_URL=https://sandbox.fedapay.com/api
+# Pour PRODUCTION (live) - Format recommandé :
 FEDAPAY_API_URL=https://api.fedapay.com
+# Format alternatif (sera automatiquement converti) :
+# FEDAPAY_API_URL=https://live.fedapay.com
 
 # URL de votre API pour les webhooks (obligatoire pour les webhooks)
 # Format : https://votre-domaine.com/api/billing/fedapay/webhook
+# En développement local :
 API_URL=http://localhost:3000
+# En production (remplacez par votre domaine réel) :
+# API_URL=https://api.academia-hub.pro
 
 # ============================================================================
 # INTÉGRATIONS - TWILIO (SMS, Voice, WhatsApp)
@@ -170,6 +188,7 @@ TWILIO_MESSAGING_SERVICE_SID=  # Recommandé : Service de messagerie Twilio (ex:
 TWILIO_PHONE_NUMBER=  # Alternative : Numéro de téléphone direct (ex: +22961234567)
 # Pour WhatsApp
 TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886  # Format: whatsapp:+numéro
+TWILIO_WHATSAPP_CONTENT_SID=HX229f5a04fd0510ce1b071852155d3e75  # Content SID du template WhatsApp Twilio (pour messages dynamiques)
 
 # ============================================================================
 # INTÉGRATIONS - EMAIL (SMTP)

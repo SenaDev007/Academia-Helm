@@ -1,15 +1,29 @@
 /**
  * Middleware Patronat - Protection des routes
- * 
- * Vérifie l'authentification et les permissions
- * pour les routes /patronat/* (sauf marketing)
+ *
+ * Vérifie l'authentification (cookies API) et les permissions
+ * pour les routes /patronat/* (sauf marketing).
  */
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createClient } from '@/utils/supabase/middleware';
 import { canAccessRoute } from '@/lib/patronat/permissions';
 import type { PatronatRole } from '@/lib/patronat/permissions';
+
+const SESSION_COOKIE = 'academia_session';
+
+function getPatronatUserFromCookie(request: NextRequest): { id: string; role?: string } | null {
+  const sessionCookie = request.cookies.get(SESSION_COOKIE)?.value;
+  if (!sessionCookie) return null;
+  try {
+    const session = JSON.parse(sessionCookie) as { user?: { id?: string; role?: string }; expiresAt?: string };
+    if (session.expiresAt && new Date(session.expiresAt) < new Date()) return null;
+    if (session?.user?.id) return { id: session.user.id, role: session.user.role };
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 // Routes marketing (publiques)
 const marketingRoutes = [
@@ -36,55 +50,32 @@ const protectedRoutes = [
 export async function patronatMiddleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Routes marketing : pas de protection
   if (marketingRoutes.some(route => pathname.startsWith(route) || pathname === route)) {
     return NextResponse.next();
   }
 
-  // Routes protégées : vérifier auth et permissions
   if (protectedRoutes.some(route => pathname.startsWith(route))) {
-    try {
-      const { supabase, response: supabaseResponse } = createClient(request);
-      
-      // Vérifier l'authentification
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
-
-      if (authError || !user) {
-        const loginUrl = new URL('/patronat/login', request.url);
-        loginUrl.searchParams.set('redirect', pathname);
-        return NextResponse.redirect(loginUrl);
-      }
-
-      // TODO: Récupérer le rôle depuis la DB (table patronat_users)
-      // Pour l'instant, utiliser un rôle par défaut
-      const userRole: PatronatRole = 'PATRONAT_ADMIN'; // À remplacer par la vraie logique
-
-      // Vérifier les permissions
-      if (!canAccessRoute(userRole, pathname)) {
-        return NextResponse.json(
-          { error: 'Accès refusé. Permissions insuffisantes.' },
-          { status: 403 }
-        );
-      }
-
-      // Ajouter les headers pour le layout
-      const response = NextResponse.next({
-        request: {
-          headers: request.headers,
-        },
-      });
-      response.headers.set('X-User-ID', user.id);
-      response.headers.set('X-User-Role', userRole);
-      
-      return response;
-    } catch (error) {
-      console.error('Patronat middleware error:', error);
+    const user = getPatronatUserFromCookie(request);
+    if (!user) {
       const loginUrl = new URL('/patronat/login', request.url);
+      loginUrl.searchParams.set('redirect', pathname);
       return NextResponse.redirect(loginUrl);
     }
+
+    // Rôle : depuis la session ou défaut PATRONAT_ADMIN (TODO: DB patronat_users)
+    const userRole: PatronatRole = (user.role as PatronatRole) || 'PATRONAT_ADMIN';
+
+    if (!canAccessRoute(userRole, pathname)) {
+      return NextResponse.json(
+        { error: 'Accès refusé. Permissions insuffisantes.' },
+        { status: 403 }
+      );
+    }
+
+    const response = NextResponse.next({ request: { headers: request.headers } });
+    response.headers.set('X-User-ID', user.id);
+    response.headers.set('X-User-Role', userRole);
+    return response;
   }
 
   return NextResponse.next();

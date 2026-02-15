@@ -12,7 +12,6 @@ import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import type { SyncDownRequest, SyncDownResponse } from '@/types';
 import { getServerSession } from '@/lib/auth/session';
 
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 const API_URL = getApiBaseUrlForRoutes();
 
 /**

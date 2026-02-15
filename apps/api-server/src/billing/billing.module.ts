@@ -37,6 +37,7 @@ import { OrionModule } from '../orion/orion.module';
     SubscriptionService,
     BillingReminderService,
     PricingService,
+    FedaPayService,
     BillingGuard,
   ],
 })

@@ -149,4 +149,54 @@ export class SubdomainService {
 
     return subdomain;
   }
+
+  /**
+   * Propose plusieurs sous-domaines à partir du nom d'école, avec statut de disponibilité.
+   * Utilisé dans le wizard d'onboarding pour laisser le choix à l'utilisateur.
+   */
+  async suggestSubdomains(schoolName: string, limit = 5): Promise<{ subdomain: string; available: boolean }[]> {
+    if (!schoolName || typeof schoolName !== 'string' || schoolName.trim().length < 2) {
+      return [];
+    }
+
+    const base = this.normalizeSchoolName(schoolName.trim());
+    if (!base) return [];
+
+    const candidates: string[] = [];
+
+    // 1. Sous-domaine principal (nom complet normalisé)
+    candidates.push(base);
+
+    // 2. Version courte : premiers mots (max 2) si le nom est long
+    const words = base.split('-').filter(Boolean);
+    if (words.length > 2) {
+      const short = words.slice(0, 2).join('-');
+      if (short.length >= 3 && short !== base) candidates.push(short);
+    }
+
+    // 3. Variantes avec suffixe -ecole, -academy
+    if (base.length <= 45) {
+      if (!candidates.includes(`${base}-ecole`)) candidates.push(`${base}-ecole`);
+      if (!candidates.includes(`${base}-academy`) && candidates.length < limit) candidates.push(`${base}-academy`);
+    }
+
+    // 4. Ajouter des suffixes numériques pour avoir assez de propositions disponibles
+    for (let i = 2; candidates.length < limit + 3; i++) {
+      const withSuffix = `${base}-${i}`;
+      if (!candidates.includes(withSuffix)) candidates.push(withSuffix);
+    }
+
+    const uniqueCandidates = [...new Set(candidates)].slice(0, limit);
+
+    const results = await Promise.all(
+      uniqueCandidates.map(async (subdomain) => {
+        const validation = this.validateSubdomain(subdomain);
+        if (!validation.valid) return { subdomain, available: false };
+        const available = !(await this.subdomainExists(subdomain));
+        return { subdomain, available };
+      }),
+    );
+
+    return results;
+  }
 }

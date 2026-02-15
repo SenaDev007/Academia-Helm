@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const apiBaseUrl = getApiBaseUrlForRoutes();
-    // getApiBaseUrl() retourne déjà l'URL avec /api à la fin
+    // getApiBaseUrlForRoutes() retourne déjà l'URL avec /api à la fin
     const draftUrl = `${apiBaseUrl}/onboarding/draft`;
     
     console.log('🔍 [Onboarding Draft] API URL:', draftUrl);
@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
     }
 
     const apiBaseUrl = getApiBaseUrlForRoutes();
-    // getApiBaseUrl() retourne déjà l'URL avec /api à la fin
+    // getApiBaseUrlForRoutes() retourne déjà l'URL avec /api à la fin
     const draftUrl = `${apiBaseUrl}/onboarding/draft/${draftId}`;
     
     // Normaliser l'URL pour utiliser 127.0.0.1 au lieu de localhost

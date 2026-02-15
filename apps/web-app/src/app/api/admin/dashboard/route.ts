@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import type { AdminDashboardData } from '@/types';
 
-const API_URL = getApiBaseUrl();
+const API_URL = getApiBaseUrlForRoutes();
 
 /**
  * GET /api/admin/dashboard

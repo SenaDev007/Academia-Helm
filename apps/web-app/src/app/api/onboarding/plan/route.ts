@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     }
 
     const apiBaseUrl = getApiBaseUrlForRoutes();
-    // getApiBaseUrl() retourne déjà l'URL avec /api à la fin
+    // getApiBaseUrlForRoutes() retourne déjà l'URL avec /api à la fin
     const planUrl = `${apiBaseUrl}/onboarding/draft/${draftId}/plan`;
 
     // Convertir planCode en planId en récupérant le plan depuis l'API publique

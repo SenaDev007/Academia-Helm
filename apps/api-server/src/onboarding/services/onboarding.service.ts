@@ -25,6 +25,7 @@ import { SubdomainService } from '../../common/services/subdomain.service';
 import { OrionAlertsService } from '../../orion/services/orion-alerts.service';
 import { PricingService } from '../../billing/services/pricing.service';
 import { OtpService } from './otp.service';
+import { DRAFT_EXPIRY_HOURS } from './draft-cleanup.service';
 import * as bcrypt from 'bcrypt';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -37,6 +38,12 @@ export class OnboardingService {
     private readonly subdomainService: SubdomainService,
     private readonly pricingService: PricingService,
     private readonly otpService: OtpService,
+    @Inject(forwardRef(() => {
+      // Import dynamique pour éviter la dépendance circulaire
+      const { FedaPayService } = require('../../billing/services/fedapay.service');
+      return FedaPayService;
+    }))
+    private readonly fedapayService: any, // Type 'any' temporaire pour éviter l'erreur de référence circulaire
     @Inject(forwardRef(() => OrionAlertsService))
     private readonly orionAlertsService?: OrionAlertsService,
   ) {}
@@ -53,6 +60,7 @@ export class OnboardingService {
     email: string;
     bilingual?: boolean;
     schoolsCount?: number;
+    preferredSubdomain?: string;
   }) {
     // Vérifier si un draft existe déjà pour cet email
     const existingDraft = await this.prisma.onboardingDraft.findFirst({
@@ -63,13 +71,26 @@ export class OnboardingService {
     });
 
     if (existingDraft) {
-      // Retourner l'ID du draft existant dans l'erreur pour permettre au frontend de le charger
       const errorResponse = {
         message: 'Un onboarding est déjà en cours pour cet email',
         existingDraftId: existingDraft.id,
         status: existingDraft.status,
       };
       throw new BadRequestException(errorResponse);
+    }
+
+    let preferredSubdomain: string | null = null;
+    if (data.preferredSubdomain != null && String(data.preferredSubdomain).trim() !== '') {
+      const raw = String(data.preferredSubdomain).trim().toLowerCase();
+      const validation = this.subdomainService.validateSubdomain(raw);
+      if (!validation.valid) {
+        throw new BadRequestException(validation.error || 'Sous-domaine invalide');
+      }
+      const exists = await this.subdomainService.subdomainExists(raw);
+      if (exists) {
+        throw new BadRequestException('Ce sous-domaine est déjà utilisé. Choisissez-en un autre.');
+      }
+      preferredSubdomain = raw;
     }
 
     const draft = await this.prisma.onboardingDraft.create({
@@ -82,11 +103,12 @@ export class OnboardingService {
         email: data.email,
         bilingual: data.bilingual || false,
         schoolsCount: data.schoolsCount || 1,
+        preferredSubdomain,
         status: 'DRAFT',
       },
     });
 
-    this.logger.log(`📝 Onboarding draft created: ${draft.id}`);
+    this.logger.log(`📝 Onboarding draft created: ${draft.id}` + (preferredSubdomain ? ` (sous-domaine: ${preferredSubdomain})` : ''));
 
     return draft;
   }
@@ -113,34 +135,57 @@ export class OnboardingService {
       throw new NotFoundException(`Onboarding draft not found: ${draftId}`);
     }
 
-    if (draft.status !== 'DRAFT') {
+    // Permettre la mise à jour si le draft est en DRAFT ou PENDING_PAYMENT
+    // L'utilisateur peut revenir en arrière pour corriger ses informations avant de payer
+    if (draft.status !== 'DRAFT' && draft.status !== 'PENDING_PAYMENT') {
       throw new BadRequestException(
-        `Cannot update draft in status: ${draft.status}`
+        `Cannot update draft in status: ${draft.status}. Only DRAFT or PENDING_PAYMENT drafts can be updated.`
       );
     }
+
+    // Normaliser le numéro de téléphone avant la vérification OTP
+    // Utiliser la même logique de normalisation que dans OtpService
+    const normalizePhoneForOTP = (phone: string): string => {
+      if (!phone) return '';
+      let normalized = phone.replace(/\s+/g, '').trim();
+      if (!normalized.startsWith('+')) {
+        normalized = '+' + normalized;
+      }
+      normalized = normalized.replace(/[^\d+]/g, '');
+      normalized = '+' + normalized.replace(/^\+/, '').replace(/\+/g, '');
+      
+      // Pour le Bénin (+229) : retirer le "01" initial si présent
+      if (normalized.startsWith('+22901')) {
+        normalized = '+229' + normalized.substring(6);
+      }
+      
+      return normalized;
+    };
+    
+    const normalizedPhone = normalizePhoneForOTP(data.phone);
 
     // Vérifier l'OTP si fourni
     let otpVerified = false;
     if (data.otpCode) {
-      // D'abord, vérifier si un OTP a déjà été vérifié pour ce draft et ce téléphone
-      const hasValidOTP = await this.otpService.hasValidOTP(draftId, data.phone);
+      // D'abord, vérifier si un OTP a déjà été vérifié pour ce draft et ce téléphone (normalisé)
+      const hasValidOTP = await this.otpService.hasValidOTP(draftId, normalizedPhone);
       if (hasValidOTP) {
         // L'OTP a déjà été vérifié via l'endpoint /otp/verify
         otpVerified = true;
-        this.logger.log(`✅ OTP already verified for draft ${draftId} - Phone: ${data.phone}`);
+        this.logger.log(`✅ OTP already verified for draft ${draftId} - Phone: ${normalizedPhone} (original: ${data.phone})`);
       } else {
-        // Sinon, vérifier l'OTP fourni
-        otpVerified = await this.otpService.verifyOTP(draftId, data.phone, data.otpCode);
+        // Sinon, vérifier l'OTP fourni avec le numéro normalisé
+        otpVerified = await this.otpService.verifyOTP(draftId, normalizedPhone, data.otpCode);
         if (!otpVerified) {
           throw new BadRequestException('Code OTP invalide ou expiré');
         }
       }
     } else {
-      // Si aucun code OTP n'est fourni, vérifier si un OTP a déjà été vérifié
-      const hasValidOTP = await this.otpService.hasValidOTP(draftId, data.phone);
+      // Si aucun code OTP n'est fourni, vérifier si un OTP a déjà été vérifié (avec le numéro normalisé)
+      const hasValidOTP = await this.otpService.hasValidOTP(draftId, normalizedPhone);
       if (hasValidOTP) {
         otpVerified = true;
-        this.logger.log(`✅ Using previously verified OTP for draft ${draftId} - Phone: ${data.phone}`);
+        this.logger.log(`✅ Using previously verified OTP for draft ${draftId} - Phone: ${normalizedPhone} (original: ${data.phone})`);
       } else {
         // En développement, on peut accepter sans OTP (mais ce n'est pas recommandé)
         if (process.env.NODE_ENV === 'development') {
@@ -161,7 +206,7 @@ export class OnboardingService {
         promoterFirstName: data.firstName,
         promoterLastName: data.lastName,
         promoterEmail: data.email,
-        promoterPhone: data.phone,
+        promoterPhone: normalizedPhone, // Stocker le numéro normalisé
         promoterPasswordHash: passwordHash,
         otpVerified,
       },
@@ -241,76 +286,64 @@ export class OnboardingService {
    * PHASE 4 : Créer une session de paiement FedaPay
    */
   async createPaymentSession(draftId: string) {
-    const draft = await this.prisma.onboardingDraft.findUnique({
-      where: { id: draftId },
-      include: { payments: true },
+    // Déléguer à FedaPayService qui gère la création complète de la transaction
+    // avec support du checkout intégré
+    return this.fedapayService.createOnboardingPaymentSession(draftId);
+  }
+
+  /**
+   * Vérifie le statut d'un paiement
+   * 
+   * ⚠️ CRITIQUE : Cette méthode vérifie le statut réel depuis FedaPay
+   * et enregistre le résultat dans la base de données
+   * 
+   * Le frontend ne doit JAMAIS faire confiance au callback onComplete.
+   * Il doit toujours appeler cet endpoint pour vérifier le statut.
+   */
+  async verifyPaymentStatus(paymentId: string) {
+    // Récupérer le paiement
+    const payment = await this.prisma.onboardingPayment.findUnique({
+      where: { id: paymentId },
+      include: { draft: true },
     });
 
-    if (!draft) {
-      throw new NotFoundException(`Onboarding draft not found: ${draftId}`);
+    if (!payment) {
+      throw new NotFoundException(`Payment not found: ${paymentId}`);
     }
 
-    if (draft.status !== 'PENDING_PAYMENT') {
-      throw new BadRequestException(
-        `Cannot create payment session for draft in status: ${draft.status}`
-      );
+    // Récupérer le transactionId depuis les métadonnées
+    const metadata = payment.metadata as any;
+    const transactionId = metadata?.transactionId;
+
+    if (!transactionId) {
+      throw new BadRequestException('Transaction ID not found in payment metadata');
     }
 
-    if (!draft.priceSnapshot) {
-      throw new BadRequestException('No pricing information found. Please select a plan first.');
-    }
+    // Vérifier le statut via FedaPay API
+    const verification = await this.fedapayService.verifyTransactionStatus(transactionId);
 
-    const pricing = draft.priceSnapshot as any;
-    const amount = pricing.initialPayment;
-
-    // Vérifier s'il existe déjà un paiement en cours
-    const existingPayment = draft.payments.find(
-      (p) => p.status === 'PENDING' || p.status === 'PROCESSING'
-    );
-
-    if (existingPayment) {
-      return {
-        paymentId: existingPayment.id,
-        reference: existingPayment.reference,
-        amount: existingPayment.amount,
-        status: existingPayment.status,
-      };
-    }
-
-    // Créer un nouveau paiement
-    const reference = `ONB-${draftId.substring(0, 8).toUpperCase()}-${Date.now()}`;
-
-    const payment = await this.prisma.onboardingPayment.create({
-      data: {
-        draftId,
-        provider: 'fedapay',
-        reference,
-        amount,
-        currency: 'XOF',
-        status: 'PENDING',
-        metadata: {
-          draftId,
-          pricing,
-        },
-      },
+    // Recharger le paiement (après possible activation du tenant dans verifyTransactionStatus)
+    const updatedPayment = await this.prisma.onboardingPayment.findUnique({
+      where: { id: paymentId },
     });
 
-    this.logger.log(`💳 Payment session created: ${payment.id} - Reference: ${reference}`);
+    const mergedMeta = (updatedPayment?.metadata || payment.metadata) as Record<string, unknown> | null;
 
-    // TODO: Intégrer avec FedaPay SDK pour créer la transaction
-    // Pour l'instant, on retourne les infos de paiement
     return {
       paymentId: payment.id,
-      reference: payment.reference,
+      status: updatedPayment?.status || payment.status,
       amount: payment.amount,
-      currency: payment.currency,
-      // TODO: Ajouter l'URL de redirection FedaPay
-      paymentUrl: `https://fedapay.com/payment/${reference}`, // Placeholder
+      verified: verification.verified,
+      transactionStatus: verification.status,
+      draftId: payment.draftId,
+      tenantActivated: updatedPayment?.status === 'SUCCESS',
+      firstTenantSubdomain: mergedMeta?.firstTenantSubdomain as string | undefined,
     };
   }
 
   /**
-   * Activer le tenant après paiement réussi (transaction atomique)
+   * Activer le tenant après paiement réussi (transaction atomique).
+   * Accepte les statuts COMPLETED (après webhook/vérification FedaPay) et SUCCESS (idempotence).
    */
   async activateTenantAfterPayment(paymentId: string) {
     const payment = await this.prisma.onboardingPayment.findUnique({
@@ -322,9 +355,15 @@ export class OnboardingService {
       throw new NotFoundException(`Payment not found: ${paymentId}`);
     }
 
-    if (payment.status !== 'SUCCESS') {
+    // Idempotence : déjà activé
+    if (payment.status === 'SUCCESS') {
+      this.logger.log(`✅ Tenant already activated for payment ${paymentId}`);
+      return { alreadyActivated: true };
+    }
+
+    if (payment.status !== 'COMPLETED') {
       throw new BadRequestException(
-        `Cannot activate tenant for payment with status: ${payment.status}`
+        `Cannot activate tenant for payment with status: ${payment.status}. Expected COMPLETED or SUCCESS.`
       );
     }
 
@@ -361,18 +400,31 @@ export class OnboardingService {
       const tenants = [];
       const subscriptions = [];
 
+      // Sous-domaine du premier tenant : préférer celui choisi par l'utilisateur si valide et disponible
+      let firstTenantSubdomain: string;
+      if (draft.preferredSubdomain) {
+        const validation = this.subdomainService.validateSubdomain(draft.preferredSubdomain);
+        if (!validation.valid) {
+          throw new BadRequestException(`Sous-domaine invalide: ${validation.error}`);
+        }
+        const existing = await tx.tenant.findUnique({ where: { subdomain: draft.preferredSubdomain } });
+        if (existing) {
+          throw new BadRequestException('Ce sous-domaine est déjà utilisé. Un nouvel onboarding avec un autre sous-domaine est nécessaire.');
+        }
+        firstTenantSubdomain = draft.preferredSubdomain;
+      } else {
+        firstTenantSubdomain = await this.subdomainService.generateAndValidate(draft.schoolName);
+      }
+
       for (let i = 0; i < schoolsCount; i++) {
-        // Générer un sous-domaine unique pour chaque annexe
         let schoolNameForSubdomain = draft.schoolName;
         if (schoolsCount > 1) {
-          // Pour les annexes, ajouter le suffixe "annexe-1", "annexe-2", etc.
           schoolNameForSubdomain = `${draft.schoolName} - Annexe ${i + 1}`;
         }
-        
-        const baseSubdomain = await this.subdomainService.generateAndValidate(draft.schoolName);
-        const subdomain = schoolsCount > 1 
-          ? await this.generateAnnexeSubdomain(baseSubdomain, i + 1, tx)
-          : baseSubdomain;
+
+        const subdomain = schoolsCount > 1
+          ? await this.generateAnnexeSubdomain(firstTenantSubdomain, i + 1, tx)
+          : firstTenantSubdomain;
         const slug = subdomain;
 
         // Créer le tenant
@@ -608,11 +660,16 @@ export class OnboardingService {
         },
       });
 
-      // 6. Mettre à jour le paiement
+      // 6. Mettre à jour le paiement (statut SUCCESS + sous-domaine pour la redirection)
+      const paymentMeta = (payment.metadata as Record<string, unknown>) || {};
       await tx.onboardingPayment.update({
         where: { id: paymentId },
         data: {
           status: 'SUCCESS',
+          metadata: {
+            ...paymentMeta,
+            firstTenantSubdomain: tenants[0].subdomain,
+          },
         },
       });
 
@@ -749,10 +806,9 @@ export class OnboardingService {
 
   /**
    * Vérifie si un draft existe pour un email
-   * Supprime automatiquement les drafts expirés (plus de 24h)
+   * Supprime automatiquement les drafts expirés (après DRAFT_EXPIRY_HOURS)
    */
   async checkDraftByEmail(email: string) {
-    // Nettoyer les drafts expirés pour cet email avant de vérifier
     await this.deleteExpiredDraftsForEmail(email);
 
     const existingDraft = await this.prisma.onboardingDraft.findFirst({
@@ -769,18 +825,16 @@ export class OnboardingService {
   }
 
   /**
-   * Supprime les drafts expirés (plus de 24 heures) pour un email spécifique
+   * Supprime les drafts expirés (après DRAFT_EXPIRY_HOURS) pour un email
    */
   private async deleteExpiredDraftsForEmail(email: string) {
-    const twentyFourHoursAgo = new Date();
-    twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
+    const expiryThreshold = new Date();
+    expiryThreshold.setHours(expiryThreshold.getHours() - DRAFT_EXPIRY_HOURS);
 
     const deleted = await this.prisma.onboardingDraft.deleteMany({
       where: {
         email,
-        createdAt: {
-          lt: twentyFourHoursAgo,
-        },
+        createdAt: { lt: expiryThreshold },
         status: { in: ['DRAFT', 'PENDING_PAYMENT'] },
       },
     });
@@ -792,7 +846,7 @@ export class OnboardingService {
 
   /**
    * Récupère un draft par ID
-   * Vérifie automatiquement si le draft est expiré (plus de 24h) et le supprime si nécessaire
+   * Supprime et renvoie une erreur si le draft est expiré (après DRAFT_EXPIRY_HOURS)
    */
   async getDraft(draftId: string) {
     const draft = await this.prisma.onboardingDraft.findUnique({
@@ -804,12 +858,10 @@ export class OnboardingService {
       throw new NotFoundException(`Onboarding draft not found: ${draftId}`);
     }
 
-    // Vérifier si le draft est expiré (plus de 24 heures)
-    const twentyFourHoursAgo = new Date();
-    twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
+    const expiryThreshold = new Date();
+    expiryThreshold.setHours(expiryThreshold.getHours() - DRAFT_EXPIRY_HOURS);
 
-    if (draft.createdAt < twentyFourHoursAgo && draft.status !== 'COMPLETED') {
-      // Supprimer le draft expiré
+    if (draft.createdAt < expiryThreshold && draft.status !== 'COMPLETED') {
       await this.deleteDraft(draftId);
       throw new NotFoundException(`Onboarding draft expired and has been deleted: ${draftId}`);
     }

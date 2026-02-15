@@ -8,10 +8,11 @@
 ## 📋 Table des Matières
 
 1. [Prérequis](#prérequis)
-2. [Démarrage Rapide](#démarrage-rapide)
-3. [Commandes Utiles](#commandes-utiles)
-4. [Configuration](#configuration)
-5. [Dépannage](#dépannage)
+2. [Démarrage Rapide (développement)](#démarrage-rapide)
+3. [Production (Docker Compose prod)](#production-docker-compose-prod)
+4. [Commandes Utiles](#commandes-utiles)
+5. [Configuration](#configuration)
+6. [Dépannage](#dépannage)
 
 ---
 
@@ -71,6 +72,27 @@ docker-compose -f docker-compose.dev.yml down
 # Arrêter et supprimer les volumes (⚠️ supprime les données)
 docker-compose -f docker-compose.dev.yml down -v
 ```
+
+---
+
+## 🚀 Production (Docker Compose prod)
+
+Pour déployer en production avec Docker (VPS, serveur dédié) :
+
+1. **Copier et éditer le fichier d'environnement** :
+   ```bash
+   cp .env.docker.example .env
+   ```
+   Renseigner au minimum : `POSTGRES_PASSWORD`, `JWT_SECRET`, et les URLs publiques (`NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_API_URL`).
+
+2. **Construire et démarrer** :
+   ```bash
+   npm run docker:prod:build
+   npm run docker:prod:up
+   ```
+   Ou : `docker compose -f docker-compose.prod.yml up -d`
+
+3. **Ports** : frontend (3001), API (3000), PostgreSQL (5432). Mettre un reverse proxy (Nginx/Caddy) devant et activer le SSL. Voir aussi [docs/HEBERGEMENT-OVH.md](docs/HEBERGEMENT-OVH.md).
 
 ---
 
@@ -296,4 +318,4 @@ docker-compose -f docker-compose.dev.yml up
 
 ---
 
-**Dernière mise à jour** : 2025-01-17
+**Dernière mise à jour** : 2026-02-14 — ajout Docker production (Dockerfile, docker-compose.prod.yml, .env.docker.example).

@@ -15,8 +15,6 @@
     "lighthouse": "lighthouse ${NEXT_PUBLIC_APP_URL:-http://localhost:3001} --view --output=html --output-path=./lighthouse-report.html"
   },
   "dependencies": {
-    "@supabase/ssr": "^0.5.2",
-    "@supabase/supabase-js": "^2.90.1",
     "axios": "^1.7.2",
     "clsx": "^2.1.1",
     "js-cookie": "^3.0.5",

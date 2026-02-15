@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     }
 
     const apiBaseUrl = getApiBaseUrlForRoutes();
-    // getApiBaseUrl() retourne déjà l'URL avec /api à la fin
+    // getApiBaseUrlForRoutes() retourne déjà l'URL avec /api à la fin
     const paymentUrl = `${apiBaseUrl}/onboarding/draft/${draftId}/payment`;
 
     // Normaliser l'URL pour utiliser 127.0.0.1 au lieu de localhost

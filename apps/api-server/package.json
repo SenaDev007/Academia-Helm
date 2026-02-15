@@ -34,7 +34,9 @@
     "migrate:validate": "ts-node scripts/validate-migrations.ts",
     "migrate:status": "npx prisma migrate status --schema=prisma/schema.prisma",
     "migrate:deploy": "npx prisma migrate deploy --schema=prisma/schema.prisma",
-    "migrate:dev": "npx prisma migrate dev --schema=prisma/schema.prisma"
+    "migrate:dev": "npx prisma migrate dev --schema=prisma/schema.prisma",
+    "seed": "ts-node prisma/seed.ts",
+    "db:seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.0",
@@ -55,6 +57,7 @@
     "better-sqlite3": "^9.2.2",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.0",
+    "fedapay": "^1.2.5",
     "handlebars": "^4.7.8",
     "nodemailer": "^6.9.8",
     "passport": "^0.7.0",
@@ -85,6 +88,7 @@
     "@types/uuid": "^9.0.7",
     "@typescript-eslint/eslint-plugin": "^6.17.0",
     "@typescript-eslint/parser": "^6.17.0",
+    "dotenv": "^17.2.4",
     "eslint": "^8.56.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.1.2",

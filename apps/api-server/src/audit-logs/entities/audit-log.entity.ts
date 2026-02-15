@@ -1,31 +1,40 @@
 import {
   Entity,
-  PrimaryGeneratedColumn,
+  PrimaryColumn,
   Column,
   ManyToOne,
   JoinColumn,
   CreateDateColumn,
+  BeforeInsert,
 } from 'typeorm';
+import { v4 as uuidv4 } from 'uuid';
 import { Tenant } from '../../tenants/entities/tenant.entity';
 import { User } from '../../users/entities/user.entity';
 
 @Entity('audit_logs')
 export class AuditLog {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryColumn({ type: 'text' })
   id: string;
 
-  @Column({ type: 'uuid' })
+  @BeforeInsert()
+  generateId() {
+    if (!this.id) {
+      this.id = uuidv4();
+    }
+  }
+
+  @Column({ type: 'uuid', name: 'tenant_id' })
   tenantId: string;
 
   @ManyToOne(() => Tenant, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'tenant_id' })
   tenant: Tenant;
 
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'uuid', nullable: true, name: 'userId' })
   userId: string | null;
 
   @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
-  @JoinColumn({ name: 'user_id' })
+  @JoinColumn({ name: 'userId' })
   user: User | null;
 
   @Column({ type: 'varchar', length: 50 })
@@ -33,6 +42,9 @@ export class AuditLog {
 
   @Column({ type: 'varchar', length: 100 })
   resource: string;
+
+  @Column({ type: 'text', name: 'tableName' })
+  tableName: string;
 
   @Column({ type: 'uuid', nullable: true })
   resourceId: string | null;

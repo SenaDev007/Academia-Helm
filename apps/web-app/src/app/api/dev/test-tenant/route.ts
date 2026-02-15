@@ -6,9 +6,9 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrl } from '@/lib/utils/urls';
+import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 
-const API_BASE_URL = getApiBaseUrl();
+const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function GET(request: NextRequest) {
   // Vérifier que c'est en développement

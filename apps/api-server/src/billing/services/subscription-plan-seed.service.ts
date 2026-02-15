@@ -18,7 +18,18 @@ export class SubscriptionPlanSeedService implements OnModuleInit {
   constructor(private readonly prisma: PrismaService) {}
 
   async onModuleInit() {
-    await this.seedPlans();
+    try {
+      await this.seedPlans();
+    } catch (error: unknown) {
+      const code = (error as { code?: string })?.code;
+      if (code === 'P2021') {
+        this.logger.warn(
+          'Table subscription_plans manquante. Exécutez: cd apps/api-server && npx prisma migrate deploy'
+        );
+        return;
+      }
+      throw error;
+    }
   }
 
   /**

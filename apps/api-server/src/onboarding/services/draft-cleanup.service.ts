@@ -2,16 +2,18 @@
  * ============================================================================
  * DRAFT CLEANUP SERVICE - NETTOYAGE AUTOMATIQUE DES DRAFTS EXPIRÉS
  * ============================================================================
- * 
- * Service pour supprimer automatiquement les drafts d'onboarding expirés
- * après 24 heures pour éviter de surcharger la base de données.
- * 
+ *
+ * Supprime les drafts d'onboarding expirés (après 4 heures).
+ *
  * ============================================================================
  */
 
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../database/prisma.service';
+
+/** Durée de vie des drafts (en heures). Au-delà, ils sont considérés expirés et supprimés. */
+export const DRAFT_EXPIRY_HOURS = 4;
 
 @Injectable()
 export class DraftCleanupService {
@@ -27,19 +29,17 @@ export class DraftCleanupService {
   async cleanupExpiredDrafts() {
     this.logger.log('🧹 Starting cleanup of expired onboarding drafts...');
 
-    const twentyFourHoursAgo = new Date();
-    twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
+    const expiryThreshold = new Date();
+    expiryThreshold.setHours(expiryThreshold.getHours() - DRAFT_EXPIRY_HOURS);
 
     try {
-      // Supprimer tous les drafts créés il y a plus de 24 heures
-      // et qui ne sont pas encore complétés
       const result = await this.prisma.onboardingDraft.deleteMany({
         where: {
           createdAt: {
-            lt: twentyFourHoursAgo,
+            lt: expiryThreshold,
           },
           status: {
-            not: 'COMPLETED', // Ne pas supprimer les drafts complétés
+            not: 'COMPLETED',
           },
         },
       });
@@ -68,23 +68,16 @@ export class DraftCleanupService {
 
   /**
    * Compte le nombre de drafts expirés sans les supprimer
-   * Utile pour le monitoring
    */
   async countExpiredDrafts(): Promise<number> {
-    const twentyFourHoursAgo = new Date();
-    twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
+    const expiryThreshold = new Date();
+    expiryThreshold.setHours(expiryThreshold.getHours() - DRAFT_EXPIRY_HOURS);
 
-    const count = await this.prisma.onboardingDraft.count({
+    return this.prisma.onboardingDraft.count({
       where: {
-        createdAt: {
-          lt: twentyFourHoursAgo,
-        },
-        status: {
-          not: 'COMPLETED',
-        },
+        createdAt: { lt: expiryThreshold },
+        status: { not: 'COMPLETED' },
       },
     });
-
-    return count;
   }
 }

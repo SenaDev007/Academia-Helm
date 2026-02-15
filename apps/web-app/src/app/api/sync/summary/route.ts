@@ -8,7 +8,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import type { SyncSummary } from '@/types';
 
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 const API_URL = getApiBaseUrlForRoutes();
 
 /**

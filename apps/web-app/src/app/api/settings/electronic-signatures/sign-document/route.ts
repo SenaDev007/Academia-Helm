@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
-import { getServerSession } from 'next-auth';
+import { getServerSession } from '@/lib/auth/session';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     const response = await fetch(`${API_BASE_URL}/settings/electronic-signatures/sign-document`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${(session as any).accessToken}`,
+        'Authorization': `Bearer ${session.token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),

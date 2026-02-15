@@ -1,0 +1,92 @@
+# ============================================================================
+# ACADEMIA HUB - DOCKER COMPOSE (PRODUCTION)
+# ============================================================================
+#
+# Usage:
+#   cp .env.docker.example .env   # puis éditer .env
+#   docker compose -f docker-compose.prod.yml up -d
+#   docker compose -f docker-compose.prod.yml down
+#
+# ============================================================================
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: academia-hub-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-academia_hub}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requis}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - academia-network
+
+  api-server:
+    build:
+      context: ./apps/api-server
+      dockerfile: Dockerfile
+    image: academia-hub-api:latest
+    container_name: academia-hub-api
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-academia_hub}
+      DIRECT_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-academia_hub}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET requis}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      FRONTEND_URL: ${NEXT_PUBLIC_APP_URL:-https://academia-hub.pro}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - academia-network
+
+  frontend:
+    build:
+      context: ./apps/web-app
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-https://academia-hub.pro}
+        NEXT_PUBLIC_BASE_DOMAIN: ${NEXT_PUBLIC_BASE_DOMAIN:-academia-hub.pro}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.academia-hub.pro/api}
+        NEXT_PUBLIC_ENV: production
+    image: academia-hub-frontend:latest
+    container_name: academia-hub-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3001}:3000"
+    depends_on:
+      api-server:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+    networks:
+      - academia-network
+
+volumes:
+  postgres_data:
+    name: academia-hub-postgres-data
+
+networks:
+  academia-network:
+    name: academia-hub-network

@@ -1,15 +1,30 @@
 /**
  * Next.js Middleware
- * 
- * Gestion du multi-tenant et protection des routes
- * Intégration Supabase pour l'authentification
+ *
+ * Gestion du multi-tenant et protection des routes.
+ * Authentification via cookies API (academia_session / academia_token).
  */
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import type { SubscriptionStatus } from './types';
-import { createClient } from '@/utils/supabase/middleware';
 import { getApiBaseUrl, getAppBaseUrl } from '@/lib/utils/urls';
+
+const SESSION_COOKIE = 'academia_session';
+
+/** Récupère l'utilisateur depuis le cookie de session (Edge). */
+function getUserFromSessionCookie(request: NextRequest): { id: string } | null {
+  const sessionCookie = request.cookies.get(SESSION_COOKIE)?.value;
+  if (!sessionCookie) return null;
+  try {
+    const session = JSON.parse(sessionCookie) as { user?: { id?: string }; expiresAt?: string };
+    if (session.expiresAt && new Date(session.expiresAt) < new Date()) return null;
+    if (session?.user?.id) return { id: session.user.id };
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 function extractSubdomainFromRequest(request: NextRequest): string | null {
   const host = request.headers.get('host') || request.headers.get('x-forwarded-host');
@@ -72,6 +87,7 @@ const publicRoutes = [
   '/admin-login', // Route publique pour le login Super Admin
   '/forgot-password',
   '/onboarding-error',
+  '/onboarding',
   '/testimonials', // Route publique pour les témoignages
 ];
 
@@ -90,23 +106,8 @@ export async function middleware(request: NextRequest) {
     return patronatMiddleware(request);
   }
 
-  // Initialiser Supabase client pour l'authentification
-  let response = NextResponse.next();
-  let user = null;
-
-  try {
-    const { supabase, response: supabaseResponse } = createClient(request);
-    response = supabaseResponse;
-
-    // Rafraîchir la session utilisateur si nécessaire
-    const {
-      data: { user: currentUser },
-    } = await supabase.auth.getUser();
-    user = currentUser;
-  } catch (error) {
-    // Si Supabase n'est pas configuré, continuer sans authentification
-    console.warn('Supabase not configured or error:', error);
-  }
+  const response = NextResponse.next();
+  const user = getUserFromSessionCookie(request);
 
   // Routes admin : pas de vérification de subdomain
   if (pathname.startsWith('/admin')) {

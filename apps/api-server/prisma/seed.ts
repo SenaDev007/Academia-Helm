@@ -12,14 +12,42 @@
  * 
  * ⚠️ IMPORTANT : Seed idempotent (peut être relancé plusieurs fois)
  * 
- * Usage: npx prisma db seed
+ * Usage:
+ *   - npm run seed (depuis apps/api-server)
+ *   - npm run db:seed (depuis apps/api-server)
+ *   - npx ts-node prisma/seed.ts (depuis apps/api-server)
+ * 
+ * ⚠️ Assurez-vous que DATABASE_URL est configurée dans .env
  * 
  * ============================================================================
  */
 
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { Pool } from 'pg';
+import * as dotenv from 'dotenv';
+import { resolve } from 'path';
 
-const prisma = new PrismaClient();
+// Charger les variables d'environnement depuis .env
+dotenv.config({ path: resolve(__dirname, '../.env') });
+
+// Vérifier que DATABASE_URL est définie
+if (!process.env.DATABASE_URL) {
+  console.error('❌ ERREUR: DATABASE_URL n\'est pas définie dans .env');
+  console.error('   Veuillez ajouter DATABASE_URL dans apps/api-server/.env');
+  console.error('   Format: DATABASE_URL=postgresql://user:password@host:port/database');
+  process.exit(1);
+}
+
+console.log('🔍 DATABASE_URL chargée:', process.env.DATABASE_URL ? `${process.env.DATABASE_URL.substring(0, 30)}...` : 'NON DÉFINIE');
+
+// Créer un pool PostgreSQL et l'adapter Prisma (comme dans PrismaService)
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const adapter = new PrismaPg(pool);
+
+const prisma = new PrismaClient({
+  adapter: adapter,
+});
 
 async function main() {
   console.log('🌱 Démarrage du seed...\n');
@@ -72,16 +100,15 @@ async function main() {
   console.log(`   ✅ Tenant créé: ${tenant.name} (${tenant.slug})`);
 
   // ============================================================================
-  // 3. CRÉER L'ANNÉE SCOLAIRE ACTIVE (2024-2025) - IDEMPOTENT
+  // 3. CRÉER L'ANNÉE SCOLAIRE ACTIVE (2025-2026) - IDEMPOTENT
   // ============================================================================
-  console.log('\n3️⃣  Création de l\'année scolaire active (2024-2025)...');
+  console.log('\n3️⃣  Création de l\'année scolaire active (2025-2026)...');
   
-  // Dates : Septembre 2024 - Juillet 2025
-  const currentYear = new Date().getFullYear();
-  const academicYearName = `${currentYear}-${currentYear + 1}`;
-  const startDate = new Date(`${currentYear}-09-01`);
-  const endDate = new Date(`${currentYear + 1}-07-31`);
-  const preEntryDate = new Date(`${currentYear}-09-02`); // Lundi 2ème semaine septembre
+  // Dates : Septembre 2025 - Juillet 2026
+  const academicYearName = '2025-2026';
+  const startDate = new Date('2025-09-01');
+  const endDate = new Date('2026-07-31');
+  const preEntryDate = new Date('2025-09-02'); // Lundi 2ème semaine septembre
 
   // Vérifier si l'année existe déjà
   let academicYear = await prisma.academicYear.findFirst({
@@ -190,6 +217,87 @@ async function main() {
   }
 
   // ============================================================================
+  // 6. CRÉER LA CONFIGURATION PRICING - IDEMPOTENT
+  // ============================================================================
+  console.log('\n6️⃣  Création de la configuration pricing...');
+
+  // Vérifier si une config active existe déjà
+  const existingConfig = await prisma.pricingConfig.findFirst({
+    where: { isActive: true },
+  });
+
+  if (!existingConfig) {
+    const pricingConfig = await prisma.pricingConfig.create({
+      data: {
+        initialSubscriptionFee: 100000, // 100 000 FCFA - Paiement initial
+        multiSchoolInitialDiscountPercent: 10, // 10% de réduction sur la souscription initiale pour les promoteurs gérant plusieurs écoles
+        monthlyBasePrice: 15000, // 15 000 FCFA - Prix de base mensuel
+        yearlyBasePrice: 150000, // 150 000 FCFA - Prix de base annuel
+        yearlyDiscountPercent: 17, // 17% de réduction pour l'abonnement annuel
+        bilingualMonthlyAddon: 5000, // +5 000 FCFA/mois pour l'option bilingue
+        bilingualYearlyAddon: 50000, // +50 000 FCFA/an pour l'option bilingue
+        schoolAdditionalPrice: 10000, // +10 000 FCFA par école supplémentaire
+        trialDays: 30, // 30 jours d'essai gratuit
+        graceDays: 7, // 7 jours de grâce après expiration
+        reminderDays: [7, 3, 1], // Rappels à J-7, J-3, J-1
+        currency: 'XOF', // Franc CFA
+        isActive: true,
+        version: 1,
+        createdBy: 'SEED',
+        metadata: {
+          seeded: true,
+          seededAt: new Date().toISOString(),
+          description: 'Configuration pricing par défaut pour les tests',
+        },
+      },
+    });
+
+    console.log(`   ✅ Configuration pricing créée: version ${pricingConfig.version}`);
+    console.log(`      - Paiement initial: ${pricingConfig.initialSubscriptionFee.toLocaleString()} ${pricingConfig.currency}`);
+    console.log(`      - Prix mensuel de base: ${pricingConfig.monthlyBasePrice.toLocaleString()} ${pricingConfig.currency}`);
+    console.log(`      - Prix annuel de base: ${pricingConfig.yearlyBasePrice.toLocaleString()} ${pricingConfig.currency}`);
+    console.log(`      - Réduction annuelle: ${pricingConfig.yearlyDiscountPercent}%`);
+    console.log(`      - Réduction multi-écoles: ${pricingConfig.multiSchoolInitialDiscountPercent}%`);
+  } else {
+    console.log(`   ℹ️  Configuration pricing déjà existante: version ${existingConfig.version}`);
+  }
+
+  // ============================================================================
+  // 7. CRÉER LES GROUP TIERS (PRIX PAR NOMBRE D'ÉCOLES) - IDEMPOTENT
+  // ============================================================================
+  console.log('\n7️⃣  Création des group tiers (prix par nombre d\'écoles)...');
+
+  const groupTiers = [
+    { schoolsCount: 2, monthlyPrice: 25000, yearlyPrice: 250000 },
+    { schoolsCount: 3, monthlyPrice: 35000, yearlyPrice: 350000 },
+    { schoolsCount: 4, monthlyPrice: 45000, yearlyPrice: 450000 },
+  ];
+
+  for (const tierData of groupTiers) {
+    const existing = await prisma.pricingGroupTier.findUnique({
+      where: { schoolsCount: tierData.schoolsCount },
+    });
+
+    if (!existing) {
+      const tier = await prisma.pricingGroupTier.create({
+        data: {
+          ...tierData,
+          isActive: true,
+          createdBy: 'SEED',
+          metadata: {
+            seeded: true,
+            seededAt: new Date().toISOString(),
+          },
+        },
+      });
+
+      console.log(`   ✅ Group tier créé: ${tier.schoolsCount} écoles - ${tier.monthlyPrice.toLocaleString()} XOF/mois - ${tier.yearlyPrice.toLocaleString()} XOF/an`);
+    } else {
+      console.log(`   ℹ️  Group tier déjà existant: ${tierData.schoolsCount} écoles`);
+    }
+  }
+
+  // ============================================================================
   // RÉSUMÉ
   // ============================================================================
   console.log('\n' + '='.repeat(60));
@@ -201,6 +309,26 @@ async function main() {
   console.log(`   - Année scolaire: ${academicYear.label}`);
   console.log(`   - Niveaux scolaires: ${schoolLevels.length} (${schoolLevels.map(s => s.label).join(', ')})`);
   console.log(`   - Régimes tarifaires: ${schoolLevels.length} (STANDARD par niveau)`);
+  
+  // Afficher le résumé de la configuration pricing
+  const activeConfig = await prisma.pricingConfig.findFirst({
+    where: { isActive: true },
+  });
+  if (activeConfig) {
+    console.log(`   - Configuration pricing: version ${activeConfig.version} (active)`);
+    console.log(`     • Paiement initial: ${activeConfig.initialSubscriptionFee.toLocaleString()} ${activeConfig.currency}`);
+    console.log(`     • Prix mensuel: ${activeConfig.monthlyBasePrice.toLocaleString()} ${activeConfig.currency}`);
+    console.log(`     • Prix annuel: ${activeConfig.yearlyBasePrice.toLocaleString()} ${activeConfig.currency}`);
+    console.log(`     • Réduction annuelle: ${activeConfig.yearlyDiscountPercent}%`);
+  }
+  
+  const tiersCount = await prisma.pricingGroupTier.count({
+    where: { isActive: true },
+  });
+  if (tiersCount > 0) {
+    console.log(`   - Group tiers: ${tiersCount} tiers de prix configurés`);
+  }
+  
   console.log('\n🎯 La base de données est prête à l\'usage!');
 }
 

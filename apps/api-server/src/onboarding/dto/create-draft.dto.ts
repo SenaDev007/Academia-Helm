@@ -27,4 +27,9 @@ export class CreateDraftDto {
   @IsOptional()
   @IsInt()
   schoolsCount?: number;
+
+  /** Sous-domaine personnalisé (optionnel). Vérifié en format et unicité si fourni. */
+  @IsOptional()
+  @IsString()
+  preferredSubdomain?: string;
 }

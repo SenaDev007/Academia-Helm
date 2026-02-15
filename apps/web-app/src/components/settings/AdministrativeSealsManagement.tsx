@@ -16,7 +16,7 @@
 
 import { useState, useEffect } from 'react';
 import { 
-  Seal, 
+  Stamp, 
   Plus, 
   Edit, 
   Trash2, 
@@ -245,7 +245,7 @@ export default function AdministrativeSealsManagement() {
                   <tr key={seal.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-3">
-                        <Seal className="w-5 h-5 text-gray-400" />
+                        <Stamp className="w-5 h-5 text-gray-400" />
                         <div>
                           <div className="text-sm font-medium text-gray-900">{seal.label}</div>
                           <div className="text-xs text-gray-500">

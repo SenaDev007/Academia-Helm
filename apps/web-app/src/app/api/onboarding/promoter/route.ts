@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     }
 
     const apiBaseUrl = getApiBaseUrlForRoutes();
-    // getApiBaseUrl() retourne déjà l'URL avec /api à la fin
+    // getApiBaseUrlForRoutes() retourne déjà l'URL avec /api à la fin
     const promoterUrl = `${apiBaseUrl}/onboarding/draft/${draftId}/promoter`;
 
     console.log('🔍 [Onboarding Promoter] API URL:', promoterUrl);

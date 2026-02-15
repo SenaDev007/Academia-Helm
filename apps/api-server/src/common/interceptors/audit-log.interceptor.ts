@@ -186,16 +186,48 @@ export class AuditLogInterceptor implements NestInterceptor {
         setTimeout(() => reject(new Error('Audit log timeout')), 2000);
       });
 
-      const savePromise = this.auditLogRepository.save({
-        tenantId: data.tenantId || 'system',
+      // Récupérer l'ID du tenant système si tenantId n'est pas disponible
+      // Le tenant système a le slug 'system'
+      // IMPORTANT: La colonne tenant_id est de type UUID, donc on doit utiliser un UUID valide
+      let finalTenantId: string = data.tenantId ? String(data.tenantId) : '';
+      if (!finalTenantId || finalTenantId.trim() === '') {
+        // Utiliser un UUID système par défaut (créé par le script create-system-tenant.ts)
+        // Si ce tenant n'existe pas, l'erreur sera non-bloquante
+        finalTenantId = 'c6b26096-04e0-4c73-af5a-a62abbc827cc'; // Tenant système créé par le script
+      }
+      
+      // S'assurer que finalTenantId est un UUID valide (format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(finalTenantId)) {
+        // Si ce n'est pas un UUID valide, utiliser le tenant système
+        finalTenantId = 'c6b26096-04e0-4c73-af5a-a62abbc827cc';
+      }
+
+      // Déterminer tableName à partir de resource (ex: "students" -> "students")
+      // Si resource contient un slash, prendre la partie après le dernier slash
+      const tableName = data.resource.includes('/') 
+        ? data.resource.split('/').pop() || data.resource
+        : data.resource;
+
+      const auditLog = this.auditLogRepository.create({
+        tenantId: finalTenantId, // UUID valide pour la colonne tenant_id (uuid)
         userId: data.userId,
         action: data.action,
         resource: data.resource,
+        tableName: tableName || 'unknown', // TableName est NOT NULL
         resourceId: data.resourceId,
         changes: data.changes,
         ipAddress: data.ipAddress,
         userAgent: data.userAgent,
       });
+      
+      // S'assurer que l'ID est généré si nécessaire
+      if (!auditLog.id) {
+        const { v4: uuidv4 } = require('uuid');
+        auditLog.id = uuidv4();
+      }
+
+      const savePromise = this.auditLogRepository.save(auditLog);
 
       await Promise.race([savePromise, timeoutPromise]);
     } catch (error: any) {

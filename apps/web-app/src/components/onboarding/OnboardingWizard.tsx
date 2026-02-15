@@ -42,12 +42,12 @@ import {
   RotateCcw,
   MessageSquare,
   Phone,
-  MessageCircle,
   Briefcase,
   DollarSign,
   Sparkles,
   TrendingDown,
 } from 'lucide-react';
+import FedaPayCheckout from './FedaPayCheckout';
 
 interface OnboardingData {
   // Phase 1: Établissement
@@ -60,6 +60,8 @@ interface OnboardingData {
   bilingual: boolean;
   schoolsCount: number;
   logoUrl?: string;
+  /** Sous-domaine personnalisé (ex: mon-ecole → mon-ecole.academia-hub.pro) */
+  preferredSubdomain?: string;
 
   // Phase 2: Promoteur
   firstName: string;
@@ -94,6 +96,15 @@ export default function OnboardingWizard() {
   const [otpCode, setOtpCode] = useState<string | null>(null); // Code OTP affiché en dev
   const [otpMethod, setOtpMethod] = useState<'sms' | 'voice' | 'whatsapp'>('sms'); // Méthode d'envoi OTP
   const [otpExpiresAt, setOtpExpiresAt] = useState<Date | null>(null); // Expiration OTP
+  const [resendCooldown, setResendCooldown] = useState(0); // Compteur pour renvoyer l'OTP (en secondes)
+  const [showCheckout, setShowCheckout] = useState(false); // Afficher le checkout intégré
+  const [checkoutData, setCheckoutData] = useState<{
+    public_key: string;
+    transaction: { amount: number; description: string }; // currency n'est PAS dans transaction pour le checkout intégré
+    customer: { email: string; lastname: string; firstname?: string; phone_number?: string };
+    transactionId?: string; // ID de la transaction FedaPay
+    paymentId?: string; // ID du paiement dans notre base
+  } | null>(null); // Données pour le checkout intégré (conformes à la doc FedaPay)
   const [isUploadingLogo, setIsUploadingLogo] = useState(false); // État de l'upload du logo
   const [logoPreview, setLogoPreview] = useState<string | null>(null); // Aperçu du logo
   const [passwordStrength, setPasswordStrength] = useState<{
@@ -104,9 +115,9 @@ export default function OnboardingWizard() {
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [priceCalculation, setPriceCalculation] = useState<{
     monthly: {
-      basePrice: number;
-      bilingualPrice: number;
-      total: number;
+    basePrice: number;
+    bilingualPrice: number;
+    total: number;
     } | null;
     yearly: {
       basePrice: number;
@@ -135,6 +146,10 @@ export default function OnboardingWizard() {
     data?: any;
   } | null>(null);
 
+  const [subdomainSuggestions, setSubdomainSuggestions] = useState<{ subdomain: string; available: boolean }[]>([]);
+  const [subdomainSuggestionsLoading, setSubdomainSuggestionsLoading] = useState(false);
+  const [subdomainCheckStatus, setSubdomainCheckStatus] = useState<'idle' | 'checking' | 'available' | 'taken' | 'invalid'>('idle');
+
   // État initial vide - ne pas charger automatiquement les données
   const [data, setData] = useState<OnboardingData>({
     schoolName: '',
@@ -154,6 +169,7 @@ export default function OnboardingWizard() {
     otp: '',
     planCode: 'BASIC_MONTHLY',
     billingPeriod: 'monthly',
+    preferredSubdomain: '',
   });
 
   // Sauvegarder les données dans localStorage à chaque changement
@@ -243,18 +259,24 @@ export default function OnboardingWizard() {
     }
   }, [data.schoolsCount, data.billingPeriod]);
 
-  // Charger le prix initial au montage
+  // Charger le prix initial au montage (dynamiquement depuis le backend)
   useEffect(() => {
     const loadInitialPayment = async () => {
       try {
         const response = await fetch('/api/public/pricing/initial');
         if (response.ok) {
           const result = await response.json();
-          setInitialPayment(result.amount || 100000);
+          if (result.amount) {
+            setInitialPayment(result.amount);
+          } else {
+            console.warn('⚠️ Initial payment amount not found in API response');
+          }
+        } else {
+          console.error('Failed to load initial payment:', response.status);
         }
       } catch (error) {
         console.error('Error loading initial payment:', error);
-        setInitialPayment(100000); // Fallback
+        // Ne pas définir de fallback hardcodé - le montant doit venir du backend
       }
     };
     loadInitialPayment();
@@ -270,9 +292,114 @@ export default function OnboardingWizard() {
   // Mettre à jour le code téléphonique quand le pays change
   useEffect(() => {
     // Le placeholder des champs téléphone sera automatiquement mis à jour
-    // car il utilise getCountryPhoneCode(data.country)
-    // Pas besoin de forcer un re-render, React le fait automatiquement
   }, [data.country]);
+
+  // Charger les propositions de sous-domaine quand le nom d'établissement change
+  useEffect(() => {
+    if (step !== 1 || !data.schoolName || data.schoolName.trim().length < 2) {
+      setSubdomainSuggestions([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      setSubdomainSuggestionsLoading(true);
+      try {
+        const res = await fetch(`/api/onboarding/subdomain/suggest?schoolName=${encodeURIComponent(data.schoolName.trim())}`);
+        if (res.ok) {
+          const json = await res.json();
+          setSubdomainSuggestions(json.suggestions || []);
+        } else {
+          setSubdomainSuggestions([]);
+        }
+      } catch {
+        setSubdomainSuggestions([]);
+      } finally {
+        setSubdomainSuggestionsLoading(false);
+      }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [data.schoolName, step]);
+
+  // Vérifier la disponibilité du sous-domaine saisi (debounce)
+  useEffect(() => {
+    const raw = (data.preferredSubdomain || '').trim().toLowerCase();
+    if (!raw) {
+      setSubdomainCheckStatus('idle');
+      return;
+    }
+    if (raw.length < 3) {
+      setSubdomainCheckStatus('invalid');
+      return;
+    }
+    if (!/^[a-z0-9-]+$/.test(raw) || raw.startsWith('-') || raw.endsWith('-') || raw.includes('--')) {
+      setSubdomainCheckStatus('invalid');
+      return;
+    }
+    const t = setTimeout(async () => {
+      setSubdomainCheckStatus('checking');
+      try {
+        const res = await fetch(`/api/onboarding/subdomain/check/${encodeURIComponent(raw)}`);
+        const json = await res.json();
+        if (json.available) setSubdomainCheckStatus('available');
+        else if (json.error) setSubdomainCheckStatus('invalid');
+        else setSubdomainCheckStatus('taken');
+      } catch {
+        setSubdomainCheckStatus('idle');
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [data.preferredSubdomain]);
+
+  // Gérer le compteur pour renvoyer l'OTP
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => {
+        setResendCooldown(resendCooldown - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendCooldown]);
+
+  // Vérifier les règles du mot de passe
+  const checkPasswordRules = (password: string) => {
+    if (!password) {
+      return {
+        minLength: false,
+        hasLowercase: false,
+        hasUppercase: false,
+        hasNumbers: false,
+        hasSpecialChars: false,
+        hasThreeOfFour: false,
+        noConsecutiveChars: false,
+        isValid: false,
+      };
+    }
+
+    const minLength = password.length >= 8;
+    const hasLowercase = /[a-z]/.test(password);
+    const hasUppercase = /[A-Z]/.test(password);
+    const hasNumbers = /[0-9]/.test(password);
+    const hasSpecialChars = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+    
+    // Vérifier qu'au moins 3 des 4 types sont présents
+    const typeCount = [hasLowercase, hasUppercase, hasNumbers, hasSpecialChars].filter(Boolean).length;
+    const hasThreeOfFour = typeCount >= 3;
+    
+    // Vérifier qu'il n'y a pas plus de 2 caractères identiques consécutifs
+    const noConsecutiveChars = !/(.)\1{2,}/.test(password);
+    
+    const isValid = minLength && hasThreeOfFour && noConsecutiveChars;
+
+    return {
+      minLength,
+      hasLowercase,
+      hasUppercase,
+      hasNumbers,
+      hasSpecialChars,
+      hasThreeOfFour,
+      noConsecutiveChars,
+      isValid,
+    };
+  };
 
   // Calculer la force du mot de passe
   const calculatePasswordStrength = (password: string) => {
@@ -281,23 +408,14 @@ export default function OnboardingWizard() {
       return;
     }
 
+    const rules = checkPasswordRules(password);
+    
+    // Calculer un score basé sur les règles
     let score = 0;
-    
-    // Longueur minimale (8 caractères)
-    if (password.length >= 8) score++;
-    if (password.length >= 12) score++;
-    
-    // Contient des minuscules
-    if (/[a-z]/.test(password)) score++;
-    
-    // Contient des majuscules
-    if (/[A-Z]/.test(password)) score++;
-    
-    // Contient des chiffres
-    if (/[0-9]/.test(password)) score++;
-    
-    // Contient des caractères spéciaux
-    if (/[^a-zA-Z0-9]/.test(password)) score++;
+    if (rules.minLength) score++;
+    if (rules.hasThreeOfFour) score++;
+    if (rules.noConsecutiveChars) score++;
+    if (rules.hasLowercase && rules.hasUppercase && rules.hasNumbers && rules.hasSpecialChars) score++;
     
     // Limiter le score à 4 (0-4)
     score = Math.min(score, 4);
@@ -491,6 +609,16 @@ export default function OnboardingWizard() {
       if (data.schoolsCount < 1 || data.schoolsCount > 4) {
         newErrors.schoolsCount = 'Le nombre d\'écoles doit être entre 1 et 4';
       }
+      const sub = (data.preferredSubdomain || '').trim();
+      if (sub) {
+        if (subdomainCheckStatus === 'checking') {
+          newErrors.preferredSubdomain = 'Vérification du sous-domaine en cours...';
+        } else if (subdomainCheckStatus === 'taken') {
+          newErrors.preferredSubdomain = 'Ce sous-domaine est déjà utilisé. Choisissez-en un autre.';
+        } else if (subdomainCheckStatus === 'invalid' || (sub.length > 0 && sub.length < 3)) {
+          newErrors.preferredSubdomain = 'Sous-domaine invalide (min. 3 caractères, lettres minuscules, chiffres, tirets).';
+        }
+      }
     }
 
     if (stepNumber === 2) {
@@ -517,9 +645,18 @@ export default function OnboardingWizard() {
           newErrors.promoterPhone = `Le numéro doit contenir 10 chiffres (format: ${countryCode}XXXXXXXXXX ou juste XXXXXXXXXX)`;
         }
       }
-      if (!data.password) newErrors.password = 'Le mot de passe est requis';
-      if (data.password && data.password.length < 8) {
+      if (!data.password) {
+        newErrors.password = 'Le mot de passe est requis';
+      } else {
+        const passwordRules = checkPasswordRules(data.password);
+        
+        if (!passwordRules.minLength) {
         newErrors.password = 'Le mot de passe doit contenir au moins 8 caractères';
+        } else if (!passwordRules.hasThreeOfFour) {
+          newErrors.password = 'Le mot de passe doit contenir au moins 3 des 4 types suivants : minuscules, majuscules, chiffres, caractères spéciaux';
+        } else if (!passwordRules.noConsecutiveChars) {
+          newErrors.password = 'Le mot de passe ne doit pas contenir plus de 2 caractères identiques consécutifs';
+        }
       }
       if (!data.confirmPassword) newErrors.confirmPassword = 'La confirmation du mot de passe est requise';
       if (data.password && data.confirmPassword && data.password !== data.confirmPassword) {
@@ -638,8 +775,7 @@ export default function OnboardingWizard() {
             email: data.email,
             bilingual: data.bilingual,
             schoolsCount: data.schoolsCount,
-            // logoUrl n'est pas envoyé ici car il n'est pas dans le modèle OnboardingDraft
-            // Le logo sera associé à l'établissement lors de la création finale du tenant
+            preferredSubdomain: (data.preferredSubdomain || '').trim() || undefined,
           }),
         });
 
@@ -854,6 +990,7 @@ export default function OnboardingWizard() {
       setOtpSent(true);
       setOtpVerified(false); // Réinitialiser la vérification
       setData({ ...data, otp: '' }); // Réinitialiser le champ OTP
+      setResendCooldown(30); // Démarrer le compteur de 30 secondes
       setErrors({});
     } catch (error: any) {
       setErrors({ otp: error.message || 'Erreur lors de l\'envoi du code OTP' });
@@ -912,8 +1049,18 @@ export default function OnboardingWizard() {
         throw new Error(result.message || 'Code OTP invalide ou expiré');
       }
     } catch (error: any) {
-      setErrors({ otp: error.message || 'Code OTP invalide' });
+      const errorMessage = error.message || 'Code OTP invalide';
+      setErrors({ otp: errorMessage });
       setOtpVerified(false);
+      
+      // Si le code est invalide ou expiré, réinitialiser l'état pour permettre un nouvel envoi
+      if (errorMessage.includes('invalide') || errorMessage.includes('expiré')) {
+        setOtpSent(false);
+        setOtpExpiresAt(null);
+        setOtpCode(null);
+        setData({ ...data, otp: '' }); // Réinitialiser le champ OTP
+        setResendCooldown(0); // Réinitialiser le compteur
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -926,6 +1073,7 @@ export default function OnboardingWizard() {
     }
 
     setIsSubmitting(true);
+    setErrors({});
     try {
       const response = await fetch('/api/onboarding/payment', {
         method: 'POST',
@@ -942,16 +1090,122 @@ export default function OnboardingWizard() {
 
       const result = await response.json();
       
-      if (result.paymentUrl) {
-        // Rediriger vers la page de paiement FedaPay
+      // ⚠️ Mettre à jour le montant affiché avec la valeur réelle du backend
+      // Priorité : amount depuis result, puis checkout.transaction.amount, puis initialPayment existant
+      if (result.amount) {
+        setInitialPayment(result.amount);
+      } else if (result.checkout?.transaction?.amount) {
+        setInitialPayment(result.checkout.transaction.amount);
+      }
+      
+      // Vérifier si le checkout intégré est disponible
+      if (result.checkout && result.checkout.public_key) {
+        // Afficher le checkout intégré
+        setCheckoutData({
+          ...result.checkout,
+          transactionId: result.checkout.transactionId,
+          paymentId: result.paymentId,
+        });
+        setShowCheckout(true);
+        setIsSubmitting(false);
+      } else if (result.paymentUrl) {
+        // Fallback : rediriger vers la page de paiement FedaPay si checkout non disponible
         window.location.href = result.paymentUrl;
       } else {
-        throw new Error('URL de paiement non reçue');
+        throw new Error('Données de paiement non reçues');
       }
     } catch (error: any) {
       setErrors({ submit: error.message });
       setIsSubmitting(false);
     }
+  };
+
+  const handlePaymentComplete = async (transactionData: any) => {
+    console.log('📥 Callback FedaPay reçu:', transactionData);
+    
+    // ⚠️ CRITIQUE : Ne pas faire confiance au callback frontend
+    // Vérifier le statut réel depuis le backend qui interroge FedaPay
+    if (!data.draftId) {
+      setErrors({ submit: 'Draft ID manquant' });
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrors({});
+
+    try {
+      // Récupérer le paymentId depuis les données du checkout
+      const paymentId = checkoutData?.paymentId;
+
+      if (!paymentId) {
+        // Si pas de paymentId, récupérer depuis le draft
+        const response = await fetch(`/api/onboarding/draft/${data.draftId}`);
+        if (response.ok) {
+          const draft = await response.json();
+          const payments = draft.payments || [];
+          const lastPayment = payments[payments.length - 1];
+          if (lastPayment) {
+            await verifyPaymentStatus(lastPayment.id);
+            return;
+          }
+        }
+        throw new Error('Payment ID introuvable');
+      }
+
+      await verifyPaymentStatus(paymentId);
+    } catch (error: any) {
+      console.error('❌ Erreur lors de la vérification du paiement:', error);
+      setErrors({ submit: error.message || 'Erreur lors de la vérification du paiement' });
+      setIsSubmitting(false);
+    }
+  };
+
+  const verifyPaymentStatus = async (paymentId: string) => {
+    try {
+      // Appeler le backend pour vérifier le statut réel depuis FedaPay
+      const response = await fetch(`/api/onboarding/payment/${paymentId}/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Erreur lors de la vérification du paiement');
+      }
+
+      const result = await response.json();
+      
+      console.log('✅ Statut du paiement vérifié:', result);
+
+      if (result.status === 'SUCCESS' || result.tenantActivated) {
+        // Paiement confirmé par le backend, rediriger vers la page de succès
+        const frontendUrl = typeof window !== 'undefined' ? window.location.origin : '';
+        let callbackUrl = `${frontendUrl}/onboarding/callback?draftId=${data.draftId}&paymentId=${paymentId}&status=success`;
+        if (result.firstTenantSubdomain) {
+          callbackUrl += `&subdomain=${encodeURIComponent(result.firstTenantSubdomain)}`;
+        }
+        window.location.href = callbackUrl;
+      } else if (result.status === 'PENDING' || result.status === 'PROCESSING') {
+        // Le paiement est en cours, attendre un peu et réessayer
+        setTimeout(() => {
+          verifyPaymentStatus(paymentId);
+        }, 3000); // Réessayer après 3 secondes
+      } else {
+        // Paiement échoué ou annulé
+        setErrors({ submit: 'Le paiement n\'a pas été confirmé. Veuillez réessayer.' });
+        setIsSubmitting(false);
+      }
+    } catch (error: any) {
+      console.error('❌ Erreur lors de la vérification du paiement:', error);
+      setErrors({ submit: error.message || 'Erreur lors de la vérification du paiement' });
+      setIsSubmitting(false);
+    }
+  };
+
+  const handlePaymentError = (error: any) => {
+    console.error('❌ Erreur de paiement:', error);
+    setErrors({ submit: error.message || 'Erreur lors du paiement. Veuillez réessayer.' });
+    setShowCheckout(false);
   };
 
   const handleBack = () => {
@@ -1007,6 +1261,7 @@ export default function OnboardingWizard() {
         email: existingDraft.email || '',
         bilingual: existingDraft.bilingual ?? false,
         schoolsCount: existingDraft.schoolsCount || 1,
+        preferredSubdomain: existingDraft.preferredSubdomain || '',
         // Phase 2: Promoteur
         firstName: existingDraft.promoterFirstName || '',
         lastName: existingDraft.promoterLastName || '',
@@ -1078,6 +1333,7 @@ export default function OnboardingWizard() {
       email: '',
       bilingual: false,
       schoolsCount: 1,
+      preferredSubdomain: '',
       firstName: '',
       lastName: '',
       promoterPhone: '',
@@ -1088,7 +1344,9 @@ export default function OnboardingWizard() {
       planCode: 'BASIC_MONTHLY',
       billingPeriod: 'monthly',
     });
-    
+
+    setSubdomainSuggestions([]);
+    setSubdomainCheckStatus('idle');
     setStep(1);
     setErrors({});
     setShowDraftRestoreBanner(false);
@@ -1121,6 +1379,7 @@ export default function OnboardingWizard() {
         email: existingDraft.email || data.email,
         bilingual: existingDraft.bilingual ?? data.bilingual,
         schoolsCount: existingDraft.schoolsCount || data.schoolsCount,
+        preferredSubdomain: existingDraft.preferredSubdomain || data.preferredSubdomain || '',
         // Phase 2: Promoteur
         firstName: existingDraft.promoterFirstName || data.firstName,
         lastName: existingDraft.promoterLastName || data.lastName,
@@ -1209,6 +1468,7 @@ export default function OnboardingWizard() {
           email: data.email,
           bilingual: data.bilingual,
           schoolsCount: data.schoolsCount,
+          preferredSubdomain: (data.preferredSubdomain || '').trim() || undefined,
         }),
       });
 
@@ -1340,6 +1600,85 @@ export default function OnboardingWizard() {
                   <p className="mt-1 text-xs text-slate-500">
                     Le type sélectionné détermine quels niveaux scolaires seront actifs dans votre école après la création.
                   </p>
+                </div>
+
+                {/* Sous-domaine personnalisé */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-900 mb-2">
+                    Sous-domaine de votre espace <span className="text-gray-500 text-xs">(optionnel)</span>
+                  </label>
+                  <p className="text-xs text-slate-500 mb-2">
+                    Votre espace sera accessible à <strong>votre-sous-domaine.academia-hub.pro</strong>. Choisissez une proposition ou saisissez le vôtre (lettres minuscules, chiffres, tirets).
+                  </p>
+                  <input
+                    type="text"
+                    value={data.preferredSubdomain || ''}
+                    onChange={(e) => {
+                      const v = e.target.value
+                        .toLowerCase()
+                        .replace(/[^a-z0-9-]/g, '-')
+                        .replace(/-+/g, '-')
+                        .replace(/^-|-$/g, '');
+                      handleChange('preferredSubdomain', v);
+                    }}
+                    placeholder="Ex: mon-ecole"
+                    className={`w-full px-4 py-3 border rounded-md focus:ring-2 focus:ring-blue-600 focus:border-blue-600 ${
+                      errors.preferredSubdomain ? 'border-red-500' : subdomainCheckStatus === 'taken' || subdomainCheckStatus === 'invalid' ? 'border-amber-500' : 'border-gray-300'
+                    }`}
+                  />
+                  <div className="mt-1 flex items-center gap-2 flex-wrap">
+                    {subdomainCheckStatus === 'checking' && (
+                      <span className="text-sm text-slate-500 flex items-center gap-1">
+                        <Loader className="w-4 h-4 animate-spin" /> Vérification...
+                      </span>
+                    )}
+                    {subdomainCheckStatus === 'available' && (data.preferredSubdomain || '').trim().length >= 3 && (
+                      <span className="text-sm text-green-600 flex items-center gap-1">
+                        <Check className="w-4 h-4" /> Disponible
+                      </span>
+                    )}
+                    {subdomainCheckStatus === 'taken' && (
+                      <span className="text-sm text-red-600 flex items-center gap-1">
+                        <X className="w-4 h-4" /> Déjà utilisé
+                      </span>
+                    )}
+                    {subdomainCheckStatus === 'invalid' && (data.preferredSubdomain || '').trim().length > 0 && (
+                      <span className="text-sm text-amber-600">Min. 3 caractères, lettres minuscules, chiffres ou tirets</span>
+                    )}
+                  </div>
+                  {subdomainSuggestions.length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-xs font-medium text-gray-700 mb-2">Propositions :</p>
+                      <div className="flex flex-wrap gap-2">
+                        {subdomainSuggestions.map((s) => (
+                          <button
+                            key={s.subdomain}
+                            type="button"
+                            onClick={() => handleChange('preferredSubdomain', s.subdomain)}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm border transition-colors ${
+                              data.preferredSubdomain === s.subdomain
+                                ? 'bg-blue-100 border-blue-600 text-blue-900'
+                                : s.available
+                                  ? 'bg-green-50 border-green-300 text-green-800 hover:bg-green-100'
+                                  : 'bg-slate-50 border-slate-300 text-slate-600'
+                            }`}
+                          >
+                            {s.available ? <Check className="w-4 h-4 text-green-600" /> : <X className="w-4 h-4 text-slate-400" />}
+                            <span>{s.subdomain}</span>
+                            {s.available ? <span className="text-xs">Choisir</span> : <span className="text-xs">Indisponible</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {subdomainSuggestionsLoading && subdomainSuggestions.length === 0 && data.schoolName.trim().length >= 2 && (
+                    <p className="mt-2 text-sm text-slate-500 flex items-center gap-1">
+                      <Loader className="w-4 h-4 animate-spin" /> Chargement des propositions...
+                    </p>
+                  )}
+                  {errors.preferredSubdomain && (
+                    <p className="mt-1 text-sm text-red-600">{errors.preferredSubdomain}</p>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1732,35 +2071,94 @@ export default function OnboardingWizard() {
                   {errors.password && (
                     <p className="mt-1 text-sm text-red-600">{errors.password}</p>
                   )}
-                  {/* Indicateur de force du mot de passe */}
-                  {data.password && (
-                    <div className="mt-2">
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full transition-all duration-300 ${
-                              passwordStrength.color === 'red' ? 'bg-red-500' :
-                              passwordStrength.color === 'orange' ? 'bg-orange-500' :
-                              passwordStrength.color === 'yellow' ? 'bg-yellow-500' :
-                              passwordStrength.color === 'green' ? 'bg-green-500' :
-                              'bg-emerald-500'
-                            }`}
-                            style={{ width: `${(passwordStrength.score / 4) * 100}%` }}
-                          />
+                  
+                  {/* Règles du mot de passe - Masquer si tous les critères sont respectés */}
+                  {data.password && !checkPasswordRules(data.password).isValid && (
+                    <div className="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                      <h4 className="text-sm font-medium text-gray-900 mb-3">
+                        Votre mot de passe doit contenir :
+                      </h4>
+                      <ul className="space-y-2">
+                        {/* Règle 1: Longueur minimale */}
+                        <li className="flex items-start">
+                          {checkPasswordRules(data.password).minLength ? (
+                            <CheckCircle className="w-5 h-5 text-green-600 mr-2 flex-shrink-0 mt-0.5" />
+                          ) : (
+                            <XIcon className="w-5 h-5 text-red-600 mr-2 flex-shrink-0 mt-0.5" />
+                          )}
+                          <span className={`text-sm ${checkPasswordRules(data.password).minLength ? 'text-gray-900' : 'text-red-600'}`}>
+                            Au moins 8 caractères
+                          </span>
+                        </li>
+                        
+                        {/* Règle 2: Au moins 3 des 4 types */}
+                        <li className="flex items-start">
+                          {checkPasswordRules(data.password).hasThreeOfFour ? (
+                            <CheckCircle className="w-5 h-5 text-green-600 mr-2 flex-shrink-0 mt-0.5" />
+                          ) : (
+                            <XIcon className="w-5 h-5 text-red-600 mr-2 flex-shrink-0 mt-0.5" />
+                          )}
+                          <span className={`text-sm ${checkPasswordRules(data.password).hasThreeOfFour ? 'text-gray-900' : 'text-red-600'}`}>
+                            Au moins 3 des éléments suivants :
+                          </span>
+                        </li>
+                        
+                        {/* Sous-liste des types */}
+                        <li className="ml-7 space-y-1.5">
+                          <div className="flex items-start">
+                            {checkPasswordRules(data.password).hasLowercase ? (
+                              <CheckCircle className="w-4 h-4 text-green-600 mr-2 flex-shrink-0 mt-0.5" />
+                            ) : (
+                              <XIcon className="w-4 h-4 text-red-600 mr-2 flex-shrink-0 mt-0.5" />
+                            )}
+                            <span className={`text-xs ${checkPasswordRules(data.password).hasLowercase ? 'text-gray-900' : 'text-red-600'}`}>
+                              Lettres minuscules (a-z)
+                            </span>
                         </div>
-                        <span className={`text-xs font-medium ${
-                          passwordStrength.color === 'red' ? 'text-red-600' :
-                          passwordStrength.color === 'orange' ? 'text-orange-600' :
-                          passwordStrength.color === 'yellow' ? 'text-yellow-600' :
-                          passwordStrength.color === 'green' ? 'text-green-600' :
-                          'text-emerald-600'
-                        }`}>
-                          {passwordStrength.label}
+                          <div className="flex items-start">
+                            {checkPasswordRules(data.password).hasUppercase ? (
+                              <CheckCircle className="w-4 h-4 text-green-600 mr-2 flex-shrink-0 mt-0.5" />
+                            ) : (
+                              <XIcon className="w-4 h-4 text-red-600 mr-2 flex-shrink-0 mt-0.5" />
+                            )}
+                            <span className={`text-xs ${checkPasswordRules(data.password).hasUppercase ? 'text-gray-900' : 'text-red-600'}`}>
+                              Lettres majuscules (A-Z)
                         </span>
                       </div>
-                      <p className="text-xs text-slate-500">
-                        {passwordStrength.score < 2 && 'Utilisez des majuscules, chiffres et caractères spéciaux pour renforcer votre mot de passe'}
-                      </p>
+                          <div className="flex items-start">
+                            {checkPasswordRules(data.password).hasNumbers ? (
+                              <CheckCircle className="w-4 h-4 text-green-600 mr-2 flex-shrink-0 mt-0.5" />
+                            ) : (
+                              <XIcon className="w-4 h-4 text-red-600 mr-2 flex-shrink-0 mt-0.5" />
+                            )}
+                            <span className={`text-xs ${checkPasswordRules(data.password).hasNumbers ? 'text-gray-900' : 'text-red-600'}`}>
+                              Chiffres (0-9)
+                            </span>
+                    </div>
+                          <div className="flex items-start">
+                            {checkPasswordRules(data.password).hasSpecialChars ? (
+                              <CheckCircle className="w-4 h-4 text-green-600 mr-2 flex-shrink-0 mt-0.5" />
+                            ) : (
+                              <XIcon className="w-4 h-4 text-red-600 mr-2 flex-shrink-0 mt-0.5" />
+                            )}
+                            <span className={`text-xs ${checkPasswordRules(data.password).hasSpecialChars ? 'text-gray-900' : 'text-red-600'}`}>
+                              Caractères spéciaux (e.g. !@#$%^&*)
+                            </span>
+                          </div>
+                        </li>
+                        
+                        {/* Règle 3: Pas plus de 2 caractères identiques consécutifs */}
+                        <li className="flex items-start">
+                          {checkPasswordRules(data.password).noConsecutiveChars ? (
+                            <CheckCircle className="w-5 h-5 text-green-600 mr-2 flex-shrink-0 mt-0.5" />
+                          ) : (
+                            <XIcon className="w-5 h-5 text-red-600 mr-2 flex-shrink-0 mt-0.5" />
+                          )}
+                          <span className={`text-sm ${checkPasswordRules(data.password).noConsecutiveChars ? 'text-gray-900' : 'text-red-600'}`}>
+                            Pas plus de 2 caractères identiques consécutifs
+                          </span>
+                        </li>
+                      </ul>
                     </div>
                   )}
                 </div>
@@ -1872,11 +2270,17 @@ export default function OnboardingWizard() {
                           }`}
                           aria-label="Envoyer le code par WhatsApp"
                         >
-                          <MessageCircle
-                            className={`w-6 h-6 mb-2 ${
-                              otpMethod === 'whatsapp' ? 'text-blue-600' : 'text-gray-600'
-                            }`}
-                          />
+                          <svg
+                            className="w-6 h-6 mb-2"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <path
+                              d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"
+                              fill={otpMethod === 'whatsapp' ? '#25D366' : '#6B7280'}
+                            />
+                          </svg>
                           <span
                             className={`text-sm font-medium ${
                               otpMethod === 'whatsapp' ? 'text-blue-900' : 'text-gray-700'
@@ -1960,6 +2364,25 @@ export default function OnboardingWizard() {
                           Code valide jusqu'à {new Date(otpExpiresAt).toLocaleTimeString('fr-FR')}
                         </div>
                       )}
+                      {/* Bouton pour renvoyer le code */}
+                      <div className="mt-3 pt-3 border-t border-gray-200">
+                        <p className="text-xs text-gray-600 mb-2">
+                          Vous n'avez pas reçu le code ?
+                        </p>
+                        <button
+                          type="button"
+                          onClick={handleSendOtp}
+                          disabled={isSubmitting || resendCooldown > 0}
+                          className="flex items-center justify-center w-full px-4 py-2 text-sm font-medium text-blue-900 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          <RotateCcw className={`w-4 h-4 mr-2 ${resendCooldown > 0 ? 'animate-spin' : ''}`} />
+                          {resendCooldown > 0 ? (
+                            <span>Renvoyer le code dans {resendCooldown}s</span>
+                          ) : (
+                            <span>Renvoyer le code</span>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1977,6 +2400,7 @@ export default function OnboardingWizard() {
                   <p className="text-sm text-red-800">{errors.submit}</p>
                 </div>
               )}
+
 
               <div className="flex justify-between mt-8">
                 <button
@@ -2014,9 +2438,9 @@ export default function OnboardingWizard() {
                   <Briefcase className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <h2 className="text-3xl font-bold text-blue-900">Plan & Options</h2>
+                <h2 className="text-3xl font-bold text-blue-900">Plan & Options</h2>
                   <p className="text-sm text-graphite-700 mt-1">Choisissez votre plan d'abonnement</p>
-                </div>
+              </div>
               </div>
               
               <div className="mt-8 space-y-8">
@@ -2025,8 +2449,8 @@ export default function OnboardingWizard() {
                   <div className="flex items-center mb-5">
                     <Calendar className="w-5 h-5 text-blue-700 mr-2" />
                     <label className="text-base font-semibold text-blue-900">
-                      Période de facturation
-                    </label>
+                    Période de facturation
+                  </label>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <button
@@ -2041,7 +2465,7 @@ export default function OnboardingWizard() {
                       {data.billingPeriod === 'monthly' && (
                         <div className="absolute -top-2 -right-2 bg-blue-700 text-white text-xs font-semibold px-2 py-1 rounded-full">
                           Sélectionné
-                        </div>
+                      </div>
                       )}
                       <div className="flex items-center mb-3">
                         <div className={`p-2 rounded-lg mr-3 ${
@@ -2084,7 +2508,7 @@ export default function OnboardingWizard() {
                       {data.billingPeriod === 'yearly' && (
                         <div className="absolute -top-2 -right-2 bg-blue-700 text-white text-xs font-semibold px-2 py-1 rounded-full">
                           Sélectionné
-                        </div>
+                      </div>
                       )}
                       <div className="flex items-center mb-3">
                         <div className={`p-2 rounded-lg mr-3 ${
@@ -2131,11 +2555,11 @@ export default function OnboardingWizard() {
                         <div className="p-3 bg-gold-500 rounded-lg mr-4">
                           <Languages className="w-5 h-5 text-white" />
                         </div>
-                        <div>
+                      <div>
                           <div className="font-semibold text-lg text-blue-900 flex items-center gap-2">
                             Option bilingue
                             <Sparkles className="w-4 h-4 text-gold-600" />
-                          </div>
+                      </div>
                           <div className="text-sm text-graphite-700 mt-1">Français + Anglais</div>
                         </div>
                       </div>
@@ -2165,17 +2589,21 @@ export default function OnboardingWizard() {
                     <div className="flex items-center">
                       <div className="p-3 bg-white/20 rounded-lg mr-4">
                         <DollarSign className="w-6 h-6 text-white" />
-                      </div>
+                  </div>
                       <div>
                         <div className="text-lg font-semibold text-white mb-1">Paiement initial</div>
                         <p className="text-sm text-blue-100 max-w-md">
-                          Paiement unique pour activer votre compte et démarrer la période d'essai de 30 jours.
-                        </p>
+                    Paiement unique pour activer votre compte et démarrer la période d'essai de 30 jours.
+                  </p>
                       </div>
                     </div>
                     <div className="text-right">
                       <div className="text-3xl font-bold text-white">
-                        {initialPayment ? initialPayment.toLocaleString() : '100 000'} FCFA
+                        {initialPayment ? (
+                          `${initialPayment.toLocaleString()} FCFA`
+                        ) : (
+                          <span className="text-lg">Chargement...</span>
+                        )}
                       </div>
                       <div className="text-xs text-blue-200 mt-1">Paiement unique</div>
                     </div>
@@ -2189,25 +2617,25 @@ export default function OnboardingWizard() {
                       <div className="p-3 bg-green-600 rounded-lg mr-4">
                         <CheckCircle className="w-6 h-6 text-white" />
                       </div>
-                      <div>
+                    <div>
                         <div className="font-bold text-lg text-blue-900 mb-1">
                           Total {data.billingPeriod === 'monthly' ? 'mensuel' : 'annuel'} après essai
                         </div>
                         <div className="flex items-center gap-2 text-sm text-graphite-700 mt-2">
                           <School className="w-4 h-4" />
                           <span>
-                            {data.schoolsCount} école{data.schoolsCount > 1 ? 's' : ''}
-                            {data.bilingual && ' • Bilingue'}
+                        {data.schoolsCount} école{data.schoolsCount > 1 ? 's' : ''}
+                        {data.bilingual && ' • Bilingue'}
                             {data.billingPeriod === 'yearly' && ' • Paiement annuel'}
                           </span>
-                        </div>
                       </div>
+                    </div>
                     </div>
                     <div className="text-right">
                       {priceCalculation.isLoading ? (
                         <div className="flex items-center gap-2">
                           <Loader className="w-5 h-5 animate-spin text-green-600" />
-                        </div>
+                  </div>
                       ) : (
                         <>
                           <div className="text-3xl font-bold text-green-700">
@@ -2282,9 +2710,9 @@ export default function OnboardingWizard() {
                   <CreditCard className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <h2 className="text-3xl font-bold text-blue-900">Paiement initial</h2>
+                <h2 className="text-3xl font-bold text-blue-900">Paiement initial</h2>
                   <p className="text-sm text-graphite-700 mt-1">Finalisez votre inscription en effectuant le paiement</p>
-                </div>
+              </div>
               </div>
               
               <div className="mt-8 space-y-6">
@@ -2294,11 +2722,15 @@ export default function OnboardingWizard() {
                     <div className="flex items-center justify-center mb-4">
                       <div className="p-3 bg-white/20 rounded-lg mr-3">
                         <DollarSign className="w-8 h-8 text-white" />
-                      </div>
+                    </div>
                       <div>
                         <p className="text-sm text-blue-200 mb-1">Montant à payer</p>
                         <div className="text-5xl font-bold text-white">
-                          {initialPayment ? initialPayment.toLocaleString() : '100 000'} FCFA
+                          {initialPayment ? (
+                            `${initialPayment.toLocaleString()} FCFA`
+                          ) : (
+                            <span className="text-2xl">Chargement...</span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -2306,22 +2738,22 @@ export default function OnboardingWizard() {
                       Paiement unique pour activer votre compte et démarrer la période d'essai de 30 jours
                     </p>
                   </div>
-                </div>
+                  </div>
 
                 {/* Section 2: Détails de l'offre - Design distinctif */}
                 <div className="bg-gradient-to-br from-mist to-cloud rounded-xl p-6 border border-blue-200 shadow-md">
                   <div className="flex items-center mb-5">
                     <CheckCircle className="w-5 h-5 text-blue-700 mr-2" />
                     <h3 className="text-base font-semibold text-blue-900">Ce qui est inclus</h3>
-                  </div>
+                    </div>
                   <div className="space-y-4">
                     <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
                       <div className="flex items-center">
                         <div className="p-2 bg-blue-100 rounded-lg mr-3">
                           <Calendar className="w-4 h-4 text-blue-700" />
-                        </div>
+                    </div>
                         <span className="text-sm font-medium text-graphite-900">Période d'essai</span>
-                      </div>
+                    </div>
                       <span className="text-sm font-semibold text-blue-900">30 jours</span>
                     </div>
                     <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
@@ -2345,7 +2777,7 @@ export default function OnboardingWizard() {
                   </div>
                 </div>
 
-                {/* Section 3: Bouton de paiement avec logo FedaPay */}
+                {/* Section 3: Checkout intégré ou bouton de paiement */}
                 {errors.submit && (
                   <div className="p-4 bg-red-50 border-2 border-red-300 rounded-xl flex items-start shadow-md">
                     <AlertCircle className="w-5 h-5 text-red-600 mr-2 flex-shrink-0 mt-0.5" />
@@ -2353,43 +2785,60 @@ export default function OnboardingWizard() {
                   </div>
                 )}
 
-                <div className="space-y-3">
-                  <button
-                    onClick={handlePayment}
-                    disabled={isSubmitting}
-                    className="w-full px-6 py-4 bg-gradient-to-r from-blue-900 to-blue-800 text-white rounded-xl font-semibold hover:from-blue-800 hover:to-blue-700 transition-all duration-300 flex items-center justify-center disabled:opacity-50 shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader className="w-5 h-5 mr-2 animate-spin" />
-                        Redirection vers FedaPay...
-                      </>
-                    ) : (
-                      <>
-                        <img 
-                          src="/images/fedapay.png" 
-                          alt="FedaPay" 
-                          className="w-8 h-8 mr-3 object-contain"
-                        />
-                        Payer {initialPayment ? initialPayment.toLocaleString() : '100 000'} FCFA
-                      </>
-                    )}
-                  </button>
+                {showCheckout && checkoutData ? (
+                  // Afficher le checkout intégré FedaPay
+                  <FedaPayCheckout
+                    publicKey={checkoutData.public_key}
+                    transaction={checkoutData.transaction}
+                    customer={checkoutData.customer}
+                    onComplete={handlePaymentComplete}
+                    onError={handlePaymentError}
+                  />
+                ) : (
+                  // Afficher le bouton pour initialiser le paiement
+                  <div className="space-y-3 flex flex-col items-center">
+                <button
+                  onClick={handlePayment}
+                  disabled={isSubmitting || !initialPayment}
+                      className="px-6 py-4 bg-gradient-to-r from-blue-900 to-blue-800 text-white rounded-xl font-semibold hover:from-blue-800 hover:to-blue-700 transition-all duration-300 flex items-center justify-center disabled:opacity-50 shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader className="w-5 h-5 mr-2 animate-spin" />
+                          Préparation du paiement...
+                    </>
+                  ) : !initialPayment ? (
+                    <>
+                      <Loader className="w-5 h-5 mr-2 animate-spin" />
+                      Chargement du montant...
+                    </>
+                  ) : (
+                    <>
+                          <img 
+                            src="/images/logoFedaPay.png" 
+                            alt="FedaPay" 
+                            className="w-16 h-16 mr-3 object-contain"
+                          />
+                          Payer {initialPayment.toLocaleString()} FCFA
+                    </>
+                  )}
+                </button>
 
-                  <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                    <div className="flex items-start">
-                      <div className="p-2 bg-blue-100 rounded-lg mr-3 flex-shrink-0">
-                        <CheckCircle className="w-4 h-4 text-blue-700" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-medium text-blue-900 mb-1">Paiement sécurisé</p>
-                        <p className="text-xs text-graphite-700">
-                          Votre paiement est traité de manière sécurisée via FedaPay. Vous serez redirigé vers la page de paiement sécurisée.
-                        </p>
+                    <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                      <div className="flex items-start">
+                        <div className="p-2 bg-blue-100 rounded-lg mr-3 flex-shrink-0">
+                          <CheckCircle className="w-4 h-4 text-blue-700" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-blue-900 mb-1">Paiement sécurisé</p>
+                          <p className="text-xs text-graphite-700">
+                            Votre paiement est traité de manière sécurisée via FedaPay directement sur cette page.
+                          </p>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
+                )}
               </div>
 
               <div className="flex justify-start mt-8">

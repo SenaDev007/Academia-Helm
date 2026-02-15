@@ -9,7 +9,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Settings, Globe, Shield, Brain, MessageSquare, CloudOff, History, ToggleLeft, ToggleRight, Seal } from 'lucide-react';
+import { Settings, Globe, Shield, Brain, MessageSquare, CloudOff, History, ToggleLeft, ToggleRight, Stamp } from 'lucide-react';
 import { ModuleContainer, ModuleHeader } from '@/components/modules/blueprint';
 import AdministrativeSealsManagement from '@/components/settings/AdministrativeSealsManagement';
 import ElectronicSignaturesManagement from '@/components/settings/ElectronicSignaturesManagement';
@@ -43,7 +43,7 @@ export default function SettingsPage() {
     { id: 'general', label: 'Général & Identité', icon: Globe },
     { id: 'features', label: 'Modules & Fonctionnalités', icon: ToggleLeft },
     { id: 'security', label: 'Sécurité & Conformité', icon: Shield },
-    { id: 'seals', label: 'Cachets & Signatures', icon: Seal },
+    { id: 'seals', label: 'Cachets & Signatures', icon: Stamp },
     { id: 'orion', label: 'IA ORION', icon: Brain },
     { id: 'atlas', label: 'IA ATLAS', icon: MessageSquare },
     { id: 'offline', label: 'Synchronisation Offline', icon: CloudOff },

@@ -10,12 +10,14 @@ import {
   Get,
   Body,
   Param,
+  Query,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
 import { Public } from '../auth/decorators/public.decorator';
 import { OnboardingService } from './services/onboarding.service';
 import { OtpService } from './services/otp.service';
+import { SubdomainService } from '../common/services/subdomain.service';
 import { CreateDraftDto } from './dto/create-draft.dto';
 import { AddPromoterDto } from './dto/add-promoter.dto';
 import { SelectPlanDto } from './dto/select-plan.dto';
@@ -26,6 +28,7 @@ export class OnboardingController {
   constructor(
     private readonly onboardingService: OnboardingService,
     private readonly otpService: OtpService,
+    private readonly subdomainService: SubdomainService,
   ) {}
 
   /**
@@ -126,5 +129,44 @@ export class OnboardingController {
       valid: isValid,
       message: isValid ? 'Code OTP valide' : 'Code OTP invalide ou expiré',
     };
+  }
+
+  /**
+   * Proposer des sous-domaines à partir du nom d'établissement (avec disponibilité)
+   */
+  @Get('subdomain/suggest')
+  async suggestSubdomains(@Query('schoolName') schoolName: string) {
+    const name = typeof schoolName === 'string' ? schoolName.trim() : '';
+    const suggestions = await this.subdomainService.suggestSubdomains(name, 5);
+    return { suggestions };
+  }
+
+  /**
+   * Vérifier si un sous-domaine est disponible (format + unicité en BDD)
+   */
+  @Get('subdomain/check/:subdomain')
+  async checkSubdomain(@Param('subdomain') subdomain: string) {
+    const normalized = subdomain.trim().toLowerCase();
+    const validation = this.subdomainService.validateSubdomain(normalized);
+    if (!validation.valid) {
+      return { available: false, error: validation.error };
+    }
+    const exists = await this.subdomainService.subdomainExists(normalized);
+    return { available: !exists, subdomain: normalized };
+  }
+
+  /**
+   * Vérifier le statut d'un paiement
+   * 
+   * ⚠️ CRITIQUE : Cette méthode vérifie le statut réel depuis FedaPay
+   * et enregistre le résultat dans la base de données
+   * 
+   * Le frontend ne doit JAMAIS faire confiance au callback onComplete.
+   * Il doit toujours appeler cet endpoint pour vérifier le statut.
+   */
+  @Post('payment/:paymentId/verify')
+  @HttpCode(HttpStatus.OK)
+  async verifyPaymentStatus(@Param('paymentId') paymentId: string) {
+    return this.onboardingService.verifyPaymentStatus(paymentId);
   }
 }

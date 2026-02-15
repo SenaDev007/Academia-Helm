@@ -1781,19 +1781,19 @@ model OrionAccessLog {
 
 model AuditLog {
   id         String   @id @default(uuid())
-  tenantId   String
-  userId     String?
+  tenantId   String   @map("tenant_id")
+  userId     String?  @map("userId")
   action     String
   resource   String
-  resourceId String?
-  tableName  String
-  recordId   String?
-  oldData    Json?
-  newData    Json?
-  ipAddress  String?
-  userAgent  String?
+  resourceId String?  @map("resourceId")
+  tableName  String   @map("tableName")
+  recordId   String?  @map("recordId")
+  oldData    Json?    @map("oldData")
+  newData    Json?    @map("newData")
+  ipAddress  String?  @map("ipAddress")
+  userAgent  String?  @map("userAgent")
   changes    Json?
-  createdAt  DateTime @default(now())
+  createdAt  DateTime @default(now()) @map("created_at")
   tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, createdAt])
@@ -7741,15 +7741,16 @@ model BillingEvent {
 // ============================================================================
 
 model OnboardingDraft {
-  id           String  @id @default(uuid())
-  schoolName   String  @map("school_name")
-  schoolType   String  @map("school_type")
-  city         String
-  country      String
-  phone        String
-  email        String
-  bilingual    Boolean @default(false)
-  schoolsCount Int     @default(1) @map("schools_count")
+  id                 String  @id @default(uuid())
+  schoolName         String  @map("school_name")
+  schoolType         String  @map("school_type")
+  city               String
+  country            String
+  phone              String
+  email              String
+  bilingual          Boolean @default(false)
+  schoolsCount       Int     @default(1) @map("schools_count")
+  preferredSubdomain String? @map("preferred_subdomain")
 
   promoterFirstName    String? @map("promoter_first_name")
   promoterLastName     String? @map("promoter_last_name")

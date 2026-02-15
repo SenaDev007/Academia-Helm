@@ -15,9 +15,11 @@ import twilio from 'twilio';
 
 export interface WhatsAppRequest {
   to: string; // Numéro au format international (ex: +22961234567)
-  message: string;
+  message?: string; // Message texte (pour WhatsApp Business ou fallback)
   template?: string; // Nom du template (pour WhatsApp Business)
   variables?: Record<string, string>; // Variables pour le template
+  contentSid?: string; // Content SID pour Twilio WhatsApp (template dynamique)
+  contentVariables?: Record<string, string>; // Variables pour le Content SID Twilio
 }
 
 export type WhatsAppProvider = 'whatsapp-business' | 'twilio-whatsapp' | 'gateway' | 'mock';
@@ -140,11 +142,15 @@ export class WhatsAppService {
 
   /**
    * Envoie un message via Twilio WhatsApp
+   * Supporte deux méthodes :
+   * 1. Content SID avec variables (recommandé pour templates dynamiques)
+   * 2. Message texte simple (fallback)
    */
   private async sendViaTwilioWhatsApp(request: WhatsAppRequest): Promise<{ success: boolean; messageId?: string }> {
     const accountSid = this.configService.get<string>('TWILIO_ACCOUNT_SID');
     const authToken = this.configService.get<string>('TWILIO_AUTH_TOKEN');
     const fromNumber = this.configService.get<string>('TWILIO_WHATSAPP_NUMBER') || 'whatsapp:+14155238886';
+    const defaultContentSid = this.configService.get<string>('TWILIO_WHATSAPP_CONTENT_SID');
 
     if (!accountSid || !authToken) {
       throw new Error('Twilio configuration incomplete. Check TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN');
@@ -158,14 +164,62 @@ export class WhatsAppService {
     const client = twilio(accountSid, authToken);
 
     try {
+      // Priorité 1 : Utiliser Content SID avec variables (template dynamique)
+      // Utilisé uniquement si contentSid ET contentVariables sont explicitement fournis
+      if (request.contentSid && request.contentVariables) {
+        // Convertir les variables en JSON string comme requis par Twilio
+        const contentVariables = JSON.stringify(request.contentVariables);
+        
+        const result = await client.messages.create({
+          from: fromNumber,
+          to: `whatsapp:${request.to}`,
+          contentSid: request.contentSid,
+          contentVariables: contentVariables,
+        });
+
+        this.logger.log(`✅ WhatsApp sent via Twilio (Content SID) to ${request.to}: ${result.sid}`);
+        this.logger.debug(`💬 Twilio Message SID: ${result.sid}, Status: ${result.status}, Content SID: ${request.contentSid}, Variables: ${contentVariables}`);
+
+        return {
+          success: true,
+          messageId: result.sid,
+        };
+      }
+
+      // Priorité 2 : Utiliser Content SID par défaut si configuré ET contentVariables fourni
+      // (pour compatibilité avec l'envoi OTP qui utilise defaultContentSid)
+      if (defaultContentSid && request.contentVariables) {
+        const contentVariables = JSON.stringify(request.contentVariables);
+        
+        const result = await client.messages.create({
+          from: fromNumber,
+          to: `whatsapp:${request.to}`,
+          contentSid: defaultContentSid,
+          contentVariables: contentVariables,
+        });
+
+        this.logger.log(`✅ WhatsApp sent via Twilio (Content SID default) to ${request.to}: ${result.sid}`);
+        this.logger.debug(`💬 Twilio Message SID: ${result.sid}, Status: ${result.status}, Content SID: ${defaultContentSid}, Variables: ${contentVariables}`);
+
+        return {
+          success: true,
+          messageId: result.sid,
+        };
+      }
+
+      // Priorité 3 : Message texte simple (pour conversations initiées par l'utilisateur)
+      if (!request.message) {
+        throw new Error('Either contentSid with contentVariables or message is required for WhatsApp');
+      }
+
       const result = await client.messages.create({
         body: request.message,
         from: fromNumber,
         to: `whatsapp:${request.to}`,
       });
 
-      this.logger.log(`✅ WhatsApp sent via Twilio to ${request.to}: ${result.sid}`);
-      this.logger.debug(`💬 Twilio Message SID: ${result.sid}, Status: ${result.status}, Account SID: ${result.accountSid}`);
+      this.logger.log(`✅ WhatsApp sent via Twilio (text) to ${request.to}: ${result.sid}`);
+      this.logger.debug(`💬 Twilio Message SID: ${result.sid}, Status: ${result.status}, Body: ${request.message.substring(0, 50)}...`);
 
       return {
         success: true,

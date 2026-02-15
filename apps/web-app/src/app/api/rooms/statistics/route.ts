@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 
-const API_URL = getApiBaseUrl();
+const API_URL = getApiBaseUrlForRoutes();
 
 export async function GET(request: NextRequest) {
   try {

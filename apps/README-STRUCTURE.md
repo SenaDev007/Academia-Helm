@@ -17,7 +17,7 @@
 - ✅ Mode standalone
 - ✅ Page offline dédiée
 
-**Déploiement** : Vercel (production)
+**Déploiement** : OVH (academia-hub.pro) ou tout hébergeur Node
 
 **Documentation** :
 - `apps/web-app/MIGRATION-DESKTOP-TO-PWA.md` : Checklist de migration
@@ -55,7 +55,7 @@
 **Usage** : API REST pour toutes les applications (Web, Mobile)  
 **Base de données** : PostgreSQL
 
-**Déploiement** : Serveur dédié / Railway / Supabase
+**Déploiement** : OVH (VPS / base managée) ou serveur dédié
 
 ---
 
@@ -66,7 +66,7 @@
 1. **Modifier** : `apps/web-app/src/`
 2. **Tester** : `cd apps/web-app && npm run dev`
 3. **Build PWA** : `cd apps/web-app && npm run build` (génère Service Worker)
-4. **Déployer** : Vercel (automatique via Git)
+4. **Déployer** : voir docs/HEBERGEMENT-OVH.md (OVH, VPS, etc.)
 
 ### Pour l'Application Mobile
 

@@ -108,7 +108,10 @@ services:
       api-server:
         condition: service_healthy  # ✅ Attend que l'API soit prête
     environment:
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:3000/api
+      NEXT_PUBLIC_APP_URL: http://localhost:3001
+      NEXT_PUBLIC_BASE_DOMAIN: localhost:3001
+      NEXT_PUBLIC_API_URL: http://localhost:3000/api
+      NEXT_PUBLIC_ENV: local
       NODE_ENV: development
     volumes:
       - ./apps/web-app:/app

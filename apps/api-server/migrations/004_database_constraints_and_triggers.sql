@@ -584,40 +584,57 @@ DECLARE
   v_user_id UUID;
   v_tenant_id UUID;
 BEGIN
-  -- Récupérer user_id depuis le contexte de session
-  v_user_id := current_setting('app.current_user_id', true)::uuid;
+  -- Récupérer user_id depuis le contexte de session (peut être NULL)
+  BEGIN
+    v_user_id := current_setting('app.current_user_id', true)::uuid;
+  EXCEPTION WHEN OTHERS THEN
+    v_user_id := NULL;
+  END;
   
-  -- Récupérer tenant_id depuis NEW ou OLD
-  IF TG_OP = 'DELETE' THEN
-    v_tenant_id := OLD.tenant_id;
-  ELSE
-    v_tenant_id := NEW.tenant_id;
-  END IF;
+  -- Récupérer tenant_id depuis NEW ou OLD (peut ne pas exister dans toutes les tables)
+  BEGIN
+    IF TG_OP = 'DELETE' THEN
+      v_tenant_id := OLD.tenant_id;
+    ELSE
+      v_tenant_id := NEW.tenant_id;
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    -- Si la colonne tenant_id n'existe pas dans cette table, utiliser NULL
+    v_tenant_id := NULL;
+  END;
   
-  -- Insérer dans audit_logs
-  INSERT INTO audit_logs (
-    tenant_id,
-    user_id,
-    action,
-    resource,
-    resource_id,
-    changes,
-    ip_address,
-    user_agent
-  )
-  VALUES (
-    v_tenant_id,
-    v_user_id,
-    TG_OP,
-    TG_TABLE_NAME,
-    COALESCE(NEW.id, OLD.id),
-    jsonb_build_object(
-      'old', row_to_json(OLD),
-      'new', row_to_json(NEW)
-    ),
-    current_setting('app.current_ip', true),
-    current_setting('app.current_user_agent', true)
-  );
+  -- Insérer dans audit_logs seulement si la table existe et a les colonnes nécessaires
+  BEGIN
+    INSERT INTO audit_logs (
+      tenant_id,
+      user_id,
+      action,
+      resource,
+      resource_id,
+      changes,
+      ip_address,
+      user_agent,
+      created_at
+    )
+    VALUES (
+      v_tenant_id,
+      v_user_id,
+      TG_OP,
+      TG_TABLE_NAME,
+      COALESCE(NEW.id, OLD.id),
+      jsonb_build_object(
+        'old', row_to_json(OLD),
+        'new', row_to_json(NEW)
+      ),
+      current_setting('app.current_ip', true),
+      current_setting('app.current_user_agent', true),
+      CURRENT_TIMESTAMP
+    );
+  EXCEPTION WHEN OTHERS THEN
+    -- Si l'insertion échoue (table n'existe pas, colonnes manquantes, etc.), ignorer silencieusement
+    -- C'est une opération non-bloquante
+    NULL;
+  END;
   
   RETURN COALESCE(NEW, OLD);
 END;

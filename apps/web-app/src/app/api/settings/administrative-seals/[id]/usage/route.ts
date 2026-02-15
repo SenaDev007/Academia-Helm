@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
-import { getServerSession } from 'next-auth';
+import { getServerSession } from '@/lib/auth/session';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
@@ -34,7 +34,7 @@ export async function GET(
       `${API_BASE_URL}/settings/administrative-seals/${params.id}/usage?${urlParams.toString()}`,
       {
         headers: {
-          'Authorization': `Bearer ${(session as any).accessToken}`,
+          'Authorization': `Bearer ${session.token}`,
           'Content-Type': 'application/json',
         },
       }

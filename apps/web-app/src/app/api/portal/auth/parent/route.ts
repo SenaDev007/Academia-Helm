@@ -5,10 +5,10 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrl } from '@/lib/utils/urls';
+import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import { setServerSession } from '@/lib/auth/session';
 
-const API_BASE_URL = getApiBaseUrl();
+const API_BASE_URL = getApiBaseUrlForRoutes();
 
 interface BackendResponse {
   user?: {

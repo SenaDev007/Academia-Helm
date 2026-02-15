@@ -2,51 +2,26 @@
  * ============================================================================
  * URL HELPER - GESTION CENTRALISÉE DES URLs
  * ============================================================================
- * 
- * Helper centralisé pour gérer toutes les URLs de l'application
- * Supporte : local, preview (Vercel), production
- * 
+ *
+ * Helper centralisé pour gérer toutes les URLs de l'application.
+ * Supporte : local, production (ex. academia-hub.pro sur OVH).
+ *
  * ============================================================================
  */
 
-/**
- * Environnement actuel
- */
-export type AppEnvironment = 'local' | 'preview' | 'production';
+export type AppEnvironment = 'local' | 'production';
 
 /**
  * Détecte l'environnement actuel
  */
 export function getAppEnvironment(): AppEnvironment {
-  // En production, vérifier si on est sur Vercel preview ou production
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname;
-    
-    // Local
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      return 'local';
-    }
-    
-    // Vercel preview (contient .vercel.app)
-    if (hostname.includes('.vercel.app')) {
-      return 'preview';
-    }
-    
-    // Production (domaine custom)
+    if (hostname === 'localhost' || hostname === '127.0.0.1') return 'local';
     return 'production';
   }
-  
-  // Côté serveur, utiliser les variables d'environnement
   const env = process.env.NEXT_PUBLIC_ENV || process.env.NODE_ENV;
-  
-  if (env === 'development' || !env) {
-    return 'local';
-  }
-  
-  if (process.env.VERCEL_ENV === 'preview') {
-    return 'preview';
-  }
-  
+  if (env === 'development' || !env) return 'local';
   return 'production';
 }
 
@@ -67,38 +42,22 @@ export function getAppBaseUrl(): string {
   }
   
   const env = getAppEnvironment();
-  
-  // PRIORITÉ 2 : En preview/production, construire depuis le domaine
-  if (env === 'preview' || env === 'production') {
-    // En preview Vercel, utiliser l'URL fournie par Vercel
+
+  if (env === 'production') {
     if (typeof window !== 'undefined') {
       return `${window.location.protocol}//${window.location.host}`;
     }
-    
-    // Côté serveur, utiliser VERCEL_URL si disponible
-    if (process.env.VERCEL_URL) {
-      return `https://${process.env.VERCEL_URL}`;
-    }
-    
-    // Sinon, construire depuis NEXT_PUBLIC_BASE_DOMAIN
     const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN;
     if (baseDomain) {
-      // Si le domaine contient déjà le protocole, le retirer
       const cleanDomain = baseDomain.replace(/^https?:\/\//, '');
       return `https://${cleanDomain}`;
     }
-    
-    // En production sans config, erreur explicite
-    if (env === 'production') {
-      throw new Error(
-        'NEXT_PUBLIC_APP_URL or NEXT_PUBLIC_BASE_DOMAIN must be set in production. ' +
-        'Please configure your environment variables.'
-      );
-    }
+    throw new Error(
+      'NEXT_PUBLIC_APP_URL or NEXT_PUBLIC_BASE_DOMAIN must be set in production. ' +
+      'Please configure your environment variables.'
+    );
   }
-  
-  // PRIORITÉ 3 : Local uniquement (fallback pour développement)
-  // ⚠️ Ce fallback ne devrait jamais être utilisé si NEXT_PUBLIC_APP_URL est configuré
+
   if (env === 'local') {
     // En local, essayer de détecter depuis window si disponible
     if (typeof window !== 'undefined') {
@@ -135,9 +94,7 @@ export function getApiBaseUrl(): string {
   
   const env = getAppEnvironment();
   
-  // PRIORITÉ 2 : En preview/production, construire depuis le domaine
-  if (env === 'preview' || env === 'production') {
-    // Si l'API est sur un sous-domaine différent
+  if (env === 'production') {
     const apiDomain = process.env.NEXT_PUBLIC_API_DOMAIN;
     if (apiDomain) {
       const cleanDomain = apiDomain.replace(/^https?:\/\//, '');
@@ -193,28 +150,14 @@ export function getBaseDomain(): string {
   
   const env = getAppEnvironment();
   
-  // PRIORITÉ 2 : En preview/production, extraire depuis l'URL actuelle
-  if (env === 'preview' || env === 'production') {
-    if (typeof window !== 'undefined') {
-      return window.location.host;
-    }
-    
-    // Côté serveur, utiliser VERCEL_URL si disponible
-    if (process.env.VERCEL_URL) {
-      return process.env.VERCEL_URL;
-    }
-    
-    // En production sans config, erreur explicite
-    if (env === 'production') {
-      throw new Error(
-        'NEXT_PUBLIC_BASE_DOMAIN must be set in production. ' +
-        'Please configure your environment variables.'
-      );
-    }
+  if (env === 'production') {
+    if (typeof window !== 'undefined') return window.location.host;
+    throw new Error(
+      'NEXT_PUBLIC_BASE_DOMAIN must be set in production. ' +
+      'Please configure your environment variables.'
+    );
   }
-  
-  // PRIORITÉ 3 : Local uniquement (fallback pour développement)
-  // ⚠️ Ce fallback ne devrait jamais être utilisé si NEXT_PUBLIC_BASE_DOMAIN est configuré
+
   if (env === 'local') {
     if (typeof window !== 'undefined') {
       return window.location.host;

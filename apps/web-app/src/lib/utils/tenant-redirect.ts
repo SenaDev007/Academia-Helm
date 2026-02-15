@@ -4,11 +4,11 @@
  * ============================================================================
  * 
  * Utilitaires pour la redirection multi-tenant sécurisée
- * Supporte : local, preview (Vercel), production
- * 
+ * Supporte : local, production (ex. academia-hub.pro)
+ *
  * RÈGLES :
  * - En local : utilise les query params (pas de DNS requis)
- * - En preview/prod : utilise les sous-domaines réels
+ * - En prod : utilise les sous-domaines réels
  * - Logging automatique de toutes les redirections
  * - Protection contre les accès non autorisés
  * 

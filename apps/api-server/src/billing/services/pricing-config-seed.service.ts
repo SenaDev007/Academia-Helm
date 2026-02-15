@@ -18,7 +18,18 @@ export class PricingConfigSeedService implements OnModuleInit {
   constructor(private readonly prisma: PrismaService) {}
 
   async onModuleInit() {
-    await this.seedDefaultConfig();
+    try {
+      await this.seedDefaultConfig();
+    } catch (error: unknown) {
+      const code = (error as { code?: string })?.code;
+      if (code === 'P2021') {
+        this.logger.warn(
+          'Table pricing_configs ou pricing_group_tiers manquante. Exécutez: cd apps/api-server && npx prisma migrate deploy'
+        );
+        return;
+      }
+      throw error;
+    }
   }
 
   /**

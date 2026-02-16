@@ -16,7 +16,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
 import { OnboardingService } from '../../onboarding/services/onboarding.service';
 import { PricingService } from './pricing.service';
-import { FedaPay, Transaction } from 'fedapay';
+import { FedaPay, Transaction, Webhook } from 'fedapay';
 
 @Injectable()
 export class FedaPayService implements OnModuleInit {
@@ -89,8 +89,18 @@ export class FedaPayService implements OnModuleInit {
     // S'assurer qu'il n'y a pas de slash à la fin
     baseUrl = baseUrl.replace(/\/$/, '');
     
-    // Détecter le mode (live ou sandbox) après toutes les normalisations
-    this.isLiveMode = baseUrl.includes('api.fedapay.com') && !baseUrl.includes('sandbox');
+    // Détecter le mode sandbox : FEDAPAY_SANDBOX=true, ou URL "sandbox", ou clé sk_sandbox_/sk_test_/pk_test_
+    const envSandbox = this.configService.get<string>('FEDAPAY_SANDBOX') === 'true';
+    const urlIsSandbox = baseUrl.includes('sandbox');
+    const keyIsSandbox = this.apiKey.startsWith('sk_sandbox_') || this.apiKey.startsWith('sk_test_') || this.apiKey.startsWith('pk_test_');
+    this.isLiveMode = !envSandbox && !urlIsSandbox && !keyIsSandbox;
+    if (envSandbox) {
+      baseUrl = 'https://sandbox-api.fedapay.com';
+      this.logger.warn('⚠️  FEDAPAY_SANDBOX=true : mode sandbox forcé, montant plafonné à 20 000 XOF');
+    } else if (keyIsSandbox && !urlIsSandbox) {
+      baseUrl = 'https://sandbox-api.fedapay.com';
+      this.logger.warn('⚠️  Clé sandbox détectée : utilisation de sandbox-api.fedapay.com');
+    }
     const mode = this.isLiveMode ? 'LIVE/PRODUCTION' : 'SANDBOX/TEST';
     
     this.apiBaseUrl = baseUrl;
@@ -311,28 +321,67 @@ export class FedaPayService implements OnModuleInit {
   }
 
   /**
-   * Crée une transaction FedaPay en utilisant le SDK officiel
+   * Normalise le pays vers le code ISO 3166-1 alpha-2 attendu par FedaPay (ex: Bénin -> BJ).
+   * Référence: https://docs.fedapay.com/api-reference/transactions/create (customer.phone_number.country)
+   */
+  private normalizeCountryForFedaPay(country: string | undefined): string {
+    if (!country || typeof country !== 'string') return 'BJ';
+    const s = country.trim().toUpperCase();
+    if (s.length === 2) return s;
+    const map: Record<string, string> = {
+      'BENIN': 'BJ', 'BÉNIN': 'BJ',
+      'TOGO': 'TG', 'NIGER': 'NE', 'BURKINA': 'BF', 'BURKINA FASO': 'BF',
+      'SENEGAL': 'SN', 'MALI': 'ML', 'NIGERIA': 'NG', 'GHANA': 'GH',
+    };
+    return map[s] || s.substring(0, 2);
+  }
+
+  /**
+   * Convertit un numéro (string) au format FedaPay: { number, country }.
+   * API: phone_number doit être un objet avec number (sans préfixe international) et country (code ISO).
+   * https://docs.fedapay.com/api-reference/transactions/create
+   */
+  private normalizePhoneForFedaPay(phone: string | undefined, countryCode: string): { number: string; country: string } | null {
+    if (!phone || typeof phone !== 'string') return null;
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length < 8) return null;
+    const code = countryCode.toUpperCase();
+    const prefixes: Record<string, string> = { BJ: '229', TG: '228', NE: '227', BF: '226', SN: '221', ML: '223', NG: '234', GH: '233' };
+    let num = digits;
+    const prefix = prefixes[code];
+    if (prefix && num.startsWith(prefix)) num = num.slice(prefix.length);
+    if (num.startsWith('0')) num = num.slice(1);
+    if (num.length < 8) return null;
+    return { number: num, country: code };
+  }
+
+  /**
+   * Crée une transaction FedaPay en utilisant le SDK officiel.
    * 
-   * Documentation : 
-   * - SDK: https://docs.fedapay.com/sdks/fr/nodejs-fr
-   * - API: https://docs.fedapay.com/api/transactions#create-a-transaction
+   * Important : la transaction est toujours créée même si les infos client sont incomplètes
+   * (ex. pas de téléphone ou numéro invalide). Le formulaire FedaPay s'ouvre et l'utilisateur
+   * peut remplir ou modifier les informations (ex. utiliser un autre numéro Mobile Money).
+   * Référence : https://github.com/fedapay-samples/sample-node
    * 
-   * Le SDK gère automatiquement la structure et le format des données.
-   * Format currency selon SDK: { iso: 'XOF' }
+   * SDK: https://docs.fedapay.com/sdks/fr/nodejs-fr
+   * API: https://docs.fedapay.com/api/transactions#create-a-transaction
    */
   async createTransaction(data: {
     amount: number;
     description: string;
     callbackUrl: string;
-    currency?: string; // Code devise (XOF par défaut pour FCFA)
+    currency?: string;
     metadata?: Record<string, any>;
     customer?: {
       email: string;
       firstname?: string;
       lastname?: string;
       phone_number?: string;
+      /** Code pays ISO (ex: BJ) ou nom (ex: Bénin) pour formater phone_number pour FedaPay */
+      countryCode?: string;
+      countryName?: string;
     };
-    imageUrl?: string; // URL de l'image pour la page de paiement
+    imageUrl?: string;
   }) {
     if (!this.apiKey) {
       throw new BadRequestException('FEDAPAY_API_KEY not configured');
@@ -342,10 +391,8 @@ export class FedaPayService implements OnModuleInit {
     let transactionData: any;
 
     try {
-      // Normaliser currency (XOF par défaut)
-      let currencyCode = (data.currency || 'XOF').trim().toUpperCase();
-      
-      // Valider que currency est un code ISO valide (3 caractères)
+      // Normaliser currency (XOF par défaut) — accepter string ou number depuis la DB
+      let currencyCode = String(data.currency || 'XOF').trim().toUpperCase();
       if (currencyCode.length !== 3) {
         this.logger.warn(`⚠️  Invalid currency code: "${currencyCode}", using XOF as default`);
         currencyCode = 'XOF';
@@ -355,19 +402,26 @@ export class FedaPayService implements OnModuleInit {
       // Le SDK attend directement les paramètres, pas la structure { transaction: { ... } }
       // IMPORTANT: Vérifier que tous les paramètres requis sont présents
       // Documentation: https://docs.fedapay.com/sdks/fr/nodejs-fr
+      // FedaPay API attend amount en entier. En sandbox, plafond 20 000 XOF (limite FedaPay).
+      const SANDBOX_MAX_AMOUNT = 20000;
+      let amountInteger = Math.round(Number(data.amount));
+      const isSandbox = !this.isLiveMode;
+      if (isSandbox && amountInteger > SANDBOX_MAX_AMOUNT) {
+        this.logger.warn(`⚠️  Sandbox FedaPay : montant plafonné à ${SANDBOX_MAX_AMOUNT} XOF (demandé: ${amountInteger})`);
+        amountInteger = SANDBOX_MAX_AMOUNT;
+      }
       transactionData = {
         description: data.description,
-        amount: data.amount,
+        amount: amountInteger,
         currency: { iso: currencyCode }, // Format SDK: { iso: 'XOF' }
         callback_url: data.callbackUrl,
-        // Le paramètre 'mode' est requis par l'API FedaPay
-        // Valeurs possibles: 'mtn_open', 'moov_open', 'mtn', 'moov', etc.
-        // Si non spécifié, utiliser 'mtn_open' par défaut (MTN Mobile Money)
-        mode: data.metadata?.mode || 'mtn_open',
+        // En sandbox FedaPay le mode unifié est 'momo_test' (numéros 64000001/66000001 pour succès).
+        // En production utiliser 'mtn_open', 'moov_open', etc.
+        mode: data.metadata?.mode || (this.isLiveMode ? 'mtn_open' : 'momo_test'),
       };
 
       // Validation des paramètres requis
-      if (!transactionData.amount || transactionData.amount <= 0) {
+      if (!Number.isFinite(transactionData.amount) || transactionData.amount <= 0) {
         throw new BadRequestException('Transaction amount must be greater than 0');
       }
       if (!transactionData.description || transactionData.description.trim() === '') {
@@ -380,13 +434,19 @@ export class FedaPayService implements OnModuleInit {
         throw new BadRequestException('Transaction currency is required');
       }
 
-      // Ajouter customer si présent
-      if (data.customer) {
+      // Ajouter customer si présent (format FedaPay: phone_number = { number, country })
+      if (data.customer?.email) {
+        const countryCode = data.customer.countryCode
+          ? this.normalizeCountryForFedaPay(data.customer.countryCode)
+          : this.normalizeCountryForFedaPay(data.customer.countryName);
+        const phoneObj = data.customer.phone_number
+          ? this.normalizePhoneForFedaPay(data.customer.phone_number, countryCode)
+          : null;
         transactionData.customer = {
-          email: data.customer.email,
-          ...(data.customer.firstname && { firstname: data.customer.firstname }),
-          ...(data.customer.lastname && { lastname: data.customer.lastname }),
-          ...(data.customer.phone_number && { phone_number: data.customer.phone_number }),
+          email: String(data.customer.email).trim(),
+          ...(data.customer.firstname && { firstname: String(data.customer.firstname).trim() }),
+          ...(data.customer.lastname && { lastname: String(data.customer.lastname).trim() }),
+          ...(phoneObj && { phone_number: phoneObj }),
         };
       }
 
@@ -433,15 +493,19 @@ export class FedaPayService implements OnModuleInit {
       }
 
       // Gestion des erreurs du SDK FedaPay
+      const responseData = error.response?.data ?? error.data;
       this.logger.error('❌ FedaPay SDK error:', {
         message: error.message,
         code: error.code,
         errors: error.errors,
         cause: error.cause,
-        status: error.status,
-        statusCode: error.statusCode,
-        response: error.response,
+        status: error.status ?? error.statusCode,
+        statusCode: error.statusCode ?? error.status,
+        responseBody: responseData,
       });
+      if (responseData && typeof responseData === 'object') {
+        this.logger.error('❌ FedaPay API response body: ' + JSON.stringify(responseData, null, 2));
+      }
 
       // Log des données qui ont été envoyées (pour déboguer)
       // Vérifier que transactionData existe avant de logger
@@ -461,19 +525,26 @@ export class FedaPayService implements OnModuleInit {
       // Extraire le message d'erreur détaillé
       let errorMessage = error.message || 'Unknown error';
       
-      // Si le SDK retourne des erreurs détaillées
       if (error.errors && Array.isArray(error.errors) && error.errors.length > 0) {
         const errorDetails = error.errors.map((e: any) => e.message || e).join(', ');
         errorMessage = `${errorMessage}: ${errorDetails}`;
       }
 
+      // Erreur 400 "montant maximum 20000" = sandbox FedaPay
+      const amountErr = error.errors?.amount?.[0] ?? '';
+      if ((error.status === 400 || error.statusCode === 400) && typeof amountErr === 'string' && amountErr.includes('20000')) {
+        errorMessage += ' En sandbox FedaPay le montant max est 20 000 XOF. Ajoutez FEDAPAY_SANDBOX=true dans .env (api-server) et redémarrez l\'API.';
+      }
+
       // Si c'est une erreur 500, ajouter plus de détails
       if (error.status === 500 || error.statusCode === 500) {
         this.logger.error('❌ FedaPay server error (500). Possible causes:');
-        this.logger.error('  - Invalid transaction data structure');
-        this.logger.error('  - Missing required parameters');
-        this.logger.error('  - Invalid callback_url format');
-        this.logger.error('  - Currency format issue');
+        this.logger.error('  - callback_url : FedaPay peut refuser localhost. En dev, essayer FRONTEND_URL=https://votre-tunnel.ngrok.io');
+        this.logger.error('  - Invalid transaction data structure or missing required parameters');
+        this.logger.error('  - Clé API sandbox invalide ou compte FedaPay (vérifier FEDAPAY_API_URL et FEDAPAY_API_KEY)');
+        if (responseData) {
+          this.logger.error('  - Voir responseBody ci-dessus pour le détail renvoyé par FedaPay');
+        }
       }
 
       throw new BadRequestException(
@@ -507,11 +578,15 @@ export class FedaPayService implements OnModuleInit {
       );
     }
 
-    // ⚠️ Montant depuis PricingService (paramétrable)
-    // Appliquer la réduction multi-écoles si applicable
-    const amount = await this.pricingService.calculateInitialPaymentPrice(draft.schoolsCount || 1);
+    // Montant depuis PricingService. En sandbox FedaPay, plafonner à 20 000 XOF (limite API test).
+    const amountFromPricing = await this.pricingService.calculateInitialPaymentPrice(draft.schoolsCount || 1);
+    const SANDBOX_MAX = 20000;
+    const amount = this.isLiveMode ? amountFromPricing : Math.min(amountFromPricing, SANDBOX_MAX);
+    if (!this.isLiveMode && amountFromPricing > SANDBOX_MAX) {
+      this.logger.log(`🧪 Sandbox : montant onboarding ${amountFromPricing} → ${amount} XOF pour le test`);
+    }
 
-    // ⚠️ Récupérer la devise dynamiquement depuis priceSnapshot ou utiliser XOF par défaut
+    // Récupérer la devise dynamiquement depuis priceSnapshot ou utiliser XOF par défaut
     const priceSnapshot = draft.priceSnapshot as any;
     
     // S'assurer que currency est toujours valide et non vide
@@ -627,12 +702,26 @@ export class FedaPayService implements OnModuleInit {
       };
     }
 
-    // Mode API : Créer la transaction FedaPay dynamiquement
-    const frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://localhost:3001');
+    // Mode API : Créer la transaction FedaPay (toujours, même si infos promoteur incomplètes).
+    // Le formulaire FedaPay s'ouvrira et l'utilisateur pourra remplir/modifier (ex. autre numéro).
+    const frontendUrl = (this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3001').trim().replace(/\/$/, '');
+    const apiUrl = (this.configService.get<string>('API_URL') || 'http://localhost:3000').trim().replace(/\/$/, '');
     const callbackUrl = `${frontendUrl}/onboarding/callback?draftId=${draftId}`;
-    const webhookUrl = `${this.configService.get<string>('API_URL', 'http://localhost:3000')}/api/billing/fedapay/webhook`;
+    const webhookUrl = `${apiUrl}/api/billing/fedapay/webhook`;
 
-    // URL de l'image pour la souscription initiale
+    // FedaPay ne peut pas appeler localhost : callback et webhook doivent être des URLs publiques (ngrok, localtunnel, etc.)
+    const isCallbackLocalhost = /localhost|127\.0\.0\.1/i.test(frontendUrl);
+    const isWebhookLocalhost = /localhost|127\.0\.0\.1/i.test(apiUrl);
+    if (isCallbackLocalhost || isWebhookLocalhost) {
+      this.logger.error('❌ FRONTEND_URL ou API_URL pointe vers localhost. FedaPay ne peut pas rediriger ni envoyer les webhooks.');
+      this.logger.error(`   FRONTEND_URL=${frontendUrl}, API_URL=${apiUrl}`);
+      this.logger.error('   En dev : utilisez ngrok/localtunnel et mettez à jour .env puis redémarrez l\'API.');
+      throw new BadRequestException(
+        'Configuration incorrecte : FRONTEND_URL et API_URL doivent être des URLs accessibles depuis Internet (ex. ngrok, localtunnel). ' +
+        'Mettez à jour le .env et redémarrez l\'API.'
+      );
+    }
+
     const imageUrl = `${frontendUrl}/images/Souscription%20initiale.jpg`;
 
     // Validation finale du currency avant l'appel
@@ -662,6 +751,7 @@ export class FedaPayService implements OnModuleInit {
         firstname: draft.promoterFirstName || '',
         lastname: draft.promoterLastName || '',
         phone_number: draft.promoterPhone || draft.phone,
+        countryName: draft.country,
       },
     });
 
@@ -681,30 +771,37 @@ export class FedaPayService implements OnModuleInit {
 
     this.logger.log(`💳 Payment session created (API): ${payment.id} - Reference: ${reference} - URL: ${transaction.paymentUrl}`);
 
-    // Retourner les données pour le checkout intégré
+    const paymentPageUrl = transaction.paymentUrl ?? transaction.payment_url ?? transaction.url;
+    if (!paymentPageUrl) {
+      this.logger.warn('⚠️ FedaPay n\'a pas renvoyé d\'URL de paiement (transaction.paymentUrl)');
+    }
+    // Retourner les données pour le checkout intégré + URL pleine page (éviter iframe tronquée)
     return {
       paymentId: payment.id,
       reference,
-      paymentUrl: transaction.paymentUrl,
+      paymentUrl: paymentPageUrl,
+      payment_url: paymentPageUrl,
       amount,
       status: 'PENDING',
-      // Données pour le checkout intégré selon la documentation FedaPay
-      // Documentation : https://docs-v1.fedapay.com/payments/checkout
+      // Données pour le checkout intégré (FedaPay). Même avec infos partielles, le popup
+      // s'ouvre et l'utilisateur peut compléter/modifier (ex. autre numéro Mobile Money).
+      // Retourner public_key (snake_case) et publicKey pour compatibilité frontend.
       checkout: {
         publicKey: this.publicKey,
+        public_key: this.publicKey,
         transaction: {
           id: transaction.transactionId,
           amount: transaction.amount || amount,
           description: `Paiement initial Academia Hub - ${draft.schoolName}`,
         },
         customer: {
-          email: draft.promoterEmail || draft.email,
+          email: draft.promoterEmail || draft.email || '',
           firstname: draft.promoterFirstName || '',
           lastname: draft.promoterLastName || '',
-          phone_number: draft.promoterPhone || draft.phone,
+          phone_number: draft.promoterPhone || draft.phone || '',
         },
         transactionId: transaction.transactionId,
-        paymentId: payment.id, // ID du paiement dans notre base pour la vérification
+        paymentId: payment.id,
       },
     };
   }
@@ -891,19 +988,26 @@ export class FedaPayService implements OnModuleInit {
    * 5. Reference connue
    * 6. Idempotence
    */
-  async handleWebhook(payload: any, signature: string) {
-    // 1. Vérifier la signature (OBLIGATOIRE)
-    const payloadString = typeof payload === 'string' ? payload : JSON.stringify(payload);
-    const isValid = await this.verifyWebhookSignature(payloadString, signature);
-
+  async handleWebhook(payload: any, signatureHeader: string, rawBody?: string) {
+    // 1. Vérifier la signature (OBLIGATOIRE) – FedaPay signe le body brut exact
+    const payloadString = rawBody != null && rawBody.length > 0
+      ? rawBody
+      : (typeof payload === 'string' ? payload : JSON.stringify(payload));
+    const skipVerify = this.configService.get<string>('FEDAPAY_WEBHOOK_SKIP_VERIFY') === 'true' && process.env.NODE_ENV !== 'production';
+    let isValid = await this.verifyWebhookSignature(payloadString, signatureHeader);
+    if (!isValid && skipVerify) {
+      this.logger.warn('⚠️  FedaPay webhook signature verification SKIPPED (FEDAPAY_WEBHOOK_SKIP_VERIFY=true, dev only)');
+      isValid = true;
+    }
     if (!isValid) {
-      this.logger.error('❌ Invalid FedaPay webhook signature');
+      this.logger.error('❌ Invalid FedaPay webhook signature. Vérifiez FEDAPAY_WEBHOOK_SECRET (secret du webhook dans le dashboard FedaPay pour cette URL).');
+      this.logger.error(`   rawBody length: ${payloadString.length}, header prefix: ${(signatureHeader || '').substring(0, 40)}...`);
       throw new BadRequestException('Invalid webhook signature');
     }
 
-    // 2. Extraire l'événement et la transaction
-    const event = payload.event || payload.type;
-    const transaction = payload.data || payload.transaction || payload;
+    // 2. Extraire l'événement et la transaction (FedaPay envoie name + entity)
+    const event = payload.name || payload.event || payload.type;
+    const transaction = payload.entity || payload.data || payload.transaction || payload;
 
     if (!event) {
       throw new BadRequestException('Missing event type in webhook payload');
@@ -1131,29 +1235,24 @@ export class FedaPayService implements OnModuleInit {
   }
 
   /**
-   * Vérifie la signature d'un webhook FedaPay
-   * 
-   * Documentation : https://docs.fedapay.com/webhooks#verify-webhook-signature
+   * Vérifie la signature d'un webhook FedaPay via le SDK officiel.
+   * Nécessite le body brut exact (rawBody) pour que la signature corresponde.
    */
   async verifyWebhookSignature(
-    payload: string,
-    signature: string,
+    rawPayload: string,
+    header: string,
   ): Promise<boolean> {
-    // TODO: Implémenter la vérification de signature selon la doc FedaPay
-    // Généralement, c'est un HMAC SHA256
-    
-    const crypto = require('crypto');
-    const webhookSecret = this.configService.get<string>('FEDAPAY_WEBHOOK_SECRET') || '';
-    
-    const expectedSignature = crypto
-      .createHmac('sha256', webhookSecret)
-      .update(payload)
-      .digest('hex');
-
-    return crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(expectedSignature)
-    );
+    const webhookSecret = (this.configService.get<string>('FEDAPAY_WEBHOOK_SECRET') || '').trim();
+    if (!webhookSecret) {
+      this.logger.warn('⚠️  FEDAPAY_WEBHOOK_SECRET is not set');
+      return false;
+    }
+    try {
+      Webhook.constructEvent(rawPayload, header, webhookSecret, 600);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -1167,19 +1266,26 @@ export class FedaPayService implements OnModuleInit {
    * 5. Reference connue
    * 6. Idempotence
    */
-  async handleWebhook(payload: any, signature: string) {
-    // 1. Vérifier la signature (OBLIGATOIRE)
-    const payloadString = typeof payload === 'string' ? payload : JSON.stringify(payload);
-    const isValid = await this.verifyWebhookSignature(payloadString, signature);
-
+  async handleWebhook(payload: any, signatureHeader: string, rawBody?: string) {
+    // 1. Vérifier la signature (OBLIGATOIRE) – FedaPay signe le body brut exact
+    const payloadString = rawBody != null && rawBody.length > 0
+      ? rawBody
+      : (typeof payload === 'string' ? payload : JSON.stringify(payload));
+    const skipVerify = this.configService.get<string>('FEDAPAY_WEBHOOK_SKIP_VERIFY') === 'true' && process.env.NODE_ENV !== 'production';
+    let isValid = await this.verifyWebhookSignature(payloadString, signatureHeader);
+    if (!isValid && skipVerify) {
+      this.logger.warn('⚠️  FedaPay webhook signature verification SKIPPED (FEDAPAY_WEBHOOK_SKIP_VERIFY=true, dev only)');
+      isValid = true;
+    }
     if (!isValid) {
-      this.logger.error('❌ Invalid FedaPay webhook signature');
+      this.logger.error('❌ Invalid FedaPay webhook signature. Vérifiez FEDAPAY_WEBHOOK_SECRET (secret du webhook dans le dashboard FedaPay pour cette URL).');
+      this.logger.error(`   rawBody length: ${payloadString.length}, header prefix: ${(signatureHeader || '').substring(0, 40)}...`);
       throw new BadRequestException('Invalid webhook signature');
     }
 
-    // 2. Extraire l'événement et la transaction
-    const event = payload.event || payload.type;
-    const transaction = payload.data || payload.transaction || payload;
+    // 2. Extraire l'événement et la transaction (FedaPay envoie name + entity)
+    const event = payload.name || payload.event || payload.type;
+    const transaction = payload.entity || payload.data || payload.transaction || payload;
 
     if (!event) {
       throw new BadRequestException('Missing event type in webhook payload');
@@ -1237,6 +1343,45 @@ export class FedaPayService implements OnModuleInit {
 
       throw error;
     }
+  }
+
+  /**
+   * Simule un webhook transaction.approved pour un paiement onboarding (DEV uniquement).
+   * Utile pour tester la création du tenant sans refaire un vrai paiement FedaPay.
+   * En production cette méthode lève une exception.
+   */
+  async simulateOnboardingApproved(paymentId: string) {
+    const nodeEnv = this.configService.get<string>('NODE_ENV', 'development');
+    if (nodeEnv === 'production') {
+      this.logger.warn('simulateOnboardingApproved called in production - rejected');
+      throw new BadRequestException('Simulation is not available in production');
+    }
+
+    const payment = await this.prisma.onboardingPayment.findUnique({
+      where: { id: paymentId },
+    });
+
+    if (!payment) {
+      throw new BadRequestException(`Payment not found: ${paymentId}`);
+    }
+
+    if (payment.status === 'COMPLETED') {
+      this.logger.warn(`Payment ${paymentId} already COMPLETED`);
+      return { received: true, processed: false, reason: 'already_completed' };
+    }
+
+    const reference = payment.reference;
+    const simulatedTransaction = {
+      id: `sim-${Date.now()}`,
+      reference,
+      metadata: {
+        paymentId: payment.id,
+        type: 'onboarding',
+      },
+    };
+
+    this.logger.log(`🧪 Simulating transaction.approved for payment ${paymentId} (ref: ${reference})`);
+    return this.handlePaymentSuccess(simulatedTransaction);
   }
 
   /**
@@ -1416,8 +1561,19 @@ export class FedaPayService implements OnModuleInit {
    */
   private async handlePaymentFailure(transaction: any) {
     const paymentReference = transaction.reference || transaction.id;
+    const transactionId = transaction.id || transaction.transaction_id;
+    const errorMessage = transaction.error || transaction.message || transaction.status_message || 'Payment failed';
+    const errorCode = transaction.error_code || transaction.code;
     
-    // Enregistrer le webhook
+    // Log détaillé de l'échec
+    this.logger.error(`❌ Payment failed - Reference: ${paymentReference}, Transaction ID: ${transactionId}`);
+    this.logger.error(`❌ Error message: ${errorMessage}`);
+    if (errorCode) {
+      this.logger.error(`❌ Error code: ${errorCode}`);
+    }
+    this.logger.error(`❌ Full transaction data: ${JSON.stringify(transaction, null, 2)}`);
+    
+    // Enregistrer le webhook avec plus de détails
     await this.prisma.paymentWebhookLog.create({
       data: {
         reference: paymentReference,
@@ -1426,11 +1582,33 @@ export class FedaPayService implements OnModuleInit {
         processed: false,
         payload: transaction,
         metadata: {
-          error: transaction.error || transaction.message || 'Payment failed',
+          error: errorMessage,
+          errorCode,
+          transactionId,
+          // Raisons possibles de l'échec
+          possibleCauses: [
+            'Callback URL inaccessible (localhost)',
+            'Webhook URL inaccessible',
+            'Numéro de téléphone invalide',
+            'Opérateur Mobile Money non disponible',
+            'Fonds insuffisants',
+            'Transaction expirée',
+          ],
         },
       },
     });
 
-    this.logger.warn(`⚠️  Payment failed: ${paymentReference}`);
+    this.logger.warn(`⚠️  Payment failed: ${paymentReference} - ${errorMessage}`);
+    
+    // Suggestions de résolution
+    if (errorMessage.includes('callback') || errorMessage.includes('redirect')) {
+      this.logger.error(`💡 Suggestion: Vérifier que FRONTEND_URL est accessible publiquement (utiliser ngrok en dev)`);
+    }
+    if (errorMessage.includes('webhook') || errorMessage.includes('notification')) {
+      this.logger.error(`💡 Suggestion: Vérifier que API_URL est accessible publiquement et que le webhook est configuré dans FedaPay`);
+    }
+    if (errorMessage.includes('phone') || errorMessage.includes('mobile')) {
+      this.logger.error(`💡 Suggestion: Vérifier que le numéro de téléphone est valide pour le sandbox FedaPay`);
+    }
   }
 }

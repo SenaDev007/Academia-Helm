@@ -3,12 +3,11 @@
  * FEDAPAY CHECKOUT COMPONENT - CHECKOUT INTÉGRÉ
  * ============================================================================
  * 
- * Composant pour afficher le checkout FedaPay intégré dans la page
- * au lieu de rediriger vers une page externe
- * 
+ * Composant pour afficher le checkout FedaPay intégré dans la page.
+ * Même avec des infos client partielles (ex. pas de téléphone), le formulaire s'ouvre
+ * et l'utilisateur peut compléter ou modifier (ex. utiliser un autre numéro Mobile Money).
  * Documentation : https://docs-v1.fedapay.com/payments/checkout
- * 
- * ============================================================================
+ * Exemple : https://github.com/fedapay-samples/sample-node
  */
 
 'use client';
@@ -49,9 +48,10 @@ interface FedaPayCheckoutProps {
     // currency n'est PAS dans l'objet transaction pour le checkout intégré
     // Il est géré par l'API backend lors de la création de la transaction
   };
+  /** Infos client (optionnelles). Si partielles, l'utilisateur peut compléter dans le formulaire FedaPay (ex. autre numéro). */
   customer: {
-    email: string;
-    lastname: string;
+    email?: string;
+    lastname?: string;
     firstname?: string;
     phone_number?: string;
   };
@@ -128,10 +128,10 @@ export default function FedaPayCheckout({
           // currency n'est PAS inclus ici car géré par l'API backend
         },
         customer: {
-          email: customer.email,
-          lastname: customer.lastname,
-          ...(customer.firstname && { firstname: customer.firstname }),
-          ...(customer.phone_number && { phone_number: customer.phone_number }),
+          email: customer?.email ?? '',
+          lastname: customer?.lastname ?? '',
+          ...(customer?.firstname && { firstname: customer.firstname }),
+          ...(customer?.phone_number && { phone_number: customer.phone_number }),
         },
         container: '#fedapay-checkout-container',
         onComplete: async (transactionData: any) => {
@@ -152,6 +152,41 @@ export default function FedaPayCheckout({
       };
       
       window.FedaPay.init(checkoutConfig);
+
+      // Forcer une hauteur très grande pour que tout le contenu FedaPay soit visible sans scroll
+      const ensureFullHeight = () => {
+        const container = document.getElementById('fedapay-checkout-container');
+        if (!container) return;
+        
+        // Conteneur sans contrainte
+        container.style.height = 'auto';
+        container.style.minHeight = 'auto';
+        container.style.maxHeight = 'none';
+        container.style.overflow = 'visible';
+        
+        // Iframe avec hauteur très grande pour éviter le scroll interne (FedaPay définit sa propre hauteur dans l'iframe)
+        const iframe = container.querySelector('iframe');
+        if (iframe) {
+          (iframe as HTMLIFrameElement).style.height = '2000px';
+          (iframe as HTMLIFrameElement).style.minHeight = '2000px';
+          (iframe as HTMLIFrameElement).style.maxHeight = 'none';
+          (iframe as HTMLIFrameElement).style.overflow = 'visible';
+        }
+      };
+      
+      ensureFullHeight();
+      const timer1 = setTimeout(ensureFullHeight, 300);
+      const timer2 = setTimeout(ensureFullHeight, 1000);
+      const timer3 = setTimeout(ensureFullHeight, 2500);
+      const observer = new MutationObserver(() => ensureFullHeight());
+      const el = document.getElementById('fedapay-checkout-container');
+      if (el) observer.observe(el, { childList: true, subtree: true });
+      return () => {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+        clearTimeout(timer3);
+        observer.disconnect();
+      };
     } catch (err: any) {
       console.error('Erreur lors de l\'initialisation du checkout FedaPay:', err);
       setError(err.message || 'Erreur lors de l\'initialisation du paiement');
@@ -179,25 +214,22 @@ export default function FedaPayCheckout({
   }
 
   return (
-    <div className="bg-cloud rounded-xl border border-gray-200 shadow-sm p-6">
-      <div className="mb-4">
-        <div className="flex items-center gap-2 mb-2">
-          <h3 className="text-lg font-semibold text-blue-900">Paiement sécurisé</h3>
-          <div className="w-2 h-2 bg-gold-500 rounded-full" title="Paiement premium sécurisé" />
-        </div>
-        <p className="text-sm text-graphite-700">
-          Complétez votre paiement en utilisant Mobile Money ou votre carte bancaire
-        </p>
-      </div>
-      <div
-        id="fedapay-checkout-container"
-        ref={containerRef}
-        className="w-full min-h-[420px] bg-white rounded-lg border border-gray-200 p-4 relative"
-        style={{ width: '100%', minHeight: '420px' }}
-      >
-        {/* Accent or subtil en haut du container */}
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-gold-500 to-transparent opacity-30 rounded-t-lg" />
-      </div>
-    </div>
+    <>
+      <style>{`
+        #fedapay-checkout-container {
+          height: auto !important;
+          min-height: auto !important;
+          max-height: none !important;
+          overflow: visible !important;
+        }
+        #fedapay-checkout-container iframe {
+          height: 2000px !important;
+          min-height: 2000px !important;
+          max-height: none !important;
+          overflow: visible !important;
+        }
+      `}</style>
+      <div id="fedapay-checkout-container" ref={containerRef} className="w-full" />
+    </>
   );
 }

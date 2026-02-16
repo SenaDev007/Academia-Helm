@@ -10,6 +10,7 @@ async function bootstrap() {
   
   const app = await NestFactory.create(AppModule, {
     logger, // ✅ Réduire les logs pour accélérer le démarrage
+    rawBody: true, // ✅ Nécessaire pour vérifier la signature des webhooks FedaPay (body brut)
   });
 
   // Global prefix for all routes

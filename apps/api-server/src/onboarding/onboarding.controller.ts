@@ -13,6 +13,7 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import { Public } from '../auth/decorators/public.decorator';
 import { OnboardingService } from './services/onboarding.service';
@@ -25,6 +26,8 @@ import { SelectPlanDto } from './dto/select-plan.dto';
 @Controller('onboarding')
 @Public()
 export class OnboardingController {
+  private readonly logger = new Logger(OnboardingController.name);
+
   constructor(
     private readonly onboardingService: OnboardingService,
     private readonly otpService: OtpService,
@@ -37,7 +40,21 @@ export class OnboardingController {
   @Post('draft')
   @HttpCode(HttpStatus.CREATED)
   async createDraft(@Body() dto: CreateDraftDto) {
-    return this.onboardingService.createDraft(dto);
+    try {
+      return await this.onboardingService.createDraft(dto);
+    } catch (err) {
+      this.logger.error(`createDraft failed: ${err?.message}`, err?.stack);
+      throw err;
+    }
+  }
+
+  /**
+   * Annule un draft (après paiement refusé ou abandon) pour pouvoir recommencer avec le même email.
+   */
+  @Post('draft/:draftId/cancel')
+  @HttpCode(HttpStatus.OK)
+  async cancelDraft(@Param('draftId') draftId: string) {
+    return this.onboardingService.cancelDraft(draftId);
   }
 
   /**

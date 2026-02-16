@@ -84,7 +84,9 @@ export class OtpService {
     });
 
     if (!draft) {
-      throw new NotFoundException(`Onboarding draft not found: ${draftId}`);
+      throw new NotFoundException(
+        `Onboarding draft introuvable ou expiré. Le draft expire après 4 heures d'inactivité. Veuillez recommencer le processus d'inscription depuis le début.`
+      );
     }
 
     // Invalider les anciens OTP non vérifiés pour ce draft

@@ -86,22 +86,37 @@ export class BillingController {
     @Body() body: any,
     @Req() req: any,
   ) {
-    // Récupérer la signature depuis les headers
-    // FedaPay envoie généralement la signature dans un header spécifique
-    const signature = 
-      req.headers['x-fedapay-signature'] || 
-      req.headers['x-signature'] ||
-      req.headers['signature'] ||
-      req.headers['x-webhook-signature'];
-    
-    if (!signature) {
+    // FedaPay signe le body brut : on utilise req.rawBody si disponible (main.ts : rawBody: true)
+    const rawBody = req.rawBody != null
+      ? (Buffer.isBuffer(req.rawBody) ? req.rawBody.toString('utf8') : String(req.rawBody))
+      : (typeof body === 'string' ? body : JSON.stringify(body));
+    const signatureRaw = req.headers['x-fedapay-signature'] ?? req.headers['x-signature'] ?? req.headers['signature'] ?? req.headers['x-webhook-signature'];
+    const signatureHeader = Array.isArray(signatureRaw) ? signatureRaw[0] : signatureRaw;
+
+    if (!signatureHeader || typeof signatureHeader !== 'string') {
       this.logger.error('❌ Missing webhook signature');
       throw new BadRequestException('Missing webhook signature');
     }
 
-    this.logger.log(`📥 FedaPay webhook received with signature: ${signature.substring(0, 20)}...`);
+    this.logger.log(`📥 FedaPay webhook received with signature: ${signatureHeader.substring(0, 30)}...`);
 
-    return this.fedapayService.handleWebhook(body, signature);
+    return this.fedapayService.handleWebhook(body, signatureHeader, rawBody);
+  }
+
+  /**
+   * Simule un webhook transaction.approved pour un paiement onboarding (DEV uniquement).
+   * Body: { paymentId: string }. En production retourne 400.
+   * Endpoint : POST /billing/fedapay/simulate-approved
+   */
+  @Public()
+  @Post('fedapay/simulate-approved')
+  @HttpCode(HttpStatus.OK)
+  async simulateApproved(@Body() body: { paymentId: string }) {
+    const { paymentId } = body || {};
+    if (!paymentId || typeof paymentId !== 'string') {
+      throw new BadRequestException('paymentId is required');
+    }
+    return this.fedapayService.simulateOnboardingApproved(paymentId);
   }
 
   /**

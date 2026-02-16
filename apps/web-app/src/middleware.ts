@@ -128,6 +128,11 @@ export async function middleware(request: NextRequest) {
 
   // Routes publiques
   if (publicRoutes.some(route => pathname.startsWith(route))) {
+    // La route racine `/` est toujours accessible, même avec subdomain (landing page principale)
+    if (pathname === '/') {
+      return response;
+    }
+    
     if (!subdomain) {
       return response;
     }

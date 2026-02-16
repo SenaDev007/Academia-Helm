@@ -112,6 +112,7 @@ export default function OnboardingWizard() {
     label: string; // 'Très faible', 'Faible', 'Moyen', 'Fort', 'Très fort'
     color: string; // Couleur de l'indicateur
   }>({ score: 0, label: '', color: 'gray' });
+  const [passwordFocused, setPasswordFocused] = useState(false); // Suivre si le champ password est focus
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [priceCalculation, setPriceCalculation] = useState<{
     monthly: {
@@ -448,8 +449,23 @@ export default function OnboardingWizard() {
   useEffect(() => {
     if (step === 2) {
       calculatePasswordStrength(data.password);
+      
+      // Vérifier que le draft existe toujours (peut avoir expiré)
+      if (data.draftId) {
+        fetch(`/api/onboarding/draft?draftId=${data.draftId}`)
+          .then(res => {
+            if (!res.ok && res.status === 404) {
+              setErrors({ 
+                submit: 'Votre session d\'inscription a expiré (4 heures d\'inactivité). Veuillez recommencer depuis l\'étape 1.' 
+              });
+            }
+          })
+          .catch(() => {
+            // Ignorer les erreurs de réseau silencieusement
+          });
+      }
     }
-  }, [data.password, step]);
+  }, [data.password, step, data.draftId]);
 
   // Fonction pour obtenir le code téléphonique selon le pays
   const getCountryPhoneCode = (country: string): string => {
@@ -969,7 +985,12 @@ export default function OnboardingWizard() {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || 'Erreur lors de l\'envoi du code OTP');
+        const errorMessage = error.message || 'Erreur lors de l\'envoi du code OTP';
+        // Si le draft n'existe pas, suggérer de recommencer
+        if (errorMessage.includes('introuvable') || errorMessage.includes('expiré') || response.status === 404) {
+          throw new Error(`${errorMessage} Veuillez retourner à l'étape 1 pour créer un nouveau draft.`);
+        }
+        throw new Error(errorMessage);
       }
 
       const result = await response.json();
@@ -1098,19 +1119,22 @@ export default function OnboardingWizard() {
         setInitialPayment(result.checkout.transaction.amount);
       }
       
-      // Vérifier si le checkout intégré est disponible
-      if (result.checkout && result.checkout.public_key) {
-        // Afficher le checkout intégré
+      // Toujours ouvrir en pleine page pour éviter le checkout intégré tronqué (scroll)
+      const paymentPageUrl = result.paymentUrl ?? result.payment_url;
+      if (paymentPageUrl) {
+        window.location.href = paymentPageUrl;
+        return;
+      }
+      const hasCheckout = result.checkout && (result.checkout.public_key ?? result.checkout.publicKey);
+      if (hasCheckout) {
         setCheckoutData({
           ...result.checkout,
+          public_key: result.checkout.public_key ?? result.checkout.publicKey,
           transactionId: result.checkout.transactionId,
           paymentId: result.paymentId,
         });
         setShowCheckout(true);
         setIsSubmitting(false);
-      } else if (result.paymentUrl) {
-        // Fallback : rediriger vers la page de paiement FedaPay si checkout non disponible
-        window.location.href = result.paymentUrl;
       } else {
         throw new Error('Données de paiement non reçues');
       }
@@ -2053,6 +2077,8 @@ export default function OnboardingWizard() {
                       type={showPassword ? 'text' : 'password'}
                       value={data.password}
                       onChange={(e) => handleChange('password', e.target.value)}
+                      onFocus={() => setPasswordFocused(true)}
+                      onBlur={() => setPasswordFocused(false)}
                       className={`w-full px-4 py-3 border rounded-md focus:ring-2 focus:ring-blue-600 pr-10 ${
                         errors.password ? 'border-red-500' : 'border-gray-300'
                       }`}
@@ -2072,8 +2098,8 @@ export default function OnboardingWizard() {
                     <p className="mt-1 text-sm text-red-600">{errors.password}</p>
                   )}
                   
-                  {/* Règles du mot de passe - Masquer si tous les critères sont respectés */}
-                  {data.password && !checkPasswordRules(data.password).isValid && (
+                  {/* Règles du mot de passe - Afficher tant que le champ est focus OU le mot de passe n'est pas valide */}
+                  {data.password && (passwordFocused || !checkPasswordRules(data.password).isValid) && (
                     <div className="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
                       <h4 className="text-sm font-medium text-gray-900 mb-3">
                         Votre mot de passe doit contenir :
@@ -2786,11 +2812,10 @@ export default function OnboardingWizard() {
                 )}
 
                 {showCheckout && checkoutData ? (
-                  // Afficher le checkout intégré FedaPay
                   <FedaPayCheckout
-                    publicKey={checkoutData.public_key}
+                    publicKey={checkoutData.public_key ?? checkoutData.publicKey}
                     transaction={checkoutData.transaction}
-                    customer={checkoutData.customer}
+                    customer={checkoutData.customer ?? { email: '', lastname: '' }}
                     onComplete={handlePaymentComplete}
                     onError={handlePaymentError}
                   />

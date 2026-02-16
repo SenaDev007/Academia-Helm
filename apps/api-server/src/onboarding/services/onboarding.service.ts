@@ -20,6 +20,7 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { SubdomainService } from '../../common/services/subdomain.service';
 import { OrionAlertsService } from '../../orion/services/orion-alerts.service';
@@ -75,6 +76,7 @@ export class OnboardingService {
         message: 'Un onboarding est déjà en cours pour cet email',
         existingDraftId: existingDraft.id,
         status: existingDraft.status,
+        hint: 'Pour recommencer : annulez le draft en cours (POST /api/onboarding/draft/:draftId/cancel avec ce existingDraftId) puis recréez un draft.',
       };
       throw new BadRequestException(errorResponse);
     }
@@ -93,24 +95,73 @@ export class OnboardingService {
       preferredSubdomain = raw;
     }
 
-    const draft = await this.prisma.onboardingDraft.create({
-      data: {
-        schoolName: data.schoolName,
-        schoolType: data.schoolType,
-        city: data.city,
-        country: data.country,
-        phone: data.phone,
-        email: data.email,
-        bilingual: data.bilingual || false,
-        schoolsCount: data.schoolsCount || 1,
-        preferredSubdomain,
-        status: 'DRAFT',
-      },
+    try {
+      const draft = await this.prisma.onboardingDraft.create({
+        data: {
+          schoolName: data.schoolName,
+          schoolType: data.schoolType,
+          city: data.city,
+          country: data.country,
+          phone: data.phone,
+          email: data.email,
+          bilingual: data.bilingual || false,
+          schoolsCount: data.schoolsCount ?? 1,
+          preferredSubdomain,
+          status: 'DRAFT',
+        },
+      });
+
+      this.logger.log(`📝 Onboarding draft created: ${draft.id}` + (preferredSubdomain ? ` (sous-domaine: ${preferredSubdomain})` : ''));
+
+      return draft;
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError) {
+        if (err.code === 'P2002') {
+          throw new BadRequestException('Une contrainte d\'unicité est violée (email ou sous-domaine peut-être déjà utilisé).');
+        }
+        if (err.code === 'P2003') {
+          throw new BadRequestException('Référence invalide (clé étrangère).');
+        }
+      }
+      this.logger.error(`createDraft Prisma error: ${err?.message}`, err?.stack);
+      throw err;
+    }
+  }
+
+  /**
+   * Annule un draft (DRAFT ou PENDING_PAYMENT) pour permettre de recommencer avec le même email.
+   * Impossible si un paiement est déjà COMPLETED.
+   */
+  async cancelDraft(draftId: string) {
+    const draft = await this.prisma.onboardingDraft.findUnique({
+      where: { id: draftId },
+      include: { payments: true },
     });
 
-    this.logger.log(`📝 Onboarding draft created: ${draft.id}` + (preferredSubdomain ? ` (sous-domaine: ${preferredSubdomain})` : ''));
+    if (!draft) {
+      throw new NotFoundException(`Onboarding draft not found: ${draftId}`);
+    }
 
-    return draft;
+    if (draft.status !== 'DRAFT' && draft.status !== 'PENDING_PAYMENT') {
+      throw new BadRequestException(
+        `Impossible d'annuler un draft en statut ${draft.status}. Seuls DRAFT ou PENDING_PAYMENT peuvent être annulés.`
+      );
+    }
+
+    const hasCompletedPayment = draft.payments.some((p) => p.status === 'COMPLETED' || p.status === 'SUCCESS');
+    if (hasCompletedPayment) {
+      throw new BadRequestException(
+        'Impossible d\'annuler ce draft : un paiement a déjà été validé. Contactez le support si besoin.'
+      );
+    }
+
+    await this.prisma.onboardingDraft.update({
+      where: { id: draftId },
+      data: { status: 'CANCELLED' },
+    });
+
+    this.logger.log(`📋 Draft ${draftId} cancelled (email: ${draft.email})`);
+    return { success: true, message: 'Draft annulé. Vous pouvez recommencer un nouvel onboarding avec le même email.' };
   }
 
   /**

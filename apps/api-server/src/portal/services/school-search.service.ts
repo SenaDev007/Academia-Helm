@@ -52,7 +52,6 @@ export class SchoolSearchService {
             address: true,
             educationLevels: true,
           },
-          take: 1,
         },
         country: {
           select: {
@@ -64,9 +63,9 @@ export class SchoolSearchService {
       take: 20, // Limiter à 20 résultats
     });
 
-      // Formater les résultats
+      // Formater les résultats (schools est une relation 1-1, donc un objet ou null)
       const results = tenants.map((tenant) => {
-        const school = tenant.schools?.[0];
+        const school = tenant.schools;
         const address = school?.address || '';
         const city = this.extractCityFromAddress(address);
 
@@ -120,7 +119,6 @@ export class SchoolSearchService {
             address: true,
             educationLevels: true,
           },
-          take: 1,
         },
         country: {
           select: {
@@ -134,9 +132,9 @@ export class SchoolSearchService {
       },
     });
 
-      // Formater les résultats
+      // Formater les résultats (schools est une relation 1-1, donc un objet ou null)
       const results = tenants.map((tenant) => {
-        const school = tenant.schools?.[0];
+        const school = tenant.schools;
         const address = school?.address || '';
         const city = this.extractCityFromAddress(address);
 

@@ -24,15 +24,19 @@ export default async function QhsePage() {
   const user = session.user as User;
   const tenantId = user.tenantId || '';
 
-  // TODO: Charger le tenant depuis la DB
-  const tenant: Tenant = {
+  // Utiliser le tenant depuis la session (chargé depuis la DB lors du login)
+  // Fallback vers valeurs par défaut si le tenant n'est pas dans la session
+  const tenant: Tenant = session.tenant || {
     id: tenantId,
     name: 'École Test',
+    slug: '',
     subdomain: '',
+    status: 'active',
     subscriptionStatus: 'ACTIVE_SUBSCRIBED',
     createdAt: new Date().toISOString(),
-    trialEndsAt: null,
-    nextPaymentDueAt: null,
+    updatedAt: new Date().toISOString(),
+    trialEndsAt: undefined,
+    nextPaymentDueAt: undefined,
   };
 
   return (

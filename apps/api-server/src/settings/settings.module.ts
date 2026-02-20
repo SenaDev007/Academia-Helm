@@ -10,6 +10,13 @@ import { SettingsHistoryService } from './services/settings-history.service';
 import { AdministrativeSealsService } from './services/administrative-seals.service';
 import { ElectronicSignaturesService } from './services/electronic-signatures.service';
 import { SealGenerationService } from './services/seal-generation.service';
+import { PedagogicalStructureService } from './services/pedagogical-structure.service';
+import { BilingualSettingsService } from './services/bilingual-settings.service';
+import { CommunicationSettingsService } from './services/communication-settings.service';
+import { AcademicYearSettingsService } from './services/academic-year-settings.service';
+import { RolesPermissionsService } from './services/roles-permissions.service';
+import { BillingSettingsService } from './services/billing-settings.service';
+import { IdentityProfileService } from './services/identity-profile.service';
 import { DatabaseModule } from '../database/database.module';
 import { OrionModule } from '../orion/orion.module';
 
@@ -18,11 +25,17 @@ import { OrionModule } from '../orion/orion.module';
  * 
  * Ce module centralise toutes les configurations de l'application :
  * - Paramètres généraux & identité
+ * - Structure pédagogique (niveaux, cycles, séries)
+ * - Option bilingue
  * - Feature flags (modules & fonctionnalités)
+ * - Communication (SMS, Email, WhatsApp)
+ * - Années scolaires
+ * - Rôles & permissions
  * - Paramètres de sécurité & conformité
  * - Paramètres ORION (IA de pilotage)
  * - Paramètres ATLAS (Chatbot IA)
  * - Paramètres de synchronisation offline
+ * - Cachets administratifs & signatures électroniques
  * - Historique & audit
  */
 @Module({
@@ -30,7 +43,14 @@ import { OrionModule } from '../orion/orion.module';
   controllers: [SettingsController],
   providers: [
     GeneralSettingsService,
+    PedagogicalStructureService,
+    BilingualSettingsService,
     FeatureFlagsService,
+    CommunicationSettingsService,
+    AcademicYearSettingsService,
+    RolesPermissionsService,
+    BillingSettingsService,
+    IdentityProfileService,
     SecuritySettingsService,
     OrionSettingsService,
     AtlasSettingsService,
@@ -42,7 +62,14 @@ import { OrionModule } from '../orion/orion.module';
   ],
   exports: [
     GeneralSettingsService,
+    PedagogicalStructureService,
+    BilingualSettingsService,
     FeatureFlagsService,
+    CommunicationSettingsService,
+    AcademicYearSettingsService,
+    RolesPermissionsService,
+    BillingSettingsService,
+    IdentityProfileService,
     SecuritySettingsService,
     OrionSettingsService,
     AtlasSettingsService,

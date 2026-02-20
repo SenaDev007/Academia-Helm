@@ -86,24 +86,21 @@ export function getTenantRedirectUrl(config: TenantRedirectConfig): string {
 
   // En local : utiliser les query params (pas de DNS requis)
   if (env === 'local') {
-    // Utiliser le helper centralisé (pas de localhost en dur)
     const { getAppBaseUrl } = require('./urls');
     const baseUrl = getAppBaseUrl();
     const url = new URL(path, baseUrl);
-    
-    // Ajouter le tenant en query param
+
     url.searchParams.set('tenant', tenantSlug);
-    
-    // Ajouter le portal type si fourni
+    if (config.tenantId) {
+      url.searchParams.set('tenant_id', config.tenantId);
+    }
     if (portalType) {
       url.searchParams.set('portal', portalType.toLowerCase());
     }
-    
-    // Ajouter les autres query params
     Object.entries(queryParams).forEach(([key, value]) => {
       url.searchParams.set(key, value);
     });
-    
+
     return url.toString();
   }
 
@@ -125,12 +122,13 @@ export function getTenantRedirectUrl(config: TenantRedirectConfig): string {
     return url.toString();
   }
 
-  // Construire l'URL avec sous-domaine
   const protocol = env === 'local' ? 'http' : 'https';
   const domain = `${tenantSlug}.${baseDomain}`;
   const url = new URL(path, `${protocol}://${domain}`);
-  
-  // Ajouter les query params
+
+  if (config.tenantId) {
+    url.searchParams.set('tenant_id', config.tenantId);
+  }
   if (portalType) {
     url.searchParams.set('portal', portalType.toLowerCase());
   }

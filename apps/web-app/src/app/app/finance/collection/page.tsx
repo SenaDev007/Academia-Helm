@@ -7,9 +7,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { AlertCircle, Bell, Handshake, Phone, Mail, MessageSquare, Plus, Eye } from 'lucide-react';
+import { Bell, Handshake, Phone, Mail, MessageSquare, Plus, Eye } from 'lucide-react';
 import {
-  ModuleContainer,
   ModuleHeader,
   SubModuleNavigation,
   ModuleContentArea,
@@ -103,11 +102,11 @@ export default function CollectionPage() {
   const totalBalanceDue = arrears.reduce((sum, a) => sum + a.balanceDue, 0);
 
   return (
-    <ModuleContainer>
+    <div className="space-y-6">
       <ModuleHeader
         title="Recouvrement"
         description="Identifiez, priorisez et recouvrez les impayés efficacement."
-        icon={AlertCircle}
+        icon="finance"
         kpis={[
           { label: 'Impayés critiques', value: String(criticalCount), unit: '' },
           { label: 'Montant total dû', value: totalBalanceDue.toLocaleString('fr-FR'), unit: 'XOF' },
@@ -203,7 +202,7 @@ export default function CollectionPage() {
           </TableBody>
         </Table>
       </ModuleContentArea>
-    </ModuleContainer>
+    </div>
   );
 }
 

@@ -7,8 +7,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { FileText, Plus, Search, Edit, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
-import { ModuleContainer, ModuleHeader } from '@/components/modules/blueprint';
+import { Plus, Search, Edit, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
+import { ModuleHeader } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 
 export default function TemplatesPage() {
@@ -22,11 +22,11 @@ export default function TemplatesPage() {
   }, [academicYear, schoolLevel]);
 
   return (
-    <ModuleContainer>
+    <div className="space-y-6">
       <ModuleHeader
         title="Templates de messages"
         description="Créer et gérer des templates de messages réutilisables."
-        icon={FileText}
+        icon="reports"
       />
       <div className="p-6">
         <div className="flex justify-between items-center mb-6">
@@ -49,7 +49,6 @@ export default function TemplatesPage() {
             <div className="col-span-full text-center py-8 text-gray-500">Chargement...</div>
           ) : templates.length === 0 ? (
             <div className="col-span-full text-center py-8 text-gray-500">
-              <FileText className="w-12 h-12 mx-auto mb-4 text-gray-300" />
               <p>Aucun template pour le moment.</p>
               <button className="mt-4 text-blue-600 hover:underline">
                 Créer votre premier template
@@ -85,7 +84,7 @@ export default function TemplatesPage() {
           )}
         </div>
       </div>
-    </ModuleContainer>
+    </div>
   );
 }
 

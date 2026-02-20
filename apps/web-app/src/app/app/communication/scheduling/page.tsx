@@ -7,8 +7,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Calendar, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
-import { ModuleContainer, ModuleHeader } from '@/components/modules/blueprint';
+import { Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { ModuleHeader } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 
 export default function SchedulingPage() {
@@ -35,11 +35,11 @@ export default function SchedulingPage() {
   };
 
   return (
-    <ModuleContainer>
+    <div className="space-y-6">
       <ModuleHeader
         title="Planification des messages"
         description="Gérer les messages planifiés et leur statut d'envoi."
-        icon={Calendar}
+        icon="attendance"
       />
       <div className="p-6">
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
@@ -51,7 +51,6 @@ export default function SchedulingPage() {
               <div className="text-center py-8 text-gray-500">Chargement...</div>
             ) : scheduledMessages.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
-                <Calendar className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                 <p>Aucun message planifié pour le moment.</p>
               </div>
             ) : (
@@ -87,7 +86,7 @@ export default function SchedulingPage() {
           </div>
         </div>
       </div>
-    </ModuleContainer>
+    </div>
   );
 }
 

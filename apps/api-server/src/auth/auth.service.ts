@@ -110,6 +110,23 @@ export class AuthService {
       }
     }
 
+    // Si tenant_id est fourni (même sans portal_type), vérifier l'appartenance
+    // Cela permet de sécuriser le login standard avec tenant_id
+    if (loginDto.tenant_id && (!loginDto.portal_type || loginDto.portal_type === 'PLATFORM')) {
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: loginDto.tenant_id },
+      });
+
+      if (!tenant || tenant.status !== 'active') {
+        throw new ForbiddenException('Tenant not found or inactive');
+      }
+
+      // Vérifier que l'utilisateur appartient à ce tenant
+      if (user.tenantId !== loginDto.tenant_id) {
+        throw new ForbiddenException('User does not belong to the specified tenant');
+      }
+    }
+
     // Update last login
     await this.usersService.updateLastLogin(user.id);
 

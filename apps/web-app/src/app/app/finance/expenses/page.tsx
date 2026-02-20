@@ -7,9 +7,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { TrendingDown, Plus, Eye, CheckCircle, XCircle, Filter } from 'lucide-react';
+import { Plus, Eye, CheckCircle, XCircle, Filter } from 'lucide-react';
 import {
-  ModuleContainer,
   ModuleHeader,
   SubModuleNavigation,
   ModuleContentArea,
@@ -69,11 +68,11 @@ export default function ExpensesPage() {
   };
 
   return (
-    <ModuleContainer>
+    <div className="space-y-6">
       <ModuleHeader
         title="Dépenses"
         description="Gérez les dépenses de l'établissement et leur processus d'approbation."
-        icon={TrendingDown}
+        icon="finance"
         kpis={[
           { label: 'Dépenses du mois', value: '1 890 000', unit: 'XOF' },
           { label: 'En attente', value: '5', unit: '' },
@@ -213,7 +212,7 @@ export default function ExpensesPage() {
           </TableBody>
         </Table>
       </ModuleContentArea>
-    </ModuleContainer>
+    </div>
   );
 }
 

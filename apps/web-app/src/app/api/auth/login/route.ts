@@ -7,11 +7,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import { setServerSession } from '@/lib/auth/session';
+import { loadTenantFromApi } from '@/lib/utils/load-tenant';
 
 interface LoginCredentials {
   email: string;
   password: string;
   tenantSubdomain?: string;
+  tenant_id?: string;
 }
 
 interface BackendLoginResponse {
@@ -53,6 +55,7 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify({
           email: body.email,
           password: body.password,
+          tenant_id: body.tenant_id,
         }),
         signal: controller.signal,
       });
@@ -90,20 +93,39 @@ export async function POST(request: NextRequest) {
     // Mapper la réponse du backend vers le format attendu par le frontend
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24h
     const token = backendData.accessToken;
+    const tenantId = backendData.user.tenantId || '';
     
-    // Créer un tenant par défaut si nécessaire (sera chargé depuis la DB plus tard)
-    const tenant = {
-      id: backendData.user.tenantId || '',
-      name: 'Mon École',
-      subdomain: body.tenantSubdomain || '',
-      subscriptionStatus: 'ACTIVE_SUBSCRIBED' as const,
+    // Charger le tenant complet depuis l'API backend avec le token reçu
+    let tenant = await loadTenantFromApi(tenantId, token);
+    
+    // Fallback si le chargement échoue ou si pas de tenant (PLATFORM_OWNER)
+    if (!tenant) {
+      tenant = {
+        id: tenantId,
+        name: tenantId ? 'Mon École' : '', // Vide pour PLATFORM_OWNER
+        slug: body.tenantSubdomain || '',
+        subdomain: body.tenantSubdomain || '',
+        status: 'active',
+        subscriptionStatus: 'ACTIVE_SUBSCRIBED',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    // Construire l'objet user complet avec les champs requis
+    const user = {
+      id: backendData.user.id,
+      email: backendData.user.email,
+      firstName: backendData.user.firstName || '',
+      lastName: backendData.user.lastName || '',
+      role: (backendData.user.role || 'USER') as any,
+      tenantId: backendData.user.tenantId || tenantId,
+      permissions: [], // Sera chargé via /context/bootstrap
       createdAt: new Date().toISOString(),
-      trialEndsAt: null,
-      nextPaymentDueAt: null,
     };
 
     const session = {
-      user: backendData.user,
+      user,
       tenant,
       token,
       expiresAt,
@@ -114,7 +136,7 @@ export async function POST(request: NextRequest) {
     
     return NextResponse.json({
       success: true,
-      user: backendData.user,
+      user,
       tenant,
     });
   } catch (error: any) {

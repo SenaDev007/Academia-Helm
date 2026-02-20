@@ -10,7 +10,7 @@
 
 import { useState, useEffect } from 'react';
 import { Calendar, Users, FileText, CheckSquare, AlertTriangle, Clock, MapPin, FileDown, Edit3, Eye } from 'lucide-react';
-import { ModuleContainer, ModuleHeader } from '@/components/modules/blueprint';
+import { ModuleHeader } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 
 export default function MeetingsPage() {
@@ -521,11 +521,11 @@ export default function MeetingsPage() {
   };
 
   return (
-    <ModuleContainer>
+    <div className="space-y-6">
       <ModuleHeader
         title="Réunions Administratives, Pédagogiques & Parents"
         description="Gestion complète des réunions institutionnelles. Planification, participants, ordres du jour, comptes rendus, décisions et suivi."
-        icon={Calendar}
+        icon="attendance"
         kpis={[
           {
             label: 'À venir',
@@ -582,7 +582,7 @@ export default function MeetingsPage() {
           renderTabContent()
         )}
       </div>
-    </ModuleContainer>
+    </div>
   );
 }
 

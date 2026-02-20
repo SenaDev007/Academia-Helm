@@ -7,9 +7,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Wallet, Plus, CheckCircle, Eye, BarChart2 } from 'lucide-react';
+import { Plus, CheckCircle, Eye, BarChart2 } from 'lucide-react';
 import {
-  ModuleContainer,
   ModuleHeader,
   SubModuleNavigation,
   ModuleContentArea,
@@ -67,11 +66,11 @@ export default function TreasuryPage() {
   const netCashFlow = totalCollected - totalSpent;
 
   return (
-    <ModuleContainer>
+    <div className="space-y-6">
       <ModuleHeader
         title="Trésorerie"
         description="Suivez la trésorerie et effectuez les clôtures journalières."
-        icon={Wallet}
+        icon="finance"
         kpis={[
           { label: 'Solde actuel', value: closures[0]?.closingBalance?.toLocaleString('fr-FR') || '0', unit: 'XOF' },
           { label: 'Recettes 30j', value: totalCollected.toLocaleString('fr-FR'), unit: 'XOF' },
@@ -190,7 +189,7 @@ export default function TreasuryPage() {
           </TableBody>
         </Table>
       </ModuleContentArea>
-    </ModuleContainer>
+    </div>
   );
 }
 

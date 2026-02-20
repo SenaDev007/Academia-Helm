@@ -6,16 +6,16 @@
 
 'use client';
 
-import { Shield, Plus } from 'lucide-react';
-import { ModuleContainer, ModuleHeader } from '@/components/modules/blueprint';
+import { Plus } from 'lucide-react';
+import { ModuleHeader } from '@/components/modules/blueprint';
 
 export default function CNSSPage() {
   return (
-    <ModuleContainer>
+    <div className="space-y-6">
       <ModuleHeader
         title="CNSS & Déclarations sociales"
         description="Gestion des déclarations CNSS et conformité sociale"
-        icon={Shield}
+        icon="qhse"
       />
       <div className="p-4">
         <div className="flex justify-end mb-4">
@@ -29,7 +29,7 @@ export default function CNSSPage() {
           <p className="text-gray-600">Interface de gestion CNSS en cours de développement...</p>
         </div>
       </div>
-    </ModuleContainer>
+    </div>
   );
 }
 

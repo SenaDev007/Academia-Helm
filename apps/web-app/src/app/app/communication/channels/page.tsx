@@ -7,8 +7,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Smartphone, Mail, MessageCircle, Bell, Settings, ToggleLeft, ToggleRight } from 'lucide-react';
-import { ModuleContainer, ModuleHeader } from '@/components/modules/blueprint';
+import { Mail, MessageCircle, Bell, Settings, ToggleLeft, ToggleRight } from 'lucide-react';
+import { ModuleHeader } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 
 export default function ChannelsPage() {
@@ -32,16 +32,16 @@ export default function ChannelsPage() {
       case 'PUSH':
         return <Bell className="w-5 h-5" />;
       default:
-        return <Smartphone className="w-5 h-5" />;
+        return <MessageCircle className="w-5 h-5" />;
     }
   };
 
   return (
-    <ModuleContainer>
+    <div className="space-y-6">
       <ModuleHeader
         title="Canaux de communication"
         description="Gérer les canaux de communication disponibles (SMS, Email, WhatsApp, Push)."
-        icon={Smartphone}
+        icon="communication"
       />
       <div className="p-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -49,7 +49,6 @@ export default function ChannelsPage() {
             <div className="col-span-full text-center py-8 text-gray-500">Chargement...</div>
           ) : channels.length === 0 ? (
             <div className="col-span-full text-center py-8 text-gray-500">
-              <Smartphone className="w-12 h-12 mx-auto mb-4 text-gray-300" />
               <p>Aucun canal configuré pour le moment.</p>
             </div>
           ) : (
@@ -79,7 +78,7 @@ export default function ChannelsPage() {
           )}
         </div>
       </div>
-    </ModuleContainer>
+    </div>
   );
 }
 

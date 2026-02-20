@@ -6,16 +6,16 @@
 
 'use client';
 
-import { DollarSign, Plus } from 'lucide-react';
-import { ModuleContainer, ModuleHeader } from '@/components/modules/blueprint';
+import { Plus } from 'lucide-react';
+import { ModuleHeader } from '@/components/modules/blueprint';
 
 export default function PayrollPage() {
   return (
-    <ModuleContainer>
+    <div className="space-y-6">
       <ModuleHeader
         title="Paie"
         description="Gestion de la paie et bulletins de salaire"
-        icon={DollarSign}
+        icon="rh"
       />
       <div className="p-4">
         <div className="flex justify-end mb-4">
@@ -29,7 +29,7 @@ export default function PayrollPage() {
           <p className="text-gray-600">Interface de gestion de la paie en cours de développement...</p>
         </div>
       </div>
-    </ModuleContainer>
+    </div>
   );
 }
 

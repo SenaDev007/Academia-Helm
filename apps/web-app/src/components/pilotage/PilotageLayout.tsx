@@ -51,14 +51,14 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Badge Offline/Online Status */}
       <OfflineStatusBadge />
       
       {/* Toast Synchronisation */}
       <SyncToast />
 
-      {/* Top Bar */}
+      {/* Top Bar - Fixé en haut */}
       <PilotageTopBar user={user} tenant={tenant} />
 
       <div className="flex">
@@ -69,9 +69,9 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
           user={user}
         />
 
-        {/* Main Content */}
+        {/* Main Content - avec scroll contenu isolé */}
         <main
-          className={`flex-1 transition-all duration-300 ${
+          className={`flex-1 transition-all duration-300 overflow-x-hidden ${
             sidebarOpen ? 'ml-64' : 'ml-16'
           }`}
         >
@@ -81,9 +81,9 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
         </main>
       </div>
 
-      {/* Footer minimal */}
-      <footer className="bg-white border-t border-gray-200 px-6 py-3">
-        <div className="flex items-center justify-between text-sm text-gray-600">
+      {/* Footer minimal — hauteur ~1 cm */}
+      <footer className="bg-white border-t border-gray-200 px-6 h-[1cm] min-h-[28px] flex items-center">
+        <div className="flex items-center justify-between text-xs text-gray-600 w-full">
           <div className="flex items-center space-x-4">
             <span>Academia Hub v1.0.0</span>
             <span>•</span>

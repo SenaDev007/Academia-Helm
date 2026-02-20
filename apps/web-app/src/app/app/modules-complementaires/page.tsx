@@ -17,11 +17,10 @@ import {
   Heart,
   ShoppingBag,
   Video,
-  Settings,
   TrendingUp,
   AlertTriangle,
 } from 'lucide-react';
-import { ModuleContainer, ModuleHeader } from '@/components/modules/blueprint';
+import { ModuleHeader } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import Link from 'next/link';
 
@@ -153,11 +152,11 @@ export default function ModulesComplementairesPage() {
   ];
 
   return (
-    <ModuleContainer>
+    <div className="space-y-6">
       <ModuleHeader
         title="Modules Complémentaires"
         description="Gestion des modules optionnels activables à la carte"
-        icon={Settings}
+        icon="settings"
       />
 
       {/* Alertes ORION */}
@@ -331,7 +330,7 @@ export default function ModulesComplementairesPage() {
           Les modules inactifs ne sont pas accessibles mais les données sont conservées.
         </p>
       </div>
-    </ModuleContainer>
+    </div>
   );
 }
 

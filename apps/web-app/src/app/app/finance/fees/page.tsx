@@ -7,9 +7,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { DollarSign, Plus, Edit, Trash2, Eye, Settings } from 'lucide-react';
+import { Plus, Edit, Trash2, Eye, Settings } from 'lucide-react';
 import {
-  ModuleContainer,
   ModuleHeader,
   SubModuleNavigation,
   ModuleContentArea,
@@ -69,11 +68,11 @@ export default function FeesPage() {
   ];
 
   return (
-    <ModuleContainer>
+    <div className="space-y-6">
       <ModuleHeader
         title="Configuration des Frais"
         description="Définissez les catégories et les montants de frais par niveau scolaire et classe."
-        icon={DollarSign}
+        icon="finance"
         actions={[
           {
             label: 'Nouvelle catégorie',
@@ -263,7 +262,7 @@ export default function FeesPage() {
           </TabsContent>
         </Tabs>
       </ModuleContentArea>
-    </ModuleContainer>
+    </div>
   );
 }
 

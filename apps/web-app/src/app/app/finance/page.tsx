@@ -7,7 +7,7 @@
 'use client';
 
 import { DollarSign, CreditCard, TrendingDown, Wallet, AlertCircle } from 'lucide-react';
-import { ModuleContainer, ModuleHeader, SubModuleNavigation } from '@/components/modules/blueprint';
+import { ModuleHeader, SubModuleNavigation } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -27,11 +27,11 @@ export default function FinancePage() {
   const currentTab = subModuleTabs.find(tab => pathname.startsWith(tab.path))?.id || 'fees';
 
   return (
-    <ModuleContainer>
+    <div className="space-y-6">
       <ModuleHeader
         title="Finances & Économat"
         description="Gestion complète des finances de l'établissement : frais, paiements, dépenses, trésorerie et recouvrement."
-        icon={DollarSign}
+        icon="finance"
         kpis={[
           { label: 'Recettes du mois', value: '2 450 000', unit: 'XOF' },
           { label: 'Dépenses du mois', value: '1 890 000', unit: 'XOF' },
@@ -73,6 +73,6 @@ export default function FinancePage() {
           ))}
         </div>
       </div>
-    </ModuleContainer>
+    </div>
   );
 }

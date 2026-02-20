@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import { setServerSession } from '@/lib/auth/session';
+import { loadTenantFromApi } from '@/lib/utils/load-tenant';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
@@ -44,18 +45,39 @@ export async function POST(request: NextRequest) {
 
     // Gérer la session après connexion réussie
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24h
-    const tenant = {
-      id: data.user.tenantId || body.tenantId || '',
-      name: 'Mon École',
-      subdomain: '',
-      subscriptionStatus: 'ACTIVE_SUBSCRIBED' as const,
+    const tenantId = data.user.tenantId || body.tenantId || '';
+    
+    // Charger le tenant complet depuis l'API backend avec le token reçu
+    let tenant = await loadTenantFromApi(tenantId, data.token);
+    
+    // Fallback si le chargement échoue (utiliser valeurs minimales)
+    if (!tenant) {
+      tenant = {
+        id: tenantId,
+        name: 'Mon École',
+        slug: '',
+        subdomain: '',
+        status: 'active',
+        subscriptionStatus: 'ACTIVE_SUBSCRIBED',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    // Construire l'objet user complet avec les champs requis
+    const user = {
+      id: data.user.id,
+      email: data.user.email,
+      firstName: data.user.firstName || '',
+      lastName: data.user.lastName || '',
+      role: (data.user.role || 'USER') as any,
+      tenantId: data.user.tenantId || tenantId,
+      permissions: [], // Sera chargé via /context/bootstrap
       createdAt: new Date().toISOString(),
-      trialEndsAt: null,
-      nextPaymentDueAt: null,
     };
 
     const session = {
-      user: data.user,
+      user,
       tenant,
       token: data.token,
       expiresAt,
@@ -66,7 +88,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      user: data.user,
+      user,
       tenant,
       portalType: data.portalType,
     });

@@ -7,8 +7,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Users, Plus, Search, Filter } from 'lucide-react';
-import { ModuleContainer, ModuleHeader } from '@/components/modules/blueprint';
+import { Plus, Search, Filter } from 'lucide-react';
+import { ModuleHeader } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 
 export default function StaffPage() {
@@ -22,11 +22,11 @@ export default function StaffPage() {
   }, [academicYear, schoolLevel]);
 
   return (
-    <ModuleContainer>
+    <div className="space-y-6">
       <ModuleHeader
         title="Personnel"
         description="Gestion du personnel de l'établissement"
-        icon={Users}
+        icon="rh"
       />
       <div className="p-4">
         <div className="flex justify-between items-center mb-4">
@@ -99,7 +99,7 @@ export default function StaffPage() {
           </div>
         )}
       </div>
-    </ModuleContainer>
+    </div>
   );
 }
 

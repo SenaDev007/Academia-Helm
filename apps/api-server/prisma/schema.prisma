@@ -189,8 +189,12 @@ model Tenant {
   schoolLevels                     SchoolLevel[]
   schoolPaymentAccounts            SchoolPaymentAccount[]
   schoolSettings                   SchoolSettings?
+  identityProfiles                 TenantIdentityProfile[]
   schools                          School?
   securitySettings                 SecuritySettings?
+  settingsBilingual                SettingsBilingual?
+  settingsCommunication            SettingsCommunication?
+  settingsPedagogicalStructure     SettingsPedagogicalStructure?
   settingsHistory                  SettingsHistory[]
   shopProducts                     ShopProduct[]
   shopSales                        ShopSale[]
@@ -912,6 +916,14 @@ model Role {
   name            String
   description     String?
   isSystemRole    Boolean          @default(false)
+
+  // Accès IA
+  canAccessOrion  Boolean          @default(false)
+  canAccessAtlas  Boolean          @default(false)
+
+  // Niveaux autorisés (vide = tous)
+  allowedLevelIds String[]         @default([])
+
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   rolePermissions RolePermission[]
@@ -1869,25 +1881,120 @@ model TenantSetting {
 }
 
 model SchoolSettings {
-  id              String   @id @default(uuid())
-  tenantId        String   @unique
-  schoolName      String
-  logoUrl         String?
-  sealUrl         String?
-  signatureUrl    String?
-  timezone        String   @default("Africa/Porto-Novo")
-  defaultLanguage String   @default("FR")
-  currency        String   @default("XOF")
-  currencySymbol  String   @default("FCFA")
-  address         String?
-  phone           String?
-  email           String?
-  website         String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id                   String   @id @default(uuid())
+  tenantId             String   @unique
+
+  // Identité juridique
+  schoolName           String
+  abbreviation         String?
+  establishmentType    String   @default("PRIVEE") // PUBLIQUE, PRIVEE, CONFESSIONNELLE, INSTITUT, UNIVERSITE
+  authorizationNumber  String?
+  authorizationDate    DateTime?
+  foundingDate         DateTime?
+
+  // Visuels
+  logoUrl              String?
+  sealUrl              String?
+  signatureUrl         String?
+
+  // Localisation
+  address              String?
+  city                 String?
+  department           String?
+  country              String   @default("BJ")
+  postalCode           String?
+  gpsCoordinates       Json?
+
+  // Contacts
+  phone                String?
+  secondaryPhone       String?
+  fax                  String?
+  email                String?
+  website              String?
+  whatsapp             String?
+  socialMediaLinks     Json?
+
+  // Paramètres régionaux
+  timezone             String   @default("Africa/Porto-Novo")
+  defaultLanguage      String   @default("FR")
+  currency             String   @default("XOF")
+  currencySymbol       String   @default("FCFA")
+
+  // Branding
+  slogan               String?
+  primaryColor         String   @default("#3b82f6")
+  secondaryColor       String   @default("#10b981")
+
+  // Versioning
+  version              Int      @default(1)
+
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  tenant               Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("school_settings")
+}
+
+// ============================================================================
+// IDENTITÉ ÉTABLISSEMENT — SOURCE LÉGALE DE VÉRITÉ VERSIONNÉE
+// ============================================================================
+// Chaque modification crée une nouvelle version.
+// Les documents historiques conservent leur validité légale.
+// Un seul profil actif par tenant, mais toutes les versions sont conservées.
+
+model TenantIdentityProfile {
+  id                    String    @id @default(uuid())
+  tenantId              String
+  version               Int       @default(1)
+  isActive              Boolean   @default(false)
+
+  // Identité juridique
+  schoolName            String
+  schoolAcronym         String?
+  schoolType            String    @default("PRIVEE") // PUBLIQUE, PRIVEE, CONFESSIONNELLE, INSTITUT, UNIVERSITE
+  authorizationNumber   String?
+  foundationDate        DateTime?
+  slogan                String?
+
+  // Localisation
+  address               String?
+  city                  String?
+  department            String?
+  country               String    @default("BJ")
+  postalCode            String?
+
+  // Contacts
+  phonePrimary          String?
+  phoneSecondary        String?
+  email                 String?
+  website               String?
+
+  // Paramètres régionaux
+  currency              String    @default("XOF")
+  timezone              String    @default("Africa/Porto-Novo")
+
+  // Visuels officiels (URLs des fichiers uploadés)
+  logoUrl               String?
+  stampUrl              String?
+  directorSignatureUrl  String?
+
+  // Métadonnées de version
+  createdBy             String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  activatedAt           DateTime?
+  activatedBy           String?
+  deactivatedAt         DateTime?
+  deactivatedBy         String?
+  changeReason          String?
+
+  // Relations
+  tenant                Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, version])
+  @@index([tenantId, isActive])
+  @@index([tenantId, version])
+  @@map("tenant_identity_profiles")
 }
 
 model AdministrativeSeal {
@@ -2133,6 +2240,106 @@ model AtlasSettings {
   tenant                  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("atlas_settings")
+}
+
+// ============================================================================
+// SETTINGS - STRUCTURE PÉDAGOGIQUE
+// ============================================================================
+
+model SettingsPedagogicalStructure {
+  id                     String   @id @default(uuid())
+  tenantId               String   @unique
+
+  // Niveaux actifs
+  maternelleEnabled      Boolean  @default(false)
+  primaireEnabled        Boolean  @default(true)
+  secondaireEnabled      Boolean  @default(true)
+
+  // Configuration cycles (JSON flexible)
+  cyclesConfiguration    Json?
+
+  // Séries actives (secondaire)
+  activeSeries           String[] @default(["A", "C", "D"])
+
+  // Contraintes
+  allowLevelModification Boolean  @default(true)
+
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  tenant                 Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("settings_pedagogical_structure")
+}
+
+// ============================================================================
+// SETTINGS - OPTION BILINGUE
+// ============================================================================
+
+model SettingsBilingual {
+  id                          String    @id @default(uuid())
+  tenantId                    String    @unique
+
+  isEnabled                   Boolean   @default(false)
+  separateSubjects            Boolean   @default(true)
+  separateGrades              Boolean   @default(true)
+  defaultUILanguage           String    @default("FR")
+
+  // Migration
+  migrationRequired           Boolean   @default(false)
+  migrationStatus             String?
+  migratedAt                  DateTime?
+
+  // Impact facturation
+  billingImpactAcknowledged   Boolean   @default(false)
+
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+  tenant                      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("settings_bilingual")
+}
+
+// ============================================================================
+// SETTINGS - COMMUNICATION
+// ============================================================================
+
+model SettingsCommunication {
+  id                    String   @id @default(uuid())
+  tenantId              String   @unique
+
+  // SMS Provider
+  smsProvider           String?
+  smsCredentials        Json?
+  smsEnabled            Boolean  @default(false)
+
+  // WhatsApp
+  whatsappProvider      String?
+  whatsappCredentials   Json?
+  whatsappEnabled       Boolean  @default(false)
+
+  // Email SMTP
+  smtpHost              String?
+  smtpPort              Int?     @default(587)
+  smtpUser              String?
+  smtpPassword          String?
+  smtpFromEmail         String?
+  smtpFromName          String?
+  smtpSecure            Boolean  @default(true)
+  emailEnabled          Boolean  @default(false)
+
+  // Expéditeur par défaut
+  defaultSenderName     String?
+  defaultSenderPhone    String?
+
+  // Limites
+  dailySmsLimit         Int?
+  dailyEmailLimit       Int?
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("settings_communication")
 }
 
 model Meeting {

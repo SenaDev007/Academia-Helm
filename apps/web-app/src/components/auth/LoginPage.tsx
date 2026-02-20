@@ -36,9 +36,11 @@ export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   
-  // Récupérer les paramètres de l'URL
+  // Récupérer les paramètres de l'URL (tenant_id = UUID pour l'API, tenant = slug pour affichage/compat)
   const portalParam = searchParams?.get('portal')?.toLowerCase() as PortalType;
-  const tenantId = searchParams?.get('tenant');
+  const tenantSlug = searchParams?.get('tenant');
+  const tenantIdFromUrl = searchParams?.get('tenant_id');
+  const tenantIdForApi = tenantIdFromUrl || tenantSlug;
   const redirectPath = searchParams?.get('redirect') || '/app';
 
   // État pour le type de portail
@@ -102,7 +104,8 @@ export default function LoginPage() {
       body: JSON.stringify({
         email: schoolCredentials.email,
         password: schoolCredentials.password,
-        tenantSubdomain: tenantId,
+        tenantSubdomain: tenantSlug,
+        tenant_id: tenantIdFromUrl || undefined,
       }),
     });
 
@@ -112,14 +115,23 @@ export default function LoginPage() {
       throw new Error(data.message || 'Erreur lors de la connexion');
     }
 
-    const redirectUrl = tenantId 
-      ? `${redirectPath}?tenant=${encodeURIComponent(tenantId)}`
-      : redirectPath;
+    // Construire l'URL de redirection avec tenant et tenant_id si présents
+    let redirectUrl = redirectPath;
+    if (tenantSlug || tenantIdFromUrl) {
+      const params = new URLSearchParams();
+      if (tenantSlug) {
+        params.set('tenant', tenantSlug);
+      }
+      if (tenantIdFromUrl) {
+        params.set('tenant_id', tenantIdFromUrl);
+      }
+      redirectUrl = `${redirectPath}?${params.toString()}`;
+    }
     window.location.href = redirectUrl;
   };
 
   const handleSchoolLogin = async () => {
-    if (!tenantId) {
+    if (!tenantIdForApi) {
       throw new Error('Identifiant de l\'établissement manquant');
     }
 
@@ -129,7 +141,7 @@ export default function LoginPage() {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        tenantId,
+        tenantId: tenantIdForApi,
         email: schoolCredentials.email,
         password: schoolCredentials.password,
       }),
@@ -141,11 +153,15 @@ export default function LoginPage() {
       throw new Error(data.message || data.error || 'Erreur lors de la connexion');
     }
 
-    window.location.href = redirectPath;
+    // Ajouter tenant dans l'URL pour que le middleware autorise l'accès à /app
+    const redirectUrl = tenantSlug || tenantIdFromUrl
+      ? `${redirectPath}?tenant=${encodeURIComponent(tenantSlug || '')}${tenantIdFromUrl ? `&tenant_id=${encodeURIComponent(tenantIdFromUrl)}` : ''}`
+      : redirectPath;
+    window.location.href = redirectUrl;
   };
 
   const handleTeacherLogin = async () => {
-    if (!tenantId) {
+    if (!tenantIdForApi) {
       throw new Error('Identifiant de l\'établissement manquant');
     }
 
@@ -155,7 +171,7 @@ export default function LoginPage() {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        tenantId,
+        tenantId: tenantIdForApi,
         teacherIdentifier: teacherCredentials.teacherIdentifier,
         password: teacherCredentials.password,
       }),
@@ -167,15 +183,18 @@ export default function LoginPage() {
       throw new Error(data.message || data.error || 'Erreur lors de la connexion');
     }
 
-    window.location.href = redirectPath;
+    // Ajouter tenant dans l'URL pour que le middleware autorise l'accès à /app
+    const redirectUrl = tenantSlug || tenantIdFromUrl
+      ? `${redirectPath}?tenant=${encodeURIComponent(tenantSlug || '')}${tenantIdFromUrl ? `&tenant_id=${encodeURIComponent(tenantIdFromUrl)}` : ''}`
+      : redirectPath;
+    window.location.href = redirectUrl;
   };
 
   const handleParentLogin = async () => {
-    if (!tenantId) {
+    if (!tenantIdForApi) {
       throw new Error('Identifiant de l\'établissement manquant');
     }
 
-    // Si OTP pas encore envoyé, envoyer la demande
     if (!parentOtpSent) {
       const response = await fetch('/api/portal/auth/parent', {
         method: 'POST',
@@ -183,7 +202,7 @@ export default function LoginPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          tenantId,
+          tenantId: tenantIdForApi,
           phone: parentCredentials.phone,
         }),
       });
@@ -203,14 +222,13 @@ export default function LoginPage() {
       return;
     }
 
-    // Si OTP envoyé, vérifier avec le code
     const response = await fetch('/api/portal/auth/parent', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        tenantId,
+        tenantId: tenantIdForApi,
         phone: parentCredentials.phone,
         otp: parentCredentials.otp,
       }),
@@ -222,7 +240,11 @@ export default function LoginPage() {
       throw new Error(data.message || data.error || 'Code OTP invalide');
     }
 
-    window.location.href = redirectPath;
+    // Ajouter tenant dans l'URL pour que le middleware autorise l'accès à /app
+    const redirectUrl = tenantSlug || tenantIdFromUrl
+      ? `${redirectPath}?tenant=${encodeURIComponent(tenantSlug || '')}${tenantIdFromUrl ? `&tenant_id=${encodeURIComponent(tenantIdFromUrl)}` : ''}`
+      : redirectPath;
+    window.location.href = redirectUrl;
   };
 
   // Déterminer le titre et l'icône selon le type de portail

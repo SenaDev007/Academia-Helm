@@ -7,8 +7,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { MessageSquare, Plus, Search, Filter, Send, Archive } from 'lucide-react';
-import { ModuleContainer, ModuleHeader } from '@/components/modules/blueprint';
+import { Plus, Search, Filter, Send, Archive } from 'lucide-react';
+import { ModuleHeader } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 
 export default function MessagesPage() {
@@ -22,11 +22,11 @@ export default function MessagesPage() {
   }, [academicYear, schoolLevel]);
 
   return (
-    <ModuleContainer>
+    <div className="space-y-6">
       <ModuleHeader
         title="Messages"
         description="Gérer et envoyer des messages aux parents, élèves et personnel."
-        icon={MessageSquare}
+        icon="communication"
       />
       <div className="p-6">
         <div className="flex justify-between items-center mb-6">
@@ -95,7 +95,7 @@ export default function MessagesPage() {
           </div>
         </div>
       </div>
-    </ModuleContainer>
+    </div>
   );
 }
 

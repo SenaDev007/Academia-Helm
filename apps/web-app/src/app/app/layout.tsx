@@ -34,16 +34,21 @@ export default async function AppLayout({
     redirect('/login');
   }
 
-  // TODO: Charger le tenant depuis la session ou la base de données
   const user = session.user as User;
-  const tenant: Tenant = {
+  
+  // Utiliser le tenant depuis la session (chargé depuis la DB lors du login)
+  // Fallback vers valeurs par défaut si le tenant n'est pas dans la session
+  const tenant: Tenant = session.tenant || {
     id: user.tenantId || '',
-    name: 'Mon École', // TODO: Charger depuis la DB
-    subdomain: '', // TODO: Charger depuis la DB
-    subscriptionStatus: 'ACTIVE_SUBSCRIBED', // TODO: Charger depuis la DB
+    name: 'Mon École',
+    slug: '',
+    subdomain: '',
+    status: 'active',
+    subscriptionStatus: 'ACTIVE_SUBSCRIBED',
     createdAt: new Date().toISOString(),
-    trialEndsAt: null,
-    nextPaymentDueAt: null,
+    updatedAt: new Date().toISOString(),
+    trialEndsAt: undefined,
+    nextPaymentDueAt: undefined,
   };
 
   return (

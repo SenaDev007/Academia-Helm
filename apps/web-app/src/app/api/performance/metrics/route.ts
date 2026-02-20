@@ -1,19 +1,16 @@
 /**
  * Performance Metrics API Route
- * 
- * Route pour recevoir les métriques de performance
- * Usage interne uniquement (Super Admin)
+ *
+ * Reçoit les métriques de performance côté client.
+ * Le backend NestJS n'expose pas cette route ; on accepte et on retourne 200.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
-
-const API_BASE_URL = getApiBaseUrlForRoutes();
 
 /**
  * POST /api/performance/metrics
- * 
- * Enregistre les métriques de performance
+ *
+ * Accepte les métriques de performance (POST_LOGIN, MODULE_LOAD, etc.)
  */
 export async function POST(request: NextRequest) {
   try {
@@ -27,21 +24,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Envoyer au backend API
-    const response = await fetch(`${API_BASE_URL}/performance/metrics`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
-      },
-      body: JSON.stringify({ metrics }),
-    });
-
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: 'Failed to save metrics' },
-        { status: response.status }
-      );
+    // En développement, log optionnel pour debug
+    if (process.env.NODE_ENV === 'development' && metrics.length > 0) {
+      const summary = metrics.map((m: any) => `${m.type}: ${m.duration?.toFixed(0)}ms`).join(', ');
+      console.log('[Performance]', summary);
     }
 
     return NextResponse.json({ success: true });

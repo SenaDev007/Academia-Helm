@@ -25,6 +25,9 @@ import {
   PortalType,
 } from '../dto/portal-login.dto';
 
+/** UUID v4 regex (simplifié) pour distinguer id vs slug */
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 @Injectable()
 export class PortalAuthService {
   private readonly logger = new Logger(PortalAuthService.name);
@@ -36,6 +39,18 @@ export class PortalAuthService {
   ) {}
 
   /**
+   * Résout le tenant par id (UUID) ou par slug.
+   * Permet au frontend d'envoyer soit l'id (depuis l'URL) soit le slug (compatibilité).
+   */
+  private async resolveTenant(tenantIdOrSlug: string) {
+    const isUuid = UUID_REGEX.test(tenantIdOrSlug.trim());
+    const tenant = isUuid
+      ? await this.prisma.tenant.findUnique({ where: { id: tenantIdOrSlug } })
+      : await this.prisma.tenant.findUnique({ where: { slug: tenantIdOrSlug } });
+    return tenant;
+  }
+
+  /**
    * Authentification Portail École
    * Email + Password pour Direction/Administration
    */
@@ -44,20 +59,17 @@ export class PortalAuthService {
     ipAddress?: string,
     userAgent?: string,
   ) {
-    // Vérifier que le tenant existe et est actif
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: dto.tenantId },
-    });
-
+    const tenant = await this.resolveTenant(dto.tenantId);
     if (!tenant || tenant.status !== 'active') {
       throw new UnauthorizedException('Établissement non trouvé ou inactif');
     }
+    const tenantId = tenant.id;
 
     // Trouver l'utilisateur
     const user = await this.prisma.user.findFirst({
       where: {
         email: dto.email,
-        tenantId: dto.tenantId,
+        tenantId,
         status: 'active',
       },
       include: {
@@ -105,7 +117,7 @@ export class PortalAuthService {
 
     // Créer une session de portail
     const session = await this.portalSessionService.createSession(
-      dto.tenantId,
+      tenantId,
       PortalType.SCHOOL,
       user.id,
       ipAddress,
@@ -145,19 +157,16 @@ export class PortalAuthService {
     ipAddress?: string,
     userAgent?: string,
   ) {
-    // Vérifier que le tenant existe
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: dto.tenantId },
-    });
-
+    const tenant = await this.resolveTenant(dto.tenantId);
     if (!tenant || tenant.status !== 'active') {
       throw new UnauthorizedException('Établissement non trouvé ou inactif');
     }
+    const tenantId = tenant.id;
 
     // Trouver l'enseignant par matricule
     const teacher = await this.prisma.teacher.findFirst({
       where: {
-        tenantId: dto.tenantId,
+        tenantId,
         matricule: dto.teacherIdentifier,
         status: 'active',
       },
@@ -170,7 +179,7 @@ export class PortalAuthService {
     // Trouver l'utilisateur associé par email
     const user = await this.prisma.user.findFirst({
       where: {
-        tenantId: dto.tenantId,
+        tenantId,
         email: teacher.email || '',
         status: 'active',
       },
@@ -217,7 +226,7 @@ export class PortalAuthService {
 
     // Créer une session de portail
     const session = await this.portalSessionService.createSession(
-      dto.tenantId,
+      tenantId,
       PortalType.TEACHER,
       user.id,
       ipAddress,
@@ -261,19 +270,16 @@ export class PortalAuthService {
     ipAddress?: string,
     userAgent?: string,
   ) {
-    // Vérifier que le tenant existe
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: dto.tenantId },
-    });
-
+    const tenant = await this.resolveTenant(dto.tenantId);
     if (!tenant || tenant.status !== 'active') {
       throw new UnauthorizedException('Établissement non trouvé ou inactif');
     }
+    const tenantId = tenant.id;
 
     // Trouver le parent par téléphone
     const guardian = await this.prisma.guardian.findFirst({
       where: {
-        tenantId: dto.tenantId,
+        tenantId,
         phone: dto.phone,
       },
     });
@@ -285,7 +291,7 @@ export class PortalAuthService {
     // Trouver l'utilisateur associé par email
     const user = guardian.email ? await this.prisma.user.findFirst({
       where: {
-        tenantId: dto.tenantId,
+        tenantId,
         email: guardian.email,
         status: 'active',
       },
@@ -293,37 +299,30 @@ export class PortalAuthService {
 
     // Si pas d'OTP fourni, générer et envoyer
     if (!dto.otp) {
-      // TODO: Générer et envoyer OTP via SMS/WhatsApp
       const otp = this.generateOTP();
-      // TODO: Stocker OTP temporairement (Redis ou table temporaire)
-      // TODO: Envoyer OTP via service de communication
-
+      await this.storeParentOtp(tenantId, dto.phone, otp);
+      // TODO: Envoyer OTP via SMS/WhatsApp en production
       this.logger.log(`OTP generated for parent ${guardian.id}: ${otp}`);
 
       return {
         message: 'Code OTP envoyé',
         phone: dto.phone,
-        // En développement, retourner l'OTP (à retirer en production)
         otp: process.env.NODE_ENV === 'development' ? otp : undefined,
       };
     }
 
     // Vérifier l'OTP
-    // TODO: Vérifier OTP depuis le stockage temporaire
-    // Pour l'instant, on accepte n'importe quel OTP en développement
-    if (process.env.NODE_ENV !== 'development') {
-      // TODO: Implémenter la vérification réelle
-      throw new BadRequestException('Vérification OTP non implémentée');
+    const otpValid = await this.verifyParentOtp(tenantId, dto.phone, dto.otp);
+    if (!otpValid) {
+      throw new UnauthorizedException('Code OTP invalide ou expiré');
     }
 
-    // Si l'OTP est valide, créer la session
     if (!user) {
       throw new UnauthorizedException('Compte parent non configuré');
     }
 
-    // Créer une session de portail
     const session = await this.portalSessionService.createSession(
-      dto.tenantId,
+      tenantId,
       PortalType.PARENT,
       user.id,
       ipAddress,
@@ -380,6 +379,35 @@ export class PortalAuthService {
    */
   private generateOTP(): string {
     return Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
+  /** Stockage OTP temporaire (en mémoire, TTL 5 min). En production préférer Redis ou table dédiée. */
+  private readonly parentOtpStore = new Map<string, { code: string; expiresAt: number }>();
+  private static readonly PARENT_OTP_TTL_MS = 5 * 60 * 1000;
+
+  private normalizePhoneForOtpKey(phone: string): string {
+    return phone.replace(/\D/g, '').trim() || phone;
+  }
+
+  private async storeParentOtp(tenantId: string, phone: string, code: string): Promise<void> {
+    const key = `${tenantId}:${this.normalizePhoneForOtpKey(phone)}`;
+    this.parentOtpStore.set(key, {
+      code,
+      expiresAt: Date.now() + PortalAuthService.PARENT_OTP_TTL_MS,
+    });
+  }
+
+  private async verifyParentOtp(tenantId: string, phone: string, code: string): Promise<boolean> {
+    const key = `${tenantId}:${this.normalizePhoneForOtpKey(phone)}`;
+    const entry = this.parentOtpStore.get(key);
+    if (!entry) return false;
+    if (Date.now() > entry.expiresAt) {
+      this.parentOtpStore.delete(key);
+      return false;
+    }
+    const valid = entry.code === code.trim();
+    if (valid) this.parentOtpStore.delete(key);
+    return valid;
   }
 }
 

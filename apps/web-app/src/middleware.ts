@@ -12,14 +12,40 @@ import { getApiBaseUrl, getAppBaseUrl } from '@/lib/utils/urls';
 
 const SESSION_COOKIE = 'academia_session';
 
-/** Récupère l'utilisateur depuis le cookie de session (Edge). */
-function getUserFromSessionCookie(request: NextRequest): { id: string } | null {
+/** Récupère l'utilisateur et le tenant depuis le cookie de session (Edge). */
+function getUserFromSessionCookie(request: NextRequest): { 
+  id: string; 
+  tenantId?: string;
+  isPlatformOwner?: boolean;
+  tenantSlug?: string;
+} | null {
   const sessionCookie = request.cookies.get(SESSION_COOKIE)?.value;
   if (!sessionCookie) return null;
   try {
-    const session = JSON.parse(sessionCookie) as { user?: { id?: string }; expiresAt?: string };
+    const session = JSON.parse(sessionCookie) as { 
+      user?: { 
+        id?: string; 
+        tenantId?: string;
+        isPlatformOwner?: boolean;
+        role?: string;
+      }; 
+      tenant?: { 
+        id?: string;
+        slug?: string;
+        subdomain?: string;
+      };
+      expiresAt?: string 
+    };
     if (session.expiresAt && new Date(session.expiresAt) < new Date()) return null;
-    if (session?.user?.id) return { id: session.user.id };
+    if (session?.user?.id) {
+      const isPlatformOwner = session.user.isPlatformOwner || session.user.role === 'PLATFORM_OWNER';
+      return { 
+        id: session.user.id,
+        tenantId: session.user.tenantId || session.tenant?.id,
+        isPlatformOwner,
+        tenantSlug: session.tenant?.slug || session.tenant?.subdomain,
+      };
+    }
     return null;
   } catch {
     return null;
@@ -149,8 +175,27 @@ export async function middleware(request: NextRequest) {
     const isLocal = process.env.NODE_ENV === 'development';
     const tenantParam = request.nextUrl.searchParams.get('tenant');
     
-    // Si pas de subdomain ET pas de tenant param → redirection vers portail
+    // Si pas de subdomain ET pas de tenant param → vérifier la session
     if (!subdomain && !tenantParam) {
+      // Si la session contient un tenant valide, autoriser l'accès
+      if (user?.tenantId) {
+        // Ajouter le tenant dans l'URL pour cohérence
+        // Utiliser le slug depuis la session si disponible, sinon tenantId (UUID)
+        const url = request.nextUrl.clone();
+        const tenantSlug = user.tenantSlug || user.tenantId;
+        url.searchParams.set('tenant', tenantSlug);
+        // Ajouter tenant_id si on utilise le slug
+        if (user.tenantSlug && user.tenantId) {
+          url.searchParams.set('tenant_id', user.tenantId);
+        }
+        return NextResponse.redirect(url);
+      }
+      
+      // Si PLATFORM_OWNER (pas de tenantId mais session valide), autoriser /app
+      if (user?.id && user.isPlatformOwner) {
+        return response; // Autoriser l'accès à /app pour PLATFORM_OWNER
+      }
+      
       const mainDomain = getAppBaseUrl();
       
       // Logger la tentative d'accès sans tenant

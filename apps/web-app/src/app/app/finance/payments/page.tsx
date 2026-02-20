@@ -7,9 +7,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { CreditCard, Plus, Eye, Download, Filter } from 'lucide-react';
+import { Plus, Eye, Download, Filter } from 'lucide-react';
 import {
-  ModuleContainer,
   ModuleHeader,
   SubModuleNavigation,
   ModuleContentArea,
@@ -63,11 +62,11 @@ export default function PaymentsPage() {
   };
 
   return (
-    <ModuleContainer>
+    <div className="space-y-6">
       <ModuleHeader
         title="Paiements"
         description="Enregistrez et suivez tous les paiements des élèves."
-        icon={CreditCard}
+        icon="payments"
         kpis={[
           { label: 'Paiements aujourd\'hui', value: '12', unit: '' },
           { label: 'Montant total', value: '2 450 000', unit: 'XOF' },
@@ -192,7 +191,7 @@ export default function PaymentsPage() {
           </TableBody>
         </Table>
       </ModuleContentArea>
-    </ModuleContainer>
+    </div>
   );
 }
 

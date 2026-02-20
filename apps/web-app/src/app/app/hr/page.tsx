@@ -7,7 +7,7 @@
 'use client';
 
 import { UserCheck, FileText, Clock, DollarSign, Shield, Users } from 'lucide-react';
-import { ModuleContainer, ModuleHeader, SubModuleNavigation } from '@/components/modules/blueprint';
+import { ModuleHeader, SubModuleNavigation } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { usePathname } from 'next/navigation';
 
@@ -26,11 +26,11 @@ export default function HRPage() {
   const currentTab = subModuleTabs.find(tab => pathname.startsWith(tab.path))?.id || 'staff';
 
   return (
-    <ModuleContainer>
+    <div className="space-y-6">
       <ModuleHeader
         title="Personnel, RH & Paie"
         description="Gestion complète du personnel, des contrats, des présences, de la paie et des déclarations sociales."
-        icon={UserCheck}
+        icon="rh"
         kpis={[
           { label: 'Effectif total', value: '45', unit: 'personnes' },
           { label: 'Taux de présence', value: '92%', unit: '' },
@@ -51,6 +51,6 @@ export default function HRPage() {
           Sélectionnez un sous-module ci-dessus pour commencer.
         </p>
       </div>
-    </ModuleContainer>
+    </div>
   );
 }

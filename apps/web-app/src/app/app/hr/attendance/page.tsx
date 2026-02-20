@@ -6,16 +6,16 @@
 
 'use client';
 
-import { Clock, Plus } from 'lucide-react';
-import { ModuleContainer, ModuleHeader } from '@/components/modules/blueprint';
+import { Plus } from 'lucide-react';
+import { ModuleHeader } from '@/components/modules/blueprint';
 
 export default function AttendancePage() {
   return (
-    <ModuleContainer>
+    <div className="space-y-6">
       <ModuleHeader
         title="Présences & Temps de travail"
         description="Gestion des présences et heures supplémentaires"
-        icon={Clock}
+        icon="attendance"
       />
       <div className="p-4">
         <div className="flex justify-end mb-4">
@@ -29,7 +29,7 @@ export default function AttendancePage() {
           <p className="text-gray-600">Interface de gestion des présences en cours de développement...</p>
         </div>
       </div>
-    </ModuleContainer>
+    </div>
   );
 }
 

@@ -7,8 +7,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Zap, Plus, ToggleLeft, ToggleRight, Edit, Trash2, Activity } from 'lucide-react';
-import { ModuleContainer, ModuleHeader } from '@/components/modules/blueprint';
+import { Plus, ToggleLeft, ToggleRight, Edit, Trash2, Activity } from 'lucide-react';
+import { ModuleHeader } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 
 export default function AutomationPage() {
@@ -22,11 +22,11 @@ export default function AutomationPage() {
   }, [academicYear, schoolLevel]);
 
   return (
-    <ModuleContainer>
+    <div className="space-y-6">
       <ModuleHeader
         title="Automatisation"
         description="Configurer des déclencheurs automatiques pour les messages (absences, impayés, incidents, etc.)."
-        icon={Zap}
+        icon="communication"
       />
       <div className="p-6">
         <div className="flex justify-between items-center mb-6">
@@ -42,7 +42,6 @@ export default function AutomationPage() {
             <div className="col-span-full text-center py-8 text-gray-500">Chargement...</div>
           ) : triggers.length === 0 ? (
             <div className="col-span-full text-center py-8 text-gray-500">
-              <Zap className="w-12 h-12 mx-auto mb-4 text-gray-300" />
               <p>Aucun déclencheur automatisé pour le moment.</p>
               <button className="mt-4 text-blue-600 hover:underline">
                 Créer votre premier déclencheur
@@ -85,7 +84,7 @@ export default function AutomationPage() {
           )}
         </div>
       </div>
-    </ModuleContainer>
+    </div>
   );
 }
 

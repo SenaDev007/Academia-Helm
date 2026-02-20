@@ -121,11 +121,29 @@ export async function executePostLoginFlow(
       }
     }
 
-    if (!tenant) {
+    // PLATFORM_OWNER : accepter un tenant vide (pas de throw)
+    const isPlatformOwner = user.role === 'PLATFORM_OWNER' || (user as any).isPlatformOwner;
+    if (!tenant && !isPlatformOwner) {
       throw {
         step: 'INIT_SECURE_CONTEXT' as LoadingStep,
         message: 'Établissement introuvable',
         code: 'TENANT_NOT_FOUND',
+      };
+    }
+
+    // Créer un tenant virtuel pour PLATFORM_OWNER si nécessaire
+    if (isPlatformOwner && !tenant) {
+      tenant = {
+        id: '',
+        name: 'Plateforme',
+        slug: '',
+        subdomain: '',
+        status: 'active',
+        subscriptionStatus: 'ACTIVE_SUBSCRIBED',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        trialEndsAt: undefined,
+        nextPaymentDueAt: undefined,
       };
     }
 
@@ -156,7 +174,8 @@ export async function executePostLoginFlow(
         const years = await academicYearResponse.json();
         const activeYear = years.find((y: any) => y.isCurrent);
 
-        if (!activeYear) {
+        // PLATFORM_OWNER n'a pas besoin d'une année scolaire active
+        if (!activeYear && !isPlatformOwner) {
           throw {
             step: 'VERIFY_ACADEMIC_YEAR' as LoadingStep,
             message: 'Aucune année scolaire active',
@@ -214,7 +233,7 @@ export async function executePostLoginFlow(
     const isOnline = networkDetectionService.isConnected();
     let pendingOperations = 0;
 
-    if (tenant) {
+    if (tenant && tenant.id) {
       try {
         // Charger dynamiquement pour éviter les problèmes de circular dependency
         const { outboxService } = await import('@/lib/offline/outbox.service');
@@ -236,8 +255,8 @@ export async function executePostLoginFlow(
       subtitle: step5Message.subtitle,
     });
 
-    // ORION uniquement pour les rôles direction
-    if (['DIRECTOR', 'SUPER_DIRECTOR', 'ADMIN'].includes(user.role) && tenant) {
+    // ORION uniquement pour les rôles direction (tenir compte du tenant avec id)
+    if (['DIRECTOR', 'SUPER_DIRECTOR', 'ADMIN', 'PLATFORM_OWNER'].includes(user.role) && tenant?.id) {
       try {
         const alerts = await getOrionAlerts('CRITIQUE', false);
         orionAlerts = alerts.slice(0, 5).map((alert) => ({
@@ -326,6 +345,7 @@ export async function executePostLoginFlow(
  */
 function getPermissionsForRole(role: string): string[] {
   const rolePermissions: Record<string, string[]> = {
+    PLATFORM_OWNER: ['*'],
     SUPER_DIRECTOR: ['*'],
     DIRECTOR: [
       'dashboard:view',

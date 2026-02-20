@@ -73,7 +73,7 @@ export class BillingReminderService {
               settings: true, // Pour paramètres communication tenant
             },
           },
-          plan: true,
+          subscriptionPlan: true, // Relation vers SubscriptionPlan (pas le champ scalaire 'plan')
         },
       });
 

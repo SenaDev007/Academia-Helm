@@ -7,18 +7,18 @@
 'use client';
 
 import { useState } from 'react';
-import { FileText, Plus } from 'lucide-react';
-import { ModuleContainer, ModuleHeader } from '@/components/modules/blueprint';
+import { Plus } from 'lucide-react';
+import { ModuleHeader } from '@/components/modules/blueprint';
 
 export default function ContractsPage() {
   const [contracts, setContracts] = useState<any[]>([]);
 
   return (
-    <ModuleContainer>
+    <div className="space-y-6">
       <ModuleHeader
         title="Contrats de travail"
         description="Gestion des contrats de travail du personnel"
-        icon={FileText}
+        icon="rh"
       />
       <div className="p-4">
         <div className="flex justify-end mb-4">
@@ -83,7 +83,7 @@ export default function ContractsPage() {
           </table>
         </div>
       </div>
-    </ModuleContainer>
+    </div>
   );
 }
 

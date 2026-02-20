@@ -6,8 +6,8 @@
 
 'use client';
 
-import { MessageSquare, Mail, Smartphone, Calendar, Zap, FileText } from 'lucide-react';
-import { ModuleContainer, ModuleHeader, SubModuleNavigation } from '@/components/modules/blueprint';
+import { MessageSquare, Smartphone, Calendar, Zap, FileText } from 'lucide-react';
+import { ModuleHeader, SubModuleNavigation } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { usePathname } from 'next/navigation';
 
@@ -26,11 +26,11 @@ export default function CommunicationPage() {
   const currentTab = subModuleTabs.find(tab => pathname.startsWith(tab.path))?.id || 'messages';
 
   return (
-    <ModuleContainer>
+    <div className="space-y-6">
       <ModuleHeader
         title="Communication & Engagement"
         description="Gestion complète des communications avec les parents, le personnel et les élèves. Messages, templates, planification et automatisation."
-        icon={Mail}
+        icon="communication"
         kpis={[
           { label: 'Messages envoyés', value: '1,234', unit: 'ce mois' },
           { label: 'Taux de livraison', value: '98.5%', unit: '' },
@@ -51,6 +51,6 @@ export default function CommunicationPage() {
           Sélectionnez un sous-module ci-dessus pour commencer.
         </p>
       </div>
-    </ModuleContainer>
+    </div>
   );
 }

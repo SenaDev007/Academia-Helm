@@ -31,6 +31,8 @@ export class GeneralSettingsService {
           defaultLanguage: 'FR',
           currency: 'XOF',
           currencySymbol: 'FCFA',
+          country: 'BJ',
+          establishmentType: 'PRIVEE',
         },
       });
     }
@@ -41,23 +43,47 @@ export class GeneralSettingsService {
   /**
    * Met à jour les paramètres de l'école
    * - Enregistre l'historique
+   * - Incrémente la version
    * - Intègre avec ORION pour alertes
    */
   async updateSchoolSettings(
     tenantId: string,
     data: {
+      // Identité juridique
       schoolName?: string;
+      abbreviation?: string;
+      establishmentType?: string;
+      authorizationNumber?: string;
+      authorizationDate?: Date;
+      foundingDate?: Date;
+      // Visuels
       logoUrl?: string;
       sealUrl?: string;
       signatureUrl?: string;
+      // Localisation
+      address?: string;
+      city?: string;
+      department?: string;
+      country?: string;
+      postalCode?: string;
+      gpsCoordinates?: { lat: number; lng: number };
+      // Contacts
+      phone?: string;
+      secondaryPhone?: string;
+      fax?: string;
+      email?: string;
+      website?: string;
+      whatsapp?: string;
+      socialMediaLinks?: Record<string, string>;
+      // Paramètres régionaux
       timezone?: string;
       defaultLanguage?: string;
       currency?: string;
       currencySymbol?: string;
-      address?: string;
-      phone?: string;
-      email?: string;
-      website?: string;
+      // Branding
+      slogan?: string;
+      primaryColor?: string;
+      secondaryColor?: string;
     },
     userId: string,
     ipAddress?: string,
@@ -77,11 +103,12 @@ export class GeneralSettingsService {
       return existing;
     }
 
-    // Mettre à jour les paramètres
+    // Mettre à jour les paramètres avec incrémentation de version
     const updated = await this.prisma.schoolSettings.update({
       where: { tenantId },
       data: {
         ...data,
+        version: existing.version + 1,
         updatedAt: new Date(),
       },
     });
@@ -89,9 +116,9 @@ export class GeneralSettingsService {
     // Enregistrer l'historique
     await this.historyService.logSettingChange(
       tenantId,
-      null, // Pas de TenantSetting ID pour SchoolSettings
+      null,
       'school_settings',
-      'general',
+      'identity',
       changes,
       userId,
       ipAddress,
@@ -105,25 +132,41 @@ export class GeneralSettingsService {
   }
 
   /**
+   * Récupère l'historique des versions de l'identité
+   */
+  async getIdentityHistory(tenantId: string, limit = 50) {
+    return this.prisma.settingsHistory.findMany({
+      where: {
+        tenantId,
+        category: 'identity',
+      },
+      orderBy: { changedAt: 'desc' },
+      take: limit,
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
    * Vérifie si des changements nécessitent une alerte ORION
    */
   private async checkOrionAlerts(
     tenantId: string,
     changes: Record<string, { old: any; new: any }>,
   ) {
-    // Changements sensibles qui nécessitent une alerte
-    const sensitiveFields = ['defaultLanguage', 'timezone', 'currency'];
+    const sensitiveFields = ['defaultLanguage', 'timezone', 'currency', 'establishmentType'];
 
     for (const field of sensitiveFields) {
       if (changes[field]) {
         // TODO: Intégrer avec OrionAlertsService pour créer une alerte
-        // await this.orionAlertsService.createAlert({
-        //   tenantId,
-        //   alertType: 'OPERATIONAL',
-        //   severity: 'WARNING',
-        //   title: `Paramètre sensible modifié: ${field}`,
-        //   description: `Le paramètre ${field} a été modifié de ${changes[field].old} à ${changes[field].new}`,
-        // });
       }
     }
   }

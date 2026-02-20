@@ -71,23 +71,22 @@ export default function PortalPage() {
   const handleDevLogin = async () => {
     setIsDevLoggingIn(true);
     try {
-      // Récupérer les informations du tenant de test
-      const tenantResponse = await fetch('/api/dev/test-tenant', {
-        method: 'GET',
+      // Connexion automatique avec PLATFORM_OWNER (mode développement uniquement)
+      const response = await fetch('/api/auth/dev-login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
       });
 
-      const tenantData = await tenantResponse.json();
+      const data = await response.json();
 
-      if (!tenantResponse.ok || !tenantData.success) {
-        throw new Error(tenantData.message || 'Impossible de récupérer les informations du tenant de test');
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Impossible de se connecter en mode développement');
       }
 
-      const testTenant = tenantData.tenant;
-
-      // Rediriger vers la page de login avec le tenant de test
-      // L'utilisateur pourra utiliser les identifiants PLATFORM_OWNER
-      const loginUrl = `/login?tenant=${encodeURIComponent(testTenant.id || testTenant.slug)}&redirect=/app`;
-      router.push(loginUrl);
+      // Redirection automatique vers /app après connexion réussie
+      window.location.href = '/app';
     } catch (error: any) {
       console.error('[Dev Login] Error:', error);
       alert(`Erreur: ${error.message || 'Impossible de se connecter en mode développement'}`);

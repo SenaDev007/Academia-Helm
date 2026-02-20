@@ -10,7 +10,7 @@
 
 import { useState, useEffect } from 'react';
 import { Brain, AlertTriangle, TrendingUp, FileText, Eye, BarChart3 } from 'lucide-react';
-import { ModuleContainer, ModuleHeader } from '@/components/modules/blueprint';
+import { ModuleHeader } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 
 export default function OrionDashboardPage() {
@@ -53,11 +53,11 @@ export default function OrionDashboardPage() {
   };
 
   return (
-    <ModuleContainer>
+    <div className="space-y-6">
       <ModuleHeader
         title="ORION — Pilotage Direction"
         description="Intelligence de décision éducative. Analyse, alertes et insights pour le pilotage stratégique de l'établissement."
-        icon={Brain}
+        icon="orion"
         kpis={[
           { label: 'Alertes actives', value: String(alerts.length), unit: '' },
           { label: 'Insights', value: String(insights.length), unit: '' },
@@ -198,6 +198,6 @@ export default function OrionDashboardPage() {
           </div>
         </div>
       </div>
-    </ModuleContainer>
+    </div>
   );
 }

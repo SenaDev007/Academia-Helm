@@ -92,21 +92,13 @@ export default function PilotageSidebar({ isOpen, onToggle, user }: PilotageSide
 
   return (
     <aside
-      className={`fixed left-0 top-0 h-full bg-gradient-to-b from-blue-900 via-blue-900 to-blue-800 text-white transition-all duration-300 ease-in-out z-40 shadow-xl ${
+      className={`fixed left-0 top-[60px] h-[calc(100vh-60px)] bg-gradient-to-b from-blue-900 via-blue-900 to-blue-800 text-white transition-all duration-300 ease-in-out z-40 shadow-xl ${
         isOpen ? 'w-64' : 'w-16'
       }`}
     >
       <div className="flex flex-col h-full">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-blue-700/50 bg-blue-900/50 backdrop-blur-sm">
-          {isOpen && (
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg flex items-center justify-center shadow-md">
-                <span className="text-white font-bold text-sm">AH</span>
-              </div>
-              <h2 className="text-lg font-bold text-white tracking-tight">Academia Hub</h2>
-            </div>
-          )}
+        {/* Toggle button */}
+        <div className="flex items-center justify-end p-3 border-b border-blue-700/50">
           <button
             onClick={onToggle}
             className="p-2 rounded-lg hover:bg-blue-800/80 transition-all duration-200 text-white hover:scale-105 active:scale-95"

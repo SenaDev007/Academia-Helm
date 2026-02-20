@@ -125,6 +125,7 @@ export default function SettingsPage() {
           city: identity.city || '',
           department: identity.department || '',
           country: identity.country || 'BJ',
+          postalCode: identity.postalCode || '',
           phonePrimary: identity.phonePrimary || '',
           phoneSecondary: identity.phoneSecondary || '',
           email: identity.email || '',
@@ -542,11 +543,11 @@ export default function SettingsPage() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-gray-600 mb-1">Nom officiel *</label>
-                  <input type="text" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.schoolName || ''} onChange={(e) => setIdentityForm({ ...identityForm, schoolName: e.target.value })} />
+                  <input type="text" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.schoolName || ''} onChange={(e) => setIdentityForm({ ...identityForm, schoolName: e.target.value })} placeholder="Collège d'Enseignement Général de Porto-Novo" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Sigle</label>
-                  <input type="text" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.schoolAcronym || ''} onChange={(e) => setIdentityForm({ ...identityForm, schoolAcronym: e.target.value })} />
+                  <input type="text" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.schoolAcronym || ''} onChange={(e) => setIdentityForm({ ...identityForm, schoolAcronym: e.target.value })} placeholder="CEG PN" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
@@ -560,7 +561,7 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">N° Autorisation</label>
-                  <input type="text" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.authorizationNumber || ''} onChange={(e) => setIdentityForm({ ...identityForm, authorizationNumber: e.target.value })} />
+                  <input type="text" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.authorizationNumber || ''} onChange={(e) => setIdentityForm({ ...identityForm, authorizationNumber: e.target.value })} placeholder="MEMP/2024/001" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Date de création</label>
@@ -568,7 +569,7 @@ export default function SettingsPage() {
                 </div>
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-gray-600 mb-1">Devise</label>
-                  <input type="text" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.devise || ''} onChange={(e) => setIdentityForm({ ...identityForm, devise: e.target.value })} placeholder="L'excellence au service de l'éducation" />
+                  <input type="text" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.devise || ''} onChange={(e) => setIdentityForm({ ...identityForm, devise: e.target.value })} placeholder="Discipline - Fraternité - Travail" />
                 </div>
               </div>
             </div>
@@ -582,19 +583,19 @@ export default function SettingsPage() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Tél. principal</label>
-                  <input type="tel" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.phonePrimary || ''} onChange={(e) => setIdentityForm({ ...identityForm, phonePrimary: e.target.value })} />
+                  <input type="tel" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.phonePrimary || ''} onChange={(e) => setIdentityForm({ ...identityForm, phonePrimary: e.target.value })} placeholder="01 XX XX XX XX" maxLength={14} />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Tél. secondaire</label>
-                  <input type="tel" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.phoneSecondary || ''} onChange={(e) => setIdentityForm({ ...identityForm, phoneSecondary: e.target.value })} />
+                  <input type="tel" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.phoneSecondary || ''} onChange={(e) => setIdentityForm({ ...identityForm, phoneSecondary: e.target.value })} placeholder="01 XX XX XX XX" maxLength={14} />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Email officiel</label>
-                  <input type="email" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.email || ''} onChange={(e) => setIdentityForm({ ...identityForm, email: e.target.value })} />
+                  <input type="email" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.email || ''} onChange={(e) => setIdentityForm({ ...identityForm, email: e.target.value })} placeholder="contact@ecole.bj" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Site web</label>
-                  <input type="url" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.website || ''} onChange={(e) => setIdentityForm({ ...identityForm, website: e.target.value })} />
+                  <input type="url" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.website || ''} onChange={(e) => setIdentityForm({ ...identityForm, website: e.target.value })} placeholder="https://www.ecole.bj" />
                 </div>
               </div>
             </div>
@@ -606,43 +607,43 @@ export default function SettingsPage() {
                 3. Localisation
               </h4>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div className="col-span-2 md:col-span-4">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Adresse complète</label>
-                  <input type="text" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.address || ''} onChange={(e) => setIdentityForm({ ...identityForm, address: e.target.value })} />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Ville</label>
-                  <input type="text" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.city || ''} onChange={(e) => setIdentityForm({ ...identityForm, city: e.target.value })} />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Département</label>
-                  <input type="text" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.department || ''} onChange={(e) => setIdentityForm({ ...identityForm, department: e.target.value })} />
-                </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Pays</label>
                   <select className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.country || 'BJ'} onChange={(e) => setIdentityForm({ ...identityForm, country: e.target.value })}>
-                    <option value="BJ">Bénin</option>
-                    <option value="TG">Togo</option>
-                    <option value="CI">Côte d'Ivoire</option>
-                    <option value="SN">Sénégal</option>
-                    <option value="FR">France</option>
+                    <option value="BJ">🇧🇯 Bénin</option>
+                    <option value="TG">🇹🇬 Togo</option>
+                    <option value="CI">🇨🇮 Côte d'Ivoire</option>
                   </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Département / Région</label>
+                  <input type="text" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.department || ''} onChange={(e) => setIdentityForm({ ...identityForm, department: e.target.value })} placeholder="Ouémé" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Ville</label>
+                  <input type="text" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.city || ''} onChange={(e) => setIdentityForm({ ...identityForm, city: e.target.value })} placeholder="Porto-Novo" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Code postal</label>
+                  <input type="text" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.postalCode || ''} onChange={(e) => setIdentityForm({ ...identityForm, postalCode: e.target.value })} placeholder="01 BP 123" />
+                </div>
+                <div className="col-span-2 md:col-span-4">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Adresse complète</label>
+                  <input type="text" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.address || ''} onChange={(e) => setIdentityForm({ ...identityForm, address: e.target.value })} placeholder="Quartier Djègandji, Rue 123, Lot 456" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Fuseau horaire</label>
                   <select className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.timezone || 'Africa/Porto-Novo'} onChange={(e) => setIdentityForm({ ...identityForm, timezone: e.target.value })}>
-                    <option value="Africa/Porto-Novo">Porto-Novo (UTC+1)</option>
-                    <option value="Africa/Lagos">Lagos (UTC+1)</option>
-                    <option value="Africa/Abidjan">Abidjan (UTC+0)</option>
-                    <option value="Europe/Paris">Paris (UTC+1/+2)</option>
+                    <option value="Africa/Porto-Novo">🇧🇯 Porto-Novo (UTC+1)</option>
+                    <option value="Africa/Lome">🇹🇬 Lomé (UTC+0)</option>
+                    <option value="Africa/Abidjan">🇨🇮 Abidjan (UTC+0)</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Devise</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Monnaie</label>
                   <select className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.currency || 'XOF'} onChange={(e) => setIdentityForm({ ...identityForm, currency: e.target.value })}>
-                    <option value="XOF">XOF (FCFA)</option>
-                    <option value="EUR">EUR (€)</option>
-                    <option value="USD">USD ($)</option>
+                    <option value="XOF">XOF - Franc CFA (FCFA)</option>
+                    <option value="EUR">EUR - Euro (€)</option>
                   </select>
                 </div>
               </div>

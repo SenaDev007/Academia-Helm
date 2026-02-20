@@ -81,16 +81,15 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
         </main>
       </div>
 
-      {/* Footer minimal — hauteur ~1 cm */}
-      <footer className="bg-white border-t border-gray-200 px-6 h-[1cm] min-h-[28px] flex items-center">
+      {/* Footer minimal — avec décalage pour la sidebar */}
+      <footer className={`bg-white border-t border-gray-200 px-6 h-[1cm] min-h-[28px] flex items-center transition-all duration-300 ${
+        sidebarOpen ? 'ml-64' : 'ml-16'
+      }`}>
         <div className="flex items-center justify-between text-xs text-gray-600 w-full">
           <div className="flex items-center space-x-4">
             <span>Academia Hub v1.0.0</span>
             <span>•</span>
             <span>© 2021-2026 YEHI OR Tech</span>
-          </div>
-          <div className="flex items-center space-x-4">
-            <span>Statut: Opérationnel</span>
           </div>
         </div>
       </footer>

@@ -14,13 +14,19 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
-import { Bell, RefreshCw, User, LogOut, Wifi, WifiOff, AlertCircle, ChevronDown, Settings, HelpCircle } from 'lucide-react';
+import { Bell, RefreshCw, User, LogOut, Wifi, WifiOff, AlertCircle, ChevronDown, Settings, HelpCircle, School } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import AcademicYearSelector from './AcademicYearSelector';
 import SchoolLevelSelector from './SchoolLevelSelector';
 import AcademicTrackSelector from '../dashboard/AcademicTrackSelector';
 import { useOffline, useSyncStatus } from '@/hooks/useOffline';
 import type { User, Tenant } from '@/types';
+
+interface SchoolIdentity {
+  schoolName: string;
+  schoolAcronym?: string;
+  logoUrl?: string;
+}
 
 interface PilotageTopBarProps {
   user: User;
@@ -33,7 +39,33 @@ export default function PilotageTopBar({ user, tenant }: PilotageTopBarProps) {
   const { isSyncing, pendingCount } = useSyncStatus();
   const [orionAlertsCount, setOrionAlertsCount] = useState(0);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  const [schoolIdentity, setSchoolIdentity] = useState<SchoolIdentity | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Charger l'identité de l'école
+  useEffect(() => {
+    const loadSchoolIdentity = async () => {
+      try {
+        const response = await fetch('/api/settings/identity', {
+          credentials: 'include',
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data) {
+            setSchoolIdentity({
+              schoolName: data.schoolName,
+              schoolAcronym: data.schoolAcronym,
+              logoUrl: data.logoUrl,
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load school identity:', error);
+      }
+    };
+
+    loadSchoolIdentity();
+  }, []);
 
   // Charger les alertes ORION
   useEffect(() => {
@@ -85,22 +117,28 @@ export default function PilotageTopBar({ user, tenant }: PilotageTopBarProps) {
     <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm backdrop-blur-sm bg-white/95">
       <div className="px-6 py-3">
         <div className="flex items-center justify-between">
-          {/* Gauche : Logo + Contexte */}
+          {/* Gauche : Logo École + Contexte */}
           <div className="flex items-center space-x-6">
-            {/* Logo */}
+            {/* Logo et Nom de l'École */}
             <div className="flex items-center space-x-3">
               <div className="relative">
-                <Image
-                  src="/images/logo-Academia Hub.png"
-                  alt="Academia Hub"
-                  width={36}
-                  height={36}
-                  className="rounded-lg shadow-sm"
-                />
+                {schoolIdentity?.logoUrl ? (
+                  <Image
+                    src={schoolIdentity.logoUrl}
+                    alt={schoolIdentity.schoolName || 'École'}
+                    width={40}
+                    height={40}
+                    className="rounded-full shadow-sm object-cover"
+                  />
+                ) : (
+                  <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-blue-700 rounded-full flex items-center justify-center shadow-sm">
+                    <School className="w-5 h-5 text-white" />
+                  </div>
+                )}
                 <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
               </div>
-              <span className="text-lg font-bold bg-gradient-to-r from-blue-900 to-blue-700 bg-clip-text text-transparent hidden sm:block">
-                Academia Hub
+              <span className="text-lg font-bold bg-gradient-to-r from-blue-900 to-blue-700 bg-clip-text text-transparent hidden sm:block max-w-[200px] truncate" title={schoolIdentity?.schoolName || tenant.name}>
+                {schoolIdentity?.schoolAcronym || schoolIdentity?.schoolName || tenant.name || 'Mon École'}
               </span>
             </div>
 

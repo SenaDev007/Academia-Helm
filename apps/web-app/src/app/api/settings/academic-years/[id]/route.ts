@@ -7,13 +7,30 @@ import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import { getServerToken, getServerSession } from '@/lib/auth/session';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
+const TOKEN_COOKIE = 'academia_token';
+
+/** Extrait le token depuis l'en-tête Cookie (fallback si request.cookies ne le voit pas). */
+function getTokenFromCookieHeader(cookieHeader: string | null): string | null {
+  if (!cookieHeader) return null;
+  const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${TOKEN_COOKIE}=([^;]*)`));
+  return match ? decodeURIComponent(match[1].trim()) : null;
+}
 
 async function getAuthHeaders(request: NextRequest) {
   const authHeader = request.headers.get('Authorization');
-  const cookieToken = request.cookies.get('academia_token')?.value;
-  const sessionToken = await getServerToken();
-  const token = authHeader || (cookieToken ? `Bearer ${cookieToken}` : '') || (sessionToken ? `Bearer ${sessionToken}` : '');
-  const headers: Record<string, string> = { Authorization: token || '', 'Content-Type': 'application/json' };
+  let rawToken =
+    (authHeader && authHeader.replace(/^Bearer\s+/i, '').trim()) ||
+    request.cookies.get(TOKEN_COOKIE)?.value?.trim() ||
+    getTokenFromCookieHeader(request.headers.get('cookie'));
+  if (!rawToken) {
+    const serverToken = await getServerToken();
+    rawToken = serverToken?.trim() || '';
+  }
+  const token = rawToken ? (rawToken.startsWith('Bearer ') ? rawToken : `Bearer ${rawToken}`) : '';
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = token;
+  const cookieHeader = request.headers.get('cookie');
+  if (cookieHeader) headers['Cookie'] = cookieHeader;
   const session = await getServerSession();
   const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
   const tenantId = session?.tenant?.id ?? request.headers.get('x-tenant-id') ?? fromQuery;
@@ -46,9 +63,22 @@ export async function PUT(
 ) {
   try {
     const { id } = await params;
-    const body = await request.json();
     const headers = await getAuthHeaders(request);
-    const response = await fetch(`${API_BASE_URL}/settings/academic-years/${id}`, {
+    if (!headers['Authorization']) {
+      return NextResponse.json(
+        { error: 'Session expirée ou non authentifié. Veuillez vous reconnecter.', code: 'UNAUTHORIZED' },
+        { status: 401 }
+      );
+    }
+    const body = await request.json().catch(() => ({}));
+    const hasDates = body && (body.preEntryDate != null || body.officialStartDate != null || body.startDate != null || body.endDate != null);
+    if (!hasDates && process.env.NODE_ENV === 'development') {
+      console.warn('[academic-years PUT] Body sans dates reçu:', Object.keys(body || {}));
+    }
+    const url = new URL(`${API_BASE_URL}/settings/academic-years/${id}`);
+    const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
+    if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
+    const response = await fetch(url.toString(), {
       method: 'PUT',
       headers,
       body: JSON.stringify(body),

@@ -114,37 +114,43 @@ export class IdentityProfileService {
         });
       }
 
-      // Créer la nouvelle version
+      // Payload explicite (même logique que périodes/années) : champs envoyés ou valeur par défaut
+      const foundationDate =
+        data.foundationDate != null && String(data.foundationDate).trim() !== ''
+          ? new Date(data.foundationDate)
+          : null;
+      const createData = {
+        tenantId,
+        version: nextVersion,
+        isActive: true,
+        schoolName: String(data.schoolName ?? '').trim() || (currentVersion?.schoolName ?? 'Établissement'),
+        schoolAcronym: data.schoolAcronym != null ? String(data.schoolAcronym).trim() : null,
+        schoolType: data.schoolType && String(data.schoolType).trim() ? data.schoolType : 'PRIVEE',
+        authorizationNumber: data.authorizationNumber != null ? String(data.authorizationNumber).trim() : null,
+        foundationDate,
+        slogan: data.slogan != null ? String(data.slogan).trim() : null,
+        address: data.address != null ? String(data.address).trim() : null,
+        city: data.city != null ? String(data.city).trim() : null,
+        department: data.department != null ? String(data.department).trim() : null,
+        country: data.country && String(data.country).trim() ? data.country : 'BJ',
+        postalCode: data.postalCode != null ? String(data.postalCode).trim() : null,
+        phonePrimary: data.phonePrimary != null ? String(data.phonePrimary).trim() : null,
+        phoneSecondary: data.phoneSecondary != null ? String(data.phoneSecondary).trim() : null,
+        email: data.email != null ? String(data.email).trim() : null,
+        website: data.website != null ? String(data.website).trim() : null,
+        currency: data.currency && String(data.currency).trim() ? data.currency : 'XOF',
+        timezone: data.timezone && String(data.timezone).trim() ? data.timezone : 'Africa/Porto-Novo',
+        logoUrl: data.logoUrl != null ? String(data.logoUrl).trim() : null,
+        stampUrl: data.stampUrl != null ? String(data.stampUrl).trim() : null,
+        directorSignatureUrl: data.directorSignatureUrl != null ? String(data.directorSignatureUrl).trim() : null,
+        createdBy: userId,
+        activatedAt: now,
+        activatedBy: userId,
+        changeReason: (changeReason && String(changeReason).trim()) || 'Nouvelle version créée',
+      };
+
       const created = await tx.tenantIdentityProfile.create({
-        data: {
-          tenantId,
-          version: nextVersion,
-          isActive: true,
-          schoolName: data.schoolName,
-          schoolAcronym: data.schoolAcronym,
-          schoolType: data.schoolType || 'PRIVEE',
-          authorizationNumber: data.authorizationNumber,
-          foundationDate: data.foundationDate ? new Date(data.foundationDate) : null,
-          slogan: data.slogan,
-          address: data.address,
-          city: data.city,
-          department: data.department,
-          country: data.country || 'BJ',
-          postalCode: data.postalCode,
-          phonePrimary: data.phonePrimary,
-          phoneSecondary: data.phoneSecondary,
-          email: data.email,
-          website: data.website,
-          currency: data.currency || 'XOF',
-          timezone: data.timezone || 'Africa/Porto-Novo',
-          logoUrl: data.logoUrl,
-          stampUrl: data.stampUrl,
-          directorSignatureUrl: data.directorSignatureUrl,
-          createdBy: userId,
-          activatedAt: now,
-          activatedBy: userId,
-          changeReason: changeReason || 'Nouvelle version créée',
-        },
+        data: createData as Parameters<typeof tx.tenantIdentityProfile.create>[0]['data'],
       });
 
       return created;

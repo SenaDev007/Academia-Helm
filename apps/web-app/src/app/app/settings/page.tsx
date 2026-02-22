@@ -88,6 +88,15 @@ export default function SettingsPage() {
   const [editingYearId, setEditingYearId] = useState<string | null>(null);
   const [editingYearForm, setEditingYearForm] = useState<{ preEntryDate: string; officialStartDate: string; startDate: string; endDate: string } | null>(null);
   const [editingYearBusy, setEditingYearBusy] = useState(false);
+  const [academicPeriods, setAcademicPeriods] = useState<settingsService.AcademicPeriod[]>([]);
+  const [periodYearId, setPeriodYearId] = useState<string | null>(null);
+  const [periodBusy, setPeriodBusy] = useState(false);
+  const [showNewPeriodForm, setShowNewPeriodForm] = useState(false);
+  const [newPeriodForm, setNewPeriodForm] = useState<{ name: string; type: settingsService.AcademicPeriodType; periodOrder: number; startDate: string; endDate: string }>({
+    name: '', type: 'TRIMESTER', periodOrder: 1, startDate: '', endDate: '',
+  });
+  const [editingPeriodId, setEditingPeriodId] = useState<string | null>(null);
+  const [editingPeriodForm, setEditingPeriodForm] = useState<{ name: string; type: settingsService.AcademicPeriodType; periodOrder: number; startDate: string; endDate: string } | null>(null);
   const [pedagogicalStructure, setPedagogicalStructure] = useState<any>(null);
   const [bilingualSettings, setBilingualSettings] = useState<any>(null);
   const [communicationSettings, setCommunicationSettings] = useState<any>(null);
@@ -113,6 +122,13 @@ export default function SettingsPage() {
   const [atlasForm, setAtlasForm] = useState<any>({});
   const [offlineForm, setOfflineForm] = useState<any>({});
   const [structureForm, setStructureForm] = useState<any>({});
+  const [educationStructure, setEducationStructure] = useState<{ levels?: any[] } | null>(null);
+  const [structureYearId, setStructureYearId] = useState<string | null>(null);
+  const [educationClassrooms, setEducationClassrooms] = useState<any[]>([]);
+  const [structureBusy, setStructureBusy] = useState(false);
+  const [newClassroomGradeId, setNewClassroomGradeId] = useState<string | null>(null);
+  const [newClassroomName, setNewClassroomName] = useState('');
+  const [newClassroomCapacity, setNewClassroomCapacity] = useState<number | ''>('');
   const [bilingualForm, setBilingualForm] = useState<any>({});
 
   const showToast = useCallback((type: 'success' | 'error', message: string) => {
@@ -130,6 +146,8 @@ export default function SettingsPage() {
     if (!effectiveTenantId) {
       setAcademicYears([]);
       setActiveAcademicYear(null);
+      setPeriodYearId(null);
+      setAcademicPeriods([]);
       return;
     }
     let cancelled = false;
@@ -144,10 +162,67 @@ export default function SettingsPage() {
         const hasActiveInList = activeYear && yearList.some((y: any) => y.id === activeYear.id);
         setAcademicYears(hasActiveInList ? yearList : (activeYear ? [activeYear, ...yearList] : yearList));
         setActiveAcademicYear(activeYear || null);
+        setPeriodYearId((prev) => prev || activeYear?.id || yearList[0]?.id || null);
       } catch (_) {}
     })();
     return () => { cancelled = true; };
   }, [activeTab, effectiveTenantId]);
+
+  // Charger les périodes académiques de l'année sélectionnée
+  useEffect(() => {
+    if (activeTab !== 'academic-year' || !periodYearId || !effectiveTenantId) {
+      if (!periodYearId) setAcademicPeriods([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await settingsService.getAcademicYearPeriods(periodYearId, effectiveTenantId);
+        if (!cancelled) setAcademicPeriods(Array.isArray(list) ? list : []);
+      } catch (_) {
+        if (!cancelled) setAcademicPeriods([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeTab, periodYearId, effectiveTenantId]);
+
+  // Charger la structure pédagogique hiérarchique (onglet Structure)
+  useEffect(() => {
+    if (activeTab !== 'structure' || !effectiveTenantId) {
+      if (activeTab !== 'structure') setEducationStructure(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await settingsService.getEducationStructure(effectiveTenantId);
+        if (!cancelled && res?.levels) setEducationStructure(res);
+        else if (!cancelled) setEducationStructure(res || { levels: [] });
+      } catch (_) {
+        if (!cancelled) setEducationStructure({ levels: [] });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeTab, effectiveTenantId]);
+
+  // Charger les classes physiques pour l'année sélectionnée (onglet Structure)
+  useEffect(() => {
+    const yearId = structureYearId || activeAcademicYear?.id;
+    if (activeTab !== 'structure' || !yearId || !effectiveTenantId) {
+      if (!structureYearId && !activeAcademicYear?.id) setEducationClassrooms([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await settingsService.getEducationClassrooms(yearId, effectiveTenantId);
+        if (!cancelled) setEducationClassrooms(Array.isArray(list) ? list : []);
+      } catch (_) {
+        if (!cancelled) setEducationClassrooms([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeTab, structureYearId, activeAcademicYear?.id, effectiveTenantId]);
 
   // Charger la liste des établissements pour le PO (onglet Année scolaire)
   useEffect(() => {
@@ -425,6 +500,131 @@ export default function SettingsPage() {
     }
   };
 
+  const reloadPeriods = useCallback(async () => {
+    if (!periodYearId || !effectiveTenantId) return;
+    try {
+      const list = await settingsService.getAcademicYearPeriods(periodYearId, effectiveTenantId);
+      setAcademicPeriods(Array.isArray(list) ? list : []);
+    } catch (_) {
+      setAcademicPeriods([]);
+    }
+  }, [periodYearId, effectiveTenantId]);
+
+  const handleCreatePeriod = async () => {
+    if (!periodYearId || !newPeriodForm.name.trim() || !newPeriodForm.startDate || !newPeriodForm.endDate) {
+      showToast('error', 'Nom et dates début/fin requis.');
+      return;
+    }
+    try {
+      setPeriodBusy(true);
+      await settingsService.createAcademicPeriod(
+        periodYearId,
+        {
+          name: newPeriodForm.name.trim(),
+          type: newPeriodForm.type,
+          periodOrder: newPeriodForm.periodOrder,
+          startDate: newPeriodForm.startDate,
+          endDate: newPeriodForm.endDate,
+        },
+        effectiveTenantId ?? undefined
+      );
+      showToast('success', 'Période créée.');
+      setShowNewPeriodForm(false);
+      setNewPeriodForm({ name: '', type: 'TRIMESTER', periodOrder: academicPeriods.length + 1, startDate: '', endDate: '' });
+      await reloadPeriods();
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur lors de la création');
+    } finally {
+      setPeriodBusy(false);
+    }
+  };
+
+  const handleActivatePeriod = async (id: string) => {
+    try {
+      setPeriodBusy(true);
+      await settingsService.activateAcademicPeriod(id, effectiveTenantId ?? undefined);
+      showToast('success', 'Période activée.');
+      await reloadPeriods();
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur');
+    } finally {
+      setPeriodBusy(false);
+    }
+  };
+
+  const handleClosePeriod = async (id: string) => {
+    try {
+      setPeriodBusy(true);
+      await settingsService.closeAcademicPeriod(id, effectiveTenantId ?? undefined);
+      showToast('success', 'Période clôturée. Les notes et absences ne pourront plus être modifiées.');
+      await reloadPeriods();
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur');
+    } finally {
+      setPeriodBusy(false);
+    }
+  };
+
+  const handleStartEditPeriod = (p: settingsService.AcademicPeriod) => {
+    setEditingPeriodId(p.id);
+    setEditingPeriodForm({
+      name: p.name,
+      type: p.type,
+      periodOrder: p.periodOrder,
+      startDate: toInputDate(p.startDate) || (typeof p.startDate === 'string' ? p.startDate.slice(0, 10) : ''),
+      endDate: toInputDate(p.endDate) || (typeof p.endDate === 'string' ? p.endDate.slice(0, 10) : ''),
+    });
+  };
+
+  const handleCancelEditPeriod = () => {
+    setEditingPeriodId(null);
+    setEditingPeriodForm(null);
+  };
+
+  const handleCreateDefaultPeriods = async () => {
+    if (!periodYearId) return;
+    try {
+      setPeriodBusy(true);
+      await settingsService.createDefaultAcademicPeriods(periodYearId, effectiveTenantId ?? undefined);
+      showToast('success', 'Les 3 trimestres ont été créés. Vous pouvez les modifier ou en ajouter d\'autres.');
+      await reloadPeriods();
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur lors de la création');
+    } finally {
+      setPeriodBusy(false);
+    }
+  };
+
+  const handleSavePeriodEdit = async () => {
+    if (!editingPeriodId || !editingPeriodForm) return;
+    if (!editingPeriodForm.name.trim() || !editingPeriodForm.startDate || !editingPeriodForm.endDate) {
+      showToast('error', 'Nom et dates début/fin requis.');
+      return;
+    }
+    try {
+      setPeriodBusy(true);
+      await settingsService.updateAcademicPeriod(
+        editingPeriodId,
+        {
+          name: editingPeriodForm.name.trim(),
+          type: editingPeriodForm.type,
+          periodOrder: editingPeriodForm.periodOrder,
+          startDate: editingPeriodForm.startDate,
+          endDate: editingPeriodForm.endDate,
+        },
+        effectiveTenantId ?? undefined
+      );
+      showToast('success', 'Période mise à jour.');
+      setEditingPeriodId(null);
+      setEditingPeriodForm(null);
+      await reloadPeriods();
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur lors de l\'enregistrement');
+    } finally {
+      setPeriodBusy(false);
+    }
+  };
+
   const handleSaveSecurity = async () => {
     try {
       setSaving(true);
@@ -492,6 +692,117 @@ export default function SettingsPage() {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleInitializeEducationStructure = async () => {
+    try {
+      setStructureBusy(true);
+      const res = await settingsService.initializeEducationStructure(effectiveTenantId ?? undefined);
+      setEducationStructure(res || { levels: res?.levels ?? [] });
+      showToast('success', 'Structure pédagogique initialisée (niveaux, cycles, classes pédagogiques).');
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur');
+    } finally {
+      setStructureBusy(false);
+    }
+  };
+
+  const handleSetEducationLevelEnabled = async (levelId: string, isEnabled: boolean) => {
+    try {
+      setStructureBusy(true);
+      await settingsService.setEducationLevelEnabled(levelId, isEnabled, effectiveTenantId ?? undefined);
+      const res = await settingsService.getEducationStructure(effectiveTenantId ?? undefined);
+      if (res?.levels) setEducationStructure(res);
+      showToast('success', isEnabled ? 'Niveau activé' : 'Niveau désactivé');
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur');
+    } finally {
+      setStructureBusy(false);
+    }
+  };
+
+  const structureYearIdOrActive = structureYearId || activeAcademicYear?.id;
+  const handleCreateEducationClassroom = async () => {
+    if (!newClassroomGradeId || !structureYearIdOrActive) {
+      showToast('error', 'Sélectionnez une classe pédagogique et une année.');
+      return;
+    }
+    const name = (newClassroomName || '').trim();
+    if (!name) {
+      showToast('error', 'Nom de la classe physique requis (ex. CE1 A).');
+      return;
+    }
+    try {
+      setStructureBusy(true);
+      await settingsService.createEducationClassroom(
+        {
+          academicYearId: structureYearIdOrActive,
+          gradeId: newClassroomGradeId,
+          name,
+          capacity: newClassroomCapacity === '' ? undefined : Number(newClassroomCapacity),
+        },
+        effectiveTenantId ?? undefined
+      );
+      setNewClassroomGradeId(null);
+      setNewClassroomName('');
+      setNewClassroomCapacity('');
+      const list = await settingsService.getEducationClassrooms(structureYearIdOrActive, effectiveTenantId ?? undefined);
+      setEducationClassrooms(Array.isArray(list) ? list : []);
+      showToast('success', 'Classe physique créée.');
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur');
+    } finally {
+      setStructureBusy(false);
+    }
+  };
+
+  const handleArchiveEducationClassroom = async (id: string) => {
+    try {
+      setStructureBusy(true);
+      await settingsService.archiveEducationClassroom(id, effectiveTenantId ?? undefined);
+      if (structureYearIdOrActive) {
+        const list = await settingsService.getEducationClassrooms(structureYearIdOrActive, effectiveTenantId ?? undefined);
+        setEducationClassrooms(Array.isArray(list) ? list : []);
+      }
+      showToast('success', 'Classe archivée.');
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur');
+    } finally {
+      setStructureBusy(false);
+    }
+  };
+
+  const handleDuplicateEducationClassrooms = async () => {
+    if (!structureYearIdOrActive || !academicYears.length) {
+      showToast('error', 'Sélectionnez une année source.');
+      return;
+    }
+    // Année suivante = ordre chronologique (tri par startDate)
+    const sorted = [...academicYears].sort(
+      (a: any, b: any) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
+    );
+    const idx = sorted.findIndex((y: any) => y.id === structureYearIdOrActive);
+    const nextYear = idx >= 0 && idx < sorted.length - 1 ? sorted[idx + 1] : null;
+    if (!nextYear) {
+      showToast('error', 'Aucune année scolaire suivante. Créez la prochaine année (ex. 2026-2027) pour dupliquer vers.');
+      return;
+    }
+    try {
+      setStructureBusy(true);
+      const res = await settingsService.duplicateEducationClassrooms(
+        structureYearIdOrActive,
+        nextYear.id,
+        effectiveTenantId ?? undefined
+      );
+      showToast('success', `${res?.duplicated ?? 0} classe(s) dupliquée(s) vers ${nextYear.name}.`);
+      setStructureYearId(nextYear.id);
+      const list = await settingsService.getEducationClassrooms(nextYear.id, effectiveTenantId ?? undefined);
+      setEducationClassrooms(Array.isArray(list) ? list : []);
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur');
+    } finally {
+      setStructureBusy(false);
     }
   };
 
@@ -1054,14 +1365,19 @@ export default function SettingsPage() {
                       <span>{activeAcademicYear._count.classes ?? 0} classes</span>
                     </div>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => handleStartEditAcademicYearDates(activeAcademicYear)}
-                    className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-white/20 text-white rounded-md hover:bg-white/30"
-                  >
-                    <CalendarRange className="w-4 h-4" aria-hidden />
-                    Modifier les dates
-                  </button>
+                  <div className="w-full mt-3 flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleStartEditAcademicYearDates(activeAcademicYear)}
+                      disabled={editingYearBusy}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-white text-blue-900 rounded-md hover:bg-blue-100 disabled:opacity-50"
+                      title="Modifier la pré-rentrée, la rentrée et la fin d’année"
+                    >
+                      <CalendarRange className="w-4 h-4" aria-hidden />
+                      Modifier les dates
+                    </button>
+                    <span className="text-white/80 text-xs">Pré-rentrée, rentrée officielle, fin d’année</span>
+                  </div>
                 </div>
               ) : (
                 <div className="text-white/90 ml-7">
@@ -1074,10 +1390,11 @@ export default function SettingsPage() {
             {editingYearId && editingYearForm && (() => {
               const editingYear = activeAcademicYear?.id === editingYearId ? activeAcademicYear : academicYears.find((y: any) => y.id === editingYearId);
               return (
-                <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
-                  <h4 className="font-semibold text-gray-900 mb-3">
+                <div className="bg-amber-50 border border-amber-200 rounded-lg shadow-sm p-5">
+                  <h4 className="font-semibold text-gray-900 mb-1">
                     Modifier les dates — {editingYear?.name ?? editingYearId}
                   </h4>
+                  <p className="text-sm text-gray-600 mb-4">Ajustez les dates ci-dessous puis cliquez sur Enregistrer.</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Pré-rentrée</label>
@@ -1289,104 +1606,456 @@ export default function SettingsPage() {
                 </div>
               )}
             </div>
+
+            {/* Périodes académiques (trimestres / semestres) */}
+            {academicYears.length > 0 && (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                  <CalendarRange className="w-5 h-5 text-blue-600 shrink-0" aria-hidden />
+                  Périodes académiques
+                </h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Définissez les trimestres, semestres ou séquences pour les notes, bulletins et statistiques. Une seule période peut être active à la fois.
+                </p>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Année scolaire</label>
+                  <select
+                    value={periodYearId ?? ''}
+                    onChange={(e) => {
+                      setPeriodYearId(e.target.value || null);
+                      setEditingPeriodId(null);
+                      setEditingPeriodForm(null);
+                    }}
+                    className="w-full max-w-xs rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    <option value="">Sélectionner une année</option>
+                    {academicYears.map((y: any) => (
+                      <option key={y.id} value={y.id}>{y.name} — {y.label}</option>
+                    ))}
+                  </select>
+                </div>
+                {periodYearId && (
+                  <>
+                    {!showNewPeriodForm ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowNewPeriodForm(true);
+                          setNewPeriodForm({
+                            name: '',
+                            type: 'TRIMESTER',
+                            periodOrder: academicPeriods.length + 1,
+                            startDate: academicYears.find((y: any) => y.id === periodYearId)?.startDate ? toInputDate(academicYears.find((y: any) => y.id === periodYearId).startDate) : '',
+                            endDate: academicYears.find((y: any) => y.id === periodYearId)?.endDate ? toInputDate(academicYears.find((y: any) => y.id === periodYearId).endDate) : '',
+                          });
+                        }}
+                        disabled={periodBusy}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 mb-4"
+                      >
+                        <CalendarRange className="w-3.5 h-3.5" aria-hidden />
+                        Ajouter une période
+                      </button>
+                    ) : (
+                      <div className="border border-gray-200 rounded-lg p-4 mb-4 bg-gray-50">
+                        <h4 className="font-medium text-gray-900 mb-3">Nouvelle période</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Nom</label>
+                            <input
+                              type="text"
+                              value={newPeriodForm.name}
+                              onChange={(e) => setNewPeriodForm({ ...newPeriodForm, name: e.target.value })}
+                              placeholder="ex. Trimestre 1"
+                              className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
+                            <select
+                              value={newPeriodForm.type}
+                              onChange={(e) => setNewPeriodForm({ ...newPeriodForm, type: e.target.value as settingsService.AcademicPeriodType })}
+                              className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                            >
+                              <option value="TRIMESTER">Trimestre</option>
+                              <option value="SEMESTER">Semestre</option>
+                              <option value="SEQUENCE">Séquence</option>
+                              <option value="CUSTOM">Personnalisé</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Ordre</label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={newPeriodForm.periodOrder}
+                              onChange={(e) => setNewPeriodForm({ ...newPeriodForm, periodOrder: parseInt(e.target.value, 10) || 1 })}
+                              className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                            />
+                          </div>
+                          <div className="sm:col-span-2 lg:col-span-1" />
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Début</label>
+                            <input
+                              type="date"
+                              value={newPeriodForm.startDate}
+                              onChange={(e) => setNewPeriodForm({ ...newPeriodForm, startDate: e.target.value })}
+                              className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Fin</label>
+                            <input
+                              type="date"
+                              value={newPeriodForm.endDate}
+                              onChange={(e) => setNewPeriodForm({ ...newPeriodForm, endDate: e.target.value })}
+                              className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={handleCreatePeriod}
+                            disabled={periodBusy}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            {periodBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden /> : <Save className="w-3.5 h-3.5" aria-hidden />}
+                            Créer
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowNewPeriodForm(false)}
+                            disabled={periodBusy}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100"
+                          >
+                            Annuler
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {/* Bouton visible uniquement quand l'année sélectionnée n'a aucune période (trimestres/semestres) */}
+                    {academicPeriods.length === 0 ? (
+                      <div className="py-4 space-y-3">
+                        <p className="text-sm text-gray-500">Aucune période pour cette année.</p>
+                        <button
+                          type="button"
+                          onClick={handleCreateDefaultPeriods}
+                          disabled={periodBusy}
+                          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          {periodBusy ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden /> : <CalendarRange className="w-4 h-4" aria-hidden />}
+                          Créer les 3 trimestres par défaut
+                        </button>
+                        <p className="text-xs text-gray-400">Ou ajoutez une période manuellement avec le bouton ci-dessus.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {academicPeriods.map((p) => (
+                          <div
+                            key={p.id}
+                            className={`p-3 border rounded-lg flex flex-wrap items-center justify-between gap-2 ${
+                              p.isActive ? 'border-blue-600 bg-blue-50' : p.isClosed ? 'border-gray-200 bg-gray-50' : 'border-gray-200 bg-white'
+                            }`}
+                          >
+                            {editingPeriodId === p.id && editingPeriodForm ? (
+                              <div className="w-full space-y-3">
+                                <h4 className="font-medium text-gray-900">Modifier la période</h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-600 mb-1">Nom</label>
+                                    <input
+                                      type="text"
+                                      value={editingPeriodForm.name}
+                                      onChange={(e) => setEditingPeriodForm({ ...editingPeriodForm, name: e.target.value })}
+                                      className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
+                                    <select
+                                      value={editingPeriodForm.type}
+                                      onChange={(e) => setEditingPeriodForm({ ...editingPeriodForm, type: e.target.value as settingsService.AcademicPeriodType })}
+                                      className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                                    >
+                                      <option value="TRIMESTER">Trimestre</option>
+                                      <option value="SEMESTER">Semestre</option>
+                                      <option value="SEQUENCE">Séquence</option>
+                                      <option value="CUSTOM">Personnalisé</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-600 mb-1">Ordre</label>
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      value={editingPeriodForm.periodOrder}
+                                      onChange={(e) => setEditingPeriodForm({ ...editingPeriodForm, periodOrder: parseInt(e.target.value, 10) || 1 })}
+                                      className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                                    />
+                                  </div>
+                                  <div />
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-600 mb-1">Début</label>
+                                    <input
+                                      type="date"
+                                      value={editingPeriodForm.startDate}
+                                      onChange={(e) => setEditingPeriodForm({ ...editingPeriodForm, startDate: e.target.value })}
+                                      className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-600 mb-1">Fin</label>
+                                    <input
+                                      type="date"
+                                      value={editingPeriodForm.endDate}
+                                      onChange={(e) => setEditingPeriodForm({ ...editingPeriodForm, endDate: e.target.value })}
+                                      className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={handleSavePeriodEdit}
+                                    disabled={periodBusy}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                                  >
+                                    {periodBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden /> : <Save className="w-3.5 h-3.5" aria-hidden />}
+                                    Enregistrer
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={handleCancelEditPeriod}
+                                    disabled={periodBusy}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100"
+                                  >
+                                    Annuler
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium text-gray-900">{p.name}</span>
+                                  <span className="text-xs text-gray-500">
+                                    {p.type === 'TRIMESTER' ? 'Trimestre' : p.type === 'SEMESTER' ? 'Semestre' : p.type === 'SEQUENCE' ? 'Séquence' : 'Personnalisé'}
+                                  </span>
+                                  <span className="text-xs text-gray-600">
+                                    {toInputDate(p.startDate) || p.startDate} → {toInputDate(p.endDate) || p.endDate}
+                                  </span>
+                                  {p.isActive && (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs bg-blue-100 text-blue-800 rounded font-medium">
+                                      <CheckCircle className="w-3 h-3" aria-hidden /> Active
+                                    </span>
+                                  )}
+                                  {p.isClosed && (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs bg-gray-200 text-gray-700 rounded">
+                                      <Lock className="w-3 h-3" aria-hidden /> Clôturée
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStartEditPeriod(p)}
+                                    disabled={periodBusy || p.isClosed}
+                                    title={p.isClosed ? 'Période clôturée : modification impossible' : 'Modifier nom, type, ordre et dates'}
+                                    className="inline-flex items-center gap-1 px-2 py-1 text-xs border border-gray-300 rounded text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    Modifier
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleActivatePeriod(p.id)}
+                                    disabled={periodBusy || p.isActive || p.isClosed}
+                                    title={p.isClosed ? 'Période clôturée' : p.isActive ? 'Déjà active' : 'Activer cette période'}
+                                    className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    Activer
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleClosePeriod(p.id)}
+                                    disabled={periodBusy || p.isClosed}
+                                    title={p.isClosed ? 'Déjà clôturée' : 'Clôturer (bloque les modifications notes/absences)'}
+                                    className="inline-flex items-center gap-1 px-2 py-1 text-xs border border-gray-300 rounded text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    Clôturer
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
           </div>
         );
 
       case 'structure':
+        const levels = educationStructure?.levels ?? [];
+        const allGrades: { id: string; name: string; code: string; cycle: { name: string }; level: { name: string } }[] = [];
+        levels.forEach((l: any) => l.cycles?.forEach((c: any) => c.grades?.forEach((g: any) => allGrades.push({ ...g, cycle: c, level: l }))));
         return (
           <div className="space-y-6">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Structure pédagogique</h3>
-              <p className="text-sm text-gray-600 mb-6">
-                Configurez les niveaux scolaires actifs pour votre établissement.
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">Structure pédagogique</h3>
+              <p className="text-sm text-gray-600 mb-2">
+                Hiérarchie académique officielle (élèves, notes, bulletins et ORION en dépendent) :
               </p>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-                  <div>
-                    <h4 className="font-semibold text-gray-800">Maternelle</h4>
-                    <p className="text-sm text-gray-600">Activer le niveau maternelle</p>
-                  </div>
+              <p className="text-xs text-gray-500 mb-4">
+                École → Année scolaire → Niveau (Maternelle / Primaire / Secondaire) → Cycle → Classe pédagogique (CE1, 6ème…) → Classe physique (CE1 A, CE1 B, 6ème 2…).
+              </p>
+              {levels.length === 0 ? (
+                <div className="py-6 text-center">
+                  <p className="text-gray-600 mb-4">Aucune structure. Initialisez les niveaux, cycles et classes pédagogiques par défaut.</p>
                   <button
-                    onClick={() => setStructureForm({ ...structureForm, maternelleEnabled: !structureForm.maternelleEnabled })}
-                    className="p-2"
+                    type="button"
+                    onClick={handleInitializeEducationStructure}
+                    disabled={structureBusy}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                   >
-                    {structureForm.maternelleEnabled ? (
-                      <ToggleRight className="w-6 h-6 text-green-600" />
-                    ) : (
-                      <ToggleLeft className="w-6 h-6 text-gray-400" />
-                    )}
+                    {structureBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <GraduationCap className="w-4 h-4" />}
+                    Initialiser la structure par défaut
                   </button>
                 </div>
-                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-                  <div>
-                    <h4 className="font-semibold text-gray-800">Primaire</h4>
-                    <p className="text-sm text-gray-600">Activer le niveau primaire</p>
-                  </div>
-                  <button
-                    onClick={() => setStructureForm({ ...structureForm, primaireEnabled: !structureForm.primaireEnabled })}
-                    className="p-2"
-                  >
-                    {structureForm.primaireEnabled ? (
-                      <ToggleRight className="w-6 h-6 text-green-600" />
-                    ) : (
-                      <ToggleLeft className="w-6 h-6 text-gray-400" />
-                    )}
-                  </button>
-                </div>
-                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-                  <div>
-                    <h4 className="font-semibold text-gray-800">Secondaire</h4>
-                    <p className="text-sm text-gray-600">Activer le niveau secondaire</p>
-                  </div>
-                  <button
-                    onClick={() => setStructureForm({ ...structureForm, secondaireEnabled: !structureForm.secondaireEnabled })}
-                    className="p-2"
-                  >
-                    {structureForm.secondaireEnabled ? (
-                      <ToggleRight className="w-6 h-6 text-green-600" />
-                    ) : (
-                      <ToggleLeft className="w-6 h-6 text-gray-400" />
-                    )}
-                  </button>
-                </div>
-              </div>
-              <div className="mt-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Séries actives (secondaire)
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((serie) => (
-                    <button
-                      key={serie}
-                      onClick={() => {
-                        const current = structureForm.activeSeries || [];
-                        const newSeries = current.includes(serie)
-                          ? current.filter((s: string) => s !== serie)
-                          : [...current, serie];
-                        setStructureForm({ ...structureForm, activeSeries: newSeries });
-                      }}
-                      className={`px-3 py-1 rounded-full text-sm font-medium ${
-                        (structureForm.activeSeries || []).includes(serie)
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-gray-100 text-gray-600'
-                      }`}
-                    >
-                      Série {serie}
-                    </button>
+              ) : (
+                <div className="space-y-4">
+                  {levels.map((level: any) => (
+                    <div key={level.id} className={`border rounded-lg overflow-hidden ${level.isEnabled ? 'border-gray-200 bg-white' : 'border-gray-100 bg-gray-50'}`}>
+                      <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b">
+                        <span className="font-semibold text-gray-900">{level.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleSetEducationLevelEnabled(level.id, !level.isEnabled)}
+                          disabled={structureBusy}
+                          className="p-1"
+                        >
+                          {level.isEnabled ? (
+                            <ToggleRight className="w-6 h-6 text-green-600" title="Désactiver le niveau" />
+                          ) : (
+                            <ToggleLeft className="w-6 h-6 text-gray-400" title="Activer le niveau" />
+                          )}
+                        </button>
+                      </div>
+                      {level.isEnabled && level.cycles?.length > 0 && (
+                        <div className="p-3 space-y-2">
+                          {level.cycles.map((cycle: any) => (
+                            <div key={cycle.id} className="ml-2">
+                              <div className="text-sm font-medium text-gray-700 mb-1">{cycle.name}</div>
+                              <div className="flex flex-wrap gap-2 ml-2">
+                                {(cycle.grades || []).map((grade: any) => (
+                                  <span key={grade.id} className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-800 text-sm">
+                                    {grade.name}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
-              </div>
-              <div className="mt-6 flex justify-end">
-                <button
-                  onClick={handleSaveStructure}
-                  disabled={saving}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  Enregistrer
-                </button>
-              </div>
+              )}
             </div>
+
+            {levels.length > 0 && (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Classes physiques (par année)</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Créez les classes réelles (CE1 A, CE1 B, 6ème 1…) pour chaque année scolaire. Une classe physique dépend d&apos;une année et d&apos;un grade.
+                </p>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Année scolaire</label>
+                  <select
+                    value={structureYearIdOrActive ?? ''}
+                    onChange={(e) => setStructureYearId(e.target.value || null)}
+                    className="w-full max-w-xs rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    <option value="">Sélectionner une année</option>
+                    {academicYears.map((y: any) => (
+                      <option key={y.id} value={y.id}>{y.name}</option>
+                    ))}
+                  </select>
+                </div>
+                {structureYearIdOrActive && (
+                  <>
+                    <div className="flex flex-wrap items-center gap-3 mb-4">
+                      <select
+                        value={newClassroomGradeId ?? ''}
+                        onChange={(e) => setNewClassroomGradeId(e.target.value || null)}
+                        className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                      >
+                        <option value="">Classe pédagogique (grade)</option>
+                        {allGrades.map((g) => (
+                          <option key={g.id} value={g.id}>{g.level.name} → {g.cycle.name} → {g.name}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        value={newClassroomName}
+                        onChange={(e) => setNewClassroomName(e.target.value)}
+                        placeholder="ex. CE1 A, 6ème 2"
+                        className="rounded-md border border-gray-300 px-3 py-2 text-sm w-40"
+                      />
+                      <input
+                        type="number"
+                        min={1}
+                        value={newClassroomCapacity}
+                        onChange={(e) => setNewClassroomCapacity(e.target.value === '' ? '' : parseInt(e.target.value, 10) || '')}
+                        placeholder="Capacité (opt.)"
+                        className="rounded-md border border-gray-300 px-3 py-2 text-sm w-24"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleCreateEducationClassroom}
+                        disabled={structureBusy || !newClassroomGradeId || !newClassroomName.trim()}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {structureBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                        Ajouter la classe
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      <button
+                        type="button"
+                        onClick={handleDuplicateEducationClassrooms}
+                        disabled={structureBusy || academicYears.length < 2}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Dupliquer les classes vers l&apos;année suivante
+                      </button>
+                    </div>
+                    {educationClassrooms.length === 0 ? (
+                      <p className="text-sm text-gray-500 py-4">Aucune classe physique pour cette année. Ajoutez-en ci-dessus.</p>
+                    ) : (
+                      <ul className="space-y-2">
+                        {educationClassrooms.map((c: any) => (
+                          <li key={c.id} className="flex items-center justify-between p-2 border border-gray-200 rounded-md">
+                            <span className="font-medium">{c.name}</span>
+                            <span className="text-xs text-gray-500">{c.grade?.name ?? ''}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleArchiveEducationClassroom(c.id)}
+                              disabled={structureBusy}
+                              className="text-xs text-gray-500 hover:text-red-600 disabled:opacity-50"
+                            >
+                              Archiver
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
           </div>
         );
 

@@ -166,6 +166,64 @@ export async function updatePedagogicalStructure(data: {
   });
 }
 
+// Structure pedagogique hierarchique (niveaux -> cycles -> grades -> classes physiques)
+export async function getEducationStructure(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuthNoCache(`${BASE_URL}/education/structure${qs}`);
+}
+
+export async function initializeEducationStructure(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/education/structure/initialize${qs}`, { method: 'POST' });
+}
+
+export async function getEducationClassrooms(academicYearId: string, tenantId?: string | null) {
+  const qs = tenantId ? `&tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuthNoCache(`${BASE_URL}/education/classrooms?academic_year_id=${encodeURIComponent(academicYearId)}${qs}`);
+}
+
+export async function createEducationClassroom(
+  data: { academicYearId: string; gradeId: string; name: string; code?: string; capacity?: number },
+  tenantId?: string | null
+) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/education/classrooms${qs}`, { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function updateEducationClassroom(
+  id: string,
+  data: { name?: string; code?: string; capacity?: number; isActive?: boolean },
+  tenantId?: string | null
+) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/education/classrooms/${id}${qs}`, { method: 'PUT', body: JSON.stringify(data) });
+}
+
+export async function archiveEducationClassroom(id: string, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/education/classrooms/${id}/archive${qs}`, { method: 'POST' });
+}
+
+export async function duplicateEducationClassrooms(
+  oldAcademicYearId: string,
+  newAcademicYearId: string,
+  tenantId?: string | null
+) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/education/classrooms/duplicate${qs}`, {
+    method: 'POST',
+    body: JSON.stringify({ oldAcademicYearId, newAcademicYearId }),
+  });
+}
+
+export async function setEducationLevelEnabled(id: string, isEnabled: boolean, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/education/levels/${id}/enabled${qs}`, {
+    method: 'PUT',
+    body: JSON.stringify({ isEnabled }),
+  });
+}
+
 // ============================================================================
 // OPTION BILINGUE
 // ============================================================================
@@ -436,6 +494,79 @@ export async function duplicateAcademicYear(sourceId: string, data: {
     method: 'POST',
     body: JSON.stringify(data),
   });
+}
+
+// ============================================================================
+// PÉRIODES ACADÉMIQUES (trimestres / semestres / séquences)
+// ============================================================================
+
+export type AcademicPeriodType = 'TRIMESTER' | 'SEMESTER' | 'SEQUENCE' | 'CUSTOM';
+
+export interface AcademicPeriod {
+  id: string;
+  tenantId: string;
+  academicYearId: string;
+  name: string;
+  type: AcademicPeriodType;
+  periodOrder: number;
+  startDate: string;
+  endDate: string;
+  isActive: boolean;
+  isClosed: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function getAcademicYearPeriods(academicYearId: string, tenantId?: string | null): Promise<AcademicPeriod[]> {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  const res = await fetchWithAuthNoCache(`${BASE_URL}/academic-years/${academicYearId}/periods${qs}`);
+  return Array.isArray(res) ? res : [];
+}
+
+/** Crée les 3 trimestres par défaut pour une année qui n'a pas encore de périodes. */
+export async function createDefaultAcademicPeriods(academicYearId: string, tenantId?: string | null): Promise<AcademicPeriod[]> {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  const res = await fetchWithAuth(`${BASE_URL}/academic-years/${academicYearId}/periods/create-default${qs}`, { method: 'POST' });
+  return Array.isArray(res) ? res : [];
+}
+
+export async function getCurrentAcademicPeriod(academicYearId: string, tenantId?: string | null): Promise<AcademicPeriod | null> {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuthNoCache(`${BASE_URL}/academic-years/${academicYearId}/periods/current${qs}`);
+}
+
+export async function createAcademicPeriod(
+  academicYearId: string,
+  data: { name: string; type: AcademicPeriodType; periodOrder: number; startDate: string; endDate: string },
+  tenantId?: string | null
+) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/academic-years/${academicYearId}/periods${qs}`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateAcademicPeriod(
+  id: string,
+  data: { name?: string; type?: AcademicPeriodType; periodOrder?: number; startDate?: string; endDate?: string },
+  tenantId?: string | null
+) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/periods/${id}${qs}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function activateAcademicPeriod(id: string, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/periods/${id}/activate${qs}`, { method: 'POST' });
+}
+
+export async function closeAcademicPeriod(id: string, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/periods/${id}/close${qs}`, { method: 'POST' });
 }
 
 // ============================================================================

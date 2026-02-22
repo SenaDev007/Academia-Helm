@@ -1,6 +1,7 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
+import { AcademicPeriodSettingsService } from './academic-period-settings.service';
 
 /** Format attendu du nom d'année : "YYYY-YYYY" (ex. 2025-2026) */
 const ACADEMIC_YEAR_NAME_REGEX = /^(\d{4})-(\d{4})$/;
@@ -12,9 +13,12 @@ const ACADEMIC_YEAR_NAME_REGEX = /^(\d{4})-(\d{4})$/;
  */
 @Injectable()
 export class AcademicYearSettingsService {
+  private readonly logger = new Logger(AcademicYearSettingsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly historyService: SettingsHistoryService,
+    private readonly academicPeriodSettingsService: AcademicPeriodSettingsService,
   ) {}
 
   /**
@@ -296,12 +300,14 @@ export class AcademicYearSettingsService {
       userId,
     );
 
+    await this.academicPeriodSettingsService.createDefaultTrimestersForYear(tenantId, year.id, startDate, endDate, userId);
+
     return year;
   }
 
   /**
    * Met à jour une année scolaire.
-   * Si le nom est fourni au format "YYYY-YYYY", les dates sont recalculées automatiquement et enregistrées en BDD.
+   * Même logique que les périodes : payload explicite (données envoyées ou existantes), un seul prisma.update, retour de l'entité mise à jour.
    */
   async update(
     tenantId: string,
@@ -310,6 +316,7 @@ export class AcademicYearSettingsService {
       name?: string;
       label?: string;
       preEntryDate?: Date;
+      officialStartDate?: Date;
       startDate?: Date;
       endDate?: Date;
     },
@@ -323,61 +330,53 @@ export class AcademicYearSettingsService {
     });
     if (!existing) throw new NotFoundException('Année scolaire non trouvée.');
 
-    const nextName = data.name !== undefined ? data.name : existing.name;
-    const startYear = this.parseStartYearFromName(nextName);
-    const computedDates = startYear !== null ? this.buildYearDates(startYear) : null;
-
-    // Si des données existent, on n'autorise pas de modifier manuellement les dates
-    if ((data.startDate || data.endDate) && !computedDates && (existing._count.grades > 0 || existing._count.payments > 0)) {
-      throw new BadRequestException(
-        'Impossible de modifier les dates : des données existent (notes ou paiements).',
-      );
+    // Interdiction de modifier les dates si des notes/paiements existent (sécurité métier)
+    if (existing._count.grades > 0 || existing._count.payments > 0) {
+      if (data.startDate !== undefined || data.endDate !== undefined) {
+        throw new BadRequestException(
+          'Impossible de modifier les dates : des données existent (notes ou paiements).',
+        );
+      }
     }
 
-    const payload = {
-      ...(data.label !== undefined && { label: data.label }),
-      ...(data.name !== undefined && { name: data.name }),
-      ...(computedDates
-        ? {
-            preEntryDate: computedDates.preEntryDate,
-            officialStartDate: computedDates.officialStartDate,
-            startDate: computedDates.startDate,
-            endDate: computedDates.endDate,
-          }
-        : {
-            ...(data.preEntryDate !== undefined && { preEntryDate: data.preEntryDate }),
-            ...(data.startDate !== undefined && { startDate: data.startDate }),
-            ...(data.endDate !== undefined && { endDate: data.endDate }),
-          }),
+    // Construire le payload comme pour les périodes : champs envoyés ou valeur existante
+    const updateData: Record<string, unknown> = {
       updatedAt: new Date(),
+      name: data.name !== undefined ? data.name : existing.name,
+      label: data.label !== undefined ? data.label : existing.label,
+      preEntryDate: data.preEntryDate !== undefined ? data.preEntryDate : existing.preEntryDate,
+      officialStartDate: data.officialStartDate !== undefined ? data.officialStartDate : existing.officialStartDate,
+      startDate: data.startDate !== undefined ? data.startDate : existing.startDate,
+      endDate: data.endDate !== undefined ? data.endDate : existing.endDate,
     };
 
+    const updated = await this.prisma.academicYear.update({
+      where: { id, tenantId },
+      data: updateData as Parameters<typeof this.prisma.academicYear.update>[0]['data'],
+    });
+
+    const dateKeys = ['preEntryDate', 'officialStartDate', 'startDate', 'endDate'] as const;
+    const existingRecord = existing as Record<string, unknown>;
     const changes: Record<string, { old: unknown; new: unknown }> = {};
-    (Object.keys(payload) as Array<keyof typeof payload>).forEach((key) => {
-      if (key === 'updatedAt') return;
-      const newVal = payload[key];
-      if (newVal === undefined) return;
-      const oldVal = (existing as Record<string, unknown>)[key];
-      if (oldVal !== newVal) changes[key] = { old: oldVal, new: newVal };
+    dateKeys.forEach((key) => {
+      const oldVal = existingRecord[key];
+      const newVal = updateData[key];
+      const isSame =
+        oldVal != null && newVal != null
+          ? this.sameDate(oldVal as Date, newVal as Date)
+          : oldVal === newVal;
+      if (!isSame) changes[key] = { old: oldVal, new: newVal };
     });
-
-    if (Object.keys(changes).length === 0) {
-      return this.ensureAndPersistYearDates(existing);
+    if (Object.keys(changes).length > 0) {
+      await this.historyService.logSettingChange(
+        tenantId,
+        null,
+        'academic_year',
+        'academic_year',
+        changes,
+        userId,
+      );
     }
-
-    await this.prisma.academicYear.update({
-      where: { id },
-      data: payload,
-    });
-
-    await this.historyService.logSettingChange(
-      tenantId,
-      null,
-      'academic_year',
-      'academic_year',
-      changes,
-      userId,
-    );
 
     const refetched = await this.prisma.academicYear.findFirst({
       where: { tenantId, id },
@@ -385,7 +384,7 @@ export class AcademicYearSettingsService {
         _count: { select: { students: true, classes: true, grades: true, payments: true } },
       },
     });
-    return refetched ? this.ensureAndPersistYearDates(refetched) : refetched!;
+    return refetched ?? updated;
   }
 
   /**
@@ -644,6 +643,8 @@ export class AcademicYearSettingsService {
       { generated: { old: null, new: name, dates: { preEntryDate: dates.preEntryDate, officialStartDate: dates.officialStartDate, startDate: dates.startDate, endDate: dates.endDate } } },
       userId,
     );
+
+    await this.academicPeriodSettingsService.createDefaultTrimestersForYear(tenantId, year.id, dates.startDate, dates.endDate, userId);
 
     return year;
   }

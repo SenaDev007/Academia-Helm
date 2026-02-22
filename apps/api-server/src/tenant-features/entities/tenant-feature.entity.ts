@@ -51,11 +51,11 @@ export class TenantFeature {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'uuid' })
+  @Column({ type: 'uuid', name: 'tenantId' })
   tenantId: string;
 
   @ManyToOne(() => Tenant, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'tenant_id' })
+  @JoinColumn({ name: 'tenantId' })
   tenant: Tenant;
 
   /**
@@ -64,7 +64,7 @@ export class TenantFeature {
   @Column({
     type: 'varchar',
     length: 50,
-    enum: FeatureCode,
+    name: 'featureCode',
   })
   featureCode: FeatureCode;
 
@@ -74,7 +74,7 @@ export class TenantFeature {
   @Column({
     type: 'varchar',
     length: 20,
-    enum: FeatureStatus,
+    name: 'status',
     default: FeatureStatus.DISABLED,
   })
   status: FeatureStatus;
@@ -82,52 +82,52 @@ export class TenantFeature {
   /**
    * Date d'activation (si activée)
    */
-  @Column({ type: 'timestamptz', nullable: true })
+  @Column({ type: 'timestamptz', nullable: true, name: 'enabledAt' })
   enabledAt: Date | null;
 
   /**
    * Utilisateur qui a activé la feature
    */
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'uuid', nullable: true, name: 'enabledBy' })
   enabledBy: string | null;
 
   @ManyToOne(() => User, { nullable: true })
-  @JoinColumn({ name: 'enabled_by' })
+  @JoinColumn({ name: 'enabledBy' })
   enabledByUser: User | null;
 
   /**
    * Date de désactivation (si désactivée)
    */
-  @Column({ type: 'timestamptz', nullable: true })
+  @Column({ type: 'timestamptz', nullable: true, name: 'disabledAt' })
   disabledAt: Date | null;
 
   /**
    * Utilisateur qui a désactivé la feature
    */
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'uuid', nullable: true, name: 'disabledBy' })
   disabledBy: string | null;
 
   @ManyToOne(() => User, { nullable: true })
-  @JoinColumn({ name: 'disabled_by' })
+  @JoinColumn({ name: 'disabledBy' })
   disabledByUser: User | null;
 
   /**
    * Métadonnées optionnelles (configuration spécifique)
    * Ex: pour BILINGUAL_TRACK, stocker les tracks activés
    */
-  @Column({ type: 'jsonb', nullable: true })
+  @Column({ type: 'jsonb', nullable: true, name: 'metadata' })
   metadata: Record<string, any> | null;
 
   /**
    * Raison de l'activation/désactivation (pour audit)
    */
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'text', nullable: true, name: 'reason' })
   reason: string | null;
 
-  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
+  @CreateDateColumn({ type: 'timestamptz', name: 'createdAt' })
   createdAt: Date;
 
-  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updatedAt' })
   updatedAt: Date;
 }
 

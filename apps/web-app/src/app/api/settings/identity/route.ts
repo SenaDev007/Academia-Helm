@@ -2,37 +2,41 @@
  * ============================================================================
  * API PROXY - IDENTITÉ ÉTABLISSEMENT
  * ============================================================================
- * Source légale de vérité versionnée
+ * Source légale de vérité versionnée. Même logique que périodes/années : auth + tenant.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
-import { getServerToken } from '@/lib/auth/session';
+import { getServerToken, getServerSession } from '@/lib/auth/session';
 
 async function getAuthHeaders(request: NextRequest) {
-  // Priorité 1: Header Authorization existant
   const authHeader = request.headers.get('Authorization');
-  
-  // Priorité 2: Cookie academia_token via request.cookies
   const cookieToken = request.cookies.get('academia_token')?.value;
-  
-  // Priorité 3: Utiliser la fonction session
   const sessionToken = await getServerToken();
-  
   const token = authHeader || (cookieToken ? `Bearer ${cookieToken}` : '') || (sessionToken ? `Bearer ${sessionToken}` : '');
-  
-  return {
-    'Authorization': token,
+  const headers: Record<string, string> = {
+    'Authorization': token || '',
     'Content-Type': 'application/json',
   };
+  const session = await getServerSession();
+  const fromSession = session?.tenant?.id;
+  const fromHeader = request.headers.get('x-tenant-id');
+  const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
+  const tenantId = fromSession ?? fromHeader ?? fromQuery;
+  if (tenantId && typeof tenantId === 'string') headers['x-tenant-id'] = tenantId;
+  return headers;
 }
 
 export async function GET(request: NextRequest) {
   try {
     const headers = await getAuthHeaders(request);
     const baseUrl = normalizeApiUrl(getApiBaseUrlForRoutes());
-    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/settings/identity`, {
+    const url = new URL(`${baseUrl.replace(/\/$/, '')}/settings/identity`);
+    const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
+    if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
+    const response = await fetch(url.toString(), {
       headers,
+      cache: 'no-store',
     });
 
     const contentType = response.headers.get('content-type') || '';
@@ -53,11 +57,19 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
     const headers = await getAuthHeaders(request);
-    
+    if (!headers['Authorization']) {
+      return NextResponse.json(
+        { error: 'Session expirée ou non authentifié.', code: 'UNAUTHORIZED' },
+        { status: 401 }
+      );
+    }
     const baseUrl = normalizeApiUrl(getApiBaseUrlForRoutes());
-    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/settings/identity`, {
+    const url = new URL(`${baseUrl.replace(/\/$/, '')}/settings/identity`);
+    const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
+    if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
+    const response = await fetch(url.toString(), {
       method: 'POST',
       headers,
       body: JSON.stringify(body),

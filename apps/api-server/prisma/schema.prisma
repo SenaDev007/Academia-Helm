@@ -26,6 +26,9 @@ model Tenant {
   absences                         Absence[]
   academicTracks                   AcademicTrack[]
   academicYears                    AcademicYear[]
+  academicPeriods                  AcademicPeriod[]
+  educationLevels                  EducationLevel[]
+  classrooms                       Classroom[]
   activityLogs                     ActivityLog[]
   administrativeSeals              AdministrativeSeal[]              @relation("AdministrativeSealTenant")
   admissions                       Admission[]
@@ -415,6 +418,8 @@ model AcademicYear {
   qhsDecisionLogs                  QhsDecisionLog[]                  @relation("QhsDecisionLogAcademicYear")
   qhsIncidents                     QhsIncident[]                     @relation("QhsIncidentAcademicYear")
   qhsRiskRegisters                 QhsRiskRegister[]                 @relation("QhsRiskRegisterAcademicYear")
+  periods                          AcademicPeriod[]
+  classrooms                       Classroom[]
   quarters                         Quarter[]
   questionBankResources            QuestionBankResource[]            @relation("QuestionBankAcademicYear")
   rankings                         Ranking[]
@@ -474,6 +479,113 @@ model AcademicYear {
   @@unique([tenantId, label])
   @@index([tenantId, isActive])
   @@map("academic_years")
+}
+
+/// Périodes académiques (trimestres, semestres, séquences) — une année en contient plusieurs.
+/// Une seule période active à la fois. Clôture = blocage modification notes/absences.
+model AcademicPeriod {
+  id              String       @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  name            String
+  type            AcademicPeriodType
+  periodOrder     Int
+  startDate       DateTime
+  endDate         DateTime
+  isActive        Boolean      @default(false)
+  isClosed        Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  tenant          Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([academicYearId, periodOrder])
+  @@index([tenantId, academicYearId])
+  @@index([academicYearId, isActive])
+  @@map("academic_periods")
+}
+
+// ============================================================================
+// STRUCTURE PÉDAGOGIQUE HIÉRARCHIQUE (niveau → cycle → grade → classe physique)
+// ============================================================================
+
+/// Niveau d'enseignement : MATERNELLE, PRIMAIRE, SECONDAIRE. Activables par l'établissement.
+model EducationLevel {
+  id         String   @id @default(uuid())
+  tenantId  String
+  name      String   // MATERNELLE | PRIMAIRE | SECONDAIRE
+  isEnabled Boolean  @default(true)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cycles    EducationCycle[]
+
+  @@unique([tenantId, name])
+  @@map("education_levels")
+}
+
+/// Cycle sous un niveau (ex. PS/MS/GS pour Maternelle, CE1-CM2 pour Primaire).
+model EducationCycle {
+  id        String   @id @default(uuid())
+  levelId   String
+  name      String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  level     EducationLevel @relation(fields: [levelId], references: [id], onDelete: Cascade)
+  grades    EducationGrade[]
+
+  @@unique([levelId, name])
+  @@index([levelId])
+  @@map("education_cycles")
+}
+
+/// Classe pédagogique (ex. CE1, 6ème). Non supprimable, référence officielle.
+model EducationGrade {
+  id         String   @id @default(uuid())
+  cycleId    String
+  name       String
+  code       String
+  order      Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  cycle      EducationCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  classrooms Classroom[]
+
+  @@unique([cycleId, code])
+  @@index([cycleId])
+  @@map("education_grades")
+}
+
+/// Classe physique (ex. CE1 A, 6ème 2). Créée par l'école, liée à une année scolaire. Désactivation uniquement, pas de suppression.
+model Classroom {
+  id              String       @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  gradeId         String
+  name            String       // CE1 A, 6ème 2
+  code            String?
+  capacity        Int?
+  isActive        Boolean      @default(true)
+  isArchived      Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  tenant          Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  grade           EducationGrade @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, academicYearId, name])
+  @@index([tenantId, academicYearId])
+  @@index([gradeId])
+  @@map("classrooms")
+}
+
+enum AcademicPeriodType {
+  TRIMESTER
+  SEMESTER
+  SEQUENCE
+  CUSTOM
 }
 
 model SchoolLevel {

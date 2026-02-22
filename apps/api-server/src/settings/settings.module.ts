@@ -14,6 +14,8 @@ import { PedagogicalStructureService } from './services/pedagogical-structure.se
 import { BilingualSettingsService } from './services/bilingual-settings.service';
 import { CommunicationSettingsService } from './services/communication-settings.service';
 import { AcademicYearSettingsService } from './services/academic-year-settings.service';
+import { AcademicPeriodSettingsService } from './services/academic-period-settings.service';
+import { EducationStructureService } from './services/education-structure.service';
 import { RolesPermissionsService } from './services/roles-permissions.service';
 import { BillingSettingsService } from './services/billing-settings.service';
 import { IdentityProfileService } from './services/identity-profile.service';
@@ -48,6 +50,8 @@ import { OrionModule } from '../orion/orion.module';
     FeatureFlagsService,
     CommunicationSettingsService,
     AcademicYearSettingsService,
+    AcademicPeriodSettingsService,
+    EducationStructureService,
     RolesPermissionsService,
     BillingSettingsService,
     IdentityProfileService,
@@ -67,6 +71,8 @@ import { OrionModule } from '../orion/orion.module';
     FeatureFlagsService,
     CommunicationSettingsService,
     AcademicYearSettingsService,
+    AcademicPeriodSettingsService,
+    EducationStructureService,
     RolesPermissionsService,
     BillingSettingsService,
     IdentityProfileService,

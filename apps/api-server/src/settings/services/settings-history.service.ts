@@ -13,7 +13,7 @@ export class SettingsHistoryService {
    * Enregistre un changement de paramètre dans l'historique
    */
   async logSettingChange(
-    tenantId: string,
+    tenantId: string | undefined,
     settingId: string | null,
     key: string,
     category: string,
@@ -22,6 +22,9 @@ export class SettingsHistoryService {
     ipAddress?: string,
     userAgent?: string,
   ) {
+    if (!tenantId || typeof tenantId !== 'string') {
+      return;
+    }
     // Créer une entrée d'historique pour chaque changement
     const historyEntries = Object.keys(changes).map((field) =>
       this.prisma.settingsHistory.create({
@@ -47,7 +50,7 @@ export class SettingsHistoryService {
    * Enregistre un changement de feature flag dans l'historique
    */
   async logFeatureChange(
-    tenantId: string,
+    tenantId: string | undefined,
     featureCode: string,
     oldStatus: string,
     newStatus: string,
@@ -56,6 +59,7 @@ export class SettingsHistoryService {
     ipAddress?: string,
     userAgent?: string,
   ) {
+    if (!tenantId || typeof tenantId !== 'string') return;
     await this.prisma.settingsHistory.create({
       data: {
         tenantId,

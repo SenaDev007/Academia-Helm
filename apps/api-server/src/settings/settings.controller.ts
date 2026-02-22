@@ -10,6 +10,7 @@ import {
   UseGuards,
   Request,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
@@ -27,6 +28,8 @@ import { PedagogicalStructureService } from './services/pedagogical-structure.se
 import { BilingualSettingsService } from './services/bilingual-settings.service';
 import { CommunicationSettingsService } from './services/communication-settings.service';
 import { AcademicYearSettingsService } from './services/academic-year-settings.service';
+import { AcademicPeriodSettingsService } from './services/academic-period-settings.service';
+import { EducationStructureService } from './services/education-structure.service';
 import { RolesPermissionsService } from './services/roles-permissions.service';
 import { BillingSettingsService } from './services/billing-settings.service';
 import { IdentityProfileService } from './services/identity-profile.service';
@@ -38,6 +41,8 @@ import { IdentityProfileService } from './services/identity-profile.service';
 @Controller('settings')
 @UseGuards(JwtAuthGuard)
 export class SettingsController {
+  private readonly logger = new Logger(SettingsController.name);
+
   constructor(
     private readonly generalSettingsService: GeneralSettingsService,
     private readonly featureFlagsService: FeatureFlagsService,
@@ -52,6 +57,8 @@ export class SettingsController {
     private readonly bilingualSettingsService: BilingualSettingsService,
     private readonly communicationSettingsService: CommunicationSettingsService,
     private readonly academicYearSettingsService: AcademicYearSettingsService,
+    private readonly academicPeriodSettingsService: AcademicPeriodSettingsService,
+    private readonly educationStructureService: EducationStructureService,
     private readonly rolesPermissionsService: RolesPermissionsService,
     private readonly billingSettingsService: BillingSettingsService,
     private readonly identityProfileService: IdentityProfileService,
@@ -1035,28 +1042,34 @@ export class SettingsController {
 
   @Put('academic-years/:id')
   async updateAcademicYear(
-    @TenantId() tenantId: string,
+    @TenantId() tenantId: string | undefined,
     @Param('id') id: string,
     @CurrentUser() user: any,
+    @Request() req: any,
     @Body() data: {
       name?: string;
       label?: string;
       preEntryDate?: string;
+      officialStartDate?: string;
       startDate?: string;
       endDate?: string;
     },
   ) {
-    return this.academicYearSettingsService.update(
-      tenantId,
-      id,
-      {
-        ...data,
-        preEntryDate: data.preEntryDate ? new Date(data.preEntryDate) : undefined,
-        startDate: data.startDate ? new Date(data.startDate) : undefined,
-        endDate: data.endDate ? new Date(data.endDate) : undefined,
-      },
-      user.id,
-    );
+    const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
+    const fromHeader = req?.headers?.['x-tenant-id'];
+    const fromQuery = req?.query?.tenant_id;
+    const tid = tenantId ?? fromUser ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader) ?? (Array.isArray(fromQuery) ? fromQuery[0] : fromQuery);
+    if (!tid || typeof tid !== 'string') throw new BadRequestException('Contexte tenant manquant.');
+    this.logger.log(`PUT academic-years/${id} body keys: ${JSON.stringify(Object.keys(data || {}))} dates: preEntry=${data?.preEntryDate} official=${data?.officialStartDate} start=${data?.startDate} end=${data?.endDate}`);
+    const body = {
+      name: data?.name,
+      label: data?.label,
+      preEntryDate: data?.preEntryDate != null && String(data.preEntryDate).trim() !== '' ? new Date(data.preEntryDate) : undefined,
+      officialStartDate: data?.officialStartDate != null && String(data.officialStartDate).trim() !== '' ? new Date(data.officialStartDate) : undefined,
+      startDate: data?.startDate != null && String(data.startDate).trim() !== '' ? new Date(data.startDate) : undefined,
+      endDate: data?.endDate != null && String(data.endDate).trim() !== '' ? new Date(data.endDate) : undefined,
+    };
+    return this.academicYearSettingsService.update(tid, id, body, user.id);
   }
 
   @Post('academic-years/:id/activate')
@@ -1144,6 +1157,258 @@ export class SettingsController {
     @Param('id') id: string,
   ) {
     return this.academicYearSettingsService.getYearStats(tenantId, id);
+  }
+
+  // ============================================================================
+  // PÉRIODES ACADÉMIQUES (trimestres / semestres / séquences)
+  // ============================================================================
+
+  @Get('academic-years/:id/periods/current')
+  async getCurrentAcademicPeriod(
+    @TenantId() tenantId: string | undefined,
+    @Param('id') id: string,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
+    const fromHeader = req?.headers?.['x-tenant-id'];
+    const fromQuery = req?.query?.tenant_id;
+    const tid = tenantId ?? fromUser ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader) ?? (Array.isArray(fromQuery) ? fromQuery[0] : fromQuery);
+    if (!tid || typeof tid !== 'string') throw new BadRequestException('Contexte tenant manquant.');
+    return this.academicPeriodSettingsService.getCurrentPeriod(tid, id);
+  }
+
+  @Get('academic-years/:id/periods')
+  async getAcademicYearPeriods(
+    @TenantId() tenantId: string | undefined,
+    @Param('id') id: string,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
+    const fromHeader = req?.headers?.['x-tenant-id'];
+    const fromQuery = req?.query?.tenant_id;
+    const tid = tenantId ?? fromUser ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader) ?? (Array.isArray(fromQuery) ? fromQuery[0] : fromQuery);
+    if (!tid || typeof tid !== 'string') throw new BadRequestException('Contexte tenant manquant.');
+    return this.academicPeriodSettingsService.getByYear(tid, id);
+  }
+
+  @Post('academic-years/:id/periods/create-default')
+  async createDefaultPeriodsForYear(
+    @TenantId() tenantId: string | undefined,
+    @Param('id') id: string,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
+    const fromHeader = req?.headers?.['x-tenant-id'];
+    const fromQuery = req?.query?.tenant_id;
+    const tid = tenantId ?? fromUser ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader) ?? (Array.isArray(fromQuery) ? fromQuery[0] : fromQuery);
+    if (!tid || typeof tid !== 'string') throw new BadRequestException('Contexte tenant manquant.');
+    return this.academicPeriodSettingsService.ensureDefaultTrimestersForYear(tid, id, user.id);
+  }
+
+  @Post('academic-years/:id/periods')
+  async createAcademicPeriod(
+    @TenantId() tenantId: string | undefined,
+    @Param('id') id: string,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Body() data: {
+      name: string;
+      type: string;
+      periodOrder: number;
+      startDate: string;
+      endDate: string;
+    },
+  ) {
+    const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
+    const fromHeader = req?.headers?.['x-tenant-id'];
+    const fromQuery = req?.query?.tenant_id;
+    const tid = tenantId ?? fromUser ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader) ?? (Array.isArray(fromQuery) ? fromQuery[0] : fromQuery);
+    if (!tid || typeof tid !== 'string') throw new BadRequestException('Contexte tenant manquant.');
+    return this.academicPeriodSettingsService.create(
+      tid,
+      id,
+      {
+        name: data.name,
+        type: data.type as 'TRIMESTER' | 'SEMESTER' | 'SEQUENCE' | 'CUSTOM',
+        periodOrder: data.periodOrder,
+        startDate: new Date(data.startDate),
+        endDate: new Date(data.endDate),
+      },
+      user.id,
+    );
+  }
+
+  @Put('periods/:id')
+  async updateAcademicPeriod(
+    @TenantId() tenantId: string | undefined,
+    @Param('id') id: string,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Body() data: {
+      name?: string;
+      type?: string;
+      periodOrder?: number;
+      startDate?: string;
+      endDate?: string;
+    },
+  ) {
+    const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
+    const fromHeader = req?.headers?.['x-tenant-id'];
+    const fromQuery = req?.query?.tenant_id;
+    const tid = tenantId ?? fromUser ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader) ?? (Array.isArray(fromQuery) ? fromQuery[0] : fromQuery);
+    if (!tid || typeof tid !== 'string') throw new BadRequestException('Contexte tenant manquant.');
+    return this.academicPeriodSettingsService.update(
+      tid,
+      id,
+      {
+        ...(data.name !== undefined && { name: data.name }),
+        ...(data.type !== undefined && { type: data.type as 'TRIMESTER' | 'SEMESTER' | 'SEQUENCE' | 'CUSTOM' }),
+        ...(data.periodOrder !== undefined && { periodOrder: data.periodOrder }),
+        ...(data.startDate !== undefined && { startDate: new Date(data.startDate) }),
+        ...(data.endDate !== undefined && { endDate: new Date(data.endDate) }),
+      },
+      user.id,
+    );
+  }
+
+  @Post('periods/:id/activate')
+  async activateAcademicPeriod(
+    @TenantId() tenantId: string | undefined,
+    @Param('id') id: string,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
+    const fromHeader = req?.headers?.['x-tenant-id'];
+    const fromQuery = req?.query?.tenant_id;
+    const tid = tenantId ?? fromUser ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader) ?? (Array.isArray(fromQuery) ? fromQuery[0] : fromQuery);
+    if (!tid || typeof tid !== 'string') throw new BadRequestException('Contexte tenant manquant.');
+    return this.academicPeriodSettingsService.activate(tid, id, user.id);
+  }
+
+  @Post('periods/:id/close')
+  async closeAcademicPeriod(
+    @TenantId() tenantId: string | undefined,
+    @Param('id') id: string,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
+    const fromHeader = req?.headers?.['x-tenant-id'];
+    const fromQuery = req?.query?.tenant_id;
+    const tid = tenantId ?? fromUser ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader) ?? (Array.isArray(fromQuery) ? fromQuery[0] : fromQuery);
+    if (!tid || typeof tid !== 'string') throw new BadRequestException('Contexte tenant manquant.');
+    return this.academicPeriodSettingsService.close(tid, id, user.id);
+  }
+
+  // ============================================================================
+  // STRUCTURE PÉDAGOGIQUE HIÉRARCHIQUE (niveaux → cycles → grades → classes physiques)
+  // ============================================================================
+
+  private resolveTid(tenantId: string | undefined, user: any, req: any): string {
+    const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
+    const fromHeader = req?.headers?.['x-tenant-id'];
+    const fromQuery = req?.query?.tenant_id;
+    const tid = tenantId ?? fromUser ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader) ?? (Array.isArray(fromQuery) ? fromQuery[0] : fromQuery);
+    if (!tid || typeof tid !== 'string') throw new BadRequestException('Contexte tenant manquant.');
+    return tid;
+  }
+
+  @Get('education/structure')
+  async getEducationStructure(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    return this.educationStructureService.getStructure(this.resolveTid(tenantId, user, req));
+  }
+
+  @Post('education/structure/initialize')
+  async initializeEducationStructure(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    return this.educationStructureService.initializeDefaultStructure(this.resolveTid(tenantId, user, req));
+  }
+
+  @Get('education/classrooms')
+  async getEducationClassrooms(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Query('academic_year_id') academicYearId: string,
+  ) {
+    if (!academicYearId) throw new BadRequestException('academic_year_id requis.');
+    return this.educationStructureService.getClassrooms(this.resolveTid(tenantId, user, req), academicYearId);
+  }
+
+  @Post('education/classrooms')
+  async createEducationClassroom(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Body() data: { academicYearId: string; gradeId: string; name: string; code?: string; capacity?: number },
+  ) {
+    if (!data.academicYearId || !data.gradeId) throw new BadRequestException('academicYearId et gradeId requis.');
+    const tid = this.resolveTid(tenantId, user, req);
+    return this.educationStructureService.createClassroom(tid, data.academicYearId, {
+      gradeId: data.gradeId,
+      name: data.name,
+      code: data.code,
+      capacity: data.capacity,
+    });
+  }
+
+  @Put('education/classrooms/:id')
+  async updateEducationClassroom(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Param('id') id: string,
+    @Body() data: { name?: string; code?: string; capacity?: number; isActive?: boolean },
+  ) {
+    return this.educationStructureService.updateClassroom(this.resolveTid(tenantId, user, req), id, data);
+  }
+
+  @Post('education/classrooms/:id/archive')
+  async archiveEducationClassroom(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Param('id') id: string,
+  ) {
+    return this.educationStructureService.archiveClassroom(this.resolveTid(tenantId, user, req), id);
+  }
+
+  @Post('education/classrooms/duplicate')
+  async duplicateEducationClassrooms(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Body() data: { oldAcademicYearId: string; newAcademicYearId: string },
+  ) {
+    if (!data.oldAcademicYearId || !data.newAcademicYearId)
+      throw new BadRequestException('oldAcademicYearId et newAcademicYearId requis.');
+    return this.educationStructureService.duplicateStructureToNewYear(
+      this.resolveTid(tenantId, user, req),
+      data.oldAcademicYearId,
+      data.newAcademicYearId,
+    );
+  }
+
+  @Put('education/levels/:id/enabled')
+  async setEducationLevelEnabled(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Param('id') id: string,
+    @Body() data: { isEnabled: boolean },
+  ) {
+    return this.educationStructureService.setLevelEnabled(this.resolveTid(tenantId, user, req), id, data.isEnabled);
   }
 
   // ============================================================================

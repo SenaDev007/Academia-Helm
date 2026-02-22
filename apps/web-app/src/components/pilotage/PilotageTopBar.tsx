@@ -137,7 +137,7 @@ export default function PilotageTopBar({ user, tenant }: PilotageTopBarProps) {
                 )}
                 <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
               </div>
-              <span className="text-lg font-bold bg-gradient-to-r from-blue-900 to-blue-700 bg-clip-text text-transparent hidden sm:block max-w-[200px] truncate" title={schoolIdentity?.schoolName || tenant.name}>
+              <span className="text-xs font-semibold bg-gradient-to-r from-blue-900 to-blue-700 bg-clip-text text-transparent hidden sm:block max-w-[240px] leading-tight break-words whitespace-normal line-clamp-2" title={schoolIdentity?.schoolName || tenant.name}>
                 {schoolIdentity?.schoolAcronym || schoolIdentity?.schoolName || tenant.name || 'Mon École'}
               </span>
             </div>

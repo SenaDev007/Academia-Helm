@@ -2,13 +2,12 @@
  * ============================================================================
  * ACADEMIC YEAR CALCULATOR SERVICE
  * ============================================================================
- * 
- * Service pour calculer automatiquement les dates d'année scolaire
- * selon les règles nationales :
- * - Prérentrée : Lundi de la 2ème semaine de septembre
- * - Rentrée officielle : Lundi suivant la prérentrée
- * - Fin d'année : Fin juin ou 1ère semaine de juillet
- * 
+ *
+ * Calendrier type Bénin :
+ * - Pré-rentrée : 2e lundi de septembre (lundi de la 2e semaine de septembre)
+ * - Rentrée : 3e lundi de septembre (lundi suivant les 2 premières semaines)
+ * - Fin d'année : dernier vendredi de juin
+ *
  * ============================================================================
  */
 
@@ -52,20 +51,26 @@ export class AcademicYearCalculatorService {
   }
 
   /**
-   * Calcule la date de prérentrée : Lundi de la 2ème semaine de septembre
+   * Pré-rentrée : 2e lundi de septembre (lundi de la 2e semaine de septembre).
    */
   private calculatePreEntryDate(year: number): Date {
-    // 1er septembre de l'année
-    const september1 = new Date(year, 8, 1); // Mois 8 = septembre (0-indexed)
-    
-    // Trouver le premier lundi de septembre
-    const firstMonday = this.findNextMonday(september1);
-    
-    // Ajouter 7 jours pour obtenir le lundi de la 2ème semaine
-    const secondWeekMonday = new Date(firstMonday);
-    secondWeekMonday.setDate(firstMonday.getDate() + 7);
-    
-    return secondWeekMonday;
+    const firstMonday = this.getNthMondayOfSeptember(year, 1);
+    const second = new Date(firstMonday);
+    second.setDate(firstMonday.getDate() + 7);
+    return second;
+  }
+
+  /**
+   * N-ième lundi de septembre (n=1 → 1er lundi).
+   */
+  private getNthMondayOfSeptember(year: number, n: number): Date {
+    const sept1 = new Date(year, 8, 1);
+    const dayOfWeek = sept1.getDay();
+    const daysUntilFirstMonday = dayOfWeek === 1 ? 0 : (8 - dayOfWeek) % 7;
+    const firstMonday = new Date(year, 8, 1 + daysUntilFirstMonday);
+    const nth = new Date(firstMonday);
+    nth.setDate(firstMonday.getDate() + (n - 1) * 7);
+    return nth;
   }
 
   /**
@@ -78,49 +83,10 @@ export class AcademicYearCalculatorService {
   }
 
   /**
-   * Calcule la date de fin : Fin juin ou 1ère semaine de juillet
-   * On choisit le dernier vendredi de juin ou le premier vendredi de juillet
+   * Fin d'année : dernier vendredi de juin.
    */
   private calculateEndDate(year: number): Date {
-    // Dernier jour de juin
-    const june30 = new Date(year, 5, 30); // Mois 5 = juin
-    
-    // Trouver le dernier vendredi de juin
-    const lastFridayJune = this.findLastFridayOfMonth(year, 5);
-    
-    // Si le dernier vendredi est après le 25 juin, on le prend
-    // Sinon, on prend le premier vendredi de juillet
-    if (lastFridayJune.getDate() >= 25) {
-      return lastFridayJune;
-    } else {
-      // Premier vendredi de juillet
-      const july1 = new Date(year, 6, 1); // Mois 6 = juillet
-      return this.findNextFriday(july1);
-    }
-  }
-
-  /**
-   * Trouve le prochain lundi à partir d'une date donnée
-   */
-  private findNextMonday(date: Date): Date {
-    const dayOfWeek = date.getDay(); // 0 = dimanche, 1 = lundi, etc.
-    const daysUntilMonday = dayOfWeek === 0 ? 1 : (8 - dayOfWeek) % 7 || 7;
-    
-    const monday = new Date(date);
-    monday.setDate(date.getDate() + daysUntilMonday);
-    return monday;
-  }
-
-  /**
-   * Trouve le prochain vendredi à partir d'une date donnée
-   */
-  private findNextFriday(date: Date): Date {
-    const dayOfWeek = date.getDay();
-    const daysUntilFriday = dayOfWeek <= 5 ? (5 - dayOfWeek) : (12 - dayOfWeek);
-    
-    const friday = new Date(date);
-    friday.setDate(date.getDate() + daysUntilFriday);
-    return friday;
+    return this.findLastFridayOfMonth(year, 5); // 5 = juin (0-indexed)
   }
 
   /**

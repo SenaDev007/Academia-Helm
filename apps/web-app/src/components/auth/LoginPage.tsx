@@ -115,6 +115,16 @@ export default function LoginPage() {
       throw new Error(data.message || 'Erreur lors de la connexion');
     }
 
+    // Plateforme Owner sans tenant : rediriger vers la sélection d'établissement
+    const isPlatformOwner = data.user?.role === 'PLATFORM_OWNER' || (data.user as any)?.isPlatformOwner;
+    const hasNoTenant = !data.tenant?.id;
+    if (isPlatformOwner && hasNoTenant) {
+      const params = new URLSearchParams();
+      if (redirectPath !== '/app') params.set('redirect', redirectPath);
+      window.location.href = params.toString() ? `/auth/select-tenant?${params.toString()}` : '/auth/select-tenant';
+      return;
+    }
+
     // Construire l'URL de redirection avec tenant et tenant_id si présents
     let redirectUrl = redirectPath;
     if (tenantSlug || tenantIdFromUrl) {

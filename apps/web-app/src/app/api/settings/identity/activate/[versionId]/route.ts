@@ -4,17 +4,30 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
-import { cookies } from 'next/headers';
+import { getServerToken } from '@/lib/auth/session';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
 async function getAuthHeaders(request: NextRequest) {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get('session_token')?.value;
   const authHeader = request.headers.get('Authorization');
+  if (authHeader) {
+    return {
+      'Authorization': authHeader,
+      'Content-Type': 'application/json',
+    };
+  }
   
+  const cookieToken = request.cookies.get('academia_token')?.value;
+  if (cookieToken) {
+    return {
+      'Authorization': `Bearer ${cookieToken}`,
+      'Content-Type': 'application/json',
+    };
+  }
+  
+  const sessionToken = await getServerToken();
   return {
-    'Authorization': authHeader || (sessionToken ? `Bearer ${sessionToken}` : ''),
+    'Authorization': sessionToken ? `Bearer ${sessionToken}` : '',
     'Content-Type': 'application/json',
   };
 }
@@ -28,7 +41,7 @@ export async function PUT(
     const body = await request.json();
     const headers = await getAuthHeaders(request);
     
-    const response = await fetch(`${API_BASE_URL}/api/settings/identity/activate/${versionId}`, {
+    const response = await fetch(`${API_BASE_URL}/settings/identity/activate/${versionId}`, {
       method: 'PUT',
       headers,
       body: JSON.stringify(body),

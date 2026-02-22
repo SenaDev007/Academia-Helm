@@ -265,7 +265,6 @@ export class AuthService {
               name: true,
               logo: true,
             },
-            take: 1,
           },
           country: {
             select: {
@@ -281,11 +280,11 @@ export class AuthService {
 
       return tenants.map((tenant) => ({
         tenantId: tenant.id,
-        schoolName: tenant.schools?.[0]?.name || tenant.name,
+        schoolName: tenant.schools?.name || tenant.name,
         tenantName: tenant.name,
         slug: tenant.slug,
         subdomain: tenant.subdomain,
-        logoUrl: tenant.schools?.[0]?.logo || null,
+        logoUrl: tenant.schools?.logo ?? null,
         country: tenant.country?.name || null,
       }));
     }
@@ -303,7 +302,6 @@ export class AuthService {
               name: true,
               logo: true,
             },
-            take: 1,
           },
           country: {
             select: {
@@ -317,11 +315,11 @@ export class AuthService {
       if (tenant && tenant.status === 'active') {
         tenants.push({
           tenantId: tenant.id,
-          schoolName: tenant.schools?.[0]?.name || tenant.name,
+          schoolName: tenant.schools?.name || tenant.name,
           tenantName: tenant.name,
           slug: tenant.slug,
           subdomain: tenant.subdomain,
-          logoUrl: tenant.schools?.[0]?.logo || null,
+          logoUrl: tenant.schools?.logo ?? null,
           country: tenant.country?.name || null,
         });
       }
@@ -344,16 +342,9 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
-    // Vérifier que le tenant existe et est actif
+    // Vérifier que le tenant existe et est actif (sans include pour éviter erreurs Prisma/DB)
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
-      include: {
-        academicYears: {
-          where: { isActive: true },
-          orderBy: { startDate: 'desc' },
-          take: 1,
-        },
-      },
     });
 
     if (!tenant) {
@@ -372,9 +363,17 @@ export class AuthService {
       throw new ForbiddenException('You do not have access to this tenant');
     }
 
-    // Récupérer l'année académique active
-    const academicYear = tenant.academicYears?.[0];
-    const academicYearId = academicYear?.id || null;
+    // Récupérer l'année académique active (requête séparée, non bloquante si schéma DB divergent)
+    let academicYear: { id: string; name: string; startDate: Date; endDate: Date } | null = null;
+    try {
+      academicYear = await this.prisma.academicYear.findFirst({
+        where: { tenantId, isActive: true },
+        orderBy: { startDate: 'desc' },
+      });
+    } catch (err: any) {
+      this.logger.warn('Could not load active academic year for select-tenant (non-blocking)', err?.message || err);
+    }
+    const academicYearId = academicYear?.id ?? null;
 
     // Générer un nouveau token enrichi avec le tenant
     const tokens = this.generateEnrichedToken(user, tenantId, academicYearId);

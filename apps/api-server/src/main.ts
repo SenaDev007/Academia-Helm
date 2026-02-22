@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -12,6 +13,10 @@ async function bootstrap() {
     logger, // ✅ Réduire les logs pour accélérer le démarrage
     rawBody: true, // ✅ Nécessaire pour vérifier la signature des webhooks FedaPay (body brut)
   });
+
+  // ✅ Augmenter la limite de taille du body pour les uploads d'images en base64
+  app.use(json({ limit: '10mb' }));
+  app.use(urlencoded({ extended: true, limit: '10mb' }));
 
   // Global prefix for all routes
   app.setGlobalPrefix('api');

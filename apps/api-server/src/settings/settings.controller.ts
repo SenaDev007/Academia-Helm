@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   Request,
+  BadRequestException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
@@ -942,45 +943,94 @@ export class SettingsController {
   // ============================================================================
 
   @Get('academic-years')
-  async getAcademicYears(@TenantId() tenantId: string) {
-    return this.academicYearSettingsService.getAll(tenantId);
+  async getAcademicYears(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
+    const fromHeader = req?.headers?.['x-tenant-id'];
+    const tid = tenantId ?? fromUser ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader);
+    if (!tid || typeof tid !== 'string') {
+      throw new BadRequestException(
+        'Contexte tenant manquant. Connectez-vous avec un établissement sélectionné ou envoyez l’en-tête x-tenant-id.',
+      );
+    }
+    return this.academicYearSettingsService.getAll(tid);
   }
 
   @Get('academic-years/active')
-  async getActiveAcademicYear(@TenantId() tenantId: string) {
-    return this.academicYearSettingsService.getActive(tenantId);
+  async getActiveAcademicYear(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
+    const fromHeader = req?.headers?.['x-tenant-id'];
+    const tid = tenantId ?? fromUser ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader);
+    if (!tid || typeof tid !== 'string') {
+      throw new BadRequestException(
+        'Contexte tenant manquant. Connectez-vous avec un établissement sélectionné ou envoyez l’en-tête x-tenant-id.',
+      );
+    }
+    return this.academicYearSettingsService.getActive(tid);
   }
 
   @Get('academic-years/:id')
   async getAcademicYearById(
-    @TenantId() tenantId: string,
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
     @Param('id') id: string,
   ) {
-    return this.academicYearSettingsService.getById(tenantId, id);
+    const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
+    const fromHeader = req?.headers?.['x-tenant-id'];
+    const tid = tenantId ?? fromUser ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader);
+    if (!tid || typeof tid !== 'string') throw new BadRequestException('Contexte tenant manquant.');
+    return this.academicYearSettingsService.getById(tid, id);
   }
 
   @Post('academic-years')
   async createAcademicYear(
-    @TenantId() tenantId: string,
+    @TenantId() tenantId: string | undefined,
     @CurrentUser() user: any,
+    @Request() req: any,
     @Body() data: {
       name: string;
       label: string;
       preEntryDate?: string;
-      startDate: string;
-      endDate: string;
+      startDate?: string;
+      endDate?: string;
     },
   ) {
+    const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
+    const fromHeader = req?.headers?.['x-tenant-id'];
+    const tid = tenantId ?? fromUser ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader);
+    if (!tid || typeof tid !== 'string') throw new BadRequestException('Contexte tenant manquant.');
     return this.academicYearSettingsService.create(
-      tenantId,
+      tid,
       {
-        ...data,
+        name: data.name,
+        label: data.label,
         preEntryDate: data.preEntryDate ? new Date(data.preEntryDate) : undefined,
-        startDate: new Date(data.startDate),
-        endDate: new Date(data.endDate),
+        startDate: data.startDate ? new Date(data.startDate) : undefined,
+        endDate: data.endDate ? new Date(data.endDate) : undefined,
       },
       user.id,
     );
+  }
+
+  @Post('academic-years/generate-next')
+  async generateNextAcademicYear(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
+    const fromHeader = req?.headers?.['x-tenant-id'];
+    const tid = tenantId ?? fromUser ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader);
+    if (!tid || typeof tid !== 'string') throw new BadRequestException('Contexte tenant manquant.');
+    return this.academicYearSettingsService.generateNext(tid, user.id);
   }
 
   @Put('academic-years/:id')
@@ -1011,11 +1061,16 @@ export class SettingsController {
 
   @Post('academic-years/:id/activate')
   async activateAcademicYear(
-    @TenantId() tenantId: string,
-    @Param('id') id: string,
+    @TenantId() tenantId: string | undefined,
     @CurrentUser() user: any,
+    @Request() req: any,
+    @Param('id') id: string,
   ) {
-    return this.academicYearSettingsService.activate(tenantId, id, user.id);
+    const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
+    const fromHeader = req?.headers?.['x-tenant-id'];
+    const tid = tenantId ?? fromUser ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader);
+    if (!tid || typeof tid !== 'string') throw new BadRequestException('Contexte tenant manquant.');
+    return this.academicYearSettingsService.activate(tid, id, user.id);
   }
 
   @Post('academic-years/:id/lock')
@@ -1035,8 +1090,8 @@ export class SettingsController {
     @Body() data: {
       name: string;
       label: string;
-      startDate: string;
-      endDate: string;
+      startDate?: string;
+      endDate?: string;
       preEntryDate?: string;
       duplicateClasses?: boolean;
       duplicateFees?: boolean;
@@ -1047,10 +1102,14 @@ export class SettingsController {
       tenantId,
       id,
       {
-        ...data,
-        startDate: new Date(data.startDate),
-        endDate: new Date(data.endDate),
+        name: data.name,
+        label: data.label,
+        startDate: data.startDate ? new Date(data.startDate) : undefined,
+        endDate: data.endDate ? new Date(data.endDate) : undefined,
         preEntryDate: data.preEntryDate ? new Date(data.preEntryDate) : undefined,
+        duplicateClasses: data.duplicateClasses,
+        duplicateFees: data.duplicateFees,
+        duplicateSubjects: data.duplicateSubjects,
       },
       user.id,
     );
@@ -1065,12 +1124,26 @@ export class SettingsController {
     return this.academicYearSettingsService.delete(tenantId, id, user.id);
   }
 
-  @Post('academic-years/generate-next')
-  async generateNextAcademicYear(
-    @TenantId() tenantId: string,
+  @Post('academic-years/:id/close')
+  async closeAcademicYear(
+    @TenantId() tenantId: string | undefined,
     @CurrentUser() user: any,
+    @Request() req: any,
+    @Param('id') id: string,
   ) {
-    return this.academicYearSettingsService.generateNext(tenantId, user.id);
+    const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
+    const fromHeader = req?.headers?.['x-tenant-id'];
+    const tid = tenantId ?? fromUser ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader);
+    if (!tid || typeof tid !== 'string') throw new BadRequestException('Contexte tenant manquant.');
+    return this.academicYearSettingsService.close(tid, id, user.id);
+  }
+
+  @Get('academic-years/:id/stats')
+  async getAcademicYearStats(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.academicYearSettingsService.getYearStats(tenantId, id);
   }
 
   // ============================================================================

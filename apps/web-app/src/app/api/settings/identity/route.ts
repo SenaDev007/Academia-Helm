@@ -6,18 +6,23 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
-import { cookies } from 'next/headers';
-
-const API_BASE_URL = getApiBaseUrlForRoutes();
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { getServerToken } from '@/lib/auth/session';
 
 async function getAuthHeaders(request: NextRequest) {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get('session_token')?.value;
+  // Priorité 1: Header Authorization existant
   const authHeader = request.headers.get('Authorization');
   
+  // Priorité 2: Cookie academia_token via request.cookies
+  const cookieToken = request.cookies.get('academia_token')?.value;
+  
+  // Priorité 3: Utiliser la fonction session
+  const sessionToken = await getServerToken();
+  
+  const token = authHeader || (cookieToken ? `Bearer ${cookieToken}` : '') || (sessionToken ? `Bearer ${sessionToken}` : '');
+  
   return {
-    'Authorization': authHeader || (sessionToken ? `Bearer ${sessionToken}` : ''),
+    'Authorization': token,
     'Content-Type': 'application/json',
   };
 }
@@ -25,11 +30,20 @@ async function getAuthHeaders(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const headers = await getAuthHeaders(request);
-    const response = await fetch(`${API_BASE_URL}/api/settings/identity`, {
+    const baseUrl = normalizeApiUrl(getApiBaseUrlForRoutes());
+    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/settings/identity`, {
       headers,
     });
 
-    const data = await response.json();
+    const contentType = response.headers.get('content-type') || '';
+    const text = await response.text();
+    if (!text || text.trim() === '') {
+      return NextResponse.json(null, { status: response.status });
+    }
+    if (!contentType.includes('application/json')) {
+      return NextResponse.json({ error: text || 'Invalid response' }, { status: response.status });
+    }
+    const data = JSON.parse(text);
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error fetching identity profile:', error);
@@ -42,13 +56,22 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const headers = await getAuthHeaders(request);
     
-    const response = await fetch(`${API_BASE_URL}/api/settings/identity`, {
+    const baseUrl = normalizeApiUrl(getApiBaseUrlForRoutes());
+    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/settings/identity`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
     });
 
-    const data = await response.json();
+    const contentType = response.headers.get('content-type') || '';
+    const text = await response.text();
+    if (!text || text.trim() === '') {
+      return NextResponse.json({ success: true }, { status: response.status });
+    }
+    if (!contentType.includes('application/json')) {
+      return NextResponse.json({ error: text || 'Invalid response' }, { status: response.status });
+    }
+    const data = JSON.parse(text);
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error creating identity version:', error);

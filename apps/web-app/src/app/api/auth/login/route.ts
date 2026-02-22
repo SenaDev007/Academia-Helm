@@ -23,6 +23,7 @@ interface BackendLoginResponse {
     firstName?: string;
     lastName?: string;
     tenantId?: string;
+    role?: string;
   };
   accessToken: string;
   refreshToken: string;

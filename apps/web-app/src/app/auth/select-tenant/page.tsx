@@ -11,7 +11,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 interface Tenant {
   tenantId: string;
@@ -30,6 +30,8 @@ export default function SelectTenantPage() {
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
   const [isSelecting, setIsSelecting] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams.get('redirect') || '/app';
 
   useEffect(() => {
     loadAvailableTenants();
@@ -40,22 +42,21 @@ export default function SelectTenantPage() {
       setIsLoading(true);
       setError(null);
 
-      const token = localStorage.getItem('accessToken');
-      if (!token) {
-        router.push('/auth/login');
-        return;
-      }
+      const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
 
       const response = await fetch('/api/auth/available-tenants', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
+        credentials: 'include',
+        headers,
       });
 
       if (!response.ok) {
         if (response.status === 401) {
-          localStorage.removeItem('accessToken');
-          localStorage.removeItem('refreshToken');
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
+          }
           router.push('/auth/login');
           return;
         }
@@ -65,8 +66,7 @@ export default function SelectTenantPage() {
       const data = await response.json();
       setTenants(data);
 
-      // Si un seul tenant, le sélectionner automatiquement
-      if (data.length === 1) {
+      if (Array.isArray(data) && data.length === 1) {
         handleSelectTenant(data[0].tenantId);
       }
     } catch (err: any) {
@@ -82,34 +82,29 @@ export default function SelectTenantPage() {
       setIsSelecting(true);
       setError(null);
 
-      const token = localStorage.getItem('accessToken');
-      if (!token) {
-        router.push('/auth/login');
-        return;
-      }
+      const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
 
       const response = await fetch('/api/auth/select-tenant', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+        credentials: 'include',
+        headers,
         body: JSON.stringify({ tenant_id: tenantId }),
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Failed to select tenant');
-      }
-
       const data = await response.json();
 
-      // Stocker le nouveau token enrichi
-      localStorage.setItem('accessToken', data.accessToken);
-      localStorage.setItem('refreshToken', data.refreshToken);
+      if (!response.ok) {
+        throw new Error(data.message || data.error || 'Failed to select tenant');
+      }
 
-      // Rediriger vers le dashboard
-      router.push('/dashboard');
+      if (data.accessToken && typeof window !== 'undefined') {
+        localStorage.setItem('accessToken', data.accessToken);
+        localStorage.setItem('refreshToken', data.refreshToken || '');
+      }
+
+      router.push(redirectTo);
     } catch (err: any) {
       console.error('Error selecting tenant:', err);
       setError(err.message || 'Failed to select tenant');

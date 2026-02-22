@@ -181,27 +181,19 @@ export class AuditLogInterceptor implements NestInterceptor {
     userAgent: string | null;
   }): Promise<void> {
     try {
+      // Ne pas créer d'audit log si aucun tenant (ex: PLATFORM_OWNER sans établissement sélectionné)
+      // Évite la violation de clé étrangère audit_logs_tenant_id_fkey
+      const rawTenantId = data.tenantId ? String(data.tenantId).trim() : '';
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!rawTenantId || !uuidRegex.test(rawTenantId)) {
+        return;
+      }
+      const finalTenantId = rawTenantId;
+
       // ✅ Timeout pour éviter de bloquer la requête si la DB est lente
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => reject(new Error('Audit log timeout')), 2000);
       });
-
-      // Récupérer l'ID du tenant système si tenantId n'est pas disponible
-      // Le tenant système a le slug 'system'
-      // IMPORTANT: La colonne tenant_id est de type UUID, donc on doit utiliser un UUID valide
-      let finalTenantId: string = data.tenantId ? String(data.tenantId) : '';
-      if (!finalTenantId || finalTenantId.trim() === '') {
-        // Utiliser un UUID système par défaut (créé par le script create-system-tenant.ts)
-        // Si ce tenant n'existe pas, l'erreur sera non-bloquante
-        finalTenantId = 'c6b26096-04e0-4c73-af5a-a62abbc827cc'; // Tenant système créé par le script
-      }
-      
-      // S'assurer que finalTenantId est un UUID valide (format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (!uuidRegex.test(finalTenantId)) {
-        // Si ce n'est pas un UUID valide, utiliser le tenant système
-        finalTenantId = 'c6b26096-04e0-4c73-af5a-a62abbc827cc';
-      }
 
       // Déterminer tableName à partir de resource (ex: "students" -> "students")
       // Si resource contient un slash, prendre la partie après le dernier slash

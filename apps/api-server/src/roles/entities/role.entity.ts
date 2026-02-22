@@ -22,7 +22,7 @@ export class Role {
   tenantId: string | null;
 
   @ManyToOne(() => Tenant, { nullable: true, onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'tenant_id' })
+  @JoinColumn({ name: 'tenantId' })
   tenant: Tenant | null;
 
   @Column({ type: 'varchar', length: 100 })
@@ -38,8 +38,8 @@ export class Role {
   @ManyToMany(() => Permission, (permission) => permission.roles)
   @JoinTable({
     name: 'role_permissions',
-    joinColumn: { name: 'role_id', referencedColumnName: 'id' },
-    inverseJoinColumn: { name: 'permission_id', referencedColumnName: 'id' },
+    joinColumn: { name: 'roleId', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'permissionId', referencedColumnName: 'id' },
   })
   permissions: Permission[];
 
@@ -47,9 +47,9 @@ export class Role {
   @ManyToMany(() => User, (user) => user.roles)
   users: User[];
 
-  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
+  @CreateDateColumn({ type: 'timestamptz', name: 'createdAt' })
   createdAt: Date;
 
-  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updatedAt' })
   updatedAt: Date;
 }

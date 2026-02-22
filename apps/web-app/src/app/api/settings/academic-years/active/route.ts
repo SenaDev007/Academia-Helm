@@ -1,5 +1,5 @@
 /**
- * API PROXY - ANNÉES SCOLAIRES (liste + création)
+ * API PROXY - ANNÉE SCOLAIRE ACTIVE
  * Envoie le tenant de la session au backend (x-tenant-id) pour que le contexte soit disponible.
  */
 
@@ -19,10 +19,8 @@ async function getAuthHeaders(request: NextRequest) {
     'Content-Type': 'application/json',
   };
   const session = await getServerSession();
-  const fromSession = session?.tenant?.id;
-  const fromHeader = request.headers.get('x-tenant-id');
   const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
-  const tenantId = fromSession ?? fromHeader ?? fromQuery;
+  const tenantId = session?.tenant?.id ?? request.headers.get('x-tenant-id') ?? fromQuery;
   if (tenantId && typeof tenantId === 'string') headers['x-tenant-id'] = tenantId;
   return headers;
 }
@@ -30,7 +28,7 @@ async function getAuthHeaders(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const headers = await getAuthHeaders(request);
-    const response = await fetch(`${API_BASE_URL}/settings/academic-years`, {
+    const response = await fetch(`${API_BASE_URL}/settings/academic-years/active`, {
       headers,
       cache: 'no-store',
     });
@@ -43,27 +41,7 @@ export async function GET(request: NextRequest) {
       headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
     });
   } catch (error) {
-    console.error('Error fetching academic years:', error);
-    return NextResponse.json({ error: 'Failed to fetch academic years' }, { status: 500 });
-  }
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const headers = await getAuthHeaders(request); // inclut x-tenant-id depuis la session
-    const response = await fetch(`${API_BASE_URL}/settings/academic-years`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    });
-    const contentType = response.headers.get('content-type') || '';
-    const data = contentType.includes('application/json')
-      ? await response.json().catch(() => ({ error: 'Invalid response' }))
-      : { error: await response.text() || 'Erreur serveur' };
-    return NextResponse.json(data, { status: response.status });
-  } catch (error) {
-    console.error('Error creating academic year:', error);
-    return NextResponse.json({ error: 'Failed to create academic year' }, { status: 500 });
+    console.error('Error fetching active academic year:', error);
+    return NextResponse.json({ error: 'Failed to fetch active academic year' }, { status: 500 });
   }
 }

@@ -23,11 +23,11 @@ export class AuditLog {
     }
   }
 
-  @Column({ type: 'uuid', name: 'tenantId' })
+  @Column({ type: 'uuid', name: 'tenant_id' })
   tenantId: string;
 
   @ManyToOne(() => Tenant, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'tenantId' })
+  @JoinColumn({ name: 'tenant_id' })
   tenant: Tenant;
 
   @Column({ type: 'uuid', nullable: true, name: 'userId' })

@@ -24,6 +24,28 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
   return response.json();
 }
 
+/** Appels sans cache pour données toujours à jour (ex. années scolaires depuis le backend) */
+async function fetchWithAuthNoCache(url: string, options: RequestInit = {}) {
+  const response = await fetch(url, {
+    ...options,
+    cache: 'no-store',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache',
+      ...options.headers,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: 'Une erreur est survenue' }));
+    throw new Error(error.message || error.error || `HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
 // ============================================================================
 // IDENTITÉ & PARAMÈTRES GÉNÉRAUX
 // ============================================================================
@@ -330,20 +352,27 @@ export async function updateCommunicationSettings(data: {
 // ANNÉES SCOLAIRES
 // ============================================================================
 
-export async function getAcademicYears() {
-  return fetchWithAuth(`${BASE_URL}/academic-years`);
+/** Optionnel : pour Plateforme Owner, passer l'ID de l'établissement à consulter (ou depuis l'URL ?tenant_id=) */
+export async function getAcademicYears(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuthNoCache(`${BASE_URL}/academic-years${qs}`);
 }
 
-export async function getActiveAcademicYear() {
-  return fetchWithAuth(`${BASE_URL}/academic-years/active`);
+export async function getActiveAcademicYear(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuthNoCache(`${BASE_URL}/academic-years/active${qs}`);
+}
+
+export async function getAcademicYearStats(id: string) {
+  return fetchWithAuth(`${BASE_URL}/academic-years/${id}/stats`);
 }
 
 export async function createAcademicYear(data: {
   name: string;
   label: string;
   preEntryDate?: string;
-  startDate: string;
-  endDate: string;
+  startDate?: string;
+  endDate?: string;
 }) {
   return fetchWithAuth(`${BASE_URL}/academic-years`, {
     method: 'POST',
@@ -351,9 +380,61 @@ export async function createAcademicYear(data: {
   });
 }
 
-export async function activateAcademicYear(id: string) {
-  return fetchWithAuth(`${BASE_URL}/academic-years/${id}/activate`, {
+export async function activateAcademicYear(id: string, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/academic-years/${id}/activate${qs}`, {
     method: 'POST',
+  });
+}
+
+export async function closeAcademicYear(id: string, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/academic-years/${id}/close${qs}`, {
+    method: 'POST',
+  });
+}
+
+export async function generateNextAcademicYear(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/academic-years/generate-next${qs}`, {
+    method: 'POST',
+  });
+}
+
+export async function updateAcademicYear(id: string, data: {
+  name?: string;
+  label?: string;
+  preEntryDate?: string;
+  officialStartDate?: string;
+  startDate?: string;
+  endDate?: string;
+}, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/academic-years/${id}${qs}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteAcademicYear(id: string) {
+  return fetchWithAuth(`${BASE_URL}/academic-years/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function duplicateAcademicYear(sourceId: string, data: {
+  name: string;
+  label: string;
+  startDate: string;
+  endDate: string;
+  preEntryDate?: string;
+  duplicateClasses?: boolean;
+  duplicateFees?: boolean;
+  duplicateSubjects?: boolean;
+}) {
+  return fetchWithAuth(`${BASE_URL}/academic-years/${sourceId}/duplicate`, {
+    method: 'POST',
+    body: JSON.stringify(data),
   });
 }
 

@@ -3,27 +3,28 @@
  * SELECT TENANT API ROUTE
  * ============================================================================
  * 
- * Proxy Next.js pour l'endpoint backend /auth/select-tenant
+ * Proxy Next.js pour l'endpoint backend /auth/select-tenant.
+ * Accepte le token via Authorization ou cookie (PO après login).
+ * Met à jour la session cookie avec le tenant choisi.
  * 
  * ============================================================================
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+import { getServerToken, setServerSession } from '@/lib/auth/session';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 
 export async function POST(request: NextRequest) {
   try {
-    // Récupérer le token depuis les headers
     const authHeader = request.headers.get('authorization');
-    if (!authHeader) {
+    const token = authHeader?.replace(/^Bearer\s+/i, '').trim() || await getServerToken();
+    if (!token) {
       return NextResponse.json(
-        { error: 'Authorization header missing' },
+        { error: 'Authorization header or session cookie required' },
         { status: 401 }
       );
     }
 
-    // Récupérer le body
     const body = await request.json();
     const { tenant_id } = body;
 
@@ -34,11 +35,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Appeler l'API backend
-    const response = await fetch(`${API_URL}/api/auth/select-tenant`, {
+    const baseUrl = normalizeApiUrl(getApiBaseUrlForRoutes());
+    const url = `${baseUrl.replace(/\/$/, '')}/auth/select-tenant`;
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
-        'Authorization': authHeader,
+        'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ tenant_id }),
@@ -50,12 +52,53 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(data, { status: response.status });
     }
 
-    return NextResponse.json(data);
+    // Mettre à jour la session cookie avec le tenant choisi (user + tenant + token)
+    if (data.user && data.tenant && data.accessToken) {
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      await setServerSession({
+        user: {
+          id: data.user.id,
+          email: data.user.email,
+          firstName: data.user.firstName ?? '',
+          lastName: data.user.lastName ?? '',
+          role: data.user.role || 'USER',
+          tenantId: data.tenant.id,
+          permissions: data.user.permissions || [],
+          createdAt: data.user.createdAt || new Date().toISOString(),
+        },
+        tenant: {
+          id: data.tenant.id,
+          name: data.tenant.name,
+          slug: data.tenant.slug || '',
+          subdomain: data.tenant.subdomain || '',
+          status: 'active',
+          subscriptionStatus: 'ACTIVE_SUBSCRIBED',
+          createdAt: data.tenant.createdAt || new Date().toISOString(),
+          updatedAt: data.tenant.updatedAt || new Date().toISOString(),
+          trialEndsAt: undefined,
+          nextPaymentDueAt: undefined,
+        },
+        token: data.accessToken,
+        expiresAt,
+      });
+    }
+
+    return NextResponse.json({
+      success: true,
+      user: data.user,
+      tenant: data.tenant,
+      accessToken: data.accessToken,
+      refreshToken: data.refreshToken,
+    });
   } catch (error: any) {
     console.error('Error in select tenant:', error);
+    const isConnectionRefused = error?.cause?.code === 'ECONNREFUSED' || error?.code === 'ECONNREFUSED';
+    const message = isConnectionRefused
+      ? 'API backend injoignable. Vérifiez que le serveur Nest (api-server) est démarré.'
+      : error?.message || 'Internal server error';
     return NextResponse.json(
-      { error: 'Internal server error', message: error.message },
-      { status: 500 }
+      { error: 'Internal server error', message },
+      { status: isConnectionRefused ? 503 : 500 }
     );
   }
 }

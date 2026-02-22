@@ -9,17 +9,40 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams, usePathname, useRouter } from 'next/navigation';
 import { 
   Globe, Shield, Brain, MessageSquare, CloudOff, History, 
   ToggleLeft, ToggleRight, Stamp, GraduationCap, Languages, 
   Bell, Users, Calendar, Save, Loader2, CheckCircle, AlertCircle,
   Mail, UserCog, Lock, Key, Smartphone, CreditCard, Receipt, RefreshCw,
-  Upload, Image, FileSignature
+  Upload, Image, FileSignature, CalendarDays, UserCircle, School, Archive, CalendarRange
 } from 'lucide-react';
 import { ModuleHeader } from '@/components/modules/blueprint';
 import AdministrativeSealsManagement from '@/components/settings/AdministrativeSealsManagement';
 import ElectronicSignaturesManagement from '@/components/settings/ElectronicSignaturesManagement';
+import { useAppSession } from '@/contexts/AppSessionContext';
 import * as settingsService from '@/services/settings.service';
+
+/** Format d’affichage des dates d’année scolaire (conforme calendrier officiel, évite décalage timezone) */
+function toInputDate(date: Date | string | null | undefined): string {
+  if (date == null) return '';
+  const d = typeof date === 'string' ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toISOString().slice(0, 10);
+}
+
+function formatAcademicDate(date: Date | string | null | undefined, options?: { weekday?: boolean }): string {
+  if (date == null) return '—';
+  const d = typeof date === 'string' ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('fr-FR', {
+    timeZone: 'UTC',
+    weekday: options?.weekday ? 'long' : undefined,
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+}
 
 type TabId = 'identity' | 'academic-year' | 'structure' | 'bilingual' | 'features' | 
              'roles' | 'communication' | 'billing' | 'security' | 'seals' | 'orion' | 'atlas' | 'offline' | 'history';
@@ -32,6 +55,17 @@ interface Toast {
 }
 
 export default function SettingsPage() {
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
+  const { user, tenant } = useAppSession();
+  const urlTenantId = searchParams.get('tenant_id');
+  const isPlatformOwner = user?.role === 'PLATFORM_OWNER';
+  const effectiveTenantId = (isPlatformOwner || !tenant?.id) ? (urlTenantId || tenant?.id) : tenant?.id;
+
+  const [availableTenantsForPO, setAvailableTenantsForPO] = useState<{ tenantId: string; name?: string }[]>([]);
+  const [loadingTenantsPO, setLoadingTenantsPO] = useState(false);
+
   const [activeTab, setActiveTab] = useState<TabId>('identity');
   const [sealsSubTab, setSealsSubTab] = useState<SealsSubTab>('seals');
   const [loading, setLoading] = useState(true);
@@ -47,6 +81,13 @@ export default function SettingsPage() {
   const [offlineSyncSettings, setOfflineSyncSettings] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [academicYears, setAcademicYears] = useState<any[]>([]);
+  const [activeAcademicYear, setActiveAcademicYear] = useState<any>(null);
+  const [academicYearAction, setAcademicYearAction] = useState<'activate' | 'close' | 'generate' | null>(null);
+  const [academicYearTargetId, setAcademicYearTargetId] = useState<string | null>(null);
+  const [academicYearBusy, setAcademicYearBusy] = useState(false);
+  const [editingYearId, setEditingYearId] = useState<string | null>(null);
+  const [editingYearForm, setEditingYearForm] = useState<{ preEntryDate: string; officialStartDate: string; startDate: string; endDate: string } | null>(null);
+  const [editingYearBusy, setEditingYearBusy] = useState(false);
   const [pedagogicalStructure, setPedagogicalStructure] = useState<any>(null);
   const [bilingualSettings, setBilingualSettings] = useState<any>(null);
   const [communicationSettings, setCommunicationSettings] = useState<any>(null);
@@ -81,12 +122,63 @@ export default function SettingsPage() {
 
   useEffect(() => {
     loadAllSettings();
-  }, []);
+  }, [effectiveTenantId]);
+
+  // Recharger les années scolaires depuis le backend à chaque ouverture de l’onglet (dates dynamiques)
+  useEffect(() => {
+    if (activeTab !== 'academic-year') return;
+    if (!effectiveTenantId) {
+      setAcademicYears([]);
+      setActiveAcademicYear(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const [years, activeYear] = await Promise.all([
+          settingsService.getAcademicYears(effectiveTenantId).catch(() => []),
+          settingsService.getActiveAcademicYear(effectiveTenantId).catch(() => null),
+        ]);
+        if (cancelled) return;
+        const yearList = years || [];
+        const hasActiveInList = activeYear && yearList.some((y: any) => y.id === activeYear.id);
+        setAcademicYears(hasActiveInList ? yearList : (activeYear ? [activeYear, ...yearList] : yearList));
+        setActiveAcademicYear(activeYear || null);
+      } catch (_) {}
+    })();
+    return () => { cancelled = true; };
+  }, [activeTab, effectiveTenantId]);
+
+  // Charger la liste des établissements pour le PO (onglet Année scolaire)
+  useEffect(() => {
+    if (!isPlatformOwner || activeTab !== 'academic-year') return;
+    let cancelled = false;
+    setLoadingTenantsPO(true);
+    (async () => {
+      try {
+        const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+        if (!token) return;
+        const res = await fetch('/api/auth/available-tenants', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (cancelled || !res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        setAvailableTenantsForPO(
+          Array.isArray(data) ? data.map((t: any) => ({ tenantId: t.tenantId || t.id, name: t.name || t.tenantName })) : []
+        );
+      } catch (_) {}
+      finally {
+        if (!cancelled) setLoadingTenantsPO(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isPlatformOwner, activeTab]);
 
   const loadAllSettings = async () => {
     try {
       setLoading(true);
-      const [general, featuresData, security, orion, atlas, offline, historyData, years, structure, bilingual, communication, rolesData, permissionsData, billing, plans, invoicesData, identity, identityHist] = 
+      const [general, featuresData, security, orion, atlas, offline, historyData, academicYearsResult, structure, bilingual, communication, rolesData, permissionsData, billing, plans, invoicesData, identity, identityHist] = 
         await Promise.all([
           settingsService.getGeneralSettings().catch(() => null),
           settingsService.getFeatures().catch(() => []),
@@ -95,7 +187,12 @@ export default function SettingsPage() {
           settingsService.getAtlasSettings().catch(() => null),
           settingsService.getOfflineSyncSettings().catch(() => null),
           settingsService.getSettingsHistory({ limit: 50 }).catch(() => []),
-          settingsService.getAcademicYears().catch(() => []),
+          effectiveTenantId
+            ? Promise.all([
+                settingsService.getAcademicYears(effectiveTenantId).catch(() => []),
+                settingsService.getActiveAcademicYear(effectiveTenantId).catch(() => null),
+              ]).then(([y, a]) => ({ years: y, activeYear: a }))
+            : Promise.resolve({ years: [], activeYear: null }),
           settingsService.getPedagogicalStructure().catch(() => null),
           settingsService.getBilingualSettings().catch(() => null),
           settingsService.getCommunicationSettings().catch(() => null),
@@ -148,7 +245,14 @@ export default function SettingsPage() {
       setOfflineSyncSettings(offline);
       setOfflineForm(offline || {});
       setHistory(historyData || []);
-      setAcademicYears(years || []);
+      const years = academicYearsResult?.years ?? [];
+      const activeYear = academicYearsResult?.activeYear ?? null;
+      const yearList = years || [];
+      const hasActiveInList = activeYear && yearList.some((y: any) => y.id === activeYear.id);
+      setAcademicYears(
+        hasActiveInList ? yearList : (activeYear ? [activeYear, ...yearList] : yearList)
+      );
+      setActiveAcademicYear(activeYear || null);
       setPedagogicalStructure(structure);
       setStructureForm(structure || {});
       setBilingualSettings(bilingual);
@@ -232,6 +336,92 @@ export default function SettingsPage() {
       showToast('error', error.message || 'Erreur lors de la restauration');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const reloadAcademicYears = async () => {
+    if (!effectiveTenantId) {
+      setAcademicYears([]);
+      setActiveAcademicYear(null);
+      return;
+    }
+    try {
+      const [years, active] = await Promise.all([
+        settingsService.getAcademicYears(effectiveTenantId),
+        settingsService.getActiveAcademicYear(effectiveTenantId),
+      ]);
+      setAcademicYears(years || []);
+      setActiveAcademicYear(active || null);
+    } catch (_) {}
+  };
+
+  const handleGenerateNextAcademicYear = async () => {
+    setAcademicYearAction('generate');
+    setAcademicYearTargetId(null);
+  };
+
+  const handleConfirmAcademicYearAction = async () => {
+    if (!academicYearAction) return;
+    try {
+      setAcademicYearBusy(true);
+      if (academicYearAction === 'generate') {
+        const created = await settingsService.generateNextAcademicYear(effectiveTenantId);
+        showToast('success', `Année ${created.name} créée. Vous pouvez l'activer quand vous le souhaitez.`);
+      } else if (academicYearAction === 'activate' && academicYearTargetId) {
+        await settingsService.activateAcademicYear(academicYearTargetId, effectiveTenantId);
+        showToast('success', 'Année scolaire activée. Toutes les données seront désormais rattachées à cette année.');
+      } else if (academicYearAction === 'close' && academicYearTargetId) {
+        await settingsService.closeAcademicYear(academicYearTargetId, effectiveTenantId);
+        showToast('success', 'Année clôturée. Elle est désormais en lecture seule.');
+      }
+      setAcademicYearAction(null);
+      setAcademicYearTargetId(null);
+      await reloadAcademicYears();
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur');
+    } finally {
+      setAcademicYearBusy(false);
+    }
+  };
+
+  const handleCancelAcademicYearAction = () => {
+    setAcademicYearAction(null);
+    setAcademicYearTargetId(null);
+  };
+
+  const handleStartEditAcademicYearDates = (year: { id: string; preEntryDate?: Date | string | null; officialStartDate?: Date | string | null; startDate?: Date | string; endDate?: Date | string | null }) => {
+    setEditingYearId(year.id);
+    setEditingYearForm({
+      preEntryDate: toInputDate(year.preEntryDate),
+      officialStartDate: toInputDate(year.officialStartDate ?? year.startDate),
+      startDate: toInputDate(year.startDate),
+      endDate: toInputDate(year.endDate),
+    });
+  };
+
+  const handleCancelEditAcademicYearDates = () => {
+    setEditingYearId(null);
+    setEditingYearForm(null);
+  };
+
+  const handleSaveAcademicYearDates = async () => {
+    if (!editingYearId || !editingYearForm) return;
+    try {
+      setEditingYearBusy(true);
+      await settingsService.updateAcademicYear(editingYearId, {
+        preEntryDate: editingYearForm.preEntryDate || undefined,
+        officialStartDate: editingYearForm.officialStartDate || undefined,
+        startDate: editingYearForm.startDate || undefined,
+        endDate: editingYearForm.endDate || undefined,
+      }, effectiveTenantId ?? undefined);
+      showToast('success', 'Dates mises à jour.');
+      setEditingYearId(null);
+      setEditingYearForm(null);
+      await reloadAcademicYears();
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur lors de l\'enregistrement');
+    } finally {
+      setEditingYearBusy(false);
     }
   };
 
@@ -609,11 +799,16 @@ export default function SettingsPage() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Pays</label>
-                  <select className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.country || 'BJ'} onChange={(e) => setIdentityForm({ ...identityForm, country: e.target.value })}>
-                    <option value="BJ">🇧🇯 Bénin</option>
-                    <option value="TG">🇹🇬 Togo</option>
-                    <option value="CI">🇨🇮 Côte d'Ivoire</option>
-                  </select>
+                  <div className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md bg-gray-50 text-gray-700">
+                    {(() => {
+                      const countryMap: Record<string, string> = {
+                        'BJ': '🇧🇯 Bénin',
+                        'TG': '🇹🇬 Togo',
+                        'CI': '🇨🇮 Côte d\'Ivoire'
+                      };
+                      return countryMap[identityForm.country] || '🇧🇯 Bénin';
+                    })()}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Département / Région</label>
@@ -756,40 +951,338 @@ export default function SettingsPage() {
       case 'academic-year':
         return (
           <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Années scolaires</h3>
+            {/* Sélecteur d'établissement pour Plateforme Owner */}
+            {isPlatformOwner && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-amber-900 mb-2">Établissement à gérer</h3>
+                {!effectiveTenantId ? (
+                  <>
+                    <p className="text-sm text-amber-800 mb-3">
+                      Sélectionnez un établissement pour voir et gérer ses années scolaires.
+                    </p>
+                    {loadingTenantsPO ? (
+                      <div className="flex items-center gap-2 text-amber-700">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span className="text-sm">Chargement des établissements…</span>
+                      </div>
+                    ) : availableTenantsForPO.length > 0 ? (
+                      <select
+                        className="w-full max-w-md px-3 py-2 border border-amber-300 rounded-md bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        value=""
+                        onChange={(e) => {
+                          const id = e.target.value;
+                          if (id) router.push(`${pathname}?tenant_id=${encodeURIComponent(id)}`);
+                        }}
+                      >
+                        <option value="">— Choisir un établissement —</option>
+                        {availableTenantsForPO.map((t) => (
+                          <option key={t.tenantId} value={t.tenantId}>
+                            {t.name || t.tenantId}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <p className="text-sm text-amber-700">Aucun établissement accessible. Ajoutez <code className="bg-amber-100 px-1 rounded">?tenant_id=xxx</code> dans l’URL.</p>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm text-amber-800">
+                      Établissement : <strong>{availableTenantsForPO.find((t) => t.tenantId === effectiveTenantId)?.name || effectiveTenantId}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => router.push(pathname)}
+                      className="text-sm text-amber-700 hover:text-amber-900 underline"
+                    >
+                      Changer
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Message si aucun établissement en contexte (non-PO) */}
+            {!isPlatformOwner && !effectiveTenantId && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <p className="text-sm text-amber-800">
+                  Contexte établissement manquant. Reconnectez-vous ou{' '}
+                  <a href="/auth/select-tenant" className="font-medium text-amber-900 underline hover:no-underline">
+                    sélectionnez un établissement
+                  </a>
+                  .
+                </p>
+              </div>
+            )}
+
+            {/* Carte Année active */}
+            <div className="min-h-[140px] bg-blue-900 bg-gradient-to-r from-blue-900 to-blue-800 rounded-xl shadow-lg p-6 text-white">
+                <div className="flex items-center gap-2 mb-1">
+                <Calendar className="w-5 h-5 text-white/80 shrink-0" aria-hidden />
+                <h3 className="text-lg font-bold">Année scolaire en cours</h3>
+              </div>
+              <p className="text-white/90 text-sm mb-4 ml-7">Contexte par défaut pour toutes les données (élèves, notes, finances, KPI)</p>
+              {activeAcademicYear ? (
+                <div className="flex flex-wrap items-center gap-6">
+                  <div>
+                    <div className="text-2xl font-bold">{activeAcademicYear.name}</div>
+                    <div className="text-white/90 text-sm">{activeAcademicYear.label}</div>
+                  </div>
+                  <div className="flex flex-wrap gap-4 text-sm">
+                    <span className="inline-flex items-center gap-1.5">
+                      <CalendarDays className="w-4 h-4 text-white/80 shrink-0" aria-hidden />
+                      <strong>Pré-rentrée :</strong>{' '}
+                      {formatAcademicDate(activeAcademicYear.preEntryDate, { weekday: true })}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <CalendarDays className="w-4 h-4 text-white/80 shrink-0" aria-hidden />
+                      <strong>Rentrée (début des activités pédagogiques) :</strong>{' '}
+                      {formatAcademicDate(activeAcademicYear.officialStartDate ?? activeAcademicYear.startDate, { weekday: true })}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <CalendarDays className="w-4 h-4 text-white/80 shrink-0" aria-hidden />
+                      <strong>Fin (dernier jour de classe) :</strong>{' '}
+                      {formatAcademicDate(activeAcademicYear.endDate)}
+                    </span>
+                  </div>
+                  {activeAcademicYear._count && (
+                    <div className="inline-flex items-center gap-2 text-white/90 text-sm">
+                      <UserCircle className="w-4 h-4 text-white/80 shrink-0" aria-hidden />
+                      <span>{activeAcademicYear._count.students ?? 0} élèves</span>
+                      <span className="text-white/70">·</span>
+                      <School className="w-4 h-4 text-white/80 shrink-0" aria-hidden />
+                      <span>{activeAcademicYear._count.classes ?? 0} classes</span>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleStartEditAcademicYearDates(activeAcademicYear)}
+                    className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-white/20 text-white rounded-md hover:bg-white/30"
+                  >
+                    <CalendarRange className="w-4 h-4" aria-hidden />
+                    Modifier les dates
+                  </button>
+                </div>
+              ) : (
+                <div className="text-white/90 ml-7">
+                  Aucune année active. Créez une année ou activez-en une dans l’historique ci-dessous.
+                </div>
+              )}
+            </div>
+
+            {/* Formulaire modification des dates */}
+            {editingYearId && editingYearForm && (() => {
+              const editingYear = activeAcademicYear?.id === editingYearId ? activeAcademicYear : academicYears.find((y: any) => y.id === editingYearId);
+              return (
+                <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+                  <h4 className="font-semibold text-gray-900 mb-3">
+                    Modifier les dates — {editingYear?.name ?? editingYearId}
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Pré-rentrée</label>
+                      <input
+                        type="date"
+                        value={editingYearForm.preEntryDate}
+                        onChange={(e) => setEditingYearForm({ ...editingYearForm, preEntryDate: e.target.value })}
+                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Rentrée officielle</label>
+                      <input
+                        type="date"
+                        value={editingYearForm.officialStartDate}
+                        onChange={(e) => setEditingYearForm({ ...editingYearForm, officialStartDate: e.target.value })}
+                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Début (activités)</label>
+                      <input
+                        type="date"
+                        value={editingYearForm.startDate}
+                        onChange={(e) => setEditingYearForm({ ...editingYearForm, startDate: e.target.value })}
+                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Fin (dernier jour)</label>
+                      <input
+                        type="date"
+                        value={editingYearForm.endDate}
+                        onChange={(e) => setEditingYearForm({ ...editingYearForm, endDate: e.target.value })}
+                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSaveAcademicYearDates}
+                      disabled={editingYearBusy}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {editingYearBusy ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden /> : <Save className="w-4 h-4" aria-hidden />}
+                      Enregistrer
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelEditAcademicYearDates}
+                      disabled={editingYearBusy}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                    >
+                      Annuler
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Confirmation critique */}
+            {(academicYearAction === 'generate' || (academicYearAction && academicYearTargetId)) && (
+              <div className="bg-gray-100 border border-gray-200 rounded-lg p-4 flex items-center justify-between">
+                <div>
+                  {academicYearAction === 'generate' && (
+                    <p className="text-gray-900 font-medium">Générer la prochaine année scolaire ?</p>
+                  )}
+                  {academicYearAction === 'activate' && academicYearTargetId && (
+                    <p className="text-gray-900 font-medium">Activer cette année ? Toutes les nouvelles données y seront rattachées.</p>
+                  )}
+                  {academicYearAction === 'close' && academicYearTargetId && (
+                    <p className="text-gray-900 font-medium">Clôturer cette année ? Elle passera en lecture seule.</p>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleCancelAcademicYearAction}
+                    className="px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-200"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={handleConfirmAcademicYearAction}
+                    disabled={academicYearBusy}
+                    className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {academicYearBusy ? 'En cours…' : 'Confirmer'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Actions globales */}
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={handleGenerateNextAcademicYear}
+                disabled={academicYearBusy}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium shadow-sm"
+              >
+                <RefreshCw className="w-4 h-4 shrink-0" aria-hidden />
+                Préparer la prochaine année
+              </button>
+            </div>
+
+            {/* Historique des années */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 min-h-[200px]">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <History className="w-5 h-5 text-blue-600 shrink-0" aria-hidden />
+                Historique des années
+              </h3>
               {academicYears.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
-                  <Calendar className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                  <p>Aucune année scolaire configurée.</p>
+                  <Calendar className="w-12 h-12 mx-auto mb-4 text-gray-300" aria-hidden />
+                  <p>Aucune année scolaire. Cliquez sur « Préparer la prochaine année » pour en créer une.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
                   {academicYears.map((year) => (
                     <div
                       key={year.id}
-                      className={`p-4 border rounded-lg ${year.isActive ? 'border-green-500 bg-green-50' : 'border-gray-200'}`}
+                      className={`p-4 border rounded-lg flex flex-wrap items-center justify-between gap-3 ${
+                        year.isActive ? 'border-blue-600 bg-blue-50' : year.isClosed ? 'border-gray-200 bg-gray-50' : 'border-gray-200 bg-white'
+                      }`}
                     >
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <h4 className="font-semibold text-gray-800">{year.name}</h4>
-                          <p className="text-sm text-gray-600">{year.label}</p>
-                          <p className="text-xs text-gray-500 mt-1">
-                            {new Date(year.startDate).toLocaleDateString('fr-FR')} - {new Date(year.endDate).toLocaleDateString('fr-FR')}
-                          </p>
+                      <div className="flex flex-wrap items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          <CalendarDays className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" aria-hidden />
+                          <div>
+                            <h4 className="font-semibold text-gray-900">{year.name}</h4>
+                            <p className="text-sm text-gray-600">{year.label}</p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              Pré-rentrée : {formatAcademicDate(year.preEntryDate)} · Rentrée : {formatAcademicDate(year.officialStartDate ?? year.startDate)} · Fin : {formatAcademicDate(year.endDate)}
+                            </p>
+                          </div>
                         </div>
                         <div className="flex items-center gap-2">
                           {year.isActive && (
-                            <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
+                            <span className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full font-medium">
+                              <CheckCircle className="w-3.5 h-3.5 shrink-0" aria-hidden />
                               Active
                             </span>
                           )}
+                          {year.isClosed && (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded-full">
+                              <Archive className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                              Clôturée
+                            </span>
+                          )}
                           {year._count && (
-                            <span className="text-xs text-gray-500">
-                              {year._count.students} élèves, {year._count.classes} classes
+                            <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
+                              <UserCircle className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                              {year._count.students ?? 0} élèves
+                              <School className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                              {year._count.classes ?? 0} classes
                             </span>
                           )}
                         </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleStartEditAcademicYearDates(year)}
+                          disabled={editingYearBusy}
+                          title="Modifier les dates (pré-rentrée, rentrée, fin)"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <CalendarRange className="w-3.5 h-3.5" aria-hidden />
+                          Modifier les dates
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (year.isActive) return;
+                            setAcademicYearAction('activate');
+                            setAcademicYearTargetId(year.id);
+                          }}
+                          disabled={academicYearBusy || year.isActive}
+                          title={year.isActive ? 'Cette année est déjà active' : 'Rendre cette année active'}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <CheckCircle className="w-3.5 h-3.5" aria-hidden />
+                          Activer
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (year.isActive || year.isClosed) return;
+                            setAcademicYearAction('close');
+                            setAcademicYearTargetId(year.id);
+                          }}
+                          disabled={academicYearBusy || year.isActive || year.isClosed}
+                          title={
+                            year.isActive
+                              ? 'Activez une autre année avant de clôturer celle-ci'
+                              : year.isClosed
+                                ? 'Cette année est déjà clôturée'
+                                : 'Clôturer cette année (lecture seule)'
+                          }
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Archive className="w-3.5 h-3.5" aria-hidden />
+                          Clôturer
+                        </button>
                       </div>
                     </div>
                   ))}

@@ -4,30 +4,32 @@
  * ============================================================================
  * 
  * Proxy Next.js pour l'endpoint backend /auth/available-tenants
+ * Accepte le token via Authorization ou via le cookie de session (PO après login).
  * 
  * ============================================================================
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+import { getServerToken } from '@/lib/auth/session';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 
 export async function GET(request: NextRequest) {
   try {
-    // Récupérer le token depuis les headers
     const authHeader = request.headers.get('authorization');
-    if (!authHeader) {
+    const token = authHeader?.replace(/^Bearer\s+/i, '').trim() || await getServerToken();
+    if (!token) {
       return NextResponse.json(
-        { error: 'Authorization header missing' },
+        { error: 'Authorization header or session cookie required' },
         { status: 401 }
       );
     }
 
-    // Appeler l'API backend
-    const response = await fetch(`${API_URL}/api/auth/available-tenants`, {
+    const baseUrl = normalizeApiUrl(getApiBaseUrlForRoutes());
+    const url = `${baseUrl.replace(/\/$/, '')}/auth/available-tenants`;
+    const response = await fetch(url, {
       method: 'GET',
       headers: {
-        'Authorization': authHeader,
+        'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
     });

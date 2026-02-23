@@ -41,7 +41,7 @@ export default function StudentMobileLayout({ children }: StudentMobileLayoutPro
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="px-4 py-3">
-          <h1 className="text-lg font-bold text-navy-900">Academia Hub</h1>
+          <h1 className="text-lg font-bold text-navy-900">Academia Helm</h1>
         </div>
       </header>
 

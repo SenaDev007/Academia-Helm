@@ -383,7 +383,7 @@ export default function DashboardPage({ user, tenant, subdomain }: DashboardPage
           </div>
           <div className="flex-1">
             <h3 className="text-xl font-bold mb-3">
-              Bienvenue sur Academia Hub
+              Bienvenue sur Academia Helm
             </h3>
             <p className="text-gray-100 leading-relaxed mb-2">
               {isSuspended

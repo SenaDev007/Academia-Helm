@@ -1,7 +1,7 @@
 /**
  * Institutional Footer Component
  * 
- * Footer moderne, professionnel et captivant pour Academia Hub
+ * Footer moderne, professionnel et captivant pour Academia Helm
  * Design premium institutionnel avec médias sociaux et informations éditeur
  */
 
@@ -52,7 +52,7 @@ export default function InstitutionalFooter() {
               <div className="flex items-center space-x-1 mb-6">
                 <Image
                   src="/images/logo-Academia Hub.png"
-                  alt="Academia Hub - Plateforme de gestion scolaire"
+                  alt="Academia Helm - Plateforme de pilotage éducatif"
                   width={52}
                   height={52}
                   className="h-14 w-auto"
@@ -61,12 +61,11 @@ export default function InstitutionalFooter() {
                 />
                 <div className={`font-bold leading-none`}>
                   <span className="text-xl md:text-2xl text-white block">Academia</span>
-                  <span className="text-xs md:text-sm text-white block -mt-2">Hub</span>
+                  <span className="text-xs md:text-sm text-white block -mt-2">Helm</span>
                 </div>
               </div>
               <p className={`${typo('body-small')} text-white mb-6 leading-relaxed`}>
-                La plateforme de gestion scolaire qui structure, contrôle et sécurise vos établissements.
-                Conçue pour les directeurs et promoteurs exigeants.
+                La plateforme de pilotage éducatif nouvelle génération. Prenez le gouvernail de votre institution.
               </p>
               
               {/* Social Media Links */}
@@ -222,7 +221,7 @@ export default function InstitutionalFooter() {
         )}>
           <div className="flex flex-col md:flex-row items-center space-y-2 md:space-y-0 md:space-x-6">
             <p className={cn(typo('caption'), 'text-white text-center md:text-left')}>
-              © 2021-{currentYear} Academia Hub — Plateforme SaaS de gestion scolaire institutionnelle.
+              © 2021-{currentYear} Academia Helm — Plateforme de pilotage éducatif.
             </p>
             <div className="flex items-center space-x-4">
               <span className={cn(typo('caption'), 'text-white')}>Conforme</span>

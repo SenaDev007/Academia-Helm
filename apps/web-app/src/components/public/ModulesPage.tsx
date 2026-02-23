@@ -1,7 +1,7 @@
 /**
  * Modules Page Component
  * 
- * Page dédiée présentant tous les modules d'Academia Hub
+ * Page dédiée présentant tous les modules d'Academia Helm
  * Design moderne et professionnel
  */
 
@@ -43,7 +43,7 @@ export default function ModulesPage() {
               </span>.
           </h1>
             <p className={`${typo('large')} ${textColor('secondary')} max-w-3xl mx-auto mb-16 text-lg`}>
-              Academia Hub intègre l'ensemble des modules nécessaires
+              Academia Helm intègre l'ensemble des modules nécessaires
               à une gestion scolaire moderne et rigoureuse.
           </p>
           </div>
@@ -287,7 +287,7 @@ export default function ModulesPage() {
             <span className="text-gold-500">Aucune option cachée</span>.
           </h2>
           <p className={`${typo('large')} text-graphite-500 leading-relaxed text-lg max-w-3xl mx-auto mb-12`}>
-              Lorsque vous activez Academia Hub, vous obtenez immédiatement l'accès à tous les 15 modules.
+              Lorsque vous activez Academia Helm, vous obtenez immédiatement l'accès à tous les 15 modules.
             Aucun supplément. Aucun bridage. Accès complet dès le premier jour.
             </p>
             <Link
@@ -295,7 +295,7 @@ export default function ModulesPage() {
             className="bg-blue-600 text-white px-12 py-5 rounded-subtle font-semibold hover:bg-blue-700 transition-all duration-300 inline-flex items-center justify-center text-lg shadow-xl hover:shadow-2xl hover:scale-105 gap-3"
             >
             <AppIcon name="userPlus" size="action" className="text-white" />
-              Activer Academia Hub maintenant
+              Activer Academia Helm maintenant
             </Link>
           </div>
       </section>

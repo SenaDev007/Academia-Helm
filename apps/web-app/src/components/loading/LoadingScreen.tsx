@@ -84,12 +84,12 @@ export function LoadingScreen({
       )}
     >
       <div className={cn(containerClass, 'text-center')}>
-        {/* Logo Academia Hub */}
+        {/* Logo Academia Helm */}
         <div className="mb-8 flex justify-center">
           <div className="relative">
             <img 
               src="/images/logo-Academia Hub.png" 
-              alt="Academia Hub" 
+              alt="Academia Helm" 
               className="h-20 w-20 object-contain animate-pulse"
             />
           </div>

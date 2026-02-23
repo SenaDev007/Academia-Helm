@@ -20,7 +20,7 @@ export default function CGVPage() {
               Conditions Générales de Vente (CGV)
             </h1>
             <p className="text-slate-600 mb-8">
-              Academia Hub - Plateforme de Gestion Scolaire
+              Academia Helm - Plateforme de pilotage éducatif
             </p>
             
             <div className="prose prose-lg max-w-none text-slate-700">

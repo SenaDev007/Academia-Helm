@@ -5,9 +5,10 @@
  */
 
 import { Metadata } from 'next';
+import { BRAND } from './brand';
 
-const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.academiahub.com';
-const defaultImage = '/images/logo-Academia Hub.png';
+const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.academiahelm.com';
+const defaultImage = BRAND.logoPath;
 
 export interface SEOConfig {
   title: string;
@@ -31,24 +32,24 @@ export function generateSEOMetadata(config: SEOConfig): Metadata {
     noIndex = false,
   } = config;
 
-  const fullTitle = title.includes('Academia Hub') ? title : `${title} | Academia Hub`;
+  const fullTitle = title.includes(BRAND.name) ? title : `${title} | ${BRAND.name}`;
   const url = `${baseUrl}${path}`;
 
   return {
     title: fullTitle,
     description,
     keywords: [
-      'gestion scolaire',
+      'pilotage éducatif',
       'logiciel école',
-      'plateforme SaaS éducation',
-      'Academia Hub',
+      'plateforme éducation',
+      BRAND.name,
       ...keywords,
     ],
     openGraph: {
       title: fullTitle,
       description,
       url,
-      siteName: 'Academia Hub',
+      siteName: BRAND.name,
       images: [
         {
           url: image,
@@ -95,10 +96,10 @@ export function generateOrganizationSchema() {
   return {
     '@context': 'https://schema.org',
     '@type': 'Organization',
-    name: 'Academia Hub',
+    name: BRAND.name,
     url: baseUrl,
     logo: `${baseUrl}${defaultImage}`,
-    description: 'Plateforme SaaS complète de gestion scolaire pour établissements privés en Afrique',
+    description: BRAND.description,
     address: {
       '@type': 'PostalAddress',
       addressCountry: 'BJ',
@@ -125,7 +126,7 @@ export function generateSoftwareApplicationSchema() {
   return {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
-    name: 'Academia Hub',
+    name: BRAND.name,
     applicationCategory: 'EducationalApplication',
     operatingSystem: 'Web',
     offers: {

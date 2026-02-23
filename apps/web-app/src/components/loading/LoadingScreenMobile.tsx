@@ -80,7 +80,7 @@ export function LoadingScreenMobile({
           <div className="relative">
             <img 
               src="/images/logo-Academia Hub.png" 
-              alt="Academia Hub" 
+              alt="Academia Helm" 
               className="h-16 w-16 object-contain animate-pulse"
             />
           </div>

@@ -239,6 +239,52 @@ export class AuthService {
   }
 
   /**
+   * Liste des tenants pour le mode développement (sans authentification).
+   * Uniquement en NODE_ENV=development / APP_ENV=development.
+   */
+  async getDevAvailableTenants(): Promise<any[]> {
+    const appEnv = this.configService.get<string>('APP_ENV', 'production');
+    const nodeEnv = process.env.NODE_ENV || 'production';
+    if (appEnv !== 'development' && nodeEnv !== 'development') {
+      throw new ForbiddenException('Dev available tenants is only available in development mode');
+    }
+    const tenants = await this.prisma.tenant.findMany({
+      where: {
+        status: 'active',
+        type: 'SCHOOL',
+      },
+      include: {
+        schools: {
+          select: {
+            name: true,
+            logo: true,
+          },
+        },
+        country: {
+          select: {
+            name: true,
+            code: true,
+          },
+        },
+      },
+      orderBy: {
+        name: 'asc',
+      },
+    });
+    return tenants.map((tenant) => ({
+      tenantId: tenant.id,
+      id: tenant.id,
+      schoolName: tenant.schools?.name || tenant.name,
+      tenantName: tenant.name,
+      name: tenant.name,
+      slug: tenant.slug,
+      subdomain: tenant.subdomain,
+      logoUrl: tenant.schools?.logo ?? null,
+      country: tenant.country?.name || null,
+    }));
+  }
+
+  /**
    * Récupère la liste des tenants accessibles à l'utilisateur
    * 
    * Cas particuliers :

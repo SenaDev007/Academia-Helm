@@ -14,6 +14,19 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Loader, AlertCircle, Mail, Lock, User, Phone, KeyRound, Building2, GraduationCap, Users } from 'lucide-react';
+import { BRAND } from '@/lib/brand';
+import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-email';
+
+/**
+ * Récupère le dernier email mémorisé pour un tenant (ou "platform" si pas de tenant).
+ * Un seul email par tenant : pas de liste, pour ne jamais exposer les emails d'autres utilisateurs.
+ * Isolation stricte : tenant A ne voit jamais les emails du tenant B.
+ */
+
+/**
+ * Enregistre le dernier email utilisé pour ce tenant (écrase l’ancien).
+ * Un seul email par tenant : pas de liste partagée entre utilisateurs.
+ */
 
 type PortalType = 'school' | 'teacher' | 'parent' | null;
 
@@ -68,6 +81,17 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Clé de stockage = tenant (isolation stricte : un tenant ne voit jamais les emails d’un autre)
+  const tenantStorageKey = tenantIdFromUrl || tenantSlug || 'platform';
+
+  // Charger le dernier email mémorisé pour CE tenant uniquement (un seul par établissement)
+  useEffect(() => {
+    const lastEmail = getSavedEmailForTenant(tenantStorageKey);
+    if (lastEmail && !schoolCredentials.email) {
+      setSchoolCredentials((prev) => ({ ...prev, email: lastEmail }));
+    }
+  }, [tenantStorageKey]);
+
   // Si pas de type de portail, utiliser le login standard
   const isStandardLogin = !portalType;
 
@@ -114,6 +138,9 @@ export default function LoginPage() {
     if (!response.ok) {
       throw new Error(data.message || 'Erreur lors de la connexion');
     }
+
+    const tenantKey = data.tenant?.id || tenantIdFromUrl || tenantSlug || 'platform';
+    saveEmailForTenant(schoolCredentials.email, tenantKey);
 
     // Plateforme Owner sans tenant : rediriger vers la sélection d'établissement
     const isPlatformOwner = data.user?.role === 'PLATFORM_OWNER' || (data.user as any)?.isPlatformOwner;
@@ -162,6 +189,9 @@ export default function LoginPage() {
     if (!response.ok || !data.success) {
       throw new Error(data.message || data.error || 'Erreur lors de la connexion');
     }
+
+    const tenantKey = data.tenant?.id || tenantIdForApi || 'platform';
+    saveEmailForTenant(schoolCredentials.email, tenantKey);
 
     // Ajouter tenant dans l'URL pour que le middleware autorise l'accès à /app
     const redirectUrl = tenantSlug || tenantIdFromUrl
@@ -283,8 +313,8 @@ export default function LoginPage() {
         };
       default:
         return {
-          title: 'Academia Hub',
-          subtitle: 'Connexion à votre espace sécurisé',
+          title: BRAND.name,
+          subtitle: BRAND.subtitle,
           icon: null,
           iconColor: '',
         };
@@ -309,7 +339,7 @@ export default function LoginPage() {
             <div className="inline-flex items-center justify-center mb-6">
               <Image
                 src="/images/logo-Academia Hub.png"
-                alt="Academia Hub"
+                alt={BRAND.name}
                 width={120}
                 height={120}
                 className="w-24 h-24 md:w-28 md:h-28 object-contain drop-shadow-lg"
@@ -323,6 +353,9 @@ export default function LoginPage() {
               </h1>
             </div>
             <p className="text-sm text-gray-600 mt-2">{portalInfo.subtitle}</p>
+            {portalInfo.title === BRAND.name && (
+              <p className="text-xs text-gray-500 mt-1 font-medium">{BRAND.slogan}</p>
+            )}
           </div>
 
           {/* Error Message */}
@@ -347,7 +380,7 @@ export default function LoginPage() {
             {(isStandardLogin || portalType === 'school') && (
               <>
                 <div>
-                  <label htmlFor="email" className="block text-sm font-semibold text-gray-900 mb-2">
+                  <label htmlFor={`email-${tenantStorageKey}`} className="block text-sm font-semibold text-gray-900 mb-2">
                     Adresse email
                   </label>
                   <div className="relative">
@@ -356,7 +389,9 @@ export default function LoginPage() {
                     </div>
                     <input
                       type="email"
-                      id="email"
+                      id={`email-${tenantStorageKey}`}
+                      name={`email_${tenantStorageKey}`}
+                      autoComplete="email"
                       required
                       value={schoolCredentials.email}
                       onChange={(e) => setSchoolCredentials({ ...schoolCredentials, email: e.target.value })}
@@ -364,10 +399,13 @@ export default function LoginPage() {
                       placeholder="votre.email@etablissement.com"
                     />
                   </div>
+                  {getSavedEmailForTenant(tenantStorageKey) && (
+                    <p className="text-xs text-gray-500 mt-1">Dernière connexion pour cet établissement (ce poste uniquement).</p>
+                  )}
                 </div>
 
                 <div>
-                  <label htmlFor="password" className="block text-sm font-semibold text-gray-900 mb-2">
+                  <label htmlFor={`password-${tenantStorageKey}`} className="block text-sm font-semibold text-gray-900 mb-2">
                     Mot de passe
                   </label>
                   <div className="relative">
@@ -376,7 +414,9 @@ export default function LoginPage() {
                     </div>
                     <input
                       type="password"
-                      id="password"
+                      id={`password-${tenantStorageKey}`}
+                      name={`password_${tenantStorageKey}`}
+                      autoComplete="current-password"
                       required
                       value={schoolCredentials.password}
                       onChange={(e) => setSchoolCredentials({ ...schoolCredentials, password: e.target.value })}
@@ -528,7 +568,7 @@ export default function LoginPage() {
                 <p className="text-sm text-gray-600">
                   Pas encore de compte ?{' '}
                   <Link href="/signup" className="text-blue-600 hover:text-blue-700 font-semibold transition-colors">
-                    Activer Academia Hub
+                    Activer Academia Helm
                   </Link>
                 </p>
               </>

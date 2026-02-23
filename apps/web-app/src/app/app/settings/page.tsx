@@ -2,7 +2,7 @@
  * ============================================================================
  * MODULE TRANSVERSAL — PARAMÈTRES DE L'APPLICATION
  * ============================================================================
- * Centre de contrôle stratégique d'Academia Hub
+ * Plateforme de pilotage éducatif - Academia Helm
  * ============================================================================
  */
 
@@ -3113,7 +3113,7 @@ export default function SettingsPage() {
     <div className="space-y-6 overflow-x-hidden">
       <ModuleHeader
         title="Paramètres de l'application"
-        description="Centre de contrôle stratégique d'Academia Hub. Configurez l'établissement, activez/désactivez des capacités, adaptez le comportement métier."
+        description="La plateforme de pilotage éducatif nouvelle génération. Prenez le gouvernail de votre institution. Configurez l'établissement, activez/désactivez des capacités, adaptez le comportement métier."
         icon="settings"
         kpis={[]}
         actions={[]}

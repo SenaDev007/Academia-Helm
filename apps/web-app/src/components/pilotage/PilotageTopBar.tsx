@@ -89,10 +89,10 @@ export default function PilotageTopBar({ user, tenant }: PilotageTopBarProps) {
   const handleLogout = async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
-      router.push('/login');
+      router.push('/portal');
     } catch (error) {
       console.error('Error logging out:', error);
-      router.push('/login');
+      router.push('/portal');
     }
   };
 

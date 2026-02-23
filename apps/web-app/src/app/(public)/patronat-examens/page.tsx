@@ -11,7 +11,7 @@ import PatronatExamensLanding from '@/components/public/PatronatExamensLanding';
 import StructuredData from '@/components/public/StructuredData';
 
 export const metadata: Metadata = {
-  title: 'Patronat & Examens Nationaux - Academia Hub',
+  title: 'Patronat & Examens Nationaux - Academia Helm',
   description: 'Plateforme institutionnelle pour l\'organisation des examens des écoles privées. Centralisez les inscriptions, sécurisez les données et pilotez les examens nationaux avec rigueur.',
   keywords: [
     'patronat écoles privées',
@@ -21,19 +21,19 @@ export const metadata: Metadata = {
     'inscription candidats examens',
     'banque épreuves partagée',
     'relevés notes sécurisés',
-    'Academia Hub patronat',
+    'Academia Helm patronat',
   ],
   openGraph: {
-    title: 'Patronat & Examens Nationaux - Academia Hub',
+    title: 'Patronat & Examens Nationaux - Academia Helm',
     description: 'Plateforme institutionnelle pour l\'organisation des examens des écoles privées.',
     url: '/patronat-examens',
-    siteName: 'Academia Hub',
+    siteName: 'Academia Helm',
     images: [
       {
         url: '/images/logo-Academia Hub.png',
         width: 1200,
         height: 630,
-        alt: 'Academia Hub - Patronat & Examens',
+        alt: 'Academia Helm - Patronat & Examens',
       },
     ],
     locale: 'fr_FR',
@@ -41,7 +41,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Patronat & Examens Nationaux - Academia Hub',
+    title: 'Patronat & Examens Nationaux - Academia Helm',
     description: 'Plateforme institutionnelle pour l\'organisation des examens des écoles privées.',
     images: ['/images/logo-Academia Hub.png'],
   },

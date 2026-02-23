@@ -1,7 +1,7 @@
 /**
  * Mentions Légales
  * 
- * Page officielle des mentions légales d'Academia Hub
+ * Page officielle des mentions légales d'Academia Helm
  */
 
 import PremiumHeader from '@/components/layout/PremiumHeader';
@@ -27,7 +27,7 @@ export default function LegalNoticesPage() {
                 1. Éditeur
               </h2>
               <p>
-                <strong>Academia Hub</strong>
+                <strong>Academia Helm</strong>
                 <br />
                 Plateforme SaaS de gestion scolaire institutionnelle
                 <br />
@@ -51,7 +51,7 @@ export default function LegalNoticesPage() {
                 3. Hébergement
               </h2>
               <p>
-                La plateforme Academia Hub est hébergée sur des serveurs sécurisés conformes aux standards
+                La plateforme Academia Helm est hébergée sur des serveurs sécurisés conformes aux standards
                 internationaux de sécurité et de protection des données.
               </p>
             </section>
@@ -61,8 +61,8 @@ export default function LegalNoticesPage() {
                 4. Propriété intellectuelle
               </h2>
               <p>
-                L'ensemble des éléments de la plateforme Academia Hub (textes, images, logos, design, code)
-                sont la propriété exclusive d'Academia Hub et sont protégés par les lois relatives à la
+                L'ensemble des éléments de la plateforme Academia Helm (textes, images, logos, design, code)
+                sont la propriété exclusive d'Academia Helm et sont protégés par les lois relatives à la
                 propriété intellectuelle.
               </p>
             </section>
@@ -72,8 +72,8 @@ export default function LegalNoticesPage() {
                 5. Responsabilité
               </h2>
               <p>
-                Academia Hub s'efforce d'assurer la disponibilité et la fiabilité de la plateforme.
-                Cependant, Academia Hub ne saurait être tenu responsable des dommages directs ou indirects
+                Academia Helm s'efforce d'assurer la disponibilité et la fiabilité de la plateforme.
+                Cependant, Academia Helm ne saurait être tenu responsable des dommages directs ou indirects
                 résultant de l'utilisation ou de l'impossibilité d'utiliser la plateforme.
               </p>
             </section>

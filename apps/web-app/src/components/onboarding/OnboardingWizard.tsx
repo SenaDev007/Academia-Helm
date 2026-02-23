@@ -1522,7 +1522,7 @@ export default function OnboardingWizard() {
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pb-4" style={{ paddingTop: 0 }}>
           {/* Titre centré */}
           <div className="text-center mb-4">
-            <h1 className="text-xl font-bold text-blue-900">Création de votre école sur Academia Hub</h1>
+            <h1 className="text-xl font-bold text-blue-900">Création de votre école sur Academia Helm</h1>
           </div>
           
           {/* Progress Steps */}

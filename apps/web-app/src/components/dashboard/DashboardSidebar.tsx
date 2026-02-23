@@ -68,7 +68,7 @@ export default function DashboardSidebar({ isOpen, onToggle, user }: DashboardSi
         {/* Toggle Button */}
         <div className="flex items-center justify-between p-4 border-b border-navy-700">
           {isOpen && (
-            <h2 className="text-lg font-bold">Academia Hub</h2>
+            <h2 className="text-lg font-bold">Academia Helm</h2>
           )}
           <button
             onClick={onToggle}

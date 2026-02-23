@@ -1,5 +1,5 @@
 /**
- * Support Chat Widget - Academia Hub
+ * Support Chat Widget - Academia Helm
  * 
  * Chatbot de support intelligent pour le landing page (pré-ATLAS)
  * Répond à toutes les questions des prospects
@@ -52,7 +52,7 @@ const QUICK_REPLIES: QuickReply[] = [
   { id: 'contact', label: 'Parler à un conseiller', emoji: '📞', category: 'contact' },
 ];
 
-const WELCOME_MESSAGE = `👋 Bonjour et bienvenue sur Academia Hub !
+const WELCOME_MESSAGE = `👋 Bonjour et bienvenue sur Academia Helm !
 
 Je suis **SARA**, votre assistante conversationnelle.
 Je suis là pour répondre à toutes vos questions sur :
@@ -208,7 +208,7 @@ export default function SupportChatWidget() {
       }
       
       return {
-        answer: `${greeting} ! 😊\n\nJe suis SARA, votre assistante conversationnelle. Je suis là pour répondre à toutes vos questions sur Academia Hub : tarification, free trial, fonctionnalités, et bien plus.\n\nComment puis-je vous aider aujourd'hui ?`,
+        answer: `${greeting} ! 😊\n\nJe suis SARA, votre assistante conversationnelle. Je suis là pour répondre à toutes vos questions sur Academia Helm : tarification, free trial, fonctionnalités, et bien plus.\n\nComment puis-je vous aider aujourd'hui ?`,
         closing: undefined, // Pas de closing sur les salutations
         intentId: 'greeting'
       };
@@ -622,7 +622,7 @@ Ou reformulez votre question, je ferai de mon mieux pour vous aider ! 😊`,
       {/* Widget de chat */}
       {isOpen && (
         <div className="fixed bottom-6 right-6 z-50 w-full md:w-80 h-[600px] bg-white rounded-2xl shadow-2xl flex flex-col border border-gray-200 max-w-[calc(100vw-3rem)] md:max-w-none">
-          {/* Header - bg-blue-600 (couleur bleue du logo Academia Hub) */}
+          {/* Header - bg-blue-600 (couleur bleue du logo Academia Helm) */}
           <div className="bg-blue-600 text-white p-4 rounded-t-2xl flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center bg-white/10">
@@ -633,7 +633,7 @@ Ou reformulez votre question, je ferai de mon mieux pour vous aider ! 😊`,
                 />
               </div>
               <div>
-                <h3 className="font-semibold text-sm">Sara - Assistante Support Academia Hub</h3>
+                <h3 className="font-semibold text-sm">Sara - Assistante Support Academia Helm</h3>
                 <p className="text-xs text-white/80 flex items-center gap-1.5">
                   <span className="relative flex h-2 w-2">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>

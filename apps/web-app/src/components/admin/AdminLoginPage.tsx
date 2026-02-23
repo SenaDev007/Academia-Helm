@@ -149,7 +149,7 @@ export default function AdminLoginPage() {
             <div className="inline-flex items-center justify-center mb-4">
               <Image
                 src="/images/logo-Academia Hub.png"
-                alt="Academia Hub"
+                alt="Academia Helm"
                 width={80}
                 height={80}
                 className="w-20 h-20 object-contain"

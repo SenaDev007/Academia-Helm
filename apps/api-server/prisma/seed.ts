@@ -87,7 +87,7 @@ async function main() {
     where: { slug: 'default-tenant' },
     update: {},
     create: {
-      name: 'Tenant par Défaut - Academia Hub',
+      name: 'Tenant par Défaut - Academia Helm',
       slug: 'default-tenant',
       subdomain: 'default',
       countryId: country.id,

@@ -50,8 +50,8 @@ export class VoiceService {
       
       // Message professionnel en français
       const message = language.startsWith('fr') 
-        ? `Bonjour. Vous recevez un appel de la part d'Academia Hub. Votre code de vérification est : ${codeDigits}. Je répète : ${codeDigits}. Ce code est valable 3 minutes. Ne partagez jamais ce code avec personne. Merci.`
-        : `Hello. You are receiving a call from Academia Hub. Your verification code is : ${codeDigits}. I repeat : ${codeDigits}. This code is valid for 3 minutes. Never share this code with anyone. Thank you.`;
+        ? `Bonjour. Vous recevez un appel de la part d'Academia Helm. Votre code de vérification est : ${codeDigits}. Je répète : ${codeDigits}. Ce code est valable 3 minutes. Ne partagez jamais ce code avec personne. Merci.`
+        : `Hello. You are receiving a call from Academia Helm. Your verification code is : ${codeDigits}. I repeat : ${codeDigits}. This code is valid for 3 minutes. Never share this code with anyone. Thank you.`;
 
       // Créer l'appel
       const call = await client.calls.create({

@@ -450,13 +450,13 @@ Votre ${statusText} pour ${schoolName} expire dans ${daysRemaining} jour${daysRe
 
 Plan : ${planName}
 
-Pour continuer à bénéficier de tous les services Academia Hub, veuillez renouveler votre abonnement.
+Pour continuer à bénéficier de tous les services Academia Helm, veuillez renouveler votre abonnement.
 
 Connectez-vous à votre espace pour effectuer le paiement :
 ${renewalUrl}
 
 Cordialement,
-L'équipe Academia Hub
+L'équipe Academia Helm
     `.trim();
   }
 

@@ -62,6 +62,7 @@ export class ContextValidationGuard implements CanActivate {
       path.includes('/auth/register') ||
       path.includes('/auth/select-tenant') ||
       path.includes('/auth/dev-login') ||
+      path.includes('/auth/dev-available-tenants') ||
       path.includes('/portal/auth') ||
       path.includes('/portal/search') ||
       path.includes('/portal/list') ||

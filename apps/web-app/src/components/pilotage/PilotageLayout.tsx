@@ -87,7 +87,7 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
       }`}>
         <div className="flex items-center justify-between text-xs text-gray-600 w-full">
           <div className="flex items-center space-x-4">
-            <span>Academia Hub v1.0.0</span>
+            <span>Academia Helm v1.0.0</span>
             <span>•</span>
             <span>© 2021-2026 YEHI OR Tech</span>
           </div>

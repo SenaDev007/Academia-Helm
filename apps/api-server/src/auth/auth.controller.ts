@@ -72,6 +72,17 @@ export class AuthController {
   }
 
   /**
+   * Liste des écoles (tenants) pour le mode développement - sans authentification.
+   * Permet de sélectionner une école avant de saisir les identifiants.
+   */
+  @Public()
+  @Get('dev-available-tenants')
+  @HttpCode(HttpStatus.OK)
+  async getDevAvailableTenants() {
+    return this.authService.getDevAvailableTenants();
+  }
+
+  /**
    * ÉTAPE 2 : Récupère la liste des tenants accessibles à l'utilisateur
    * 
    * Guard : AuthGuard uniquement (pas de TenantGuard)

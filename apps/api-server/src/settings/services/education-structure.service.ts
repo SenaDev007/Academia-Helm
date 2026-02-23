@@ -12,12 +12,12 @@ const DEFAULT_LEVELS: { name: string; order: number }[] = [
   { name: 'SECONDAIRE', order: 3 },
 ];
 
+/** Aligné plateforme nationale Bénin Educmaster : Maternelle 1 et Maternelle 2 (au lieu de PS, MS, GS). */
 const DEFAULT_CYCLES_AND_GRADES: Record<string, { cycles: { name: string; order: number; grades: { name: string; code: string; order: number }[] }[] }> = {
   MATERNELLE: {
     cycles: [
-      { name: 'PS', order: 1, grades: [{ name: 'PS', code: 'PS', order: 1 }] },
-      { name: 'MS', order: 2, grades: [{ name: 'MS', code: 'MS', order: 1 }] },
-      { name: 'GS', order: 3, grades: [{ name: 'GS', code: 'GS', order: 1 }] },
+      { name: 'Maternelle 1', order: 1, grades: [{ name: 'Maternelle 1', code: 'MAT1', order: 1 }] },
+      { name: 'Maternelle 2', order: 2, grades: [{ name: 'Maternelle 2', code: 'MAT2', order: 1 }] },
     ],
   },
   PRIMAIRE: {

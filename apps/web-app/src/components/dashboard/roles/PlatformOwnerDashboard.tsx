@@ -22,7 +22,7 @@ export function PlatformOwnerDashboard() {
       <div className="mb-6">
         <h1 className="text-3xl font-bold">Dashboard PLATFORM_OWNER</h1>
         <p className="text-gray-600 mt-2">
-          Contrôle global de la plateforme Academia Hub
+          Contrôle global de la plateforme Academia Helm
         </p>
       </div>
 

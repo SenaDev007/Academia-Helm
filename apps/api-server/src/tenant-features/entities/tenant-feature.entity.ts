@@ -17,13 +17,12 @@
 
 import {
   Entity,
-  PrimaryGeneratedColumn,
+  PrimaryColumn,
   Column,
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
-  Unique,
 } from 'typeorm';
 import { Tenant } from '../../tenants/entities/tenant.entity';
 import { User } from '../../users/entities/user.entity';
@@ -40,33 +39,22 @@ export enum FeatureCode {
  * Statut d'une feature
  */
 export enum FeatureStatus {
-  DISABLED = 'DISABLED', // Désactivée
-  ENABLED = 'ENABLED',   // Activée
-  PENDING = 'PENDING',   // En attente de validation
+  DISABLED = 'DISABLED',   // Désactivée (alias INACTIVE en BDD)
+  ENABLED = 'ENABLED',     // Activée
+  PENDING = 'PENDING',     // En attente de validation
 }
 
 @Entity('tenant_features')
-@Unique(['tenantId', 'featureCode'])
 export class TenantFeature {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
-  @Column({ type: 'uuid', name: 'tenantId' })
+  @PrimaryColumn({ type: 'uuid', name: 'tenantId' })
   tenantId: string;
+
+  @PrimaryColumn({ type: 'varchar', length: 50, name: 'featureCode' })
+  featureCode: FeatureCode;
 
   @ManyToOne(() => Tenant, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'tenantId' })
   tenant: Tenant;
-
-  /**
-   * Code de la feature (BILINGUAL_TRACK, etc.)
-   */
-  @Column({
-    type: 'varchar',
-    length: 50,
-    name: 'featureCode',
-  })
-  featureCode: FeatureCode;
 
   /**
    * Statut de la feature
@@ -117,12 +105,6 @@ export class TenantFeature {
    */
   @Column({ type: 'jsonb', nullable: true, name: 'metadata' })
   metadata: Record<string, any> | null;
-
-  /**
-   * Raison de l'activation/désactivation (pour audit)
-   */
-  @Column({ type: 'text', nullable: true, name: 'reason' })
-  reason: string | null;
 
   @CreateDateColumn({ type: 'timestamptz', name: 'createdAt' })
   createdAt: Date;

@@ -153,7 +153,7 @@ export default function DevicesManagement() {
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-navy-900 mb-2">Gestion des Appareils</h1>
-        <p className="text-slate-600">Suivi et gestion des appareils connectés à Academia Hub</p>
+        <p className="text-slate-600">Suivi et gestion des appareils connectés à Academia Helm</p>
       </div>
 
       {/* Stats Cards */}

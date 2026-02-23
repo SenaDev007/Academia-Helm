@@ -119,8 +119,8 @@ export default function PatronatLayout({
           {/* Logo & Identité */}
           <div className="flex items-center space-x-3 flex-shrink-0">
             <Image
-              src="/images/logo-Academia Hub.png"
-              alt="Academia Hub - Patronat"
+              src="/images/logo-Academia Helm.png"
+              alt="Academia Helm - Patronat"
               width={40}
               height={40}
               className="h-10 w-auto"

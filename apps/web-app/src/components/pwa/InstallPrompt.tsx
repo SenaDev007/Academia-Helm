@@ -96,7 +96,7 @@ export function InstallPrompt() {
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
-              Installer Academia Hub
+              Installer Academia Helm
             </h3>
             <p className="text-xs text-gray-600 dark:text-gray-300 mb-3">
               Installez l'application pour un accès rapide et une utilisation hors ligne.

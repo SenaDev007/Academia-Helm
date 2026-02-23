@@ -34,8 +34,8 @@ export default function PatronatExamensLanding() {
         <div className="relative z-10 max-w-6xl mx-auto text-center -mt-8">
           <div className="inline-flex items-center justify-center mb-8">
             <Image
-              src="/images/logo-Academia Hub.png"
-              alt="Academia Hub - Logo institutionnel"
+              src="/images/logo-Academia Helm.png"
+              alt="Academia Helm - Logo institutionnel"
               width={120}
               height={120}
               className="w-30 h-30 object-contain"
@@ -146,8 +146,8 @@ export default function PatronatExamensLanding() {
         <div className="max-w-6xl mx-auto text-center relative z-10">
           <div className="inline-flex items-center justify-center mb-10">
             <Image
-              src="/images/logo-Academia Hub.png"
-              alt="Academia Hub - Logo de la plateforme institutionnelle"
+              src="/images/logo-Academia Helm.png"
+              alt="Academia Helm - Logo de la plateforme institutionnelle"
               width={120}
               height={120}
               className="w-30 h-30 object-contain"
@@ -157,7 +157,7 @@ export default function PatronatExamensLanding() {
           </div>
           <h2 className={`text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-8 leading-tight`}>
             La solution <span className="text-gold-500 relative inline-block">
-              <span className="relative z-10">Academia Hub</span>
+              <span className="relative z-10">Academia Helm</span>
               <span className="absolute bottom-1 left-0 right-0 h-4 bg-gold-500/20 -rotate-1"></span>
             </span>
           </h2>
@@ -491,8 +491,8 @@ export default function PatronatExamensLanding() {
             <div className="absolute inset-0 bg-blue-500 rounded-full blur-xl opacity-75 animate-pulse"></div>
             <div className="relative z-10 w-32 h-32 flex items-center justify-center">
               <Image
-                src="/images/logo-Academia Hub.png"
-                alt="Academia Hub - Logo institutionnel"
+                src="/images/logo-Academia Helm.png"
+                alt="Academia Helm - Logo institutionnel"
                 width={128}
                 height={128}
                 className="w-full h-full object-contain drop-shadow-2xl"

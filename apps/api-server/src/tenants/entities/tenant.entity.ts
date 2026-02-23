@@ -33,11 +33,11 @@ export class Tenant {
   @Column({ nullable: true })
   schemaName: string;
 
-  @Column({ type: 'uuid' })
+  @Column({ type: 'uuid', name: 'countryId' })
   countryId: string; // OBLIGATOIRE : chaque école appartient à un pays
 
   @ManyToOne(() => Country, { onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'country_id' })
+  @JoinColumn({ name: 'countryId' })
   country: Country;
 
   @Column({ default: 'active' })

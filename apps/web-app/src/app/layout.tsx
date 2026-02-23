@@ -11,6 +11,7 @@ import type { Metadata } from 'next';
 import localFont from 'next/font/local';
 import './globals.css';
 import { InstallPromptWrapper } from '@/components/pwa/InstallPromptWrapper';
+import { BRAND } from '@/lib/brand';
 
 // ✅ POLICES LOCALES - Téléchargées depuis Google Fonts et stockées localement
 // 
@@ -77,47 +78,42 @@ const inter = localFont({
   adjustFontFallback: true, // ✅ Ajuster le fallback automatiquement
 });
 
+// Titre par défaut unique (un seul titre, pas de template pour éviter toute concaténation)
+const defaultTitle = `${BRAND.name} - ${BRAND.subtitle}`;
+const defaultDescription = `${BRAND.description}. ${BRAND.slogan}`;
+
 // eslint-disable-next-line @next/next/no-head-element
 export const metadata: Metadata = {
-  // ✅ metadataBase requis pour les images Open Graph et Twitter
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'),
-  
-  title: 'Academia Hub - Plateforme de gestion scolaire',
-  description: 'La plateforme de gestion scolaire qui structure, contrôle et sécurise vos établissements. Conçue pour les directeurs et promoteurs exigeants.',
-  keywords: ['gestion scolaire', 'ERP éducation', 'Academia Hub', 'gestion établissement'],
-  authors: [{ name: 'Academia Hub' }],
+  title: defaultTitle,
+  description: defaultDescription,
+  keywords: ['pilotage éducatif', 'plateforme éducation', BRAND.name, 'gestion établissement'],
+  authors: [{ name: BRAND.name }],
   creator: 'YEHI OR Tech',
-  publisher: 'Academia Hub',
-  // ✅ Next.js 14 gère automatiquement les icônes via metadata (pas besoin de <head> manuel)
-  // Cette configuration est correcte pour Next.js 14 App Router
+  publisher: BRAND.name,
   icons: {
     icon: [
       { url: '/images/logo-Academia-Hub.ico', sizes: 'any' },
-      { url: '/images/logo-Academia Hub.png', sizes: '512x512', type: 'image/png' },
+      { url: BRAND.logoPath, sizes: '512x512', type: 'image/png' },
     ],
     shortcut: '/images/logo-Academia-Hub.ico',
-    apple: [
-      { url: '/images/logo-Academia Hub.png', sizes: '512x512', type: 'image/png' },
-    ],
+    apple: [{ url: BRAND.logoPath, sizes: '512x512', type: 'image/png' }],
   },
   manifest: '/manifest.json',
   openGraph: {
     type: 'website',
     locale: 'fr_FR',
-    url: 'https://academiahub.com',
-    siteName: 'Academia Hub',
-    title: 'Academia Hub - Plateforme de gestion scolaire',
-    description: 'La plateforme de gestion scolaire qui structure, contrôle et sécurise vos établissements.',
+    url: 'https://academiahelm.com',
+    siteName: BRAND.name,
+    title: defaultTitle,
+    description: defaultDescription,
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Academia Hub - Plateforme de gestion scolaire',
-    description: 'La plateforme de gestion scolaire qui structure, contrôle et sécurise vos établissements.',
+    title: defaultTitle,
+    description: BRAND.description,
   },
-  robots: {
-    index: true,
-    follow: true,
-  },
+  robots: { index: true, follow: true },
 };
 
 export default function RootLayout({

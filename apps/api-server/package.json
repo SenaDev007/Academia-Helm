@@ -1,7 +1,7 @@
 {
   "name": "academia-hub-api",
   "version": "1.0.0",
-  "description": "Academia Hub - Backend API Server (NestJS)",
+  "description": "Academia Helm - Backend API Server (NestJS)",
   "author": "YEHI OR Tech <yehiortech@gmail.com>",
   "private": true,
   "license": "UNLICENSED",
@@ -35,8 +35,10 @@
     "migrate:status": "npx prisma migrate status --schema=prisma/schema.prisma",
     "migrate:deploy": "npx prisma migrate deploy --schema=prisma/schema.prisma",
     "migrate:dev": "npx prisma migrate dev --schema=prisma/schema.prisma",
+    "studio": "npx prisma studio --schema=prisma/schema.prisma --port 51212",
     "seed": "ts-node prisma/seed.ts",
-    "db:seed": "ts-node prisma/seed.ts"
+    "db:seed": "ts-node prisma/seed.ts",
+    "migrate:maternelle-educmaster": "ts-node -r tsconfig-paths/register scripts/migrate-maternelle-educmaster.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.0",

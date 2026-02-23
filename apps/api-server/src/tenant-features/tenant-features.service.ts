@@ -65,9 +65,8 @@ export class TenantFeaturesService {
     // Créer ou mettre à jour la feature
     let feature: TenantFeature;
     if (existing) {
-      feature = await this.repository.update(existing.id, tenantId, {
+      feature = await this.repository.update(tenantId, existing.featureCode, {
         status: FeatureStatus.ENABLED,
-        reason,
         updatedBy: userId,
       });
     } else {
@@ -88,12 +87,11 @@ export class TenantFeaturesService {
       {
         action: 'FEATURE_ENABLED',
         resource: 'tenant_feature',
-        resourceId: feature.id,
+        resourceId: feature.featureCode,
         changes: {
           featureCode,
           status: FeatureStatus.ENABLED,
           pricingImpact,
-          reason,
         },
       },
       tenantId,
@@ -127,9 +125,8 @@ export class TenantFeaturesService {
     const pricingImpact = FEATURE_PRICING[featureCode] || { monthly: 0, annual: 0 };
 
     // Mettre à jour la feature
-    const updated = await this.repository.update(feature.id, tenantId, {
+    const updated = await this.repository.update(tenantId, feature.featureCode, {
       status: FeatureStatus.DISABLED,
-      reason,
       updatedBy: userId,
     });
 
@@ -141,7 +138,7 @@ export class TenantFeaturesService {
       {
         action: 'FEATURE_DISABLED',
         resource: 'tenant_feature',
-        resourceId: updated.id,
+        resourceId: updated.featureCode,
         changes: {
           featureCode,
           status: FeatureStatus.DISABLED,
@@ -149,7 +146,6 @@ export class TenantFeaturesService {
             monthly: -pricingImpact.monthly,
             annual: -pricingImpact.annual,
           },
-          reason,
         },
       },
       tenantId,
@@ -167,12 +163,12 @@ export class TenantFeaturesService {
   }
 
   /**
-   * Récupère une feature spécifique
+   * Récupère une feature par code (le param id est interprété comme featureCode)
    */
-  async findOne(id: string, tenantId: string): Promise<TenantFeature> {
-    const feature = await this.repository.findOne(id, tenantId);
+  async findOne(idOrCode: string, tenantId: string): Promise<TenantFeature> {
+    const feature = await this.repository.findOne(tenantId, idOrCode as FeatureCode);
     if (!feature) {
-      throw new NotFoundException(`Feature with ID ${id} not found`);
+      throw new NotFoundException(`Feature ${idOrCode} not found`);
     }
     return feature;
   }

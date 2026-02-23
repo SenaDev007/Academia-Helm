@@ -18,7 +18,7 @@ export default function SecuritePage() {
             Sécurité des données. Méthode éprouvée. Durabilité garantie.
           </h1>
           <p className="text-xl text-slate-600 leading-relaxed">
-            Academia Hub est une plateforme SaaS professionnelle, conçue selon les standards de sécurité.
+            Academia Helm est une plateforme SaaS professionnelle, conçue selon les standards de sécurité.
           </p>
         </div>
       </section>

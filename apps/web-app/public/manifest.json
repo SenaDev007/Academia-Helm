@@ -1,7 +1,7 @@
 {
-  "name": "Academia Hub - Plateforme de gestion scolaire",
-  "short_name": "Academia Hub",
-  "description": "La plateforme de gestion scolaire qui structure, contrôle et sécurise vos établissements",
+  "name": "Academia Helm - Plateforme de pilotage éducatif",
+  "short_name": "Academia Helm",
+  "description": "La plateforme de pilotage éducatif nouvelle génération. Prenez le gouvernail de votre institution.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

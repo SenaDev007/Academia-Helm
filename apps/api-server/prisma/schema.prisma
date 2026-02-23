@@ -525,7 +525,7 @@ model EducationLevel {
   @@map("education_levels")
 }
 
-/// Cycle sous un niveau (ex. PS/MS/GS pour Maternelle, CE1-CM2 pour Primaire).
+/// Cycle sous un niveau (ex. Maternelle 1/2 pour Maternelle - Educmaster Bénin, CE1-CM2 pour Primaire).
 model EducationCycle {
   id        String   @id @default(uuid())
   levelId   String

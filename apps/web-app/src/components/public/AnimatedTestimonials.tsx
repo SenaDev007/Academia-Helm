@@ -16,7 +16,7 @@ interface TestimonialExample {
 
 const testimonialExamples: TestimonialExample[] = [
   {
-    content: "Academia Hub a transformé notre gestion quotidienne. Tout est centralisé, accessible et sécurisé. Nous avons gagné un temps précieux sur les tâches administratives.",
+    content: "Academia Helm a transformé notre gestion quotidienne. Tout est centralisé, accessible et sécurisé. Nous avons gagné un temps précieux sur les tâches administratives.",
     authorName: "Marie Adékambi",
     authorFunction: "Directrice",
     schoolName: "École Primaire Les Étoiles",
@@ -24,7 +24,7 @@ const testimonialExamples: TestimonialExample[] = [
     type: 'director'
   },
   {
-    content: "En tant que promoteur, j'ai besoin de visibilité sur tous mes établissements. Academia Hub me donne cette vision globale en temps réel, avec des rapports détaillés.",
+    content: "En tant que promoteur, j'ai besoin de visibilité sur tous mes établissements. Academia Helm me donne cette vision globale en temps réel, avec des rapports détaillés.",
     authorName: "Jean-Baptiste Assogba",
     authorFunction: "Promoteur",
     schoolName: "Groupe Scolaire Excellence",
@@ -96,7 +96,7 @@ const testimonialExamples: TestimonialExample[] = [
     type: 'promoter'
   },
   {
-    content: "La sécurité des données est un point crucial pour nous. Academia Hub nous rassure avec son système de sauvegarde automatique et son mode offline.",
+    content: "La sécurité des données est un point crucial pour nous. Academia Helm nous rassure avec son système de sauvegarde automatique et son mode offline.",
     authorName: "Sylvie Hounkpatin",
     authorFunction: "Directrice",
     schoolName: "École Secondaire Les Élites",

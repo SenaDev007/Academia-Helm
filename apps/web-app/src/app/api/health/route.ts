@@ -12,7 +12,7 @@ export async function GET() {
     {
       status: 'ok',
       timestamp: new Date().toISOString(),
-      service: 'academia-hub-web',
+      service: 'academia-helm-web',
     },
     { status: 200 }
   );

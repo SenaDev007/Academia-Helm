@@ -307,7 +307,7 @@ export class WhatsAppService {
   }): string {
     const statusText = data.status === 'TRIAL_ACTIVE' ? 'période d\'essai' : 'abonnement';
 
-    return `🔔 *Rappel Academia Hub*
+    return `🔔 *Rappel Academia Helm*
 
 Bonjour,
 
@@ -315,11 +315,11 @@ Votre ${statusText} pour *${data.schoolName}* expire dans *${data.daysRemaining}
 
 📋 Plan actuel : ${data.planName}
 
-Pour continuer à bénéficier de tous les services Academia Hub, renouvelez votre abonnement :
+Pour continuer à bénéficier de tous les services Academia Helm, renouvelez votre abonnement :
 
 ${data.renewalUrl}
 
 Cordialement,
-L'équipe Academia Hub`.trim();
+L'équipe Academia Helm`.trim();
   }
 }

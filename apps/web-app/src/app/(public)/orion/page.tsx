@@ -1,7 +1,7 @@
 /**
  * Page ORION (IA)
  * 
- * Page dédiée à ORION, l'assistant de direction intégré à Academia Hub
+ * Page dédiée à ORION, l'assistant de direction intégré à Academia Helm
  */
 
 import { Metadata } from 'next';
@@ -14,7 +14,7 @@ import { generateSEOMetadata } from '@/lib/seo';
 
 export const metadata: Metadata = generateSEOMetadata({
   title: 'ORION - Intelligence Artificielle pour la Direction',
-  description: 'ORION est l\'assistant de direction intégré à Academia Hub. Analysez vos données, anticipez les risques et prenez des décisions stratégiques éclairées grâce à l\'IA.',
+  description: 'ORION est l\'assistant de direction intégré à Academia Helm. Analysez vos données, anticipez les risques et prenez des décisions stratégiques éclairées grâce à l\'IA.',
   keywords: ['IA gestion scolaire', 'ORION intelligence artificielle', 'assistant direction école', 'analyse données scolaire'],
   path: '/orion',
   image: '/images/ORION-Academia-Hub.png',
@@ -36,7 +36,7 @@ export default function OrionPage() {
                 ORION — L'intelligence qui éclaire vos décisions
               </h1>
               <p className={`${typo('large')} text-white/90 max-w-3xl mx-auto leading-relaxed`}>
-                ORION est l'assistant de direction intégré à Academia Hub. Il analyse vos données
+                ORION est l'assistant de direction intégré à Academia Helm. Il analyse vos données
                 et vous aide à comprendre vos chiffres, anticiper les risques et prendre de meilleures décisions.
               </p>
             </div>

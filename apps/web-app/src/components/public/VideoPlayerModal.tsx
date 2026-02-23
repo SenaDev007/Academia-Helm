@@ -18,7 +18,7 @@ export default function VideoPlayerModal({
   onClose,
   videoUrl,
   thumbnailUrl,
-  title = 'Présentation Academia Hub',
+  title = 'Présentation Academia Helm',
 }: VideoPlayerModalProps) {
   const handlePlay = () => {
     // Pour le moment, on ne lance pas la vidéo
@@ -141,7 +141,7 @@ export default function VideoPlayerModal({
         {/* Footer */}
         <div className="p-4 bg-gray-50 border-t border-gray-200">
           <p className="text-sm text-gray-600 text-center">
-            Découvrez comment Academia Hub transforme la gestion scolaire
+            Découvrez comment Academia Helm transforme la gestion scolaire
           </p>
         </div>
       </div>

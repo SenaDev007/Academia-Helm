@@ -30,18 +30,16 @@ export class TenantFeaturesRepository {
     });
   }
 
-  async findOne(id: string, tenantId: string): Promise<TenantFeature | null> {
+  /** Récupère une feature par code (pas d'id unique, clé composite tenantId + featureCode). */
+  async findOne(tenantId: string, featureCode: FeatureCode): Promise<TenantFeature | null> {
     return this.repository.findOne({
-      where: { id, tenantId },
+      where: { tenantId, featureCode },
       relations: ['enabledByUser', 'disabledByUser'],
     });
   }
 
   async findByCode(featureCode: FeatureCode, tenantId: string): Promise<TenantFeature | null> {
-    return this.repository.findOne({
-      where: { featureCode, tenantId },
-      relations: ['enabledByUser', 'disabledByUser'],
-    });
+    return this.findOne(tenantId, featureCode);
   }
 
   async isEnabled(featureCode: FeatureCode, tenantId: string): Promise<boolean> {
@@ -49,10 +47,10 @@ export class TenantFeaturesRepository {
     return feature?.status === FeatureStatus.ENABLED;
   }
 
-  async update(id: string, tenantId: string, data: UpdateTenantFeatureDto & { updatedBy?: string }): Promise<TenantFeature> {
-    const feature = await this.findOne(id, tenantId);
+  async update(tenantId: string, featureCode: FeatureCode, data: UpdateTenantFeatureDto & { updatedBy?: string }): Promise<TenantFeature> {
+    const feature = await this.findOne(tenantId, featureCode);
     if (!feature) {
-      throw new Error(`Feature ${id} not found`);
+      throw new Error(`Feature ${featureCode} not found`);
     }
 
     const updateData: any = { ...data };
@@ -68,12 +66,12 @@ export class TenantFeaturesRepository {
       updateData.disabledBy = data.updatedBy || feature.disabledBy;
     }
 
-    await this.repository.update({ id, tenantId }, updateData);
-    return this.findOne(id, tenantId);
+    await this.repository.update({ tenantId, featureCode }, updateData);
+    return this.findOne(tenantId, featureCode) as Promise<TenantFeature>;
   }
 
-  async delete(id: string, tenantId: string): Promise<void> {
-    await this.repository.delete({ id, tenantId });
+  async delete(tenantId: string, featureCode: FeatureCode): Promise<void> {
+    await this.repository.delete({ tenantId, featureCode });
   }
 }
 

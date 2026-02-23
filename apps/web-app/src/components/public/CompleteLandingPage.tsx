@@ -1,7 +1,7 @@
 /**
  * Complete Landing Page Component
  * 
- * Landing page officielle d'Academia Hub
+ * Landing page officielle d'Academia Helm
  * Copywriting EXACT, mot pour mot
  * Structure stricte respectée
  * Design System premium institutionnel
@@ -205,7 +205,7 @@ export default function CompleteLandingPage() {
         <div className="absolute inset-0 z-0">
           <Image
             src="/images/school-background.png"
-            alt="École moderne avec élèves en classe - Academia Hub"
+            alt="École moderne avec élèves en classe - Academia Helm"
             fill
             className="object-cover"
             priority
@@ -227,9 +227,7 @@ export default function CompleteLandingPage() {
             avec précision et facilité.
           </h1>
           <p className={`${typo('large')} text-lg md:text-xl text-white/95 mb-12 max-w-3xl mx-auto leading-relaxed drop-shadow-md`}>
-            Academia Hub est un système de gestion scolaire institutionnel,
-            conçu pour les directeurs et promoteurs exigeants,
-            de la maternelle au secondaire.
+            La plateforme de pilotage éducatif nouvelle génération. Prenez le gouvernail de votre institution.
           </p>
           <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
             <Link
@@ -248,7 +246,7 @@ export default function CompleteLandingPage() {
               className="bg-white/10 backdrop-blur-md text-white px-10 py-4 rounded-md border-2 border-white/30 font-semibold hover:bg-white/20 transition-all duration-300 inline-flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:scale-105"
             >
               <AppIcon name="playCircle" size="action" className="text-white" />
-              Voir Academia Hub
+              Voir Academia Helm
             </button>
           </div>
         </div>
@@ -329,7 +327,7 @@ export default function CompleteLandingPage() {
           <div className="inline-flex items-center justify-center mb-10">
             <Image
               src="/images/logo-Academia Hub.png"
-              alt="Academia Hub - Logo de la plateforme de gestion scolaire"
+              alt="Academia Helm - Plateforme de pilotage éducatif"
               width={120}
               height={120}
               className="w-30 h-30 object-contain"
@@ -345,7 +343,7 @@ export default function CompleteLandingPage() {
             <span className="text-white/90">pas une simple application.</span>
           </h2>
           <p className={`${typo('large')} text-white leading-relaxed text-lg max-w-3xl mx-auto`}>
-            Academia Hub centralise l'ensemble des données de votre établissement,
+            Academia Helm centralise l'ensemble des données de votre établissement,
             structure vos processus internes
             et vous permet de piloter votre école avec précision,
             même en l'absence de connexion internet.
@@ -361,7 +359,7 @@ export default function CompleteLandingPage() {
               Modules de gestion scolaire
             </h2>
             <p className={`${typo('large')} ${textColor('secondary')} max-w-3xl mx-auto mb-16 text-lg`}>
-              Academia Hub intègre l'ensemble des modules nécessaires
+              Academia Helm intègre l'ensemble des modules nécessaires
               à une gestion scolaire moderne et rigoureuse.
             </p>
           </div>
@@ -476,7 +474,7 @@ export default function CompleteLandingPage() {
                 </span> qui éclaire vos décisions.
               </h2>
               <p className={`${typo('large')} text-white mb-2 leading-relaxed text-lg`}>
-                <span className="text-gold-500">ORION</span> est l'assistant de direction intégré à Academia Hub.
+                <span className="text-gold-500">ORION</span> est l'assistant de direction intégré à Academia Helm.
                 Il analyse vos données et vous aide à comprendre vos chiffres,
                 anticiper les risques
                 et prendre de meilleures décisions.
@@ -558,7 +556,7 @@ export default function CompleteLandingPage() {
               </span>.
             </h2>
             <p className={`${typo('large')} ${textColor('secondary')} max-w-3xl mx-auto mb-16 text-lg`}>
-              Academia Hub est conçu pour les réalités du terrain.
+              Academia Helm est conçu pour les réalités du terrain.
               Toutes les opérations peuvent être effectuées hors ligne,
               puis synchronisées automatiquement dès que la connexion est rétablie.
             </p>
@@ -664,7 +662,7 @@ export default function CompleteLandingPage() {
               Une tarification claire, pensée pour les établissements sérieux
             </h2>
             <p className={`${typo('large')} text-white/90 max-w-3xl mx-auto leading-relaxed mb-8`}>
-              Accédez à l'ensemble des modules Academia Hub avec une logique simple,
+              Accédez à l'ensemble des modules Academia Helm avec une logique simple,
               transparente et évolutive selon la taille de votre structure.
             </p>
             
@@ -1005,7 +1003,7 @@ export default function CompleteLandingPage() {
             <div className="bg-gradient-to-br from-blue-50 to-white rounded-3xl border-2 border-blue-200 p-8 shadow-xl">
               <div className="text-center max-w-3xl mx-auto">
                 <h3 className={`${typo('h3')} text-gray-900 font-bold mb-4`}>
-                  Découvrir Academia Hub sans engagement
+                  Découvrir Academia Helm sans engagement
                 </h3>
                 <p className={`${typo('base')} text-gray-700 mb-6 leading-relaxed`}>
                   Profitez de 3 jours de démonstration guidée avec des données fictives
@@ -1065,7 +1063,7 @@ export default function CompleteLandingPage() {
                 <span className="relative z-10">structuré</span>
                 <span className="absolute bottom-1 left-0 right-0 h-4 bg-blue-900/20 -rotate-1"></span>
               </span> leur établissement<br />
-              avec Academia Hub.
+              avec Academia Helm.
             </h2>
             
             {/* Enhanced Subtitle */}
@@ -1144,7 +1142,7 @@ export default function CompleteLandingPage() {
             <div className="relative z-10 w-32 h-32 flex items-center justify-center">
               <Image
                 src="/images/logo-Academia Hub.png"
-                alt="Academia Hub - Logo de la plateforme de gestion scolaire"
+                alt="Academia Helm - Plateforme de pilotage éducatif"
                 width={128}
                 height={128}
                 className="w-full h-full object-contain drop-shadow-2xl"
@@ -1179,8 +1177,8 @@ export default function CompleteLandingPage() {
         isOpen={isVideoModalOpen}
         onClose={() => setIsVideoModalOpen(false)}
         videoUrl="/videos/academia-hub-presentation.mp4"
-        thumbnailUrl="/images/Miniature Présentation Academia Hub.png"
-        title="Présentation Academia Hub"
+        thumbnailUrl="/images/Miniature Présentation Academia Helm.png"
+        title="Présentation Academia Helm"
       />
 
       {/* Support Chat Widget */}

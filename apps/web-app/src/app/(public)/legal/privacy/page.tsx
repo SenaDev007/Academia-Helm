@@ -1,7 +1,7 @@
 /**
  * Politique de Confidentialité
  * 
- * Page officielle de la politique de confidentialité d'Academia Hub
+ * Page officielle de la politique de confidentialité d'Academia Helm
  */
 
 import PremiumHeader from '@/components/layout/PremiumHeader';
@@ -27,7 +27,7 @@ export default function PrivacyPolicyPage() {
                 1. Collecte des données
               </h2>
               <p>
-                Academia Hub collecte les données nécessaires au fonctionnement de la plateforme de gestion scolaire.
+                Academia Helm collecte les données nécessaires au fonctionnement de la plateforme de gestion scolaire.
                 Ces données incluent les informations relatives aux établissements, aux élèves, aux enseignants,
                 et aux opérations administratives et financières.
               </p>
@@ -39,7 +39,7 @@ export default function PrivacyPolicyPage() {
               </h2>
               <p>
                 Les données collectées sont utilisées exclusivement pour fournir les services de gestion scolaire
-                demandés par l'établissement. Academia Hub ne vend, ne loue, ni ne partage vos données avec des tiers
+                demandés par l'établissement. Academia Helm ne vend, ne loue, ni ne partage vos données avec des tiers
                 à des fins commerciales.
               </p>
             </section>

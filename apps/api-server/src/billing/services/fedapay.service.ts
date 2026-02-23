@@ -735,7 +735,7 @@ export class FedaPayService implements OnModuleInit {
     const transaction = await this.createTransaction({
       amount,
       currency, // Devise récupérée dynamiquement
-      description: `Paiement initial Academia Hub - ${draft.schoolName}`,
+      description: `Paiement initial Academia Helm - ${draft.schoolName}`,
       callbackUrl,
       imageUrl, // Image pour la page de paiement
       metadata: {
@@ -792,7 +792,7 @@ export class FedaPayService implements OnModuleInit {
         transaction: {
           id: transaction.transactionId,
           amount: transaction.amount || amount,
-          description: `Paiement initial Academia Hub - ${draft.schoolName}`,
+          description: `Paiement initial Academia Helm - ${draft.schoolName}`,
         },
         customer: {
           email: draft.promoterEmail || draft.email || '',
@@ -927,7 +927,7 @@ export class FedaPayService implements OnModuleInit {
     const transaction = await this.createTransaction({
       amount,
       currency, // Devise récupérée dynamiquement depuis la subscription
-      description: `Renouvellement ${cycle === 'MONTHLY' ? 'mensuel' : 'annuel'} Academia Hub - ${subscription.tenant.name}`,
+      description: `Renouvellement ${cycle === 'MONTHLY' ? 'mensuel' : 'annuel'} Academia Helm - ${subscription.tenant.name}`,
       callbackUrl,
       imageUrl, // Image pour la page de paiement
       metadata: {
@@ -1188,7 +1188,7 @@ export class FedaPayService implements OnModuleInit {
     const transaction = await this.createTransaction({
       amount,
       currency, // Devise récupérée dynamiquement depuis la subscription
-      description: `Renouvellement ${cycle === 'MONTHLY' ? 'mensuel' : 'annuel'} Academia Hub - ${subscription.tenant.name}`,
+      description: `Renouvellement ${cycle === 'MONTHLY' ? 'mensuel' : 'annuel'} Academia Helm - ${subscription.tenant.name}`,
       callbackUrl,
       imageUrl, // Image pour la page de paiement
       metadata: {

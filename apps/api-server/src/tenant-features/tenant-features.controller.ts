@@ -72,14 +72,14 @@ export class TenantFeaturesController {
     );
   }
 
-  @Patch(':id')
+  @Patch(':featureCode')
   update(
-    @Param('id') id: string,
+    @Param('featureCode') featureCode: FeatureCode,
     @Body() updateDto: UpdateTenantFeatureDto,
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
   ) {
-    return this.tenantFeaturesService.repository.update(id, tenantId, {
+    return this.tenantFeaturesService.repository.update(tenantId, featureCode, {
       ...updateDto,
       updatedBy: user.id,
     });

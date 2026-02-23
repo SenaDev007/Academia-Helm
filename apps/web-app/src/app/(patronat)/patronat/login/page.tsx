@@ -95,7 +95,7 @@ export default function PatronatLoginPage() {
             <div className="inline-flex items-center justify-center mb-4">
               <Image
                 src="/images/logo-Academia Hub.png"
-                alt="Academia Hub"
+                alt="Academia Helm"
                 width={64}
                 height={64}
                 className="h-16 w-auto"

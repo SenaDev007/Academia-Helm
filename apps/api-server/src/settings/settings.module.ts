@@ -23,7 +23,7 @@ import { DatabaseModule } from '../database/database.module';
 import { OrionModule } from '../orion/orion.module';
 
 /**
- * Module Paramètres — Centre de contrôle stratégique d'Academia Hub
+ * Module Paramètres — Centre de contrôle stratégique d'Academia Helm
  * 
  * Ce module centralise toutes les configurations de l'application :
  * - Paramètres généraux & identité

@@ -32,7 +32,7 @@ export default function ForgotPasswordPage() {
           <div className="inline-flex items-center justify-center w-16 h-16 bg-navy-900 rounded-lg mb-4">
             <GraduationCap className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-navy-900">Academia Hub</h1>
+          <h1 className="text-2xl font-bold text-navy-900">Academia Helm</h1>
           <p className="text-sm text-slate-600 mt-2">Réinitialisation du mot de passe</p>
         </div>
 

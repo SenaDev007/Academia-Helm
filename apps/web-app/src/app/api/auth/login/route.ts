@@ -14,6 +14,7 @@ interface LoginCredentials {
   password: string;
   tenantSubdomain?: string;
   tenant_id?: string;
+  portal_type?: string;
 }
 
 interface BackendLoginResponse {
@@ -57,6 +58,7 @@ export async function POST(request: NextRequest) {
           email: body.email,
           password: body.password,
           tenant_id: body.tenant_id,
+          portal_type: body.portal_type,
         }),
         signal: controller.signal,
       });
@@ -91,10 +93,11 @@ export async function POST(request: NextRequest) {
 
     const backendData: BackendLoginResponse = await backendResponse.json();
     
-    // Mapper la réponse du backend vers le format attendu par le frontend
+    // Tenant : priorité backend > body (connexion avec école sélectionnée en mode dev)
+    const tenantId = backendData.user.tenantId || body.tenant_id || '';
+    
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24h
     const token = backendData.accessToken;
-    const tenantId = backendData.user.tenantId || '';
     
     // Charger le tenant complet depuis l'API backend avec le token reçu
     let tenant = await loadTenantFromApi(tenantId, token);
@@ -103,7 +106,7 @@ export async function POST(request: NextRequest) {
     if (!tenant) {
       tenant = {
         id: tenantId,
-        name: tenantId ? 'Mon École' : '', // Vide pour PLATFORM_OWNER
+        name: tenantId ? 'Mon École' : '',
         slug: body.tenantSubdomain || '',
         subdomain: body.tenantSubdomain || '',
         status: 'active',
@@ -113,14 +116,19 @@ export async function POST(request: NextRequest) {
       };
     }
 
-    // Construire l'objet user complet avec les champs requis
+    // S'assurer que tenant.id est toujours renseigné quand on a un tenant_id (évite "contexte établissement manquant")
+    const resolvedTenantId = tenant.id || tenantId;
+    if (!tenant.id && resolvedTenantId) {
+      tenant = { ...tenant, id: resolvedTenantId };
+    }
+
     const user = {
       id: backendData.user.id,
       email: backendData.user.email,
       firstName: backendData.user.firstName || '',
       lastName: backendData.user.lastName || '',
       role: (backendData.user.role || 'USER') as any,
-      tenantId: backendData.user.tenantId || tenantId,
+      tenantId: backendData.user.tenantId || resolvedTenantId,
       permissions: [], // Sera chargé via /context/bootstrap
       createdAt: new Date().toISOString(),
     };

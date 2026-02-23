@@ -34,11 +34,10 @@ export class SchoolSearchService {
     this.logger.log(`School search: "${searchTerm}" from IP: ${ipAddress}`);
 
     try {
-      // Recherche dans les tenants actifs de type SCHOOL
+      // Recherche dans tous les tenants actifs (même critère que listAllSchools)
       const tenants = await this.prisma.tenant.findMany({
       where: {
         status: 'active',
-        type: 'SCHOOL',
         OR: [
           { name: { contains: searchTerm, mode: 'insensitive' } },
           { slug: { contains: searchTerm, mode: 'insensitive' } },
@@ -99,17 +98,17 @@ export class SchoolSearchService {
   }
 
   /**
-   * Liste tous les établissements actifs (pour sélecteur)
+   * Liste tous les établissements actifs (pour sélecteur portail).
+   * Inclut tous les tenants actifs (type SCHOOL ou autre) pour afficher toutes les écoles.
    */
   async listAllSchools(): Promise<any[]> {
     this.logger.log('Listing all active schools');
 
     try {
-      // Récupérer tous les tenants actifs de type SCHOOL
+      // Récupérer tous les tenants actifs (pas seulement type SCHOOL, pour inclure tous les établissements)
       const tenants = await this.prisma.tenant.findMany({
       where: {
         status: 'active',
-        type: 'SCHOOL',
       },
       include: {
         schools: {

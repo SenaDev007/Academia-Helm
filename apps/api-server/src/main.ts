@@ -53,7 +53,7 @@ async function bootstrap() {
   // Logger l'URL sans hardcoder localhost
   const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
   const host = process.env.HOST || 'localhost';
-  console.log(`🚀 Academia Hub API Server is running on: ${protocol}://${host}:${port}/api`);
+  console.log(`🚀 Academia Helm API Server is running on: ${protocol}://${host}:${port}/api`);
 }
 
 bootstrap();

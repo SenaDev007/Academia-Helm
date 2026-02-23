@@ -3,25 +3,13 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
-import { getServerToken, getServerSession } from '@/lib/auth/session';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
-async function getAuthHeaders(request: NextRequest) {
-  const authHeader = request.headers.get('Authorization');
-  const cookieToken = request.cookies.get('academia_token')?.value;
-  const sessionToken = await getServerToken();
-  const token = authHeader || (cookieToken ? `Bearer ${cookieToken}` : '') || (sessionToken ? `Bearer ${sessionToken}` : '');
-  const headers: Record<string, string> = { 'Authorization': token || '', 'Content-Type': 'application/json' };
-  const session = await getServerSession();
-  const tenantId = session?.tenant?.id ?? request.headers.get('x-tenant-id') ?? request.nextUrl?.searchParams?.get('tenant_id');
-  if (tenantId && typeof tenantId === 'string') headers['x-tenant-id'] = tenantId;
-  return headers;
-}
-
 export async function GET(request: NextRequest) {
   try {
-    const headers = await getAuthHeaders(request);
+    const headers = await getProxyAuthHeaders(request);
     const academicYearId = request.nextUrl?.searchParams?.get('academic_year_id');
     if (!academicYearId) {
       return NextResponse.json({ error: 'academic_year_id requis' }, { status: 400 });
@@ -41,7 +29,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const headers = await getAuthHeaders(request);
+    const headers = await getProxyAuthHeaders(request);
     if (!headers['Authorization']) {
       return NextResponse.json({ error: 'Non authentifié', code: 'UNAUTHORIZED' }, { status: 401 });
     }

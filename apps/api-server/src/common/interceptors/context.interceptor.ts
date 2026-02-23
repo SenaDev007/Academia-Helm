@@ -55,6 +55,7 @@ export class ContextInterceptor implements NestInterceptor {
       path.includes('/auth/register') ||
       path.includes('/auth/select-tenant') ||
       path.includes('/auth/dev-login') ||
+      path.includes('/auth/dev-available-tenants') ||
       path.includes('/auth/available-tenants') ||
       path.includes('/portal/auth') ||
       path.includes('/portal/search') ||

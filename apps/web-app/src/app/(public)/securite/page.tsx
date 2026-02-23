@@ -8,7 +8,7 @@ import { generateSEOMetadata } from '@/lib/seo';
 
 export const metadata: Metadata = generateSEOMetadata({
   title: 'Sécurité & Conformité - Protection des Données',
-  description: 'Academia Hub garantit la sécurité et la conformité de vos données scolaires. Mode offline, sauvegarde automatique, conformité RGPD et standards internationaux.',
+  description: 'Academia Helm garantit la sécurité et la conformité de vos données scolaires. Mode offline, sauvegarde automatique, conformité RGPD et standards internationaux.',
   keywords: ['sécurité données scolaires', 'RGPD école', 'protection données élèves', 'conformité gestion scolaire'],
   path: '/securite',
 });

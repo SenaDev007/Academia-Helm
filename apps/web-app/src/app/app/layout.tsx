@@ -36,20 +36,24 @@ export default async function AppLayout({
 
   const user = session.user as User;
   
-  // Utiliser le tenant depuis la session (chargé depuis la DB lors du login)
-  // Fallback vers valeurs par défaut si le tenant n'est pas dans la session
-  const tenant: Tenant = session.tenant || {
-    id: user.tenantId || '',
-    name: 'Mon École',
-    slug: '',
-    subdomain: '',
-    status: 'active',
-    subscriptionStatus: 'ACTIVE_SUBSCRIBED',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    trialEndsAt: undefined,
-    nextPaymentDueAt: undefined,
-  };
+  // Tenant : session.tenant prioritaire ; si id manquant, utiliser user.tenantId (connexion avec école en mode dev)
+  const sessionTenant = session.tenant;
+  const tenantIdFromUser = (user as any).tenantId || '';
+  const effectiveTenantId = sessionTenant?.id || tenantIdFromUser;
+  const tenant: Tenant = sessionTenant && effectiveTenantId
+    ? { ...sessionTenant, id: sessionTenant.id || effectiveTenantId }
+    : {
+        id: effectiveTenantId,
+        name: effectiveTenantId ? 'Mon École' : '',
+        slug: sessionTenant?.slug ?? '',
+        subdomain: sessionTenant?.subdomain ?? '',
+        status: 'active',
+        subscriptionStatus: 'ACTIVE_SUBSCRIBED',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        trialEndsAt: undefined,
+        nextPaymentDueAt: undefined,
+      };
 
   return (
     <ModalProvider>

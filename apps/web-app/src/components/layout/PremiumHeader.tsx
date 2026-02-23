@@ -14,6 +14,7 @@ import { useState, useEffect } from 'react';
 import AppIcon from '@/components/ui/AppIcon';
 import { bgColor, textColor } from '@/lib/design-tokens';
 import { cn } from '@/lib/utils';
+import { BRAND } from '@/lib/brand';
 
 export default function PremiumHeader() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -62,7 +63,7 @@ export default function PremiumHeader() {
             <div className="relative">
                     <Image
                       src="/images/logo-Academia Hub.png"
-                      alt="Academia Hub - Connexion Super Admin"
+                      alt={`${BRAND.name} - ${BRAND.subtitle}`}
                       width={52}
                       height={52}
                       className="h-14 w-auto transition-opacity duration-200 group-hover:opacity-90"
@@ -72,7 +73,7 @@ export default function PremiumHeader() {
             </div>
             <div className={`${textColor('primary')} font-bold leading-none`}>
               <span className="text-xl md:text-2xl block">Academia</span>
-              <span className="text-xs md:text-sm block -mt-2">Hub</span>
+              <span className="text-xs md:text-sm block -mt-2">Helm</span>
             </div>
           </Link>
 

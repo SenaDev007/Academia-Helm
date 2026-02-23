@@ -1,7 +1,7 @@
 {
   "name": "academia-hub",
   "version": "1.0.0",
-  "description": "Academia Hub - Web SaaS Platform (Monorepo)",
+  "description": "Academia Helm - Web SaaS Platform (Monorepo)",
   "author": "YEHI OR Tech <yehiortech@gmail.com>",
   "private": true,
   "scripts": {

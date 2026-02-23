@@ -10,7 +10,7 @@ export default function Loading() {
       <div className="text-center">
         <img 
           src="/images/logo-Academia Hub.png" 
-          alt="Academia Hub" 
+          alt="Academia Helm" 
           className="h-16 w-16 object-contain animate-pulse mx-auto mb-4"
         />
         <p className="text-slate-600">Chargement...</p>

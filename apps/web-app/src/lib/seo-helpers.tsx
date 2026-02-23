@@ -28,8 +28,8 @@ export function SEOImage({
  * Génère un title SEO optimisé
  */
 export function generateSEOTitle(pageTitle: string, includeBrand: boolean = true): string {
-  if (includeBrand && !pageTitle.includes('Academia Hub')) {
-    return `${pageTitle} | Academia Hub`;
+  if (includeBrand && !pageTitle.includes('Academia Helm')) {
+    return `${pageTitle} | Academia Helm`;
   }
   return pageTitle;
 }

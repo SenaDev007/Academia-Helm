@@ -63,7 +63,7 @@ export default function BillingHistoryPage() {
         <div>
           <h1 className="text-2xl font-bold text-navy-900 mb-1">Facturation</h1>
           <p className="text-sm text-slate-600">
-            Historique des factures et reçus de votre abonnement Academia Hub.
+            Historique des factures et reçus de votre abonnement Academia Helm.
           </p>
         </div>
         <div className="hidden md:flex items-center text-slate-500 text-xs">
@@ -90,7 +90,7 @@ export default function BillingHistoryPage() {
           <div>
             <p className="text-sm text-red-800">{error}</p>
             <p className="text-xs text-red-700 mt-1">
-              Si le problème persiste, contactez le support Academia Hub.
+              Si le problème persiste, contactez le support Academia Helm.
             </p>
           </div>
         </div>

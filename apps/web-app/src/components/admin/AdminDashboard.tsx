@@ -65,7 +65,7 @@ export default function AdminDashboard() {
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-navy-900 mb-2">Dashboard Super Admin</h1>
-        <p className="text-slate-600">Vue d'ensemble de la plateforme Academia Hub</p>
+        <p className="text-slate-600">Vue d'ensemble de la plateforme Academia Helm</p>
       </div>
 
       {/* System Health */}

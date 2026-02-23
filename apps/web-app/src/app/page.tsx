@@ -10,31 +10,29 @@ import CompleteLandingPage from '@/components/public/CompleteLandingPage';
 import StructuredData from '@/components/public/StructuredData';
 
 export const metadata: Metadata = {
-  title: 'Academia Hub - Plateforme de Gestion Scolaire Premium',
-  description: 'Découvrez Academia Hub, la plateforme SaaS complète de gestion scolaire pour établissements privés en Afrique. Administration, finances, pédagogie, RH, ORION (IA) et mode offline. Conçue pour les directeurs et promoteurs exigeants.',
+  title: 'Academia Helm - Plateforme de pilotage éducatif',
+  description: 'La plateforme de pilotage éducatif nouvelle génération. Prenez le gouvernail de votre institution.',
   keywords: [
-    'gestion scolaire',
+    'pilotage éducatif',
     'logiciel école',
-    'plateforme SaaS éducation',
+    'plateforme éducation',
     'gestion établissement scolaire',
-    'système gestion scolaire Afrique',
     'ORION IA éducation',
-    'gestion scolaire offline',
-    'Academia Hub',
+    'Academia Helm',
     'gestion scolaire Bénin',
     'gestion scolaire Afrique de l\'Ouest',
   ],
   openGraph: {
-    title: 'Academia Hub - Plateforme de Gestion Scolaire Premium',
-    description: 'Plateforme SaaS complète de gestion scolaire pour établissements privés. Administration, finances, pédagogie, RH, ORION (IA) et mode offline.',
+    title: 'Academia Helm - Plateforme de pilotage éducatif',
+    description: 'La plateforme de pilotage éducatif nouvelle génération. Prenez le gouvernail de votre institution.',
     url: '/',
-    siteName: 'Academia Hub',
+    siteName: 'Academia Helm',
     images: [
       {
         url: '/images/logo-Academia Hub.png',
         width: 1200,
         height: 630,
-        alt: 'Academia Hub - Plateforme de Gestion Scolaire',
+        alt: 'Academia Helm - Plateforme de pilotage éducatif',
       },
     ],
     locale: 'fr_FR',
@@ -42,8 +40,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Academia Hub - Plateforme de Gestion Scolaire Premium',
-    description: 'Plateforme SaaS complète de gestion scolaire pour établissements privés en Afrique.',
+    title: 'Academia Helm - Plateforme de pilotage éducatif',
+    description: 'La plateforme de pilotage éducatif nouvelle génération.',
     images: ['/images/logo-Academia Hub.png'],
   },
   alternates: {

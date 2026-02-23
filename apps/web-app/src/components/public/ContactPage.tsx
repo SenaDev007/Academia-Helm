@@ -18,7 +18,7 @@ export default function ContactPage() {
             Contact institutionnel
           </h1>
           <p className="text-xl text-slate-600 leading-relaxed">
-            Academia Hub est une plateforme destinée aux promoteurs et directeurs d'établissements privés.
+            Academia Helm est une plateforme destinée aux promoteurs et directeurs d'établissements privés.
           </p>
         </div>
       </section>

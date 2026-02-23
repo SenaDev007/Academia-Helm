@@ -65,8 +65,8 @@ export default function PatronatHeader() {
           >
             <div className="relative">
               <Image
-                src="/images/logo-Academia Hub.png"
-                alt="Academia Hub - Connexion Super Admin"
+                src="/images/logo-Academia Helm.png"
+                alt="Academia Helm - Connexion Super Admin"
                 width={48}
                 height={48}
                 className="h-12 w-auto transition-opacity duration-200"

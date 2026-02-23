@@ -3,7 +3,7 @@
  * FEDAPAY SERVICE - INTÉGRATION PSP FEDAPAY
  * ============================================================================
  * 
- * Fedapay est le PSP principal pour Academia Hub.
+ * Fedapay est le PSP principal pour Academia Helm.
  * 
  * CONFIGURATION :
  * - Clés API dans les variables d'environnement
@@ -66,7 +66,7 @@ export class FedapayService {
       // Si destinationAccount est fourni, c'est un paiement TUITION vers l'école
       if (params.destinationAccount) {
         payload.destination = params.destinationAccount;
-        payload.split = true; // Split payment : commission Academia Hub + montant école
+        payload.split = true; // Split payment : commission Academia Helm + montant école
       }
 
       // Appel API Fedapay

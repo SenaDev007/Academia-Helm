@@ -80,7 +80,7 @@ export default function DirectionKpiPage() {
           <div>
             <p className="text-sm text-red-800">{error}</p>
             <p className="text-xs text-red-700 mt-1">
-              Si le problème persiste, contactez la direction ou le support Academia Hub.
+              Si le problème persiste, contactez la direction ou le support Academia Helm.
             </p>
           </div>
         </div>

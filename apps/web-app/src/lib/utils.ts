@@ -17,3 +17,12 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/**
+ * Libellé court pour l'affichage : "Terminale" → "Tle"
+ * Utilisé partout où on affiche un nom de classe/grade (dropdowns, tableaux, structure).
+ */
+export function formatGradeLabel(name: string | null | undefined): string {
+  if (name == null || name === '') return '';
+  return name.replace(/\bTerminale\b/g, 'Tle');
+}
+

@@ -14,6 +14,7 @@ import {
   ConfirmModal,
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { formatGradeLabel } from '@/lib/utils';
 import StudentEnrollmentForm from '@/components/students/StudentEnrollmentForm';
 
 interface Enrollment {
@@ -162,7 +163,7 @@ export default function EnrollmentsPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {enrollment.class?.name || 'Non affecté'}
+                      {formatGradeLabel(enrollment.class?.name) || 'Non affecté'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {enrollment.enrollmentType}

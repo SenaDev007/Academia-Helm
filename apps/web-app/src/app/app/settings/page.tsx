@@ -8,20 +8,22 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams, usePathname, useRouter } from 'next/navigation';
 import { 
   Globe, Shield, Brain, MessageSquare, CloudOff, History, 
   ToggleLeft, ToggleRight, Stamp, GraduationCap, Languages, 
   Bell, Users, Calendar, Save, Loader2, CheckCircle, AlertCircle,
   Mail, UserCog, Lock, Key, Smartphone, CreditCard, Receipt, RefreshCw,
-  Upload, Image, FileSignature, CalendarDays, UserCircle, School, Archive, CalendarRange
+  Upload, Image, FileSignature, CalendarDays, UserCircle, School, Archive, CalendarRange,
+  Pencil, CopyPlus, Layers
 } from 'lucide-react';
 import { ModuleHeader } from '@/components/modules/blueprint';
 import AdministrativeSealsManagement from '@/components/settings/AdministrativeSealsManagement';
 import ElectronicSignaturesManagement from '@/components/settings/ElectronicSignaturesManagement';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import * as settingsService from '@/services/settings.service';
+import { formatGradeLabel } from '@/lib/utils';
 
 /** Format d’affichage des dates d’année scolaire (conforme calendrier officiel, évite décalage timezone) */
 function toInputDate(date: Date | string | null | undefined): string {
@@ -129,7 +131,78 @@ export default function SettingsPage() {
   const [newClassroomGradeId, setNewClassroomGradeId] = useState<string | null>(null);
   const [newClassroomName, setNewClassroomName] = useState('');
   const [newClassroomCapacity, setNewClassroomCapacity] = useState<number | ''>('');
+  const [editingClassroomId, setEditingClassroomId] = useState<string | null>(null);
+  const [editingClassroomName, setEditingClassroomName] = useState('');
+  const [editingClassroomCapacity, setEditingClassroomCapacity] = useState<number | ''>('');
+  const [editingClassroomSeriesCode, setEditingClassroomSeriesCode] = useState('');
+  const [showBulkCreate, setShowBulkCreate] = useState(false);
+  const [bulkGradeId, setBulkGradeId] = useState<string | null>(null);
+  const [bulkCount, setBulkCount] = useState<number>(3);
+  const [bulkSuffixType, setBulkSuffixType] = useState<'letters' | 'numbers'>('letters');
+  const [bulkCapacity, setBulkCapacity] = useState<number | ''>('');
   const [bilingualForm, setBilingualForm] = useState<any>({});
+
+  const allGradesFromStructure = useMemo(() => {
+    const levels = educationStructure?.levels ?? [];
+    const out: { id: string; name: string; code: string; cycle: { name: string }; level: { name: string }; series?: { code: string; name?: string; order?: number } }[] = [];
+    levels.forEach((l: any) => l.cycles?.forEach((c: any) => c.grades?.forEach((g: any) => out.push({ ...g, cycle: c, level: l }))));
+    return out;
+  }, [educationStructure?.levels]);
+
+  /** Classes physiques triées par ordre niveau → cycle → grade → nom (pour le tableau). */
+  const sortedClassrooms = useMemo(() => {
+    const list = [...(educationClassrooms ?? [])];
+    const levelOrder = (name: string) => {
+      if (name === 'MATERNELLE') return 0;
+      if (name === 'PRIMAIRE') return 1;
+      if (name === 'SECONDAIRE') return 2;
+      return 99;
+    };
+    list.sort((a: any, b: any) => {
+      const lA = a.grade?.cycle?.level;
+      const lB = b.grade?.cycle?.level;
+      const ordL = (lA?.order ?? levelOrder(lA?.name ?? '')) - (lB?.order ?? levelOrder(lB?.name ?? ''));
+      if (ordL !== 0) return ordL;
+      const ordC = (a.grade?.cycle?.order ?? 0) - (b.grade?.cycle?.order ?? 0);
+      if (ordC !== 0) return ordC;
+      const ordG = (a.grade?.order ?? 0) - (b.grade?.order ?? 0);
+      if (ordG !== 0) return ordG;
+      return (a.name ?? '').localeCompare(b.name ?? '', 'fr');
+    });
+    return list;
+  }, [educationClassrooms]);
+
+  /** Séries du 2nd cycle secondaire (A1, A2, B, C, D). Liste de secours si l'API ne renvoie pas les séries. */
+  const SECOND_CYCLE_SERIES_FALLBACK = [
+    { code: 'A1', name: 'Série A1', order: 1 },
+    { code: 'A2', name: 'Série A2', order: 2 },
+    { code: 'B', name: 'Série B', order: 3 },
+    { code: 'C', name: 'Série C', order: 4 },
+    { code: 'D', name: 'Série D', order: 5 },
+  ];
+  const secondCycleSeriesOptions = useMemo(() => {
+    const grades = allGradesFromStructure.filter(
+      (g: any) => g?.level?.name === 'SECONDAIRE' && g?.cycle?.name === '2nd cycle' && g?.series
+    );
+    const byCode = new Map<string, { code: string; name?: string; order?: number }>();
+    grades.forEach((g: any) => {
+      if (g.series && !byCode.has(g.series.code)) byCode.set(g.series.code, g.series);
+    });
+    const fromApi = Array.from(byCode.values()).sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+    return fromApi.length > 0 ? fromApi : SECOND_CYCLE_SERIES_FALLBACK;
+  }, [allGradesFromStructure]);
+
+  const [selectedSecondCycleSeriesCode, setSelectedSecondCycleSeriesCode] = useState<string>('');
+
+  useEffect(() => {
+    if (!newClassroomGradeId) {
+      setSelectedSecondCycleSeriesCode('');
+      return;
+    }
+    const g = allGradesFromStructure.find((x: any) => x.id === newClassroomGradeId);
+    const is2nd = g?.level?.name === 'SECONDAIRE' && g?.cycle?.name === '2nd cycle';
+    if (!is2nd || g?.series) setSelectedSecondCycleSeriesCode('');
+  }, [newClassroomGradeId, allGradesFromStructure]);
 
   const showToast = useCallback((type: 'success' | 'error', message: string) => {
     setToast({ type, message });
@@ -799,6 +872,96 @@ export default function SettingsPage() {
       setStructureYearId(nextYear.id);
       const list = await settingsService.getEducationClassrooms(nextYear.id, effectiveTenantId ?? undefined);
       setEducationClassrooms(Array.isArray(list) ? list : []);
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur');
+    } finally {
+      setStructureBusy(false);
+    }
+  };
+
+  const handleUpdateEducationClassroom = async () => {
+    if (!editingClassroomId || !structureYearIdOrActive) return;
+    const name = (editingClassroomName || '').trim();
+    if (!name) {
+      showToast('error', 'Nom de la classe requis.');
+      return;
+    }
+    const editingRow = educationClassrooms.find((x: any) => x.id === editingClassroomId);
+    const isSecondCycle = editingRow?.grade?.level?.name === 'SECONDAIRE' && editingRow?.grade?.cycle?.name === '2nd cycle';
+    let gradeId: string | undefined;
+    if (isSecondCycle && editingClassroomSeriesCode && allGradesFromStructure.length) {
+      const baseRaw = (editingRow?.grade?.name ?? '').split(' ')[0] ?? '';
+      const base = baseRaw === 'Tle' ? 'Terminale' : baseRaw;
+      const newGrade = allGradesFromStructure.find(
+        (g: any) => g?.level?.name === 'SECONDAIRE' && g?.cycle?.name === '2nd cycle' && g.series?.code === editingClassroomSeriesCode && (g.name.startsWith(base) || g.name.startsWith(baseRaw))
+      );
+      if (newGrade && newGrade.id !== editingRow?.grade?.id) gradeId = newGrade.id;
+    }
+    try {
+      setStructureBusy(true);
+      await settingsService.updateEducationClassroom(
+        editingClassroomId,
+        {
+          name,
+          capacity: editingClassroomCapacity === '' ? undefined : Number(editingClassroomCapacity),
+          ...(gradeId && { gradeId }),
+        },
+        effectiveTenantId ?? undefined
+      );
+      setEditingClassroomId(null);
+      setEditingClassroomName('');
+      setEditingClassroomCapacity('');
+      setEditingClassroomSeriesCode('');
+      const list = await settingsService.getEducationClassrooms(structureYearIdOrActive, effectiveTenantId ?? undefined);
+      setEducationClassrooms(Array.isArray(list) ? list : []);
+      showToast('success', 'Classe mise à jour.');
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur');
+    } finally {
+      setStructureBusy(false);
+    }
+  };
+
+  const handleBulkCreateClassrooms = async () => {
+    if (!bulkGradeId || !structureYearIdOrActive || bulkCount < 1 || bulkCount > 30) {
+      showToast('error', 'Sélectionnez un grade et un nombre de classes (1 à 30).');
+      return;
+    }
+    const grade = allGradesFromStructure.find((g: any) => g.id === bulkGradeId);
+    const prefix = grade?.name ?? '';
+    const names: string[] = [];
+    if (bulkSuffixType === 'letters') {
+      for (let i = 0; i < bulkCount; i++) {
+        names.push(`${prefix} ${String.fromCharCode(65 + i)}`.trim());
+      }
+    } else {
+      for (let i = 1; i <= bulkCount; i++) {
+        names.push(`${prefix} ${i}`.trim());
+      }
+    }
+    const capacity = bulkCapacity === '' ? undefined : Number(bulkCapacity);
+    try {
+      setStructureBusy(true);
+      let created = 0;
+      for (const name of names) {
+        await settingsService.createEducationClassroom(
+          {
+            academicYearId: structureYearIdOrActive,
+            gradeId: bulkGradeId,
+            name,
+            capacity,
+          },
+          effectiveTenantId ?? undefined
+        );
+        created++;
+      }
+      const list = await settingsService.getEducationClassrooms(structureYearIdOrActive, effectiveTenantId ?? undefined);
+      setEducationClassrooms(Array.isArray(list) ? list : []);
+      showToast('success', `${created} classe(s) créée(s) : ${names.join(', ')}`);
+      setShowBulkCreate(false);
+      setBulkGradeId(null);
+      setBulkCount(3);
+      setBulkCapacity('');
     } catch (error: any) {
       showToast('error', error.message || 'Erreur');
     } finally {
@@ -1898,8 +2061,12 @@ export default function SettingsPage() {
 
       case 'structure':
         const levels = educationStructure?.levels ?? [];
-        const allGrades: { id: string; name: string; code: string; cycle: { name: string }; level: { name: string } }[] = [];
-        levels.forEach((l: any) => l.cycles?.forEach((c: any) => c.grades?.forEach((g: any) => allGrades.push({ ...g, cycle: c, level: l }))));
+        const allGrades = allGradesFromStructure;
+        const isSecondCycleSecondary = (g: any) => g?.level?.name === 'SECONDAIRE' && g?.cycle?.name === '2nd cycle';
+        const selectedGradeForClassroom = newClassroomGradeId ? allGrades.find((g: any) => g.id === newClassroomGradeId) : null;
+        const selectedGradeForBulk = bulkGradeId ? allGrades.find((g: any) => g.id === bulkGradeId) : null;
+        const showSeriesReminderAdd = selectedGradeForClassroom && isSecondCycleSecondary(selectedGradeForClassroom);
+        const showSeriesReminderBulk = selectedGradeForBulk && isSecondCycleSecondary(selectedGradeForBulk);
         return (
           <div className="space-y-6">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
@@ -1949,8 +2116,15 @@ export default function SettingsPage() {
                               <div className="text-sm font-medium text-gray-700 mb-1">{cycle.name}</div>
                               <div className="flex flex-wrap gap-2 ml-2">
                                 {(cycle.grades || []).map((grade: any) => (
-                                  <span key={grade.id} className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-800 text-sm">
-                                    {grade.name}
+                                  <span key={grade.id} className="inline-flex items-center gap-1.5 flex-wrap">
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-800 text-sm">
+                                      {formatGradeLabel(grade.name)}
+                                    </span>
+                                    {grade.series && (
+                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 text-xs font-medium" title="Série">
+                                        Série {grade.series.code}
+                                      </span>
+                                    )}
                                   </span>
                                 ))}
                               </div>
@@ -1993,7 +2167,7 @@ export default function SettingsPage() {
                       >
                         <option value="">Classe pédagogique (grade)</option>
                         {allGrades.map((g) => (
-                          <option key={g.id} value={g.id}>{g.level.name} → {g.cycle.name} → {g.name}</option>
+                          <option key={g.id} value={g.id}>{g.level.name} → {g.cycle.name} → {formatGradeLabel(g.name)}</option>
                         ))}
                       </select>
                       <input
@@ -2011,17 +2185,58 @@ export default function SettingsPage() {
                         placeholder="Capacité (opt.)"
                         className="rounded-md border border-gray-300 px-3 py-2 text-sm w-24"
                       />
-                      <button
+                        <button
                         type="button"
                         onClick={handleCreateEducationClassroom}
-                        disabled={structureBusy || !newClassroomGradeId || !newClassroomName.trim()}
+                        disabled={structureBusy || !newClassroomGradeId || !newClassroomName.trim() || (showSeriesReminderAdd && !selectedGradeForClassroom?.series?.code && !selectedSecondCycleSeriesCode)}
                         className="inline-flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                       >
                         {structureBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                         Ajouter la classe
                       </button>
                     </div>
+                    {showSeriesReminderAdd && (
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Série (2nd cycle secondaire) <span className="text-amber-600">*</span></label>
+                        <select
+                          value={selectedGradeForClassroom?.series?.code ?? selectedSecondCycleSeriesCode ?? ''}
+                          onChange={(e) => {
+                            const code = e.target.value;
+                            if (!selectedGradeForClassroom) return;
+                            if (!code) {
+                              setSelectedSecondCycleSeriesCode('');
+                              return;
+                            }
+                            const base = selectedGradeForClassroom.name.split(' ')[0];
+                            const newGrade = allGrades.find(
+                              (g: any) => g?.level?.name === 'SECONDAIRE' && g?.cycle?.name === '2nd cycle' && g.name.startsWith(base) && g.series?.code === code
+                            );
+                            if (newGrade) {
+                              setNewClassroomGradeId(newGrade.id);
+                              setSelectedSecondCycleSeriesCode('');
+                            } else {
+                              setSelectedSecondCycleSeriesCode(code);
+                            }
+                          }}
+                          className="rounded-md border border-amber-300 bg-amber-50/50 px-3 py-2 text-sm w-48"
+                        >
+                          <option value="">Choisir la série</option>
+                          {secondCycleSeriesOptions.map((s: any) => (
+                            <option key={s.code} value={s.code}>{s.code} — {s.name ?? s.code}</option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">Obligatoire pour le 2nd cycle secondaire (A1, A2, B, C, D).</p>
+                      </div>
+                    )}
                     <div className="flex flex-wrap gap-2 mb-4">
+                      <button
+                        type="button"
+                        onClick={() => setShowBulkCreate(!showBulkCreate)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100"
+                      >
+                        <Layers className="w-3.5 h-3.5" />
+                        Création multiple
+                      </button>
                       <button
                         type="button"
                         onClick={handleDuplicateEducationClassrooms}
@@ -2032,25 +2247,204 @@ export default function SettingsPage() {
                         Dupliquer les classes vers l&apos;année suivante
                       </button>
                     </div>
-                    {educationClassrooms.length === 0 ? (
+                    {showBulkCreate && (
+                      <div className="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <h4 className="text-sm font-medium text-gray-700 mb-3">Créer plusieurs classes d&apos;un coup</h4>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <select
+                            value={bulkGradeId ?? ''}
+                            onChange={(e) => setBulkGradeId(e.target.value || null)}
+                            className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                          >
+                            <option value="">Classe pédagogique (grade)</option>
+                            {allGrades.map((g: any) => (
+                              <option key={g.id} value={g.id}>{g.level.name} → {g.cycle.name} → {formatGradeLabel(g.name)}</option>
+                            ))}
+                          </select>
+                          <label className="flex items-center gap-2 text-sm">
+                            <span>Nombre :</span>
+                            <input
+                              type="number"
+                              min={1}
+                              max={30}
+                              value={bulkCount}
+                              onChange={(e) => setBulkCount(Math.min(30, Math.max(1, parseInt(e.target.value, 10) || 1)))}
+                              className="rounded-md border border-gray-300 px-2 py-1.5 w-16 text-sm"
+                            />
+                          </label>
+                          <label className="flex items-center gap-2 text-sm">
+                            <span>Suffixe :</span>
+                            <select
+                              value={bulkSuffixType}
+                              onChange={(e) => setBulkSuffixType(e.target.value as 'letters' | 'numbers')}
+                              className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                            >
+                              <option value="letters">Lettres (A, B, C…)</option>
+                              <option value="numbers">Chiffres (1, 2, 3…)</option>
+                            </select>
+                          </label>
+                          <input
+                            type="number"
+                            min={1}
+                            placeholder="Capacité (opt.)"
+                            value={bulkCapacity}
+                            onChange={(e) => setBulkCapacity(e.target.value === '' ? '' : parseInt(e.target.value, 10) || '')}
+                            className="rounded-md border border-gray-300 px-2 py-1.5 w-24 text-sm"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleBulkCreateClassrooms}
+                            disabled={structureBusy || !bulkGradeId || (showSeriesReminderBulk && !selectedGradeForBulk?.series?.code)}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            {structureBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Layers className="w-4 h-4" />}
+                            Créer les {bulkCount} classes
+                          </button>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-2">
+                          Ex. grade CE1, 3 classes, lettres → CE1 A, CE1 B, CE1 C
+                        </p>
+                        {showSeriesReminderBulk && (
+                          <div className="mt-3">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Série (2nd cycle secondaire) <span className="text-amber-600">*</span></label>
+                            <select
+                              value={selectedGradeForBulk?.series?.code ?? ''}
+                              onChange={(e) => {
+                                const code = e.target.value;
+                                if (!code || !selectedGradeForBulk) return;
+                                const base = selectedGradeForBulk.name.split(' ')[0];
+                                const newGrade = allGrades.find(
+                                  (g: any) => g?.level?.name === 'SECONDAIRE' && g?.cycle?.name === '2nd cycle' && g.name.startsWith(base) && g.series?.code === code
+                                );
+                                if (newGrade) setBulkGradeId(newGrade.id);
+                              }}
+                              className="rounded-md border border-amber-300 bg-amber-50/50 px-3 py-2 text-sm w-48"
+                            >
+                              <option value="">Choisir la série</option>
+                              {secondCycleSeriesOptions.map((s: any) => (
+                                <option key={s.code} value={s.code}>{s.code} — {s.name ?? s.code}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {sortedClassrooms.length === 0 ? (
                       <p className="text-sm text-gray-500 py-4">Aucune classe physique pour cette année. Ajoutez-en ci-dessus.</p>
                     ) : (
-                      <ul className="space-y-2">
-                        {educationClassrooms.map((c: any) => (
-                          <li key={c.id} className="flex items-center justify-between p-2 border border-gray-200 rounded-md">
-                            <span className="font-medium">{c.name}</span>
-                            <span className="text-xs text-gray-500">{c.grade?.name ?? ''}</span>
-                            <button
-                              type="button"
-                              onClick={() => handleArchiveEducationClassroom(c.id)}
-                              disabled={structureBusy}
-                              className="text-xs text-gray-500 hover:text-red-600 disabled:opacity-50"
-                            >
-                              Archiver
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-sm border border-gray-200 rounded-md overflow-hidden">
+                          <thead>
+                            <tr className="bg-gray-50 border-b border-gray-200">
+                              <th className="text-left py-2 px-3 font-medium text-gray-700">Nom</th>
+                              <th className="text-left py-2 px-3 font-medium text-gray-700">Classe pédagogique</th>
+                              <th className="text-left py-2 px-3 font-medium text-gray-700 w-20">Série</th>
+                              <th className="text-left py-2 px-3 font-medium text-gray-700 w-24">Capacité</th>
+                              <th className="text-right py-2 px-3 font-medium text-gray-700">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sortedClassrooms.map((c: any) => (
+                              <tr key={c.id} className="border-b border-gray-100 last:border-0">
+                                <td className="py-2 px-3">
+                                  {editingClassroomId === c.id ? (
+                                    <input
+                                      type="text"
+                                      value={editingClassroomName}
+                                      onChange={(e) => setEditingClassroomName(e.target.value)}
+                                      className="rounded border border-gray-300 px-2 py-1 w-full max-w-[140px]"
+                                      autoFocus
+                                    />
+                                  ) : (
+                                    <span className="font-medium">{formatGradeLabel(c.name)}</span>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3 text-gray-600">{formatGradeLabel(c.grade?.name) || '—'}</td>
+                                <td className="py-2 px-3 text-gray-600">
+                                  {editingClassroomId === c.id &&
+                                  c.grade?.level?.name === 'SECONDAIRE' &&
+                                  c.grade?.cycle?.name === '2nd cycle' ? (
+                                    <select
+                                      value={editingClassroomSeriesCode}
+                                      onChange={(e) => setEditingClassroomSeriesCode(e.target.value)}
+                                      className="rounded border border-gray-300 px-2 py-1 text-sm min-w-[4rem] w-24 bg-white cursor-pointer focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                      aria-label="Série"
+                                    >
+                                      <option value="">—</option>
+                                      {(secondCycleSeriesOptions.length > 0 ? secondCycleSeriesOptions : SECOND_CYCLE_SERIES_FALLBACK).map((s: any) => (
+                                        <option key={s.code} value={s.code}>{s.code}</option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    c.grade?.series?.code ?? '—'
+                                  )}
+                                </td>
+                                <td className="py-2 px-3">
+                                  {editingClassroomId === c.id ? (
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      value={editingClassroomCapacity}
+                                      onChange={(e) => setEditingClassroomCapacity(e.target.value === '' ? '' : parseInt(e.target.value, 10) || '')}
+                                      placeholder="—"
+                                      className="rounded border border-gray-300 px-2 py-1 w-20"
+                                    />
+                                  ) : (
+                                    <span>{c.capacity != null ? c.capacity : '—'}</span>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3 text-right">
+                                  {editingClassroomId === c.id ? (
+                                    <span className="flex items-center justify-end gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={handleUpdateEducationClassroom}
+                                        disabled={structureBusy}
+                                        className="text-blue-600 hover:underline text-xs disabled:opacity-50"
+                                      >
+                                        Enregistrer
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => { setEditingClassroomId(null); setEditingClassroomName(''); setEditingClassroomCapacity(''); setEditingClassroomSeriesCode(''); }}
+                                        className="text-gray-500 hover:underline text-xs"
+                                      >
+                                        Annuler
+                                      </button>
+                                    </span>
+                                  ) : (
+                                    <span className="flex items-center justify-end gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingClassroomId(c.id);
+                                          setEditingClassroomName(c.name ?? '');
+                                          setEditingClassroomCapacity(c.capacity ?? '');
+                                          setEditingClassroomSeriesCode(c.grade?.series?.code ?? '');
+                                        }}
+                                        disabled={structureBusy}
+                                        className="text-gray-500 hover:text-blue-600 disabled:opacity-50"
+                                        title="Modifier"
+                                      >
+                                        <Pencil className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleArchiveEducationClassroom(c.id)}
+                                        disabled={structureBusy}
+                                        className="text-gray-500 hover:text-red-600 disabled:opacity-50"
+                                        title="Archiver"
+                                      >
+                                        Archiver
+                                      </button>
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     )}
                   </>
                 )}

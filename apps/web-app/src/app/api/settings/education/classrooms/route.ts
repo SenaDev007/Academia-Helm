@@ -30,7 +30,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const headers = await getProxyAuthHeaders(request);
-    if (!headers['Authorization']) {
+    const hasAuth = headers['Authorization'] || headers['Cookie'];
+    if (!hasAuth) {
       return NextResponse.json({ error: 'Non authentifié', code: 'UNAUTHORIZED' }, { status: 401 });
     }
     const body = await request.json().catch(() => ({}));

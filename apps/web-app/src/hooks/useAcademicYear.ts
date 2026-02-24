@@ -2,70 +2,19 @@
  * ============================================================================
  * USE ACADEMIC YEAR HOOK
  * ============================================================================
- * 
- * Hook pour gérer l'année scolaire courante
- * Persiste dans localStorage
+ *
+ * Utilise le contexte partagé (AcademicYearProvider) pour que le sélecteur
+ * dans le header et tout le contenu (modules, dashboard, sidebar) voient
+ * la même année courante. Au changement d'année, toutes les données
+ * dans tous les modules basculent vers l'année sélectionnée.
+ * Persiste dans localStorage.
  * ============================================================================
  */
 
-import { useState, useEffect } from 'react';
+import { useAcademicYearContext } from '@/contexts/AcademicYearContext';
 
-interface AcademicYear {
-  id: string;
-  name: string;
-  startDate: string;
-  endDate: string;
-  isCurrent: boolean;
-}
+export type { AcademicYear } from '@/contexts/AcademicYearContext';
 
 export function useAcademicYear() {
-  const [currentYear, setCurrentYearState] = useState<AcademicYear | null>(null);
-  const [availableYears, setAvailableYears] = useState<AcademicYear[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    const loadAcademicYears = async () => {
-      try {
-        const response = await fetch('/api/academic-years');
-        if (response.ok) {
-          const years: AcademicYear[] = await response.json();
-          setAvailableYears(years);
-
-          // Récupérer l'année sauvegardée ou utiliser l'année active
-          const savedYearId = localStorage.getItem('currentAcademicYearId');
-          const activeYear = years.find(y => y.isCurrent);
-          const selectedYear = savedYearId
-            ? years.find(y => y.id === savedYearId) || activeYear
-            : activeYear;
-
-          if (selectedYear) {
-            setCurrentYearState(selectedYear);
-            localStorage.setItem('currentAcademicYearId', selectedYear.id);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to load academic years:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadAcademicYears();
-  }, []);
-
-  const setCurrentYear = (yearId: string) => {
-    const year = availableYears.find(y => y.id === yearId);
-    if (year) {
-      setCurrentYearState(year);
-      localStorage.setItem('currentAcademicYearId', yearId);
-    }
-  };
-
-  return {
-    currentYear,
-    setCurrentYear,
-    availableYears,
-    isLoading,
-  };
+  return useAcademicYearContext();
 }
-

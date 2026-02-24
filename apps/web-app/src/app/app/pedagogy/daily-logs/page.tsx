@@ -13,6 +13,7 @@ import {
   FormModal,
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { formatGradeLabel } from '@/lib/utils';
 
 interface DailyLog {
   id: string;
@@ -115,7 +116,7 @@ export default function DailyLogsPage() {
                       {log.teacher.lastName} {log.teacher.firstName}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {log.class?.name || '-'}
+                      {formatGradeLabel(log.class?.name) || '-'}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-500">
                       {log.summary.substring(0, 100)}

@@ -21,6 +21,7 @@ import {
   RefreshCw,
   Download,
 } from 'lucide-react';
+import { formatGradeLabel } from '@/lib/utils';
 
 interface DossierData {
   identity: {
@@ -293,7 +294,7 @@ export default function StudentDossierSection({ studentId }: { studentId: string
                       <div key={record.id} className="bg-gray-50 rounded-lg p-4">
                         <div className="flex items-center justify-between mb-2">
                           <h4 className="font-semibold text-gray-900">{record.academicYear.name}</h4>
-                          <span className="text-sm text-gray-600">{record.class?.name || 'Non affecté'}</span>
+                          <span className="text-sm text-gray-600">{formatGradeLabel(record.class?.name) || 'Non affecté'}</span>
                         </div>
                         <div className="grid grid-cols-3 gap-4 text-sm">
                           {record.averageScore && (

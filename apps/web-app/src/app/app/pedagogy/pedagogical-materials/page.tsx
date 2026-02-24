@@ -9,6 +9,7 @@
 import { useState, useEffect } from 'react';
 import { Package, Plus, Search, Filter, FileText, Users, TrendingUp } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { formatGradeLabel } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -253,7 +254,7 @@ export default function PedagogicalMaterialsPage() {
                           {stock.material?.name || '-'}
                         </TableCell>
                         <TableCell>{stock.schoolLevel?.name || '-'}</TableCell>
-                        <TableCell>{stock.class?.name || 'Tous'}</TableCell>
+                        <TableCell>{formatGradeLabel(stock.class?.name) || 'Tous'}</TableCell>
                         <TableCell className="text-right font-medium">
                           {stock.quantityTotal}
                         </TableCell>

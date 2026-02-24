@@ -9,6 +9,8 @@
 
 import { PostLoginFlowWrapper } from '@/components/loading/PostLoginFlowWrapper';
 import { AppSessionProvider } from '@/contexts/AppSessionContext';
+import { AcademicYearProvider } from '@/contexts/AcademicYearContext';
+import { SchoolLevelProvider } from '@/contexts/SchoolLevelContext';
 import type { User, Tenant } from '@/types';
 
 export interface AppLayoutClientProps {
@@ -30,9 +32,13 @@ export default function AppLayoutClient({
 }: AppLayoutClientProps) {
   return (
     <AppSessionProvider user={user} tenant={tenant}>
-      <PostLoginFlowWrapper user={user} tenant={tenant}>
-        {children}
-      </PostLoginFlowWrapper>
+      <AcademicYearProvider>
+        <SchoolLevelProvider>
+          <PostLoginFlowWrapper user={user} tenant={tenant}>
+            {children}
+          </PostLoginFlowWrapper>
+        </SchoolLevelProvider>
+      </AcademicYearProvider>
     </AppSessionProvider>
   );
 }

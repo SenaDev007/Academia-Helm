@@ -15,6 +15,7 @@ import {
   ReadOnlyModal,
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { formatGradeLabel } from '@/lib/utils';
 
 interface CouncilDecision {
   id: string;
@@ -207,7 +208,7 @@ export default function CouncilDecisionsPage() {
                       {decision.student?.firstName} {decision.student?.lastName}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {decision.council?.class?.name || '-'}
+                      {formatGradeLabel(decision.council?.class?.name) || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span

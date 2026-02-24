@@ -38,7 +38,8 @@
     "studio": "npx prisma studio --schema=prisma/schema.prisma --port 51212",
     "seed": "ts-node prisma/seed.ts",
     "db:seed": "ts-node prisma/seed.ts",
-    "migrate:maternelle-educmaster": "ts-node -r tsconfig-paths/register scripts/migrate-maternelle-educmaster.ts"
+    "migrate:maternelle-educmaster": "ts-node -r tsconfig-paths/register scripts/migrate-maternelle-educmaster.ts",
+    "seed:education-series": "ts-node -r tsconfig-paths/register scripts/seed-education-series-and-second-cycle.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.0",

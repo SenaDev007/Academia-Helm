@@ -14,6 +14,7 @@ import {
   ReadOnlyModal,
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { formatGradeLabel } from '@/lib/utils';
 
 interface HonorRoll {
   id: string;
@@ -205,7 +206,7 @@ export default function HonorRollsPage() {
                       {roll.student?.firstName} {roll.student?.lastName}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {roll.class?.name || '-'}
+                      {formatGradeLabel(roll.class?.name) || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-semibold">
                       {roll.average.toFixed(2)}

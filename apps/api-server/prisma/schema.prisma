@@ -28,6 +28,7 @@ model Tenant {
   academicYears                    AcademicYear[]
   academicPeriods                  AcademicPeriod[]
   educationLevels                  EducationLevel[]
+  educationSeries                  EducationSeries[]
   classrooms                       Classroom[]
   activityLogs                     ActivityLog[]
   administrativeSeals              AdministrativeSeal[]              @relation("AdministrativeSealTenant")
@@ -541,20 +542,40 @@ model EducationCycle {
   @@map("education_cycles")
 }
 
-/// Classe pédagogique (ex. CE1, 6ème). Non supprimable, référence officielle.
+/// Série du 2nd cycle secondaire (Bénin) : A1, A2, B, C, D. Optionnelle sur un grade.
+model EducationSeries {
+  id        String   @id @default(uuid())
+  tenantId  String
+  code      String   // A1, A2, B, C, D
+  name      String?  // libellé optionnel (ex. "Série scientifique")
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  grades    EducationGrade[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("education_series")
+}
+
+/// Classe pédagogique (ex. CE1, 6ème, Terminale C). Peut être liée à une série (2nd cycle secondaire).
 model EducationGrade {
   id         String   @id @default(uuid())
   cycleId    String
+  seriesId   String?  // optionnel : 2nd cycle secondaire (série A1, A2, B, C, D)
   name       String
   code       String
   order      Int      @default(0)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
-  cycle      EducationCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  cycle      EducationCycle  @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  series     EducationSeries? @relation(fields: [seriesId], references: [id], onDelete: SetNull)
   classrooms Classroom[]
 
   @@unique([cycleId, code])
   @@index([cycleId])
+  @@index([seriesId])
   @@map("education_grades")
 }
 

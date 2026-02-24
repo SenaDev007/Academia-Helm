@@ -12,8 +12,20 @@ const DEFAULT_LEVELS: { name: string; order: number }[] = [
   { name: 'SECONDAIRE', order: 3 },
 ];
 
+/** Séries du 2nd cycle secondaire (Bénin). */
+const DEFAULT_SERIES = [
+  { code: 'A1', name: 'Série A1', order: 1 },
+  { code: 'A2', name: 'Série A2', order: 2 },
+  { code: 'B', name: 'Série B', order: 3 },
+  { code: 'C', name: 'Série C', order: 4 },
+  { code: 'D', name: 'Série D', order: 5 },
+] as const;
+
 /** Aligné plateforme nationale Bénin Educmaster : Maternelle 1 et Maternelle 2 (au lieu de PS, MS, GS). */
-const DEFAULT_CYCLES_AND_GRADES: Record<string, { cycles: { name: string; order: number; grades: { name: string; code: string; order: number }[] }[] }> = {
+const DEFAULT_CYCLES_AND_GRADES: Record<
+  string,
+  { cycles: { name: string; order: number; grades: { name: string; code: string; order: number; seriesCode?: string }[] }[] }
+> = {
   MATERNELLE: {
     cycles: [
       { name: 'Maternelle 1', order: 1, grades: [{ name: 'Maternelle 1', code: 'MAT1', order: 1 }] },
@@ -42,13 +54,26 @@ const DEFAULT_CYCLES_AND_GRADES: Record<string, { cycles: { name: string; order:
           { name: '3ème', code: '3EME', order: 4 },
         ],
       },
+      // 2nd cycle : chaque grade est lié à une série (EducationSeries). Les classes physiques peuvent avoir un suffixe (ex. Terminale C 1).
       {
         name: '2nd cycle',
         order: 2,
         grades: [
-          { name: '2nde', code: '2NDE', order: 1 },
-          { name: '1ère', code: '1ERE', order: 2 },
-          { name: 'Terminale', code: 'TLE', order: 3 },
+          { name: '2nde A1', code: '2NDE_A1', order: 1, seriesCode: 'A1' },
+          { name: '2nde A2', code: '2NDE_A2', order: 2, seriesCode: 'A2' },
+          { name: '2nde B', code: '2NDE_B', order: 3, seriesCode: 'B' },
+          { name: '2nde C', code: '2NDE_C', order: 4, seriesCode: 'C' },
+          { name: '2nde D', code: '2NDE_D', order: 5, seriesCode: 'D' },
+          { name: '1ère A1', code: '1ERE_A1', order: 6, seriesCode: 'A1' },
+          { name: '1ère A2', code: '1ERE_A2', order: 7, seriesCode: 'A2' },
+          { name: '1ère B', code: '1ERE_B', order: 8, seriesCode: 'B' },
+          { name: '1ère C', code: '1ERE_C', order: 9, seriesCode: 'C' },
+          { name: '1ère D', code: '1ERE_D', order: 10, seriesCode: 'D' },
+          { name: 'Terminale A1', code: 'TLE_A1', order: 11, seriesCode: 'A1' },
+          { name: 'Terminale A2', code: 'TLE_A2', order: 12, seriesCode: 'A2' },
+          { name: 'Terminale B', code: 'TLE_B', order: 13, seriesCode: 'B' },
+          { name: 'Terminale C', code: 'TLE_C', order: 14, seriesCode: 'C' },
+          { name: 'Terminale D', code: 'TLE_D', order: 15, seriesCode: 'D' },
         ],
       },
     ],
@@ -86,6 +111,19 @@ export class EducationStructureService {
       orderBy: { order: 'asc' },
     });
 
+    // Créer les séries par défaut (2nd cycle secondaire) pour ce tenant
+    for (const s of DEFAULT_SERIES) {
+      await this.prisma.educationSeries.upsert({
+        where: { tenantId_code: { tenantId, code: s.code } },
+        create: { tenantId, code: s.code, name: s.name, order: s.order },
+        update: { name: s.name, order: s.order },
+      });
+    }
+
+    const seriesByCode = await this.prisma.educationSeries.findMany({
+      where: { tenantId },
+    }).then((list) => new Map(list.map((s) => [s.code, s.id])));
+
     for (const level of levels) {
       const config = DEFAULT_CYCLES_AND_GRADES[level.name];
       if (!config) continue;
@@ -104,17 +142,24 @@ export class EducationStructureService {
           });
         }
         for (const gr of cy.grades) {
+          const seriesId = gr.seriesCode ? seriesByCode.get(gr.seriesCode) ?? null : null;
           const existingGrade = await this.prisma.educationGrade.findFirst({
             where: { cycleId: cycle.id, code: gr.code },
           });
           if (!existingGrade) {
             await this.prisma.educationGrade.create({
-              data: { cycleId: cycle.id, name: gr.name, code: gr.code, order: gr.order },
+              data: {
+                cycleId: cycle.id,
+                seriesId: seriesId ?? undefined,
+                name: gr.name,
+                code: gr.code,
+                order: gr.order,
+              },
             });
           } else {
             await this.prisma.educationGrade.update({
               where: { id: existingGrade.id },
-              data: { name: gr.name, order: gr.order },
+              data: { name: gr.name, order: gr.order, seriesId: seriesId ?? undefined },
             });
           }
         }
@@ -136,7 +181,10 @@ export class EducationStructureService {
         cycles: {
           orderBy: { order: 'asc' },
           include: {
-            grades: { orderBy: { order: 'asc' } },
+            grades: {
+              orderBy: { order: 'asc' },
+              include: { series: true },
+            },
           },
         },
       },
@@ -159,6 +207,7 @@ export class EducationStructureService {
         grade: {
           include: {
             cycle: { include: { level: true } },
+            series: true,
           },
         },
       },
@@ -179,7 +228,7 @@ export class EducationStructureService {
     if (!year) throw new NotFoundException('Année scolaire non trouvée.');
     const grade = await this.prisma.educationGrade.findFirst({
       where: { id: data.gradeId },
-      include: { cycle: { include: { level: true } } },
+      include: { cycle: { include: { level: true } }, series: true },
     });
     if (!grade || grade.cycle.level.tenantId !== tenantId)
       throw new NotFoundException('Classe pédagogique (grade) non trouvée.');
@@ -199,21 +248,29 @@ export class EducationStructureService {
         isArchived: false,
       },
       include: {
-        grade: { include: { cycle: { include: { level: true } } } },
+        grade: { include: { cycle: { include: { level: true } }, series: true } },
       },
     });
   }
 
   /**
-   * Mise à jour d'une classe physique (nom, code, capacité, isActive).
+   * Mise à jour d'une classe physique (nom, code, capacité, isActive, gradeId pour changer la série).
    */
   async updateClassroom(
     tenantId: string,
     id: string,
-    data: { name?: string; code?: string; capacity?: number; isActive?: boolean },
+    data: { name?: string; code?: string; capacity?: number; isActive?: boolean; gradeId?: string },
   ) {
     const existing = await this.prisma.classroom.findFirst({ where: { id, tenantId } });
     if (!existing) throw new NotFoundException('Classe non trouvée.');
+    if (data.gradeId !== undefined) {
+      const grade = await this.prisma.educationGrade.findFirst({
+        where: { id: data.gradeId },
+        include: { cycle: { include: { level: true } } },
+      });
+      if (!grade || grade.cycle.level.tenantId !== tenantId)
+        throw new NotFoundException('Classe pédagogique (grade) non trouvée.');
+    }
     return this.prisma.classroom.update({
       where: { id, tenantId },
       data: {
@@ -221,9 +278,10 @@ export class EducationStructureService {
         ...(data.code !== undefined && { code: data.code.trim() || null }),
         ...(data.capacity !== undefined && { capacity: data.capacity }),
         ...(data.isActive !== undefined && { isActive: data.isActive }),
+        ...(data.gradeId !== undefined && { gradeId: data.gradeId }),
       },
       include: {
-        grade: { include: { cycle: { include: { level: true } } } },
+        grade: { include: { cycle: { include: { level: true } }, series: true } },
       },
     });
   }
@@ -240,7 +298,7 @@ export class EducationStructureService {
       where: { id, tenantId },
       data: { isArchived: true, isActive: false },
       include: {
-        grade: { include: { cycle: { include: { level: true } } } },
+        grade: { include: { cycle: { include: { level: true } }, series: true } },
       },
     });
   }
@@ -271,7 +329,7 @@ export class EducationStructureService {
           isArchived: false,
         },
         include: {
-          grade: { include: { cycle: { include: { level: true } } } },
+          grade: { include: { cycle: { include: { level: true } }, series: true } },
         },
       });
       created.push(createdOne);

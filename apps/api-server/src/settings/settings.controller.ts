@@ -1369,7 +1369,7 @@ export class SettingsController {
     @CurrentUser() user: any,
     @Request() req: any,
     @Param('id') id: string,
-    @Body() data: { name?: string; code?: string; capacity?: number; isActive?: boolean },
+    @Body() data: { name?: string; code?: string; capacity?: number; isActive?: boolean; gradeId?: string },
   ) {
     return this.educationStructureService.updateClassroom(this.resolveTid(tenantId, user, req), id, data);
   }

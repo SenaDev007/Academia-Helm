@@ -13,6 +13,7 @@ import {
   FormModal,
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { formatGradeLabel } from '@/lib/utils';
 
 interface ClassDiary {
   id: string;
@@ -114,7 +115,7 @@ export default function ClassDiariesPage() {
                       {new Date(diary.date).toLocaleDateString('fr-FR')}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {diary.classSubject.class.name}
+                      {formatGradeLabel(diary.classSubject.class.name)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {diary.classSubject.subject.name}

@@ -13,14 +13,24 @@ export type ProxyAuthHeaders = Record<string, string> & {
   'x-tenant-id'?: string;
 };
 
+/** Extrait le token depuis l'en-tête Cookie brut (fallback si cookies() ne le renvoie pas). */
+function getTokenFromCookieHeader(cookieHeader: string | null): string | null {
+  if (!cookieHeader) return null;
+  const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${TOKEN_COOKIE}=([^;]*)`));
+  return match ? decodeURIComponent(match[1].trim()) : null;
+}
+
 /**
  * Récupère le token JWT et le tenant pour les appels au backend.
- * Priorité : header Authorization > cookie academia_token (via next/headers) > getServerToken() > session.token.
+ * Priorité : header Authorization > request.cookies (Route Handler) > next/headers cookies > Cookie header brut > getServerToken() > session.token.
  */
 export async function getProxyAuthHeaders(request: NextRequest): Promise<ProxyAuthHeaders> {
   const authHeader = request.headers.get('Authorization');
+  const requestCookieToken = request.cookies.get(TOKEN_COOKIE)?.value?.trim();
   const cookieStore = await cookies();
-  const cookieToken = cookieStore.get(TOKEN_COOKIE)?.value?.trim();
+  const cookieToken = requestCookieToken
+    ?? cookieStore.get(TOKEN_COOKIE)?.value?.trim()
+    ?? getTokenFromCookieHeader(request.headers.get('cookie'));
   const sessionToken = await getServerToken();
   const session = await getServerSession();
   const sessionTokenAlt = session?.token?.trim();
@@ -39,6 +49,11 @@ export async function getProxyAuthHeaders(request: NextRequest): Promise<ProxyAu
   };
   if (token) {
     headers['Authorization'] = token;
+  }
+  // Transmettre le cookie au backend pour que l'API puisse extraire le JWT (fallback si Authorization manquant)
+  const cookieHeader = request.headers.get('cookie');
+  if (cookieHeader) {
+    headers['Cookie'] = cookieHeader;
   }
 
   const tenantId =

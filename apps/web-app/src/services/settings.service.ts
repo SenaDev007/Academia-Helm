@@ -192,7 +192,7 @@ export async function createEducationClassroom(
 
 export async function updateEducationClassroom(
   id: string,
-  data: { name?: string; code?: string; capacity?: number; isActive?: boolean },
+  data: { name?: string; code?: string; capacity?: number; isActive?: boolean; gradeId?: string },
   tenantId?: string | null
 ) {
   const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';

@@ -30,6 +30,7 @@ import {
   ReadOnlyModal,
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { formatGradeLabel } from '@/lib/utils';
 
 // ============================================================================
 // TYPES
@@ -266,7 +267,7 @@ export default function StudentsModulePage() {
     const activeEnrollment = student.studentEnrollments?.find(
       (e) => e.status === 'ACTIVE' || e.status === 'VALIDATED'
     );
-    return activeEnrollment?.class?.name || 'Non affecté';
+    return formatGradeLabel(activeEnrollment?.class?.name) || 'Non affecté';
   };
 
   // ============================================================================
@@ -648,7 +649,7 @@ export default function StudentsModulePage() {
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm font-medium text-gray-900">
-                          {enrollment.class?.name || 'Non affecté'}
+                          {formatGradeLabel(enrollment.class?.name) || 'Non affecté'}
                         </p>
                         <p className="text-xs text-gray-600">
                           Type: {enrollment.enrollmentType} | Statut: {enrollment.status}

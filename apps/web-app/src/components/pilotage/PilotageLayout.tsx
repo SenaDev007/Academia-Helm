@@ -20,6 +20,7 @@ import PilotageTopBar from './PilotageTopBar';
 import PilotageSidebar from './PilotageSidebar';
 import { OfflineStatusBadge } from '@/components/offline/OfflineStatusBadge';
 import { SyncToast } from '@/components/offline/SyncToast';
+import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import type { User, Tenant } from '@/types';
 
 interface PilotageLayoutProps {
@@ -30,6 +31,7 @@ interface PilotageLayoutProps {
 
 export default function PilotageLayout({ user, tenant, children }: PilotageLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const { currentLevel } = useSchoolLevel();
 
   // Initialiser les services offline
   useEffect(() => {
@@ -51,17 +53,21 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50 overflow-x-hidden">
+    <div className="min-h-screen bg-gray-50 overflow-x-hidden flex flex-col">
       {/* Badge Offline/Online Status */}
       <OfflineStatusBadge />
       
       {/* Toast Synchronisation */}
       <SyncToast />
 
-      {/* Top Bar - Fixé en haut */}
+      {/* Top Bar - Fixe en haut, toujours visible */}
       <PilotageTopBar user={user} tenant={tenant} />
 
-      <div className="flex">
+      {/* Spacer pour éviter que le contenu passe sous la barre fixe (hauteur ~ barre) */}
+      <div className="h-14 shrink-0" aria-hidden />
+
+      {/* Zone principale + footer : flex-1 pour occuper l'espace et garder le footer en bas */}
+      <div className="flex flex-1 min-h-0">
         {/* Sidebar */}
         <PilotageSidebar
           isOpen={sidebarOpen}
@@ -69,20 +75,20 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
           user={user}
         />
 
-        {/* Main Content - avec scroll contenu isolé */}
+        {/* Main Content - scroll interne si contenu long */}
         <main
-          className={`flex-1 transition-all duration-300 overflow-x-hidden ${
+          className={`flex-1 min-h-0 transition-all duration-300 overflow-x-hidden overflow-y-auto ${
             sidebarOpen ? 'ml-64' : 'ml-16'
           }`}
         >
-          <div className="p-6">
+          <div className="p-6" key={currentLevel?.id ?? 'no-level'}>
             {children}
           </div>
         </main>
       </div>
 
-      {/* Footer minimal — avec décalage pour la sidebar */}
-      <footer className={`bg-white border-t border-gray-200 px-6 h-[1cm] min-h-[28px] flex items-center transition-all duration-300 ${
+      {/* Footer — toujours en bas de l'app (shrink-0 pour ne pas être compressé) */}
+      <footer className={`shrink-0 bg-white border-t border-gray-200 px-6 py-2 flex items-center transition-all duration-300 ${
         sidebarOpen ? 'ml-64' : 'ml-16'
       }`}>
         <div className="flex items-center justify-between text-xs text-gray-600 w-full">

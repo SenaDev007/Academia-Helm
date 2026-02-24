@@ -18,7 +18,23 @@ export default function SchoolLevelSelector() {
   const { currentLevel, setCurrentLevel, availableLevels, isLoading } = useSchoolLevel();
   const [isOpen, setIsOpen] = useState(false);
 
-  if (isLoading || !currentLevel) {
+  if (isLoading) {
+    return (
+      <div className="flex items-center space-x-2 px-3 py-2 bg-gray-50 rounded-md">
+        <GraduationCap className="w-4 h-4 text-gray-400" />
+        <span className="text-sm text-gray-500">Chargement...</span>
+      </div>
+    );
+  }
+  if (!availableLevels.length) {
+    return (
+      <div className="flex items-center space-x-2 px-3 py-2 bg-amber-50 rounded-md border border-amber-200">
+        <GraduationCap className="w-4 h-4 text-amber-600" />
+        <span className="text-sm text-amber-800">Aucun niveau activé</span>
+      </div>
+    );
+  }
+  if (!currentLevel) {
     return (
       <div className="flex items-center space-x-2 px-3 py-2 bg-gray-50 rounded-md">
         <GraduationCap className="w-4 h-4 text-gray-400" />

@@ -13,6 +13,7 @@ import {
   FormModal,
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { formatGradeLabel } from '@/lib/utils';
 
 interface LessonPlan {
   id: string;
@@ -109,7 +110,7 @@ export default function LessonPlansPage() {
                       {plan.title}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {plan.class?.name || '-'}
+                      {formatGradeLabel(plan.class?.name) || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {plan.subject?.name || '-'}

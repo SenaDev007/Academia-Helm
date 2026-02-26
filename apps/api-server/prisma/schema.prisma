@@ -184,6 +184,7 @@ model Tenant {
   resourceAccessLogs               ResourceAccessLog[]
   riskAlerts                       RiskAlert[]
   roles                            Role[]
+  userRoleAssignments              UserRole[]
   roomAllocations                  RoomAllocation[]
   roomReservations                 RoomReservation[]
   rooms                            Room[]
@@ -1085,18 +1086,22 @@ model Permission {
 }
 
 model UserRole {
-  userId String
-  roleId String
-  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  roleId    String
+  tenantId  String?   // Contexte tenant pour isolation stricte (null = rôle plateforme)
+  role      Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant    Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@id([userId, roleId])
+  @@index([tenantId])
   @@map("user_roles")
 }
 
 model RolePermission {
   roleId       String
   permissionId String
+  levelScope   String?    // Niveau scolaire optionnel (scope de la permission)
   permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
   role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
@@ -1280,6 +1285,7 @@ model Subject {
   academicYearId       String
   schoolLevelId        String
   academicTrackId      String?
+  language             String?               // FR | EN — option bilingue (séparation pédagogique)
   name                 String
   code                 String
   coefficient          Float                 @default(1.0)
@@ -1357,6 +1363,7 @@ model Grade {
   academicYearId  String
   schoolLevelId   String
   academicTrackId String?
+  language        String?        // FR | EN — option bilingue
   studentId       String
   subjectId       String
   examId          String?
@@ -2420,14 +2427,17 @@ model SettingsBilingual {
   isEnabled                   Boolean   @default(false)
   separateSubjects            Boolean   @default(true)
   separateGrades              Boolean   @default(true)
-  defaultUILanguage           String    @default("FR")
+  defaultLanguage             String    @default("FR")   // FR | EN — langue par défaut pour évaluations
+  defaultUILanguage           String    @default("FR")  // préférence interface
 
-  // Migration
+  // Migration (activation avec données existantes)
   migrationRequired           Boolean   @default(false)
   migrationStatus             String?
   migratedAt                  DateTime?
+  activatedAt                 DateTime? // date d’activation du mode bilingue
 
-  // Impact facturation
+  // Impact facturation (supplément mensuel en centimes ou unité devise)
+  pricingSupplement           Int?      @default(0)
   billingImpactAcknowledged   Boolean   @default(false)
 
   createdAt                   DateTime  @default(now())
@@ -4857,6 +4867,7 @@ model ExamScore {
   academicYearId  String
   schoolLevelId   String
   academicTrackId String?
+  language        String?        // FR | EN — option bilingue
   examId          String
   studentId       String
   subjectId       String
@@ -4946,6 +4957,7 @@ model ReportCard {
   academicYearId  String
   schoolLevelId   String
   academicTrackId String?
+  language        String?         // FR | EN — option bilingue
   studentId       String
   quarterId       String?
   type            String

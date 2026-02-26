@@ -93,14 +93,16 @@ export async function updateGeneralSettings(data: {
 // IDENTITÉ ÉTABLISSEMENT — SOURCE LÉGALE DE VÉRITÉ VERSIONNÉE
 // ============================================================================
 
-export async function getActiveIdentityProfile() {
-  return fetchWithAuth(`${BASE_URL}/identity`);
+export async function getActiveIdentityProfile(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/identity${qs}`);
 }
 
-export async function getIdentityHistory(options?: { limit?: number; offset?: number }) {
+export async function getIdentityHistory(options?: { limit?: number; offset?: number }, tenantId?: string | null) {
   const params = new URLSearchParams();
   if (options?.limit) params.append('limit', options.limit.toString());
   if (options?.offset) params.append('offset', options.offset.toString());
+  if (tenantId) params.append('tenant_id', tenantId);
   return fetchWithAuth(`${BASE_URL}/identity/history?${params.toString()}`);
 }
 
@@ -126,22 +128,25 @@ export async function createIdentityVersion(data: {
   stampUrl?: string;
   directorSignatureUrl?: string;
   changeReason?: string;
-}) {
-  return fetchWithAuth(`${BASE_URL}/identity`, {
+}, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/identity${qs}`, {
     method: 'POST',
     body: JSON.stringify(data),
   });
 }
 
-export async function activateIdentityVersion(versionId: string, reason?: string) {
-  return fetchWithAuth(`${BASE_URL}/identity/activate/${versionId}`, {
+export async function activateIdentityVersion(versionId: string, reason?: string, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/identity/activate/${versionId}${qs}`, {
     method: 'PUT',
     body: JSON.stringify({ reason }),
   });
 }
 
-export async function getIdentityPreview() {
-  return fetchWithAuth(`${BASE_URL}/identity/preview`);
+export async function getIdentityPreview(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/identity/preview${qs}`);
 }
 
 // ============================================================================
@@ -228,46 +233,80 @@ export async function setEducationLevelEnabled(id: string, isEnabled: boolean, t
 // OPTION BILINGUE
 // ============================================================================
 
-export async function getBilingualSettings() {
-  return fetchWithAuth(`${BASE_URL}/bilingual`);
+export async function getBilingualSettings(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/bilingual${qs}`);
 }
 
 export async function updateBilingualSettings(data: {
   isEnabled?: boolean;
   separateSubjects?: boolean;
   separateGrades?: boolean;
+  defaultLanguage?: string;
   defaultUILanguage?: string;
   billingImpactAcknowledged?: boolean;
-}) {
-  return fetchWithAuth(`${BASE_URL}/bilingual`, {
+  pricingSupplement?: number;
+}, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/bilingual${qs}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
 }
 
-export async function getBilingualBillingImpact() {
-  return fetchWithAuth(`${BASE_URL}/bilingual/billing-impact`);
+export async function getBilingualCheckMigration(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/bilingual/check-migration${qs}`);
+}
+
+export async function getBilingualBillingImpact(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/bilingual/billing-impact${qs}`);
+}
+
+export async function startBilingualMigration(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/bilingual/migrate${qs}`, { method: 'POST' });
 }
 
 // ============================================================================
-// FEATURE FLAGS
+// FEATURE FLAGS (Modules & fonctionnalités)
 // ============================================================================
 
-export async function getFeatures() {
-  return fetchWithAuth(`${BASE_URL}/features`);
+export async function getFeatures(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/features${qs}`);
 }
 
-export async function enableFeature(featureCode: string, reason?: string) {
-  return fetchWithAuth(`${BASE_URL}/features/${featureCode}/enable`, {
+export async function enableFeature(featureCode: string, reason?: string, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/features/${featureCode}/enable${qs}`, {
     method: 'POST',
     body: JSON.stringify({ reason }),
   });
 }
 
-export async function disableFeature(featureCode: string, reason?: string) {
-  return fetchWithAuth(`${BASE_URL}/features/${featureCode}/disable`, {
+export async function disableFeature(featureCode: string, reason?: string, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/features/${featureCode}/disable${qs}`, {
     method: 'POST',
     body: JSON.stringify({ reason }),
+  });
+}
+
+export async function enableAllModules(reason?: string, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/features/enable-all${qs}`, {
+    method: 'POST',
+    body: JSON.stringify({ reason: reason ?? 'Activation globale depuis les paramètres' }),
+  });
+}
+
+export async function disableAllModules(reason?: string, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/features/disable-all${qs}`, {
+    method: 'POST',
+    body: JSON.stringify({ reason: reason ?? 'Désactivation globale depuis les paramètres' }),
   });
 }
 
@@ -591,11 +630,20 @@ export async function getSettingsHistory(options?: {
 }
 
 // ============================================================================
-// RÔLES & PERMISSIONS
+// RÔLES & PERMISSIONS (RBAC multi-tenant)
 // ============================================================================
 
-export async function getRoles() {
-  return fetchWithAuth(`${BASE_URL}/roles`);
+function rolesQs(tenantId?: string | null) {
+  return tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+}
+
+/** Force la création des permissions et rôles système en BDD si absents (production, idempotent). */
+export async function ensureRbacInitialized() {
+  return fetchWithAuth(`${BASE_URL}/rbac/ensure-initialized`, { method: 'POST' });
+}
+
+export async function getRoles(tenantId?: string | null) {
+  return fetchWithAuth(`${BASE_URL}/roles${rolesQs(tenantId)}`);
 }
 
 export async function getPermissions() {
@@ -613,8 +661,9 @@ export async function createRole(data: {
   canAccessOrion?: boolean;
   canAccessAtlas?: boolean;
   allowedLevelIds?: string[];
-}) {
-  return fetchWithAuth(`${BASE_URL}/roles`, {
+  permissionIds?: string[];
+}, tenantId?: string | null) {
+  return fetchWithAuth(`${BASE_URL}/roles${rolesQs(tenantId)}`, {
     method: 'POST',
     body: JSON.stringify(data),
   });
@@ -626,23 +675,47 @@ export async function updateRole(roleId: string, data: {
   canAccessOrion?: boolean;
   canAccessAtlas?: boolean;
   allowedLevelIds?: string[];
-}) {
-  return fetchWithAuth(`${BASE_URL}/roles/${roleId}`, {
+}, tenantId?: string | null) {
+  return fetchWithAuth(`${BASE_URL}/roles/${roleId}${rolesQs(tenantId)}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
 }
 
-export async function deleteRole(roleId: string) {
-  return fetchWithAuth(`${BASE_URL}/roles/${roleId}`, {
+export async function deleteRole(roleId: string, tenantId?: string | null) {
+  return fetchWithAuth(`${BASE_URL}/roles/${roleId}${rolesQs(tenantId)}`, {
     method: 'DELETE',
   });
 }
 
-export async function updateRolePermissions(roleId: string, permissionIds: string[]) {
-  return fetchWithAuth(`${BASE_URL}/roles/${roleId}/permissions`, {
+export async function updateRolePermissions(roleId: string, permissionIds: string[], tenantId?: string | null) {
+  return fetchWithAuth(`${BASE_URL}/roles/${roleId}/permissions${rolesQs(tenantId)}`, {
     method: 'PUT',
     body: JSON.stringify({ permissionIds }),
+  });
+}
+
+/** Liste des utilisateurs du tenant avec leurs rôles (Paramètres → Utilisateurs & rôles) */
+export async function getUsersWithRoles(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/users${qs}`);
+}
+
+/** Assigne un rôle à un utilisateur */
+export async function assignRoleToUser(userId: string, roleId: string, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/users/${userId}/assign-role${qs}`, {
+    method: 'POST',
+    body: JSON.stringify({ roleId }),
+  });
+}
+
+/** Révoque un rôle d'un utilisateur */
+export async function revokeRoleFromUser(userId: string, roleId: string, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/users/${userId}/revoke-role${qs}`, {
+    method: 'POST',
+    body: JSON.stringify({ roleId }),
   });
 }
 

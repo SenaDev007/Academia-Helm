@@ -15,6 +15,8 @@ import {
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { PermissionGuard } from '../common/guards/permission.guard';
+import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { GeneralSettingsService } from './services/general-settings.service';
 import { FeatureFlagsService } from './services/feature-flags.service';
 import { SecuritySettingsService } from './services/security-settings.service';
@@ -31,6 +33,7 @@ import { AcademicYearSettingsService } from './services/academic-year-settings.s
 import { AcademicPeriodSettingsService } from './services/academic-period-settings.service';
 import { EducationStructureService } from './services/education-structure.service';
 import { RolesPermissionsService } from './services/roles-permissions.service';
+import { RolesPermissionsBootstrapService } from './services/roles-permissions-bootstrap.service';
 import { BillingSettingsService } from './services/billing-settings.service';
 import { IdentityProfileService } from './services/identity-profile.service';
 
@@ -60,6 +63,7 @@ export class SettingsController {
     private readonly academicPeriodSettingsService: AcademicPeriodSettingsService,
     private readonly educationStructureService: EducationStructureService,
     private readonly rolesPermissionsService: RolesPermissionsService,
+    private readonly rolesPermissionsBootstrapService: RolesPermissionsBootstrapService,
     private readonly billingSettingsService: BillingSettingsService,
     private readonly identityProfileService: IdentityProfileService,
   ) {}
@@ -110,17 +114,23 @@ export class SettingsController {
   // ============================================================================
 
   @Get('identity')
-  async getActiveIdentityProfile(@TenantId() tenantId: string) {
-    return this.identityProfileService.getActiveProfile(tenantId);
+  async getActiveIdentityProfile(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    return this.identityProfileService.getActiveProfile(this.resolveTid(tenantId, user, req));
   }
 
   @Get('identity/history')
   async getIdentityHistory(
-    @TenantId() tenantId: string,
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
-    return this.identityProfileService.getVersionHistory(tenantId, {
+    return this.identityProfileService.getVersionHistory(this.resolveTid(tenantId, user, req), {
       limit: limit ? parseInt(limit) : undefined,
       offset: offset ? parseInt(offset) : undefined,
     });
@@ -128,42 +138,52 @@ export class SettingsController {
 
   @Get('identity/version/:versionId')
   async getIdentityVersion(
-    @TenantId() tenantId: string,
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
     @Param('versionId') versionId: string,
   ) {
-    return this.identityProfileService.getProfileById(tenantId, versionId);
+    return this.identityProfileService.getProfileById(this.resolveTid(tenantId, user, req), versionId);
   }
 
   @Get('identity/compare')
   async compareIdentityVersions(
-    @TenantId() tenantId: string,
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
     @Query('versionA') versionA: string,
     @Query('versionB') versionB: string,
   ) {
     return this.identityProfileService.compareVersions(
-      tenantId,
+      this.resolveTid(tenantId, user, req),
       parseInt(versionA),
       parseInt(versionB),
     );
   }
 
   @Get('identity/preview')
-  async getDocumentPreview(@TenantId() tenantId: string) {
-    return this.identityProfileService.generateDocumentPreview(tenantId);
+  async getDocumentPreview(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    return this.identityProfileService.generateDocumentPreview(this.resolveTid(tenantId, user, req));
   }
 
   @Get('identity/at-date')
   async getIdentityAtDate(
-    @TenantId() tenantId: string,
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
     @Query('date') dateStr: string,
   ) {
     const date = new Date(dateStr);
-    return this.identityProfileService.getProfileAtDate(tenantId, date);
+    return this.identityProfileService.getProfileAtDate(this.resolveTid(tenantId, user, req), date);
   }
 
   @Post('identity')
   async createIdentityVersion(
-    @TenantId() tenantId: string,
+    @TenantId() tenantId: string | undefined,
     @CurrentUser() user: any,
     @Body() data: {
       schoolName: string;
@@ -190,12 +210,13 @@ export class SettingsController {
     },
     @Request() req: any,
   ) {
+    const tid = this.resolveTid(tenantId, user, req);
     const ipAddress = req.ip || req.connection?.remoteAddress;
     const userAgent = req.headers['user-agent'];
     const { changeReason, ...profileData } = data;
 
     return this.identityProfileService.createNewVersion(
-      tenantId,
+      tid,
       profileData,
       user.id,
       changeReason,
@@ -206,17 +227,18 @@ export class SettingsController {
 
   @Put('identity/activate/:versionId')
   async activateIdentityVersion(
-    @TenantId() tenantId: string,
+    @TenantId() tenantId: string | undefined,
     @CurrentUser() user: any,
+    @Request() req: any,
     @Param('versionId') versionId: string,
     @Body() data: { reason?: string },
-    @Request() req: any,
   ) {
+    const tid = this.resolveTid(tenantId, user, req);
     const ipAddress = req.ip || req.connection?.remoteAddress;
     const userAgent = req.headers['user-agent'];
 
     return this.identityProfileService.activateVersion(
-      tenantId,
+      tid,
       versionId,
       user.id,
       data.reason,
@@ -227,20 +249,21 @@ export class SettingsController {
 
   @Put('identity/visuals')
   async updateIdentityVisuals(
-    @TenantId() tenantId: string,
+    @TenantId() tenantId: string | undefined,
     @CurrentUser() user: any,
+    @Request() req: any,
     @Body() data: {
       logoUrl?: string;
       stampUrl?: string;
       directorSignatureUrl?: string;
     },
-    @Request() req: any,
   ) {
+    const tid = this.resolveTid(tenantId, user, req);
     const ipAddress = req.ip || req.connection?.remoteAddress;
     const userAgent = req.headers['user-agent'];
 
     return this.identityProfileService.updateVisuals(
-      tenantId,
+      tid,
       data,
       user.id,
       ipAddress,
@@ -249,48 +272,98 @@ export class SettingsController {
   }
 
   // ============================================================================
-  // FEATURE FLAGS
+  // FEATURE FLAGS (Modules & fonctionnalités — gouvernance SaaS)
   // ============================================================================
 
   @Get('features')
-  async getAllFeatures(@TenantId() tenantId: string) {
-    return this.featureFlagsService.getAllFeatures(tenantId);
+  async getAllFeatures(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    return this.featureFlagsService.getAllModulesWithState(this.resolveTid(tenantId, user, req));
   }
 
   @Get('features/billing-impact')
-  async getBillingImpact(@TenantId() tenantId: string) {
-    return this.featureFlagsService.calculateBillingImpact(tenantId);
+  async getBillingImpact(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    return this.featureFlagsService.calculateBillingImpact(this.resolveTid(tenantId, user, req));
+  }
+
+  @Post('features/enable-all')
+  async enableAllFeatures(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Body() body: { reason?: string },
+    @Request() req: any,
+  ) {
+    const tid = this.resolveTid(tenantId, user, req);
+    const ipAddress = req.ip || req.connection?.remoteAddress;
+    const userAgent = req.headers['user-agent'];
+    return this.featureFlagsService.enableAllFeatures(
+      tid,
+      user.id,
+      body.reason,
+      ipAddress,
+      userAgent,
+    );
+  }
+
+  @Post('features/disable-all')
+  async disableAllFeatures(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Body() body: { reason?: string },
+    @Request() req: any,
+  ) {
+    const tid = this.resolveTid(tenantId, user, req);
+    const ipAddress = req.ip || req.connection?.remoteAddress;
+    const userAgent = req.headers['user-agent'];
+    return this.featureFlagsService.disableAllFeatures(
+      tid,
+      user.id,
+      body.reason,
+      ipAddress,
+      userAgent,
+    );
   }
 
   @Get('features/:featureCode')
   async getFeature(
-    @TenantId() tenantId: string,
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
     @Param('featureCode') featureCode: string,
   ) {
-    return this.featureFlagsService.getFeature(tenantId, featureCode);
+    return this.featureFlagsService.getFeature(this.resolveTid(tenantId, user, req), featureCode);
   }
 
   @Get('features/:featureCode/check')
   async checkFeature(
-    @TenantId() tenantId: string,
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
     @Param('featureCode') featureCode: string,
   ) {
-    return this.featureFlagsService.isFeatureEnabled(tenantId, featureCode);
+    return this.featureFlagsService.isFeatureEnabled(this.resolveTid(tenantId, user, req), featureCode);
   }
 
   @Post('features/:featureCode/enable')
   async enableFeature(
-    @TenantId() tenantId: string,
+    @TenantId() tenantId: string | undefined,
     @Param('featureCode') featureCode: string,
     @CurrentUser() user: any,
     @Body() body: { reason?: string },
     @Request() req: any,
   ) {
+    const tid = this.resolveTid(tenantId, user, req);
     const ipAddress = req.ip || req.connection?.remoteAddress;
     const userAgent = req.headers['user-agent'];
-
     return this.featureFlagsService.enableFeature(
-      tenantId,
+      tid,
       featureCode,
       user.id,
       body.reason,
@@ -301,17 +374,17 @@ export class SettingsController {
 
   @Post('features/:featureCode/disable')
   async disableFeature(
-    @TenantId() tenantId: string,
+    @TenantId() tenantId: string | undefined,
     @Param('featureCode') featureCode: string,
     @CurrentUser() user: any,
     @Body() body: { reason?: string },
     @Request() req: any,
   ) {
+    const tid = this.resolveTid(tenantId, user, req);
     const ipAddress = req.ip || req.connection?.remoteAddress;
     const userAgent = req.headers['user-agent'];
-
     return this.featureFlagsService.disableFeature(
-      tenantId,
+      tid,
       featureCode,
       user.id,
       body.reason,
@@ -801,27 +874,33 @@ export class SettingsController {
   // ============================================================================
 
   @Get('bilingual')
-  async getBilingualSettings(@TenantId() tenantId: string) {
-    return this.bilingualSettingsService.getSettings(tenantId);
+  async getBilingualSettings(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    return this.bilingualSettingsService.getSettings(this.resolveTid(tenantId, user, req));
   }
 
   @Put('bilingual')
   async updateBilingualSettings(
-    @TenantId() tenantId: string,
+    @TenantId() tenantId: string | undefined,
     @CurrentUser() user: any,
     @Body() data: {
       isEnabled?: boolean;
       separateSubjects?: boolean;
       separateGrades?: boolean;
+      defaultLanguage?: string;
       defaultUILanguage?: string;
       billingImpactAcknowledged?: boolean;
+      pricingSupplement?: number;
     },
     @Request() req: any,
   ) {
     const ipAddress = req.ip || req.connection?.remoteAddress;
     const userAgent = req.headers['user-agent'];
     return this.bilingualSettingsService.updateSettings(
-      tenantId,
+      this.resolveTid(tenantId, user, req),
       data,
       user.id,
       ipAddress,
@@ -830,22 +909,31 @@ export class SettingsController {
   }
 
   @Get('bilingual/check-migration')
-  async checkBilingualMigration(@TenantId() tenantId: string) {
-    const needed = await this.bilingualSettingsService.checkMigrationNeeded(tenantId);
+  async checkBilingualMigration(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    const needed = await this.bilingualSettingsService.checkMigrationNeeded(this.resolveTid(tenantId, user, req));
     return { migrationNeeded: needed };
   }
 
   @Post('bilingual/migrate')
   async startBilingualMigration(
-    @TenantId() tenantId: string,
+    @TenantId() tenantId: string | undefined,
     @CurrentUser() user: any,
+    @Request() req: any,
   ) {
-    return this.bilingualSettingsService.startMigration(tenantId, user.id);
+    return this.bilingualSettingsService.startMigration(this.resolveTid(tenantId, user, req), user.id);
   }
 
   @Get('bilingual/billing-impact')
-  async getBilingualBillingImpact(@TenantId() tenantId: string) {
-    return this.bilingualSettingsService.getBillingImpact(tenantId);
+  async getBilingualBillingImpact(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    return this.bilingualSettingsService.getBillingImpact(this.resolveTid(tenantId, user, req));
   }
 
   // ============================================================================
@@ -1308,13 +1396,31 @@ export class SettingsController {
   // STRUCTURE PÉDAGOGIQUE HIÉRARCHIQUE (niveaux → cycles → grades → classes physiques)
   // ============================================================================
 
+  /**
+   * Résout le tenant du contexte. Isolation stricte :
+   * - Utilisateur normal : uniquement son tenant (user.tenantId).
+   * - PLATFORM_OWNER / SUPER_ADMIN : peut passer tenant_id (query/header) pour vision cross-tenant.
+   */
   private resolveTid(tenantId: string | undefined, user: any, req: any): string {
-    const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
-    const fromHeader = req?.headers?.['x-tenant-id'];
-    const fromQuery = req?.query?.tenant_id;
-    const tid = tenantId ?? fromUser ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader) ?? (Array.isArray(fromQuery) ? fromQuery[0] : fromQuery);
-    if (!tid || typeof tid !== 'string') throw new BadRequestException('Contexte tenant manquant.');
+    const tid = this.resolveTidOptional(tenantId, user, req);
+    if (tid == null) throw new BadRequestException('Contexte tenant manquant.');
     return tid;
+  }
+
+  /** Comme resolveTid mais retourne null si PO sans tenant (pour getRoles = rôles système uniquement). */
+  private resolveTidOptional(tenantId: string | undefined, user: any, req: any): string | null {
+    const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
+    const roleStr = (user?.role as string)?.toUpperCase();
+    const canCrossTenant = roleStr === 'PLATFORM_OWNER' || roleStr === 'SUPER_ADMIN' || user?.isSuperAdmin === true;
+    if (canCrossTenant) {
+      const fromHeader = req?.headers?.['x-tenant-id'];
+      const fromQuery = req?.query?.tenant_id;
+      const override = tenantId ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader) ?? (Array.isArray(fromQuery) ? fromQuery[0] : fromQuery);
+      if (override && typeof override === 'string') return override;
+      return null;
+    }
+    if (!fromUser || typeof fromUser !== 'string') throw new BadRequestException('Contexte tenant manquant.');
+    return fromUser;
   }
 
   @Get('education/structure')
@@ -1412,26 +1518,44 @@ export class SettingsController {
   }
 
   // ============================================================================
-  // RÔLES & PERMISSIONS
+  // RÔLES & PERMISSIONS (RBAC multi-tenant — isolation stricte + audit)
+  // Ordre guards : JWT → tenant → rôle → permission → feature flag (PermissionGuard)
   // ============================================================================
 
+  /** Lecture rôles : tout utilisateur authentifié (pour afficher l’onglet RBAC avant attribution de rôles). */
+  @Post('rbac/ensure-initialized')
+  async ensureRbacInitialized() {
+    await this.rolesPermissionsBootstrapService.ensurePermissionsAndRoles();
+    return { ok: true, message: 'RBAC initialisé' };
+  }
+
   @Get('roles')
-  async getRoles(@TenantId() tenantId: string) {
-    return this.rolesPermissionsService.getRoles(tenantId);
+  async getRoles(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    const tid = this.resolveTidOptional(tenantId, user, req);
+    return this.rolesPermissionsService.getRoles(tid);
   }
 
   @Get('roles/:id')
   async getRoleById(
-    @TenantId() tenantId: string,
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
     @Param('id') id: string,
   ) {
-    return this.rolesPermissionsService.getRoleById(tenantId, id);
+    return this.rolesPermissionsService.getRoleById(this.resolveTidOptional(tenantId, user, req), id);
   }
 
   @Post('roles')
+  @UseGuards(PermissionGuard)
+  @RequirePermission('PARAMETRES', 'write')
   async createRole(
-    @TenantId() tenantId: string,
+    @TenantId() tenantId: string | undefined,
     @CurrentUser() user: any,
+    @Request() req: any,
     @Body() data: {
       name: string;
       description?: string;
@@ -1441,14 +1565,18 @@ export class SettingsController {
       permissionIds?: string[];
     },
   ) {
-    return this.rolesPermissionsService.createRole(tenantId, data, user.id);
+    const tid = this.resolveTid(tenantId, user, req);
+    return this.rolesPermissionsService.createRole(tid, data, user.id);
   }
 
   @Put('roles/:id')
+  @UseGuards(PermissionGuard)
+  @RequirePermission('PARAMETRES', 'write')
   async updateRole(
-    @TenantId() tenantId: string,
-    @Param('id') id: string,
+    @TenantId() tenantId: string | undefined,
     @CurrentUser() user: any,
+    @Request() req: any,
+    @Param('id') id: string,
     @Body() data: {
       name?: string;
       description?: string;
@@ -1457,18 +1585,24 @@ export class SettingsController {
       allowedLevelIds?: string[];
     },
   ) {
-    return this.rolesPermissionsService.updateRole(tenantId, id, data, user.id);
+    const tid = this.resolveTid(tenantId, user, req);
+    return this.rolesPermissionsService.updateRole(tid, id, data, user.id);
   }
 
   @Delete('roles/:id')
+  @UseGuards(PermissionGuard)
+  @RequirePermission('PARAMETRES', 'write')
   async deleteRole(
-    @TenantId() tenantId: string,
-    @Param('id') id: string,
+    @TenantId() tenantId: string | undefined,
     @CurrentUser() user: any,
+    @Request() req: any,
+    @Param('id') id: string,
   ) {
-    return this.rolesPermissionsService.deleteRole(tenantId, id, user.id);
+    const tid = this.resolveTid(tenantId, user, req);
+    return this.rolesPermissionsService.deleteRole(tid, id, user.id);
   }
 
+  /** Lecture permissions : tout utilisateur authentifié (matrice RBAC). */
   @Get('permissions')
   async getPermissions() {
     return this.rolesPermissionsService.getPermissions();
@@ -1480,18 +1614,64 @@ export class SettingsController {
   }
 
   @Put('roles/:id/permissions')
+  @UseGuards(PermissionGuard)
+  @RequirePermission('PARAMETRES', 'write')
   async updateRolePermissions(
-    @TenantId() tenantId: string,
-    @Param('id') id: string,
+    @TenantId() tenantId: string | undefined,
     @CurrentUser() user: any,
+    @Request() req: any,
+    @Param('id') id: string,
     @Body() data: { permissionIds: string[] },
   ) {
+    const tid = this.resolveTid(tenantId, user, req);
     return this.rolesPermissionsService.updateRolePermissions(
-      tenantId,
+      tid,
       id,
       data.permissionIds,
       user.id,
     );
+  }
+
+  /** Liste des utilisateurs du tenant avec leurs rôles (tout utilisateur authentifié pour l’onglet RBAC). */
+  @Get('users')
+  async getUsersWithRoles(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    return this.rolesPermissionsService.getUsersWithRoles(this.resolveTid(tenantId, user, req));
+  }
+
+  /** Assigne un rôle à un utilisateur (audit + isolation tenant) */
+  @Post('users/:userId/assign-role')
+  @UseGuards(PermissionGuard)
+  @RequirePermission('PARAMETRES', 'write')
+  async assignRoleToUser(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Param('userId') userId: string,
+    @Body() body: { roleId: string },
+  ) {
+    const tid = this.resolveTid(tenantId, user, req);
+    if (!body?.roleId) throw new BadRequestException('roleId requis');
+    return this.rolesPermissionsService.assignRoleToUser(tid, userId, body.roleId, user.id);
+  }
+
+  /** Révoque un rôle d'un utilisateur (audit) */
+  @Post('users/:userId/revoke-role')
+  @UseGuards(PermissionGuard)
+  @RequirePermission('PARAMETRES', 'write')
+  async revokeRoleFromUser(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Param('userId') userId: string,
+    @Body() body: { roleId: string },
+  ) {
+    const tid = this.resolveTid(tenantId, user, req);
+    if (!body?.roleId) throw new BadRequestException('roleId requis');
+    return this.rolesPermissionsService.revokeRoleFromUser(tid, userId, body.roleId, user.id);
   }
 
   // ============================================================================

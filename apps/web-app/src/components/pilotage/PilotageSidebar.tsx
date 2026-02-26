@@ -12,7 +12,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import type { User } from '@/types';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
+import { useEnabledFeatureCodes } from '@/hooks/useEnabledFeatureCodes';
 
 interface PilotageSidebarProps {
   isOpen: boolean;
@@ -47,36 +48,50 @@ interface PilotageSidebarProps {
   user?: User;
 }
 
+/** Mapping path → featureCode (optionnel). Sans featureCode = toujours affiché. */
+const MAIN_MODULES = [
+  { path: '/app', label: 'Tableau de pilotage', icon: LayoutDashboard },
+  { path: '/app/orion', label: 'ORION — Pilotage Direction', icon: Brain, featureCode: 'ORION' },
+  { path: '/app/meetings', label: 'Réunions', icon: Calendar },
+  { path: '/app/students', label: 'Élèves & Scolarité', icon: Users, featureCode: 'STUDENTS' },
+  { path: '/app/finance', label: 'Finances & Économat', icon: Calculator, featureCode: 'FINANCE' },
+  { path: '/app/exams-grades', label: 'Examens, Notes & Bulletins', icon: BookOpen, featureCode: 'EXAMS' },
+  { path: '/app/pedagogy', label: 'Organisation Pédagogique', icon: Building, featureCode: 'PEDAGOGY' },
+  { path: '/app/hr', label: 'Personnel, RH & Paie', icon: UserCheck, featureCode: 'HR_PAYROLL' },
+  { path: '/app/communication', label: 'Communication', icon: MessageSquare, featureCode: 'COMMUNICATION' },
+];
+
+const SUPPLEMENTARY_MODULES = [
+  { path: '/app/library', label: 'Bibliothèque', icon: Library, featureCode: 'LIBRARY' },
+  { path: '/app/transport', label: 'Transport', icon: Bus, featureCode: 'TRANSPORT' },
+  { path: '/app/canteen', label: 'Cantine', icon: UtensilsCrossed, featureCode: 'CANTEEN' },
+  { path: '/app/infirmary', label: 'Infirmerie', icon: HeartPulse, featureCode: 'INFIRMARY' },
+  { path: '/app/qhse', label: 'QHSE', icon: ShieldCheck, featureCode: 'QHSE' },
+  { path: '/app/educast', label: 'EduCast', icon: Radio, featureCode: 'EDUCAST' },
+  { path: '/app/shop', label: 'Boutique', icon: ShoppingBag, featureCode: 'SHOP' },
+];
+
 export default function PilotageSidebar({ isOpen, onToggle, user }: PilotageSidebarProps) {
   const pathname = usePathname();
   const { currentLevel } = useSchoolLevel();
+  const { enabledSet, loading } = useEnabledFeatureCodes();
   const isSuperDirector = user?.role === 'SUPER_DIRECTOR';
   const [mainModulesOpen, setMainModulesOpen] = useState(true);
   const [supplementaryModulesOpen, setSupplementaryModulesOpen] = useState(true);
 
-  // Modules principaux (domaines métier)
-  const mainModules = [
-    { path: '/app', label: 'Tableau de pilotage', icon: LayoutDashboard },
-    { path: '/app/orion', label: 'ORION — Pilotage Direction', icon: Brain },
-    { path: '/app/meetings', label: 'Réunions', icon: Calendar },
-    { path: '/app/students', label: 'Élèves & Scolarité', icon: Users },
-    { path: '/app/finance', label: 'Finances & Économat', icon: Calculator },
-    { path: '/app/exams-grades', label: 'Examens, Notes & Bulletins', icon: BookOpen },
-    { path: '/app/pedagogy', label: 'Organisation Pédagogique', icon: Building },
-    { path: '/app/hr', label: 'Personnel, RH & Paie', icon: UserCheck },
-    { path: '/app/communication', label: 'Communication', icon: MessageSquare },
-  ];
+  // Filtrer par modules activés : sans featureCode = toujours visible ; avec featureCode = visible si activé (ou pendant le chargement)
+  const showModule = (featureCode?: string) =>
+    !featureCode || loading || enabledSet.has(featureCode);
 
-  // Modules supplémentaires
-  const supplementaryModules = [
-    { path: '/app/library', label: 'Bibliothèque', icon: Library },
-    { path: '/app/transport', label: 'Transport', icon: Bus },
-    { path: '/app/canteen', label: 'Cantine', icon: UtensilsCrossed },
-    { path: '/app/infirmary', label: 'Infirmerie', icon: HeartPulse },
-    { path: '/app/qhse', label: 'QHSE', icon: ShieldCheck },
-    { path: '/app/educast', label: 'EduCast', icon: Radio },
-    { path: '/app/shop', label: 'Boutique', icon: ShoppingBag },
-  ];
+  const mainModules = useMemo(
+    () => MAIN_MODULES.filter((m) => showModule(m.featureCode)),
+    [enabledSet, loading],
+  );
+
+  const supplementaryModules = useMemo(
+    () => SUPPLEMENTARY_MODULES.filter((m) => showModule(m.featureCode)),
+    [enabledSet, loading],
+  );
 
   // Module Général (Direction uniquement)
   const generalModule = isSuperDirector
@@ -169,7 +184,6 @@ export default function PilotageSidebar({ isOpen, onToggle, user }: PilotageSide
             ) : (
               mainModules.map((item) => {
                 const Icon = item.icon;
-                const active = isActive(item.path);
                 return (
                   <Link
                     key={item.path}

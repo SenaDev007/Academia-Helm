@@ -1,50 +1,27 @@
 /**
  * API PROXY - IDENTITY HISTORY
+ * Même pattern que bilingual / identity : getProxyAuthHeaders + tenant_id en query.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
-import { getServerToken } from '@/lib/auth/session';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
-async function getAuthHeaders(request: NextRequest) {
-  const authHeader = request.headers.get('Authorization');
-  if (authHeader) {
-    return {
-      'Authorization': authHeader,
-      'Content-Type': 'application/json',
-    };
-  }
-  
-  const cookieToken = request.cookies.get('academia_token')?.value;
-  if (cookieToken) {
-    return {
-      'Authorization': `Bearer ${cookieToken}`,
-      'Content-Type': 'application/json',
-    };
-  }
-  
-  const sessionToken = await getServerToken();
-  return {
-    'Authorization': sessionToken ? `Bearer ${sessionToken}` : '',
-    'Content-Type': 'application/json',
-  };
-}
-
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
+    const headers = await getProxyAuthHeaders(request);
+    const searchParams = request.nextUrl?.searchParams ?? new URL(request.url).searchParams;
     const limit = searchParams.get('limit') || '50';
     const offset = searchParams.get('offset') || '0';
-    
-    const headers = await getAuthHeaders(request);
-    const response = await fetch(
-      `${API_BASE_URL}/settings/identity/history?limit=${limit}&offset=${offset}`,
-      { headers }
-    );
-
-    const data = await response.json();
+    const url = new URL(`${API_BASE_URL}/settings/identity/history`);
+    url.searchParams.set('limit', limit);
+    url.searchParams.set('offset', offset);
+    const fromQuery = searchParams.get('tenant_id');
+    if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
+    const response = await fetch(url.toString(), { headers, cache: 'no-store' });
+    const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error fetching identity history:', error);

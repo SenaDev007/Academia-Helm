@@ -17,10 +17,13 @@ import { AcademicYearSettingsService } from './services/academic-year-settings.s
 import { AcademicPeriodSettingsService } from './services/academic-period-settings.service';
 import { EducationStructureService } from './services/education-structure.service';
 import { RolesPermissionsService } from './services/roles-permissions.service';
+import { RolesPermissionsBootstrapService } from './services/roles-permissions-bootstrap.service';
 import { BillingSettingsService } from './services/billing-settings.service';
 import { IdentityProfileService } from './services/identity-profile.service';
 import { DatabaseModule } from '../database/database.module';
 import { OrionModule } from '../orion/orion.module';
+import { TenantFeaturesModule } from '../tenant-features/tenant-features.module';
+import { PermissionGuard } from '../common/guards/permission.guard';
 
 /**
  * Module Paramètres — Centre de contrôle stratégique d'Academia Helm
@@ -41,9 +44,10 @@ import { OrionModule } from '../orion/orion.module';
  * - Historique & audit
  */
 @Module({
-  imports: [DatabaseModule, OrionModule],
+  imports: [DatabaseModule, OrionModule, TenantFeaturesModule],
   controllers: [SettingsController],
   providers: [
+    PermissionGuard,
     GeneralSettingsService,
     PedagogicalStructureService,
     BilingualSettingsService,
@@ -53,6 +57,7 @@ import { OrionModule } from '../orion/orion.module';
     AcademicPeriodSettingsService,
     EducationStructureService,
     RolesPermissionsService,
+    RolesPermissionsBootstrapService,
     BillingSettingsService,
     IdentityProfileService,
     SecuritySettingsService,
@@ -65,6 +70,7 @@ import { OrionModule } from '../orion/orion.module';
     SealGenerationService,
   ],
   exports: [
+    RolesPermissionsBootstrapService,
     GeneralSettingsService,
     PedagogicalStructureService,
     BilingualSettingsService,

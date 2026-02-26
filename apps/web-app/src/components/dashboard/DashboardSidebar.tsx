@@ -8,6 +8,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useMemo } from 'react';
 import {
   LayoutDashboard,
   Users,
@@ -24,6 +25,7 @@ import {
   Network,
 } from 'lucide-react';
 import type { User } from '@/types';
+import { useEnabledFeatureCodes } from '@/hooks/useEnabledFeatureCodes';
 
 interface DashboardSidebarProps {
   isOpen: boolean;
@@ -31,32 +33,39 @@ interface DashboardSidebarProps {
   user?: User; // Pour afficher conditionnellement les liens SUPER_DIRECTOR
 }
 
+type MenuItem = { path: string; label: string; icon: typeof LayoutDashboard; featureCode?: string };
+
 export default function DashboardSidebar({ isOpen, onToggle, user }: DashboardSidebarProps) {
   const pathname = usePathname();
+  const { enabledSet, loading } = useEnabledFeatureCodes();
   const isSuperDirector = user?.role === 'SUPER_DIRECTOR';
-  
-  // Menu items de base
-  const baseMenuItems = [
+
+  const baseMenuItems: MenuItem[] = [
     { path: '/app', label: 'Tableau de bord', icon: LayoutDashboard },
-    { path: '/app/students', label: 'Élèves', icon: Users },
-    { path: '/app/exams', label: 'Examens', icon: BookOpen },
-    { path: '/app/finance', label: 'Finances', icon: Calculator },
-    { path: '/app/hr', label: 'RH & Paie', icon: UserCheck },
-    { path: '/app/planning', label: 'Planning', icon: Building },
-    { path: '/app/communication', label: 'Communication', icon: MessageSquare },
+    { path: '/app/students', label: 'Élèves', icon: Users, featureCode: 'STUDENTS' },
+    { path: '/app/exams', label: 'Examens', icon: BookOpen, featureCode: 'EXAMS' },
+    { path: '/app/finance', label: 'Finances', icon: Calculator, featureCode: 'FINANCE' },
+    { path: '/app/hr', label: 'RH & Paie', icon: UserCheck, featureCode: 'HR_PAYROLL' },
+    { path: '/app/planning', label: 'Planning', icon: Building, featureCode: 'PEDAGOGY' },
+    { path: '/app/communication', label: 'Communication', icon: MessageSquare, featureCode: 'COMMUNICATION' },
     { path: '/app/reports', label: 'Bilans & KPI', icon: BarChart3 },
     { path: '/app/settings/billing', label: 'Facturation', icon: FileText },
     { path: '/app/settings', label: 'Paramètres', icon: Settings },
   ];
-  
-  // Ajouter le lien consolidé pour les SUPER_DIRECTOR
-  const menuItems = isSuperDirector
-    ? [
-        ...baseMenuItems.slice(0, 7), // Jusqu'à Communication
-        { path: '/app/consolidated', label: 'Bilans consolidés', icon: Network },
-        ...baseMenuItems.slice(7), // Le reste
-      ]
-    : baseMenuItems;
+
+  const menuItems = useMemo(() => {
+    const showItem = (item: MenuItem) =>
+      !item.featureCode || loading || enabledSet.has(item.featureCode);
+    let items = baseMenuItems.filter(showItem);
+    if (isSuperDirector) {
+      const idx = items.findIndex((i) => i.path === '/app/communication');
+      const consolidated = { path: '/app/consolidated', label: 'Bilans consolidés', icon: Network };
+      items = idx >= 0
+        ? [...items.slice(0, idx + 1), consolidated, ...items.slice(idx + 1)]
+        : [...items, consolidated];
+    }
+    return items;
+  }, [enabledSet, loading, isSuperDirector]);
 
   return (
     <aside

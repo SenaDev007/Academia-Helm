@@ -1,22 +1,19 @@
 /**
- * ============================================================================
- * API PROXY - SETTINGS FEATURES ENABLE
- * Auth + tenant_id (même pattern que bilingual).
- * ============================================================================
+ * API PROXY - Désactiver tous les modules (settings features)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ featureCode: string }> }
-) {
+export async function POST(request: NextRequest) {
   try {
-    const { featureCode } = await params;
     const headers = await getProxyAuthHeaders(request);
-    const url = new URL(`${getApiBaseUrlForRoutes()}/settings/features/${featureCode}/enable`);
+    const hasAuth = headers['Authorization'] || headers['Cookie'];
+    if (!hasAuth) {
+      return NextResponse.json({ error: 'Non authentifié', code: 'UNAUTHORIZED' }, { status: 401 });
+    }
+    const url = new URL(`${getApiBaseUrlForRoutes()}/settings/features/disable-all`);
     const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
     if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
     const body = await request.json().catch(() => ({}));
@@ -28,8 +25,7 @@ export async function POST(
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
-    console.error('Error enabling feature:', error);
-    return NextResponse.json({ error: 'Failed to enable feature' }, { status: 500 });
+    console.error('Error disabling all features:', error);
+    return NextResponse.json({ error: 'Échec de la désactivation globale' }, { status: 500 });
   }
 }
-

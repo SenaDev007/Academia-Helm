@@ -24,7 +24,9 @@ async function getAuthHeaders(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const headers = await getAuthHeaders(request);
-    const response = await fetch(`${API_BASE_URL}/api/settings/roles`, {
+    const { searchParams } = new URL(request.url);
+    const qs = searchParams.toString() ? `?${searchParams.toString()}` : '';
+    const response = await fetch(`${API_BASE_URL}/api/settings/roles${qs}`, {
       headers,
     });
 

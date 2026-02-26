@@ -1,28 +1,32 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
 
 /**
- * Service pour la gestion des rôles et permissions
+ * Service pour la gestion des rôles et permissions.
+ * Le bootstrap (permissions + rôles système) est assuré par RolesPermissionsBootstrapService au démarrage.
  */
 @Injectable()
 export class RolesPermissionsService {
+  private readonly logger = new Logger(RolesPermissionsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly historyService: SettingsHistoryService,
   ) {}
 
   /**
-   * Récupère tous les rôles d'un tenant
+   * Récupère tous les rôles : si tenantId fourni = rôles du tenant + rôles système ; si null = rôles système uniquement.
    */
-  async getRoles(tenantId: string) {
+  async getRoles(tenantId: string | null) {
+    const where =
+      tenantId == null
+        ? { tenantId: null, isSystemRole: true }
+        : {
+            OR: [{ tenantId }, { tenantId: null, isSystemRole: true }],
+          };
     return this.prisma.role.findMany({
-      where: {
-        OR: [
-          { tenantId },
-          { tenantId: null, isSystemRole: true },
-        ],
-      },
+      where,
       include: {
         _count: {
           select: { userRoles: true },
@@ -41,14 +45,14 @@ export class RolesPermissionsService {
   }
 
   /**
-   * Récupère un rôle par ID
+   * Récupère un rôle par ID (tenantId null = uniquement rôles système).
    */
-  async getRoleById(tenantId: string, id: string) {
+  async getRoleById(tenantId: string | null, id: string) {
     const role = await this.prisma.role.findFirst({
       where: {
         id,
         OR: [
-          { tenantId },
+          ...(tenantId != null ? [{ tenantId }] : []),
           { tenantId: null, isSystemRole: true },
         ],
       },
@@ -293,12 +297,14 @@ export class RolesPermissionsService {
   }
 
   /**
-   * Vérifie si un utilisateur a une permission spécifique
+   * Vérifie si un utilisateur a une permission spécifique.
+   * Si tenantId est fourni, ne considère que les rôles du tenant (userRole.tenantId ou role.tenantId) ou rôles globaux.
    */
   async userHasPermission(
     userId: string,
     resource: string,
     action: string,
+    tenantId?: string | null,
   ): Promise<boolean> {
     const userRoles = await this.prisma.userRole.findMany({
       where: { userId },
@@ -316,19 +322,161 @@ export class RolesPermissionsService {
     });
 
     for (const userRole of userRoles) {
-      for (const rolePermission of userRole.role.rolePermissions) {
+      const role = userRole.role;
+      // Isolation tenant : si un tenant est demandé, l'assignment doit être pour ce tenant ou global (tenantId null)
+      if (tenantId != null) {
+        const assignmentTenant = userRole.tenantId ?? role.tenantId;
+        if (assignmentTenant != null && assignmentTenant !== tenantId) continue;
+      } else if (role.tenantId != null) {
+        continue;
+      }
+      for (const rolePermission of role.rolePermissions) {
         const perm = rolePermission.permission;
-        if (perm.resource === resource && perm.action === action) {
-          return true;
-        }
-        // Wildcard permissions
-        if (perm.resource === '*' || perm.action === '*') {
-          return true;
-        }
+        if (perm.resource === resource && perm.action === action) return true;
+        if (perm.resource === '*' || perm.action === '*') return true;
       }
     }
 
     return false;
+  }
+
+  /**
+   * Liste les utilisateurs du tenant avec leurs rôles (pour Paramètres → Utilisateurs & rôles)
+   */
+  async getUsersWithRoles(tenantId: string) {
+    const users = await this.prisma.user.findMany({
+      where: { tenantId },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        status: true,
+        tenantId: true,
+        userRoles: {
+          where: {
+            OR: [
+              { tenantId },
+              { tenantId: null, role: { tenantId } },
+              { tenantId: null, role: { tenantId: null } },
+            ],
+          },
+          include: {
+            role: {
+              select: {
+                id: true,
+                name: true,
+                description: true,
+                isSystemRole: true,
+                canAccessOrion: true,
+                canAccessAtlas: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+    });
+
+    return users;
+  }
+
+  /**
+   * Assigne un rôle à un utilisateur dans le contexte d'un tenant (audit + isolation)
+   */
+  async assignRoleToUser(
+    tenantId: string,
+    userId: string,
+    roleId: string,
+    assignedBy: string,
+  ) {
+    const role = await this.prisma.role.findFirst({
+      where: {
+        id: roleId,
+        OR: [{ tenantId }, { tenantId: null, isSystemRole: true }],
+      },
+    });
+    if (!role) throw new NotFoundException('Rôle non trouvé.');
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!user) throw new NotFoundException('Utilisateur non trouvé.');
+    // Isolation tenant : on ne peut assigner un rôle qu'à un utilisateur du même tenant
+    if (user.tenantId != null && user.tenantId !== tenantId) {
+      throw new ForbiddenException('Impossible d\'assigner un rôle à un utilisateur d\'un autre tenant.');
+    }
+
+    const assignmentTenantId = role.tenantId ?? tenantId;
+    const existing = await this.prisma.userRole.findUnique({
+      where: { userId_roleId: { userId, roleId } },
+    });
+    if (existing) {
+      const sameScope =
+        existing.tenantId === assignmentTenantId ||
+        (existing.tenantId === null && role.tenantId === null);
+      if (sameScope)
+        throw new BadRequestException('Ce rôle est déjà attribué à cet utilisateur.');
+      await this.prisma.userRole.update({
+        where: { userId_roleId: { userId, roleId } },
+        data: { tenantId: assignmentTenantId },
+      });
+    } else {
+      await this.prisma.userRole.create({
+        data: {
+          userId,
+          roleId,
+          tenantId: assignmentTenantId,
+        },
+      });
+    }
+
+    await this.historyService.logSettingChange(
+      tenantId,
+      null,
+      'roles',
+      'security',
+      { roleAssigned: { old: null, new: { userId, roleId, roleName: role.name } } },
+      assignedBy,
+    );
+
+    return this.getUsersWithRoles(tenantId);
+  }
+
+  /**
+   * Révoque un rôle d'un utilisateur (audit)
+   */
+  async revokeRoleFromUser(
+    tenantId: string,
+    userId: string,
+    roleId: string,
+    revokedBy: string,
+  ) {
+    const ur = await this.prisma.userRole.findFirst({
+      where: { userId, roleId },
+      include: { role: true },
+    });
+    if (!ur) throw new NotFoundException('Attribution rôle non trouvée.');
+
+    const scopeTenant = ur.tenantId ?? ur.role.tenantId;
+    if (scopeTenant && scopeTenant !== tenantId)
+      throw new ForbiddenException('Ce rôle n\'est pas attribué dans ce tenant.');
+
+    await this.prisma.userRole.delete({
+      where: { userId_roleId: { userId, roleId } },
+    });
+
+    await this.historyService.logSettingChange(
+      tenantId,
+      null,
+      'roles',
+      'security',
+      { roleRevoked: { old: { userId, roleId, roleName: ur.role.name }, new: null } },
+      revokedBy,
+    );
+
+    return { success: true };
   }
 
   /**

@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams, usePathname, useRouter } from 'next/navigation';
+import NextImage from 'next/image';
 import { 
   Globe, Shield, Brain, MessageSquare, CloudOff, History, 
   ToggleLeft, ToggleRight, Stamp, GraduationCap, Languages, 
@@ -104,6 +105,7 @@ export default function SettingsPage() {
   const [communicationSettings, setCommunicationSettings] = useState<any>(null);
   const [roles, setRoles] = useState<any[]>([]);
   const [permissions, setPermissions] = useState<any[]>([]);
+  const [usersWithRoles, setUsersWithRoles] = useState<any[]>([]);
   const [billingSettings, setBillingSettings] = useState<any>(null);
   const [availablePlans, setAvailablePlans] = useState<any[]>([]);
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -141,6 +143,8 @@ export default function SettingsPage() {
   const [bulkSuffixType, setBulkSuffixType] = useState<'letters' | 'numbers'>('letters');
   const [bulkCapacity, setBulkCapacity] = useState<number | ''>('');
   const [bilingualForm, setBilingualForm] = useState<any>({});
+  const [bilingualBillingImpact, setBilingualBillingImpact] = useState<{ monthly?: number; annual?: number; currency?: string } | null>(null);
+  const [bilingualMigrationNeeded, setBilingualMigrationNeeded] = useState<boolean | null>(null);
 
   const allGradesFromStructure = useMemo(() => {
     const levels = educationStructure?.levels ?? [];
@@ -323,13 +327,37 @@ export default function SettingsPage() {
     return () => { cancelled = true; };
   }, [isPlatformOwner, activeTab]);
 
+  // Charger impact tarifaire et statut migration (onglet Option bilingue)
+  useEffect(() => {
+    if (activeTab !== 'bilingual') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [impact, migration] = await Promise.all([
+          settingsService.getBilingualBillingImpact(effectiveTenantId ?? undefined).catch(() => null),
+          settingsService.getBilingualCheckMigration(effectiveTenantId ?? undefined).catch(() => ({ migrationNeeded: false })),
+        ]);
+        if (!cancelled) {
+          setBilingualBillingImpact(impact || null);
+          setBilingualMigrationNeeded((migration as any)?.migrationNeeded ?? null);
+        }
+      } catch (_) {
+        if (!cancelled) {
+          setBilingualBillingImpact(null);
+          setBilingualMigrationNeeded(null);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeTab, effectiveTenantId]);
+
   const loadAllSettings = async () => {
     try {
       setLoading(true);
-      const [general, featuresData, security, orion, atlas, offline, historyData, academicYearsResult, structure, bilingual, communication, rolesData, permissionsData, billing, plans, invoicesData, identity, identityHist] = 
+      const [general, featuresData, security, orion, atlas, offline, historyData, academicYearsResult, structure, bilingual, communication, rolesData, permissionsData, usersData, billing, plans, invoicesData, identity, identityHist] = 
         await Promise.all([
           settingsService.getGeneralSettings().catch(() => null),
-          settingsService.getFeatures().catch(() => []),
+          settingsService.getFeatures(effectiveTenantId ?? undefined).catch(() => []),
           settingsService.getSecuritySettings().catch(() => null),
           settingsService.getOrionSettings().catch(() => null),
           settingsService.getAtlasSettings().catch(() => null),
@@ -342,15 +370,16 @@ export default function SettingsPage() {
               ]).then(([y, a]) => ({ years: y, activeYear: a }))
             : Promise.resolve({ years: [], activeYear: null }),
           settingsService.getPedagogicalStructure().catch(() => null),
-          settingsService.getBilingualSettings().catch(() => null),
+          settingsService.getBilingualSettings(effectiveTenantId ?? undefined).catch(() => null),
           settingsService.getCommunicationSettings().catch(() => null),
-          settingsService.getRoles().catch(() => []),
+          settingsService.getRoles(effectiveTenantId ?? undefined).catch(() => []),
           settingsService.getPermissions().catch(() => []),
+          settingsService.getUsersWithRoles(effectiveTenantId ?? undefined).catch(() => []),
           settingsService.getBillingSettings().catch(() => null),
           settingsService.getAvailablePlans().catch(() => []),
           settingsService.getBillingInvoices({ limit: 10 }).catch(() => []),
-          settingsService.getActiveIdentityProfile().catch(() => null),
-          settingsService.getIdentityHistory({ limit: 20 }).catch(() => ({ versions: [] })),
+          settingsService.getActiveIdentityProfile(effectiveTenantId ?? undefined).catch(() => null),
+          settingsService.getIdentityHistory({ limit: 20 }, effectiveTenantId ?? undefined).catch(() => ({ versions: [] })),
         ]);
 
       setGeneralSettings(general);
@@ -383,7 +412,7 @@ export default function SettingsPage() {
         });
       }
       setIdentityVersions(identityHist?.versions || []);
-      setFeatures(featuresData || []);
+      setFeatures(Array.isArray(featuresData) ? featuresData : []);
       setSecuritySettings(security);
       setSecurityForm(security || {});
       setOrionSettings(orion);
@@ -407,8 +436,31 @@ export default function SettingsPage() {
       setBilingualForm(bilingual || {});
       setCommunicationSettings(communication);
       setCommunicationForm(communication || {});
-      setRoles(rolesData || []);
-      setPermissions(permissionsData || []);
+      let finalRoles = Array.isArray(rolesData) ? rolesData : [];
+      let finalPermissions = Array.isArray(permissionsData) ? permissionsData : [];
+      const needsBootstrap = finalRoles.length === 0 || finalPermissions.length === 0;
+      let finalUsers = Array.isArray(usersData) ? usersData : [];
+      if (needsBootstrap) {
+        try {
+          await settingsService.ensureRbacInitialized();
+          const [rolesAfter, permsAfter, usersAfter] = await Promise.all([
+            settingsService.getRoles(effectiveTenantId ?? undefined).catch(() => []),
+            settingsService.getPermissions().catch(() => []),
+            effectiveTenantId ? settingsService.getUsersWithRoles(effectiveTenantId).catch(() => []) : Promise.resolve(finalUsers),
+          ]);
+          finalRoles = Array.isArray(rolesAfter) ? rolesAfter : [];
+          finalPermissions = Array.isArray(permsAfter) ? permsAfter : [];
+          if (Array.isArray(usersAfter)) finalUsers = usersAfter;
+          if (finalRoles.length > 0 || finalPermissions.length > 0) {
+            showToast('success', 'Rôles et permissions initialisés et enregistrés en BDD');
+          }
+        } catch (e: any) {
+          showToast('error', e?.message || 'Impossible d\'initialiser les rôles (vérifiez l\'API)');
+        }
+      }
+      setRoles(finalRoles);
+      setPermissions(finalPermissions);
+      setUsersWithRoles(finalUsers);
       setBillingSettings(billing);
       setBillingForm(billing || {});
       setAvailablePlans(plans || []);
@@ -430,16 +482,15 @@ export default function SettingsPage() {
       setSaving(true);
       // Mapper devise vers slogan pour l'API
       const { devise, ...rest } = identityForm;
-      const newVersion = await settingsService.createIdentityVersion({
-        ...rest,
-        slogan: devise,
-        changeReason: changeReason.trim(),
-      });
+      const newVersion = await settingsService.createIdentityVersion(
+        { ...rest, slogan: devise, changeReason: changeReason.trim() },
+        effectiveTenantId ?? undefined
+      );
       showToast('success', `Nouvelle version ${newVersion.version} créée`);
       setIdentityProfile(newVersion);
       setChangeReason('');
       // Recharger l'historique
-      const histData = await settingsService.getIdentityHistory({ limit: 20 });
+      const histData = await settingsService.getIdentityHistory({ limit: 20 }, effectiveTenantId ?? undefined);
       setIdentityVersions(histData?.versions || []);
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
@@ -452,7 +503,7 @@ export default function SettingsPage() {
     if (!confirm(`Voulez-vous restaurer la version ${versionNum} ? Une nouvelle version sera créée.`)) return;
     try {
       setSaving(true);
-      const restored = await settingsService.activateIdentityVersion(versionId, `Restauration de la version ${versionNum}`);
+      const restored = await settingsService.activateIdentityVersion(versionId, `Restauration de la version ${versionNum}`, effectiveTenantId ?? undefined);
       showToast('success', `Version ${restored.version} restaurée`);
       setIdentityProfile(restored);
       // Mettre à jour le formulaire
@@ -478,7 +529,7 @@ export default function SettingsPage() {
         directorSignatureUrl: restored.directorSignatureUrl || '',
       });
       // Recharger l'historique
-      const histData = await settingsService.getIdentityHistory({ limit: 20 });
+      const histData = await settingsService.getIdentityHistory({ limit: 20 }, effectiveTenantId ?? undefined);
       setIdentityVersions(histData?.versions || []);
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de la restauration');
@@ -972,9 +1023,9 @@ export default function SettingsPage() {
   const handleSaveBilingual = async () => {
     try {
       setSaving(true);
-      await settingsService.updateBilingualSettings(bilingualForm);
+      await settingsService.updateBilingualSettings(bilingualForm, effectiveTenantId ?? undefined);
       showToast('success', 'Paramètres bilingues enregistrés');
-      const updated = await settingsService.getBilingualSettings();
+      const updated = await settingsService.getBilingualSettings(effectiveTenantId ?? undefined);
       setBilingualSettings(updated);
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
@@ -986,14 +1037,39 @@ export default function SettingsPage() {
   const handleToggleFeature = async (featureCode: string, currentlyEnabled: boolean) => {
     try {
       setSaving(true);
+      const tid = effectiveTenantId ?? undefined;
       if (currentlyEnabled) {
-        await settingsService.disableFeature(featureCode, 'Désactivation depuis les paramètres');
+        await settingsService.disableFeature(featureCode, 'Désactivation depuis les paramètres', tid);
       } else {
-        await settingsService.enableFeature(featureCode, 'Activation depuis les paramètres');
+        await settingsService.enableFeature(featureCode, 'Activation depuis les paramètres', tid);
       }
       showToast('success', `Module ${currentlyEnabled ? 'désactivé' : 'activé'}`);
-      const updated = await settingsService.getFeatures();
-      setFeatures(updated || []);
+      const updated = await settingsService.getFeatures(tid);
+      setFeatures(Array.isArray(updated) ? updated : []);
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('settings:features-updated'));
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur lors de la modification');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleAllModules = async (enableAll: boolean) => {
+    try {
+      setSaving(true);
+      const tid = effectiveTenantId ?? undefined;
+      if (enableAll) {
+        const res = await settingsService.enableAllModules(undefined, tid);
+        const n = typeof res?.enabled === 'number' ? res.enabled : 0;
+        showToast('success', n > 0 ? `${n} module(s) activé(s)` : 'Tous les modules étaient déjà activés');
+      } else {
+        const res = await settingsService.disableAllModules(undefined, tid);
+        const n = typeof res?.disabled === 'number' ? res.disabled : 0;
+        showToast('success', n > 0 ? `${n} module(s) désactivé(s)` : 'Tous les modules étaient déjà désactivés');
+      }
+      const updated = await settingsService.getFeatures(tid);
+      setFeatures(Array.isArray(updated) ? updated : []);
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('settings:features-updated'));
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de la modification');
     } finally {
@@ -1040,16 +1116,99 @@ export default function SettingsPage() {
   };
 
   const [editingRole, setEditingRole] = useState<any>(null);
-  const [roleForm, setRoleForm] = useState<any>({ name: '', description: '', isSystemRole: false, canAccessOrion: false, canAccessAtlas: false, allowedLevelIds: [] });
+  const [roleForm, setRoleForm] = useState<any>({ name: '', description: '', isSystemRole: false, canAccessOrion: false, canAccessAtlas: false, allowedLevelIds: [], permissionIds: [] });
+  const [editingRolePermissionIds, setEditingRolePermissionIds] = useState<string[]>([]);
+  const [editingPermissionsRoleId, setEditingPermissionsRoleId] = useState<string | null>(null);
+  const [assignRoleUserId, setAssignRoleUserId] = useState<string | null>(null);
+  const [permissionFilterModule, setPermissionFilterModule] = useState<string>('');
+  const [matrixModuleFilter, setMatrixModuleFilter] = useState<string>('');
+
+  const permissionsGrouped = useMemo(() => {
+    const g: Record<string, { id: string; name: string; resource: string; action: string }[]> = {};
+    for (const p of permissions || []) {
+      const res = (p as { resource?: string }).resource ?? '';
+      if (!g[res]) g[res] = [];
+      g[res].push(p as { id: string; name: string; resource: string; action: string });
+    }
+    return g;
+  }, [permissions]);
+
+  /** Libellés des modules pour la matrice (RBAC) */
+  const RESOURCE_LABELS: Record<string, string> = {
+    ELEVES: 'Élèves & Scolarité',
+    INSCRIPTIONS: 'Inscriptions',
+    DOCUMENTS_SCOLAIRES: 'Documents scolaires',
+    ORGANISATION_PEDAGOGIQUE: 'Organisation pédagogique',
+    MATERIEL_PEDAGOGIQUE: 'Matériel pédagogique',
+    EXAMENS: 'Examens',
+    BULLETINS: 'Notes & Bulletins',
+    FINANCES: 'Finances & Économat',
+    RECOUVREMENT: 'Recouvrement',
+    DEPENSES: 'Dépenses',
+    RH: 'Personnel, RH & Paie',
+    PAIE: 'Paie',
+    COMMUNICATION: 'Communication',
+    PARAMETRES: 'Paramètres',
+    ANNEES_SCOLAIRES: 'Années scolaires',
+    ORION: 'ORION',
+    ATLAS: 'ATLAS',
+    QHSE: 'QHSE',
+    BIBLIOTHEQUE: 'Bibliothèque',
+    TRANSPORT: 'Transport',
+    CANTINE: 'Cantine',
+    INFIRMERIE: 'Infirmerie',
+    EDUCAST: 'EduCast',
+    BOUTIQUE: 'Boutique',
+  };
+
+  /** Rôles plateforme (PLATFORM_OWNER, PLATFORM_ADMIN) vs rôles école (tenant + autres système) */
+  const { platformRoles, schoolRoles } = useMemo(() => {
+    const list = Array.isArray(roles) ? roles : [];
+    const platformNames = ['PLATFORM_OWNER', 'PLATFORM_ADMIN'];
+    const platform = list.filter((r: any) => platformNames.includes(r.name));
+    const school = list.filter((r: any) => !platformNames.includes(r.name));
+    return { platformRoles: platform, schoolRoles: school };
+  }, [roles]);
+
+  const handleInitializeRbac = async () => {
+    try {
+      setSaving(true);
+      await settingsService.ensureRbacInitialized();
+      showToast('success', 'Rôles et permissions initialisés');
+      const tid = effectiveTenantId ?? undefined;
+      const [rolesAfter, permsAfter, usersAfter] = await Promise.all([
+        settingsService.getRoles(tid).catch(() => []),
+        settingsService.getPermissions().catch(() => []),
+        effectiveTenantId ? settingsService.getUsersWithRoles(tid).catch(() => []) : Promise.resolve([]),
+      ]);
+      setRoles(Array.isArray(rolesAfter) ? rolesAfter : []);
+      setPermissions(Array.isArray(permsAfter) ? permsAfter : []);
+      if (Array.isArray(usersAfter)) setUsersWithRoles(usersAfter);
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur lors de l\'initialisation RBAC');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /** Pour la matrice : ensemble des permissionIds par rôle */
+  const rolePermissionSet = useMemo(() => {
+    const m: Record<string, Set<string>> = {};
+    for (const r of Array.isArray(roles) ? roles : []) {
+      m[r.id] = new Set((r.rolePermissions || []).map((rp: any) => rp.permissionId));
+    }
+    return m;
+  }, [roles]);
 
   const handleCreateRole = async () => {
     try {
       setSaving(true);
-      await settingsService.createRole(roleForm);
+      const tid = effectiveTenantId ?? undefined;
+      await settingsService.createRole(roleForm, tid);
       showToast('success', 'Rôle créé avec succès');
-      const updated = await settingsService.getRoles();
+      const updated = await settingsService.getRoles(tid);
       setRoles(updated || []);
-      setRoleForm({ name: '', description: '', isSystemRole: false, canAccessOrion: false, canAccessAtlas: false, allowedLevelIds: [] });
+      setRoleForm({ name: '', description: '', isSystemRole: false, canAccessOrion: false, canAccessAtlas: false, allowedLevelIds: [], permissionIds: [] });
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de la création du rôle');
     } finally {
@@ -1060,9 +1219,10 @@ export default function SettingsPage() {
   const handleUpdateRole = async (roleId: string) => {
     try {
       setSaving(true);
-      await settingsService.updateRole(roleId, editingRole);
+      const tid = effectiveTenantId ?? undefined;
+      await settingsService.updateRole(roleId, editingRole, tid);
       showToast('success', 'Rôle mis à jour');
-      const updated = await settingsService.getRoles();
+      const updated = await settingsService.getRoles(tid);
       setRoles(updated || []);
       setEditingRole(null);
     } catch (error: any) {
@@ -1076,12 +1236,63 @@ export default function SettingsPage() {
     if (!confirm('Êtes-vous sûr de vouloir supprimer ce rôle ?')) return;
     try {
       setSaving(true);
-      await settingsService.deleteRole(roleId);
+      const tid = effectiveTenantId ?? undefined;
+      await settingsService.deleteRole(roleId, tid);
       showToast('success', 'Rôle supprimé');
-      const updated = await settingsService.getRoles();
+      const updated = await settingsService.getRoles(tid);
       setRoles(updated || []);
     } catch (error: any) {
       showToast('error', error.message || 'Impossible de supprimer ce rôle');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveRolePermissions = async (roleId: string) => {
+    try {
+      setSaving(true);
+      const tid = effectiveTenantId ?? undefined;
+      await settingsService.updateRolePermissions(roleId, editingRolePermissionIds, tid);
+      showToast('success', 'Permissions enregistrées');
+      const updated = await settingsService.getRoles(tid);
+      setRoles(Array.isArray(updated) ? updated : []);
+      const role = Array.isArray(updated) ? updated.find((r: any) => r.id === roleId) : null;
+      setEditingRolePermissionIds(role?.rolePermissions?.map((rp: any) => rp.permissionId) ?? []);
+      setEditingPermissionsRoleId(null);
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur lors de l\'enregistrement des permissions');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAssignRole = async (userId: string, roleId: string) => {
+    try {
+      setSaving(true);
+      const tid = effectiveTenantId ?? undefined;
+      await settingsService.assignRoleToUser(userId, roleId, tid);
+      showToast('success', 'Rôle attribué');
+      const updated = await settingsService.getUsersWithRoles(tid);
+      setUsersWithRoles(Array.isArray(updated) ? updated : []);
+      setAssignRoleUserId(null);
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur lors de l\'attribution');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRevokeRole = async (userId: string, roleId: string) => {
+    if (!confirm('Révoquer ce rôle pour cet utilisateur ?')) return;
+    try {
+      setSaving(true);
+      const tid = effectiveTenantId ?? undefined;
+      await settingsService.revokeRoleFromUser(userId, roleId, tid);
+      showToast('success', 'Rôle révoqué');
+      const updated = await settingsService.getUsersWithRoles(tid);
+      setUsersWithRoles(Array.isArray(updated) ? updated : []);
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur lors de la révocation');
     } finally {
       setSaving(false);
     }
@@ -1327,7 +1538,7 @@ export default function SettingsPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="border border-dashed border-gray-300 rounded-lg p-3 text-center">
                   {identityForm.logoUrl ? (
-                    <img src={identityForm.logoUrl} alt="Logo" className="w-16 h-16 mx-auto object-contain mb-2" />
+                    <NextImage src={identityForm.logoUrl} alt="Logo" width={64} height={64} className="mx-auto object-contain mb-2" unoptimized loading="lazy" />
                   ) : (
                     <Image className="w-12 h-12 mx-auto text-gray-300 mb-2" />
                   )}
@@ -1339,7 +1550,7 @@ export default function SettingsPage() {
                 </div>
                 <div className="border border-dashed border-gray-300 rounded-lg p-3 text-center">
                   {identityForm.stampUrl ? (
-                    <img src={identityForm.stampUrl} alt="Cachet" className="w-16 h-16 mx-auto object-contain mb-2" />
+                    <NextImage src={identityForm.stampUrl} alt="Cachet" width={64} height={64} className="mx-auto object-contain mb-2" unoptimized loading="lazy" />
                   ) : (
                     <Stamp className="w-12 h-12 mx-auto text-gray-300 mb-2" />
                   )}
@@ -1351,7 +1562,7 @@ export default function SettingsPage() {
                 </div>
                 <div className="border border-dashed border-gray-300 rounded-lg p-3 text-center">
                   {identityForm.directorSignatureUrl ? (
-                    <img src={identityForm.directorSignatureUrl} alt="Signature" className="w-16 h-16 mx-auto object-contain mb-2" />
+                    <NextImage src={identityForm.directorSignatureUrl} alt="Signature" width={64} height={64} className="mx-auto object-contain mb-2" unoptimized loading="lazy" />
                   ) : (
                     <FileSignature className="w-12 h-12 mx-auto text-gray-300 mb-2" />
                   )}
@@ -1372,7 +1583,7 @@ export default function SettingsPage() {
               </h4>
               <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
                 <div className="flex items-start gap-4 mb-4">
-                  {identityForm.logoUrl && <img src={identityForm.logoUrl} alt="Logo" className="w-16 h-16 object-contain" />}
+                  {identityForm.logoUrl && <NextImage src={identityForm.logoUrl} alt="Logo" width={64} height={64} className="object-contain" unoptimized loading="lazy" />}
                   <div className="flex-1">
                     <h5 className="font-bold text-lg">{identityForm.schoolName || 'Nom de l\'établissement'}</h5>
                     {identityForm.schoolAcronym && <p className="text-sm text-gray-600">({identityForm.schoolAcronym})</p>}
@@ -1386,8 +1597,8 @@ export default function SettingsPage() {
                   <div>N° Auth. : {identityForm.authorizationNumber || '-'}</div>
                 </div>
                 <div className="flex justify-end gap-4 mt-4 pt-2 border-t">
-                  {identityForm.stampUrl && <img src={identityForm.stampUrl} alt="Cachet" className="w-12 h-12 object-contain" />}
-                  {identityForm.directorSignatureUrl && <img src={identityForm.directorSignatureUrl} alt="Signature" className="w-12 h-12 object-contain" />}
+                  {identityForm.stampUrl && <NextImage src={identityForm.stampUrl} alt="Cachet" width={48} height={48} className="object-contain" unoptimized loading="lazy" />}
+                  {identityForm.directorSignatureUrl && <NextImage src={identityForm.directorSignatureUrl} alt="Signature" width={48} height={48} className="object-contain" unoptimized loading="lazy" />}
                 </div>
               </div>
             </div>
@@ -2454,18 +2665,44 @@ export default function SettingsPage() {
         );
 
       case 'bilingual':
+        const migrationNeeded = bilingualMigrationNeeded ?? bilingualSettings?.migrationRequired ?? false;
+        const wantsToEnable = bilingualForm.isEnabled && !bilingualSettings?.isEnabled;
         return (
           <div className="space-y-6">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Option bilingue</h3>
-              <p className="text-sm text-gray-600 mb-6">
-                Configurez l'option bilingue français/anglais pour votre établissement.
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">Option bilingue</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Mode académique structurant : mêmes élèves et classes, mais matières, notes, bulletins et statistiques séparés en français et anglais. Impacte la structure pédagogique, les matières, les notes, les bulletins, les tableaux d&apos;honneur, la tarification et ORION.
               </p>
+
+              {/* Avertissement critique à l'activation */}
+              {wantsToEnable && (
+                <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="text-sm font-medium text-amber-900 flex items-start gap-2">
+                    <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                    <span>
+                      L&apos;activation du bilingue déclenche un supplément tarifaire et peut nécessiter une migration si vous avez déjà des matières ou notes. Vous ne pourrez pas désactiver le bilingue tant que des données anglaises existent.
+                    </span>
+                  </p>
+                  {migrationNeeded && (
+                    <label className="mt-3 flex items-center gap-2 text-sm text-amber-800 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!bilingualForm.billingImpactAcknowledged}
+                        onChange={(e) => setBilingualForm({ ...bilingualForm, billingImpactAcknowledged: e.target.checked })}
+                        className="rounded border-amber-300"
+                      />
+                      J&apos;ai pris connaissance de l&apos;impact sur la facturation et de la migration éventuelle.
+                    </label>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-4">
                 <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                   <div>
-                    <h4 className="font-semibold text-gray-800">Activer le bilingue</h4>
-                    <p className="text-sm text-gray-600">Permet l'enseignement en français et anglais</p>
+                    <h4 className="font-semibold text-gray-800">Activer le mode bilingue</h4>
+                    <p className="text-sm text-gray-600">Séparation pédagogique FR / EN (notes, bulletins, statistiques)</p>
                   </div>
                   <button
                     onClick={() => setBilingualForm({ ...bilingualForm, isEnabled: !bilingualForm.isEnabled })}
@@ -2499,7 +2736,7 @@ export default function SettingsPage() {
                     <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                       <div>
                         <h4 className="font-semibold text-gray-800">Séparer les moyennes</h4>
-                        <p className="text-sm text-gray-600">Calculer des moyennes séparées</p>
+                        <p className="text-sm text-gray-600">Calculer des moyennes par langue</p>
                       </div>
                       <button
                         onClick={() => setBilingualForm({ ...bilingualForm, separateGrades: !bilingualForm.separateGrades })}
@@ -2514,10 +2751,23 @@ export default function SettingsPage() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Langue par défaut de l'interface
+                        Langue par défaut pour les évaluations (bulletins, moyennes)
                       </label>
                       <select
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={bilingualForm.defaultLanguage ?? bilingualForm.defaultUILanguage ?? 'FR'}
+                        onChange={(e) => setBilingualForm({ ...bilingualForm, defaultLanguage: e.target.value })}
+                      >
+                        <option value="FR">Français</option>
+                        <option value="EN">English</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Langue par défaut de l&apos;interface
+                      </label>
+                      <select
+                        className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={bilingualForm.defaultUILanguage || 'FR'}
                         onChange={(e) => setBilingualForm({ ...bilingualForm, defaultUILanguage: e.target.value })}
                       >
@@ -2528,18 +2778,58 @@ export default function SettingsPage() {
                   </>
                 )}
               </div>
-              {bilingualSettings?.migrationRequired && (
-                <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+
+              {/* Impact tarifaire */}
+              {bilingualForm.isEnabled && bilingualBillingImpact && (bilingualBillingImpact.monthly > 0 || bilingualBillingImpact.annual > 0) && (
+                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h4 className="text-sm font-semibold text-blue-900 mb-2">Impact sur la facturation</h4>
+                  <p className="text-sm text-blue-800">
+                    Supplément option bilingue : <strong>{bilingualBillingImpact.monthly ?? 0} {bilingualBillingImpact.currency ?? ''}</strong> / mois, ou <strong>{bilingualBillingImpact.annual ?? 0} {bilingualBillingImpact.currency ?? ''}</strong> / an.
+                  </p>
+                </div>
+              )}
+
+              {migrationNeeded && bilingualSettings?.migrationRequired && (
+                <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg space-y-2">
                   <p className="text-sm text-yellow-800">
                     <AlertCircle className="w-4 h-4 inline mr-2" />
-                    Une migration est requise pour activer le bilingue avec vos données existantes.
+                    Une migration est requise pour activer le bilingue avec vos données existantes (matières ou notes déjà présentes).
                   </p>
+                  {bilingualSettings?.migrationStatus === 'PENDING' && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          setSaving(true);
+                          const res = await settingsService.startBilingualMigration(effectiveTenantId ?? undefined);
+                          showToast('success', res?.message ?? `Migration terminée. ${res?.migrated?.subjects ?? 0} matières, ${res?.migrated?.examScores ?? 0} notes.`);
+                          const [updated, impact] = await Promise.all([
+                            settingsService.getBilingualSettings(effectiveTenantId ?? undefined),
+                            settingsService.getBilingualBillingImpact(effectiveTenantId ?? undefined).catch(() => null),
+                          ]);
+                          setBilingualSettings(updated);
+                          setBilingualForm(updated || {});
+                          setBilingualMigrationNeeded(false);
+                          if (impact) setBilingualBillingImpact(impact);
+                        } catch (e: any) {
+                          showToast('error', e.message ?? 'Erreur migration');
+                        } finally {
+                          setSaving(false);
+                        }
+                      }}
+                      disabled={saving}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50"
+                    >
+                      {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      Lancer la migration (marquer les données en FR)
+                    </button>
+                  )}
                 </div>
               )}
               <div className="mt-6 flex justify-end">
                 <button
                   onClick={handleSaveBilingual}
-                  disabled={saving}
+                  disabled={saving || (wantsToEnable && migrationNeeded && !bilingualForm.billingImpactAcknowledged)}
                   className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                 >
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
@@ -2551,26 +2841,96 @@ export default function SettingsPage() {
         );
 
       case 'features':
+        // Ordre d'affichage des modules (aligné sidebar / backend FEATURE_KEYS)
+        const modulesDisplayOrder = [
+          'STUDENTS', 'FINANCE', 'EXAMS', 'PEDAGOGY', 'HR_PAYROLL', 'COMMUNICATION',
+          'LIBRARY', 'TRANSPORT', 'CANTEEN', 'INFIRMARY', 'QHSE', 'EDUCAST', 'SHOP',
+          'ORION', 'ATLAS', 'OFFLINE_SYNC',
+        ];
+        const featureLabels: Record<string, string> = {
+          STUDENTS: 'Élèves & Scolarité',
+          FINANCE: 'Finances & Économat',
+          EXAMS: 'Examens, Notes & Bulletins',
+          PEDAGOGY: 'Organisation Pédagogique',
+          HR_PAYROLL: 'Personnel, RH & Paie',
+          COMMUNICATION: 'Communication',
+          LIBRARY: 'Bibliothèque',
+          TRANSPORT: 'Transport',
+          CANTEEN: 'Cantine',
+          INFIRMARY: 'Infirmerie',
+          QHSE: 'QHSE',
+          EDUCAST: 'EduCast',
+          SHOP: 'Boutique',
+          ORION: 'ORION',
+          ATLAS: 'ATLAS',
+          OFFLINE_SYNC: 'Sync. hors ligne',
+        };
+        const sortedFeatures = [...features].sort((a: { featureCode: string }, b: { featureCode: string }) => {
+          const ia = modulesDisplayOrder.indexOf(a.featureCode);
+          const ib = modulesDisplayOrder.indexOf(b.featureCode);
+          if (ia !== -1 && ib !== -1) return ia - ib;
+          if (ia !== -1) return -1;
+          if (ib !== -1) return 1;
+          return a.featureCode.localeCompare(b.featureCode);
+        });
         return (
           <div className="space-y-6">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Modules & Fonctionnalités</h3>
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">Modules & Fonctionnalités</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Modules activés par défaut : Élèves & Scolarité, Finances & Économat, Examens (Notes & Bulletins), Organisation Pédagogique, Personnel (RH & Paie), Communication. Les autres sont désactivés par défaut.
+              </p>
               {features.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
                   <ToggleLeft className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                  <p>Aucun module configuré.</p>
+                  <p>Chargement des modules…</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {features.map((feature) => (
+                  {/* Interrupteur global : activer/désactiver tous les modules */}
+                  {(() => {
+                    const allEnabled = features.every((f: { isEnabled: boolean }) => f.isEnabled);
+                    return (
+                      <div className="flex items-center justify-between p-4 border border-blue-200 rounded-lg bg-blue-50/50 mb-4">
+                        <div>
+                          <h4 className="font-semibold text-gray-800">Tous les modules</h4>
+                          <p className="text-sm text-gray-600 mt-0.5">
+                            {allEnabled ? 'Tous activés' : 'Tous désactivés ou partiellement'}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleToggleAllModules(!allEnabled)}
+                          disabled={saving}
+                          className="p-2 rounded-lg hover:bg-blue-100 transition-colors"
+                          title={allEnabled ? 'Désactiver tous les modules' : 'Activer tous les modules'}
+                        >
+                          {allEnabled ? (
+                            <ToggleRight className="w-6 h-6 text-green-600" />
+                          ) : (
+                            <ToggleLeft className="w-6 h-6 text-gray-500" />
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })()}
+                  {sortedFeatures.map((feature: { featureCode: string; isEnabled: boolean; premium?: boolean }) => (
                     <div
                       key={feature.featureCode}
-                      className="flex items-center justify-between p-4 border border-gray-200 rounded-lg"
+                      className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50/50"
                     >
                       <div>
-                        <h4 className="font-semibold text-gray-800">{feature.featureCode}</h4>
-                        <p className="text-sm text-gray-600">
-                          Statut: <span className={feature.isEnabled ? 'text-green-600' : 'text-gray-500'}>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-semibold text-gray-800">
+                            {featureLabels[feature.featureCode] ?? feature.featureCode}
+                          </h4>
+                          {feature.premium && (
+                            <span className="px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-800 rounded">
+                              Premium
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Statut : <span className={feature.isEnabled ? 'text-green-600' : 'text-gray-500'}>
                             {feature.isEnabled ? 'Activé' : 'Désactivé'}
                           </span>
                         </p>
@@ -2578,7 +2938,8 @@ export default function SettingsPage() {
                       <button
                         onClick={() => handleToggleFeature(feature.featureCode, feature.isEnabled)}
                         disabled={saving}
-                        className="p-2 rounded-lg hover:bg-gray-100"
+                        className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                        title={feature.isEnabled ? 'Désactiver le module' : 'Activer le module'}
                       >
                         {feature.isEnabled ? (
                           <ToggleRight className="w-6 h-6 text-green-600" />
@@ -2598,177 +2959,303 @@ export default function SettingsPage() {
         return (
           <div className="space-y-6">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Gestion des rôles</h3>
+              <h3 className="text-lg font-semibold text-gray-800 mb-1">Utilisateurs, rôles & permissions (RBAC)</h3>
               <p className="text-sm text-gray-600 mb-6">
-                Définissez les rôles et leurs permissions pour contrôler l'accès aux différentes fonctionnalités.
+                Contrôle d&apos;accès multi-tenant : <strong>rôles plateforme</strong> (PLATFORM_OWNER, PLATFORM_ADMIN), <strong>rôles école</strong> (DIRECTEUR, COMPTABLE, ENSEIGNANT, etc.), permissions par module et action (lecture, écriture, suppression, validation). Accès ORION/ATLAS par rôle. Un enseignant ne voit que ses classes ; un parent que son enfant ; un comptable ne modifie pas les notes.
               </p>
-              
-              <div className="mb-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
-                <h4 className="font-semibold text-gray-800 mb-3">Créer un nouveau rôle</h4>
+
+              {/* ——— Section 1 : Liste des utilisateurs ——— */}
+              <div className="mb-8">
+                <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                  <Users className="w-4 h-4" />
+                  Liste des utilisateurs du tenant
+                </h4>
+                <p className="text-sm text-gray-600 mb-4">Attribuez ou révoquez des rôles par utilisateur. Isolation stricte : chaque utilisateur n&apos;accède qu&apos;aux données de son tenant.</p>
+                {usersWithRoles.length === 0 ? (
+                  <p className="text-gray-500 text-sm py-4">
+                    {!effectiveTenantId && isPlatformOwner
+                      ? 'Sélectionnez un établissement (ci-dessus) pour afficher les utilisateurs.'
+                      : 'Aucun utilisateur dans cet établissement ou contexte tenant manquant.'}
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-200 bg-gray-50 text-left">
+                          <th className="py-2 px-3 font-semibold text-gray-800">Utilisateur</th>
+                          <th className="py-2 px-3 font-semibold text-gray-800">Rôles</th>
+                          <th className="py-2 px-3 font-semibold text-gray-800 w-44">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {usersWithRoles.map((u: any) => (
+                          <tr key={u.id} className="border-b border-gray-100">
+                            <td className="py-2 px-3">
+                              <span className="font-medium text-gray-800">{u.firstName} {u.lastName}</span>
+                              <span className="text-gray-500 ml-1">({u.email})</span>
+                            </td>
+                            <td className="py-2 px-3">
+                              {(u.userRoles || []).length === 0 ? (
+                                <span className="text-gray-400">Aucun rôle</span>
+                              ) : (
+                                <span className="flex flex-wrap gap-1">
+                                  {(u.userRoles || []).map((ur: any) => (
+                                    <span key={ur.role?.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">
+                                      {ur.role?.name}
+                                      <button type="button" onClick={() => handleRevokeRole(u.id, ur.role?.id)} disabled={saving} className="text-red-600 hover:underline" title="Révoquer">×</button>
+                                    </span>
+                                  ))}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2 px-3">
+                              {assignRoleUserId === u.id ? (
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  <select
+                                    id={`assign-role-${u.id}`}
+                                    className="px-2 py-1 border border-gray-300 rounded text-sm"
+                                    onChange={(e) => {
+                                      const roleId = e.target.value;
+                                      if (roleId) handleAssignRole(u.id, roleId);
+                                    }}
+                                  >
+                                    <option value="">Choisir un rôle…</option>
+                                    {roles.filter((r: any) => !(u.userRoles || []).some((ur: any) => ur.role?.id === r.id)).map((r: any) => (
+                                      <option key={r.id} value={r.id}>{r.name}</option>
+                                    ))}
+                                  </select>
+                                  <button type="button" onClick={() => setAssignRoleUserId(null)} className="text-gray-500 hover:underline text-xs">Annuler</button>
+                                </div>
+                              ) : (
+                                <button type="button" onClick={() => setAssignRoleUserId(u.id)} className="px-2 py-1 text-sm border border-blue-300 text-blue-600 rounded hover:bg-blue-50">
+                                  Attribuer un rôle
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* ——— Section 2 : Rôles (plateforme + école) ——— */}
+              <div className="mb-8">
+                <h4 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <UserCog className="w-4 h-4" />
+                  Rôles
+                </h4>
+
+                {platformRoles.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Niveau 1 — Rôles plateforme</p>
+                    <div className="flex flex-wrap gap-2">
+                      {platformRoles.map((role: any) => (
+                        <div key={role.id} className="inline-flex items-center gap-2 px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg">
+                          <span className="font-medium text-gray-800">{role.name}</span>
+                          <span className="text-xs text-gray-500">— {role.description || 'Rôle système'}</span>
+                          {role.canAccessOrion && <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">ORION</span>}
+                          {role.canAccessAtlas && <span className="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">ATLAS</span>}
+                          <button type="button" onClick={() => { setEditingPermissionsRoleId(role.id); setEditingRolePermissionIds(role.rolePermissions?.map((rp: any) => rp.permissionId) ?? []); }} className="text-xs text-blue-600 hover:underline">Permissions</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Niveau 2 — Rôles école</p>
+                {/* Bouton "Initialiser" visible uniquement lorsque la liste des rôles est vide */}
+                {platformRoles.length === 0 && schoolRoles.length === 0 ? (
+                  <div className="text-center py-6 text-gray-500 text-sm space-y-3">
+                    <p>Aucun rôle. Créez un rôle personnalisé ci-dessous ou initialisez les rôles système.</p>
+                    <button type="button" onClick={handleInitializeRbac} disabled={saving} className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm">
+                      {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserCog className="w-4 h-4" />}
+                      Initialiser les rôles et permissions
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {schoolRoles.map((role: any) => (
+                      <div key={role.id} className="p-4 border border-gray-200 rounded-lg">
+                        {editingRole?.id === role.id ? (
+                          <div className="space-y-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <input type="text" className="px-3 py-2 border border-gray-300 rounded-md" value={editingRole.name} onChange={(e) => setEditingRole({ ...editingRole, name: e.target.value })} placeholder="Nom" />
+                              <input type="text" className="px-3 py-2 border border-gray-300 rounded-md" value={editingRole.description || ''} onChange={(e) => setEditingRole({ ...editingRole, description: e.target.value })} placeholder="Description" />
+                            </div>
+                            <div className="flex flex-wrap gap-4">
+                              <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={editingRole.canAccessOrion} onChange={(e) => setEditingRole({ ...editingRole, canAccessOrion: e.target.checked })} className="rounded" /><span className="text-sm">Accès ORION</span></label>
+                              <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={editingRole.canAccessAtlas} onChange={(e) => setEditingRole({ ...editingRole, canAccessAtlas: e.target.checked })} className="rounded" /><span className="text-sm">Accès ATLAS</span></label>
+                            </div>
+                            <div className="flex gap-2">
+                              <button onClick={() => handleUpdateRole(role.id)} disabled={saving} className="px-3 py-1 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700">Sauvegarder</button>
+                              <button onClick={() => setEditingRole(null)} className="px-3 py-1 border border-gray-300 rounded-md text-sm hover:bg-gray-50">Annuler</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div>
+                              <span className="font-semibold text-gray-800">{role.name}</span>
+                              {role.isSystemRole && <span className="ml-2 text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded">Système</span>}
+                              <p className="text-sm text-gray-600 mt-0.5">{role.description || '—'}</p>
+                              <div className="flex gap-2 text-xs mt-1">
+                                {role.canAccessOrion && <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded">ORION</span>}
+                                {role.canAccessAtlas && <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded">ATLAS</span>}
+                              </div>
+                            </div>
+                            <div className="flex gap-2 flex-wrap">
+                              <button type="button" onClick={() => { setEditingPermissionsRoleId(role.id); setEditingRolePermissionIds(role.rolePermissions?.map((rp: any) => rp.permissionId) ?? []); }} className="px-3 py-1 text-sm border border-blue-300 text-blue-600 rounded-md hover:bg-blue-50">Permissions</button>
+                              {!role.isSystemRole && (
+                                <>
+                                  <button onClick={() => setEditingRole({ ...role })} className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50">Modifier</button>
+                                  <button onClick={() => handleDeleteRole(role.id)} disabled={saving} className="px-3 py-1 text-sm border border-red-300 text-red-600 rounded-md hover:bg-red-50">Supprimer</button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* ——— Section 3 : Créer un rôle personnalisé ——— */}
+              <div className="mb-8 p-4 border border-gray-200 rounded-lg bg-gray-50">
+                <h4 className="font-semibold text-gray-800 mb-3">Créer un rôle personnalisé</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Nom du rôle</label>
-                    <input
-                      type="text"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={roleForm.name}
-                      onChange={(e) => setRoleForm({ ...roleForm, name: e.target.value })}
-                      placeholder="Ex: Enseignant principal"
-                    />
+                    <input type="text" className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" value={roleForm.name} onChange={(e) => setRoleForm({ ...roleForm, name: e.target.value })} placeholder="Ex: Enseignant principal" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                    <input
-                      type="text"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={roleForm.description}
-                      onChange={(e) => setRoleForm({ ...roleForm, description: e.target.value })}
-                      placeholder="Rôle pour les enseignants"
-                    />
+                    <input type="text" className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" value={roleForm.description} onChange={(e) => setRoleForm({ ...roleForm, description: e.target.value })} placeholder="Rôle pour les enseignants" />
                   </div>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={roleForm.canAccessOrion}
-                      onChange={(e) => setRoleForm({ ...roleForm, canAccessOrion: e.target.checked })}
-                      className="rounded"
-                    />
-                    <span className="text-sm text-gray-700">Accès ORION</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={roleForm.canAccessAtlas}
-                      onChange={(e) => setRoleForm({ ...roleForm, canAccessAtlas: e.target.checked })}
-                      className="rounded"
-                    />
-                    <span className="text-sm text-gray-700">Accès ATLAS</span>
-                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={roleForm.canAccessOrion} onChange={(e) => setRoleForm({ ...roleForm, canAccessOrion: e.target.checked })} className="rounded" /><span className="text-sm text-gray-700">Accès ORION</span></label>
+                  <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={roleForm.canAccessAtlas} onChange={(e) => setRoleForm({ ...roleForm, canAccessAtlas: e.target.checked })} className="rounded" /><span className="text-sm text-gray-700">Accès ATLAS</span></label>
                 </div>
                 <div className="mt-4">
-                  <button
-                    onClick={handleCreateRole}
-                    disabled={saving || !roleForm.name}
-                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
-                  >
+                  <button onClick={handleCreateRole} disabled={saving || !roleForm.name} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50">
                     {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserCog className="w-4 h-4" />}
                     Créer le rôle
                   </button>
                 </div>
               </div>
 
-              <div className="space-y-3">
-                <h4 className="font-semibold text-gray-800">Rôles existants</h4>
-                {roles.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <UserCog className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                    <p>Aucun rôle configuré.</p>
+              {/* ——— Section 4 : Matrice des permissions (vue globale) ——— */}
+              <div className="mb-6">
+                <h4 className="font-semibold text-gray-800 mb-2">Matrice des permissions</h4>
+                <p className="text-sm text-gray-600 mb-3">Vue synthétique : module × action × rôles. Pour modifier les permissions d&apos;un rôle, utilisez le bouton « Permissions » sur le rôle.</p>
+                <div className="mb-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Filtrer par module</label>
+                  <select value={matrixModuleFilter} onChange={(e) => setMatrixModuleFilter(e.target.value)} className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">Tous les modules</option>
+                    {Object.keys(permissionsGrouped).sort().map((res) => (
+                      <option key={res} value={res}>{RESOURCE_LABELS[res] || res}</option>
+                    ))}
+                  </select>
+                </div>
+                {Object.keys(permissionsGrouped).length === 0 ? (
+                  <div className="py-4 space-y-2">
+                    <p className="text-sm text-gray-500">Aucune permission en base.</p>
+                    <button type="button" onClick={handleInitializeRbac} disabled={saving} className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm">
+                      {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      Initialiser les rôles et permissions
+                    </button>
                   </div>
                 ) : (
-                  roles.map((role) => (
-                    <div
-                      key={role.id}
-                      className="p-4 border border-gray-200 rounded-lg"
-                    >
-                      {editingRole?.id === role.id ? (
-                        <div className="space-y-3">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <input
-                              type="text"
-                              className="px-3 py-2 border border-gray-300 rounded-md"
-                              value={editingRole.name}
-                              onChange={(e) => setEditingRole({ ...editingRole, name: e.target.value })}
-                            />
-                            <input
-                              type="text"
-                              className="px-3 py-2 border border-gray-300 rounded-md"
-                              value={editingRole.description || ''}
-                              onChange={(e) => setEditingRole({ ...editingRole, description: e.target.value })}
-                            />
-                          </div>
-                          <div className="flex flex-wrap gap-4">
-                            <label className="flex items-center gap-2 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={editingRole.canAccessOrion}
-                                onChange={(e) => setEditingRole({ ...editingRole, canAccessOrion: e.target.checked })}
-                                className="rounded"
-                              />
-                              <span className="text-sm">Accès ORION</span>
-                            </label>
-                            <label className="flex items-center gap-2 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={editingRole.canAccessAtlas}
-                                onChange={(e) => setEditingRole({ ...editingRole, canAccessAtlas: e.target.checked })}
-                                className="rounded"
-                              />
-                              <span className="text-sm">Accès ATLAS</span>
-                            </label>
-                          </div>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => handleUpdateRole(role.id)}
-                              disabled={saving}
-                              className="px-3 py-1 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700"
-                            >
-                              Sauvegarder
-                            </button>
-                            <button
-                              onClick={() => setEditingRole(null)}
-                              className="px-3 py-1 border border-gray-300 rounded-md text-sm hover:bg-gray-50"
-                            >
-                              Annuler
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h5 className="font-semibold text-gray-800 flex items-center gap-2">
-                              {role.name}
-                              {role.isSystemRole && (
-                                <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded">Système</span>
-                              )}
-                            </h5>
-                            <p className="text-sm text-gray-600">{role.description || 'Aucune description'}</p>
-                            <div className="mt-1 flex gap-2 text-xs">
-                              {role.canAccessOrion && (
-                                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded">ORION</span>
-                              )}
-                              {role.canAccessAtlas && (
-                                <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded">ATLAS</span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex gap-2">
-                            {!role.isSystemRole && (
-                              <>
-                                <button
-                                  onClick={() => setEditingRole({ ...role })}
-                                  className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
-                                >
-                                  Modifier
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteRole(role.id)}
-                                  disabled={saving}
-                                  className="px-3 py-1 text-sm border border-red-300 text-red-600 rounded-md hover:bg-red-50"
-                                >
-                                  Supprimer
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))
+                  <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-200 bg-gray-50 text-left">
+                          <th className="py-2 px-3 font-semibold text-gray-800 sticky left-0 bg-gray-50">Module</th>
+                          <th className="py-2 px-3 font-semibold text-gray-800">Action</th>
+                          {roles.map((r: any) => (
+                            <th key={r.id} className="py-2 px-2 font-medium text-gray-700 whitespace-nowrap min-w-[6rem]">{r.name}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(permissionsGrouped)
+                          .filter(([res]) => !matrixModuleFilter || res === matrixModuleFilter)
+                          .flatMap(([resource, perms]) =>
+                            perms.map((perm: { id: string; action: string }) => (
+                              <tr key={perm.id} className="border-b border-gray-100 hover:bg-gray-50">
+                                <td className="py-1.5 px-3 text-gray-700 sticky left-0 bg-white">{RESOURCE_LABELS[resource] || resource}</td>
+                                <td className="py-1.5 px-3 text-gray-600">{perm.action}</td>
+                                {roles.map((r: any) => (
+                                  <td key={r.id} className="py-1.5 px-2 text-center">
+                                    {rolePermissionSet[r.id]?.has(perm.id) ? <span className="text-green-600 font-medium">✓</span> : '—'}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))
+                          )}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </div>
             </div>
+
+            {/* Modal édition des permissions d'un rôle */}
+            {editingPermissionsRoleId && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setEditingPermissionsRoleId(null)}>
+                <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+                  <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+                    <h4 className="font-semibold text-gray-800">Permissions du rôle — {roles.find((r: any) => r.id === editingPermissionsRoleId)?.name}</h4>
+                    <button type="button" onClick={() => setEditingPermissionsRoleId(null)} className="text-gray-500 hover:text-gray-700">✕</button>
+                  </div>
+                  <div className="p-4 border-b border-gray-100">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Filtrer par module</label>
+                    <select value={permissionFilterModule} onChange={(e) => setPermissionFilterModule(e.target.value)} className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <option value="">Tous les modules</option>
+                      {Object.keys(permissionsGrouped).sort().map((res) => (
+                        <option key={res} value={res}>{RESOURCE_LABELS[res] || res}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex-1 overflow-auto p-4">
+                    {Object.keys(permissionsGrouped).length === 0 ? (
+                      <p className="text-sm text-gray-500 py-4">Aucune permission. Utilisez le bouton « Initialiser les rôles et permissions » dans la section Rôles.</p>
+                    ) : (
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-gray-200 text-left">
+                            <th className="py-2 font-semibold text-gray-800">Module</th>
+                            <th className="py-2 font-semibold text-gray-800">Action (read / write / delete / validate)</th>
+                            <th className="py-2 font-semibold text-gray-800 w-24">Autoriser</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(permissionsGrouped)
+                            .filter(([res]) => !permissionFilterModule || res === permissionFilterModule)
+                            .flatMap(([resource, perms]) =>
+                              perms.map((perm: { id: string; action: string }) => (
+                                <tr key={perm.id} className="border-b border-gray-100 hover:bg-gray-50">
+                                  <td className="py-2 text-gray-700">{RESOURCE_LABELS[resource] || resource}</td>
+                                  <td className="py-2 text-gray-600">{perm.action}</td>
+                                  <td className="py-2">
+                                    <input type="checkbox" checked={editingRolePermissionIds.includes(perm.id)} onChange={(e) => { if (e.target.checked) setEditingRolePermissionIds((ids) => [...ids, perm.id]); else setEditingRolePermissionIds((ids) => ids.filter((id) => id !== perm.id)); }} className="rounded" />
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                  <div className="p-4 border-t border-gray-200 flex justify-end gap-2">
+                    <button type="button" onClick={() => setEditingPermissionsRoleId(null)} className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50">Annuler</button>
+                    <button type="button" onClick={() => editingPermissionsRoleId && handleSaveRolePermissions(editingPermissionsRoleId)} disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50">{saving ? 'Enregistrement…' : 'Sauvegarder'}</button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         );
 

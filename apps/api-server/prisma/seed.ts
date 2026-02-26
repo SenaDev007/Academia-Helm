@@ -377,7 +377,243 @@ async function main() {
   if (tiersCount > 0) {
     console.log(`   - Group tiers: ${tiersCount} tiers de prix configurés`);
   }
-  
+
+  // ============================================================================
+  // PERMISSIONS RBAC — EXHAUSTIF (tous modules × read/write/delete/validate)
+  // Aligné avec PermissionGuard et feature flags (production)
+  // ============================================================================
+  console.log('\n🔐 Seed des permissions RBAC (exhaustif)...');
+  const RESOURCES = [
+    'ELEVES',
+    'INSCRIPTIONS',
+    'DOCUMENTS_SCOLAIRES',
+    'ORGANISATION_PEDAGOGIQUE',
+    'MATERIEL_PEDAGOGIQUE',
+    'EXAMENS',
+    'BULLETINS',
+    'FINANCES',
+    'RECOUVREMENT',
+    'DEPENSES',
+    'RH',
+    'PAIE',
+    'COMMUNICATION',
+    'PARAMETRES',
+    'ANNEES_SCOLAIRES',
+    'ORION',
+    'ATLAS',
+    'QHSE',
+    'BIBLIOTHEQUE',
+    'TRANSPORT',
+    'CANTINE',
+    'INFIRMERIE',
+    'EDUCAST',
+    'BOUTIQUE',
+  ];
+  const ACTIONS = ['read', 'write', 'delete', 'validate'];
+  let permsCreated = 0;
+  for (const resource of RESOURCES) {
+    for (const action of ACTIONS) {
+      const name = `${resource}_${action}`;
+      await prisma.permission.upsert({
+        where: { name },
+        update: { resource, action, description: `${resource} - ${action}` },
+        create: { name, resource, action, description: `${resource} - ${action}` },
+      });
+      permsCreated += 1;
+    }
+  }
+  console.log(`   ✅ Permissions: ${permsCreated} (${RESOURCES.length} ressources × ${ACTIONS.length} actions)`);
+
+  // Récupérer toutes les permissions pour les attributions par rôle
+  const allPermissions = await prisma.permission.findMany({ select: { id: true, name: true } });
+  const permissionIdByName = new Map(allPermissions.map((p) => [p.name, p.id]));
+
+  // ============================================================================
+  // RÔLES SYSTÈME — création + attribution des permissions par défaut
+  // ============================================================================
+  console.log('\n👤 Seed des rôles système RBAC...');
+
+  type RoleDef = {
+    name: string;
+    description: string;
+    canAccessOrion: boolean;
+    canAccessAtlas: boolean;
+    permissionNames: string[]; // ['EXAMENS_read', 'FINANCES_read', ...]
+  };
+
+  const SYSTEM_ROLES: RoleDef[] = [
+    {
+      name: 'PLATFORM_OWNER',
+      description: 'Propriétaire plateforme (vision globale, toutes les écoles)',
+      canAccessOrion: true,
+      canAccessAtlas: true,
+      permissionNames: allPermissions.map((p) => p.name),
+    },
+    {
+      name: 'PLATFORM_ADMIN',
+      description: 'Administrateur plateforme',
+      canAccessOrion: true,
+      canAccessAtlas: true,
+      permissionNames: allPermissions.map((p) => p.name),
+    },
+    {
+      name: 'PROMOTEUR',
+      description: 'Promoteur / Gestionnaire d\'établissement (vision globale tenant)',
+      canAccessOrion: true,
+      canAccessAtlas: true,
+      permissionNames: allPermissions.map((p) => p.name),
+    },
+    {
+      name: 'DIRECTEUR',
+      description: 'Direction (vision globale établissement)',
+      canAccessOrion: true,
+      canAccessAtlas: true,
+      permissionNames: [
+        'ELEVES_read', 'ELEVES_write', 'ELEVES_validate', 'INSCRIPTIONS_read', 'INSCRIPTIONS_write', 'DOCUMENTS_SCOLAIRES_read', 'DOCUMENTS_SCOLAIRES_write', 'DOCUMENTS_SCOLAIRES_validate',
+        'ORGANISATION_PEDAGOGIQUE_read', 'ORGANISATION_PEDAGOGIQUE_write', 'MATERIEL_PEDAGOGIQUE_read',
+        'EXAMENS_read', 'EXAMENS_validate', 'BULLETINS_read', 'BULLETINS_validate',
+        'FINANCES_read', 'RECOUVREMENT_read', 'DEPENSES_read',
+        'RH_read', 'PAIE_read',
+        'COMMUNICATION_read', 'COMMUNICATION_write',
+        'PARAMETRES_read', 'PARAMETRES_write', 'ANNEES_SCOLAIRES_read', 'ANNEES_SCOLAIRES_write',
+        'ORION_read', 'ATLAS_read',
+        'QHSE_read', 'BIBLIOTHEQUE_read', 'TRANSPORT_read', 'CANTINE_read', 'INFIRMERIE_read', 'EDUCAST_read', 'BOUTIQUE_read',
+      ],
+    },
+    {
+      name: 'SECRETAIRE',
+      description: 'Secrétariat (élèves, inscriptions, documents)',
+      canAccessOrion: false,
+      canAccessAtlas: false,
+      permissionNames: [
+        'ELEVES_read', 'ELEVES_write', 'INSCRIPTIONS_read', 'INSCRIPTIONS_write', 'DOCUMENTS_SCOLAIRES_read', 'DOCUMENTS_SCOLAIRES_write',
+        'EXAMENS_read', 'BULLETINS_read',
+        'FINANCES_read', 'RECOUVREMENT_read', 'RECOUVREMENT_write',
+        'PARAMETRES_read', 'ANNEES_SCOLAIRES_read',
+        'BIBLIOTHEQUE_read', 'TRANSPORT_read', 'CANTINE_read', 'INFIRMERIE_read',
+      ],
+    },
+    {
+      name: 'COMPTABLE',
+      description: 'Finances et économat (lecture/écriture, pas les notes)',
+      canAccessOrion: false,
+      canAccessAtlas: false,
+      permissionNames: [
+        'FINANCES_read', 'FINANCES_write', 'RECOUVREMENT_read', 'RECOUVREMENT_write', 'DEPENSES_read', 'DEPENSES_write',
+        'EXAMENS_read', 'BULLETINS_read',
+        'ELEVES_read', 'RH_read', 'PARAMETRES_read', 'ANNEES_SCOLAIRES_read',
+      ],
+    },
+    {
+      name: 'SECRETAIRE_COMPTABLE',
+      description: 'Secrétariat + Comptabilité',
+      canAccessOrion: false,
+      canAccessAtlas: false,
+      permissionNames: [
+        'ELEVES_read', 'ELEVES_write', 'INSCRIPTIONS_read', 'INSCRIPTIONS_write', 'DOCUMENTS_SCOLAIRES_read', 'DOCUMENTS_SCOLAIRES_write',
+        'EXAMENS_read', 'BULLETINS_read',
+        'FINANCES_read', 'FINANCES_write', 'RECOUVREMENT_read', 'RECOUVREMENT_write', 'DEPENSES_read', 'DEPENSES_write',
+        'PARAMETRES_read', 'ANNEES_SCOLAIRES_read',
+        'BIBLIOTHEQUE_read', 'TRANSPORT_read', 'CANTINE_read', 'INFIRMERIE_read',
+      ],
+    },
+    {
+      name: 'CENSEUR',
+      description: 'Censeur (discipline, pédagogie, examens)',
+      canAccessOrion: true,
+      canAccessAtlas: false,
+      permissionNames: [
+        'ELEVES_read', 'ELEVES_write', 'INSCRIPTIONS_read', 'DOCUMENTS_SCOLAIRES_read',
+        'ORGANISATION_PEDAGOGIQUE_read', 'MATERIEL_PEDAGOGIQUE_read',
+        'EXAMENS_read', 'EXAMENS_write', 'EXAMENS_validate', 'BULLETINS_read', 'BULLETINS_validate',
+        'RH_read', 'COMMUNICATION_read', 'PARAMETRES_read', 'ANNEES_SCOLAIRES_read', 'ORION_read',
+        'QHSE_read', 'BIBLIOTHEQUE_read', 'TRANSPORT_read', 'CANTINE_read', 'INFIRMERIE_read',
+      ],
+    },
+    {
+      name: 'SURVEILLANT',
+      description: 'Surveillance (assiduité, discipline)',
+      canAccessOrion: false,
+      canAccessAtlas: false,
+      permissionNames: [
+        'ELEVES_read', 'INSCRIPTIONS_read', 'DOCUMENTS_SCOLAIRES_read',
+        'EXAMENS_read', 'BULLETINS_read',
+        'PARAMETRES_read', 'BIBLIOTHEQUE_read', 'TRANSPORT_read', 'CANTINE_read', 'INFIRMERIE_read',
+      ],
+    },
+    {
+      name: 'ENSEIGNANT',
+      description: 'Enseignant (ses classes uniquement — scope par niveau/classe côté app)',
+      canAccessOrion: false,
+      canAccessAtlas: false,
+      permissionNames: [
+        'ELEVES_read', 'INSCRIPTIONS_read', 'DOCUMENTS_SCOLAIRES_read',
+        'ORGANISATION_PEDAGOGIQUE_read', 'MATERIEL_PEDAGOGIQUE_read',
+        'EXAMENS_read', 'EXAMENS_write', 'BULLETINS_read',
+        'COMMUNICATION_read', 'PARAMETRES_read', 'ANNEES_SCOLAIRES_read',
+        'BIBLIOTHEQUE_read', 'TRANSPORT_read', 'CANTINE_read', 'INFIRMERIE_read',
+      ],
+    },
+    {
+      name: 'PARENT',
+      description: 'Parent (accès aux enfants uniquement — scope côté app)',
+      canAccessOrion: false,
+      canAccessAtlas: false,
+      permissionNames: [
+        'ELEVES_read', 'BULLETINS_read', 'COMMUNICATION_read',
+      ],
+    },
+    {
+      name: 'ELEVE',
+      description: 'Élève (accès personnel — scope côté app)',
+      canAccessOrion: false,
+      canAccessAtlas: false,
+      permissionNames: [
+        'ELEVES_read', 'BULLETINS_read', 'COMMUNICATION_read',
+      ],
+    },
+  ];
+
+  for (const sr of SYSTEM_ROLES) {
+    let role = await prisma.role.findFirst({
+      where: { tenantId: null, name: sr.name, isSystemRole: true },
+    });
+    if (!role) {
+      role = await prisma.role.create({
+        data: {
+          tenantId: null,
+          name: sr.name,
+          description: sr.description,
+          isSystemRole: true,
+          canAccessOrion: sr.canAccessOrion,
+          canAccessAtlas: sr.canAccessAtlas,
+          allowedLevelIds: [],
+        },
+      });
+      console.log(`   ✅ Rôle système créé: ${sr.name}`);
+    } else {
+      await prisma.role.update({
+        where: { id: role.id },
+        data: { description: sr.description, canAccessOrion: sr.canAccessOrion, canAccessAtlas: sr.canAccessAtlas },
+      });
+    }
+
+    const permissionIds = sr.permissionNames
+      .map((name) => permissionIdByName.get(name))
+      .filter((id): id is string => id != null);
+
+    await prisma.rolePermission.deleteMany({ where: { roleId: role.id } });
+    if (permissionIds.length > 0) {
+      await prisma.rolePermission.createMany({
+        data: permissionIds.map((permissionId) => ({ roleId: role!.id, permissionId })),
+        skipDuplicates: true,
+      });
+    }
+    console.log(`   ✅ Permissions attribuées: ${sr.name} (${permissionIds.length} permissions)`);
+  }
+
+  console.log('   ✅ Rôles système RBAC prêts (créés/mis à jour + permissions par défaut)');
+
   console.log('\n🎯 La base de données est prête à l\'usage!');
 }
 

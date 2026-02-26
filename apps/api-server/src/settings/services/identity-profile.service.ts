@@ -90,6 +90,9 @@ export class IdentityProfileService {
     ipAddress?: string,
     userAgent?: string,
   ) {
+    if (!tenantId || typeof tenantId !== 'string') {
+      throw new BadRequestException('Contexte tenant manquant (tenant_id requis).');
+    }
     const now = new Date();
 
     // Récupérer la version actuelle pour incrémenter
@@ -114,35 +117,45 @@ export class IdentityProfileService {
         });
       }
 
-      // Payload explicite (même logique que périodes/années) : champs envoyés ou valeur par défaut
+      // Tous les champs du formulaire sont persistés en base (schéma TenantIdentityProfile)
       const foundationDate =
         data.foundationDate != null && String(data.foundationDate).trim() !== ''
           ? new Date(data.foundationDate)
           : null;
+      const opt = (v: string | null | undefined) => (v != null && String(v).trim() !== '' ? String(v).trim() : null);
+      const reqStr = (v: string | null | undefined, def: string) =>
+        (v != null && String(v).trim() !== '' ? String(v).trim() : null) ?? def;
+
       const createData = {
-        tenantId,
+        tenant: { connect: { id: tenantId } },
         version: nextVersion,
         isActive: true,
-        schoolName: String(data.schoolName ?? '').trim() || (currentVersion?.schoolName ?? 'Établissement'),
-        schoolAcronym: data.schoolAcronym != null ? String(data.schoolAcronym).trim() : null,
-        schoolType: data.schoolType && String(data.schoolType).trim() ? data.schoolType : 'PRIVEE',
-        authorizationNumber: data.authorizationNumber != null ? String(data.authorizationNumber).trim() : null,
+        // Identité juridique
+        schoolName: reqStr(data.schoolName, currentVersion?.schoolName ?? 'Établissement'),
+        schoolAcronym: opt(data.schoolAcronym),
+        schoolType: reqStr(data.schoolType, 'PRIVEE'),
+        authorizationNumber: opt(data.authorizationNumber),
         foundationDate,
-        slogan: data.slogan != null ? String(data.slogan).trim() : null,
-        address: data.address != null ? String(data.address).trim() : null,
-        city: data.city != null ? String(data.city).trim() : null,
-        department: data.department != null ? String(data.department).trim() : null,
-        country: data.country && String(data.country).trim() ? data.country : 'BJ',
-        postalCode: data.postalCode != null ? String(data.postalCode).trim() : null,
-        phonePrimary: data.phonePrimary != null ? String(data.phonePrimary).trim() : null,
-        phoneSecondary: data.phoneSecondary != null ? String(data.phoneSecondary).trim() : null,
-        email: data.email != null ? String(data.email).trim() : null,
-        website: data.website != null ? String(data.website).trim() : null,
-        currency: data.currency && String(data.currency).trim() ? data.currency : 'XOF',
-        timezone: data.timezone && String(data.timezone).trim() ? data.timezone : 'Africa/Porto-Novo',
-        logoUrl: data.logoUrl != null ? String(data.logoUrl).trim() : null,
-        stampUrl: data.stampUrl != null ? String(data.stampUrl).trim() : null,
-        directorSignatureUrl: data.directorSignatureUrl != null ? String(data.directorSignatureUrl).trim() : null,
+        slogan: opt(data.slogan),
+        // Localisation
+        address: opt(data.address),
+        city: opt(data.city),
+        department: opt(data.department),
+        country: reqStr(data.country, 'BJ'),
+        postalCode: opt(data.postalCode),
+        // Contacts
+        phonePrimary: opt(data.phonePrimary),
+        phoneSecondary: opt(data.phoneSecondary),
+        email: opt(data.email),
+        website: opt(data.website),
+        // Paramètres régionaux
+        currency: reqStr(data.currency, 'XOF'),
+        timezone: reqStr(data.timezone, 'Africa/Porto-Novo'),
+        // Visuels officiels
+        logoUrl: opt(data.logoUrl),
+        stampUrl: opt(data.stampUrl),
+        directorSignatureUrl: opt(data.directorSignatureUrl),
+        // Métadonnées
         createdBy: userId,
         activatedAt: now,
         activatedBy: userId,
@@ -150,22 +163,47 @@ export class IdentityProfileService {
       };
 
       const created = await tx.tenantIdentityProfile.create({
-        data: createData as Parameters<typeof tx.tenantIdentityProfile.create>[0]['data'],
+        data: createData,
       });
 
       return created;
     });
 
-    // Audit log
+    // Audit log : tous les champs identité enregistrés en historique (newProfile = ligne créée en base)
+    const oldP = currentVersion ?? null;
+    const toChange = (getOld: (p: NonNullable<typeof oldP>) => unknown, getNew: (p: typeof newProfile) => unknown) => ({
+      old: oldP ? getOld(oldP) : null,
+      new: getNew(newProfile) ?? null,
+    });
+    // settingId = null : l'identité est en TenantIdentityProfile, pas dans TenantSetting (FK settingId → TenantSetting)
     await this.historyService.logSettingChange(
       tenantId,
-      newProfile.id,
+      null,
       'identity.profile',
       'identity',
       {
-        oldValue: currentVersion ? { version: currentVersion.version, schoolName: currentVersion.schoolName } : null,
-        newValue: { version: nextVersion, schoolName: data.schoolName },
-        changeReason,
+        version: toChange((p) => p.version, (p) => p.version),
+        schoolName: toChange((p) => p.schoolName, (p) => p.schoolName),
+        schoolAcronym: toChange((p) => p.schoolAcronym, (p) => p.schoolAcronym),
+        schoolType: toChange((p) => p.schoolType, (p) => p.schoolType),
+        authorizationNumber: toChange((p) => p.authorizationNumber, (p) => p.authorizationNumber),
+        foundationDate: toChange((p) => p.foundationDate, (p) => p.foundationDate),
+        slogan: toChange((p) => p.slogan, (p) => p.slogan),
+        address: toChange((p) => p.address, (p) => p.address),
+        city: toChange((p) => p.city, (p) => p.city),
+        department: toChange((p) => p.department, (p) => p.department),
+        country: toChange((p) => p.country, (p) => p.country),
+        postalCode: toChange((p) => p.postalCode, (p) => p.postalCode),
+        phonePrimary: toChange((p) => p.phonePrimary, (p) => p.phonePrimary),
+        phoneSecondary: toChange((p) => p.phoneSecondary, (p) => p.phoneSecondary),
+        email: toChange((p) => p.email, (p) => p.email),
+        website: toChange((p) => p.website, (p) => p.website),
+        currency: toChange((p) => p.currency, (p) => p.currency),
+        timezone: toChange((p) => p.timezone, (p) => p.timezone),
+        logoUrl: toChange((p) => p.logoUrl, (p) => p.logoUrl),
+        stampUrl: toChange((p) => p.stampUrl, (p) => p.stampUrl),
+        directorSignatureUrl: toChange((p) => p.directorSignatureUrl, (p) => p.directorSignatureUrl),
+        changeReason: toChange((p) => p.changeReason, (p) => p.changeReason),
       },
       userId,
       ipAddress,

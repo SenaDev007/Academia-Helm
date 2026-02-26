@@ -25,23 +25,25 @@ export class SettingsHistoryService {
     if (!tenantId || typeof tenantId !== 'string') {
       return;
     }
-    // Créer une entrée d'historique pour chaque changement
-    const historyEntries = Object.keys(changes).map((field) =>
-      this.prisma.settingsHistory.create({
-        data: {
-          tenantId,
-          settingId,
-          key: `${key}.${field}`,
-          category,
-          oldValue: changes[field].old,
-          newValue: changes[field].new,
-          changedBy: userId,
-          changedAt: new Date(),
-          ipAddress,
-          userAgent,
-        },
-      }),
-    );
+    // Créer une entrée d'historique pour chaque changement (chaque valeur doit être { old, new })
+    const historyEntries = Object.keys(changes)
+      .filter((field) => changes[field] != null && typeof changes[field] === 'object' && 'old' in changes[field] && 'new' in changes[field])
+      .map((field) =>
+        this.prisma.settingsHistory.create({
+          data: {
+            tenantId,
+            settingId,
+            key: `${key}.${field}`,
+            category,
+            oldValue: (changes[field] as { old: any; new: any }).old,
+            newValue: (changes[field] as { old: any; new: any }).new,
+            changedBy: userId,
+            changedAt: new Date(),
+            ipAddress,
+            userAgent,
+          },
+        }),
+      );
 
     await Promise.all(historyEntries);
   }

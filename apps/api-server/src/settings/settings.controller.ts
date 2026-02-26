@@ -7,6 +7,7 @@ import {
   Body,
   Param,
   Query,
+  StreamableFile,
   UseGuards,
   Request,
   BadRequestException,
@@ -38,6 +39,10 @@ import { RolesPermissionsService } from './services/roles-permissions.service';
 import { RolesPermissionsBootstrapService } from './services/roles-permissions-bootstrap.service';
 import { BillingSettingsService } from './services/billing-settings.service';
 import { IdentityProfileService } from './services/identity-profile.service';
+import { StampsSignaturesService } from './services/stamps-signatures.service';
+import { StreamableFile } from '@nestjs/common';
+import { createReadStream } from 'fs';
+import { existsSync } from 'fs';
 
 /**
  * Controller principal pour le Module Paramètres
@@ -68,6 +73,7 @@ export class SettingsController {
     private readonly rolesPermissionsBootstrapService: RolesPermissionsBootstrapService,
     private readonly billingSettingsService: BillingSettingsService,
     private readonly identityProfileService: IdentityProfileService,
+    private readonly stampsSignaturesService: StampsSignaturesService,
   ) {}
 
   // ============================================================================
@@ -743,6 +749,111 @@ export class SettingsController {
     return this.administrativeSealsService.checkExpiringSeals(
       tenantId,
       days ? parseInt(days, 10) : 30,
+    );
+  }
+
+  // ============================================================================
+  // CACHETS & SIGNATURES GÉNÉRÉS (tenant_stamps / tenant_signatures)
+  // ============================================================================
+
+  @Get('stamps')
+  @UseGuards(PermissionGuard)
+  @RequirePermission('PARAMETRES', 'read')
+  async getStamps(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Query('education_level_id') educationLevelId: string | undefined,
+    @Query('list') list: string | undefined,
+  ) {
+    const tid = this.resolveTid(tenantId, user, req);
+    if (list === 'true') {
+      return this.stampsSignaturesService.getStampsList(tid);
+    }
+    return this.stampsSignaturesService.getStamps(tid, educationLevelId ?? null);
+  }
+
+  @Post('stamps/generate')
+  @UseGuards(PermissionGuard)
+  @RequirePermission('PARAMETRES', 'write')
+  async generateStamps(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Body() body: { formats?: ('circular' | 'rectangular' | 'oval')[]; educationLevelId?: string | null },
+  ) {
+    return this.stampsSignaturesService.generateStamps(
+      this.resolveTid(tenantId, user, req),
+      { formats: body?.formats, educationLevelId: body?.educationLevelId ?? null },
+    );
+  }
+
+  @Get('stamps/asset')
+  @UseGuards(PermissionGuard)
+  @RequirePermission('PARAMETRES', 'read')
+  async getStampsAsset(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Query('type') type: 'circular' | 'rectangular' | 'oval' | 'signature',
+    @Query('education_level_id') educationLevelId: string | undefined,
+    @Query('signature_id') signatureId: string | undefined,
+  ) {
+    const tid = this.resolveTid(tenantId, user, req);
+    if (!type || !['circular', 'rectangular', 'oval', 'signature'].includes(type)) {
+      throw new BadRequestException('Paramètre type requis: circular, rectangular, oval ou signature');
+    }
+    const filePath =
+      type === 'signature'
+        ? this.stampsSignaturesService.getAssetPath(tid, 'signature', signatureId ?? '')
+        : this.stampsSignaturesService.getAssetPath(tid, type, educationLevelId ?? null);
+    if (!filePath || !existsSync(filePath)) {
+      throw new NotFoundException('Fichier non trouvé');
+    }
+    const stream = createReadStream(filePath);
+    return new StreamableFile(stream, { type: 'image/png' });
+  }
+
+  @Get('signatures')
+  @UseGuards(PermissionGuard)
+  @RequirePermission('PARAMETRES', 'read')
+  async getSignaturesList(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Query('education_level_id') educationLevelId: string | undefined,
+  ) {
+    return this.stampsSignaturesService.getSignaturesList(
+      this.resolveTid(tenantId, user, req),
+      educationLevelId ?? null,
+    );
+  }
+
+  @Post('signature/generate')
+  @UseGuards(PermissionGuard)
+  @RequirePermission('PARAMETRES', 'write')
+  async generateSignature(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Body()
+    body: {
+      role: string;
+      holderFirstName: string;
+      holderLastName: string;
+      educationLevelId?: string | null;
+    },
+  ) {
+    const tid = this.resolveTid(tenantId, user, req);
+    if (!body?.role?.trim()) {
+      throw new BadRequestException('Le rôle (département) est requis.');
+    }
+    return this.stampsSignaturesService.generateSignature(
+      tid,
+      body.role.trim(),
+      body.holderFirstName ?? '',
+      body.holderLastName ?? '',
+      body.educationLevelId ?? null,
     );
   }
 

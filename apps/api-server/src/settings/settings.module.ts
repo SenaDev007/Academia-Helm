@@ -20,6 +20,7 @@ import { RolesPermissionsService } from './services/roles-permissions.service';
 import { RolesPermissionsBootstrapService } from './services/roles-permissions-bootstrap.service';
 import { BillingSettingsService } from './services/billing-settings.service';
 import { IdentityProfileService } from './services/identity-profile.service';
+import { StampsSignaturesService } from './services/stamps-signatures.service';
 import { DatabaseModule } from '../database/database.module';
 import { OrionModule } from '../orion/orion.module';
 import { TenantFeaturesModule } from '../tenant-features/tenant-features.module';
@@ -60,6 +61,7 @@ import { PermissionGuard } from '../common/guards/permission.guard';
     RolesPermissionsBootstrapService,
     BillingSettingsService,
     IdentityProfileService,
+    StampsSignaturesService,
     SecuritySettingsService,
     OrionSettingsService,
     AtlasSettingsService,
@@ -82,6 +84,7 @@ import { PermissionGuard } from '../common/guards/permission.guard';
     RolesPermissionsService,
     BillingSettingsService,
     IdentityProfileService,
+    StampsSignaturesService,
     SecuritySettingsService,
     OrionSettingsService,
     AtlasSettingsService,

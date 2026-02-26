@@ -195,6 +195,8 @@ model Tenant {
   schoolPaymentAccounts            SchoolPaymentAccount[]
   schoolSettings                   SchoolSettings?
   identityProfiles                 TenantIdentityProfile[]
+  tenantStamps                     TenantStamp[]
+  tenantSignatures                 TenantSignature[]
   schools                          School?
   securitySettings                 SecuritySettings?
   settingsBilingual                SettingsBilingual?
@@ -513,15 +515,17 @@ model AcademicPeriod {
 
 /// Niveau d'enseignement : MATERNELLE, PRIMAIRE, SECONDAIRE. Activables par l'établissement.
 model EducationLevel {
-  id         String   @id @default(uuid())
-  tenantId  String
-  name      String   // MATERNELLE | PRIMAIRE | SECONDAIRE
-  isEnabled Boolean  @default(true)
-  order     Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  cycles    EducationCycle[]
+  id               String            @id @default(uuid())
+  tenantId         String
+  name             String            // MATERNELLE | PRIMAIRE | SECONDAIRE
+  isEnabled        Boolean           @default(true)
+  order            Int               @default(0)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cycles           EducationCycle[]
+  tenantStamps     TenantStamp[]
+  tenantSignatures TenantSignature[]
 
   @@unique([tenantId, name])
   @@map("education_levels")
@@ -2140,6 +2144,47 @@ model TenantIdentityProfile {
   @@index([tenantId, isActive])
   @@index([tenantId, version])
   @@map("tenant_identity_profiles")
+}
+
+// Cachets et signatures générés par tenant et par niveau scolaire (Paramètres → Cachets)
+// Un niveau null = cachet global (tout l'établissement). Sinon un set de cachets par niveau.
+// Compound unique : where { tenantId_educationLevelId: { tenantId, educationLevelId } }
+model TenantStamp {
+  id                   String          @id @default(uuid())
+  tenantId             String
+  educationLevelId     String?         // null = global établissement
+  circularStampUrl     String?
+  rectangularStampUrl  String?
+  ovalStampUrl         String?
+  generatedAt          DateTime?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  tenant               Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  educationLevel       EducationLevel? @relation(fields: [educationLevelId], references: [id], onDelete: Cascade)
+  @@unique([tenantId, educationLevelId])
+  @@index([tenantId])
+  @@index([educationLevelId])
+  @@map("tenant_stamps")
+}
+
+// Signatures électroniques des responsables : par niveau scolaire et par rôle (département administratif).
+// Compound unique : where { tenantId_educationLevelId_role: { tenantId, educationLevelId, role } }
+model TenantSignature {
+  id               String          @id @default(uuid())
+  tenantId         String
+  educationLevelId String?         // null = responsable global
+  role             String          // DIRECTEUR | COMPTABLE | DIRECTEUR_ADJOINT | etc.
+  holderFirstName  String
+  holderLastName   String
+  signatureUrl     String?
+  generatedAt      DateTime?
+  createdAt        DateTime        @default(now())
+  tenant           Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  educationLevel   EducationLevel? @relation(fields: [educationLevelId], references: [id], onDelete: Cascade)
+  @@unique([tenantId, educationLevelId, role])
+  @@index([tenantId])
+  @@index([educationLevelId])
+  @@map("tenant_signatures")
 }
 
 model AdministrativeSeal {

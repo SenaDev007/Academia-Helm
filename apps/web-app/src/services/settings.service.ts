@@ -6,6 +6,14 @@
 
 const BASE_URL = '/api/settings';
 
+function getErrorMessage(error: { message?: unknown; error?: string }, fallback: string): string {
+  const msg = error.message;
+  if (Array.isArray(msg) && msg.length) return String(msg[0]);
+  if (typeof msg === 'string') return msg;
+  if (error.error && typeof error.error === 'string') return error.error;
+  return fallback;
+}
+
 async function fetchWithAuth(url: string, options: RequestInit = {}) {
   const response = await fetch(url, {
     ...options,
@@ -18,7 +26,7 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: 'Une erreur est survenue' }));
-    throw new Error(error.message || error.error || `HTTP ${response.status}`);
+    throw new Error(getErrorMessage(error, `HTTP ${response.status}`));
   }
 
   return response.json();
@@ -40,7 +48,7 @@ async function fetchWithAuthNoCache(url: string, options: RequestInit = {}) {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: 'Une erreur est survenue' }));
-    throw new Error(error.message || error.error || `HTTP ${response.status}`);
+    throw new Error(getErrorMessage(error, `HTTP ${response.status}`));
   }
 
   return response.json();
@@ -147,6 +155,138 @@ export async function activateIdentityVersion(versionId: string, reason?: string
 export async function getIdentityPreview(tenantId?: string | null) {
   const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
   return fetchWithAuth(`${BASE_URL}/identity/preview${qs}`);
+}
+
+// ============================================================================
+// CACHETS & SIGNATURES GÉNÉRÉS (tenant_stamps / tenant_signatures)
+// Liés au niveau scolaire et aux rôles (départements administratifs).
+// ============================================================================
+
+export type StampFormat = 'circular' | 'rectangular' | 'oval';
+
+/** Un set de cachets pour un niveau (ou global si educationLevelId null) */
+export type StampsData = {
+  educationLevelId: string | null;
+  educationLevelName: string | null;
+  circularStampUrl: string | null;
+  rectangularStampUrl: string | null;
+  ovalStampUrl: string | null;
+  generatedAt: string | null;
+};
+
+/** Élément de la liste des cachets (tous niveaux) */
+export type StampsListItem = StampsData & { id: string; tenantId: string };
+
+/** Une signature : responsable par niveau et par rôle */
+export type SignatureListItem = {
+  id: string;
+  tenantId: string;
+  educationLevelId: string | null;
+  educationLevelName: string | null;
+  role: string;
+  holderFirstName: string;
+  holderLastName: string;
+  holderName: string;
+  signatureUrl: string | null;
+  generatedAt: string | null;
+};
+
+/** Rôles (départements) pour les signatures */
+export const SIGNATURE_ROLES = [
+  { value: 'DIRECTEUR', label: 'Directeur / Directrice' },
+  { value: 'DIRECTEUR_ADJOINT', label: 'Directeur adjoint' },
+  { value: 'COMPTABLE', label: 'Comptable' },
+  { value: 'SECRETAIRE', label: 'Secrétaire' },
+  { value: 'RESPONSABLE_PEDAGOGIQUE', label: 'Responsable pédagogique' },
+  { value: 'AUTRE', label: 'Autre' },
+] as const;
+
+function stampsQuery(tenantId?: string | null, educationLevelId?: string | null, list?: boolean): string {
+  const params = new URLSearchParams();
+  if (tenantId) params.set('tenant_id', tenantId);
+  if (list) params.set('list', 'true');
+  if (educationLevelId != null && educationLevelId !== '') params.set('education_level_id', educationLevelId);
+  const qs = params.toString();
+  return qs ? `?${qs}` : '';
+}
+
+/** Liste des cachets (tous niveaux + global) */
+export async function getStampsList(tenantId?: string | null): Promise<StampsListItem[]> {
+  const qs = stampsQuery(tenantId, undefined, true);
+  return fetchWithAuth(`${BASE_URL}/stamps${qs}`);
+}
+
+/** Un set de cachets pour un niveau (ou global si educationLevelId null) */
+export async function getStamps(
+  tenantId?: string | null,
+  educationLevelId?: string | null
+): Promise<StampsData> {
+  const qs = stampsQuery(tenantId, educationLevelId, false);
+  return fetchWithAuth(`${BASE_URL}/stamps${qs}`);
+}
+
+export async function generateStamps(
+  tenantId?: string | null,
+  options?: { formats?: StampFormat[]; educationLevelId?: string | null }
+): Promise<StampsData & { generatedAt: string }> {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/stamps/generate${qs}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      formats: options?.formats ?? ['circular', 'rectangular', 'oval'],
+      educationLevelId: options?.educationLevelId ?? null,
+    }),
+  });
+}
+
+/** URL pour afficher l'image d'un cachet (par niveau) ou d'une signature (par id) */
+export function getStampsAssetUrl(
+  type: 'circular' | 'rectangular' | 'oval' | 'signature',
+  tenantId?: string | null,
+  educationLevelId?: string | null,
+  signatureId?: string | null
+): string {
+  const params = new URLSearchParams();
+  params.set('type', type);
+  if (tenantId) params.set('tenant_id', tenantId);
+  if (type !== 'signature' && educationLevelId != null && educationLevelId !== '')
+    params.set('education_level_id', educationLevelId);
+  if (type === 'signature' && signatureId) params.set('signature_id', signatureId);
+  return `${BASE_URL}/stamps/asset?${params.toString()}`;
+}
+
+/** Liste des signatures (optionnel filtre par niveau) */
+export async function getSignaturesList(
+  tenantId?: string | null,
+  educationLevelId?: string | null
+): Promise<SignatureListItem[]> {
+  const params = new URLSearchParams();
+  if (tenantId) params.set('tenant_id', tenantId);
+  if (educationLevelId != null && educationLevelId !== '') params.set('education_level_id', educationLevelId);
+  const qs = params.toString();
+  return fetchWithAuth(`${BASE_URL}/signatures${qs ? `?${qs}` : ''}`);
+}
+
+/** Générer une signature pour un niveau et un rôle (département) */
+export async function generateSignature(
+  tenantId: string | null | undefined,
+  data: {
+    role: string;
+    holderFirstName: string;
+    holderLastName: string;
+    educationLevelId?: string | null;
+  }
+): Promise<SignatureListItem & { generatedAt: string }> {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/signature/generate${qs}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      role: data.role,
+      holderFirstName: data.holderFirstName,
+      holderLastName: data.holderLastName,
+      educationLevelId: data.educationLevelId ?? null,
+    }),
+  });
 }
 
 // ============================================================================

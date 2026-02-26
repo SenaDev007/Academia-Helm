@@ -16,12 +16,11 @@ import {
   ToggleLeft, ToggleRight, Stamp, GraduationCap, Languages, 
   Bell, Users, Calendar, Save, Loader2, CheckCircle, AlertCircle,
   Mail, UserCog, Lock, Key, Smartphone, CreditCard, Receipt, RefreshCw,
-  Upload, Image, FileSignature, CalendarDays, UserCircle, School, Archive, CalendarRange,
+  Upload, Image, CalendarDays, UserCircle, School, Archive, CalendarRange,
   Pencil, CopyPlus, Layers
 } from 'lucide-react';
 import { ModuleHeader } from '@/components/modules/blueprint';
-import AdministrativeSealsManagement from '@/components/settings/AdministrativeSealsManagement';
-import ElectronicSignaturesManagement from '@/components/settings/ElectronicSignaturesManagement';
+import GeneratedStampsSignatures from '@/components/settings/GeneratedStampsSignatures';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import * as settingsService from '@/services/settings.service';
 import { formatGradeLabel } from '@/lib/utils';
@@ -56,8 +55,6 @@ function formatRoleDisplayName(name: string | null | undefined): string {
 type TabId = 'identity' | 'academic-year' | 'structure' | 'bilingual' | 'features' | 
              'roles' | 'communication' | 'billing' | 'security' | 'seals' | 'orion' | 'atlas' | 'offline' | 'history';
 
-type SealsSubTab = 'seals' | 'signatures';
-
 interface Toast {
   type: 'success' | 'error';
   message: string;
@@ -76,7 +73,6 @@ export default function SettingsPage() {
   const [loadingTenantsPO, setLoadingTenantsPO] = useState(false);
 
   const [activeTab, setActiveTab] = useState<TabId>('identity');
-  const [sealsSubTab, setSealsSubTab] = useState<SealsSubTab>('seals');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
@@ -413,8 +409,6 @@ export default function SettingsPage() {
           currency: identity.currency || 'XOF',
           timezone: identity.timezone || 'Africa/Porto-Novo',
           logoUrl: identity.logoUrl || '',
-          stampUrl: identity.stampUrl || '',
-          directorSignatureUrl: identity.directorSignatureUrl || '',
         });
       }
       setIdentityVersions(identityHist?.versions || []);
@@ -486,8 +480,8 @@ export default function SettingsPage() {
     }
     try {
       setSaving(true);
-      // Mapper devise vers slogan pour l'API
-      const { devise, ...rest } = identityForm;
+      // Mapper devise vers slogan pour l'API ; cachets/signatures sont gérés dans l'onglet Cachets (par niveau)
+      const { devise, stampUrl: _s, directorSignatureUrl: _d, ...rest } = identityForm;
       const newVersion = await settingsService.createIdentityVersion(
         { ...rest, slogan: devise, changeReason: changeReason.trim() },
         effectiveTenantId ?? undefined
@@ -531,8 +525,6 @@ export default function SettingsPage() {
         currency: restored.currency || 'XOF',
         timezone: restored.timezone || 'Africa/Porto-Novo',
         logoUrl: restored.logoUrl || '',
-        stampUrl: restored.stampUrl || '',
-        directorSignatureUrl: restored.directorSignatureUrl || '',
       });
       // Recharger l'historique
       const histData = await settingsService.getIdentityHistory({ limit: 20 }, effectiveTenantId ?? undefined);
@@ -1554,31 +1546,10 @@ export default function SettingsPage() {
                     <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if(f) { const r = new FileReader(); r.onloadend = () => setIdentityForm({ ...identityForm, logoUrl: r.result as string }); r.readAsDataURL(f); }}} />
                   </label>
                 </div>
-                <div className="border border-dashed border-gray-300 rounded-lg p-3 text-center">
-                  {identityForm.stampUrl ? (
-                    <NextImage src={identityForm.stampUrl} alt="Cachet" width={64} height={64} className="mx-auto object-contain mb-2" unoptimized loading="lazy" />
-                  ) : (
-                    <Stamp className="w-12 h-12 mx-auto text-gray-300 mb-2" />
-                  )}
-                  <p className="text-xs font-medium text-gray-700 mb-2">Cachet officiel</p>
-                  <label className="cursor-pointer inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 rounded hover:bg-gray-200">
-                    <Upload className="w-3 h-3" /> Téléverser
-                    <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if(f) { const r = new FileReader(); r.onloadend = () => setIdentityForm({ ...identityForm, stampUrl: r.result as string }); r.readAsDataURL(f); }}} />
-                  </label>
-                </div>
-                <div className="border border-dashed border-gray-300 rounded-lg p-3 text-center">
-                  {identityForm.directorSignatureUrl ? (
-                    <NextImage src={identityForm.directorSignatureUrl} alt="Signature" width={64} height={64} className="mx-auto object-contain mb-2" unoptimized loading="lazy" />
-                  ) : (
-                    <FileSignature className="w-12 h-12 mx-auto text-gray-300 mb-2" />
-                  )}
-                  <p className="text-xs font-medium text-gray-700 mb-2">Signature directeur</p>
-                  <label className="cursor-pointer inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 rounded hover:bg-gray-200">
-                    <Upload className="w-3 h-3" /> Téléverser
-                    <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if(f) { const r = new FileReader(); r.onloadend = () => setIdentityForm({ ...identityForm, directorSignatureUrl: r.result as string }); r.readAsDataURL(f); }}} />
-                  </label>
-                </div>
               </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Cachets et signatures : configurés par niveau scolaire dans l&apos;onglet <strong>Cachets</strong>.
+              </p>
             </div>
 
             {/* Section 5: Aperçu Document */}
@@ -1602,9 +1573,8 @@ export default function SettingsPage() {
                   <div>Email : {identityForm.email || '-'}</div>
                   <div>N° Auth. : {identityForm.authorizationNumber || '-'}</div>
                 </div>
-                <div className="flex justify-end gap-4 mt-4 pt-2 border-t">
-                  {identityForm.stampUrl && <NextImage src={identityForm.stampUrl} alt="Cachet" width={48} height={48} className="object-contain" unoptimized loading="lazy" />}
-                  {identityForm.directorSignatureUrl && <NextImage src={identityForm.directorSignatureUrl} alt="Signature" width={48} height={48} className="object-contain" unoptimized loading="lazy" />}
+                <div className="flex justify-end gap-4 mt-4 pt-2 border-t text-xs text-gray-500">
+                  Cachets et signatures du niveau sélectionné dans l&apos;app sont utilisés sur les documents (onglet Cachets).
                 </div>
               </div>
             </div>
@@ -3745,38 +3715,8 @@ export default function SettingsPage() {
       case 'seals':
         return (
           <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-              <div className="border-b border-gray-200">
-                <div className="flex">
-                  <button
-                    onClick={() => setSealsSubTab('seals')}
-                    className={`px-6 py-4 text-sm font-medium ${
-                      sealsSubTab === 'seals'
-                        ? 'text-blue-600 border-b-2 border-blue-600'
-                        : 'text-gray-600 hover:text-gray-800'
-                    }`}
-                  >
-                    Cachets Administratifs
-                  </button>
-                  <button
-                    onClick={() => setSealsSubTab('signatures')}
-                    className={`px-6 py-4 text-sm font-medium ${
-                      sealsSubTab === 'signatures'
-                        ? 'text-blue-600 border-b-2 border-blue-600'
-                        : 'text-gray-600 hover:text-gray-800'
-                    }`}
-                  >
-                    Signatures Électroniques
-                  </button>
-                </div>
-              </div>
-              <div className="p-6">
-                {sealsSubTab === 'seals' ? (
-                  <AdministrativeSealsManagement />
-                ) : (
-                  <ElectronicSignaturesManagement />
-                )}
-              </div>
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <GeneratedStampsSignatures tenantId={effectiveTenantId ?? undefined} />
             </div>
           </div>
         );

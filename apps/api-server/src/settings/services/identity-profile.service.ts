@@ -1,14 +1,17 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
+import { StampsSignaturesService } from './stamps-signatures.service';
 
 /**
  * ============================================================================
  * SERVICE IDENTITÉ ÉTABLISSEMENT — SOURCE LÉGALE DE VÉRITÉ
  * ============================================================================
- * 
+ *
  * Ce service gère l'identité institutionnelle versionnée de chaque tenant.
- * 
+ * Cachets et signatures : gérés par niveau dans StampsSignaturesService (tenant_stamps / tenant_signatures).
+ * Pour les documents, utiliser le niveau sélectionné (maternelle, primaire, secondaire) pour récupérer cachets/signatures du niveau.
+ *
  * RÈGLES MÉTIER :
  * - Chaque modification crée une NOUVELLE VERSION (pas de mise à jour en place)
  * - Un seul profil actif par tenant à tout moment
@@ -21,6 +24,7 @@ export class IdentityProfileService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly historyService: SettingsHistoryService,
+    private readonly stampsSignatures: StampsSignaturesService,
   ) {}
 
   /**
@@ -153,8 +157,8 @@ export class IdentityProfileService {
         timezone: reqStr(data.timezone, 'Africa/Porto-Novo'),
         // Visuels officiels
         logoUrl: opt(data.logoUrl),
-        stampUrl: opt(data.stampUrl),
-        directorSignatureUrl: opt(data.directorSignatureUrl),
+        stampUrl: null,
+        directorSignatureUrl: null,
         // Métadonnées
         createdBy: userId,
         activatedAt: now,
@@ -297,8 +301,8 @@ export class IdentityProfileService {
       {
         ...current,
         logoUrl: data.logoUrl !== undefined ? data.logoUrl : current.logoUrl,
-        stampUrl: data.stampUrl !== undefined ? data.stampUrl : current.stampUrl,
-        directorSignatureUrl: data.directorSignatureUrl !== undefined ? data.directorSignatureUrl : current.directorSignatureUrl,
+        stampUrl: null,
+        directorSignatureUrl: null,
       },
       userId,
       'Mise à jour des visuels officiels',
@@ -405,8 +409,8 @@ export class IdentityProfileService {
         foundationDate: profile.foundationDate,
       },
       footer: {
-        stamp: profile.stampUrl,
-        signature: profile.directorSignatureUrl,
+        stamp: null,
+        signature: null,
         currency: profile.currency,
         timezone: profile.timezone,
       },
@@ -443,8 +447,8 @@ export class IdentityProfileService {
         currency: profile.currency,
         timezone: profile.timezone,
         logoUrl: profile.logoUrl,
-        sealUrl: profile.stampUrl,
-        signatureUrl: profile.directorSignatureUrl,
+        sealUrl: null,
+        signatureUrl: null,
         version: profile.version,
       },
       update: {
@@ -466,8 +470,8 @@ export class IdentityProfileService {
         currency: profile.currency,
         timezone: profile.timezone,
         logoUrl: profile.logoUrl,
-        sealUrl: profile.stampUrl,
-        signatureUrl: profile.directorSignatureUrl,
+        sealUrl: null,
+        signatureUrl: null,
         version: profile.version,
       },
     });
@@ -500,8 +504,8 @@ export class IdentityProfileService {
       currency: profile.currency,
       timezone: profile.timezone,
       logoUrl: profile.logoUrl,
-      stampUrl: profile.stampUrl,
-      directorSignatureUrl: profile.directorSignatureUrl,
+      stampUrl: null,
+      directorSignatureUrl: null,
       createdBy: profile.createdBy,
       createdAt: profile.createdAt,
       activatedAt: profile.activatedAt,

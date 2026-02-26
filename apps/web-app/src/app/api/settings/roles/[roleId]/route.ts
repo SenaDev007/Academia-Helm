@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { cookies } from 'next/headers';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
@@ -29,7 +29,7 @@ export async function GET(
     const { roleId } = await params;
     const headers = await getAuthHeaders(request);
     
-    const response = await fetch(`${API_BASE_URL}/api/settings/roles/${roleId}`, {
+    const response = await fetch(normalizeApiUrl(`${API_BASE_URL}/settings/roles/${roleId}`), {
       headers,
     });
 
@@ -50,7 +50,7 @@ export async function PUT(
     const body = await request.json();
     const headers = await getAuthHeaders(request);
     
-    const response = await fetch(`${API_BASE_URL}/api/settings/roles/${roleId}`, {
+    const response = await fetch(normalizeApiUrl(`${API_BASE_URL}/settings/roles/${roleId}`), {
       method: 'PUT',
       headers,
       body: JSON.stringify(body),
@@ -72,7 +72,7 @@ export async function DELETE(
     const { roleId } = await params;
     const headers = await getAuthHeaders(request);
     
-    const response = await fetch(`${API_BASE_URL}/api/settings/roles/${roleId}`, {
+    const response = await fetch(normalizeApiUrl(`${API_BASE_URL}/settings/roles/${roleId}`), {
       method: 'DELETE',
       headers,
     });

@@ -3,7 +3,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { cookies } from 'next/headers';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
@@ -29,7 +29,7 @@ export async function POST(
     const { searchParams } = new URL(request.url);
     const qs = searchParams.toString() ? `?${searchParams.toString()}` : '';
     const response = await fetch(
-      `${API_BASE_URL}/api/settings/users/${userId}/revoke-role${qs}`,
+      normalizeApiUrl(`${API_BASE_URL}/settings/users/${userId}/revoke-role${qs}`),
       { method: 'POST', headers, body: JSON.stringify(body) },
     );
     const data = await response.json();

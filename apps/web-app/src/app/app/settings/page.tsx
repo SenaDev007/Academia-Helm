@@ -47,6 +47,12 @@ function formatAcademicDate(date: Date | string | null | undefined, options?: { 
   });
 }
 
+/** Affiche un nom de rôle pour l'UI : PLATFORM_OWNER → "PLATFORM OWNER", PLATFORM_ADMIN → "PLATFORM ADMIN" */
+function formatRoleDisplayName(name: string | null | undefined): string {
+  if (name == null || name === '') return '';
+  return String(name).replace(/_/g, ' ');
+}
+
 type TabId = 'identity' | 'academic-year' | 'structure' | 'bilingual' | 'features' | 
              'roles' | 'communication' | 'billing' | 'security' | 'seals' | 'orion' | 'atlas' | 'offline' | 'history';
 
@@ -2961,7 +2967,7 @@ export default function SettingsPage() {
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               <h3 className="text-lg font-semibold text-gray-800 mb-1">Utilisateurs, rôles & permissions (RBAC)</h3>
               <p className="text-sm text-gray-600 mb-6">
-                Contrôle d&apos;accès multi-tenant : <strong>rôles plateforme</strong> (PLATFORM_OWNER, PLATFORM_ADMIN), <strong>rôles école</strong> (DIRECTEUR, COMPTABLE, ENSEIGNANT, etc.), permissions par module et action (lecture, écriture, suppression, validation). Accès ORION/ATLAS par rôle. Un enseignant ne voit que ses classes ; un parent que son enfant ; un comptable ne modifie pas les notes.
+                Contrôle d&apos;accès multi-tenant : <strong>rôles plateforme</strong> (PLATFORM OWNER, PLATFORM ADMIN), <strong>rôles école</strong> (DIRECTEUR, COMPTABLE, ENSEIGNANT, etc.), permissions par module et action (lecture, écriture, suppression, validation). Accès ORION/ATLAS par rôle. Un enseignant ne voit que ses classes ; un parent que son enfant ; un comptable ne modifie pas les notes.
               </p>
 
               {/* ——— Section 1 : Liste des utilisateurs ——— */}
@@ -3001,7 +3007,7 @@ export default function SettingsPage() {
                                 <span className="flex flex-wrap gap-1">
                                   {(u.userRoles || []).map((ur: any) => (
                                     <span key={ur.role?.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">
-                                      {ur.role?.name}
+                                      {formatRoleDisplayName(ur.role?.name)}
                                       <button type="button" onClick={() => handleRevokeRole(u.id, ur.role?.id)} disabled={saving} className="text-red-600 hover:underline" title="Révoquer">×</button>
                                     </span>
                                   ))}
@@ -3021,7 +3027,7 @@ export default function SettingsPage() {
                                   >
                                     <option value="">Choisir un rôle…</option>
                                     {roles.filter((r: any) => !(u.userRoles || []).some((ur: any) => ur.role?.id === r.id)).map((r: any) => (
-                                      <option key={r.id} value={r.id}>{r.name}</option>
+                                      <option key={r.id} value={r.id}>{formatRoleDisplayName(r.name)}</option>
                                     ))}
                                   </select>
                                   <button type="button" onClick={() => setAssignRoleUserId(null)} className="text-gray-500 hover:underline text-xs">Annuler</button>
@@ -3053,7 +3059,7 @@ export default function SettingsPage() {
                     <div className="flex flex-wrap gap-2">
                       {platformRoles.map((role: any) => (
                         <div key={role.id} className="inline-flex items-center gap-2 px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg">
-                          <span className="font-medium text-gray-800">{role.name}</span>
+                          <span className="font-medium text-gray-800">{formatRoleDisplayName(role.name)}</span>
                           <span className="text-xs text-gray-500">— {role.description || 'Rôle système'}</span>
                           {role.canAccessOrion && <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">ORION</span>}
                           {role.canAccessAtlas && <span className="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">ATLAS</span>}
@@ -3096,7 +3102,7 @@ export default function SettingsPage() {
                         ) : (
                           <div className="flex items-center justify-between flex-wrap gap-2">
                             <div>
-                              <span className="font-semibold text-gray-800">{role.name}</span>
+                              <span className="font-semibold text-gray-800">{formatRoleDisplayName(role.name)}</span>
                               {role.isSystemRole && <span className="ml-2 text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded">Système</span>}
                               <p className="text-sm text-gray-600 mt-0.5">{role.description || '—'}</p>
                               <div className="flex gap-2 text-xs mt-1">
@@ -3175,7 +3181,7 @@ export default function SettingsPage() {
                           <th className="py-2 px-3 font-semibold text-gray-800 sticky left-0 bg-gray-50">Module</th>
                           <th className="py-2 px-3 font-semibold text-gray-800">Action</th>
                           {roles.map((r: any) => (
-                            <th key={r.id} className="py-2 px-2 font-medium text-gray-700 whitespace-nowrap min-w-[6rem]">{r.name}</th>
+                            <th key={r.id} className="py-2 px-2 font-medium text-gray-700 whitespace-nowrap min-w-[6rem]">{formatRoleDisplayName(r.name)}</th>
                           ))}
                         </tr>
                       </thead>
@@ -3207,7 +3213,7 @@ export default function SettingsPage() {
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setEditingPermissionsRoleId(null)}>
                 <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
                   <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-                    <h4 className="font-semibold text-gray-800">Permissions du rôle — {roles.find((r: any) => r.id === editingPermissionsRoleId)?.name}</h4>
+                    <h4 className="font-semibold text-gray-800">Permissions du rôle — {formatRoleDisplayName(roles.find((r: any) => r.id === editingPermissionsRoleId)?.name)}</h4>
                     <button type="button" onClick={() => setEditingPermissionsRoleId(null)} className="text-gray-500 hover:text-gray-700">✕</button>
                   </div>
                   <div className="p-4 border-b border-gray-100">

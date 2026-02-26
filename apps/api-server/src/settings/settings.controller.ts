@@ -10,6 +10,8 @@ import {
   UseGuards,
   Request,
   BadRequestException,
+  ForbiddenException,
+  NotFoundException,
   Logger,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -1407,6 +1409,12 @@ export class SettingsController {
     return tid;
   }
 
+  /** True si l'utilisateur est PLATFORM_OWNER, PLATFORM_ADMIN ou isSuperAdmin (rôles plateforme visibles uniquement par eux). */
+  private isPlatformUser(user: any): boolean {
+    const roleStr = (user?.role as string)?.toUpperCase?.();
+    return roleStr === 'PLATFORM_OWNER' || roleStr === 'PLATFORM_ADMIN' || user?.isSuperAdmin === true;
+  }
+
   /** Comme resolveTid mais retourne null si PO sans tenant (pour getRoles = rôles système uniquement). */
   private resolveTidOptional(tenantId: string | undefined, user: any, req: any): string | null {
     const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
@@ -1536,7 +1544,11 @@ export class SettingsController {
     @Request() req: any,
   ) {
     const tid = this.resolveTidOptional(tenantId, user, req);
-    return this.rolesPermissionsService.getRoles(tid);
+    const roles = await this.rolesPermissionsService.getRoles(tid);
+    if (!this.isPlatformUser(user) && Array.isArray(roles)) {
+      return roles.filter((r: { name: string }) => r.name !== 'PLATFORM_OWNER' && r.name !== 'PLATFORM_ADMIN');
+    }
+    return roles;
   }
 
   @Get('roles/:id')
@@ -1546,7 +1558,11 @@ export class SettingsController {
     @Request() req: any,
     @Param('id') id: string,
   ) {
-    return this.rolesPermissionsService.getRoleById(this.resolveTidOptional(tenantId, user, req), id);
+    const role = await this.rolesPermissionsService.getRoleById(this.resolveTidOptional(tenantId, user, req), id);
+    if (!this.isPlatformUser(user) && role && (role.name === 'PLATFORM_OWNER' || role.name === 'PLATFORM_ADMIN')) {
+      throw new NotFoundException('Rôle non trouvé.');
+    }
+    return role;
   }
 
   @Post('roles')
@@ -1586,6 +1602,10 @@ export class SettingsController {
     },
   ) {
     const tid = this.resolveTid(tenantId, user, req);
+    const role = await this.rolesPermissionsService.getRoleById(this.resolveTidOptional(tenantId, user, req), id);
+    if (!this.isPlatformUser(user) && role && (role.name === 'PLATFORM_OWNER' || role.name === 'PLATFORM_ADMIN')) {
+      throw new ForbiddenException('Seuls les rôles plateforme peuvent modifier ce rôle.');
+    }
     return this.rolesPermissionsService.updateRole(tid, id, data, user.id);
   }
 
@@ -1624,6 +1644,10 @@ export class SettingsController {
     @Body() data: { permissionIds: string[] },
   ) {
     const tid = this.resolveTid(tenantId, user, req);
+    const role = await this.rolesPermissionsService.getRoleById(this.resolveTidOptional(tenantId, user, req), id);
+    if (!this.isPlatformUser(user) && role && (role.name === 'PLATFORM_OWNER' || role.name === 'PLATFORM_ADMIN')) {
+      throw new ForbiddenException('Seuls les rôles plateforme peuvent modifier les permissions de ce rôle.');
+    }
     return this.rolesPermissionsService.updateRolePermissions(
       tid,
       id,
@@ -1655,6 +1679,10 @@ export class SettingsController {
   ) {
     const tid = this.resolveTid(tenantId, user, req);
     if (!body?.roleId) throw new BadRequestException('roleId requis');
+    const role = await this.rolesPermissionsService.getRoleById(this.resolveTidOptional(tenantId, user, req), body.roleId);
+    if (!this.isPlatformUser(user) && role && (role.name === 'PLATFORM_OWNER' || role.name === 'PLATFORM_ADMIN')) {
+      throw new ForbiddenException('Seuls les rôles plateforme peuvent attribuer PLATFORM_OWNER ou PLATFORM_ADMIN.');
+    }
     return this.rolesPermissionsService.assignRoleToUser(tid, userId, body.roleId, user.id);
   }
 
@@ -1671,6 +1699,10 @@ export class SettingsController {
   ) {
     const tid = this.resolveTid(tenantId, user, req);
     if (!body?.roleId) throw new BadRequestException('roleId requis');
+    const role = await this.rolesPermissionsService.getRoleById(this.resolveTidOptional(tenantId, user, req), body.roleId);
+    if (!this.isPlatformUser(user) && role && (role.name === 'PLATFORM_OWNER' || role.name === 'PLATFORM_ADMIN')) {
+      throw new ForbiddenException('Seuls les rôles plateforme peuvent révoquer PLATFORM_OWNER ou PLATFORM_ADMIN.');
+    }
     return this.rolesPermissionsService.revokeRoleFromUser(tid, userId, body.roleId, user.id);
   }
 

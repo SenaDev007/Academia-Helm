@@ -1,34 +1,19 @@
 /**
- * ============================================================================
- * API PROXY - SETTINGS PERMISSIONS GROUPED
- * ============================================================================
+ * API PROXY - SETTINGS PERMISSIONS GROUPED (même pattern que rbac/ensure-initialized)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
-import { cookies } from 'next/headers';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
-async function getAuthHeaders(request: NextRequest) {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get('session_token')?.value;
-  const authHeader = request.headers.get('Authorization');
-  
-  return {
-    'Authorization': authHeader || (sessionToken ? `Bearer ${sessionToken}` : ''),
-    'Content-Type': 'application/json',
-  };
-}
-
 export async function GET(request: NextRequest) {
   try {
-    const headers = await getAuthHeaders(request);
-    const response = await fetch(`${API_BASE_URL}/api/settings/permissions/grouped`, {
-      headers,
-    });
-
-    const data = await response.json();
+    const headers = await getProxyAuthHeaders(request);
+    const url = new URL(`${API_BASE_URL}/settings/permissions/grouped`);
+    const response = await fetch(normalizeApiUrl(url.toString()), { headers });
+    const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error fetching grouped permissions:', error);

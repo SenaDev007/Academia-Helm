@@ -1,10 +1,11 @@
 import { Injectable, BadRequestException, ForbiddenException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
+import { RolesPermissionsBootstrapService } from './roles-permissions-bootstrap.service';
 
 /**
  * Service pour la gestion des rôles et permissions.
- * Le bootstrap (permissions + rôles système) est assuré par RolesPermissionsBootstrapService au démarrage.
+ * Initialisation lazy (même pattern que Structure) : colonnes + rôles système assurés à la première lecture.
  */
 @Injectable()
 export class RolesPermissionsService {
@@ -13,12 +14,24 @@ export class RolesPermissionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly historyService: SettingsHistoryService,
+    private readonly rolesBootstrap: RolesPermissionsBootstrapService,
   ) {}
 
   /**
+   * Assure que la table roles et les données par défaut sont prêtes (pattern Structure).
+   * Appelé avant toute lecture pour éviter "column does not exist" si db push / bootstrap ont échoué.
+   * En cas d'échec, propage l'erreur (message explicite côté bootstrap).
+   */
+  private async ensureRolesReady(): Promise<void> {
+    await this.rolesBootstrap.ensureRolesTableColumns();
+  }
+
+  /**
    * Récupère tous les rôles : si tenantId fourni = rôles du tenant + rôles système ; si null = rôles système uniquement.
+   * Initialise la table et les rôles système à la première lecture si besoin (comme getStructure pour la structure).
    */
   async getRoles(tenantId: string | null) {
+    await this.ensureRolesReady();
     const where =
       tenantId == null
         ? { tenantId: null, isSystemRole: true }
@@ -48,6 +61,7 @@ export class RolesPermissionsService {
    * Récupère un rôle par ID (tenantId null = uniquement rôles système).
    */
   async getRoleById(tenantId: string | null, id: string) {
+    await this.ensureRolesReady();
     const role = await this.prisma.role.findFirst({
       where: {
         id,
@@ -341,11 +355,14 @@ export class RolesPermissionsService {
   }
 
   /**
-   * Liste les utilisateurs du tenant avec leurs rôles (pour Paramètres → Utilisateurs & rôles)
+   * Liste les utilisateurs du tenant avec leurs rôles (pour Paramètres → Utilisateurs & rôles).
+   * Même pattern que l'onglet Structure : filtre par relation tenant.
    */
   async getUsersWithRoles(tenantId: string) {
     const users = await this.prisma.user.findMany({
-      where: { tenantId },
+      where: {
+        tenant: { id: tenantId },
+      },
       select: {
         id: true,
         email: true,

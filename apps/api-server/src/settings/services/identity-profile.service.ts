@@ -1,7 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
-import { StampsSignaturesService } from './stamps-signatures.service';
 
 /**
  * ============================================================================
@@ -24,7 +23,6 @@ export class IdentityProfileService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly historyService: SettingsHistoryService,
-    private readonly stampsSignatures: StampsSignaturesService,
   ) {}
 
   /**

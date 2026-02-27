@@ -9,7 +9,9 @@
  */
 
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { existsSync } from 'fs';
 import * as fs from 'fs/promises';
+import * as os from 'os';
 import * as path from 'path';
 import * as puppeteer from 'puppeteer';
 import { PrismaService } from '../../database/prisma.service';
@@ -21,6 +23,10 @@ const SIGNATURES_DIR = 'uploads/tenant-signatures';
 /** Rôles/départements administratifs pour les signatures */
 export const SIGNATURE_ROLES = ['DIRECTEUR', 'DIRECTEUR_ADJOINT', 'COMPTABLE', 'SECRETAIRE', 'AUTRE'] as const;
 export type SignatureRole = (typeof SIGNATURE_ROLES)[number];
+
+/** Types de cachets générables */
+export const STAMP_FORMATS = ['circular', 'rectangular', 'oval'] as const;
+export type StampFormat = (typeof STAMP_FORMATS)[number];
 
 interface IdentityProfileData {
   schoolName: string;
@@ -44,16 +50,19 @@ export class StampsSignaturesService {
     private readonly identityProfile: IdentityProfileService,
   ) {}
 
-  /** Types de cachets générables */
-  static readonly STAMP_FORMATS = ['circular', 'rectangular', 'oval'] as const;
-  type StampFormat = (typeof StampsSignaturesService.STAMP_FORMATS)[number];
-
   /**
    * Liste des cachets du tenant (tous niveaux + global). Pour les documents : récupérer par niveau ou global.
    * Tri : global (educationLevelId null) en premier, puis par ordre du niveau scolaire (educationLevel.order).
    */
   async getStampsList(tenantId: string) {
-    const rows = await this.prisma.tenantStamp.findMany({
+    const delegate = this.prisma?.tenantStamp;
+    if (!delegate?.findMany) {
+      this.logger.warn(
+        'Prisma client missing tenantStamp delegate. Run: npx prisma generate --schema=prisma/schema.prisma',
+      );
+      return [];
+    }
+    const rows = await delegate.findMany({
       where: { tenantId },
       include: { educationLevel: { select: { id: true, name: true, order: true } } },
     });
@@ -82,15 +91,17 @@ export class StampsSignaturesService {
    * Un set de cachets pour un niveau (ou global si educationLevelId null). Pour usage dans les documents.
    */
   async getStamps(tenantId: string, educationLevelId?: string | null) {
-    const row = await this.prisma.tenantStamp.findUnique({
-      where: {
-        tenantId_educationLevelId: {
-          tenantId,
-          educationLevelId: educationLevelId ?? null,
-        },
-      },
-      include: { educationLevel: { select: { id: true, name: true } } },
-    });
+    const levelId = educationLevelId ?? null;
+    const row =
+      levelId != null
+        ? await this.prisma.tenantStamp.findUnique({
+            where: { tenantId_educationLevelId: { tenantId, educationLevelId: levelId } },
+            include: { educationLevel: { select: { id: true, name: true } } },
+          })
+        : await this.prisma.tenantStamp.findFirst({
+            where: { tenantId, educationLevelId: null },
+            include: { educationLevel: { select: { id: true, name: true } } },
+          });
     if (!row) {
       return {
         educationLevelId: educationLevelId ?? null,
@@ -115,7 +126,14 @@ export class StampsSignaturesService {
    * Liste des signatures du tenant (optionnel filtre par niveau). Pour les documents : récupérer par niveau + rôle.
    */
   async getSignaturesList(tenantId: string, educationLevelId?: string | null) {
-    const rows = await this.prisma.tenantSignature.findMany({
+    const delegate = this.prisma?.tenantSignature;
+    if (!delegate?.findMany) {
+      this.logger.warn(
+        'Prisma client missing tenantSignature delegate. Run: npx prisma generate --schema=prisma/schema.prisma',
+      );
+      return [];
+    }
+    const rows = await delegate.findMany({
       where: {
         tenantId,
         ...(educationLevelId !== undefined && educationLevelId !== null
@@ -173,7 +191,7 @@ export class StampsSignaturesService {
     generatedAt: string;
   }> {
     const formats: StampFormat[] =
-      options?.formats?.length ? options.formats : [...StampsSignaturesService.STAMP_FORMATS];
+      options?.formats?.length ? options.formats : [...STAMP_FORMATS];
     const educationLevelId = options?.educationLevelId ?? null;
 
     const profile = await this.identityProfile.getActiveProfile(tenantId);
@@ -201,9 +219,15 @@ export class StampsSignaturesService {
     const stampsDir = path.join(cwd, STAMPS_DIR, tenantId, levelFolder);
     await fs.mkdir(stampsDir, { recursive: true });
 
-    const existing = await this.prisma.tenantStamp.findUnique({
-      where: { tenantId_educationLevelId: { tenantId, educationLevelId } },
-    });
+    // findUnique n'accepte pas null dans la clé composite → findFirst quand educationLevelId est null
+    const existing =
+      educationLevelId != null
+        ? await this.prisma.tenantStamp.findUnique({
+            where: { tenantId_educationLevelId: { tenantId, educationLevelId } },
+          })
+        : await this.prisma.tenantStamp.findFirst({
+            where: { tenantId, educationLevelId: null },
+          });
     const now = new Date();
     let circularStampUrl = existing?.circularStampUrl ?? null;
     let rectangularStampUrl = existing?.rectangularStampUrl ?? null;
@@ -228,23 +252,49 @@ export class StampsSignaturesService {
       ovalStampUrl = `${STAMPS_DIR}/${tenantId}/${levelFolder}/oval.png`;
     }
 
-    await this.prisma.tenantStamp.upsert({
-      where: { tenantId_educationLevelId: { tenantId, educationLevelId } },
-      create: {
-        tenantId,
-        educationLevelId,
-        circularStampUrl,
-        rectangularStampUrl,
-        ovalStampUrl,
-        generatedAt: now,
-      },
-      update: {
-        ...(circularStampUrl !== null && { circularStampUrl }),
-        ...(rectangularStampUrl !== null && { rectangularStampUrl }),
-        ...(ovalStampUrl !== null && { ovalStampUrl }),
-        generatedAt: now,
-      },
-    });
+    // upsert n'accepte pas null dans la clé composite → update ou create quand educationLevelId est null
+    if (educationLevelId != null) {
+      await this.prisma.tenantStamp.upsert({
+        where: { tenantId_educationLevelId: { tenantId, educationLevelId } },
+        create: {
+          tenantId,
+          educationLevelId,
+          circularStampUrl,
+          rectangularStampUrl,
+          ovalStampUrl,
+          generatedAt: now,
+        },
+        update: {
+          ...(circularStampUrl !== null && { circularStampUrl }),
+          ...(rectangularStampUrl !== null && { rectangularStampUrl }),
+          ...(ovalStampUrl !== null && { ovalStampUrl }),
+          generatedAt: now,
+        },
+      });
+    } else {
+      if (existing) {
+        await this.prisma.tenantStamp.update({
+          where: { id: existing.id },
+          data: {
+            ...(circularStampUrl !== null && { circularStampUrl }),
+            ...(rectangularStampUrl !== null && { rectangularStampUrl }),
+            ...(ovalStampUrl !== null && { ovalStampUrl }),
+            generatedAt: now,
+          },
+        });
+      } else {
+        await this.prisma.tenantStamp.create({
+          data: {
+            tenantId,
+            educationLevelId: null,
+            circularStampUrl,
+            rectangularStampUrl,
+            ovalStampUrl,
+            generatedAt: now,
+          },
+        });
+      }
+    }
 
     this.logger.log(`Cachets générés tenant=${tenantId} level=${levelFolder}: ${formats.join(', ')}`);
     return {
@@ -287,29 +337,55 @@ export class StampsSignaturesService {
     const signatureSvg = this.buildSignatureSvg(first, last);
     const now = new Date();
 
-    const row = await this.prisma.tenantSignature.upsert({
-      where: {
-        tenantId_educationLevelId_role: {
+    // upsert n'accepte pas null dans la clé composite → findFirst + create/update quand educationLevelId est null
+    let row: { id: string };
+    if (levelId != null) {
+      row = await this.prisma.tenantSignature.upsert({
+        where: {
+          tenantId_educationLevelId_role: { tenantId, educationLevelId: levelId, role },
+        },
+        create: {
           tenantId,
           educationLevelId: levelId,
           role,
+          holderFirstName: first,
+          holderLastName: last,
+          signatureUrl: null as any,
+          generatedAt: now,
         },
-      },
-      create: {
-        tenantId,
-        educationLevelId: levelId,
-        role,
-        holderFirstName: first,
-        holderLastName: last,
-        signatureUrl: null as any,
-        generatedAt: now,
-      },
-      update: {
-        holderFirstName: first,
-        holderLastName: last,
-        generatedAt: now,
-      },
-    });
+        update: {
+          holderFirstName: first,
+          holderLastName: last,
+          generatedAt: now,
+        },
+      });
+    } else {
+      const existing = await this.prisma.tenantSignature.findFirst({
+        where: { tenantId, educationLevelId: null, role },
+      });
+      if (existing) {
+        row = await this.prisma.tenantSignature.update({
+          where: { id: existing.id },
+          data: {
+            holderFirstName: first,
+            holderLastName: last,
+            generatedAt: now,
+          },
+        });
+      } else {
+        row = await this.prisma.tenantSignature.create({
+          data: {
+            tenantId,
+            educationLevelId: null,
+            role,
+            holderFirstName: first,
+            holderLastName: last,
+            signatureUrl: null as any,
+            generatedAt: now,
+          },
+        });
+      }
+    }
 
     const signaturePath = path.join(sigDir, `${row.id}.png`);
     await this.svgToPng(signatureSvg, signaturePath, 280, 90, true);
@@ -357,6 +433,10 @@ export class StampsSignaturesService {
   }
 
   // ---------- Génération SVG ----------
+  /** Couleur principale des cachets (rouge cachet) */
+  private static readonly STAMP_RED = '#b71c1c';
+  /** Couleur secondaire (texte secondaire, légèrement plus clair) */
+  private static readonly STAMP_RED_SECONDARY = '#c62828';
 
   private buildCircularStampSvg(data: IdentityProfileData): string {
     const name = this.escapeXml(data.schoolName);
@@ -371,15 +451,17 @@ export class StampsSignaturesService {
     const r = size / 2 - 20;
     const fontFamily = 'Georgia, "Times New Roman", serif';
 
+    const red = StampsSignaturesService.STAMP_RED;
+    const redSec = StampsSignaturesService.STAMP_RED_SECONDARY;
     let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`;
     svg += `<rect width="100%" height="100%" fill="none"/>`;
-    svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#1a1a1a" stroke-width="3"/>`;
-    svg += `<circle cx="${cx}" cy="${cy}" r="${r - 8}" fill="none" stroke="#1a1a1a" stroke-width="1"/>`;
-    svg += this.arcText(cx, cy, r - 18, name, fontFamily, 14, true);
+    svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${red}" stroke-width="3"/>`;
+    svg += `<circle cx="${cx}" cy="${cy}" r="${r - 8}" fill="none" stroke="${red}" stroke-width="1"/>`;
+    svg += this.arcText(cx, cy, r - 18, name, fontFamily, 14, true, red);
     if (line1) {
-      svg += this.arcText(cx, cy, r - 18, line1, fontFamily, 11, false);
+      svg += this.arcText(cx, cy, r - 18, line1, fontFamily, 11, false, redSec);
     }
-    svg += `<text x="${cx}" y="${cy + 6}" text-anchor="middle" dominant-baseline="middle" font-family="${fontFamily}" font-size="12" font-weight="bold" fill="#1a1a1a" letter-spacing="1">${this.escapeXml(line2)}</text>`;
+    svg += `<text x="${cx}" y="${cy + 6}" text-anchor="middle" dominant-baseline="middle" font-family="${fontFamily}" font-size="12" font-weight="bold" fill="${red}" letter-spacing="1">${this.escapeXml(line2)}</text>`;
     svg += '</svg>';
     return svg;
   }
@@ -397,15 +479,17 @@ export class StampsSignaturesService {
     const ry = h / 2 - 24;
     const fontFamily = 'Georgia, "Times New Roman", serif';
 
+    const red = StampsSignaturesService.STAMP_RED;
+    const redSec = StampsSignaturesService.STAMP_RED_SECONDARY;
     let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`;
     svg += `<rect width="100%" height="100%" fill="none"/>`;
-    svg += `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="none" stroke="#1a1a1a" stroke-width="3"/>`;
-    svg += `<ellipse cx="${cx}" cy="${cy}" rx="${rx - 8}" ry="${ry - 8}" fill="none" stroke="#1a1a1a" stroke-width="1"/>`;
-    svg += `<text x="${cx}" y="${cy - 24}" text-anchor="middle" font-family="${fontFamily}" font-size="14" font-weight="bold" fill="#1a1a1a">${name}</text>`;
+    svg += `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="none" stroke="${red}" stroke-width="3"/>`;
+    svg += `<ellipse cx="${cx}" cy="${cy}" rx="${rx - 8}" ry="${ry - 8}" fill="none" stroke="${red}" stroke-width="1"/>`;
+    svg += `<text x="${cx}" y="${cy - 24}" text-anchor="middle" font-family="${fontFamily}" font-size="14" font-weight="bold" fill="${red}">${name}</text>`;
     if (city || country) {
-      svg += `<text x="${cx}" y="${cy}" text-anchor="middle" font-family="${fontFamily}" font-size="11" fill="#333">${[city, country].filter(Boolean).join(' — ')}</text>`;
+      svg += `<text x="${cx}" y="${cy}" text-anchor="middle" font-family="${fontFamily}" font-size="11" fill="${redSec}">${[city, country].filter(Boolean).join(' — ')}</text>`;
     }
-    svg += `<text x="${cx}" y="${cy + 28}" text-anchor="middle" font-family="${fontFamily}" font-size="11" font-weight="bold" fill="#1a1a1a" letter-spacing="1">${this.escapeXml(line2)}</text>`;
+    svg += `<text x="${cx}" y="${cy + 28}" text-anchor="middle" font-family="${fontFamily}" font-size="11" font-weight="bold" fill="${red}" letter-spacing="1">${this.escapeXml(line2)}</text>`;
     svg += '</svg>';
     return svg;
   }
@@ -425,18 +509,20 @@ export class StampsSignaturesService {
     const h = 140;
     const fontFamily = 'Georgia, "Times New Roman", serif';
 
+    const red = StampsSignaturesService.STAMP_RED;
+    const redSec = StampsSignaturesService.STAMP_RED_SECONDARY;
     let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`;
-    svg += `<rect width="${w}" height="${h}" fill="none" stroke="#1a1a1a" stroke-width="2" rx="4"/>`;
-    svg += `<rect x="4" y="4" width="${w - 8}" height="${h - 8}" fill="none" stroke="#1a1a1a" stroke-width="1" rx="2"/>`;
-    svg += `<text x="${w / 2}" y="28" text-anchor="middle" font-family="${fontFamily}" font-size="16" font-weight="bold" fill="#1a1a1a">${name}</text>`;
+    svg += `<rect width="${w}" height="${h}" fill="none" stroke="${red}" stroke-width="2" rx="4"/>`;
+    svg += `<rect x="4" y="4" width="${w - 8}" height="${h - 8}" fill="none" stroke="${red}" stroke-width="1" rx="2"/>`;
+    svg += `<text x="${w / 2}" y="28" text-anchor="middle" font-family="${fontFamily}" font-size="16" font-weight="bold" fill="${red}">${name}</text>`;
     if (loc) {
-      svg += `<text x="${w / 2}" y="52" text-anchor="middle" font-family="${fontFamily}" font-size="10" fill="#333">${loc}</text>`;
+      svg += `<text x="${w / 2}" y="52" text-anchor="middle" font-family="${fontFamily}" font-size="10" fill="${redSec}">${loc}</text>`;
     }
     if (phone || email) {
-      svg += `<text x="${w / 2}" y="74" text-anchor="middle" font-family="${fontFamily}" font-size="10" fill="#333">${this.escapeXml(phone)}${phone && email ? ' • ' : ''}${email}</text>`;
+      svg += `<text x="${w / 2}" y="74" text-anchor="middle" font-family="${fontFamily}" font-size="10" fill="${redSec}">${this.escapeXml(phone)}${phone && email ? ' • ' : ''}${email}</text>`;
     }
     if (web) {
-      svg += `<text x="${w / 2}" y="96" text-anchor="middle" font-family="${fontFamily}" font-size="9" fill="#555">${web}</text>`;
+      svg += `<text x="${w / 2}" y="96" text-anchor="middle" font-family="${fontFamily}" font-size="9" fill="${redSec}">${web}</text>`;
     }
     svg += '</svg>';
     return svg;
@@ -463,6 +549,7 @@ export class StampsSignaturesService {
     fontFamily: string,
     fontSize: number,
     top: boolean,
+    fill = StampsSignaturesService.STAMP_RED,
   ): string {
     const chars = text.split('');
     const angleStep = (Math.PI * 0.85) / Math.max(chars.length - 1, 1);
@@ -473,7 +560,7 @@ export class StampsSignaturesService {
       const x = cx + r * Math.cos(angle);
       const y = cy + r * Math.sin(angle);
       const rot = (angle * 180) / Math.PI + (top ? 0 : 180);
-      out += `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-family="${fontFamily}" font-size="${fontSize}" fill="#1a1a1a" transform="rotate(${rot} ${x} ${y})">${this.escapeXml(char)}</text>`;
+      out += `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-family="${fontFamily}" font-size="${fontSize}" fill="${fill}" transform="rotate(${rot} ${x} ${y})">${this.escapeXml(char)}</text>`;
     });
     return out;
   }
@@ -487,6 +574,14 @@ export class StampsSignaturesService {
       .replace(/'/g, '&apos;');
   }
 
+  /** Chemins Windows courants pour Chrome/Edge si PUPPETEER_EXECUTABLE_PATH non défini ou invalide */
+  private static readonly FALLBACK_CHROME_PATHS = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+  ];
+
   private async svgToPng(
     svgContent: string,
     outputPath: string,
@@ -494,13 +589,37 @@ export class StampsSignaturesService {
     height: number,
     transparent = false,
   ): Promise<void> {
-    const html = `<!DOCTYPE html><html><head><style>body{margin:0;padding:0;${transparent ? 'background:transparent;' : ''}}</style></head><body>${svgContent}</body></html>`;
-    const browser = await puppeteer.launch({
+    const bg = transparent ? 'transparent' : '#ffffff';
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>html,body{margin:0;padding:0;width:100%;height:100%;background:${bg};}</style></head><body>${svgContent}</body></html>`;
+    const executablePath =
+      process.env.PUPPETEER_EXECUTABLE_PATH?.trim() ||
+      StampsSignaturesService.FALLBACK_CHROME_PATHS.find((p) => existsSync(p));
+    const userDataDir = path.join(os.tmpdir(), 'academia-puppeteer-stamps');
+    const launchOptions: Parameters<typeof puppeteer.launch>[0] = {
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
+      timeout: 60000,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--disable-extensions',
+        '--disable-background-networking',
+        '--disable-sync',
+        '--metrics-recording-only',
+        '--mute-audio',
+        `--user-data-dir=${userDataDir}`,
+      ],
+    };
+    if (executablePath) {
+      launchOptions.executablePath = executablePath;
+    }
+    const browser = await puppeteer.launch(launchOptions);
     try {
       const page = await browser.newPage();
+      await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'light' }]);
       await page.setViewport({ width, height, deviceScaleFactor: 2 });
       await page.setContent(html, { waitUntil: 'networkidle0' });
       await page.screenshot({

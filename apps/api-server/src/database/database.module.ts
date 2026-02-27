@@ -2,6 +2,7 @@ import { Module, Global } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PrismaService } from './prisma.service';
+import { DatabaseTriggersBootstrapService } from './database-triggers-bootstrap.service';
 
 @Global() // Global pour que PrismaService soit disponible partout
 @Module({
@@ -66,7 +67,7 @@ import { PrismaService } from './prisma.service';
       inject: [ConfigService],
     }),
   ],
-  providers: [PrismaService],
+  providers: [PrismaService, DatabaseTriggersBootstrapService],
   exports: [PrismaService],
 })
 export class DatabaseModule {}

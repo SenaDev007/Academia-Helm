@@ -146,6 +146,23 @@ export class StudentDossierService {
       take: 50, // Limiter à 50 derniers
     });
 
+    // Module 1 — Parents / tuteurs (identité & relations)
+    const guardians = await this.prisma.studentGuardian.findMany({
+      where: { studentId },
+      include: {
+        guardian: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+    });
+
     // Récupérer le profil tarifaire pour l'année scolaire
     let feeProfile = null;
     if (academicYearId) {
@@ -174,6 +191,7 @@ export class StudentDossierService {
       });
     }
 
+    // Module 1 — Identité légale complète (lieu de naissance, pièce, régime)
     return {
       identity: {
         id: student.id,
@@ -182,7 +200,12 @@ export class StudentDossierService {
         dateOfBirth: student.dateOfBirth,
         gender: student.gender,
         nationality: student.nationality,
-        matricule: student.identifier?.globalMatricule || null,
+        placeOfBirth: student.placeOfBirth ?? null,
+        legalDocumentType: student.legalDocumentType ?? null,
+        legalDocumentNumber: student.legalDocumentNumber ?? null,
+        regimeType: student.regimeType ?? null,
+        studentCode: student.studentCode ?? null,
+        matricule: student.identifier?.globalMatricule || student.studentCode || null,
         status: student.status,
         institution: student.tenant.schools?.[0]?.name || student.tenant.name,
       },
@@ -194,6 +217,7 @@ export class StudentDossierService {
       recentDisciplinaryActions: disciplinaryActions,
       currentIdCard: student.idCards?.[0] || null,
       feeProfile,
+      guardians,
     };
   }
 

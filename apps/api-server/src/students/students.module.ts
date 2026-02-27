@@ -33,6 +33,9 @@ import { PublicVerificationService } from './services/public-verification.servic
 import { StudentDossierService } from './services/student-dossier.service';
 import { PublicVerificationController } from './controllers/public-verification.controller';
 import { StudentDossierController } from './controllers/student-dossier.controller';
+// Module 1 - Cycle de vie (pre-register, admit, re-enroll, transfer, change-class, history, export EDUCMASTER)
+import { StudentsLifecycleService } from './services/students-lifecycle.service';
+import { StudentsLifecycleController } from './controllers/students-lifecycle.controller';
 
 @Module({
   imports: [
@@ -45,6 +48,7 @@ import { StudentDossierController } from './controllers/student-dossier.controll
   ],
   controllers: [
     StudentsController,
+    StudentsLifecycleController,
     StudentsPrismaController,
     GuardiansPrismaController,
     AttendancePrismaController,
@@ -76,6 +80,7 @@ import { StudentDossierController } from './controllers/student-dossier.controll
     // Module 1 - Vérification Publique & Dossier Scolaire
     PublicVerificationService,
     StudentDossierService,
+    StudentsLifecycleService,
   ],
   exports: [
     StudentsService,
@@ -92,6 +97,7 @@ import { StudentDossierController } from './controllers/student-dossier.controll
     // Module 1 - Vérification Publique & Dossier Scolaire
     PublicVerificationService,
     StudentDossierService,
+    StudentsLifecycleService,
   ],
 })
 export class StudentsModule {}

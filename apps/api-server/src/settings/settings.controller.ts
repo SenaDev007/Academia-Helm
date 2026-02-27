@@ -943,13 +943,17 @@ export class SettingsController {
   // ============================================================================
 
   @Get('pedagogical-structure')
-  async getPedagogicalStructure(@TenantId() tenantId: string) {
-    return this.pedagogicalStructureService.getStructure(tenantId);
+  async getPedagogicalStructure(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    return this.pedagogicalStructureService.getStructure(this.resolveTid(tenantId, user, req));
   }
 
   @Put('pedagogical-structure')
   async updatePedagogicalStructure(
-    @TenantId() tenantId: string,
+    @TenantId() tenantId: string | undefined,
     @CurrentUser() user: any,
     @Body() data: {
       maternelleEnabled?: boolean;
@@ -961,10 +965,11 @@ export class SettingsController {
     },
     @Request() req: any,
   ) {
+    const tid = this.resolveTid(tenantId, user, req);
     const ipAddress = req.ip || req.connection?.remoteAddress;
     const userAgent = req.headers['user-agent'];
     return this.pedagogicalStructureService.updateStructure(
-      tenantId,
+      tid,
       data,
       user.id,
       ipAddress,
@@ -973,13 +978,21 @@ export class SettingsController {
   }
 
   @Get('pedagogical-structure/levels')
-  async getLevels(@TenantId() tenantId: string) {
-    return this.pedagogicalStructureService.getLevels(tenantId);
+  async getLevels(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    return this.pedagogicalStructureService.getLevels(this.resolveTid(tenantId, user, req));
   }
 
   @Get('pedagogical-structure/tracks')
-  async getTracks(@TenantId() tenantId: string) {
-    return this.pedagogicalStructureService.getTracks(tenantId);
+  async getTracks(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    return this.pedagogicalStructureService.getTracks(this.resolveTid(tenantId, user, req));
   }
 
   // ============================================================================

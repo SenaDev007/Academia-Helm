@@ -224,6 +224,7 @@ model Tenant {
   studentIdCards                   StudentIdCard[]
   studentIdentifiers               StudentIdentifier[]
   students                         Student[]
+  nationalExportLogs               NationalExportLog[]
   subjectAssignments               SubjectAssignment[]
   subjects                         Subject[]
   subscriptionInvoices             SubscriptionInvoice[]
@@ -1157,6 +1158,11 @@ model Student {
   gender                   String?
   nationality              String?
   primaryLanguage          String?
+  placeOfBirth             String?
+  legalDocumentType        String?
+  legalDocumentNumber      String?
+  regimeType               String?                      // NORMAL | TEACHER_CHILD | SCHOLARSHIP | SPECIAL
+  isActive                 Boolean                      @default(true)
   status                   String                       @default("ACTIVE")
   createdAt                DateTime                     @default(now())
   updatedAt                DateTime                     @updatedAt
@@ -1200,6 +1206,7 @@ model Student {
   studentGuardians         StudentGuardian[]
   idCards                  StudentIdCard[]
   identifier               StudentIdentifier?
+  nationalExportLogs       NationalExportLog[]
   academicYear             AcademicYear                 @relation(fields: [academicYearId], references: [id])
   schoolLevel              SchoolLevel                  @relation(fields: [schoolLevelId], references: [id])
   tenant                   Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1211,6 +1218,8 @@ model Student {
   @@index([tenantId, academicYearId, schoolLevelId])
   @@index([tenantId, status])
   @@index([tenantId, studentCode])
+  @@index([tenantId, regimeType])
+  @@index([tenantId, isActive])
   @@map("students")
 }
 
@@ -2850,19 +2859,20 @@ model StudentGuardian {
 }
 
 model StudentEnrollment {
-  id             String       @id @default(uuid())
-  tenantId       String
-  academicYearId String
-  schoolLevelId  String
-  studentId      String
-  classId        String?
-  enrollmentType String       @default("NEW")
-  enrollmentDate DateTime
-  status         String       @default("PENDING")
-  exitDate       DateTime?
-  exitReason     String?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id              String       @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  schoolLevelId   String
+  studentId       String
+  classId         String?
+  enrollmentType  String       @default("NEW")
+  enrollmentDate  DateTime
+  status          String       @default("PENDING") // PRE_REGISTERED | ADMITTED | RE_ENROLLED | TRANSFERRED | WITHDRAWN
+  previousArrears Float        @default(0)
+  exitDate        DateTime?
+  exitReason      String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
   class          Class?       @relation(fields: [classId], references: [id])
   schoolLevel    SchoolLevel  @relation(fields: [schoolLevelId], references: [id])
@@ -2872,6 +2882,25 @@ model StudentEnrollment {
   @@index([tenantId, academicYearId, schoolLevelId])
   @@index([studentId])
   @@map("student_enrollments")
+}
+
+/// Log d'export national (EDUCMASTER, etc.) — non modifiable après export.
+model NationalExportLog {
+  id          String   @id @default(uuid())
+  tenantId    String
+  studentId   String
+  exportType  String   // EDUCMASTER | format officiel
+  exportedAt  DateTime @default(now())
+  status      String   // SUCCESS | FAILED
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([studentId])
+  @@index([exportType, exportedAt])
+  @@map("national_export_logs")
 }
 
 model StudentIdentifier {

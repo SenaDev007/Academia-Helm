@@ -371,7 +371,7 @@ export default function SettingsPage() {
                 settingsService.getActiveAcademicYear(effectiveTenantId).catch(() => null),
               ]).then(([y, a]) => ({ years: y, activeYear: a }))
             : Promise.resolve({ years: [], activeYear: null }),
-          settingsService.getPedagogicalStructure().catch(() => null),
+          settingsService.getPedagogicalStructure(effectiveTenantId ?? undefined).catch(() => null),
           settingsService.getBilingualSettings(effectiveTenantId ?? undefined).catch(() => null),
           settingsService.getCommunicationSettings().catch(() => null),
           settingsService.getRoles(effectiveTenantId ?? undefined).catch(() => []),
@@ -806,9 +806,9 @@ export default function SettingsPage() {
   const handleSaveStructure = async () => {
     try {
       setSaving(true);
-      await settingsService.updatePedagogicalStructure(structureForm);
+      await settingsService.updatePedagogicalStructure(structureForm, effectiveTenantId ?? undefined);
       showToast('success', 'Structure pédagogique enregistrée');
-      const updated = await settingsService.getPedagogicalStructure();
+      const updated = await settingsService.getPedagogicalStructure(effectiveTenantId ?? undefined);
       setPedagogicalStructure(updated);
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
@@ -1959,7 +1959,7 @@ export default function SettingsPage() {
 
             {/* Périodes académiques (trimestres / semestres) */}
             {academicYears.length > 0 && (
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
                   <CalendarRange className="w-5 h-5 text-blue-600 shrink-0" aria-hidden />
                   Périodes académiques
@@ -2009,19 +2009,19 @@ export default function SettingsPage() {
                       <div className="border border-gray-200 rounded-lg p-4 mb-4 bg-gray-50">
                         <h4 className="font-medium text-gray-900 mb-3">Nouvelle période</h4>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
-                          <div>
+                <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">Nom</label>
-                            <input
-                              type="text"
+                  <input
+                    type="text"
                               value={newPeriodForm.name}
                               onChange={(e) => setNewPeriodForm({ ...newPeriodForm, name: e.target.value })}
                               placeholder="ex. Trimestre 1"
                               className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-                            />
-                          </div>
-                          <div>
+                  />
+                </div>
+                <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
-                            <select
+                  <select
                               value={newPeriodForm.type}
                               onChange={(e) => setNewPeriodForm({ ...newPeriodForm, type: e.target.value as settingsService.AcademicPeriodType })}
                               className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
@@ -2030,9 +2030,9 @@ export default function SettingsPage() {
                               <option value="SEMESTER">Semestre</option>
                               <option value="SEQUENCE">Séquence</option>
                               <option value="CUSTOM">Personnalisé</option>
-                            </select>
-                          </div>
-                          <div>
+                  </select>
+                </div>
+                <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">Ordre</label>
                             <input
                               type="number"
@@ -2122,7 +2122,7 @@ export default function SettingsPage() {
                                   </div>
                                   <div>
                                     <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
-                                    <select
+                  <select
                                       value={editingPeriodForm.type}
                                       onChange={(e) => setEditingPeriodForm({ ...editingPeriodForm, type: e.target.value as settingsService.AcademicPeriodType })}
                                       className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
@@ -2733,24 +2733,24 @@ export default function SettingsPage() {
                         className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={bilingualForm.defaultLanguage ?? bilingualForm.defaultUILanguage ?? 'FR'}
                         onChange={(e) => setBilingualForm({ ...bilingualForm, defaultLanguage: e.target.value })}
-                      >
-                        <option value="FR">Français</option>
-                        <option value="EN">English</option>
-                      </select>
-                    </div>
-                    <div>
+                  >
+                    <option value="FR">Français</option>
+                    <option value="EN">English</option>
+                  </select>
+                </div>
+                <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Langue par défaut de l&apos;interface
                       </label>
-                      <select
+                  <select
                         className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={bilingualForm.defaultUILanguage || 'FR'}
                         onChange={(e) => setBilingualForm({ ...bilingualForm, defaultUILanguage: e.target.value })}
-                      >
+                  >
                         <option value="FR">Français</option>
                         <option value="EN">English</option>
-                      </select>
-                    </div>
+                  </select>
+                </div>
                   </>
                 )}
               </div>
@@ -2862,7 +2862,7 @@ export default function SettingsPage() {
                   <p>Chargement des modules…</p>
                 </div>
               ) : (
-                <div className="space-y-4">
+              <div className="space-y-4">
                   {/* Interrupteur global : activer/désactiver tous les modules */}
                   {(() => {
                     const allEnabled = features.every((f: { isEnabled: boolean }) => f.isEnabled);
@@ -2890,12 +2890,12 @@ export default function SettingsPage() {
                     );
                   })()}
                   {sortedFeatures.map((feature: { featureCode: string; isEnabled: boolean; premium?: boolean }) => (
-                    <div
-                      key={feature.featureCode}
+                  <div
+                    key={feature.featureCode}
                       className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50/50"
-                    >
-                      <div>
-                        <div className="flex items-center gap-2">
+                  >
+                    <div>
+                    <div className="flex items-center gap-2">
                           <h4 className="font-semibold text-gray-800">
                             {featureLabels[feature.featureCode] ?? feature.featureCode}
                           </h4>
@@ -2917,12 +2917,12 @@ export default function SettingsPage() {
                         className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
                         title={feature.isEnabled ? 'Désactiver le module' : 'Activer le module'}
                       >
-                        {feature.isEnabled ? (
+                      {feature.isEnabled ? (
                           <ToggleRight className="w-6 h-6 text-green-600" />
                         ) : (
                           <ToggleLeft className="w-6 h-6 text-gray-400" />
                         )}
-                      </button>
+                        </button>
                     </div>
                   ))}
                 </div>
@@ -3005,14 +3005,14 @@ export default function SettingsPage() {
                               ) : (
                                 <button type="button" onClick={() => setAssignRoleUserId(u.id)} className="px-2 py-1 text-sm border border-blue-300 text-blue-600 rounded hover:bg-blue-50">
                                   Attribuer un rôle
-                                </button>
-                              )}
+                        </button>
+                      )}
                             </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
-                  </div>
+                    </div>
                 )}
               </div>
 
@@ -3034,9 +3034,9 @@ export default function SettingsPage() {
                           {role.canAccessOrion && <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">ORION</span>}
                           {role.canAccessAtlas && <span className="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">ATLAS</span>}
                           <button type="button" onClick={() => { setEditingPermissionsRoleId(role.id); setEditingRolePermissionIds(role.rolePermissions?.map((rp: any) => rp.permissionId) ?? []); }} className="text-xs text-blue-600 hover:underline">Permissions</button>
-                        </div>
-                      ))}
-                    </div>
+                  </div>
+                ))}
+              </div>
                   </div>
                 )}
 
@@ -3644,33 +3644,33 @@ export default function SettingsPage() {
           <div className="space-y-6">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               <h3 className="text-lg font-semibold text-gray-800 mb-4">Paramètres de sécurité</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Longueur minimale du mot de passe
-                  </label>
-                  <input
-                    type="number"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Longueur minimale du mot de passe
+                    </label>
+                    <input
+                      type="number"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={securityForm.passwordMinLength || 8}
                     onChange={(e) => setSecurityForm({ ...securityForm, passwordMinLength: parseInt(e.target.value) })}
-                    min={6}
-                    max={20}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Durée de session (minutes)
-                  </label>
-                  <input
-                    type="number"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      min={6}
+                      max={20}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Durée de session (minutes)
+                    </label>
+                    <input
+                      type="number"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={securityForm.sessionTimeoutMinutes || 30}
                     onChange={(e) => setSecurityForm({ ...securityForm, sessionTimeoutMinutes: parseInt(e.target.value) })}
-                    min={5}
-                    max={480}
-                  />
-                </div>
+                      min={5}
+                      max={480}
+                    />
+                  </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Tentatives de connexion max
@@ -3705,10 +3705,10 @@ export default function SettingsPage() {
                   className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                 >
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  Enregistrer
-                </button>
+                    Enregistrer
+                  </button>
+                </div>
               </div>
-            </div>
           </div>
         );
 
@@ -3742,7 +3742,7 @@ export default function SettingsPage() {
                       <ToggleLeft className="w-6 h-6 text-gray-400" />
                     )}
                   </button>
-                </div>
+                  </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -3754,7 +3754,7 @@ export default function SettingsPage() {
                       value={orionForm.alertThresholdCritical || 5}
                       onChange={(e) => setOrionForm({ ...orionForm, alertThresholdCritical: parseInt(e.target.value) })}
                     />
-                  </div>
+                </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Seuil d'alerte warning
@@ -3803,12 +3803,12 @@ export default function SettingsPage() {
                       <ToggleLeft className="w-6 h-6 text-gray-400" />
                     )}
                   </button>
-                </div>
+                  </div>
                 <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                   <div>
                     <h4 className="font-semibold text-gray-800">Transfert humain</h4>
                     <p className="text-sm text-gray-600">Permettre le transfert vers un opérateur humain</p>
-                  </div>
+                </div>
                   <button
                     onClick={() => setAtlasForm({ ...atlasForm, allowHumanHandoff: !atlasForm.allowHumanHandoff })}
                     className="p-2"
@@ -3868,7 +3868,7 @@ export default function SettingsPage() {
                       value={offlineForm.syncFrequencyMinutes || 15}
                       onChange={(e) => setOfflineForm({ ...offlineForm, syncFrequencyMinutes: parseInt(e.target.value) })}
                     />
-                  </div>
+              </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Durée max hors ligne (jours)
@@ -3879,8 +3879,8 @@ export default function SettingsPage() {
                       value={offlineForm.maxOfflineDays || 7}
                       onChange={(e) => setOfflineForm({ ...offlineForm, maxOfflineDays: parseInt(e.target.value) })}
                     />
-                  </div>
-                </div>
+            </div>
+          </div>
                 <div className="mt-4 flex justify-end">
                   <button
                     onClick={handleSaveOffline}
@@ -3901,32 +3901,32 @@ export default function SettingsPage() {
           <div className="space-y-6">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               <h3 className="text-lg font-semibold text-gray-800 mb-4">Historique des modifications</h3>
-              {history.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <History className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                {history.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <History className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                   <p>Aucune modification enregistrée.</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {history.map((item) => (
-                    <div
-                      key={item.id}
-                      className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50"
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h4 className="font-semibold text-gray-800">{item.key}</h4>
-                          <p className="text-sm text-gray-600">{item.category}</p>
-                          <p className="text-xs text-gray-500 mt-1">
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {history.map((item) => (
+                      <div
+                        key={item.id}
+                        className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h4 className="font-semibold text-gray-800">{item.key}</h4>
+                            <p className="text-sm text-gray-600">{item.category}</p>
+                            <p className="text-xs text-gray-500 mt-1">
                             {new Date(item.changedAt).toLocaleString('fr-FR')}
                             {item.user && ` par ${item.user.firstName} ${item.user.lastName}`}
-                          </p>
+                            </p>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                )}
             </div>
           </div>
         );

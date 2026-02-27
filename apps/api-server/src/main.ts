@@ -1,10 +1,24 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { json, urlencoded } from 'express';
+import { execSync } from 'child_process';
+import { join } from 'path';
 import { AppModule } from './app.module';
 import { RolesPermissionsBootstrapService } from './settings/services/roles-permissions-bootstrap.service';
 
 async function bootstrap() {
+  // ✅ Synchronisation automatique du schéma Prisma avec la BDD (tables et colonnes manquantes)
+  // db push met à jour la BDD pour qu'elle corresponde à schema.prisma sans fichier de migration.
+  try {
+    const apiRoot = join(__dirname, '..');
+    execSync('npx prisma db push --schema=prisma/schema.prisma --skip-generate', {
+      cwd: apiRoot,
+      stdio: process.env.NODE_ENV === 'production' ? 'pipe' : 'inherit',
+    });
+  } catch (err) {
+    console.warn('⚠️  Prisma db push (ignorable si BDD indisponible):', (err as Error)?.message);
+  }
+
   // ✅ Optimisation : Désactiver les logs de démarrage en développement pour accélérer
   const logger = process.env.NODE_ENV === 'production'
     ? ['error', 'warn', 'log']
@@ -47,17 +61,26 @@ async function bootstrap() {
     credentials: true,
   });
 
-  const port = process.env.PORT || 3000;
-  // Écouter sur toutes les interfaces (0.0.0.0) pour permettre les connexions depuis Next.js
-  await app.listen(port, '0.0.0.0');
-
-  // ✅ Bootstrap RBAC : créer permissions et rôles système en BDD si absents (production-ready)
+  // ✅ Bootstrap RBAC avant listen : colonnes roles (allowedLevelIds, canAccessOrion, canAccessAtlas) + permissions/rôles
   try {
     const rbacBootstrap = app.get(RolesPermissionsBootstrapService);
     await rbacBootstrap.ensurePermissionsAndRoles();
   } catch (err) {
     console.warn('⚠️  Bootstrap RBAC en échec (paramètres → rôles peuvent être vides):', (err as Error)?.message);
   }
+
+  // ✅ Triggers SQL Module 1 (élèves) : appliqués automatiquement au démarrage (idempotent)
+  try {
+    const { DatabaseTriggersBootstrapService } = await import('./database/database-triggers-bootstrap.service');
+    const triggersBootstrap = app.get(DatabaseTriggersBootstrapService);
+    await triggersBootstrap.runModule1Triggers();
+  } catch (err) {
+    console.warn('⚠️  Triggers Module 1 (non bloquant):', (err as Error)?.message);
+  }
+
+  const port = process.env.PORT || 3000;
+  // Écouter sur toutes les interfaces (0.0.0.0) pour permettre les connexions depuis Next.js
+  await app.listen(port, '0.0.0.0');
 
   // Logger l'URL sans hardcoder localhost
   const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';

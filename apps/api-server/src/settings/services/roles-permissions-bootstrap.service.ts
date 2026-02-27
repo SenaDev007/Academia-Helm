@@ -118,10 +118,46 @@ export class RolesPermissionsBootstrapService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
+   * Assure que les tables roles et role_permissions contiennent les colonnes attendues par le schéma Prisma.
+   * roles : canAccessOrion, canAccessAtlas, allowedLevelIds.
+   * role_permissions : levelScope.
+   * Idempotent. En cas d'échec, lance une erreur explicite.
+   */
+  async ensureRolesTableColumns(): Promise<void> {
+    try {
+      await this.prisma.$executeRawUnsafe(`
+        ALTER TABLE "roles" ADD COLUMN IF NOT EXISTS "canAccessOrion" BOOLEAN NOT NULL DEFAULT false;
+      `);
+      await this.prisma.$executeRawUnsafe(`
+        ALTER TABLE "roles" ADD COLUMN IF NOT EXISTS "canAccessAtlas" BOOLEAN NOT NULL DEFAULT false;
+      `);
+      await this.prisma.$executeRawUnsafe(`
+        ALTER TABLE "roles" ADD COLUMN IF NOT EXISTS "allowedLevelIds" TEXT[] DEFAULT ARRAY[]::TEXT[];
+      `);
+      await this.prisma.$queryRawUnsafe(`SELECT "canAccessOrion", "canAccessAtlas", "allowedLevelIds" FROM "roles" LIMIT 1`);
+
+      await this.prisma.$executeRawUnsafe(`
+        ALTER TABLE "role_permissions" ADD COLUMN IF NOT EXISTS "levelScope" TEXT;
+      `);
+      await this.prisma.$queryRawUnsafe(`SELECT "levelScope" FROM "role_permissions" LIMIT 1`);
+
+      this.logger.debug('Colonnes roles et role_permissions vérifiées');
+    } catch (e) {
+      const msg = (e as Error)?.message ?? String(e);
+      this.logger.error('ensureRolesTableColumns:', msg);
+      throw new Error(
+        `Tables roles / role_permissions : colonnes manquantes. ` +
+          `Exécutez dans apps/api-server : npx prisma migrate deploy (ou npx prisma db push). Détail : ${msg}`,
+      );
+    }
+  }
+
+  /**
    * Crée en BDD les permissions exhaustives et les rôles système si absents.
    * Appelé au démarrage de l'API (main.ts après listen) pour la production.
    */
   async ensurePermissionsAndRoles(): Promise<void> {
+    await this.ensureRolesTableColumns();
     const permCount = await this.prisma.permission.count();
     const needPermissions = permCount < EXPECTED_PERMISSIONS_COUNT;
     if (needPermissions) {

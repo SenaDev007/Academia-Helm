@@ -293,19 +293,24 @@ export async function generateSignature(
 // STRUCTURE PÉDAGOGIQUE
 // ============================================================================
 
-export async function getPedagogicalStructure() {
-  return fetchWithAuth(`${BASE_URL}/pedagogical-structure`);
+export async function getPedagogicalStructure(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/pedagogical-structure${qs}`);
 }
 
-export async function updatePedagogicalStructure(data: {
-  maternelleEnabled?: boolean;
-  primaireEnabled?: boolean;
-  secondaireEnabled?: boolean;
-  cyclesConfiguration?: any;
-  activeSeries?: string[];
-  allowLevelModification?: boolean;
-}) {
-  return fetchWithAuth(`${BASE_URL}/pedagogical-structure`, {
+export async function updatePedagogicalStructure(
+  data: {
+    maternelleEnabled?: boolean;
+    primaireEnabled?: boolean;
+    secondaireEnabled?: boolean;
+    cyclesConfiguration?: any;
+    activeSeries?: string[];
+    allowLevelModification?: boolean;
+  },
+  tenantId?: string | null
+) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/pedagogical-structure${qs}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });

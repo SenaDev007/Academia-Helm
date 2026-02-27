@@ -22,7 +22,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Search, Filter, User, BookOpen, AlertCircle, FileText, Edit, Trash2, Eye, Users } from 'lucide-react';
+import { Plus, Search, Filter, User, BookOpen, AlertCircle, FileText, Edit, Trash2, Eye, Users, Download, Upload } from 'lucide-react';
 import {
   ModuleContainer,
   FormModal,
@@ -95,7 +95,10 @@ export default function StudentsModulePage() {
     classId: '',
     status: '',
     search: '',
+    regimeType: '',
+    hasArrears: '',
   });
+  const [classesList, setClassesList] = useState<{ id: string; name: string }[]>([]);
 
   // ============================================================================
   // EFFECTS
@@ -107,6 +110,17 @@ export default function StudentsModulePage() {
       loadStatistics();
     }
   }, [academicYear, schoolLevel, filters]);
+
+  useEffect(() => {
+    if (academicYear?.id) {
+      fetch(`/api/classes?academicYearId=${academicYear.id}${schoolLevel?.id ? `&schoolLevelId=${schoolLevel.id}` : ''}`)
+        .then((r) => (r.ok ? r.json() : []))
+        .then((list: any[]) => setClassesList(list.map((c) => ({ id: c.id, name: c.name || c.code || c.id }))))
+        .catch(() => setClassesList([]));
+    } else {
+      setClassesList([]);
+    }
+  }, [academicYear?.id, schoolLevel?.id]);
 
   // ============================================================================
   // HANDLERS
@@ -123,6 +137,8 @@ export default function StudentsModulePage() {
         ...(filters.classId && { classId: filters.classId }),
         ...(filters.status && { status: filters.status }),
         ...(filters.search && { search: filters.search }),
+        ...(filters.regimeType && { regimeType: filters.regimeType }),
+        ...(filters.hasArrears && { hasArrears: filters.hasArrears }),
       });
 
       const response = await fetch(`/api/students?${params}`);
@@ -315,13 +331,29 @@ export default function StudentsModulePage() {
               ]
             : [],
           actions: (
-            <button
-              onClick={handleCreate}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Nouvel élève</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleCreate}
+                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Nouvelle inscription</span>
+              </button>
+              <button
+                onClick={() => window.alert('Import : fonctionnalité à venir')}
+                className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+              >
+                <Upload className="w-4 h-4" />
+                <span>Import</span>
+              </button>
+              <button
+                onClick={() => window.alert('Export EDUCMASTER : utilisez l\'action "Exporter" sur une ligne élève')}
+                className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                <span>Export EDUCMASTER</span>
+              </button>
+            </div>
           ),
         }}
         subModules={{
@@ -353,6 +385,17 @@ export default function StudentsModulePage() {
               </div>
               </div>
               <select
+                value={filters.classId}
+                onChange={(e) => setFilters({ ...filters, classId: e.target.value })}
+                className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                aria-label="Filtrer par classe"
+              >
+                <option value="">Toutes les classes</option>
+                {classesList.map((c) => (
+                  <option key={c.id} value={c.id}>{formatGradeLabel(c.name)}</option>
+                ))}
+              </select>
+              <select
                 value={filters.status}
                 onChange={(e) => setFilters({ ...filters, status: e.target.value })}
                 className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -364,6 +407,28 @@ export default function StudentsModulePage() {
                 <option value="GRADUATED">Diplômé</option>
                 <option value="TRANSFERRED">Transféré</option>
                 <option value="ARCHIVED">Archivé</option>
+              </select>
+              <select
+                value={filters.regimeType}
+                onChange={(e) => setFilters({ ...filters, regimeType: e.target.value })}
+                className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                aria-label="Filtrer par régime"
+              >
+                <option value="">Tous les régimes</option>
+                <option value="NORMAL">Normal</option>
+                <option value="TEACHER_CHILD">Enfant enseignant</option>
+                <option value="SCHOLARSHIP">Bourse</option>
+                <option value="SPECIAL">Spécial</option>
+              </select>
+              <select
+                value={filters.hasArrears}
+                onChange={(e) => setFilters({ ...filters, hasArrears: e.target.value })}
+                className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                aria-label="Filtrer par arriérés"
+              >
+                <option value="">Tous</option>
+                <option value="true">Avec arriérés</option>
+                <option value="false">Sans arriérés</option>
               </select>
             </div>
           ),
@@ -433,17 +498,44 @@ export default function StudentsModulePage() {
                           </span>
                         </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="flex items-center justify-end space-x-2">
+                      <div className="flex items-center justify-end gap-1">
+                        <a
+                          href={`/app/students/${student.id}/dossier`}
+                          className="text-indigo-600 hover:text-indigo-900 p-1"
+                          title="Dossier"
+                        >
+                          <FileText className="w-4 h-4" />
+                        </a>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(`/api/students/${student.id}/export-educmaster`, { method: 'POST' });
+                              const json = await res.json();
+                              const blob = new Blob([JSON.stringify(json.data || json, null, 2)], { type: 'application/json' });
+                              const a = document.createElement('a');
+                              a.href = URL.createObjectURL(blob);
+                              a.download = `educmaster-${student.studentCode || student.id}.json`;
+                              a.click();
+                              URL.revokeObjectURL(a.href);
+                            } catch (e) {
+                              window.alert('Export impossible');
+                            }
+                          }}
+                          className="text-green-600 hover:text-green-900 p-1"
+                          title="Exporter EDUCMASTER"
+                        >
+                          <Download className="w-4 h-4" />
+                        </button>
                         <button
                           onClick={() => handleView(student)}
-                          className="text-blue-600 hover:text-blue-900"
+                          className="text-blue-600 hover:text-blue-900 p-1"
                           title="Voir"
                         >
                           <Eye className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleEdit(student)}
-                          className="text-yellow-600 hover:text-yellow-900"
+                          className="text-yellow-600 hover:text-yellow-900 p-1"
                           title="Modifier"
                         >
                           <Edit className="w-4 h-4" />
@@ -451,7 +543,7 @@ export default function StudentsModulePage() {
                         {student.status !== 'ARCHIVED' && (
                           <button
                             onClick={() => handleDelete(student)}
-                            className="text-red-600 hover:text-red-900"
+                            className="text-red-600 hover:text-red-900 p-1"
                             title="Archiver"
                           >
                             <Trash2 className="w-4 h-4" />

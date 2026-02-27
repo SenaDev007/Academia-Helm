@@ -24,9 +24,10 @@ async function getAuthHeaders(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const headers = await getAuthHeaders(request);
-    const response = await fetch(`${API_BASE_URL}/api/settings/pedagogical-structure`, {
-      headers,
-    });
+    const tenantId = request.nextUrl?.searchParams?.get('tenant_id');
+    const url = new URL(`${API_BASE_URL}/settings/pedagogical-structure`);
+    if (tenantId) url.searchParams.set('tenant_id', tenantId);
+    const response = await fetch(url.toString(), { headers });
 
     const data = await response.json();
     return NextResponse.json(data, { status: response.status });
@@ -40,8 +41,10 @@ export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
     const headers = await getAuthHeaders(request);
-    
-    const response = await fetch(`${API_BASE_URL}/api/settings/pedagogical-structure`, {
+    const tenantId = request.nextUrl?.searchParams?.get('tenant_id');
+    const url = new URL(`${API_BASE_URL}/settings/pedagogical-structure`);
+    if (tenantId) url.searchParams.set('tenant_id', tenantId);
+    const response = await fetch(url.toString(), {
       method: 'PUT',
       headers,
       body: JSON.stringify(body),

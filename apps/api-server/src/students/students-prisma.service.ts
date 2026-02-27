@@ -90,6 +90,8 @@ export class StudentsPrismaService {
       status?: string;
       classId?: string;
       search?: string;
+      regimeType?: string;
+      hasArrears?: boolean;
     }
   ) {
     const where: any = {
@@ -108,13 +110,22 @@ export class StudentsPrismaService {
       where.status = filters.status;
     }
 
-    if (filters?.classId) {
-      where.studentEnrollments = {
-        some: {
-          classId: filters.classId,
-          status: 'ACTIVE',
-        },
-      };
+    if (filters?.regimeType) {
+      where.regimeType = filters.regimeType;
+    }
+
+    if (filters?.classId || filters?.hasArrears === true || filters?.hasArrears === false) {
+      const enrollmentWhere: any = { status: 'ACTIVE' };
+      if (filters?.classId) {
+        enrollmentWhere.classId = filters.classId;
+      }
+      if (filters?.hasArrears === true) {
+        enrollmentWhere.previousArrears = { gt: 0 };
+      }
+      if (filters?.hasArrears === false) {
+        enrollmentWhere.previousArrears = { lte: 0 };
+      }
+      where.studentEnrollments = { some: enrollmentWhere };
     }
 
     if (filters?.search) {

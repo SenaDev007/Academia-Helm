@@ -20,6 +20,11 @@ import {
   User,
   RefreshCw,
   Download,
+  DollarSign,
+  CreditCard,
+  History,
+  ArrowRightLeft,
+  Users,
 } from 'lucide-react';
 import { formatGradeLabel } from '@/lib/utils';
 
@@ -31,6 +36,11 @@ interface DossierData {
     dateOfBirth?: Date;
     gender?: string;
     nationality?: string;
+    placeOfBirth?: string;
+    legalDocumentType?: string;
+    legalDocumentNumber?: string;
+    regimeType?: string;
+    studentCode?: string;
     matricule: string;
     status: string;
     institution: string;
@@ -42,6 +52,12 @@ interface DossierData {
   recentAbsences: any[];
   recentDisciplinaryActions: any[];
   currentIdCard: any;
+  guardians?: Array<{
+    id: string;
+    relationship: string;
+    isPrimary: boolean;
+    guardian: { id: string; firstName: string; lastName: string; phone?: string; email?: string };
+  }>;
   feeProfile?: {
     id: string;
     feeRegime: {
@@ -67,12 +83,37 @@ interface DossierData {
 export default function StudentDossierSection({ studentId }: { studentId: string }) {
   const [dossier, setDossier] = useState<DossierData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [selectedTab, setSelectedTab] = useState<'identity' | 'academic' | 'discipline' | 'documents'>('identity');
+  const [selectedTab, setSelectedTab] = useState<'identity' | 'academic' | 'discipline' | 'documents' | 'finance' | 'regimes' | 'history' | 'card' | 'parents'>('identity');
   const [academicYearId, setAcademicYearId] = useState<string>('');
+  const [historyData, setHistoryData] = useState<any>(null);
+  const [changeClassModal, setChangeClassModal] = useState(false);
+  const [changeClassPayload, setChangeClassPayload] = useState({ academicYearId: '', newClassId: '' });
+  const [classesList, setClassesList] = useState<{ id: string; name: string }[]>([]);
+  const [changeClassSubmitting, setChangeClassSubmitting] = useState(false);
 
   useEffect(() => {
     loadDossier();
   }, [studentId, academicYearId]);
+
+  useEffect(() => {
+    if (selectedTab === 'history' && studentId) {
+      fetch(`/api/students/${studentId}/history`)
+        .then((r) => r.ok ? r.json() : null)
+        .then(setHistoryData)
+        .catch(() => setHistoryData(null));
+    }
+  }, [selectedTab, studentId]);
+
+  useEffect(() => {
+    if (changeClassModal && changeClassPayload.academicYearId) {
+      fetch(`/api/classes?academicYearId=${changeClassPayload.academicYearId}`)
+        .then((r) => r.ok ? r.json() : [])
+        .then((list: any[]) => setClassesList(list.map((c) => ({ id: c.id, name: c.name || c.code }))))
+        .catch(() => setClassesList([]));
+    } else if (changeClassModal) {
+      setClassesList([]);
+    }
+  }, [changeClassModal, changeClassPayload.academicYearId]);
 
   const loadDossier = async () => {
     try {
@@ -117,9 +158,14 @@ export default function StudentDossierSection({ studentId }: { studentId: string
           <nav className="flex -mb-px">
             {[
               { id: 'identity', label: 'Identité', icon: User },
-              { id: 'academic', label: 'Parcours académique', icon: BookOpen },
-              { id: 'discipline', label: 'Discipline & Assiduité', icon: AlertTriangle },
+              { id: 'academic', label: 'Scolarité', icon: BookOpen },
+              { id: 'parents', label: 'Parents', icon: Users },
+              { id: 'finance', label: 'Finance', icon: DollarSign },
+              { id: 'regimes', label: 'Régimes', icon: Award },
               { id: 'documents', label: 'Documents', icon: FileText },
+              { id: 'history', label: 'Historique', icon: History },
+              { id: 'card', label: 'Carte scolaire', icon: CreditCard },
+              { id: 'discipline', label: 'Discipline', icon: AlertTriangle },
             ].map((tab) => {
               const Icon = tab.icon;
               return (
@@ -187,6 +233,35 @@ export default function StudentDossierSection({ studentId }: { studentId: string
                       {dossier.identity.status}
                     </span>
                   </div>
+                  {dossier.identity.placeOfBirth && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Lieu de naissance</label>
+                      <p className="text-sm text-gray-900">{dossier.identity.placeOfBirth}</p>
+                    </div>
+                  )}
+                  {(dossier.identity.legalDocumentType || dossier.identity.legalDocumentNumber) && (
+                    <div className="col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Pièce d&apos;identité</label>
+                      <p className="text-sm text-gray-900">
+                        {dossier.identity.legalDocumentType || '—'}
+                        {dossier.identity.legalDocumentNumber ? ` — ${dossier.identity.legalDocumentNumber}` : ''}
+                      </p>
+                    </div>
+                  )}
+                  {dossier.identity.regimeType && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Régime</label>
+                      <p className="text-sm text-gray-900">
+                        {dossier.identity.regimeType === 'TEACHER_CHILD'
+                          ? 'Enfant enseignant'
+                          : dossier.identity.regimeType === 'SCHOLARSHIP'
+                          ? 'Bourse'
+                          : dossier.identity.regimeType === 'SPECIAL'
+                          ? 'Spécial'
+                          : 'Normal'}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -284,8 +359,17 @@ export default function StudentDossierSection({ studentId }: { studentId: string
 
           {selectedTab === 'academic' && (
             <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-gray-900">Parcours académique</h3>
+                <button
+                  onClick={() => setChangeClassModal(true)}
+                  className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-700 bg-blue-50 rounded-md hover:bg-blue-100"
+                >
+                  <ArrowRightLeft className="w-4 h-4" />
+                  Changement de classe
+                </button>
+              </div>
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Parcours académique</h3>
                 {dossier.academicRecords.length === 0 ? (
                   <p className="text-gray-600">Aucun enregistrement académique</p>
                 ) : (
@@ -405,6 +489,35 @@ export default function StudentDossierSection({ studentId }: { studentId: string
             </div>
           )}
 
+          {selectedTab === 'parents' && (
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold text-gray-900">Parents / tuteurs</h3>
+              {!dossier.guardians?.length ? (
+                <p className="text-gray-600">Aucun parent ou tuteur enregistré</p>
+              ) : (
+                <div className="space-y-4">
+                  {dossier.guardians.map((sg) => (
+                    <div key={sg.id} className="bg-gray-50 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-medium text-gray-900">
+                          {sg.guardian.firstName} {sg.guardian.lastName}
+                        </span>
+                        <span className="text-xs px-2 py-1 rounded bg-gray-200 text-gray-700">
+                          {sg.relationship}
+                          {sg.isPrimary ? ' — Principal' : ''}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+                        {sg.guardian.phone && <span>Tél. {sg.guardian.phone}</span>}
+                        {sg.guardian.email && <span>{sg.guardian.email}</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {selectedTab === 'documents' && (
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Documents</h3>
@@ -429,8 +542,191 @@ export default function StudentDossierSection({ studentId }: { studentId: string
               )}
             </div>
           )}
+
+          {selectedTab === 'finance' && (
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold text-gray-900">Situation financière</h3>
+              {dossier.feeProfile && (
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm font-medium text-gray-700">Régime tarifaire</p>
+                  <p className="text-gray-900">{dossier.feeProfile.feeRegime?.label ?? dossier.feeProfile.feeRegime?.code}</p>
+                </div>
+              )}
+              <p className="text-sm text-gray-600">Arriérés et compte financier (liaison module Finance).</p>
+            </div>
+          )}
+
+          {selectedTab === 'regimes' && (
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold text-gray-900">Régimes spéciaux</h3>
+              {dossier.feeProfile ? (
+                <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                  <p className="font-medium text-gray-900">{dossier.feeProfile.feeRegime.label}</p>
+                  {dossier.feeProfile.feeRegime.description && (
+                    <p className="text-sm text-gray-600">{dossier.feeProfile.feeRegime.description}</p>
+                  )}
+                  {dossier.feeProfile.justification && (
+                    <p className="text-sm text-gray-600">Justification : {dossier.feeProfile.justification}</p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-gray-600">Aucun régime spécial défini</p>
+              )}
+            </div>
+          )}
+
+          {selectedTab === 'history' && (
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold text-gray-900">Historique admissions & transferts</h3>
+              {!historyData ? (
+                <p className="text-gray-500">Chargement...</p>
+              ) : (
+                <>
+                  <div>
+                    <h4 className="font-medium text-gray-700 mb-2">Inscriptions</h4>
+                    {historyData.enrollments?.length === 0 ? (
+                      <p className="text-gray-600 text-sm">Aucune inscription</p>
+                    ) : (
+                      <ul className="space-y-2">
+                        {historyData.enrollments?.map((e: any) => (
+                          <li key={e.id} className="flex items-center gap-2 text-sm bg-gray-50 rounded p-2">
+                            <History className="w-4 h-4 text-gray-400" />
+                            <span>{e.academicYearName}</span>
+                            <span className="text-gray-600">— {e.className || 'Non affecté'}</span>
+                            <span className="text-xs px-2 py-0.5 rounded bg-gray-200">{e.status}</span>
+                            {e.previousArrears > 0 && (
+                              <span className="text-amber-700">Arriérés: {e.previousArrears}</span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  {historyData.transfers?.length > 0 && (
+                    <div>
+                      <h4 className="font-medium text-gray-700 mb-2">Transferts</h4>
+                      <ul className="space-y-2">
+                        {historyData.transfers.map((t: any) => (
+                          <li key={t.id} className="flex items-center gap-2 text-sm bg-gray-50 rounded p-2">
+                            <ArrowRightLeft className="w-4 h-4 text-gray-400" />
+                            {t.fromClassName} → {t.toClassName} — {t.status}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {selectedTab === 'card' && (
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold text-gray-900">Carte scolaire</h3>
+              {dossier.currentIdCard ? (
+                <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                  <p className="text-sm font-medium">N° carte : {dossier.currentIdCard.cardNumber}</p>
+                  <p className="text-xs text-gray-500">
+                    Générée le {new Date(dossier.currentIdCard.generatedAt).toLocaleDateString('fr-FR')}
+                  </p>
+                  <p className="text-sm text-gray-600">QR et vérification publique disponibles sur la page Cartes Scolaires.</p>
+                  <a
+                    href="/app/students/id-cards"
+                    className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800"
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    Voir / Télécharger PDF
+                  </a>
+                </div>
+              ) : (
+                <p className="text-gray-600">Aucune carte générée. Générer depuis la page Cartes Scolaires.</p>
+              )}
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Modal Changement de classe */}
+      {changeClassModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setChangeClassModal(false)}>
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Changement de classe</h3>
+            {dossier?.academicRecords?.length > 0 ? (
+              <>
+                <div className="space-y-2 mb-4">
+                  <label className="block text-sm font-medium text-gray-700">Année scolaire</label>
+                  <select
+                    value={changeClassPayload.academicYearId}
+                    onChange={(e) => setChangeClassPayload({ ...changeClassPayload, academicYearId: e.target.value, newClassId: '' })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  >
+                    <option value="">Choisir</option>
+                    {dossier.academicRecords.map((r: any) => (
+                      <option key={r.id} value={r.academicYearId}>{r.academicYear?.name ?? r.academicYearId}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2 mb-4">
+                  <label className="block text-sm font-medium text-gray-700">Nouvelle classe</label>
+                  <select
+                    value={changeClassPayload.newClassId}
+                    onChange={(e) => setChangeClassPayload({ ...changeClassPayload, newClassId: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  >
+                    <option value="">Choisir</option>
+                    {classesList.map((c) => (
+                      <option key={c.id} value={c.id}>{formatGradeLabel(c.name)}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-gray-600 mb-4">Aucune année scolaire dans le dossier.</p>
+            )}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setChangeClassModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+              >
+                Annuler
+              </button>
+              <button
+                disabled={!changeClassPayload.academicYearId || !changeClassPayload.newClassId || changeClassSubmitting}
+                onClick={async () => {
+                  if (!changeClassPayload.academicYearId || !changeClassPayload.newClassId) return;
+                  setChangeClassSubmitting(true);
+                  try {
+                    const res = await fetch('/api/students/change-class', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        studentId,
+                        academicYearId: changeClassPayload.academicYearId,
+                        newClassId: changeClassPayload.newClassId,
+                      }),
+                    });
+                    if (res.ok) {
+                      setChangeClassModal(false);
+                      loadDossier();
+                      if (selectedTab === 'history') {
+                        fetch(`/api/students/${studentId}/history`).then((r) => r.ok ? r.json() : null).then(setHistoryData);
+                      }
+                    } else {
+                      const err = await res.json().catch(() => ({}));
+                      window.alert(err.message || 'Changement de classe impossible (notes existantes ?)');
+                    }
+                  } finally {
+                    setChangeClassSubmitting(false);
+                  }
+                }}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
+              >
+                {changeClassSubmitting ? 'En cours...' : 'Valider'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

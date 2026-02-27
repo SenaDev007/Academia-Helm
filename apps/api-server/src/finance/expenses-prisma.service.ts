@@ -88,7 +88,8 @@ export class ExpensesPrismaService {
       where.academicYearId = filters.academicYearId;
     }
 
-    if (filters?.schoolLevelId) {
+    // Niveau scolaire : filtrer sauf en mode 'ALL'
+    if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
       where.schoolLevelId = filters.schoolLevelId;
     }
 
@@ -230,7 +231,7 @@ export class ExpensesPrismaService {
       where.academicYearId = filters.academicYearId;
     }
 
-    if (filters?.schoolLevelId) {
+    if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
       where.schoolLevelId = filters.schoolLevelId;
     }
 
@@ -384,7 +385,7 @@ export class ExpensesPrismaService {
       where.academicYearId = academicYearId;
     }
 
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
 

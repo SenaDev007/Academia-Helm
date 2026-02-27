@@ -17,6 +17,7 @@ import {
 import { TreasuryPrismaService } from './treasury-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { SchoolLevelId } from '../common/decorators/school-level-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('api/finance/treasury')
@@ -49,8 +50,8 @@ export class TreasuryPrismaController {
   @Get('daily-closures')
   async findAllDailyClosures(
     @TenantId() tenantId: string,
+    @SchoolLevelId() schoolLevelId: string,
     @Query('academicYearId') academicYearId?: string,
-    @Query('schoolLevelId') schoolLevelId?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('validated') validated?: string,
@@ -67,8 +68,8 @@ export class TreasuryPrismaController {
   @Get('statistics')
   async getStatistics(
     @TenantId() tenantId: string,
+    @SchoolLevelId() schoolLevelId: string,
     @Query('academicYearId') academicYearId?: string,
-    @Query('schoolLevelId') schoolLevelId?: string,
   ) {
     return this.treasuryService.getTreasuryStatistics(
       tenantId,

@@ -339,7 +339,7 @@ export class PedagogicalDocumentService {
       status: { in: ['SUBMITTED', 'APPROVED', 'REJECTED', 'ACKNOWLEDGED'] },
     };
 
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
     if (filters?.documentType) {
@@ -419,7 +419,7 @@ export class PedagogicalDocumentService {
       academicYearId,
     };
 
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
     if (teacherId) {

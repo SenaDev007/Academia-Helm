@@ -15,8 +15,23 @@ import { PrismaService } from '@/database/prisma.service';
 @Injectable()
 export class StudentDossierService {
   private readonly logger = new Logger(StudentDossierService.name);
+  private puppeteer: any = null;
 
   constructor(private readonly prisma: PrismaService) {}
+
+  private async loadPuppeteer() {
+    if (this.puppeteer !== null) return;
+    try {
+      this.puppeteer = await import('puppeteer');
+      this.logger.log('Puppeteer loaded successfully for academic dossier PDF generation');
+    } catch (error) {
+      this.logger.warn(
+        'Puppeteer not available. Academic dossier PDF generation will be limited. ' +
+        'Install with: npm install puppeteer',
+      );
+      this.puppeteer = null;
+    }
+  }
 
   /**
    * Récupère le dossier scolaire complet d'un élève
@@ -219,6 +234,140 @@ export class StudentDossierService {
       feeProfile,
       guardians,
     };
+  }
+
+  /**
+   * Génère un PDF consolidé "Dossier académique" pour un élève.
+   * Contenu : identité, historique multi-année, classes, résultats, régime, arriérés.
+   */
+  async generateAcademicDossierPdf(
+    tenantId: string,
+    studentId: string,
+    academicYearId?: string,
+  ): Promise<Buffer> {
+    await this.loadPuppeteer();
+
+    if (!this.puppeteer) {
+      throw new BadRequestException(
+        'La génération de PDF n’est pas disponible (Puppeteer non installé). ' +
+        'Veuillez installer puppeteer côté serveur.',
+      );
+    }
+
+    const dossier = await this.getStudentDossier(tenantId, studentId, academicYearId);
+
+    const title = 'Dossier académique consolidé';
+    const identity = dossier.identity;
+
+    const html = `
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>${title}</title>
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 12px; color: #111827; }
+      h1, h2, h3 { color: #111827; margin-bottom: 4px; }
+      h1 { font-size: 20px; }
+      h2 { font-size: 16px; margin-top: 16px; }
+      h3 { font-size: 14px; margin-top: 12px; }
+      .section { margin-top: 12px; }
+      .label { font-weight: 600; }
+      table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+      th, td { border: 1px solid #e5e7eb; padding: 4px 6px; text-align: left; }
+      th { background: #f9fafb; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <h1>${title}</h1>
+    <p class="section"><span class="label">Établissement :</span> ${identity.institution}</p>
+    <div class="section">
+      <h2>Identité</h2>
+      <p><span class="label">Nom :</span> ${identity.lastName} ${identity.firstName}</p>
+      <p><span class="label">Matricule :</span> ${identity.matricule || 'N/A'}</p>
+      <p><span class="label">Statut :</span> ${identity.status}</p>
+      ${identity.dateOfBirth ? `<p><span class="label">Date de naissance :</span> ${new Date(identity.dateOfBirth).toLocaleDateString('fr-FR')}</p>` : ''}
+      ${identity.regimeType ? `<p><span class="label">Régime :</span> ${identity.regimeType}</p>` : ''}
+    </div>
+
+    <div class="section">
+      <h2>Parcours académique</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Année</th>
+            <th>Classe</th>
+            <th>Niveau</th>
+            <th>Moyenne</th>
+            <th>Rang</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${
+            (dossier.academicRecords || [])
+              .map((r: any) => `
+                <tr>
+                  <td>${r.academicYear?.label || ''}</td>
+                  <td>${r.class?.name || ''}</td>
+                  <td>${r.schoolLevel?.label || ''}</td>
+                  <td>${r.averageScore ?? ''}</td>
+                  <td>${r.rank ?? ''}</td>
+                </tr>
+              `)
+              .join('') || '<tr><td colspan="5">Aucun enregistrement</td></tr>'
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>Résultats & bulletins</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Année</th>
+            <th>Période</th>
+            <th>Moyenne générale</th>
+            <th>Statut</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${
+            (dossier.reportCards || [])
+              .map((rc: any) => `
+                <tr>
+                  <td>${rc.academicYear?.label || ''}</td>
+                  <td>${rc.quarter?.name || rc.type || ''}</td>
+                  <td>${rc.overallAverage ?? ''}</td>
+                  <td>${rc.status || ''}</td>
+                </tr>
+              `)
+              .join('') || '<tr><td colspan="4">Aucun bulletin</td></tr>'
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>Situation financière</h2>
+      ${
+        dossier.feeProfile
+          ? `<p><span class="label">Régime :</span> ${dossier.feeProfile.feeRegime.label}</p>
+             ${dossier.feeProfile.justification ? `<p><span class="label">Justification :</span> ${dossier.feeProfile.justification}</p>` : ''}`
+          : '<p>Aucun régime spécial enregistré pour l’année sélectionnée.</p>'
+      }
+    </div>
+  </body>
+</html>
+    `;
+
+    const browser = await this.puppeteer.launch({ headless: 'new' as any });
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+    const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true });
+    await browser.close();
+
+    return pdfBuffer;
   }
 
   /**

@@ -15,34 +15,41 @@ export class ClassesRepository {
     return this.repository.save(classEntity);
   }
 
-  async findOne(id: string, tenantId: string): Promise<Class | null> {
+  async findOne(id: string, tenantId: string, schoolLevelId: string): Promise<Class | null> {
     return this.repository.findOne({
-      where: { id, tenantId },
+      where: { id, tenantId, schoolLevelId },
       relations: ['academicYear'],
     });
   }
 
   async findAll(
     tenantId: string,
+    schoolLevelId: string,
     pagination: { skip: number; take: number },
     academicYearId?: string,
   ): Promise<Class[]> {
-    const queryBuilder = this.repository.createQueryBuilder('class')
+    const queryBuilder = this.repository
+      .createQueryBuilder('class')
       .where('class.tenantId = :tenantId', { tenantId })
+      .andWhere('class.schoolLevelId = :schoolLevelId', { schoolLevelId })
       .orderBy('class.name', 'ASC')
       .skip(pagination.skip)
       .take(pagination.take);
-    
+
     if (academicYearId) {
       queryBuilder.andWhere('class.academicYearId = :academicYearId', { academicYearId });
       queryBuilder.leftJoinAndSelect('class.academicYear', 'academicYear');
     }
-    
+
     return queryBuilder.getMany();
   }
 
-  async count(tenantId: string, academicYearId?: string): Promise<number> {
-    const where: any = { tenantId };
+  async count(
+    tenantId: string,
+    schoolLevelId: string,
+    academicYearId?: string,
+  ): Promise<number> {
+    const where: any = { tenantId, schoolLevelId };
     if (academicYearId) {
       where.academicYearId = academicYearId;
     }
@@ -51,7 +58,11 @@ export class ClassesRepository {
 
   async update(id: string, tenantId: string, classData: Partial<Class>): Promise<Class> {
     await this.repository.update({ id, tenantId }, classData);
-    return this.findOne(id, tenantId);
+    const out = await this.repository.findOne({
+      where: { id, tenantId },
+      relations: ['academicYear'],
+    });
+    return out as Class;
   }
 
   async delete(id: string, tenantId: string): Promise<void> {

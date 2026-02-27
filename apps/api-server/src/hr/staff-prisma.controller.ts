@@ -9,6 +9,7 @@ import { StaffPrismaService } from './staff-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
+import { SchoolLevelId } from '../common/decorators/school-level-id.decorator';
 
 @Controller('api/hr/staff')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -26,8 +27,8 @@ export class StaffPrismaController {
   @Get()
   async findAllStaff(
     @GetTenant() tenant: any,
+    @SchoolLevelId() schoolLevelId: string,
     @Query('academicYearId') academicYearId?: string,
-    @Query('schoolLevelId') schoolLevelId?: string,
     @Query('roleType') roleType?: string,
     @Query('status') status?: string,
   ) {

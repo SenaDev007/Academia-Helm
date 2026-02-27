@@ -258,6 +258,125 @@ export class AcademicYearsPrismaService {
   }
 
   /**
+   * Clôture une année scolaire et prépare la suivante.
+   * - Marque l'année comme close (isClosed = true, isActive = false, closedAt/closedBy renseignés)
+   * - Génère (si besoin) et active l'année suivante via le calculateur national
+   * - Les triggers SQL empêchent ensuite toute modification sur l'année clôturée
+   */
+  async closeAndPromoteYear(
+    id: string,
+    tenantId: string,
+    userId: string,
+  ): Promise<{
+    previousYearId: string;
+    previousYearLabel: string;
+    nextYearId: string | null;
+    nextYearLabel: string | null;
+    closedAt: Date;
+  }> {
+    const year = await this.prisma.academicYear.findFirst({
+      where: { id, tenantId },
+    });
+
+    if (!year) {
+      throw new NotFoundException(`Academic year with ID ${id} not found`);
+    }
+
+    if (year.isClosed) {
+      throw new BadRequestException('Academic year is already closed');
+    }
+
+    if (!year.isActive) {
+      throw new BadRequestException('Only the active academic year can be closed and promoted');
+    }
+
+    // Générer (ou récupérer) l'année suivante à partir de l'année active courante
+    const nextYear = await this.generateNextAcademicYear(tenantId);
+    const closedAt = new Date();
+
+    await this.prisma.$transaction(async (tx) => {
+      // 1. Marquer l'année comme clôturée
+      await tx.academicYear.update({
+        where: { id: year.id },
+        data: {
+          isClosed: true,
+          isActive: false,
+          closedAt,
+          closedBy: userId,
+        },
+      });
+
+      // 2. Créer (ou mettre à jour) l'entrée de clôture annuelle dédiée
+      await tx.academicYearClosure.upsert({
+        where: {
+          tenantId_academicYearId: {
+            tenantId,
+            academicYearId: year.id,
+          },
+        },
+        update: {
+          closedAt,
+          closedBy: userId,
+          isLocked: true,
+        },
+        create: {
+          tenantId,
+          academicYearId: year.id,
+          closedAt,
+          closedBy: userId,
+          isLocked: true,
+        },
+      });
+
+      // 3. Activer l'année suivante si elle existe
+      if (nextYear) {
+        await tx.academicYear.update({
+          where: { id: nextYear.id },
+          data: {
+            isActive: true,
+          },
+        });
+
+        // 4. Promotion structurelle minimale : créer un nouvel enrollment dans l'année suivante
+        //    pour chaque élève ayant un enrollment actif dans l'année clôturée.
+        const activeEnrollments = await tx.studentEnrollment.findMany({
+          where: {
+            tenantId,
+            academicYearId: year.id,
+            status: { in: ['ADMITTED', 'RE_ENROLLED', 'ACTIVE', 'VALIDATED'] },
+          },
+        });
+
+        for (const enrollment of activeEnrollments) {
+          // Si aucune classe n'est définie ou si la classe de destination n'est pas encore modélisée,
+          // on réinscrit l'élève dans la même classe (la montée de niveau pourra être affinée plus tard).
+          await tx.studentEnrollment.create({
+            data: {
+              tenantId,
+              academicYearId: nextYear.id,
+              schoolLevelId: enrollment.schoolLevelId,
+              studentId: enrollment.studentId,
+              classId: enrollment.classId,
+              enrollmentType: 'PROMOTION',
+              enrollmentDate: new Date(),
+              status: 'ACTIVE',
+              previousArrears: enrollment.previousArrears ?? 0,
+            },
+          });
+        }
+      }
+    });
+
+    return {
+      previousYearId: year.id,
+      previousYearLabel: year.label,
+      nextYearId: nextYear?.id ?? null,
+      nextYearLabel: nextYear?.label ?? null,
+      closedAt,
+    };
+  }
+
+  /**
    * Récupère toutes les années scolaires d'un tenant
    */
   async getAllAcademicYears(tenantId: string): Promise<any[]> {

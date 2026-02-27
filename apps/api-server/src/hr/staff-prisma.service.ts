@@ -76,7 +76,8 @@ export class StaffPrismaService {
     if (filters?.academicYearId) {
       where.academicYearId = filters.academicYearId;
     }
-    if (filters?.schoolLevelId) {
+    // Niveau scolaire : filtrer sauf en mode 'ALL'
+    if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
       where.schoolLevelId = filters.schoolLevelId;
     }
     if (filters?.roleType) {

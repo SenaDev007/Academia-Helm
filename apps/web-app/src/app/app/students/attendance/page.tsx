@@ -42,7 +42,7 @@ export default function AttendancePage() {
   }, [academicYear, schoolLevel, selectedDate]);
 
   const loadAttendance = async () => {
-    if (!academicYear || !schoolLevel) return;
+    if (!academicYear || !schoolLevel || schoolLevel.id === 'ALL') return;
 
     setIsLoading(true);
     try {
@@ -65,7 +65,7 @@ export default function AttendancePage() {
   };
 
   const loadStatistics = async () => {
-    if (!academicYear || !schoolLevel) return;
+    if (!academicYear || !schoolLevel || schoolLevel.id === 'ALL') return;
 
     try {
       const params = new URLSearchParams({
@@ -109,7 +109,7 @@ export default function AttendancePage() {
   };
 
   return (
-    <ModuleContainer
+      <ModuleContainer
       header={{
         title: 'Assiduité',
         description: 'Enregistrement quotidien de la présence des élèves',

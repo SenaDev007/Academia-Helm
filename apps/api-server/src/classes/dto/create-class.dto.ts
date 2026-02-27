@@ -7,6 +7,10 @@ export class CreateClassDto {
   @IsString()
   level: string;
 
+  /** Niveau scolaire — obligatoire pour encapsuler les données par niveau */
+  @IsString()
+  schoolLevelId: string;
+
   @IsString()
   @IsOptional()
   academicYearId?: string;

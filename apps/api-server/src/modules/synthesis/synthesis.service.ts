@@ -133,7 +133,7 @@ export class SynthesisService {
       .from('v_finances_by_module_and_level', 'v')
       .where('v.tenant_id = :tenantId', { tenantId });
 
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       query.andWhere('v.school_level_id = :schoolLevelId', { schoolLevelId });
     }
 
@@ -153,7 +153,7 @@ export class SynthesisService {
       .from('v_finances_by_level', 'v')
       .where('v.tenant_id = :tenantId', { tenantId });
 
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       query.andWhere('v.school_level_id = :schoolLevelId', { schoolLevelId });
     }
 
@@ -173,7 +173,7 @@ export class SynthesisService {
       .from('v_effectifs_by_level', 'v')
       .where('v.tenant_id = :tenantId', { tenantId });
 
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       query.andWhere('v.school_level_id = :schoolLevelId', { schoolLevelId });
     }
 
@@ -207,7 +207,7 @@ export class SynthesisService {
       .from('v_dashboard_synthesis', 'v')
       .where('v.tenant_id = :tenantId', { tenantId });
 
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       query.andWhere('v.school_level_id = :schoolLevelId', { schoolLevelId });
     }
 
@@ -227,7 +227,7 @@ export class SynthesisService {
       .from('v_synthesis_with_kpi', 'v')
       .where('v.tenant_id = :tenantId', { tenantId });
 
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       query.andWhere('v.school_level_id = :schoolLevelId', { schoolLevelId });
     }
 

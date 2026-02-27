@@ -84,7 +84,7 @@ export class TeachersPrismaService {
       tenantId,
     };
 
-    if (filters?.schoolLevelId) {
+    if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
       where.schoolLevelId = filters.schoolLevelId;
     }
 

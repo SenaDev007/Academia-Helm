@@ -35,25 +35,21 @@ export default function ClassesPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   useEffect(() => {
-    if (academicYear && schoolLevel) {
-      loadClasses();
-    }
+    if (academicYear) loadClasses();
   }, [academicYear, schoolLevel]);
 
   const loadClasses = async () => {
-    if (!academicYear || !schoolLevel) return;
+    if (!academicYear) return;
 
     setIsLoading(true);
     try {
-      const params = new URLSearchParams({
-        academicYearId: academicYear.id,
-        schoolLevelId: schoolLevel.id,
-      });
+      const params = new URLSearchParams({ academicYearId: academicYear.id });
+      if (schoolLevel?.id && schoolLevel.id !== 'ALL') params.set('schoolLevelId', schoolLevel.id);
 
       const response = await fetch(`/api/classes?${params}`);
       if (response.ok) {
         const data = await response.json();
-        setClasses(data);
+        setClasses(Array.isArray(data) ? data : data.data ?? []);
       }
     } catch (error) {
       console.error('Failed to load classes:', error);

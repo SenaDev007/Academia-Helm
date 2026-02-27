@@ -124,7 +124,9 @@ export class EducastService {
   async findAllContents(tenantId: string, academicYearId: string, filters?: any) {
     const where: any = { tenantId, academicYearId, isActive: true };
     if (filters?.contentType) where.contentType = filters.contentType;
-    if (filters?.schoolLevelId) where.schoolLevelId = filters.schoolLevelId;
+    if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
+      where.schoolLevelId = filters.schoolLevelId;
+    }
     if (filters?.classId) where.classId = filters.classId;
 
     return this.prisma.educastContent.findMany({

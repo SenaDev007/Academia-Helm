@@ -102,7 +102,8 @@ export class StudentsPrismaService {
       where.academicYearId = filters.academicYearId;
     }
 
-    if (filters?.schoolLevelId) {
+    // Niveau scolaire : filtrer sauf en mode 'ALL' (plateforme)
+    if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
       where.schoolLevelId = filters.schoolLevelId;
     }
 
@@ -312,7 +313,7 @@ export class StudentsPrismaService {
       academicYearId,
     };
 
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
 

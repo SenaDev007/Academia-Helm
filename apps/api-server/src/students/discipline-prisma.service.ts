@@ -113,7 +113,7 @@ export class DisciplinePrismaService {
       where.academicYearId = filters.academicYearId;
     }
 
-    if (filters?.schoolLevelId) {
+    if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
       where.schoolLevelId = filters.schoolLevelId;
     }
 
@@ -195,7 +195,7 @@ export class DisciplinePrismaService {
       academicYearId,
     };
 
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
 

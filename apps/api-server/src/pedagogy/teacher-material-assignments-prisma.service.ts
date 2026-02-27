@@ -182,7 +182,7 @@ export class TeacherMaterialAssignmentsPrismaService {
       where.materialId = filters.materialId;
     }
 
-    if (filters?.schoolLevelId) {
+    if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
       where.schoolLevelId = filters.schoolLevelId;
     }
 

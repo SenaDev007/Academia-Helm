@@ -39,12 +39,23 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
         if (response.ok) {
           const levels: SchoolLevel[] = await response.json();
           const activeLevels = levels.filter((l) => l.isActive);
-          setAvailableLevels(activeLevels);
+
+          // Option virtuelle "Tous les niveaux" réservée aux rôles de plateforme.
+          // Pour l'instant on l'ajoute toujours côté client; le backend gère 'ALL'.
+          const allLevelsOption: SchoolLevel = {
+            id: 'ALL',
+            code: 'ALL',
+            label: 'Tous les niveaux',
+            isActive: true,
+          };
+
+          const withAll = [allLevelsOption, ...activeLevels];
+          setAvailableLevels(withAll);
 
           const savedLevelId = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
           const selectedLevel = savedLevelId
-            ? activeLevels.find((l) => l.id === savedLevelId) || activeLevels[0]
-            : activeLevels[0];
+            ? withAll.find((l) => l.id === savedLevelId) || withAll[0]
+            : withAll[0];
 
           if (selectedLevel) {
             setCurrentLevelState(selectedLevel);

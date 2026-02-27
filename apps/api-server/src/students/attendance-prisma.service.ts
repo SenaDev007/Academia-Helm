@@ -231,7 +231,7 @@ export class AttendancePrismaService {
       academicYearId,
     };
 
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
 

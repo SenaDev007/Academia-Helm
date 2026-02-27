@@ -61,7 +61,7 @@ export class OrionDashboardService {
     if (academicYearId) {
       where.academicYearId = academicYearId;
     }
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
 

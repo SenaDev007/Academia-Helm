@@ -1108,7 +1108,7 @@ export class OrionAlertsService {
     if (filters?.academicYearId) {
       where.academicYearId = filters.academicYearId;
     }
-    if (filters?.schoolLevelId) {
+    if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
       where.schoolLevelId = filters.schoolLevelId;
     }
     if (filters?.alertType) {

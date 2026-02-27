@@ -119,7 +119,8 @@ export class TreasuryPrismaService {
       where.academicYearId = filters.academicYearId;
     }
 
-    if (filters?.schoolLevelId) {
+    // Niveau scolaire : filtrer sauf en mode 'ALL'
+    if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
       where.schoolLevelId = filters.schoolLevelId;
     }
 
@@ -167,7 +168,7 @@ export class TreasuryPrismaService {
       where.academicYearId = academicYearId;
     }
 
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
 

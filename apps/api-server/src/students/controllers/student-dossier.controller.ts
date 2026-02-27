@@ -19,7 +19,9 @@ import {
   Query,
   UseGuards,
   Request,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/auth/guards/roles.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
@@ -54,6 +56,33 @@ export class StudentDossierController {
     }
 
     return this.dossierService.getStudentDossier(tenantId, studentId, academicYearId);
+  }
+
+  /**
+   * GET /api/students/:studentId/academic-dossier
+   * Génère le dossier académique consolidé en PDF.
+   */
+  @Get(':studentId/academic-dossier')
+  @Roles('DIRECTOR', 'ADMIN')
+  async getAcademicDossierPdf(
+    @Param('studentId') studentId: string,
+    @Query('academicYearId') academicYearId: string | undefined,
+    @Request() req: any,
+    @Res() res: Response,
+  ) {
+    const tenantId = req.user.tenantId;
+    const pdfBuffer = await this.dossierService.generateAcademicDossierPdf(
+      tenantId,
+      studentId,
+      academicYearId,
+    );
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="dossier-academique-${studentId}.pdf"`,
+    );
+    return res.send(pdfBuffer);
   }
 
   /**

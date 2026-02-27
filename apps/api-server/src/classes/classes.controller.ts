@@ -14,6 +14,7 @@ import { CreateClassDto } from './dto/create-class.dto';
 import { UpdateClassDto } from './dto/update-class.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { SchoolLevelId } from '../common/decorators/school-level-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { PaginationDto } from '../common/dto/pagination.dto';
 
@@ -34,15 +35,20 @@ export class ClassesController {
   @Get()
   findAll(
     @TenantId() tenantId: string,
+    @SchoolLevelId() schoolLevelId: string,
     @Query() pagination: PaginationDto,
     @Query('academicYearId') academicYearId?: string,
   ) {
-    return this.classesService.findAll(tenantId, pagination, academicYearId);
+    return this.classesService.findAll(tenantId, schoolLevelId, pagination, academicYearId);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string, @TenantId() tenantId: string) {
-    return this.classesService.findOne(id, tenantId);
+  findOne(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @SchoolLevelId() schoolLevelId: string,
+  ) {
+    return this.classesService.findOne(id, tenantId, schoolLevelId);
   }
 
   @Patch(':id')
@@ -50,13 +56,18 @@ export class ClassesController {
     @Param('id') id: string,
     @Body() updateClassDto: UpdateClassDto,
     @TenantId() tenantId: string,
+    @SchoolLevelId() schoolLevelId: string,
   ) {
-    return this.classesService.update(id, updateClassDto, tenantId);
+    return this.classesService.update(id, updateClassDto, tenantId, schoolLevelId);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string, @TenantId() tenantId: string) {
-    return this.classesService.delete(id, tenantId);
+  remove(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @SchoolLevelId() schoolLevelId: string,
+  ) {
+    return this.classesService.delete(id, tenantId, schoolLevelId);
   }
 }
 

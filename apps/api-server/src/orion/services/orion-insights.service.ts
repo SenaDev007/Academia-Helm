@@ -22,7 +22,7 @@ export class OrionInsightsService {
     if (academicYearId) {
       where.academicYearId = academicYearId;
     }
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
 

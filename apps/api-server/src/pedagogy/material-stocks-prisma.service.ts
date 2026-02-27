@@ -39,7 +39,7 @@ export class MaterialStocksPrismaService {
       where.materialId = filters.materialId;
     }
 
-    if (filters?.schoolLevelId) {
+    if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
       where.schoolLevelId = filters.schoolLevelId;
     }
 
@@ -137,7 +137,7 @@ export class MaterialStocksPrismaService {
       materialId,
     };
 
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
 

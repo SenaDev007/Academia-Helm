@@ -587,7 +587,7 @@ export class WeeklySemainierService {
       status: status || 'SOUMIS',
     };
 
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
 

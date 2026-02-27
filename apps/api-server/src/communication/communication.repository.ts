@@ -28,7 +28,7 @@ export class CommunicationRepository {
     target?: AnnouncementTarget,
   ): Promise<Announcement[]> {
     const where: any = { tenantId };
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
     if (status) {

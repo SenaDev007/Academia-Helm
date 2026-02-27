@@ -20,8 +20,8 @@ export interface SubModule {
   id: string;
   /** Nom métier (jamais technique) */
   label: string;
-  /** Icône optionnelle */
-  icon?: string;
+  /** Icône optionnelle (ReactNode, ex. <Icon className="w-4 h-4" />) */
+  icon?: ReactNode;
   /** Badge optionnel (compteur, statut) */
   badge?: ReactNode;
   /** Route associée */
@@ -77,37 +77,32 @@ export default function SubModuleNavigation({
   };
 
   return (
-    <div className={cn('bg-white border-b border-gray-200', className)}>
-      <nav className="flex space-x-1 px-4" aria-label="Sous-modules">
+    <div className={cn('bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden', className)}>
+      <nav
+        className="flex border-b border-gray-200 overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
+        aria-label="Sous-modules"
+      >
         {modules.map((module) => {
           const isActive = currentActiveId === module.id;
-          
           return (
             <button
               key={module.id}
               onClick={() => handleModuleClick(module)}
               disabled={module.disabled}
               className={cn(
-                'relative px-4 py-3 text-sm font-medium transition-colors',
+                'flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors',
                 'border-b-2 border-transparent',
-                'hover:text-blue-600 hover:border-gray-300',
                 'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2',
                 'disabled:opacity-50 disabled:cursor-not-allowed',
                 isActive
                   ? 'text-blue-600 border-blue-600 bg-blue-50'
-                  : 'text-gray-600 hover:bg-gray-50'
+                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
               )}
               aria-current={isActive ? 'page' : undefined}
             >
-              <div className="flex items-center space-x-2">
-                {module.icon && (
-                  <span className="text-base">{module.icon}</span>
-                )}
-                <span>{module.label}</span>
-                {module.badge && (
-                  <span className="ml-2">{module.badge}</span>
-                )}
-              </div>
+              {module.icon && <span className="flex-shrink-0">{module.icon}</span>}
+              <span>{module.label}</span>
+              {module.badge && <span className="ml-2">{module.badge}</span>}
             </button>
           );
         })}

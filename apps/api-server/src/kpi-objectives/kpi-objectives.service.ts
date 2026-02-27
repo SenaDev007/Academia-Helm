@@ -58,7 +58,7 @@ export class KpiObjectivesService {
       where.academicYearId = academicYearId;
     }
 
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
 

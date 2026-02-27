@@ -1,28 +1,35 @@
 /**
  * ============================================================================
- * MODULE 1 : GESTION DES ÉLÈVES & SCOLARITÉ
+ * MODULE 1 — ÉLÈVES & INSCRIPTIONS (Spec Dawes)
  * ============================================================================
- * 
- * Module complet de gestion des élèves utilisant le Module Blueprint
- * 
- * Fonctionnalités :
- * - Admission & inscription
- * - Dossier élève complet
- * - Responsables légaux
- * - Organisation des classes
- * - Affectations par année scolaire
- * - Assiduité
- * - Discipline
- * - Transferts
- * - Documents administratifs
- * 
+ *
+ * 6 sous-modules métier (pas de duplication avec QHSE / Documents globaux) :
+ * Admission & cycle de vie, Identité & relations, Historique & multi-année,
+ * Régimes & situation fin., Documents & carte scolaire, Interopérabilité nationale.
+ *
  * ============================================================================
  */
 
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Search, Filter, User, BookOpen, AlertCircle, FileText, Edit, Trash2, Eye, Users, Download, Upload } from 'lucide-react';
+import {
+  Plus,
+  Search,
+  User,
+  FileText,
+  Edit,
+  Trash2,
+  Eye,
+  Download,
+  Upload,
+  UserPlus,
+  History,
+  DollarSign,
+  CreditCard,
+  Share2,
+  LayoutDashboard,
+} from 'lucide-react';
 import {
   ModuleContainer,
   FormModal,
@@ -31,6 +38,9 @@ import {
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { formatGradeLabel } from '@/lib/utils';
+import EnrollmentsContent from '@/components/students/EnrollmentsContent';
+import StudentIdCardsSection from '@/components/students/StudentIdCardsSection';
+import StudentsModuleDashboard from '@/components/students/StudentsModuleDashboard';
 
 // ============================================================================
 // TYPES
@@ -89,6 +99,10 @@ export default function StudentsModulePage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ success: number; failed: number } | null>(null);
   
   // Filtres
   const [filters, setFilters] = useState({
@@ -99,6 +113,8 @@ export default function StudentsModulePage() {
     hasArrears: '',
   });
   const [classesList, setClassesList] = useState<{ id: string; name: string }[]>([]);
+  /** Onglet actif (Dashboard par défaut à l'ouverture du module) */
+  const [activeSubModuleId, setActiveSubModuleId] = useState<string>('dashboard');
 
   // ============================================================================
   // EFFECTS
@@ -111,15 +127,21 @@ export default function StudentsModulePage() {
     }
   }, [academicYear, schoolLevel, filters]);
 
+  // Classes chargées depuis la BDD (configurées dans Paramètres), filtrées par niveau scolaire
   useEffect(() => {
-    if (academicYear?.id) {
-      fetch(`/api/classes?academicYearId=${academicYear.id}${schoolLevel?.id ? `&schoolLevelId=${schoolLevel.id}` : ''}`)
-        .then((r) => (r.ok ? r.json() : []))
-        .then((list: any[]) => setClassesList(list.map((c) => ({ id: c.id, name: c.name || c.code || c.id }))))
-        .catch(() => setClassesList([]));
-    } else {
+    if (!academicYear?.id) {
       setClassesList([]);
+      return;
     }
+    const params = new URLSearchParams({ academicYearId: academicYear.id });
+    if (schoolLevel?.id && schoolLevel.id !== 'ALL') params.set('schoolLevelId', schoolLevel.id);
+    fetch(`/api/classes?${params}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: any) => {
+        const list = Array.isArray(data) ? data : data?.data ?? data?.classes ?? [];
+        setClassesList(list.map((c: any) => ({ id: c.id, name: c.name || c.code || c.id })));
+      })
+      .catch(() => setClassesList([]));
   }, [academicYear?.id, schoolLevel?.id]);
 
   // ============================================================================
@@ -334,13 +356,14 @@ export default function StudentsModulePage() {
             <div className="flex items-center gap-2">
               <button
                 onClick={handleCreate}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                disabled={schoolLevel?.id === 'ALL'}
+                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Plus className="w-4 h-4" />
                 <span>Nouvelle inscription</span>
               </button>
               <button
-                onClick={() => window.alert('Import : fonctionnalité à venir')}
+                onClick={() => setIsImportModalOpen(true)}
                 className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
               >
                 <Upload className="w-4 h-4" />
@@ -357,20 +380,58 @@ export default function StudentsModulePage() {
           ),
         }}
         subModules={{
+          activeModuleId: activeSubModuleId,
+          onModuleChange: setActiveSubModuleId,
           modules: [
-            { id: 'list', label: 'Liste des élèves', href: '/app/students' },
-            { id: 'enrollments', label: 'Inscriptions', href: '/app/students/enrollments' },
-            { id: 'classes', label: 'Classes', href: '/app/students/classes' },
-            { id: 'matricules', label: 'Matricules', href: '/app/students/matricules' },
-            { id: 'id-cards', label: 'Cartes Scolaires', href: '/app/students/id-cards' },
-            { id: 'attendance', label: 'Assiduité', href: '/app/students/attendance' },
-            { id: 'discipline', label: 'Discipline', href: '/app/students/discipline' },
-            { id: 'documents', label: 'Documents', href: '/app/students/documents' },
+            { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-4 h-4" /> },
+            { id: 'a-admission', label: 'Admission & cycle de vie', icon: <UserPlus className="w-4 h-4" /> },
+            { id: 'e-documents-carte', label: 'Documents & carte scolaire', icon: <CreditCard className="w-4 h-4" /> },
+            { id: 'b-identite', label: 'Identité & relations', icon: <User className="w-4 h-4" /> },
+            { id: 'c-historique', label: 'Historique & multi-année', icon: <History className="w-4 h-4" /> },
+            { id: 'd-regimes-finance', label: 'Régimes & situation fin.', icon: <DollarSign className="w-4 h-4" /> },
+            { id: 'f-interop', label: 'Interopérabilité nationale', icon: <Share2 className="w-4 h-4" /> },
           ],
         }}
-        content={{
-          layout: 'table',
-          filters: (
+        content={
+          activeSubModuleId === 'dashboard'
+            ? {
+                layout: 'default',
+                children: (
+                  <StudentsModuleDashboard
+                    onNavigateToSubModule={setActiveSubModuleId}
+                    onNewEnrollment={handleCreate}
+                    onImport={() => setIsImportModalOpen(true)}
+                  />
+                ),
+              }
+            : activeSubModuleId === 'a-admission'
+            ? {
+                layout: 'default',
+                children: <EnrollmentsContent />,
+              }
+            : activeSubModuleId === 'e-documents-carte'
+              ? {
+                  layout: 'default',
+                  children: (
+                    <div className="space-y-4">
+                      <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+                        <a
+                          href="/app/students/documents"
+                          className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 text-gray-700 text-sm font-medium"
+                        >
+                          <FileText className="w-4 h-4" />
+                          Documents administratifs
+                        </a>
+                      </div>
+                      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+                        <StudentIdCardsSection />
+                      </div>
+                    </div>
+                  ),
+                }
+              : {
+                  layout: 'table',
+                  filters: (
             <div className="flex items-center space-x-4">
               <div className="flex-1">
                 <div className="relative">
@@ -797,6 +858,126 @@ export default function StudentsModulePage() {
         confirmLabel="Archiver"
         cancelLabel="Annuler"
       />
+
+      {/* Modal Import de masse */}
+      <FormModal
+        title="Import de masse d'élèves"
+        subtitle="Collez un CSV simple (Nom,Prénom,DateNaissance JJ/MM/AAAA optionnelle). L'année et le niveau actuels seront utilisés."
+        isOpen={isImportModalOpen}
+        onClose={() => {
+          if (isImporting) return;
+          setIsImportModalOpen(false);
+          setImportText('');
+          setImportResult(null);
+        }}
+        size="lg"
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (isImporting) return;
+                setIsImportModalOpen(false);
+                setImportText('');
+                setImportResult(null);
+              }}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+            >
+              Annuler
+            </button>
+            <button
+              type="button"
+              disabled={isImporting || !importText.trim() || !academicYear || !schoolLevel}
+              onClick={async () => {
+                if (!academicYear || !schoolLevel) return;
+                setIsImporting(true);
+                setImportResult(null);
+                let success = 0;
+                let failed = 0;
+                try {
+                  const lines = importText
+                    .split('\n')
+                    .map((l) => l.trim())
+                    .filter((l) => l.length > 0);
+                  if (lines.length <= 1) {
+                    setImportResult({ success: 0, failed: 0 });
+                    setIsImporting(false);
+                    return;
+                  }
+                  const rows = lines.slice(1); // skip header
+                  for (const raw of rows) {
+                    const parts = raw.split(/[;,]/).map((p) => p.trim());
+                    const [lastName, firstName, dateRaw] = parts;
+                    if (!lastName || !firstName) {
+                      failed++;
+                      continue;
+                    }
+                    let dateOfBirth: string | undefined;
+                    if (dateRaw) {
+                      const m = dateRaw.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})$/);
+                      if (m) {
+                        const [_, d, mth, y] = m;
+                        dateOfBirth = `${y}-${mth}-${d}`;
+                      }
+                    }
+                    try {
+                      const res = await fetch('/api/students', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          firstName,
+                          lastName,
+                          dateOfBirth,
+                          academicYearId: academicYear.id,
+                          schoolLevelId: schoolLevel.id,
+                        }),
+                      });
+                      if (res.ok) {
+                        success++;
+                      } else {
+                        failed++;
+                      }
+                    } catch {
+                      failed++;
+                    }
+                  }
+                  setImportResult({ success, failed });
+                  await loadStudents();
+                  await loadStatistics();
+                } finally {
+                  setIsImporting(false);
+                }
+              }}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+            >
+              {isImporting && (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              )}
+              <span>Importer</span>
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Format attendu (séparateur point-virgule ou virgule) avec en-tête :
+            <span className="font-mono ml-1">Nom,Prénom,DateNaissance</span>.
+          </p>
+          <textarea
+            value={importText}
+            onChange={(e) => setImportText(e.target.value)}
+            rows={10}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs"
+            placeholder={'Nom,Prénom,DateNaissance\nDUPONT,Jean,12/09/2012\nDOE,Jane,01/01/2013'}
+          />
+          {importResult && (
+            <p className="text-sm text-gray-700">
+              Import terminé : <span className="font-semibold">{importResult.success}</span> ligne(s) réussie(s),
+              <span className="font-semibold ml-1">{importResult.failed}</span> en échec.
+            </p>
+          )}
+        </div>
+      </FormModal>
     </>
   );
 }

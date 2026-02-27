@@ -22,11 +22,20 @@ export async function GET(request: NextRequest) {
       url.searchParams.append(key, value);
     });
 
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    };
+    const auth = request.headers.get('authorization') || request.headers.get('Authorization');
+    const cookie = request.headers.get('cookie');
+    if (auth) {
+      headers['Authorization'] = auth;
+    }
+    if (cookie) {
+      headers['cookie'] = cookie;
+    }
+
     const response = await fetch(url.toString(), {
-      headers: {
-        'Content-Type': 'application/json',
-        // TODO: Ajouter le token d'authentification
-      },
+      headers,
     });
 
     if (!response.ok) {
@@ -51,12 +60,21 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    };
+    const auth = request.headers.get('authorization') || request.headers.get('Authorization');
+    const cookie = request.headers.get('cookie');
+    if (auth) {
+      headers['Authorization'] = auth;
+    }
+    if (cookie) {
+      headers['cookie'] = cookie;
+    }
+
     const response = await fetch(`${API_URL}/api/students`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        // TODO: Ajouter le token d'authentification
-      },
+      headers,
       body: JSON.stringify(body),
     });
 

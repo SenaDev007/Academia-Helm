@@ -18,6 +18,7 @@ import {
 import { FeesPrismaService } from './fees-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { SchoolLevelId } from '../common/decorators/school-level-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('api/finance/fees')
@@ -61,8 +62,8 @@ export class FeesPrismaController {
   @Get('definitions')
   async findAllDefinitions(
     @TenantId() tenantId: string,
+    @SchoolLevelId() schoolLevelId: string,
     @Query('academicYearId') academicYearId?: string,
-    @Query('schoolLevelId') schoolLevelId?: string,
     @Query('classId') classId?: string,
     @Query('feeCategoryId') feeCategoryId?: string,
     @Query('search') search?: string,

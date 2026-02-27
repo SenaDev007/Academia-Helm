@@ -17,6 +17,7 @@ import {
 import { ExpensesPrismaService } from './expenses-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { SchoolLevelId } from '../common/decorators/school-level-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('api/finance/expenses')
@@ -36,8 +37,8 @@ export class ExpensesPrismaController {
   @Get('categories')
   async findAllCategories(
     @TenantId() tenantId: string,
+    @SchoolLevelId() schoolLevelId: string,
     @Query('academicYearId') academicYearId?: string,
-    @Query('schoolLevelId') schoolLevelId?: string,
     @Query('parentId') parentId?: string,
     @Query('isActive') isActive?: string,
   ) {
@@ -80,8 +81,8 @@ export class ExpensesPrismaController {
   @Get()
   async findAllExpenses(
     @TenantId() tenantId: string,
+    @SchoolLevelId() schoolLevelId: string,
     @Query('academicYearId') academicYearId?: string,
-    @Query('schoolLevelId') schoolLevelId?: string,
     @Query('category') category?: string,
     @Query('status') status?: string,
     @Query('startDate') startDate?: string,
@@ -130,8 +131,8 @@ export class ExpensesPrismaController {
   @Get('statistics/summary')
   async getStatistics(
     @TenantId() tenantId: string,
+    @SchoolLevelId() schoolLevelId: string,
     @Query('academicYearId') academicYearId?: string,
-    @Query('schoolLevelId') schoolLevelId?: string,
   ) {
     return this.expensesService.getExpenseStatistics(tenantId, academicYearId, schoolLevelId);
   }

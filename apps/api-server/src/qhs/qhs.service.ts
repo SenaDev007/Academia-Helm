@@ -66,7 +66,7 @@ export class QhsService {
       where.academicYearId = academicYearId;
     }
 
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
 
@@ -197,7 +197,7 @@ export class QhsService {
       where.academicYearId = academicYearId;
     }
 
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
 
@@ -263,7 +263,7 @@ export class QhsService {
       where.academicYearId = academicYearId;
     }
 
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
 

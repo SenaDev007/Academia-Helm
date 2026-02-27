@@ -16,6 +16,7 @@ import {
 import { CollectionPrismaService } from './collection-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { SchoolLevelId } from '../common/decorators/school-level-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('api/finance/collection')
@@ -34,8 +35,8 @@ export class CollectionPrismaController {
   @Get('arrears')
   async findAllArrears(
     @TenantId() tenantId: string,
+    @SchoolLevelId() schoolLevelId: string,
     @Query('academicYearId') academicYearId?: string,
-    @Query('schoolLevelId') schoolLevelId?: string,
     @Query('arrearsLevel') arrearsLevel?: string,
     @Query('studentId') studentId?: string,
     @Query('search') search?: string,

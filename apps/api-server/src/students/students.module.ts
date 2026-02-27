@@ -9,6 +9,7 @@ import { TenantsModule } from '../tenants/tenants.module'; // ✅ Import pour Te
 import { AuditLogsModule } from '../audit-logs/audit-logs.module'; // ✅ Import pour AuditLogInterceptor
 import { UsersModule } from '../users/users.module'; // ✅ Import pour PermissionsGuard
 import { ModulesModule } from '../modules/modules.module'; // ✅ Import pour ModuleAccessGuard
+import { OrionModule } from '../orion/orion.module';
 import { StudentsPrismaService } from './students-prisma.service';
 import { StudentsPrismaController } from './students-prisma.controller';
 import { GuardiansPrismaService } from './guardians-prisma.service';
@@ -45,6 +46,7 @@ import { StudentsLifecycleController } from './controllers/students-lifecycle.co
     AuditLogsModule, // ✅ Import pour que AuditLogInterceptor puisse résoudre AuditLogRepository
     UsersModule, // ✅ Import pour que PermissionsGuard puisse résoudre UserRepository
     ModulesModule, // ✅ Import pour que ModuleAccessGuard puisse résoudre ModulesService
+    OrionModule, // Pour intégration ORION sur le cycle de vie élèves
   ],
   controllers: [
     StudentsController,

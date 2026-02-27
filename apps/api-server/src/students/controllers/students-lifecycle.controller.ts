@@ -5,6 +5,7 @@
 import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { StudentsLifecycleService } from '../services/students-lifecycle.service';
 import { StudentIdCardService } from '../services/student-id-card.service';
 
@@ -17,28 +18,99 @@ export class StudentsLifecycleController {
   ) {}
 
   @Post('pre-register')
-  async preRegister(@TenantId() tenantId: string, @Body() body: any) {
-    return this.lifecycle.preRegister(tenantId, body);
+  async preRegister(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {
+    return this.lifecycle.preRegister(tenantId, body, user?.id);
   }
 
   @Post('admit')
-  async admit(@TenantId() tenantId: string, @Body() body: any) {
-    return this.lifecycle.admit(tenantId, body);
+  async admit(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {
+    return this.lifecycle.admit(tenantId, body, user?.id);
   }
 
   @Post('re-enroll')
-  async reEnroll(@TenantId() tenantId: string, @Body() body: any) {
-    return this.lifecycle.reEnroll(tenantId, body);
+  async reEnroll(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {
+    return this.lifecycle.reEnroll(tenantId, body, user?.id);
   }
 
   @Post('transfer')
-  async transfer(@TenantId() tenantId: string, @Body() body: any) {
-    return this.lifecycle.transfer(tenantId, body);
+  async transfer(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {
+    return this.lifecycle.transfer(tenantId, body, user?.id);
   }
 
   @Post('change-class')
-  async changeClass(@TenantId() tenantId: string, @Body() body: any) {
-    return this.lifecycle.changeClass(tenantId, body);
+  async changeClass(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {
+    return this.lifecycle.changeClass(tenantId, body, user?.id);
+  }
+
+  /**
+   * Promotion annuelle manuelle d'un élève (hors clôture globale).
+   */
+  @Post('promote')
+  async promote(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() body: {
+      studentId: string;
+      fromAcademicYearId: string;
+      toAcademicYearId: string;
+      schoolLevelId: string;
+      toClassId?: string | null;
+      previousArrears?: number;
+    },
+  ) {
+    return this.lifecycle.promoteStudent(tenantId, body, user?.id);
+  }
+
+  /**
+   * Redoublement manuel d'un élève.
+   */
+  @Post('repeat')
+  async repeat(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() body: {
+      studentId: string;
+      fromAcademicYearId: string;
+      toAcademicYearId: string;
+      schoolLevelId: string;
+      classId: string;
+      previousArrears?: number;
+    },
+  ) {
+    return this.lifecycle.repeatStudent(tenantId, body, user?.id);
+  }
+
+  /**
+   * Batch promotion (sélection multiple).
+   */
+  @Post('batch-promote')
+  async batchPromote(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() body: {
+      studentIds: string[];
+      fromAcademicYearId: string;
+      toAcademicYearId: string;
+      schoolLevelId: string;
+      toClassId?: string | null;
+    },
+  ) {
+    return this.lifecycle.batchPromote(tenantId, body, user?.id);
+  }
+
+  /**
+   * Batch mise à jour de statut (WITHDRAWN, EXPELLED, DECEASED, GRADUATED, etc.).
+   */
+  @Post('batch-update-status')
+  async batchUpdateStatus(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() body: {
+      studentIds: string[];
+      status: string;
+    },
+  ) {
+    return this.lifecycle.batchUpdateStatus(tenantId, body, user?.id);
   }
 
   @Get('class/:classId')
@@ -53,6 +125,15 @@ export class StudentsLifecycleController {
   @Get(':id/history')
   async getHistory(@TenantId() tenantId: string, @Param('id') id: string) {
     return this.lifecycle.getStudentHistory(tenantId, id);
+  }
+
+  /**
+   * GET /api/students/:id/audit
+   * Journal d'audit des actions Module 1 (pré-inscription, admission, réinscription, transfert, changement de classe)
+   */
+  @Get(':id/audit')
+  async getAuditLog(@TenantId() tenantId: string, @Param('id') id: string) {
+    return this.lifecycle.getStudentAuditLog(tenantId, id);
   }
 
   @Post(':id/generate-card')

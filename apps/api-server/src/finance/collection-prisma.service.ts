@@ -161,7 +161,7 @@ export class CollectionPrismaService {
       where.studentId = filters.studentId;
     }
 
-    if (filters?.schoolLevelId) {
+    if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
       where.student = {
         schoolLevelId: filters.schoolLevelId,
       };

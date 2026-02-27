@@ -48,6 +48,7 @@ export default function SchoolLevelSelector() {
       MATERNELLE: 'Maternelle',
       PRIMAIRE: 'Primaire',
       SECONDAIRE: 'Secondaire',
+      ALL: 'Tous les niveaux',
     };
     return labels[code] || code;
   };

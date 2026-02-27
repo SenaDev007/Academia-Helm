@@ -62,6 +62,33 @@ END;
 $$ LANGUAGE plpgsql`,
       `DROP TRIGGER IF EXISTS trg_prevent_class_change_if_grades ON "student_enrollments"`,
       `CREATE TRIGGER trg_prevent_class_change_if_grades BEFORE UPDATE ON "student_enrollments" FOR EACH ROW EXECUTE FUNCTION prevent_class_change_if_grades()`,
+      `CREATE OR REPLACE FUNCTION prevent_update_if_year_closed()
+RETURNS TRIGGER AS $$
+DECLARE
+  locked BOOLEAN;
+BEGIN
+  IF NEW."academicYearId" IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT COALESCE(ac."is_locked", ay."isClosed") INTO locked
+  FROM "academic_years" ay
+  LEFT JOIN "academic_year_closures" ac ON ac."academic_year_id" = ay."id"
+  WHERE ay."id" = NEW."academicYearId";
+
+  IF locked THEN
+    RAISE EXCEPTION 'Année scolaire clôturée : modifications interdites pour cette année';
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql`,
+      `DROP TRIGGER IF EXISTS trg_prevent_update_if_year_closed_enrollments ON "student_enrollments"`,
+      `CREATE TRIGGER trg_prevent_update_if_year_closed_enrollments BEFORE INSERT OR UPDATE ON "student_enrollments" FOR EACH ROW EXECUTE FUNCTION prevent_update_if_year_closed()`,
+      `DROP TRIGGER IF EXISTS trg_prevent_update_if_year_closed_grades ON "grades"`,
+      `CREATE TRIGGER trg_prevent_update_if_year_closed_grades BEFORE INSERT OR UPDATE ON "grades" FOR EACH ROW EXECUTE FUNCTION prevent_update_if_year_closed()`,
+      `DROP TRIGGER IF EXISTS trg_prevent_update_if_year_closed_fee_arrears ON "fee_arrears"`,
+      `CREATE TRIGGER trg_prevent_update_if_year_closed_fee_arrears BEFORE INSERT OR UPDATE ON "fee_arrears" FOR EACH ROW EXECUTE FUNCTION prevent_update_if_year_closed()`,
     ];
   }
 }

@@ -17,7 +17,7 @@ export class ModulesRepository {
 
   async findAll(tenantId: string, schoolLevelId?: string): Promise<ModuleEntity[]> {
     const where: any = { tenantId };
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
     return this.repository.find({
@@ -33,7 +33,7 @@ export class ModulesRepository {
       isEnabled: true,
       status: ModuleStatus.ACTIVE,
     };
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
     return this.repository.find({
@@ -56,7 +56,7 @@ export class ModulesRepository {
     schoolLevelId?: string,
   ): Promise<ModuleEntity[]> {
     const where: any = { tenantId, type };
-    if (schoolLevelId) {
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
     return this.repository.find({

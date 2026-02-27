@@ -11,6 +11,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useModuleContext } from '@/hooks/useModuleContext';
 import {
   FileText,
   BookOpen,
@@ -78,14 +79,26 @@ interface DossierData {
       lastName: string;
     };
   };
+  auditTrail?: Array<{
+    id: string;
+    action: string;
+    createdAt: string;
+    userId?: string | null;
+    beforeData?: any;
+    afterData?: any;
+  }>;
 }
 
 export default function StudentDossierSection({ studentId }: { studentId: string }) {
+  const { schoolLevel } = useModuleContext();
   const [dossier, setDossier] = useState<DossierData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [selectedTab, setSelectedTab] = useState<'identity' | 'academic' | 'discipline' | 'documents' | 'finance' | 'regimes' | 'history' | 'card' | 'parents'>('identity');
+  const [selectedTab, setSelectedTab] = useState<
+    'identity' | 'academic' | 'documents' | 'finance' | 'history' | 'card' | 'parents' | 'status'
+  >('identity');
   const [academicYearId, setAcademicYearId] = useState<string>('');
   const [historyData, setHistoryData] = useState<any>(null);
+  const [auditData, setAuditData] = useState<DossierData['auditTrail'] | null>(null);
   const [changeClassModal, setChangeClassModal] = useState(false);
   const [changeClassPayload, setChangeClassPayload] = useState({ academicYearId: '', newClassId: '' });
   const [classesList, setClassesList] = useState<{ id: string; name: string }[]>([]);
@@ -104,16 +117,22 @@ export default function StudentDossierSection({ studentId }: { studentId: string
     }
   }, [selectedTab, studentId]);
 
+  // Classes chargées depuis la BDD (Paramètres), filtrées par niveau scolaire
   useEffect(() => {
-    if (changeClassModal && changeClassPayload.academicYearId) {
-      fetch(`/api/classes?academicYearId=${changeClassPayload.academicYearId}`)
-        .then((r) => r.ok ? r.json() : [])
-        .then((list: any[]) => setClassesList(list.map((c) => ({ id: c.id, name: c.name || c.code }))))
-        .catch(() => setClassesList([]));
-    } else if (changeClassModal) {
-      setClassesList([]);
+    if (!changeClassModal || !changeClassPayload.academicYearId) {
+      if (changeClassModal) setClassesList([]);
+      return;
     }
-  }, [changeClassModal, changeClassPayload.academicYearId]);
+    const params = new URLSearchParams({ academicYearId: changeClassPayload.academicYearId });
+    if (schoolLevel?.id && schoolLevel.id !== 'ALL') params.set('schoolLevelId', schoolLevel.id);
+    fetch(`/api/classes?${params}`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: any) => {
+        const list = Array.isArray(data) ? data : data?.data ?? data?.classes ?? [];
+        setClassesList(list.map((c: any) => ({ id: c.id, name: c.name || c.code || c.id })));
+      })
+      .catch(() => setClassesList([]));
+  }, [changeClassModal, changeClassPayload.academicYearId, schoolLevel?.id]);
 
   const loadDossier = async () => {
     try {
@@ -161,11 +180,10 @@ export default function StudentDossierSection({ studentId }: { studentId: string
               { id: 'academic', label: 'Scolarité', icon: BookOpen },
               { id: 'parents', label: 'Parents', icon: Users },
               { id: 'finance', label: 'Finance', icon: DollarSign },
-              { id: 'regimes', label: 'Régimes', icon: Award },
               { id: 'documents', label: 'Documents', icon: FileText },
               { id: 'history', label: 'Historique', icon: History },
+              { id: 'status', label: 'Statut & Parcours', icon: Calendar },
               { id: 'card', label: 'Carte scolaire', icon: CreditCard },
-              { id: 'discipline', label: 'Discipline', icon: AlertTriangle },
             ].map((tab) => {
               const Icon = tab.icon;
               return (
@@ -427,68 +445,6 @@ export default function StudentDossierSection({ studentId }: { studentId: string
             </div>
           )}
 
-          {selectedTab === 'discipline' && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Résumés disciplinaires</h3>
-                {dossier.disciplinarySummaries.length === 0 ? (
-                  <p className="text-gray-600">Aucun résumé disciplinaire</p>
-                ) : (
-                  <div className="space-y-4">
-                    {dossier.disciplinarySummaries.map((summary) => (
-                      <div key={summary.id} className="bg-gray-50 rounded-lg p-4">
-                        <h4 className="font-semibold text-gray-900 mb-3">
-                          {summary.academicYear.name}
-                        </h4>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                          <div>
-                            <span className="text-gray-600">Absences: </span>
-                            <span className="font-medium">{summary.absencesCount}</span>
-                          </div>
-                          <div>
-                            <span className="text-gray-600">Incidents: </span>
-                            <span className="font-medium">{summary.incidentsCount}</span>
-                          </div>
-                          <div>
-                            <span className="text-gray-600">Sanctions: </span>
-                            <span className="font-medium">{summary.sanctionsCount}</span>
-                          </div>
-                          <div>
-                            <span className="text-gray-600">Avertissements: </span>
-                            <span className="font-medium">{summary.warningsCount}</span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {dossier.recentAbsences.length > 0 && (
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Absences récentes</h3>
-                  <div className="space-y-2">
-                    {dossier.recentAbsences.slice(0, 10).map((absence) => (
-                      <div key={absence.id} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
-                        <div>
-                          <p className="font-medium text-gray-900">
-                            {new Date(absence.date).toLocaleDateString('fr-FR')}
-                          </p>
-                          <p className="text-sm text-gray-600">
-                            {absence.isJustified ? 'Justifiée' : 'Non justifiée'}
-                          </p>
-                        </div>
-                        {absence.reason && (
-                          <p className="text-sm text-gray-600">{absence.reason}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
           {selectedTab === 'parents' && (
             <div className="space-y-6">
               <h3 className="text-lg font-semibold text-gray-900">Parents / tuteurs</h3>
@@ -546,77 +502,171 @@ export default function StudentDossierSection({ studentId }: { studentId: string
           {selectedTab === 'finance' && (
             <div className="space-y-6">
               <h3 className="text-lg font-semibold text-gray-900">Situation financière</h3>
-              {dossier.feeProfile && (
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <p className="text-sm font-medium text-gray-700">Régime tarifaire</p>
-                  <p className="text-gray-900">{dossier.feeProfile.feeRegime?.label ?? dossier.feeProfile.feeRegime?.code}</p>
-                </div>
-              )}
-              <p className="text-sm text-gray-600">Arriérés et compte financier (liaison module Finance).</p>
-            </div>
-          )}
-
-          {selectedTab === 'regimes' && (
-            <div className="space-y-6">
-              <h3 className="text-lg font-semibold text-gray-900">Régimes spéciaux</h3>
-              {dossier.feeProfile ? (
-                <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-                  <p className="font-medium text-gray-900">{dossier.feeProfile.feeRegime.label}</p>
-                  {dossier.feeProfile.feeRegime.description && (
-                    <p className="text-sm text-gray-600">{dossier.feeProfile.feeRegime.description}</p>
-                  )}
-                  {dossier.feeProfile.justification && (
-                    <p className="text-sm text-gray-600">Justification : {dossier.feeProfile.justification}</p>
-                  )}
-                </div>
-              ) : (
-                <p className="text-gray-600">Aucun régime spécial défini</p>
-              )}
+              <p className="text-sm text-gray-600">
+                Cette section est dédiée à la synthèse financière (soldes, arriérés, échéancier) issue du module Finance.
+              </p>
+              <p className="text-sm text-gray-600">
+                Le détail du régime tarifaire de l&apos;élève est présenté dans la section{' '}
+                <span className="font-medium">Régime tarifaire</span> de l&apos;onglet{' '}
+                <span className="font-medium">Identité</span>.
+              </p>
             </div>
           )}
 
           {selectedTab === 'history' && (
             <div className="space-y-6">
-              <h3 className="text-lg font-semibold text-gray-900">Historique admissions & transferts</h3>
+              <h3 className="text-lg font-semibold text-gray-900">Historique & journal des actions</h3>
               {!historyData ? (
                 <p className="text-gray-500">Chargement...</p>
               ) : (
-                <>
-                  <div>
-                    <h4 className="font-medium text-gray-700 mb-2">Inscriptions</h4>
-                    {historyData.enrollments?.length === 0 ? (
-                      <p className="text-gray-600 text-sm">Aucune inscription</p>
-                    ) : (
-                      <ul className="space-y-2">
-                        {historyData.enrollments?.map((e: any) => (
-                          <li key={e.id} className="flex items-center gap-2 text-sm bg-gray-50 rounded p-2">
-                            <History className="w-4 h-4 text-gray-400" />
-                            <span>{e.academicYearName}</span>
-                            <span className="text-gray-600">— {e.className || 'Non affecté'}</span>
-                            <span className="text-xs px-2 py-0.5 rounded bg-gray-200">{e.status}</span>
-                            {e.previousArrears > 0 && (
-                              <span className="text-amber-700">Arriérés: {e.previousArrears}</span>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <h4 className="font-medium text-gray-700 mb-2">Inscriptions & transferts</h4>
+                    <div>
+                      <h5 className="font-medium text-gray-700 mb-2">Inscriptions</h5>
+                      {historyData.enrollments?.length === 0 ? (
+                        <p className="text-gray-600 text-sm">Aucune inscription</p>
+                      ) : (
+                        <ul className="space-y-2">
+                          {historyData.enrollments?.map((e: any) => (
+                            <li key={e.id} className="flex items-center gap-2 text-sm bg-gray-50 rounded p-2">
+                              <History className="w-4 h-4 text-gray-400" />
+                              <span>{e.academicYearName}</span>
+                              <span className="text-gray-600">— {e.className || 'Non affecté'}</span>
+                              <span className="text-xs px-2 py-0.5 rounded bg-gray-200">{e.status}</span>
+                              {e.previousArrears > 0 && (
+                                <span className="text-amber-700">Arriérés: {e.previousArrears}</span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                    {historyData.transfers?.length > 0 && (
+                      <div>
+                        <h5 className="font-medium text-gray-700 mb-2">Transferts</h5>
+                        <ul className="space-y-2">
+                          {historyData.transfers.map((t: any) => (
+                            <li key={t.id} className="flex items-center gap-2 text-sm bg-gray-50 rounded p-2">
+                              <ArrowRightLeft className="w-4 h-4 text-gray-400" />
+                              {t.fromClassName} → {t.toClassName} — {t.status}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
                   </div>
-                  {historyData.transfers?.length > 0 && (
-                    <div>
-                      <h4 className="font-medium text-gray-700 mb-2">Transferts</h4>
-                      <ul className="space-y-2">
-                        {historyData.transfers.map((t: any) => (
-                          <li key={t.id} className="flex items-center gap-2 text-sm bg-gray-50 rounded p-2">
-                            <ArrowRightLeft className="w-4 h-4 text-gray-400" />
-                            {t.fromClassName} → {t.toClassName} — {t.status}
-                          </li>
+                  <div className="space-y-4">
+                    <h4 className="font-medium text-gray-700 mb-2">Journal d&apos;audit (Module 1)</h4>
+                    {auditData && auditData.length > 0 ? (
+                      <div className="border border-gray-200 rounded-lg divide-y divide-gray-200 max-h-80 overflow-y-auto">
+                        {auditData.map((entry) => (
+                          <div key={entry.id} className="p-3 text-sm">
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium text-gray-900">{entry.action}</span>
+                              <span className="text-xs text-gray-500">
+                                {new Date(entry.createdAt).toLocaleString('fr-FR')}
+                              </span>
+                            </div>
+                            {entry.userId && (
+                              <p className="text-xs text-gray-500 mt-1">
+                                Utilisateur: <span className="font-mono">{entry.userId}</span>
+                              </p>
+                            )}
+                            {entry.afterData && (
+                              <p className="text-xs text-gray-500 mt-1 truncate">
+                                Détails: <span className="font-mono">{JSON.stringify(entry.afterData)}</span>
+                              </p>
+                            )}
+                          </div>
                         ))}
-                      </ul>
-                    </div>
-                  )}
-                </>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500">Aucune entrée d&apos;audit disponible.</p>
+                    )}
+                  </div>
+                </div>
               )}
+            </div>
+          )}
+
+          {selectedTab === 'status' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Statut & Parcours</h3>
+                  <p className="text-sm text-gray-600">
+                    Promotion annuelle, réinscription ou redoublement de l&apos;élève. Les opérations sont
+                    enregistrées dans le journal d&apos;audit et soumises aux règles de clôture d&apos;année.
+                  </p>
+                </div>
+                <button
+                  onClick={async () => {
+                    try {
+                      const res = await fetch(`/api/students/${dossier.identity.id}/academic-dossier${academicYearId ? `?academicYearId=${academicYearId}` : ''}`);
+                      if (!res.ok) {
+                        window.alert('Impossible de générer le dossier académique (PDF).');
+                        return;
+                      }
+                      const blob = await res.blob();
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `dossier-academique-${dossier.identity.matricule || dossier.identity.id}.pdf`;
+                      document.body.appendChild(a);
+                      a.click();
+                      a.remove();
+                      window.URL.revokeObjectURL(url);
+                    } catch (e) {
+                      window.alert('Erreur lors du téléchargement du dossier académique.');
+                    }
+                  }}
+                  className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Télécharger le dossier académique
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <h4 className="font-medium text-gray-900">Statut actuel</h4>
+                  <p className="text-sm text-gray-700">
+                    Statut : <span className="font-semibold">{dossier.identity.status}</span>
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Le changement de statut et les promotions sont soumis aux politiques de l&apos;établissement.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="font-medium text-gray-900">Actions annuelles</h4>
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      onClick={() => window.alert('Promotion annuelle : à déclencher depuis la page dédiée Promotions.')}
+                      className="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700"
+                    >
+                      Promotion
+                    </button>
+                    <button
+                      onClick={() => window.alert('Réinscription : utiliser le sous-module Inscriptions (réinscription).')}
+                      className="inline-flex items-center px-3 py-2 bg-emerald-600 text-white rounded-md text-sm hover:bg-emerald-700"
+                    >
+                      Réinscription
+                    </button>
+                    <button
+                      onClick={() => window.alert('Redoublement : workflow backend prêt, UI spécialisée à finaliser.')}
+                      className="inline-flex items-center px-3 py-2 bg-yellow-500 text-white rounded-md text-sm hover:bg-yellow-600"
+                    >
+                      Redoublement
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Ces actions s&apos;appuient sur les endpoints du cycle de vie élève (promotion, réinscription,
+                    redoublement) et alimentent ORION pour le calcul des KPI annuels.
+                  </p>
+                </div>
+              </div>
             </div>
           )}
 

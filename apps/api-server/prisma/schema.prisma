@@ -2903,6 +2903,41 @@ model NationalExportLog {
   @@map("national_export_logs")
 }
 
+/// Journal d'audit des actions élèves (Module 1)
+model StudentAuditLog {
+  id         String   @id @default(uuid())
+  tenantId   String
+  studentId  String
+  userId     String?
+  action     String
+  beforeData Json?
+  afterData  Json?
+  createdAt  DateTime @default(now())
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, studentId, createdAt])
+  @@map("student_audit_logs")
+}
+
+/// Clôture annuelle académique (verrouillage juridique des données Module 1)
+model AcademicYearClosure {
+  id             String   @id @default(uuid())
+  tenantId       String
+  academicYearId String
+  closedAt       DateTime @default(now())
+  closedBy       String
+  isLocked       Boolean  @default(true)
+
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, academicYearId])
+  @@index([tenantId, academicYearId])
+  @@map("academic_year_closures")
+}
+
 model StudentIdentifier {
   id                  String    @id @default(uuid())
   tenantId            String

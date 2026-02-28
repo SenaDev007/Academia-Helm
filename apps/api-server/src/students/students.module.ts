@@ -37,6 +37,8 @@ import { StudentDossierController } from './controllers/student-dossier.controll
 // Module 1 - Cycle de vie (pre-register, admit, re-enroll, transfer, change-class, history, export EDUCMASTER)
 import { StudentsLifecycleService } from './services/students-lifecycle.service';
 import { StudentsLifecycleController } from './controllers/students-lifecycle.controller';
+import { EducmasterExcelExportService } from './services/educmaster-excel-export.service';
+import { MatriculeService } from './services/matricule.service';
 
 @Module({
   imports: [
@@ -83,6 +85,8 @@ import { StudentsLifecycleController } from './controllers/students-lifecycle.co
     PublicVerificationService,
     StudentDossierService,
     StudentsLifecycleService,
+    EducmasterExcelExportService,
+    MatriculeService,
   ],
   exports: [
     StudentsService,
@@ -100,6 +104,8 @@ import { StudentsLifecycleController } from './controllers/students-lifecycle.co
     PublicVerificationService,
     StudentDossierService,
     StudentsLifecycleService,
+    EducmasterExcelExportService,
+    MatriculeService,
   ],
 })
 export class StudentsModule {}

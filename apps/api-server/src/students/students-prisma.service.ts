@@ -11,34 +11,19 @@
 
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { MatriculeService } from './services/matricule.service';
+import { PublicVerificationService } from './services/public-verification.service';
 
 @Injectable()
 export class StudentsPrismaService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly matriculeService: MatriculeService,
+    private readonly publicVerificationService: PublicVerificationService,
+  ) {}
 
   /**
-   * Génère un code élève unique
-   * Format: STU-{YEAR}-{SEQUENCE}
-   */
-  private async generateStudentCode(tenantId: string, academicYearId: string): Promise<string> {
-    const year = new Date().getFullYear();
-    const prefix = `STU-${year}`;
-    
-    // Compter les élèves existants pour cette année
-    const count = await this.prisma.student.count({
-      where: {
-        tenantId,
-        academicYearId,
-        studentCode: { startsWith: prefix },
-      },
-    });
-
-    const sequence = String(count + 1).padStart(4, '0');
-    return `${prefix}-${sequence}`;
-  }
-
-  /**
-   * Crée un nouvel élève
+   * Crée un nouvel élève avec matricule institutionnel (généré backend, immuable).
    */
   async createStudent(data: {
     tenantId: string;
@@ -50,32 +35,44 @@ export class StudentsPrismaService {
     gender?: string;
     nationality?: string;
     primaryLanguage?: string;
+    photoUrl?: string;
+    npi?: string;
     createdById?: string;
   }) {
-    // Générer le code élève
-    const studentCode = await this.generateStudentCode(data.tenantId, data.academicYearId);
+    const schoolCode = await this.matriculeService.getSchoolCode(data.tenantId);
+    const enrollmentYear = await this.matriculeService.getEnrollmentYearFromAcademicYear(data.academicYearId);
 
-    return this.prisma.student.create({
-      data: {
-        ...data,
-        studentCode,
-        currentAcademicYearId: data.academicYearId,
-        status: 'ACTIVE',
-      },
-      include: {
-        schoolLevel: true,
-        academicYear: true,
-        studentGuardians: {
-          include: {
-            guardian: true,
+    return this.prisma.$transaction(async (tx) => {
+      const matricule = await this.matriculeService.generateInTransaction(
+        tx,
+        data.tenantId,
+        schoolCode,
+        enrollmentYear,
+      );
+      return tx.student.create({
+        data: {
+          ...data,
+          matricule,
+          enrollmentYear,
+          studentCode: matricule,
+          currentAcademicYearId: data.academicYearId,
+          status: 'ACTIVE',
+        },
+        include: {
+          schoolLevel: true,
+          academicYear: true,
+          studentGuardians: {
+            include: {
+              guardian: true,
+            },
+          },
+          studentEnrollments: {
+            include: {
+              class: true,
+            },
           },
         },
-        studentEnrollments: {
-          include: {
-            class: true,
-          },
-        },
-      },
+      });
     });
   }
 
@@ -218,20 +215,24 @@ export class StudentsPrismaService {
       gender?: string;
       nationality?: string;
       primaryLanguage?: string;
+      npi?: string;
       status?: string;
     }
   ) {
-    // Vérifier que l'élève existe
     await this.findStudentById(id, tenantId);
-
-    return this.prisma.student.update({
+    const { matricule: _m, enrollmentYear: _e, ...safeData } = data as typeof data & { matricule?: string; enrollmentYear?: number };
+    const updated = await this.prisma.student.update({
       where: { id },
-      data,
+      data: safeData,
       include: {
         schoolLevel: true,
         academicYear: true,
       },
     });
+    if (safeData.status === 'SUSPENDED' || safeData.status === 'TRANSFERRED') {
+      this.publicVerificationService.deactivateTokensForStudent(id).catch(() => {});
+    }
+    return updated;
   }
 
   /**

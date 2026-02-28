@@ -7,16 +7,32 @@ import { AppModule } from './app.module';
 import { RolesPermissionsBootstrapService } from './settings/services/roles-permissions-bootstrap.service';
 
 async function bootstrap() {
-  // ✅ Synchronisation automatique du schéma Prisma avec la BDD (tables et colonnes manquantes)
-  // db push met à jour la BDD pour qu'elle corresponde à schema.prisma sans fichier de migration.
+  // ✅ Migrations dynamiques et automatiques au démarrage : applique les migrations en attente puis génère le client
+  const apiRoot = join(__dirname, '..');
+  const stdioMode = process.env.NODE_ENV === 'production' ? 'pipe' : 'inherit';
+  const prismaSchema = 'prisma/schema.prisma';
   try {
-    const apiRoot = join(__dirname, '..');
-    execSync('npx prisma db push --schema=prisma/schema.prisma --skip-generate', {
+    execSync(`npx prisma migrate deploy --schema=${prismaSchema}`, {
       cwd: apiRoot,
-      stdio: process.env.NODE_ENV === 'production' ? 'pipe' : 'inherit',
+      stdio: stdioMode,
     });
-  } catch (err) {
-    console.warn('⚠️  Prisma db push (ignorable si BDD indisponible):', (err as Error)?.message);
+  } catch (migrateErr) {
+    try {
+      execSync(`npx prisma db push --schema=${prismaSchema}`, {
+        cwd: apiRoot,
+        stdio: stdioMode,
+      });
+    } catch {
+      console.warn('⚠️  Migrations / db push (ignorable si BDD indisponible):', (migrateErr as Error)?.message);
+    }
+  }
+  try {
+    execSync(`npx prisma generate --schema=${prismaSchema}`, {
+      cwd: apiRoot,
+      stdio: stdioMode,
+    });
+  } catch (genErr) {
+    console.warn('⚠️  Prisma generate (ignorable):', (genErr as Error)?.message);
   }
 
   // ✅ Optimisation : Désactiver les logs de démarrage en développement pour accélérer

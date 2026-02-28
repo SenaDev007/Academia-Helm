@@ -20,10 +20,10 @@ DB_HOST=localhost
 DB_PORT=5432
 DB_USERNAME=postgres
 DB_PASSWORD=VOTRE_MOT_DE_PASSE_POSTGRES
-DB_DATABASE=academia_hub
+DB_DATABASE=academia_helm
 
 # OU utiliser DATABASE_URL (format complet)
-DATABASE_URL=postgresql://postgres:VOTRE_MOT_DE_PASSE_POSTGRES@localhost:5432/academia_hub
+DATABASE_URL=postgresql://postgres:VOTRE_MOT_DE_PASSE_POSTGRES@localhost:5432/academia_helm
 ```
 
 ### 2. Vérifier les Credentials PostgreSQL
@@ -63,7 +63,7 @@ ALTER USER postgres WITH PASSWORD 'votre_nouveau_mot_de_passe';
 psql -U postgres
 
 # Créer la base de données
-CREATE DATABASE academia_hub;
+CREATE DATABASE academia_helm;
 
 # Vérifier
 \l
@@ -117,7 +117,7 @@ Vous devriez voir :
 ### Erreur : "database does not exist"
 ```bash
 psql -U postgres
-CREATE DATABASE academia_hub;
+CREATE DATABASE academia_helm;
 ```
 
 ### Erreur : "password authentication failed"

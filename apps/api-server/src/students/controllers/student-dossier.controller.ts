@@ -157,6 +157,22 @@ export class StudentDossierController {
   }
 
   /**
+   * GET /api/students/:studentId/verification-qr
+   * Retourne l'URL publique et l'image QR pour la carte scolaire (dossier / impression)
+   */
+  @Get(':studentId/verification-qr')
+  @Roles('DIRECTOR', 'ADMIN', 'TEACHER', 'PARENT', 'STUDENT')
+  async getVerificationQR(
+    @Param('studentId') studentId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Request() req: any,
+  ) {
+    const tenantId = req.user.tenantId;
+    if (!academicYearId) throw new Error('academicYearId est requis');
+    return this.verificationService.getStudentQRForDossier(tenantId, studentId, academicYearId);
+  }
+
+  /**
    * POST /api/students/:studentId/verification-token/generate
    * Génère un token de vérification publique pour un élève
    */
@@ -169,6 +185,25 @@ export class StudentDossierController {
   ) {
     const tenantId = req.user.tenantId;
     return this.verificationService.generateVerificationToken(
+      tenantId,
+      studentId,
+      body.academicYearId,
+    );
+  }
+
+  /**
+   * POST /api/students/:studentId/verification-token/regenerate
+   * Régénère le token (révocable, anti-abus : 1 fois / 5 min). Rôle directeur uniquement.
+   */
+  @Post(':studentId/verification-token/regenerate')
+  @Roles('DIRECTOR', 'ADMIN')
+  async regenerateVerificationToken(
+    @Param('studentId') studentId: string,
+    @Body() body: { academicYearId: string },
+    @Request() req: any,
+  ) {
+    const tenantId = req.user.tenantId;
+    return this.verificationService.regenerateToken(
       tenantId,
       studentId,
       body.academicYearId,

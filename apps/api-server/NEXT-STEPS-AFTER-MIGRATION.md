@@ -1,8 +1,8 @@
 # 🚀 Prochaines Étapes - Après Migration Initiale
 
 **Date**: Migration initiale réussie  
-**Migration**: `20260117123009_init_academia_hub`  
-**Base de données**: `academia_hub` (PostgreSQL Local)  
+**Migration**: `20260117123009_init_academia_helm`  
+**Base de données**: `academia_helm` (PostgreSQL Local)  
 **Statut**: ✅ **Migration appliquée avec succès**
 
 ---
@@ -13,8 +13,8 @@
 
 **Actions**:
 1. Ouvrez pgAdmin 4
-2. Actualisez la base `academia_hub` (clic droit → Refresh)
-3. Développez : `academia_hub` → `Schemas` → `public` → `Tables`
+2. Actualisez la base `academia_helm` (clic droit → Refresh)
+3. Développez : `academia_helm` → `Schemas` → `public` → `Tables`
 4. Vérifiez que toutes les tables sont présentes
 
 **Tables principales à vérifier**:
@@ -44,11 +44,11 @@ AND table_type = 'BASE TABLE';
 **Dans pgAdmin**:
 
 1. **Vérifier les Index**:
-   - `academia_hub` → `Schemas` → `public` → `Tables` → `tenants` → `Indexes`
+   - `academia_helm` → `Schemas` → `public` → `Tables` → `tenants` → `Indexes`
    - Vérifiez que les index sont créés (tenantId, academicYearId, etc.)
 
 2. **Vérifier les Foreign Keys**:
-   - `academia_hub` → `Schemas` → `public` → `Tables` → `students` → `Foreign Keys`
+   - `academia_helm` → `Schemas` → `public` → `Tables` → `students` → `Foreign Keys`
    - Vérifiez que les relations FK sont présentes
 
 **Avec SQL**:
@@ -209,7 +209,7 @@ npx prisma db seed
 ```bash
 # Dans pgAdmin Query Tool, exécutez le fichier SQL
 # Ou via psql :
-psql -U postgres -d academia_hub -f prisma/migrations/rls-policies.sql
+psql -U postgres -d academia_helm -f prisma/migrations/rls-policies.sql
 ```
 
 **Note**: RLS est surtout utile pour Supabase. Pour PostgreSQL local, vous pouvez l'appliquer si vous voulez tester la sécurité multi-tenant.
@@ -226,7 +226,7 @@ psql -U postgres -d academia_hub -f prisma/migrations/rls-policies.sql
 
 2. **Exporter les données locales** (si vous avez des données importantes):
    ```bash
-   pg_dump -U postgres -d academia_hub -F c -f academia_hub_backup.dump
+   pg_dump -U postgres -d academia_helm -F c -f academia_helm_backup.dump
    ```
 
 3. **Mettre à jour `.env`**:
@@ -247,7 +247,7 @@ psql -U postgres -d academia_hub -f prisma/migrations/rls-policies.sql
 
 5. **Importer les données** (si nécessaire):
    ```bash
-   pg_restore -U postgres -d academia_hub -f academia_hub_backup.dump
+   pg_restore -U postgres -d academia_helm -f academia_helm_backup.dump
    ```
 
 ---

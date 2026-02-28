@@ -52,14 +52,14 @@ export default function ModuleContentArea({
     <div className={cn('space-y-4', className)}>
       {/* Filtres persistants */}
       {filters && (
-        <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+        <div className="bg-white rounded-lg border border-gray-200 p-5 sm:p-6 shadow-sm">
           {filters}
         </div>
       )}
 
       {/* Toolbar (recherche, export, etc.) */}
       {toolbar && (
-        <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
+        <div className="bg-white rounded-lg border border-gray-200 px-5 py-4 sm:px-6 sm:py-4 shadow-sm">
           {toolbar}
         </div>
       )}
@@ -68,11 +68,12 @@ export default function ModuleContentArea({
       <div
         className={cn(
           'bg-white rounded-lg border border-gray-200 shadow-sm',
-          layout === 'table' && 'overflow-hidden',
-          layout === 'cards' && 'p-6',
-          layout === 'grid' && 'p-6',
-          layout === 'chart' && 'p-6',
-          layout === 'form' && 'p-6',
+          layout === 'table' && 'overflow-hidden p-4 sm:p-5 lg:p-6',
+          layout === 'default' && 'p-5 sm:p-6 lg:p-8',
+          layout === 'cards' && 'p-5 sm:p-6 lg:p-8',
+          layout === 'grid' && 'p-5 sm:p-6 lg:p-8',
+          layout === 'chart' && 'p-5 sm:p-6 lg:p-8',
+          layout === 'form' && 'p-5 sm:p-6 lg:p-8',
         )}
       >
         {/* État de chargement */}
@@ -118,7 +119,7 @@ export default function ModuleContentArea({
 
       {/* Pagination */}
       {pagination && (
-        <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+        <div className="bg-white rounded-lg border border-gray-200 px-5 py-4 sm:p-6 shadow-sm">
           {pagination}
         </div>
       )}

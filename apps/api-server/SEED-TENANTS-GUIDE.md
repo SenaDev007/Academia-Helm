@@ -45,7 +45,7 @@ Le script `seed-test-tenants.ts` crée :
 ### Prérequis
 
 1. **PostgreSQL doit être démarré**
-2. **Base de données `academia_hub` doit exister**
+2. **Base de données `academia_helm` doit exister**
 3. **Variables d'environnement configurées** dans `.env`
 
 ### Exécuter le script

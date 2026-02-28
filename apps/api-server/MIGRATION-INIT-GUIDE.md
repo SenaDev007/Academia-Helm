@@ -19,7 +19,7 @@ Il existe déjà une migration dans `prisma/migrations/20250101000000_init_compl
 
 **Options**:
 1. **Utiliser la migration existante** (si elle est complète)
-2. **Créer une nouvelle migration** `init_academia_hub` (comme demandé)
+2. **Créer une nouvelle migration** `init_academia_helm` (comme demandé)
 
 ## 🚀 Solutions
 
@@ -49,7 +49,7 @@ Il existe déjà une migration dans `prisma/migrations/20250101000000_init_compl
 4. **Une fois la connexion fonctionnelle**, lancer la migration:
    ```bash
    cd apps/api-server
-   npx prisma migrate dev --name init_academia_hub --schema=prisma/schema.prisma
+   npx prisma migrate dev --name init_academia_helm --schema=prisma/schema.prisma
    ```
 
 ### Solution 2: Utiliser la Migration Existante
@@ -77,7 +77,7 @@ cd apps/api-server
 rm -rf prisma/migrations
 
 # Créer une nouvelle migration
-npx prisma migrate dev --name init_academia_hub --schema=prisma/schema.prisma
+npx prisma migrate dev --name init_academia_helm --schema=prisma/schema.prisma
 ```
 
 ## 📋 Checklist Avant Migration
@@ -94,7 +94,7 @@ npx prisma migrate dev --name init_academia_hub --schema=prisma/schema.prisma
 cd apps/api-server
 
 # Créer la migration initiale
-npx prisma migrate dev --name init_academia_hub --schema=prisma/schema.prisma
+npx prisma migrate dev --name init_academia_helm --schema=prisma/schema.prisma
 
 # Vérifier l'état
 npx prisma migrate status

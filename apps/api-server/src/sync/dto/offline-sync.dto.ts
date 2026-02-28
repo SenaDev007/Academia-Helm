@@ -61,6 +61,11 @@ export class OfflineSyncRequestDto {
   @IsOptional()
   lastSyncTimestamp?: string; // Timestamp dernière sync (ISO 8601)
 
+  /** Identifiant appareil (UserDevice.id ou deviceHash) pour mise à jour lastSyncAt et audit */
+  @IsString()
+  @IsOptional()
+  device_id?: string;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => OfflineOperationDto)
@@ -106,7 +111,7 @@ export class OfflineOperationResultDto {
 }
 
 /**
- * Réponse de synchronisation offline
+ * Réponse de synchronisation offline (spec ERP : status, synced_ids, conflicts)
  */
 export class OfflineSyncResponseDto {
   @IsString()
@@ -118,6 +123,13 @@ export class OfflineSyncResponseDto {
   tenantId: string;
 
   success: boolean; // True si aucune erreur fatale
+  /** 'success' | 'partial' | 'error' pour compatibilité spec */
+  status?: 'success' | 'partial' | 'error';
+  /** IDs des enregistrements synchronisés (spec) */
+  synced_ids?: string[];
+  /** Conflits détectés (spec) */
+  conflicts?: Array<{ operation_id: string; reason?: string; server_data?: any }>;
+
   total_operations: number; // Nombre total d'opérations traitées
   successful_operations: number; // Nombre d'opérations réussies
   conflicted_operations: number; // Nombre d'opérations en conflit

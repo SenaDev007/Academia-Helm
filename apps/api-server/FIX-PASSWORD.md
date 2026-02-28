@@ -50,7 +50,7 @@ Vous devriez voir :
 ```
 ✅ Connexion réussie !
 ✅ Version PostgreSQL: ...
-✅ Base de données actuelle: academia_hub
+✅ Base de données actuelle: academia_helm
 ```
 
 ## ⚠️ Important

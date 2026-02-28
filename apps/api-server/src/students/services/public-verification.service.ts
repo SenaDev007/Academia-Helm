@@ -1,11 +1,10 @@
 /**
  * ============================================================================
- * PUBLIC VERIFICATION SERVICE - QR CODE DE VÉRIFICATION PUBLIQUE
+ * PUBLIC VERIFICATION SERVICE - QR CARTE SCOLAIRE (VÉRIFICATION PUBLIQUE)
  * ============================================================================
- * 
- * Service pour générer et valider les tokens de vérification publique
- * Permet de vérifier l'identité d'un élève sans exposer de données sensibles
- * 
+ * Token = SHA256(randomBytes(32)), aucun matricule/tenant dans le QR.
+ * URL : https://verify.academiahelm.com/v/{token}
+ * Réponse : Nom, École, Année active, Statut, Photo — pas d'info sensible.
  * ============================================================================
  */
 
@@ -13,15 +12,50 @@ import { Injectable, Logger, BadRequestException, NotFoundException } from '@nes
 import { PrismaService } from '../../database/prisma.service';
 import * as crypto from 'crypto';
 
+const REGENERATE_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 min entre deux régénérations
+
 @Injectable()
 export class PublicVerificationService {
   private readonly logger = new Logger(PublicVerificationService.name);
 
   constructor(private readonly prisma: PrismaService) {}
 
+  /** URL publique de vérification (sans tenant/matricule) */
+  getPublicVerifyUrl(token: string): string {
+    const base = process.env.PUBLIC_VERIFY_URL || 'https://verify.academiahelm.com';
+    return `${base.replace(/\/$/, '')}/v/${encodeURIComponent(token)}`;
+  }
+
+  /** Génère l'image QR en Data URL (errorCorrectionLevel H, 300px) */
+  async generateQRDataURL(publicUrl: string): Promise<string> {
+    try {
+      const QRCode = await import('qrcode');
+      return QRCode.toDataURL(publicUrl, {
+        errorCorrectionLevel: 'H',
+        margin: 1,
+        width: 300,
+      });
+    } catch {
+      this.logger.warn('qrcode package not available, returning empty QR');
+      return '';
+    }
+  }
+
   /**
-   * Génère un token de vérification publique pour un élève
-   * Le token est signé et non devinable
+   * Journalise une tentative de vérification (rate limiting, audit)
+   */
+  async logVerification(tokenId: string | null, ipAddress: string | null, result: 'VALID' | 'INVALID' | 'EXPIRED'): Promise<void> {
+    try {
+      await this.prisma.publicVerificationLog.create({
+        data: { tokenId, ipAddress, result },
+      });
+    } catch (e) {
+      this.logger.warn(`Verification log failed: ${(e as Error).message}`);
+    }
+  }
+
+  /**
+   * Génère un token de vérification publique (SHA256 cryptographiquement fort, pas de payload sensible)
    */
   async generateVerificationToken(
     tenantId: string,
@@ -45,8 +79,8 @@ export class PublicVerificationService {
       throw new NotFoundException('Élève non trouvé ou inactif');
     }
 
-    if (!student.identifier) {
-      throw new BadRequestException('L\'élève doit avoir un matricule pour générer un token de vérification');
+    if (!(student as any).matricule && !student.identifier) {
+      throw new BadRequestException('L\'élève doit avoir un matricule institutionnel pour générer un token de vérification');
     }
 
     // Vérifier si un token actif existe déjà pour cette année
@@ -83,18 +117,17 @@ export class PublicVerificationService {
     const expiresAt = new Date(academicYear.endDate);
     expiresAt.setMonth(expiresAt.getMonth() + 1); // +1 mois après la fin de l'année
 
-    // Générer un token sécurisé
-    const token = this.generateSecureToken(studentId, tenantId, academicYearId);
-    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    // Token = SHA256(randomBytes(32)) — aucun matricule/tenant dans le QR
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const token = crypto.createHash('sha256').update(rawToken).digest('hex');
 
-    // Créer le token en base
     const verificationToken = await this.prisma.publicVerificationToken.create({
       data: {
         tenantId,
         entityType: 'STUDENT',
         entityId: studentId,
-        tokenHash,
-        token, // Stocké temporairement pour la génération du QR Code
+        tokenHash: token,
+        token,
         academicYearId,
         expiresAt,
         isActive: true,
@@ -111,9 +144,66 @@ export class PublicVerificationService {
   }
 
   /**
-   * Valide un token de vérification et retourne les données minimales de l'élève
+   * Retourne l'URL publique et l'image QR pour le dossier élève / carte scolaire
    */
-  async verifyToken(token: string): Promise<{
+  async getStudentQRForDossier(
+    tenantId: string,
+    studentId: string,
+    academicYearId: string,
+  ): Promise<{ publicUrl: string; qrImage: string; isActive: boolean }> {
+    let record = await this.prisma.publicVerificationToken.findFirst({
+      where: { tenantId, entityId: studentId, academicYearId, isActive: true },
+    });
+    if (!record || record.expiresAt <= new Date()) {
+      await this.generateVerificationToken(tenantId, studentId, academicYearId);
+      record = await this.prisma.publicVerificationToken.findFirst({
+        where: { tenantId, entityId: studentId, academicYearId },
+      });
+    }
+    if (!record) throw new NotFoundException('Token de vérification non trouvé');
+    const publicUrl = this.getPublicVerifyUrl(record.token);
+    const qrImage = await this.generateQRDataURL(publicUrl);
+    return {
+      publicUrl,
+      qrImage,
+      isActive: record.isActive && record.expiresAt > new Date(),
+    };
+  }
+
+  /**
+   * Désactive tous les tokens d'un élève (ex. élève suspendu)
+   */
+  async deactivateTokensForStudent(studentId: string): Promise<void> {
+    const r = await this.prisma.publicVerificationToken.updateMany({
+      where: { entityId: studentId, isActive: true },
+      data: { isActive: false },
+    });
+    if (r.count > 0) this.logger.log(`Tokens désactivés pour l'élève ${studentId}`);
+  }
+
+  /**
+   * Régénère le token (désactive l'ancien, crée un nouveau). Limite : 1 fois toutes les 5 min.
+   */
+  async regenerateToken(tenantId: string, studentId: string, academicYearId: string): Promise<{ token: string; tokenHash: string; expiresAt: Date }> {
+    const last = await this.prisma.publicVerificationToken.findFirst({
+      where: { tenantId, entityId: studentId, academicYearId },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (last && Date.now() - last.createdAt.getTime() < REGENERATE_MIN_INTERVAL_MS) {
+      throw new BadRequestException('Régénération possible dans quelques minutes (anti-abus)');
+    }
+    await this.prisma.publicVerificationToken.updateMany({
+      where: { tenantId, entityId: studentId, academicYearId },
+      data: { isActive: false },
+    });
+    return this.generateVerificationToken(tenantId, studentId, academicYearId);
+  }
+
+  /**
+   * Valide un token (URL /v/:token). Retourne Nom, École, Année, Statut, Photo — pas de tenant/matricule sensible.
+   * @param ipAddress pour journalisation (rate limiting, audit)
+   */
+  async verifyToken(token: string, ipAddress?: string | null): Promise<{
     student: {
       id: string;
       firstName: string;
@@ -130,11 +220,13 @@ export class PublicVerificationService {
     };
     isValid: boolean;
     isExpired: boolean;
+    message?: string;
   }> {
-    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-
+    const lookupHash = token.length === 64 && /^[a-f0-9]+$/i.test(token)
+      ? token
+      : crypto.createHash('sha256').update(token).digest('hex');
     const verificationToken = await this.prisma.publicVerificationToken.findUnique({
-      where: { tokenHash },
+      where: { tokenHash: lookupHash },
       include: {
         student: {
           include: {
@@ -163,10 +255,12 @@ export class PublicVerificationService {
     });
 
     if (!verificationToken) {
+      await this.logVerification(null, ipAddress ?? null, 'INVALID');
       return {
         student: null as any,
         isValid: false,
         isExpired: false,
+        message: 'Carte invalide ou désactivée',
       };
     }
 
@@ -174,12 +268,16 @@ export class PublicVerificationService {
     const isActive = verificationToken.isActive && !isExpired;
 
     if (!isActive) {
+      await this.logVerification(verificationToken.id, ipAddress ?? null, isExpired ? 'EXPIRED' : 'INVALID');
       return {
         student: null as any,
         isValid: false,
         isExpired,
+        message: 'Carte invalide ou désactivée',
       };
     }
+
+    await this.logVerification(verificationToken.id, ipAddress ?? null, 'VALID');
 
     // Incrémenter le compteur de vérifications
     await this.prisma.publicVerificationToken.update({
@@ -196,42 +294,27 @@ export class PublicVerificationService {
     const enrollment = student.studentEnrollments?.[0];
     const institution = student.tenant.schools?.[0]?.name || student.tenant.name;
 
+    const fullName = [student.firstName, student.lastName].filter(Boolean).join(' ').trim();
     return {
       student: {
         id: student.id,
         firstName: student.firstName,
         lastName: student.lastName,
+        fullName,
         dateOfBirth: student.dateOfBirth || undefined,
         gender: student.gender || undefined,
-        photo: undefined, // À implémenter si stockage de photos
-        matricule: student.identifier?.globalMatricule || 'N/A',
+        photo: (student as any).photoUrl || undefined,
+        matricule: (student as any).matricule ?? student.identifier?.globalMatricule ?? 'N/A',
         class: enrollment?.class?.name || undefined,
         level: enrollment?.schoolLevel?.label || undefined,
         academicYear: student.academicYear.name,
         status: student.status,
         institution,
+        school: institution,
       },
       isValid: true,
       isExpired: false,
     };
-  }
-
-  /**
-   * Génère un token sécurisé non devinable
-   */
-  private generateSecureToken(studentId: string, tenantId: string, academicYearId: string): string {
-    const randomBytes = crypto.randomBytes(32).toString('hex');
-    const timestamp = Date.now().toString();
-    const payload = `${studentId}-${tenantId}-${academicYearId}-${timestamp}-${randomBytes}`;
-    
-    // Signer avec HMAC SHA256
-    const secret = process.env.VERIFICATION_SECRET || 'academia-hub-verification-secret';
-    const signature = crypto.createHmac('sha256', secret).update(payload).digest('hex');
-    
-    // Format final : base64url pour URL-safe
-    const token = Buffer.from(`${payload}:${signature}`).toString('base64url');
-    
-    return token;
   }
 
   /**

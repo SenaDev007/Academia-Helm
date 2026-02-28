@@ -21,8 +21,8 @@ Academia Hub nécessite **deux fichiers de configuration** :
 # ============================================================================
 # BASE DE DONNÉES
 # ============================================================================
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/academia_hub
-DIRECT_URL=postgresql://postgres:postgres@localhost:5432/academia_hub
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/academia_helm
+DIRECT_URL=postgresql://postgres:postgres@localhost:5432/academia_helm
 
 # ============================================================================
 # API SERVER
@@ -45,13 +45,13 @@ JWT_EXPIRES_IN=7d
 # ============================================================================
 # BASE DE DONNÉES
 # ============================================================================
-DATABASE_URL=postgresql://user:password@host:5432/academia_hub
-DIRECT_URL=postgresql://user:password@host:5432/academia_hub
+DATABASE_URL=postgresql://user:password@host:5432/academia_helm
+DIRECT_URL=postgresql://user:password@host:5432/academia_helm
 DB_HOST=your-db-host
 DB_PORT=5432
 DB_USERNAME=your-db-user
 DB_PASSWORD=your-db-password
-DB_DATABASE=academia_hub
+DB_DATABASE=academia_helm
 DB_SSL=true
 
 # ============================================================================
@@ -155,7 +155,7 @@ NEXT_PUBLIC_GA_ID=G-XXXXXXXXXX
 | `DB_PORT` | Port PostgreSQL | `5432` | ⚠️ Optionnel |
 | `DB_USERNAME` | Nom d'utilisateur PostgreSQL | `postgres` | ⚠️ Optionnel |
 | `DB_PASSWORD` | Mot de passe PostgreSQL | `postgres` | ⚠️ Optionnel |
-| `DB_DATABASE` | Nom de la base de données | `academia_hub` | ⚠️ Optionnel |
+| `DB_DATABASE` | Nom de la base de données | `academia_helm` | ⚠️ Optionnel |
 | `DB_SSL` | Activer SSL pour PostgreSQL | `true` ou `false` | ⚠️ Optionnel |
 
 #### API Server
@@ -235,8 +235,8 @@ cp ENV-EXAMPLE.txt .env
 Puis éditer `.env` avec vos valeurs :
 
 ```env
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/academia_hub
-DIRECT_URL=postgresql://postgres:postgres@localhost:5432/academia_hub
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/academia_helm
+DIRECT_URL=postgresql://postgres:postgres@localhost:5432/academia_helm
 PORT=3000
 NODE_ENV=development
 FRONTEND_URL=http://localhost:3001
@@ -331,8 +331,8 @@ PORT=3001
 
 **`apps/api-server/.env`** :
 ```env
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/academia_hub
-DIRECT_URL=postgresql://postgres:postgres@localhost:5432/academia_hub
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/academia_helm
+DIRECT_URL=postgresql://postgres:postgres@localhost:5432/academia_helm
 PORT=3000
 NODE_ENV=development
 FRONTEND_URL=http://localhost:3001
@@ -349,8 +349,8 @@ PORT=3001
 
 **`apps/api-server/.env`** :
 ```env
-DATABASE_URL=postgresql://user:password@db-host:5432/academia_hub
-DIRECT_URL=postgresql://user:password@db-host:5432/academia_hub
+DATABASE_URL=postgresql://user:password@db-host:5432/academia_helm
+DIRECT_URL=postgresql://user:password@db-host:5432/academia_helm
 PORT=3000
 NODE_ENV=production
 FRONTEND_URL=https://app.academia-hub.com

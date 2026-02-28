@@ -26,7 +26,7 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: academia_hub
+      POSTGRES_DB: academia_helm
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_HOST_AUTH_METHOD: trust
@@ -59,13 +59,13 @@ services:
         condition: service_healthy  # ✅ Attend que PostgreSQL soit prêt
     environment:
       # Database
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/academia_hub
-      DIRECT_URL: postgresql://postgres:postgres@postgres:5432/academia_hub
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/academia_helm
+      DIRECT_URL: postgresql://postgres:postgres@postgres:5432/academia_helm
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USERNAME: postgres
       DB_PASSWORD: postgres
-      DB_DATABASE: academia_hub
+      DB_DATABASE: academia_helm
       DB_SSL: "false"
       
       # API Configuration

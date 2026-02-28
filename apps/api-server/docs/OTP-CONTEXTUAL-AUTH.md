@@ -338,7 +338,7 @@ TWILIO_PHONE_NUMBER=+1234567890
 
 ```bash
 # PostgreSQL
-psql -U postgres -d academia_hub -f prisma/migrations/add-otp-device-tables.sql
+psql -U postgres -d academia_helm -f prisma/migrations/add-otp-device-tables.sql
 
 # Ou via Prisma
 npx prisma migrate dev --name add_otp_device_tables

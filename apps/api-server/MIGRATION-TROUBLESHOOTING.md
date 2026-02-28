@@ -96,7 +96,7 @@ Si le port 5432 est bloqué, vous pouvez utiliser le pooler (port 6543) pour les
 
 ```bash
 cd apps/api-server
-npx prisma migrate dev --name init_academia_hub --schema=prisma/schema.prisma
+npx prisma migrate dev --name init_academia_helm --schema=prisma/schema.prisma
 ```
 
 ---

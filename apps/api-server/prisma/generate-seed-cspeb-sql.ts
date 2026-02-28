@@ -23,7 +23,7 @@ async function generateSql() {
 -- ============================================================================
 -- 
 -- Script SQL pour créer le tenant CSPEB et les utilisateurs associés
--- Exécuter ce script dans pgAdmin 4 Query Tool sur la base de données academia_hub
+-- Exécuter ce script dans pgAdmin 4 Query Tool sur la base de données academia_helm
 -- 
 -- ============================================================================
 
@@ -296,7 +296,7 @@ SELECT
   console.log(`   ${outputPath}\n`);
   console.log('📝 Vous pouvez maintenant exécuter ce fichier dans pgAdmin 4 Query Tool');
   console.log('   - Ouvrez pgAdmin 4');
-  console.log('   - Connectez-vous à la base de données academia_hub');
+  console.log('   - Connectez-vous à la base de données academia_helm');
   console.log('   - Ouvrez Query Tool (outil de requête)');
   console.log('   - Chargez et exécutez le fichier: apps/api-server/prisma/seed-cspeb.sql\n');
 }

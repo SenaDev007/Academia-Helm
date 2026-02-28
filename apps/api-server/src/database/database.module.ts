@@ -61,7 +61,7 @@ import { DatabaseTriggersBootstrapService } from './database-triggers-bootstrap.
           port: configService.get<number>('DB_PORT', 5432),
           username: configService.get<string>('DB_USERNAME', 'postgres'),
           password: configService.get<string>('DB_PASSWORD', 'postgres'),
-          database: configService.get<string>('DB_DATABASE', 'academia_hub'),
+          database: configService.get<string>('DB_DATABASE', 'academia_helm'),
         };
       },
       inject: [ConfigService],

@@ -12,13 +12,14 @@ export interface ConflictDetectionResult {
 
 /**
  * Service de détection de conflits
- * 
- * RÈGLE GÉNÉRALE : PostgreSQL gagne toujours
- * 
+ *
+ * RÈGLE GÉNÉRALE : PostgreSQL gagne toujours (source de vérité).
+ * FINANCE : Aucun merge automatique — si conflit → blocage, intervention requise.
+ *
  * CAS DE CONFLIT :
- * - Enregistrement modifié côté serveur
+ * - Enregistrement modifié côté serveur (updatedAt ou version)
  * - Enregistrement supprimé côté serveur
- * - Règle métier violée
+ * - Règle métier violée (ex: reçu émis, élève supprimé)
  */
 @Injectable()
 export class ConflictDetectionService {

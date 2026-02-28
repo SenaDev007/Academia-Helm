@@ -9,6 +9,7 @@ import {
   OperationSyncStatus,
   OfflineOperationType,
 } from '../dto/offline-sync.dto';
+import { SyncPullRequestDto, SyncPullResponseDto } from '../dto/sync-pull.dto';
 import { ConflictDetectionService } from './conflict-detection.service';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -45,9 +46,27 @@ export class OfflineSyncService {
   async syncOfflineOperations(
     request: OfflineSyncRequestDto,
     userId: string,
+    ipAddress?: string,
   ): Promise<OfflineSyncResponseDto> {
     const syncId = uuidv4();
     this.logger.log(`[${syncId}] Début synchronisation offline pour tenant ${request.tenantId}`);
+
+    // ÉTAPE 0: VALIDATION APPAREIL (si device_id fourni)
+    let deviceIdForLastSync: string | null = null;
+    if (request.device_id) {
+      const device = await this.prisma.userDevice.findFirst({
+        where: {
+          OR: [{ id: request.device_id }, { deviceHash: request.device_id }],
+          userId,
+          tenantId: request.tenantId,
+          revokedAt: null,
+        },
+      });
+      if (!device) {
+        throw new ForbiddenException('Appareil non reconnu ou révoqué');
+      }
+      deviceIdForLastSync = device.id;
+    }
 
     // ÉTAPE 1: VALIDATION SCHÉMA (OBLIGATOIRE)
     const schemaValidation = await this.schemaValidator.validateSQLiteConformity(
@@ -119,10 +138,20 @@ export class OfflineSyncService {
       }
     }
 
+    const syncedIds = results
+      .filter((r) => r.status === OperationSyncStatus.SUCCESS && r.server_record_id)
+      .map((r) => r.server_record_id as string);
+    const conflicts = results
+      .filter((r) => r.status === OperationSyncStatus.CONFLICT)
+      .map((r) => ({ operation_id: r.operation_id, reason: r.conflict_reason, server_data: r.server_data }));
+
     const response: OfflineSyncResponseDto = {
       sync_id: syncId,
       tenantId: request.tenantId,
       success: failedCount === 0 && conflictedCount === 0,
+      status: failedCount === 0 && conflictedCount === 0 ? 'success' : conflictedCount > 0 ? 'partial' : 'error',
+      synced_ids: syncedIds,
+      conflicts,
       total_operations: request.operations.length,
       successful_operations: successfulCount,
       conflicted_operations: conflictedCount,
@@ -136,7 +165,109 @@ export class OfflineSyncService {
       `[${syncId}] Synchronisation terminée: ${successfulCount} succès, ${conflictedCount} conflits, ${failedCount} échecs`,
     );
 
+    // Mise à jour lastSyncAt sur l'appareil (ERP institutionnel)
+    if (deviceIdForLastSync) {
+      await this.prisma.userDevice.update({
+        where: { id: deviceIdForLastSync },
+        data: { lastSyncAt: new Date(), lastUsedAt: new Date() },
+      }).catch((err) => this.logger.warn(`[${syncId}] Mise à jour lastSyncAt ignorée: ${err.message}`));
+    }
+
+    // Journalisation sécurité : conflits ou anomalie
+    if (conflictedCount > 0) {
+      await this.logSecurityEvent(request.tenantId, userId, 'SYNC_CONFLICT', 'MEDIUM', {
+        syncId,
+        conflictedCount,
+        total: request.operations.length,
+      }, ipAddress);
+    }
+    if (failedCount >= 5) {
+      await this.logSecurityEvent(request.tenantId, userId, 'SYNC_ANOMALY', 'HIGH', {
+        syncId,
+        failedCount,
+        total: request.operations.length,
+      }, ipAddress);
+    }
+
     return response;
+  }
+
+  private async logSecurityEvent(
+    tenantId: string,
+    userId: string | null,
+    eventType: string,
+    severity: string,
+    metadata: Record<string, unknown>,
+    ipAddress?: string,
+  ): Promise<void> {
+    try {
+      await this.prisma.securityEvent.create({
+        data: {
+          tenantId,
+          userId: userId ?? undefined,
+          eventType,
+          severity,
+          ipAddress: ipAddress ?? undefined,
+          metadata: metadata as any,
+        },
+      });
+    } catch (e) {
+      this.logger.warn('Log SecurityEvent ignoré', e);
+    }
+  }
+
+  /**
+   * Synchronisation descendante (PostgreSQL → client) : enregistrements modifiés après last_sync_at
+   */
+  async pull(
+    request: SyncPullRequestDto,
+    userId: string,
+    ipAddress?: string,
+  ): Promise<SyncPullResponseDto> {
+    await this.validateTenantAndPermissions(request.tenant_id, userId);
+
+    const since = new Date(request.last_sync_at);
+
+    if (request.device_id) {
+      const device = await this.prisma.userDevice.findFirst({
+        where: {
+          OR: [{ id: request.device_id }, { deviceHash: request.device_id }],
+          userId,
+          tenantId: request.tenant_id,
+          revokedAt: null,
+        },
+      });
+      if (device) {
+        await this.prisma.userDevice.update({
+          where: { id: device.id },
+          data: { lastSyncAt: new Date(), lastUsedAt: new Date() },
+        });
+      }
+    }
+
+    const [students, studentEnrollments, payments] = await Promise.all([
+      this.prisma.student.findMany({
+        where: { tenantId: request.tenant_id, updatedAt: { gt: since } },
+      }),
+      this.prisma.studentEnrollment.findMany({
+        where: { tenantId: request.tenant_id, updatedAt: { gt: since } },
+      }),
+      this.prisma.payment.findMany({
+        where: { tenantId: request.tenant_id, updatedAt: { gt: since } },
+      }),
+    ]);
+
+    const pulledAt = new Date().toISOString();
+    return {
+      tenant_id: request.tenant_id,
+      last_sync_at: request.last_sync_at,
+      pulled_at: pulledAt,
+      entities: {
+        students: students as any[],
+        studentEnrollments: studentEnrollments as any[],
+        payments: payments as any[],
+      },
+    };
   }
 
   /**

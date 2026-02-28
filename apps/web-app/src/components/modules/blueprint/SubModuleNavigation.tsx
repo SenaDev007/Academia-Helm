@@ -79,7 +79,7 @@ export default function SubModuleNavigation({
   return (
     <div className={cn('bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden', className)}>
       <nav
-        className="flex border-b border-gray-200 overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
+        className="flex border-b border-gray-200 overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 px-4 sm:px-6"
         aria-label="Sous-modules"
       >
         {modules.map((module) => {

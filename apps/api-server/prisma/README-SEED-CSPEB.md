@@ -65,7 +65,7 @@ Ouvrez `apps/api-server/prisma/seed-cspeb.sql` et remplacez:
 
 1. Ouvrez **pgAdmin 4**
 2. Connectez-vous à votre base de données PostgreSQL
-3. Sélectionnez la base `academia_hub`
+3. Sélectionnez la base `academia_helm`
 4. Ouvrez **Query Tool** (Menu: Tools → Query Tool)
 5. Chargez le fichier `apps/api-server/prisma/seed-cspeb.sql`
 6. Exécutez (F5 ou bouton Execute)

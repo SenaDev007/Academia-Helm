@@ -26,4 +26,9 @@ export class CreateStudentDto {
   @IsOptional()
   @IsString()
   address?: string;
+
+  /** NPI : Numéro d'Identification Personnel (citoyens béninois). Distinct du matricule Academia Helm et du numéro Educmaster. */
+  @IsOptional()
+  @IsString()
+  npi?: string;
 }

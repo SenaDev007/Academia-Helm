@@ -38,8 +38,7 @@ interface DossierData {
     gender?: string;
     nationality?: string;
     placeOfBirth?: string;
-    legalDocumentType?: string;
-    legalDocumentNumber?: string;
+    npi?: string;
     regimeType?: string;
     studentCode?: string;
     matricule: string;
@@ -89,8 +88,10 @@ interface DossierData {
   }>;
 }
 
+type VerificationQR = { publicUrl: string; qrImage: string; isActive: boolean };
+
 export default function StudentDossierSection({ studentId }: { studentId: string }) {
-  const { schoolLevel } = useModuleContext();
+  const { schoolLevel, academicYear } = useModuleContext();
   const [dossier, setDossier] = useState<DossierData | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedTab, setSelectedTab] = useState<
@@ -103,10 +104,32 @@ export default function StudentDossierSection({ studentId }: { studentId: string
   const [changeClassPayload, setChangeClassPayload] = useState({ academicYearId: '', newClassId: '' });
   const [classesList, setClassesList] = useState<{ id: string; name: string }[]>([]);
   const [changeClassSubmitting, setChangeClassSubmitting] = useState(false);
+  const [verificationQR, setVerificationQR] = useState<VerificationQR | null>(null);
+  const [verificationQRLoading, setVerificationQRLoading] = useState(false);
+  const [regenerateQRLoading, setRegenerateQRLoading] = useState(false);
 
   useEffect(() => {
     loadDossier();
   }, [studentId, academicYearId]);
+
+  const effectiveAcademicYearId = academicYear?.id || academicYearId;
+  useEffect(() => {
+    if (selectedTab !== 'card' || !studentId || !effectiveAcademicYearId) {
+      setVerificationQR(null);
+      return;
+    }
+    let cancelled = false;
+    setVerificationQRLoading(true);
+    fetch(`/api/students/${studentId}/verification-qr?academicYearId=${encodeURIComponent(effectiveAcademicYearId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data) setVerificationQR({ publicUrl: data.publicUrl, qrImage: data.qrImage, isActive: data.isActive });
+        else if (!cancelled) setVerificationQR(null);
+      })
+      .catch(() => { if (!cancelled) setVerificationQR(null); })
+      .finally(() => { if (!cancelled) setVerificationQRLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedTab, studentId, effectiveAcademicYearId]);
 
   useEffect(() => {
     if (selectedTab === 'history' && studentId) {
@@ -218,8 +241,13 @@ export default function StudentDossierSection({ studentId }: { studentId: string
                     </p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Matricule</label>
-                    <p className="text-sm text-gray-900 font-mono">{dossier.identity.matricule || 'N/A'}</p>
+                    <div className="flex items-center gap-2 mb-1">
+                      <label className="block text-sm font-medium text-gray-700">Matricule</label>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                        Identité institutionnelle
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-900 font-mono" title="Non modifiable">{dossier.identity.matricule || 'N/A'}</p>
                   </div>
                   {dossier.identity.dateOfBirth && (
                     <div>
@@ -257,13 +285,10 @@ export default function StudentDossierSection({ studentId }: { studentId: string
                       <p className="text-sm text-gray-900">{dossier.identity.placeOfBirth}</p>
                     </div>
                   )}
-                  {(dossier.identity.legalDocumentType || dossier.identity.legalDocumentNumber) && (
-                    <div className="col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Pièce d&apos;identité</label>
-                      <p className="text-sm text-gray-900">
-                        {dossier.identity.legalDocumentType || '—'}
-                        {dossier.identity.legalDocumentNumber ? ` — ${dossier.identity.legalDocumentNumber}` : ''}
-                      </p>
+                  {dossier.identity.npi && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">NPI (Numéro d&apos;identification personnel)</label>
+                      <p className="text-sm text-gray-900">{dossier.identity.npi}</p>
                     </div>
                   )}
                   {dossier.identity.regimeType && (
@@ -673,13 +698,83 @@ export default function StudentDossierSection({ studentId }: { studentId: string
           {selectedTab === 'card' && (
             <div className="space-y-6">
               <h3 className="text-lg font-semibold text-gray-900">Carte scolaire</h3>
+
+              {/* QR public — vérification carte (spec: afficher QR, badge statut, régénérer) */}
+              <div className="bg-slate-50 rounded-lg border border-slate-200 p-4">
+                <h4 className="text-sm font-medium text-gray-900 mb-2">QR vérification publique</h4>
+                <p className="text-xs text-gray-600 mb-3">
+                  Ce QR permet de vérifier l&apos;authenticité de la carte (verify.academiahelm.com). Aucune donnée sensible dans le QR.
+                </p>
+                {verificationQRLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Chargement du QR…
+                  </div>
+                ) : verificationQR ? (
+                  <div className="flex flex-wrap items-start gap-4">
+                    <div className="flex flex-col items-center gap-2">
+                      {verificationQR.qrImage ? (
+                        <img src={verificationQR.qrImage} alt="QR vérification" className="w-[180px] h-[180px] rounded border border-gray-200" />
+                      ) : (
+                        <div className="w-[180px] h-[180px] rounded border border-gray-200 bg-gray-100 flex items-center justify-center text-xs text-gray-500">
+                          QR non disponible
+                        </div>
+                      )}
+                      <span
+                        className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                          verificationQR.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-700'
+                        }`}
+                      >
+                        {verificationQR.isActive ? 'Carte active' : 'Carte désactivée'}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0 space-y-2">
+                      <p className="text-xs text-gray-600">
+                        Vérification : <a href={verificationQR.publicUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">verify.academiahelm.com</a>
+                      </p>
+                      <button
+                        type="button"
+                        disabled={regenerateQRLoading}
+                        onClick={async () => {
+                          if (!effectiveAcademicYearId) return;
+                          setRegenerateQRLoading(true);
+                          try {
+                            const res = await fetch(`/api/students/${studentId}/verification-token/regenerate`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ academicYearId: effectiveAcademicYearId }),
+                            });
+                            if (res.ok) {
+                              const qrRes = await fetch(`/api/students/${studentId}/verification-qr?academicYearId=${encodeURIComponent(effectiveAcademicYearId)}`);
+                              const d = qrRes.ok ? await qrRes.json() : null;
+                              if (d) setVerificationQR({ publicUrl: d.publicUrl, qrImage: d.qrImage, isActive: d.isActive });
+                            } else {
+                              const err = await res.json().catch(() => ({}));
+                              window.alert(err.message || 'Régénération impossible (limite anti-abus : 1 fois / 5 min ou rôle insuffisant).');
+                            }
+                          } finally {
+                            setRegenerateQRLoading(false);
+                          }
+                        }}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-amber-800 bg-amber-100 border border-amber-200 rounded hover:bg-amber-200 disabled:opacity-50"
+                      >
+                        <RefreshCw className={regenerateQRLoading ? 'w-4 h-4 animate-spin' : 'w-4 h-4'} />
+                        {regenerateQRLoading ? 'En cours…' : 'Régénérer QR'}
+                      </button>
+                      <p className="text-xs text-gray-500">Rôle directeur uniquement. Limite : 1 fois / 5 min.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">Sélectionnez une année scolaire ou générez un token à l&apos;admission.</p>
+                )}
+              </div>
+
               {dossier.currentIdCard ? (
                 <div className="bg-gray-50 rounded-lg p-4 space-y-3">
                   <p className="text-sm font-medium">N° carte : {dossier.currentIdCard.cardNumber}</p>
                   <p className="text-xs text-gray-500">
                     Générée le {new Date(dossier.currentIdCard.generatedAt).toLocaleDateString('fr-FR')}
                   </p>
-                  <p className="text-sm text-gray-600">QR et vérification publique disponibles sur la page Cartes Scolaires.</p>
                   <a
                     href="/app/students/id-cards"
                     className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800"

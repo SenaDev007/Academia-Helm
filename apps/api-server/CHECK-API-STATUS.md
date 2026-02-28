@@ -61,7 +61,7 @@ node test-db-connection.js
 # Vérifier qu'un utilisateur existe
 npx prisma studio
 # Ou via SQL
-psql -U postgres -d academia_hub -c "SELECT email, role, \"tenantId\" FROM users LIMIT 5;"
+psql -U postgres -d academia_helm -c "SELECT email, role, \"tenantId\" FROM users LIMIT 5;"
 ```
 
 ### 6. Vérifier les variables d'environnement

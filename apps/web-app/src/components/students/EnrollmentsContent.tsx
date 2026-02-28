@@ -20,6 +20,7 @@ interface Enrollment {
     firstName: string;
     lastName: string;
     studentCode?: string;
+    matricule?: string | null;
   };
   class?: { id: string; name: string };
   enrollmentType: string;
@@ -142,7 +143,7 @@ export default function EnrollmentsContent() {
                         <div className="text-sm font-medium text-gray-900">
                           {enrollment.student.lastName} {enrollment.student.firstName}
                         </div>
-                        <div className="text-sm text-gray-500">{enrollment.student.studentCode}</div>
+                        <div className="text-sm text-gray-500 font-mono">{enrollment.student.matricule ?? enrollment.student.studentCode ?? '—'}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {formatGradeLabel(enrollment.class?.name) || 'Non affecté'}
@@ -186,20 +187,46 @@ export default function EnrollmentsContent() {
             schoolLevelId={schoolLevel.id}
             onSubmit={async (data) => {
               try {
-                const studentResponse = await fetch('/api/students', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    ...data.student,
-                    academicYearId: academicYear.id,
-                    schoolLevelId: schoolLevel.id,
-                  }),
-                });
-                if (!studentResponse.ok) {
-                  const err = await studentResponse.json().catch(() => ({}));
-                  throw new Error(err.message || "Erreur lors de la création de l'élève");
+                let student: any;
+                if (data.operation === 'PRE_REGISTER') {
+                  const preRegResponse = await fetch('/api/students/pre-register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      academicYearId: academicYear.id,
+                      schoolLevelId: schoolLevel.id,
+                      firstName: data.student.firstName,
+                      lastName: data.student.lastName,
+                      dateOfBirth: data.student.dateOfBirth,
+                      gender: data.student.gender,
+                      nationality: data.student.nationality,
+                      placeOfBirth: data.student.placeOfBirth,
+                      photoUrl: data.student.photoUrl,
+                      regimeType: undefined,
+                      classId: data.classId,
+                    }),
+                  });
+                  if (!preRegResponse.ok) {
+                    const err = await preRegResponse.json().catch(() => ({}));
+                    throw new Error(err.message || "Erreur lors de la pré-inscription");
+                  }
+                  student = await preRegResponse.json();
+                } else {
+                  const studentResponse = await fetch('/api/students', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      ...data.student,
+                      academicYearId: academicYear.id,
+                      schoolLevelId: schoolLevel.id,
+                    }),
+                  });
+                  if (!studentResponse.ok) {
+                    const err = await studentResponse.json().catch(() => ({}));
+                    throw new Error(err.message || "Erreur lors de la création de l'élève");
+                  }
+                  student = await studentResponse.json();
                 }
-                const student = await studentResponse.json();
                 await fetch('/api/finance/student-fee-profiles', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -227,7 +254,7 @@ export default function EnrollmentsContent() {
                     }).catch(() => undefined);
                   }
                 }
-                if (data.classId) {
+                if (data.classId && data.operation === 'ADMIT') {
                   await fetch(`/api/students/${student.id}/enroll`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },

@@ -109,7 +109,7 @@ Academic Year Enforcement → Rate Limiting → Database RLS
 ### Migrations
 
 - **Système** : Prisma Migrate
-- **Migration initiale** : `20260117123009_init_academia_hub`
+- **Migration initiale** : `20260117123009_init_academia_helm`
 - **RLS Policies** : Implémentées
 
 ---

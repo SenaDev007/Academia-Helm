@@ -220,4 +220,34 @@ export class DeviceTrackingService {
 
     return false; // Appareil trusted avec session active
   }
+
+  /**
+   * Liste tous les appareils du tenant (admin sync / tableau appareils)
+   * Utilisé par GET /sync/devices pour Promoteur / PLATFORM_OWNER
+   */
+  async getTenantDevices(tenantId: string) {
+    return this.prisma.userDevice.findMany({
+      where: { tenantId, revokedAt: null },
+      orderBy: [{ lastSyncAt: 'desc' }, { lastUsedAt: 'desc' }],
+      select: {
+        id: true,
+        deviceName: true,
+        deviceType: true,
+        userAgent: true,
+        ipAddress: true,
+        isTrusted: true,
+        lastUsedAt: true,
+        lastSyncAt: true,
+        createdAt: true,
+        user: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+  }
 }

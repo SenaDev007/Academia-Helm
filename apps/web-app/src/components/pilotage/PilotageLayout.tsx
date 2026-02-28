@@ -81,14 +81,17 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
             sidebarOpen ? 'ml-64' : 'ml-16'
           }`}
         >
-          <div className="p-6" key={currentLevel?.id ?? 'no-level'}>
+          <div
+            className="px-6 py-6 sm:px-8 lg:px-10 xl:px-12 max-w-[1600px] mx-auto"
+            key={currentLevel?.id ?? 'no-level'}
+          >
             {children}
           </div>
         </main>
       </div>
 
       {/* Footer — toujours en bas de l'app (shrink-0 pour ne pas être compressé) */}
-      <footer className={`shrink-0 bg-white border-t border-gray-200 px-6 py-2 flex items-center transition-all duration-300 ${
+      <footer className={`shrink-0 bg-white border-t border-gray-200 px-6 py-3 sm:px-8 lg:px-10 xl:px-12 flex items-center transition-all duration-300 ${
         sidebarOpen ? 'ml-64' : 'ml-16'
       }`}>
         <div className="flex items-center justify-between text-xs text-gray-600 w-full">

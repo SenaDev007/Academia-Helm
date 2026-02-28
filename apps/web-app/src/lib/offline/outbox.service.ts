@@ -140,6 +140,25 @@ class OutboxService {
   }
 
   /**
+   * Marque un événement comme en conflit (serveur a une version plus récente)
+   */
+  async markAsConflict(eventId: string, reason?: string): Promise<void> {
+    const event = await this.getEvent(eventId);
+    if (!event) return;
+
+    const updated: OutboxEventLocal = {
+      ...event,
+      status: 'CONFLICT',
+      errorMessage: reason,
+      attemptCount: (event.attemptCount || 0) + 1,
+      lastAttemptAt: new Date().toISOString(),
+    };
+
+    await localDb.execute('outbox_events', 'put', updated);
+    await this.updatePendingCount(event.tenantId);
+  }
+
+  /**
    * Marque un événement comme en cours de synchronisation
    */
   async markAsSyncing(eventId: string): Promise<void> {

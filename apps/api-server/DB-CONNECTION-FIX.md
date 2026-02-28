@@ -24,7 +24,7 @@ Le caractère `@` doit être encodé en `%40` dans l'URL.
 ### 2. DATABASE_URL Corrigé
 
 ```env
-DATABASE_URL=postgresql://postgres:C%40ptain.Yehioracadhub2021@localhost:5432/academia_hub
+DATABASE_URL=postgresql://postgres:C%40ptain.Yehioracadhub2021@localhost:5432/academia_helm
 ```
 
 ### 3. Vérification de la Connexion
@@ -45,10 +45,10 @@ DB_HOST=localhost
 DB_PORT=5432
 DB_USERNAME=postgres
 DB_PASSWORD=C@ptain.Yehioracadhub2021
-DB_DATABASE=academia_hub
+DB_DATABASE=academia_helm
 
 # ✅ DATABASE_URL avec mot de passe encodé
-DATABASE_URL=postgresql://postgres:C%40ptain.Yehioracadhub2021@localhost:5432/academia_hub
+DATABASE_URL=postgresql://postgres:C%40ptain.Yehioracadhub2021@localhost:5432/academia_helm
 ```
 
 ## 🔍 Vérification

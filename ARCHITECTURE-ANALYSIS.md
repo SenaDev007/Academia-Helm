@@ -299,7 +299,7 @@ Le schéma Prisma contient **plus de 150 modèles** organisés en modules foncti
 
 - **Système** : Prisma Migrate
 - **Emplacement** : `apps/api-server/prisma/migrations/`
-- **Migration initiale** : `20260117123009_init_academia_hub`
+- **Migration initiale** : `20260117123009_init_academia_helm`
 - **RLS Policies** : `rls-policies.sql`
 
 ---

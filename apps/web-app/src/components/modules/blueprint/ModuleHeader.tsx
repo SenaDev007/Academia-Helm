@@ -51,7 +51,7 @@ export default function ModuleHeader({
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
       {/* Header principal */}
-      <div className="px-6 py-4 border-b border-gray-200">
+      <div className="px-6 py-5 sm:px-8 sm:py-5 border-b border-gray-200">
         <div className="flex items-start justify-between">
           {/* Titre et description */}
           <div className="flex items-start space-x-3 flex-1">
@@ -84,7 +84,7 @@ export default function ModuleHeader({
 
       {/* KPI rapides */}
       {kpis.length > 0 && (
-        <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+        <div className="px-6 py-5 sm:px-8 sm:py-5 bg-gray-50 border-b border-gray-200">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {kpis.map((kpi, index) => (
               <div
@@ -124,7 +124,7 @@ export default function ModuleHeader({
 
       {/* Contenu personnalisé */}
       {customContent && (
-        <div className="px-6 py-4">{customContent}</div>
+        <div className="px-6 py-5 sm:px-8">{customContent}</div>
       )}
     </div>
   );

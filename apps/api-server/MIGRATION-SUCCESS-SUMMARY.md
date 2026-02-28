@@ -1,8 +1,8 @@
 # ✅ Migration Initiale - Résumé de Succès
 
 **Date**: Migration initiale terminée  
-**Migration**: `20260117123009_init_academia_hub`  
-**Base de données**: `academia_hub` (PostgreSQL Local)  
+**Migration**: `20260117123009_init_academia_helm`  
+**Base de données**: `academia_helm` (PostgreSQL Local)  
 **Statut**: ✅ **MIGRATION APPLIQUÉE AVEC SUCCÈS**
 
 ---
@@ -11,9 +11,9 @@
 
 ### ✅ Migration Créée et Appliquée
 
-- **Nom**: `init_academia_hub`
+- **Nom**: `init_academia_helm`
 - **Timestamp**: `20260117123009`
-- **Fichier**: `prisma/migrations/20260117123009_init_academia_hub/migration.sql`
+- **Fichier**: `prisma/migrations/20260117123009_init_academia_helm/migration.sql`
 - **Taille**: ~409 KB
 - **Statut**: Appliquée avec succès ✅
 
@@ -21,7 +21,7 @@
 
 - **Host**: `localhost`
 - **Port**: `5432`
-- **Database**: `academia_hub`
+- **Database**: `academia_helm`
 - **User**: `postgres`
 - **Statut**: Connexion validée ✅
 
@@ -39,8 +39,8 @@
 
 **Actions**:
 1. Ouvrez pgAdmin 4
-2. Actualisez la base `academia_hub` (clic droit → Refresh)
-3. Développez : `academia_hub` → `Schemas` → `public` → `Tables`
+2. Actualisez la base `academia_helm` (clic droit → Refresh)
+3. Développez : `academia_helm` → `Schemas` → `public` → `Tables`
 4. Vérifiez que toutes les tables sont présentes
 
 **Tables principales à vérifier**:
@@ -104,7 +104,7 @@ npx prisma db seed
 
 ```bash
 # Appliquer les policies RLS
-psql -U postgres -d academia_hub -f prisma/migrations/rls-policies.sql
+psql -U postgres -d academia_helm -f prisma/migrations/rls-policies.sql
 ```
 
 ---
@@ -115,7 +115,7 @@ psql -U postgres -d academia_hub -f prisma/migrations/rls-policies.sql
 
 1. Exporter les données locales (si besoin):
    ```bash
-   pg_dump -U postgres -d academia_hub -F c -f academia_hub_backup.dump
+   pg_dump -U postgres -d academia_helm -F c -f academia_helm_backup.dump
    ```
 
 2. Mettre à jour `.env` avec les credentials Supabase
@@ -130,7 +130,7 @@ psql -U postgres -d academia_hub -f prisma/migrations/rls-policies.sql
 ## 📁 Fichiers Créés
 
 ### Migration
-- ✅ `prisma/migrations/20260117123009_init_academia_hub/migration.sql`
+- ✅ `prisma/migrations/20260117123009_init_academia_helm/migration.sql`
 - ✅ `prisma/migrations/migration_lock.toml`
 
 ### Documentation
@@ -147,7 +147,7 @@ psql -U postgres -d academia_hub -f prisma/migrations/rls-policies.sql
 ## ✅ Checklist Complète
 
 ### Configuration
-- [x] Base de données `academia_hub` créée
+- [x] Base de données `academia_helm` créée
 - [x] Fichier `.env` configuré avec PostgreSQL local
 - [x] Connexion Prisma validée
 - [x] Migration initiale créée

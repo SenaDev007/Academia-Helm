@@ -62,6 +62,7 @@ import { RolesGuard } from './guards/roles.guard';
     DeviceSessionService,
     ContextualAuthGuard,
     JwtAuthGuard,
+    RolesGuard,
   ],
 })
 export class AuthModule {}

@@ -46,7 +46,7 @@ ALTER USER postgres WITH PASSWORD 'nouveau_mot_de_passe';
 
 ```bash
 psql -U postgres
-CREATE DATABASE academia_hub;
+CREATE DATABASE academia_helm;
 \q
 ```
 

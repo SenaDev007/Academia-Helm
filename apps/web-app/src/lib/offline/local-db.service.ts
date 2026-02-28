@@ -95,6 +95,33 @@ class LocalDbService {
     if (!db.objectStoreNames.contains('sync_state')) {
       db.createObjectStore('sync_state', { keyPath: 'tenantId' });
     }
+
+    // Object store dédié aux médias/ressources lourdes (ex: photos élèves capturées offline)
+    if (!db.objectStoreNames.contains('student_photos')) {
+      const photosStore = db.createObjectStore('student_photos', { keyPath: 'id' });
+      photosStore.createIndex('sync_status', 'syncStatus', { unique: false });
+      photosStore.createIndex('created_at', 'createdAt', { unique: false });
+    }
+
+    // Tables techniques offline (spec ERP institutionnel)
+    if (!db.objectStoreNames.contains('schema_version')) {
+      const sv = db.createObjectStore('schema_version', { keyPath: 'id' });
+      sv.createIndex('version', 'version', { unique: false });
+    }
+    if (!db.objectStoreNames.contains('sync_operations')) {
+      const so = db.createObjectStore('sync_operations', { keyPath: 'id' });
+      so.createIndex('table_name', 'table_name', { unique: false });
+      so.createIndex('status', 'status', { unique: false });
+      so.createIndex('created_at', 'created_at', { unique: false });
+    }
+    if (!db.objectStoreNames.contains('sync_conflicts')) {
+      const sc = db.createObjectStore('sync_conflicts', { keyPath: 'id' });
+      sc.createIndex('table_name', 'table_name', { unique: false });
+      sc.createIndex('detected_at', 'detected_at', { unique: false });
+    }
+    if (!db.objectStoreNames.contains('device_registry_local')) {
+      db.createObjectStore('device_registry_local', { keyPath: 'device_id' });
+    }
   }
 
   /**
@@ -201,7 +228,7 @@ class LocalDbService {
 
 // Instance singleton
 export const localDb = new LocalDbService({
-  dbName: 'academia-hub-local',
-  version: 1
+  dbName: 'academia-helm-local',
+  version: 3, // + schema_version, sync_operations, sync_conflicts, device_registry_local
 });
 

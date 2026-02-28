@@ -84,7 +84,7 @@ DB_HOST=localhost
 DB_PORT=5432
 DB_USERNAME=postgres
 DB_PASSWORD=postgres
-DB_DATABASE=academia_hub
+DB_DATABASE=academia_helm
 JWT_SECRET=your-secret-key-change-in-production
 PORT=3000
 ```
@@ -94,7 +94,7 @@ PORT=3000
 Créer la base de données PostgreSQL :
 
 ```sql
-CREATE DATABASE academia_hub;
+CREATE DATABASE academia_helm;
 ```
 
 ### Développement

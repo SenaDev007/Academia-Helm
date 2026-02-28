@@ -2,12 +2,14 @@
  * Module 1 — API cycle de vie élève : pre-register, admit, re-enroll, transfer, change-class, history, export EDUCMASTER.
  */
 
-import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { StreamableFile } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { StudentsLifecycleService } from '../services/students-lifecycle.service';
 import { StudentIdCardService } from '../services/student-id-card.service';
+import { EducmasterExcelExportService } from '../services/educmaster-excel-export.service';
 
 @Controller('api/students')
 @UseGuards(JwtAuthGuard)
@@ -15,6 +17,7 @@ export class StudentsLifecycleController {
   constructor(
     private readonly lifecycle: StudentsLifecycleService,
     private readonly idCard: StudentIdCardService,
+    private readonly educmasterExcel: EducmasterExcelExportService,
   ) {}
 
   @Post('pre-register')
@@ -111,6 +114,34 @@ export class StudentsLifecycleController {
     },
   ) {
     return this.lifecycle.batchUpdateStatus(tenantId, body, user?.id);
+  }
+
+  /**
+   * GET /api/students/export/educmaster-excel
+   * Un fichier par niveau scolaire pour emp.educmaster.bj.
+   * - Maternelle : 1 fichier, feuilles "Maternelle 1", "Maternelle 2".
+   * - Primaire : 1 fichier, feuilles CI, CP, CE1, CE2, CM1, CM2.
+   * Nom du fichier : NiveauScolaire_NomEcole_AnnéeScolaire.xlsx
+   * Query: academicYearId, schoolLevelId (obligatoires).
+   */
+  @Get('export/educmaster-excel')
+  async exportEducmasterExcel(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('schoolLevelId') schoolLevelId: string,
+  ) {
+    if (!academicYearId || !schoolLevelId) {
+      throw new BadRequestException('academicYearId et schoolLevelId sont obligatoires');
+    }
+    const result = await this.educmasterExcel.generateWorkbook({
+      tenantId,
+      academicYearId,
+      schoolLevelId,
+    });
+    return new StreamableFile(result.buffer, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename="${encodeURIComponent(result.filename)}"`,
+    });
   }
 
   @Get('class/:classId')

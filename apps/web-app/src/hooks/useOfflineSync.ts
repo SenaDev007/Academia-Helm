@@ -14,6 +14,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useOffline } from './useOffline';
 import { offlineSyncService } from '@/lib/offline/offline-sync.service';
 import { outboxService } from '@/lib/offline/outbox.service';
+import { syncEngine } from '@/lib/offline/sync-engine.service';
 import { useAuth } from './useAuth';
 
 export interface UseOfflineSyncReturn {
@@ -53,13 +54,10 @@ export function useOfflineSync(): UseOfflineSyncReturn {
   const [error, setError] = useState<string | null>(null);
 
   /**
-   * Récupère le nombre d'opérations en attente
+   * Récupère le nombre d'opérations en attente (en ligne ou hors ligne)
    */
   const updatePendingCount = useCallback(async () => {
-    if (!isOnline || !user?.tenantId) {
-      return;
-    }
-
+    if (!user?.tenantId) return;
     try {
       const pendingEvents = await outboxService.getPendingEvents(user.tenantId);
       setPendingOperationsCount(pendingEvents.length);
@@ -67,7 +65,7 @@ export function useOfflineSync(): UseOfflineSyncReturn {
       console.error('[useOfflineSync] Error fetching pending operations:', err);
       setPendingOperationsCount(0);
     }
-  }, [isOnline, user?.tenantId]);
+  }, [user?.tenantId]);
 
   /**
    * Synchronise les opérations en attente
@@ -110,6 +108,14 @@ export function useOfflineSync(): UseOfflineSyncReturn {
       setIsSyncing(false);
     }
   }, [isSyncing, isOnline, updatePendingCount]);
+
+  // Charger dernière sync depuis sync_state (Historique UX)
+  useEffect(() => {
+    if (!user?.tenantId) return;
+    syncEngine.getSyncState(user.tenantId).then((state) => {
+      if (state.lastSyncAt) setLastSyncAt(new Date(state.lastSyncAt));
+    });
+  }, [user?.tenantId]);
 
   // Mettre à jour le compteur périodiquement
   useEffect(() => {

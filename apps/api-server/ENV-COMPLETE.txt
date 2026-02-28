@@ -12,13 +12,13 @@
 # ============================================================================
 # BASE DE DONNÉES
 # ============================================================================
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/academia_hub
-DIRECT_URL=postgresql://postgres:postgres@localhost:5432/academia_hub
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/academia_helm
+DIRECT_URL=postgresql://postgres:postgres@localhost:5432/academia_helm
 DB_HOST=localhost
 DB_PORT=5432
 DB_USERNAME=postgres
 DB_PASSWORD=postgres
-DB_DATABASE=academia_hub
+DB_DATABASE=academia_helm
 DB_SSL=false
 
 # ============================================================================
@@ -239,8 +239,8 @@ ATLAS_API_URL=
 # ============================================================================
 # Décommentez et configurez ces variables pour la production :
 #
-# DATABASE_URL=postgresql://user:password@production-host:5432/academia_hub
-# DIRECT_URL=postgresql://user:password@production-host:5432/academia_hub
+# DATABASE_URL=postgresql://user:password@production-host:5432/academia_helm
+# DIRECT_URL=postgresql://user:password@production-host:5432/academia_helm
 # DB_SSL=true
 # NODE_ENV=production
 # FRONTEND_URL=https://your-frontend-domain.com

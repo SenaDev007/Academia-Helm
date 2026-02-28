@@ -188,7 +188,7 @@ pg_ctl start
 ### 2. Vérifier la Connexion
 ```bash
 # Test de connexion
-psql -h localhost -p 5432 -U postgres -d academia_hub
+psql -h localhost -p 5432 -U postgres -d academia_helm
 ```
 
 ### 3. Vérifier le Schéma Audit Logs

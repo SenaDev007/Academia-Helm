@@ -68,7 +68,7 @@ npx prisma db seed
 
 1. **Ouvrir pgAdmin 4**
 2. **Se connecter** à PostgreSQL local
-3. **Ouvrir Query Tool** sur la base `academia_hub`
+3. **Ouvrir Query Tool** sur la base `academia_helm`
 4. **Charger** le fichier `prisma/migrations/rls-policies.sql`
 5. **Exécuter** le script (F5 ou bouton Execute)
 

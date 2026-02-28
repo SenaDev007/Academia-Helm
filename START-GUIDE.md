@@ -186,7 +186,7 @@ npm run start
 pg_isready -h localhost -p 5432
 
 # Windows
-psql -h localhost -U postgres -d academia_hub
+psql -h localhost -U postgres -d academia_helm
 ```
 
 ### 2. Vérifier l'API
@@ -255,8 +255,8 @@ Ouvrir dans le navigateur : `http://localhost:3001`
 
 ```env
 # Database
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/academia_hub
-DIRECT_URL=postgresql://postgres:postgres@localhost:5432/academia_hub
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/academia_helm
+DIRECT_URL=postgresql://postgres:postgres@localhost:5432/academia_helm
 
 # API
 PORT=3000

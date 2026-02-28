@@ -1,17 +1,16 @@
 /**
  * ============================================================================
- * PUBLIC VERIFICATION CONTROLLER - API PUBLIQUE DE VÉRIFICATION
+ * PUBLIC VERIFICATION CONTROLLER - API PUBLIQUE QR CARTE SCOLAIRE
  * ============================================================================
- * 
- * Controller pour l'API publique de vérification (sans authentification)
- * Permet de vérifier l'identité d'un élève via un token QR Code
- * 
+ * GET /v/:token (ou /api/public/verify/:token) — pas d'auth, rate limit, journalisation IP
+ * Réponse : Carte valide → Nom, École, Année, Statut, Photo ; sinon "Carte invalide ou désactivée"
  * ============================================================================
  */
 
-import { Controller, Get, Post, Param, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Req, NotFoundException } from '@nestjs/common';
 import { PublicVerificationService } from '../services/public-verification.service';
 import { Public } from '@/auth/decorators/public.decorator';
+import { Throttle } from '@nestjs/throttler';
 
 @Controller('api/public/verify')
 export class PublicVerificationController {
@@ -20,24 +19,48 @@ export class PublicVerificationController {
   ) {}
 
   /**
-   * GET /api/public/verify/:token
-   * Vérifie un token et retourne les données minimales de l'élève
-   * API PUBLIQUE - Pas d'authentification requise
+   * GET /api/public/verify/v/:token
+   * Vérification publique (scan QR carte scolaire). Rate limit strict.
+   * Spec : 404 si carte invalide ou désactivée.
    */
   @Public()
-  @Get(':token')
-  async verifyToken(@Param('token') token: string) {
-    const result = await this.verificationService.verifyToken(token);
-    
+  @Throttle({ short: { limit: 20, ttl: 60000 } })
+  @Get('v/:token')
+  async verifyByToken(@Param('token') token: string, @Req() req: { ip?: string }) {
+    const ip = req.ip ?? req?.headers?.['x-forwarded-for'] ?? null;
+    const result = await this.verificationService.verifyToken(token, ip);
     if (!result.isValid) {
-      return {
-        isValid: false,
+      throw new NotFoundException({
+        valid: false,
+        message: result.message ?? 'Carte invalide ou désactivée',
         isExpired: result.isExpired,
-        message: result.isExpired ? 'Token expiré' : 'Token invalide',
-      };
+      });
     }
-
     return {
+      valid: true,
+      student: result.student,
+    };
+  }
+
+  /**
+   * GET /api/public/verify/:token (legacy path)
+   */
+  @Public()
+  @Throttle({ short: { limit: 20, ttl: 60000 } })
+  @Get(':token')
+  async verifyToken(@Param('token') token: string, @Req() req: { ip?: string; headers?: Record<string, string> }) {
+    const ip = req.ip ?? (req.headers && (req.headers['x-forwarded-for'] as string)) ?? null;
+    const result = await this.verificationService.verifyToken(token, ip);
+    if (!result.isValid) {
+      throw new NotFoundException({
+        valid: false,
+        isValid: false,
+        message: result.message ?? 'Carte invalide ou désactivée',
+        isExpired: result.isExpired,
+      });
+    }
+    return {
+      valid: true,
       isValid: true,
       student: result.student,
     };

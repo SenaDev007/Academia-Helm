@@ -3,7 +3,7 @@
 -- ============================================================================
 -- 
 -- Script SQL pour créer le tenant CSPEB et les utilisateurs associés
--- Exécuter ce script dans pgAdmin 4 Query Tool sur la base de données academia_hub
+-- Exécuter ce script dans pgAdmin 4 Query Tool sur la base de données academia_helm
 -- 
 -- IMPORTANT: Les mots de passe sont hashés avec bcrypt.
 -- Pour générer les hashés, exécutez d'abord: npx ts-node prisma/generate-seed-cspeb-sql.ts

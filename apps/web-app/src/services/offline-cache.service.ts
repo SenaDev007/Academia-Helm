@@ -6,7 +6,7 @@
 
 import { AppContext } from '../contexts/TenantContext';
 
-const CACHE_PREFIX = 'academia_hub_';
+const CACHE_PREFIX = 'academia_helm_';
 const CACHE_VERSION = '1.0.0';
 
 interface CacheEntry<T> {

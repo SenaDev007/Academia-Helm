@@ -53,7 +53,7 @@ function formatRoleDisplayName(name: string | null | undefined): string {
 }
 
 type TabId = 'identity' | 'academic-year' | 'structure' | 'bilingual' | 'features' | 
-             'roles' | 'communication' | 'billing' | 'security' | 'seals' | 'orion' | 'atlas' | 'offline' | 'history';
+             'roles' | 'communication' | 'billing' | 'security' | 'seals' | 'orion' | 'atlas' | 'offline' | 'appareils' | 'history';
 
 interface Toast {
   type: 'success' | 'error';
@@ -68,6 +68,10 @@ export default function SettingsPage() {
   const urlTenantId = searchParams.get('tenant_id');
   const isPlatformOwner = user?.role === 'PLATFORM_OWNER';
   const effectiveTenantId = (isPlatformOwner || !tenant?.id) ? (urlTenantId || tenant?.id) : tenant?.id;
+  /** Spec : Appareils autorisés accessible par PLATFORM_OWNER, PLATFORM_ADMIN, Promoteur, DIRECTOR, ADMIN */
+  const canAccessDevices =
+    !!user?.role &&
+    ['PLATFORM_OWNER', 'PLATFORM_ADMIN', 'PROMOTEUR', 'PROMOTER', 'DIRECTOR', 'ADMIN'].includes(user.role);
 
   const [availableTenantsForPO, setAvailableTenantsForPO] = useState<{ tenantId: string; name?: string }[]>([]);
   const [loadingTenantsPO, setLoadingTenantsPO] = useState(false);
@@ -84,6 +88,16 @@ export default function SettingsPage() {
   const [orionSettings, setOrionSettings] = useState<any>(null);
   const [atlasSettings, setAtlasSettings] = useState<any>(null);
   const [offlineSyncSettings, setOfflineSyncSettings] = useState<any>(null);
+  const [devicesList, setDevicesList] = useState<Array<{
+    id: string;
+    deviceName: string | null;
+    deviceType: string;
+    lastUsedAt: string | null;
+    lastSyncAt: string | null;
+    createdAt: string;
+    user?: { id: string; email: string; firstName: string | null; lastName: string | null };
+  }>>([]);
+  const [devicesLoading, setDevicesLoading] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
   const [academicYears, setAcademicYears] = useState<any[]>([]);
   const [activeAcademicYear, setActiveAcademicYear] = useState<any>(null);
@@ -352,6 +366,20 @@ export default function SettingsPage() {
     })();
     return () => { cancelled = true; };
   }, [activeTab, effectiveTenantId]);
+
+  useEffect(() => {
+    if (activeTab !== 'appareils') return;
+    let cancelled = false;
+    setDevicesLoading(true);
+    fetch('/api/sync/devices', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled && data?.devices) setDevicesList(data.devices);
+      })
+      .catch(() => { if (!cancelled) setDevicesList([]); })
+      .finally(() => { if (!cancelled) setDevicesLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeTab]);
 
   const loadAllSettings = async () => {
     try {
@@ -1343,6 +1371,7 @@ export default function SettingsPage() {
     { id: 'orion' as TabId, label: 'ORION', icon: Brain },
     { id: 'atlas' as TabId, label: 'ATLAS', icon: MessageSquare },
     { id: 'offline' as TabId, label: 'Offline', icon: CloudOff },
+    { id: 'appareils' as TabId, label: 'Appareils autorisés', icon: Smartphone },
     { id: 'history' as TabId, label: 'Historique', icon: History },
   ];
 
@@ -3896,6 +3925,88 @@ export default function SettingsPage() {
           </div>
         );
 
+      case 'appareils':
+        if (!canAccessDevices) {
+          return (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <p className="text-gray-600">
+                Accès réservé à la plateforme (PLATFORM_OWNER, PLATFORM_ADMIN), au promoteur et à la direction.
+              </p>
+            </div>
+          );
+        }
+        return (
+          <div className="space-y-6">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <Shield className="w-5 h-5 text-blue-600" />
+                Appareils autorisés
+              </h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Liste des appareils ayant accès à cet établissement. Révoquez un appareil pour invalider ses sessions et sa synchronisation offline.
+              </p>
+              {devicesLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+                </div>
+              ) : devicesList.length === 0 ? (
+                <p className="text-gray-500 py-4">Aucun appareil enregistré.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full border border-gray-200 rounded-lg">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Nom appareil</th>
+                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Utilisateur</th>
+                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Dernière sync</th>
+                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Statut</th>
+                        <th className="px-4 py-2 text-right text-sm font-medium text-gray-700 border-b">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {devicesList.map((d) => (
+                        <tr key={d.id} className="border-b border-gray-100 hover:bg-gray-50">
+                          <td className="px-4 py-2 text-sm">{d.deviceName || d.deviceType || '—'}</td>
+                          <td className="px-4 py-2 text-sm">
+                            {d.user ? `${d.user.firstName || ''} ${d.user.lastName || ''}`.trim() || d.user.email : '—'}
+                          </td>
+                          <td className="px-4 py-2 text-sm text-gray-600">
+                            {d.lastSyncAt ? new Date(d.lastSyncAt).toLocaleString('fr-FR') : d.lastUsedAt ? new Date(d.lastUsedAt).toLocaleString('fr-FR') : '—'}
+                          </td>
+                          <td className="px-4 py-2">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Actif</span>
+                          </td>
+                          <td className="px-4 py-2 text-right">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (!confirm('Révoquer cet appareil ? Les sessions et la sync offline seront invalidées.')) return;
+                                try {
+                                  const res = await fetch(`/api/auth/devices/${d.id}`, { method: 'DELETE', credentials: 'include' });
+                                  const data = await res.json().catch(() => ({}));
+                                  if (res.ok) {
+                                    showToast('success', data?.message || 'Appareil révoqué');
+                                    setDevicesList((prev) => prev.filter((x) => x.id !== d.id));
+                                  } else showToast('error', data?.message || 'Erreur');
+                                } catch {
+                                  showToast('error', 'Erreur lors de la révocation');
+                                }
+                              }}
+                              className="text-sm text-red-600 hover:text-red-800 font-medium"
+                            >
+                              Révoquer
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+
       case 'history':
         return (
           <div className="space-y-6">
@@ -3960,7 +4071,9 @@ export default function SettingsPage() {
         {/* Navigation par onglets - scroll horizontal isolé */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6 overflow-hidden">
           <div className="flex border-b border-gray-200 overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
-            {tabs.map((tab) => {
+            {tabs
+              .filter((tab) => tab.id !== 'appareils' || canAccessDevices)
+              .map((tab) => {
               const Icon = tab.icon;
               return (
                 <button

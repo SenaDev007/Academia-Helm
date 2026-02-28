@@ -470,6 +470,16 @@ export class StudentIdCardService {
     const schoolLevel = student.schoolLevel;
     const tenant = student.tenant;
 
+    // URL absolue pour que Puppeteer puisse charger l'image (relative → base publique frontend)
+    const baseUrl = (process.env.APP_PUBLIC_URL || process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+    const photoSrc = student.photoUrl
+      ? (student.photoUrl.startsWith('http') ? student.photoUrl : `${baseUrl}${student.photoUrl.startsWith('/') ? '' : '/'}${student.photoUrl}`)
+      : '';
+
+    const photoHtml = photoSrc
+      ? `<img src="${photoSrc}" alt="Photo de ${student.firstName} ${student.lastName}" style="width:100%;height:100%;object-fit:cover;" />`
+      : `<div style="font-size:8pt;color:#666;text-align:center;padding:4px;">PHOTO</div>`;
+
     return `
 <!DOCTYPE html>
 <html lang="fr">
@@ -623,7 +633,7 @@ export class StudentIdCardService {
       </div>
       <div class="content" style="flex-direction: row;">
         <div class="student-photo">
-          [PHOTO]
+          ${photoHtml}
         </div>
         <div class="student-info">
           <div class="info-row">

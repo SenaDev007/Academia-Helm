@@ -19,6 +19,7 @@ interface StudentData {
   id: string;
   firstName: string;
   lastName: string;
+  fullName?: string;
   dateOfBirth?: string;
   gender?: string;
   photo?: string;
@@ -28,6 +29,7 @@ interface StudentData {
   academicYear: string;
   status: string;
   institution: string;
+  school?: string;
 }
 
 export default function PublicVerificationPage() {
@@ -54,27 +56,28 @@ export default function PublicVerificationPage() {
       setLoading(true);
       const { getApiBaseUrl } = await import('@/lib/utils/urls');
       const apiUrl = getApiBaseUrl();
-      const response = await fetch(
-        `${apiUrl}/public/verify/${token}`
-      );
+      const response = await fetch(`${apiUrl}/public/verify/${token}`);
+      const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error('Erreur de vérification');
-      }
-
-      const data = await response.json();
-
-      if (!data.isValid) {
         setValid(false);
-        setExpired(data.isExpired || false);
-        setError(data.message || 'Token invalide');
-      } else {
-        setValid(true);
-        setStudent(data.student);
+        setExpired(data.isExpired ?? false);
+        setError(data.message ?? 'Carte invalide ou désactivée');
+        return;
       }
+
+      if (!data.valid || !data.student) {
+        setValid(false);
+        setExpired(data.isExpired ?? false);
+        setError(data.message ?? 'Carte invalide ou désactivée');
+        return;
+      }
+
+      setValid(true);
+      setStudent(data.student);
     } catch (err) {
       console.error('Error verifying token:', err);
-      setError('Erreur lors de la vérification');
+      setError('Carte invalide ou désactivée');
       setValid(false);
     } finally {
       setLoading(false);
@@ -103,7 +106,7 @@ export default function PublicVerificationPage() {
           <p className="text-gray-600 mb-4">
             {expired
               ? 'Ce token de vérification a expiré.'
-              : error || 'Ce token de vérification est invalide.'}
+              : error || 'Carte invalide ou désactivée.'}
           </p>
           <p className="text-sm text-gray-500">
             Veuillez contacter l'établissement pour obtenir un nouveau QR Code.
@@ -159,7 +162,7 @@ export default function PublicVerificationPage() {
               <div className="flex-1 space-y-4">
                 <div>
                   <h2 className="text-2xl font-bold text-gray-900">
-                    {student.firstName} {student.lastName}
+                    {student.fullName ?? `${student.firstName} ${student.lastName}`.trim()}
                   </h2>
                   <p className="text-gray-600 mt-1">
                     Matricule: <span className="font-semibold">{student.matricule}</span>

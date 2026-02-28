@@ -13,7 +13,7 @@ La base de données est maintenant accessible et les tenants ont été créés a
 Remplacez la ligne `DATABASE_URL` par :
 
 ```env
-DATABASE_URL=postgresql://postgres:C%40ptain.Yehioracadhub2021@localhost:5432/academia_hub
+DATABASE_URL=postgresql://postgres:C%40ptain.Yehioracadhub2021@localhost:5432/academia_helm
 ```
 
 ### Note sur l'Encodage

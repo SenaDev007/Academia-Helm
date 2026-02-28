@@ -32,7 +32,7 @@ SQLITE_PATH=C:/Users/Username/AppData/Roaming/academia-hub/academia-hub.db
 # PostgreSQL
 PG_HOST=localhost
 PG_PORT=5432
-PG_DATABASE=academia_hub
+PG_DATABASE=academia_helm
 PG_USER=postgres
 PG_PASSWORD=your_password
 
@@ -49,10 +49,10 @@ DRY_RUN=false        # Mode test (ne modifie pas la base)
 
 ```bash
 # 1. Vérifier que le schéma PostgreSQL est créé
-psql -U postgres -d academia_hub -f database/schemas/postgresql-complete-multi-tenant.sql
+psql -U postgres -d academia_helm -f database/schemas/postgresql-complete-multi-tenant.sql
 
 # 2. Vérifier que les pays sont créés (BJ par défaut)
-psql -U postgres -d academia_hub -f database/seeders/seed-countries-and-policies.ts
+psql -U postgres -d academia_helm -f database/seeders/seed-countries-and-policies.ts
 
 # 3. Vérifier le fichier SQLite
 ls -la "C:/Users/Username/AppData/Roaming/academia-hub/academia-hub.db"
@@ -171,7 +171,7 @@ Le script est **idempotent** : il peut être exécuté plusieurs fois sans probl
 
 ```bash
 # Restaurer le backup PostgreSQL
-pg_restore -h localhost -U postgres -d academia_hub database/backups/postgresql-backup-YYYY-MM-DD.sql
+pg_restore -h localhost -U postgres -d academia_helm database/backups/postgresql-backup-YYYY-MM-DD.sql
 ```
 
 ### Option 2 : Suppression Manuelle
@@ -236,7 +236,7 @@ database/migrations/logs/migration-YYYY-MM-DDTHH-MM-SS.log
 **Solution** :
 - Vérifier que PostgreSQL est démarré
 - Vérifier les credentials dans `.env`
-- Vérifier que la base existe : `CREATE DATABASE academia_hub;`
+- Vérifier que la base existe : `CREATE DATABASE academia_helm;`
 
 ### 3. Schéma PostgreSQL manquant
 
@@ -244,7 +244,7 @@ database/migrations/logs/migration-YYYY-MM-DDTHH-MM-SS.log
 
 **Solution** :
 ```bash
-psql -U postgres -d academia_hub -f database/schemas/postgresql-complete-multi-tenant.sql
+psql -U postgres -d academia_helm -f database/schemas/postgresql-complete-multi-tenant.sql
 ```
 
 ### 4. Pays par défaut manquant
@@ -254,7 +254,7 @@ psql -U postgres -d academia_hub -f database/schemas/postgresql-complete-multi-t
 **Solution** :
 ```bash
 # Exécuter le seeder des pays
-psql -U postgres -d academia_hub -f database/seeders/seed-countries-and-policies.ts
+psql -U postgres -d academia_helm -f database/seeders/seed-countries-and-policies.ts
 ```
 
 ### 5. Conflits de données

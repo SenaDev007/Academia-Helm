@@ -22,14 +22,14 @@ const encodedPassword = encodeURIComponent(password);
 
 // Remplacer DATABASE_URL
 envContent = envContent.replace(
-  /^DATABASE_URL=postgresql:\/\/postgres:[^@]+@localhost:5432\/academia_hub$/m,
-  `DATABASE_URL=postgresql://postgres:${encodedPassword}@localhost:5432/academia_hub`
+  /^DATABASE_URL=postgresql:\/\/postgres:[^@]+@localhost:5432\/academia_helm$/m,
+  `DATABASE_URL=postgresql://postgres:${encodedPassword}@localhost:5432/academia_helm`
 );
 
 // Remplacer DIRECT_URL
 envContent = envContent.replace(
-  /^DIRECT_URL=postgresql:\/\/postgres:[^@]+@localhost:5432\/academia_hub$/m,
-  `DIRECT_URL=postgresql://postgres:${encodedPassword}@localhost:5432/academia_hub`
+  /^DIRECT_URL=postgresql:\/\/postgres:[^@]+@localhost:5432\/academia_helm$/m,
+  `DIRECT_URL=postgresql://postgres:${encodedPassword}@localhost:5432/academia_helm`
 );
 
 // Écrire le fichier

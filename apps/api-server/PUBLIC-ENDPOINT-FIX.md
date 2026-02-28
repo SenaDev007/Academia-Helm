@@ -45,7 +45,7 @@ Tous les guards suivants vérifient maintenant correctement `@Public()` :
 
 2. **Vérifier la connexion** :
    ```bash
-   psql -h localhost -p 5432 -U postgres -d academia_hub
+   psql -h localhost -p 5432 -U postgres -d academia_helm
    ```
 
 3. **Créer les tenants si la BDD est vide** :

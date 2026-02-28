@@ -96,4 +96,4 @@ TEST_SCHOOL_COUNTRY=Bénin
 # ============================================================================
 # CONFIGURATION BASE DE DONNÉES
 # ============================================================================
-DATABASE_URL=postgresql://user:password@localhost:5432/academia_hub
+DATABASE_URL=postgresql://user:password@localhost:5432/academia_helm

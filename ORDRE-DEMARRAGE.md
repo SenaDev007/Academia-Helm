@@ -28,7 +28,7 @@ L'application Academia Hub suit un **ordre de démarrage séquentiel strict** po
 **Statut** : ⚠️ **PRÉREQUIS** (doit être démarré avant)
 
 **Port** : `5432`  
-**Base de données** : `academia_hub`
+**Base de données** : `academia_helm`
 
 **Vérification** :
 - **Linux/Mac** : `pg_isready -h localhost -p 5432`
@@ -324,8 +324,8 @@ docker-compose -f docker-compose.dev.yml up
 
 ```env
 # Base de données
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/academia_hub
-DIRECT_URL=postgresql://postgres:postgres@localhost:5432/academia_hub
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/academia_helm
+DIRECT_URL=postgresql://postgres:postgres@localhost:5432/academia_helm
 
 # API
 PORT=3000
@@ -368,7 +368,7 @@ Le script arrêtera automatiquement :
 Avant de démarrer, vérifier :
 
 - [ ] PostgreSQL est démarré et accessible sur le port 5432
-- [ ] Base de données `academia_hub` existe
+- [ ] Base de données `academia_helm` existe
 - [ ] Fichier `.env` dans `apps/api-server/` configuré
 - [ ] Fichier `.env.local` dans `apps/web-app/` configuré
 - [ ] Dépendances installées (`npm install` dans chaque dossier)

@@ -100,7 +100,7 @@ Pour déployer en production avec Docker (VPS, serveur dédié) :
 
 | Service | Port | URL | Description |
 |---------|------|-----|-------------|
-| PostgreSQL | 5432 | `postgresql://localhost:5432/academia_hub` | Base de données |
+| PostgreSQL | 5432 | `postgresql://localhost:5432/academia_helm` | Base de données |
 | API Server | 3000 | `http://localhost:3000/api` | Backend NestJS |
 | Frontend | 3001 | `http://localhost:3001` | Frontend Next.js |
 
@@ -138,7 +138,7 @@ docker-compose -f docker-compose.dev.yml build api-server
 docker-compose -f docker-compose.dev.yml exec api-server sh
 
 # PostgreSQL
-docker-compose -f docker-compose.dev.yml exec postgres psql -U postgres -d academia_hub
+docker-compose -f docker-compose.dev.yml exec postgres psql -U postgres -d academia_helm
 ```
 
 ### Appliquer les migrations Prisma
@@ -166,7 +166,7 @@ Pour les modifier, éditez le fichier ou créez un `.env` :
 ```bash
 # .env
 JWT_SECRET=your-secret-key
-DATABASE_URL=postgresql://postgres:postgres@postgres:5432/academia_hub
+DATABASE_URL=postgresql://postgres:postgres@postgres:5432/academia_helm
 ```
 
 ### Ports
@@ -205,7 +205,7 @@ docker-compose -f docker-compose.dev.yml ps postgres
 docker-compose -f docker-compose.dev.yml logs postgres
 
 # Vérifier la connexion
-docker-compose -f docker-compose.dev.yml exec postgres psql -U postgres -d academia_hub -c "SELECT 1;"
+docker-compose -f docker-compose.dev.yml exec postgres psql -U postgres -d academia_helm -c "SELECT 1;"
 ```
 
 ### Problème : Les migrations ne s'appliquent pas
@@ -252,12 +252,12 @@ Les données PostgreSQL sont stockées dans un volume Docker nommé `postgres_da
 
 Pour sauvegarder :
 ```bash
-docker-compose -f docker-compose.dev.yml exec postgres pg_dump -U postgres academia_hub > backup.sql
+docker-compose -f docker-compose.dev.yml exec postgres pg_dump -U postgres academia_helm > backup.sql
 ```
 
 Pour restaurer :
 ```bash
-docker-compose -f docker-compose.dev.yml exec -T postgres psql -U postgres academia_hub < backup.sql
+docker-compose -f docker-compose.dev.yml exec -T postgres psql -U postgres academia_helm < backup.sql
 ```
 
 ### Performance

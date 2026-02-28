@@ -11,7 +11,7 @@
 
 1. Ouvrez pgAdmin 4
 2. Connectez-vous à votre serveur PostgreSQL local
-3. Ouvrez Query Tool sur la base `academia_hub`
+3. Ouvrez Query Tool sur la base `academia_helm`
 4. Cliquez sur **"Open File"** (📁)
 5. Naviguez vers : `apps/api-server/scripts/verify-rls-installation.sql`
 6. Ouvrez le fichier

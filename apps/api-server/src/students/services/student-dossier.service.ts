@@ -218,6 +218,7 @@ export class StudentDossierService {
         placeOfBirth: student.placeOfBirth ?? null,
         legalDocumentType: student.legalDocumentType ?? null,
         legalDocumentNumber: student.legalDocumentNumber ?? null,
+        npi: student.npi ?? null,
         regimeType: student.regimeType ?? null,
         studentCode: student.studentCode ?? null,
         matricule: student.identifier?.globalMatricule || student.studentCode || null,

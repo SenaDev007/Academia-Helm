@@ -12,7 +12,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Plus,
   Search,
@@ -49,6 +49,8 @@ import StudentsModuleDashboard from '@/components/students/StudentsModuleDashboa
 interface Student {
   id: string;
   studentCode?: string;
+  matricule?: string | null;
+  npi?: string;
   firstName: string;
   lastName: string;
   dateOfBirth?: string;
@@ -115,6 +117,7 @@ export default function StudentsModulePage() {
   const [classesList, setClassesList] = useState<{ id: string; name: string }[]>([]);
   /** Onglet actif (Dashboard par défaut à l'ouverture du module) */
   const [activeSubModuleId, setActiveSubModuleId] = useState<string>('dashboard');
+  const studentFormRef = useRef<HTMLFormElement>(null);
 
   // ============================================================================
   // EFFECTS
@@ -360,7 +363,7 @@ export default function StudentsModulePage() {
                 className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Plus className="w-4 h-4" />
-                <span>Nouvelle inscription</span>
+                <span>Créer un nouvel élève</span>
               </button>
               <button
                 onClick={() => setIsImportModalOpen(true)}
@@ -507,7 +510,7 @@ export default function StudentsModulePage() {
               <thead className="bg-gray-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Code
+                    Matricule
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Nom & Prénom
@@ -527,7 +530,7 @@ export default function StudentsModulePage() {
                 {students.map((student) => (
                   <tr key={student.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
-                      {student.studentCode || 'N/A'}
+                      {student.matricule ?? student.studentCode ?? 'N/A'}
                     </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
@@ -575,7 +578,7 @@ export default function StudentsModulePage() {
                               const blob = new Blob([JSON.stringify(json.data || json, null, 2)], { type: 'application/json' });
                               const a = document.createElement('a');
                               a.href = URL.createObjectURL(blob);
-                              a.download = `educmaster-${student.studentCode || student.id}.json`;
+                              a.download = `educmaster-${student.matricule ?? student.studentCode ?? student.id}.json`;
                               a.click();
                               URL.revokeObjectURL(a.href);
                             } catch (e) {
@@ -648,9 +651,24 @@ export default function StudentsModulePage() {
               Annuler
             </button>
             <button
+              type="button"
               onClick={() => {
-                // TODO: Récupérer les données du formulaire
-                handleSubmit({});
+                const form = studentFormRef.current;
+                if (form) {
+                  const fd = new FormData(form);
+                  const dateVal = fd.get('dateOfBirth') as string;
+                  handleSubmit({
+                    lastName: (fd.get('lastName') as string) || '',
+                    firstName: (fd.get('firstName') as string) || '',
+                    dateOfBirth: dateVal || undefined,
+                    gender: (fd.get('gender') as string) || undefined,
+                    nationality: (fd.get('nationality') as string) || undefined,
+                    npi: (fd.get('npi') as string) || undefined,
+                    primaryLanguage: (fd.get('primaryLanguage') as string) || undefined,
+                  });
+                } else {
+                  handleSubmit({});
+                }
               }}
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
             >
@@ -659,7 +677,7 @@ export default function StudentsModulePage() {
           </>
         }
       >
-        <div className="space-y-4">
+        <form ref={studentFormRef} id="student-form-modal" onSubmit={(e) => e.preventDefault()} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -667,6 +685,7 @@ export default function StudentsModulePage() {
               </label>
               <input
                 type="text"
+                name="lastName"
                 defaultValue={selectedStudent?.lastName || ''}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
@@ -677,6 +696,7 @@ export default function StudentsModulePage() {
               </label>
               <input
                 type="text"
+                name="firstName"
                 defaultValue={selectedStudent?.firstName || ''}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
@@ -689,6 +709,7 @@ export default function StudentsModulePage() {
               </label>
               <input
                 type="date"
+                name="dateOfBirth"
                 defaultValue={
                   selectedStudent?.dateOfBirth
                     ? new Date(selectedStudent.dateOfBirth).toISOString().split('T')[0]
@@ -702,6 +723,7 @@ export default function StudentsModulePage() {
                 Genre
               </label>
               <select
+                name="gender"
                 defaultValue={selectedStudent?.gender || ''}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 aria-label="Genre"
@@ -718,15 +740,28 @@ export default function StudentsModulePage() {
             </label>
             <input
               type="text"
+              name="nationality"
               defaultValue={selectedStudent?.nationality || ''}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-              </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              NPI (Numéro d’Identification Personnel)
+            </label>
+            <input
+              type="text"
+              name="npi"
+              defaultValue={selectedStudent?.npi || ''}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Langue principale
             </label>
             <select
+              name="primaryLanguage"
               defaultValue={selectedStudent?.primaryLanguage || 'FR'}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               aria-label="Langue principale"
@@ -735,7 +770,7 @@ export default function StudentsModulePage() {
               <option value="EN">Anglais</option>
             </select>
           </div>
-        </div>
+        </form>
       </FormModal>
 
       <ReadOnlyModal
@@ -765,8 +800,17 @@ export default function StudentsModulePage() {
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Informations générales</h3>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Code élève</label>
-                  <p className="text-sm text-gray-900">{selectedStudent.studentCode || 'N/A'}</p>
+                  <div className="flex items-center gap-2 mb-1">
+                    <label className="block text-sm font-medium text-gray-700">Matricule</label>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                      Identité institutionnelle
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-900 font-mono" title="Non modifiable">{selectedStudent.matricule ?? selectedStudent.studentCode ?? 'N/A'}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">NPI (Numéro d’identification personnel)</label>
+                  <p className="text-sm text-gray-900">{selectedStudent.npi || '—'}</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Statut</label>

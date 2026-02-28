@@ -12,11 +12,11 @@
 
 1. Ouvrez pgAdmin 4
 2. Connectez-vous à votre serveur PostgreSQL local
-3. Développez : `PostgreSQL 18` → `Databases` → `academia_hub`
+3. Développez : `PostgreSQL 18` → `Databases` → `academia_helm`
 
 ### Étape 2 : Ouvrir le Query Tool
 
-1. Clic droit sur la base `academia_hub`
+1. Clic droit sur la base `academia_helm`
 2. Cliquez sur **"Query Tool"** (ou `Alt + Shift + Q`)
 
 ### Étape 3 : Charger le fichier SQL RLS
@@ -67,10 +67,10 @@ ORDER BY tablename;
 cd apps/api-server
 
 # Appliquer RLS
-psql -U postgres -d academia_hub -f prisma/migrations/rls-policies.sql
+psql -U postgres -d academia_helm -f prisma/migrations/rls-policies.sql
 
 # Vérifier
-psql -U postgres -d academia_hub -c "SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname = 'public' AND rowsecurity = true LIMIT 10;"
+psql -U postgres -d academia_helm -c "SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname = 'public' AND rowsecurity = true LIMIT 10;"
 ```
 
 ### Si psql n'est pas dans le PATH :
@@ -81,7 +81,7 @@ psql -U postgres -d academia_hub -c "SELECT tablename, rowsecurity FROM pg_table
 # Généralement dans : C:\Program Files\PostgreSQL\18\bin\psql.exe
 
 # Exécuter avec chemin complet
-& "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres -d academia_hub -f prisma/migrations/rls-policies.sql
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres -d academia_helm -f prisma/migrations/rls-policies.sql
 ```
 
 ---

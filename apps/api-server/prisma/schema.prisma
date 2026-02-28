@@ -223,8 +223,12 @@ model Tenant {
   studentGuardians                 StudentGuardian[]
   studentIdCards                   StudentIdCard[]
   studentIdentifiers               StudentIdentifier[]
+  studentPhotos                    StudentPhoto[]
+  studentNumberSequence            StudentNumberSequence?
   students                         Student[]
   nationalExportLogs               NationalExportLog[]
+  studentAuditLogs                 StudentAuditLog[]
+  academicYearClosures             AcademicYearClosure[]
   subjectAssignments               SubjectAssignment[]
   subjects                         Subject[]
   subscriptionInvoices             SubscriptionInvoice[]
@@ -309,6 +313,7 @@ model AcademicYear {
   createdAt                        DateTime                          @default(now())
   updatedAt                        DateTime                          @updatedAt
   tenant                           Tenant                            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYearClosures             AcademicYearClosure[]
   activityLogs                     ActivityLog[]
   administrativeSealUsages         AdministrativeSealUsage[]         @relation("AdministrativeSealUsageAcademicYear")
   administrativeSeals              AdministrativeSeal[]              @relation("AdministrativeSealAcademicYear")
@@ -944,6 +949,7 @@ model UserDevice {
   ipAddress      String?
   isTrusted      Boolean         @default(false)
   lastUsedAt     DateTime?
+  lastSyncAt     DateTime?      // Dernière synchronisation offline → serveur (ERP institutionnel)
   trustedAt      DateTime?
   revokedAt      DateTime?
   metadata       Json?
@@ -1054,6 +1060,24 @@ model AuthAuditLog {
   @@map("auth_audit_logs")
 }
 
+/// Événements de sécurité (SIEM simple) : login échoués, sync anormale, multi-device suspect, etc.
+model SecurityEvent {
+  id         String   @id @default(uuid())
+  tenantId  String?
+  userId    String?
+  eventType String   // LOGIN_FAILED, SYNC_CONFLICT, SYNC_ANOMALY, DEVICE_REVOKED, etc.
+  severity  String   // LOW, MEDIUM, HIGH, CRITICAL
+  ipAddress String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("security_events")
+}
+
 model Role {
   id              String           @id @default(uuid())
   tenantId        String?
@@ -1145,13 +1169,16 @@ model School {
   @@map("schools")
 }
 
+/// Trois identifiants distincts : (1) matricule Academia Helm = interne établissement ; (2) NPI = identification personnelle Bénin ; (3) numéro Educmaster = identifiant plateforme MEMP — aucun n'est équivalent à l'autre.
 model Student {
   id                       String                       @id @default(uuid())
   tenantId                 String
   academicYearId           String
   currentAcademicYearId    String?
   schoolLevelId            String
-  studentCode              String?
+  studentCode              String?                     // Legacy / affichage; préférer matricule
+  matricule                String?                     // 1) Matricule Academia Helm : identifiant interne établissement, généré backend, immuable. Distinct du NPI et du numéro Educmaster.
+  enrollmentYear           Int?                        // Année d'inscription initiale (pour traçabilité matricule)
   firstName                String
   lastName                 String
   dateOfBirth              DateTime?
@@ -1159,8 +1186,8 @@ model Student {
   nationality              String?
   primaryLanguage          String?
   placeOfBirth             String?
-  legalDocumentType        String?
-  legalDocumentNumber      String?
+  photoUrl                 String?
+  npi                      String?                      // 2) NPI : Numéro d'Identification Personnel (citoyens béninois). Distinct du matricule Academia Helm et du numéro Educmaster (plateforme MEMP).
   regimeType               String?                      // NORMAL | TEACHER_CHILD | SCHOLARSHIP | SPECIAL
   isActive                 Boolean                      @default(true)
   status                   String                       @default("ACTIVE")
@@ -1207,6 +1234,8 @@ model Student {
   idCards                  StudentIdCard[]
   identifier               StudentIdentifier?
   nationalExportLogs       NationalExportLog[]
+  studentAuditLogs         StudentAuditLog[]
+  studentPhotos            StudentPhoto[]
   academicYear             AcademicYear                 @relation(fields: [academicYearId], references: [id])
   schoolLevel              SchoolLevel                  @relation(fields: [schoolLevelId], references: [id])
   tenant                   Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1215,12 +1244,26 @@ model Student {
   tuitionPayments          TuitionPayment[]
 
   @@unique([tenantId, studentCode])
+  @@unique([tenantId, matricule])
   @@index([tenantId, academicYearId, schoolLevelId])
   @@index([tenantId, status])
   @@index([tenantId, studentCode])
+  @@index([tenantId, matricule])
   @@index([tenantId, regimeType])
   @@index([tenantId, isActive])
   @@map("students")
+}
+
+/// Séquence de génération du matricule Academia Helm (identifiant interne établissement) par tenant — distinct d'Educmaster/MEMP
+model StudentNumberSequence {
+  id        String   @id @default(uuid())
+  tenantId  String   @unique
+  current   Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("student_number_sequences")
 }
 
 model StudentAcademicTrack {
@@ -1237,6 +1280,23 @@ model StudentAcademicTrack {
 
   @@unique([studentId, academicTrackId])
   @@map("student_academic_tracks")
+}
+
+/// Historique des photos élèves (original + HD + thumbnail)
+model StudentPhoto {
+  id           String   @id @default(uuid())
+  tenantId     String
+  studentId    String
+  originalUrl  String
+  hdUrl        String
+  thumbnailUrl String
+  createdAt    DateTime @default(now())
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, studentId])
+  @@map("student_photos")
 }
 
 model Class {
@@ -3023,12 +3083,28 @@ model PublicVerificationToken {
   academicYear      AcademicYear @relation(fields: [academicYearId], references: [id])
   student           Student      @relation("PublicVerificationTokenStudent", fields: [entityId], references: [id], onDelete: Cascade)
   tenant            Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  verificationLogs  PublicVerificationLog[]
 
   @@unique([tenantId, academicYearId, entityId])
   @@index([tokenHash])
   @@index([entityId, academicYearId])
   @@index([expiresAt, isActive])
   @@map("public_verification_tokens")
+}
+
+/// Journal des vérifications publiques (scan QR carte scolaire) — rate limiting, audit, pas d'info sensible
+model PublicVerificationLog {
+  id         String   @id @default(uuid())
+  tokenId    String?
+  ipAddress  String?
+  result     String   // VALID | INVALID | EXPIRED
+  createdAt  DateTime @default(now())
+  token      PublicVerificationToken? @relation(fields: [tokenId], references: [id], onDelete: SetNull)
+
+  @@index([tokenId])
+  @@index([createdAt])
+  @@index([result])
+  @@map("public_verification_logs")
 }
 
 model StudentAcademicRecord {

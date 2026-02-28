@@ -122,7 +122,7 @@ Assurez-vous que ces fichiers existent :
 
 ### `apps/api-server/.env`
 ```env
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/academia_hub
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/academia_helm
 PORT=3000
 FRONTEND_URL=http://localhost:3001
 ```
@@ -137,7 +137,7 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:3000/api
 ## ✅ Checklist de Démarrage
 
 - [ ] PostgreSQL est démarré
-- [ ] Base de données `academia_hub` existe
+- [ ] Base de données `academia_helm` existe
 - [ ] Fichier `.env` dans `apps/api-server/` configuré
 - [ ] Fichier `.env.local` dans `apps/web-app/` configuré
 - [ ] Dépendances installées (`npm install` dans chaque dossier)

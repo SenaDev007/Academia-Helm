@@ -3,8 +3,10 @@
  * Matricule : <CODE_TENANT>-<ANNEE>-<AUTO_INCREMENT>
  */
 
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { MatriculeService } from './matricule.service';
+import { PublicVerificationService } from './public-verification.service';
 
 const ENROLLMENT_STATUS = {
   PRE_REGISTERED: 'PRE_REGISTERED',
@@ -19,7 +21,13 @@ const ENROLLMENT_STATUS = {
 
 @Injectable()
 export class StudentsLifecycleService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(StudentsLifecycleService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly matriculeService: MatriculeService,
+    private readonly publicVerificationService: PublicVerificationService,
+  ) {}
 
   private async logAudit(
     tenantId: string,
@@ -46,59 +54,25 @@ export class StudentsLifecycleService {
     }
   }
 
-  private async getTenantCode(tenantId: string): Promise<string> {
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: tenantId },
-      select: { slug: true },
-    });
-    if (!tenant) throw new NotFoundException('Tenant not found');
-    return (tenant.slug || 'AH').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || 'AH';
-  }
-
-  private async getYearFromAcademicYear(academicYearId: string): Promise<string> {
-    const ay = await this.prisma.academicYear.findUnique({
-      where: { id: academicYearId },
-      select: { name: true, startDate: true },
-    });
-    if (!ay) throw new NotFoundException('Academic year not found');
-    const match = ay.name?.match(/\d{4}/);
-    return match ? match[0] : String(new Date(ay.startDate).getFullYear());
-  }
-
-  /** Génère un matricule unique : CODE_TENANT-ANNEE-SEQ (ex. AH-2025-000124) */
-  async generateMatricule(tenantId: string, academicYearId: string): Promise<string> {
-    const code = await this.getTenantCode(tenantId);
-    const year = await this.getYearFromAcademicYear(academicYearId);
-    const prefix = `${code}-${year}-`;
-    const last = await this.prisma.student.findFirst({
-      where: {
-        tenantId,
-        studentCode: { startsWith: prefix },
-      },
-      orderBy: { studentCode: 'desc' },
-      select: { studentCode: true },
-    });
-    const next = last
-      ? parseInt(last.studentCode.slice(prefix.length), 10) + 1
-      : 1;
-    return `${prefix}${String(next).padStart(6, '0')}`;
-  }
-
   /** Pré-inscription : dossier incomplet autorisé, statut PRE_REGISTERED */
-  async preRegister(tenantId: string, data: {
-    academicYearId: string;
-    schoolLevelId: string;
-    firstName: string;
-    lastName: string;
-    dateOfBirth?: Date;
-    gender?: string;
-    nationality?: string;
-    placeOfBirth?: string;
-    legalDocumentType?: string;
-    legalDocumentNumber?: string;
-    regimeType?: string;
-    classId?: string;
-  }, userId?: string) {
+  async preRegister(
+    tenantId: string,
+    data: {
+      academicYearId: string;
+      schoolLevelId: string;
+      firstName: string;
+      lastName: string;
+      dateOfBirth?: Date;
+      gender?: string;
+      nationality?: string;
+      placeOfBirth?: string;
+      regimeType?: string;
+      classId?: string;
+      photoUrl?: string;
+      npi?: string;
+    },
+    userId?: string,
+  ) {
     const enrollmentDate = new Date();
     const student = await this.prisma.student.create({
       data: {
@@ -112,9 +86,9 @@ export class StudentsLifecycleService {
         gender: data.gender,
         nationality: data.nationality,
         placeOfBirth: data.placeOfBirth,
-        legalDocumentType: data.legalDocumentType,
-        legalDocumentNumber: data.legalDocumentNumber,
         regimeType: data.regimeType,
+        photoUrl: data.photoUrl,
+        npi: data.npi,
         status: 'ACTIVE',
         isActive: true,
       },
@@ -133,6 +107,19 @@ export class StudentsLifecycleService {
       },
     });
 
+    // Historique des photos d'identité (original / HD / thumbnail)
+    if (data.photoUrl) {
+      await this.prisma.studentPhoto.create({
+        data: {
+          tenantId,
+          studentId: student.id,
+          originalUrl: data.photoUrl,
+          hdUrl: data.photoUrl,
+          thumbnailUrl: data.photoUrl,
+        },
+      });
+    }
+
     await this.logAudit(tenantId, student.id, 'PRE_REGISTER', userId, null, {
       studentId: student.id,
       enrollmentId: enrollment.id,
@@ -150,7 +137,7 @@ export class StudentsLifecycleService {
     });
   }
 
-  /** Admission : documents validés, classe assignée, matricule généré */
+  /** Admission : documents validés, classe assignée, matricule institutionnel généré (backend, immuable) */
   async admit(tenantId: string, data: {
     studentId: string;
     academicYearId: string;
@@ -167,29 +154,64 @@ export class StudentsLifecycleService {
       (e) => e.academicYearId === data.academicYearId && e.status === ENROLLMENT_STATUS.PRE_REGISTERED,
     );
     if (!enrollment) throw new BadRequestException('Aucune pré-inscription trouvée pour cette année');
-    const matricule = await this.generateMatricule(tenantId, data.academicYearId);
-    await this.prisma.student.update({
-      where: { id: data.studentId },
-      data: { studentCode: matricule, currentAcademicYearId: data.academicYearId },
-    });
-    const updatedEnrollment = await this.prisma.studentEnrollment.update({
-      where: { id: enrollment.id },
-      data: {
-        classId: data.classId,
-        status: ENROLLMENT_STATUS.ADMITTED,
-      },
+
+    const schoolCode = await this.matriculeService.getSchoolCode(tenantId);
+    const enrollmentYear = await this.matriculeService.getEnrollmentYearFromAcademicYear(data.academicYearId);
+
+    let matriculeAssigned: string | null = null;
+    await this.prisma.$transaction(async (tx) => {
+      const matricule = await this.matriculeService.generateInTransaction(
+        tx,
+        tenantId,
+        schoolCode,
+        enrollmentYear,
+      );
+      matriculeAssigned = matricule;
+      await tx.student.update({
+        where: { id: data.studentId },
+        data: {
+          matricule,
+          enrollmentYear,
+          studentCode: matricule,
+          currentAcademicYearId: data.academicYearId,
+        },
+      });
+      await tx.studentEnrollment.update({
+        where: { id: enrollment.id },
+        data: {
+          classId: data.classId,
+          status: ENROLLMENT_STATUS.ADMITTED,
+        },
+      });
     });
 
+    const updatedEnrollment = await this.prisma.studentEnrollment.findUnique({
+      where: { id: enrollment.id },
+    });
     await this.logAudit(tenantId, data.studentId, 'ADMIT', userId, {
       enrollmentId: enrollment.id,
       previousStatus: enrollment.status,
       previousClassId: enrollment.classId,
     }, {
-      enrollmentId: updatedEnrollment.id,
-      status: updatedEnrollment.status,
-      classId: updatedEnrollment.classId,
-      academicYearId: updatedEnrollment.academicYearId,
+      ...(updatedEnrollment ? {
+        enrollmentId: updatedEnrollment.id,
+        status: updatedEnrollment.status,
+        classId: updatedEnrollment.classId,
+        academicYearId: updatedEnrollment.academicYearId,
+      } : {}),
+      matricule: matriculeAssigned ?? undefined,
     });
+
+    // Token de vérification publique pour QR (spec : token généré lors admission)
+    try {
+      await this.publicVerificationService.generateVerificationToken(
+        tenantId,
+        data.studentId,
+        data.academicYearId,
+      );
+    } catch (e) {
+      this.logger.warn(`Token de vérification non créé à l'admission pour ${data.studentId}: ${(e as Error).message}`);
+    }
 
     return this.prisma.student.findUnique({
       where: { id: data.studentId },
@@ -444,6 +466,7 @@ export class StudentsLifecycleService {
       where: { id: data.studentId },
       data: { status: 'TRANSFERRED' },
     });
+    await this.publicVerificationService.deactivateTokensForStudent(data.studentId).catch(() => {});
 
     await this.logAudit(tenantId, data.studentId, 'TRANSFER', userId, {
       enrollmentId: enrollment.id,
@@ -608,7 +631,11 @@ export class StudentsLifecycleService {
     };
   }
 
-  /** Export EDUCMASTER — JSON conforme, log obligatoire */
+  /**
+   * Export EDUCMASTER — JSON conforme pour la plateforme gouvernementale Bénin (MEMP / emp.educmaster.bj).
+   * Trois identifiants distincts : (1) matricule Academia Helm = interne établissement ;
+   * (2) NPI = Numéro d'Identification Personnel (citoyens béninois) ; (3) numéro Educmaster = identifiant plateforme MEMP.
+   */
   async exportEducmaster(tenantId: string, studentId: string): Promise<{ data: any; logId: string }> {
     const student = await this.prisma.student.findFirst({
       where: { id: studentId, tenantId },
@@ -625,7 +652,9 @@ export class StudentsLifecycleService {
       tenantId,
       student: {
         id: student.id,
+        matriculeAcademiaHelm: student.matricule ?? student.studentCode,
         studentCode: student.studentCode,
+        npi: student.npi,
         firstName: student.firstName,
         lastName: student.lastName,
         dateOfBirth: student.dateOfBirth,

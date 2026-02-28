@@ -62,6 +62,8 @@ export class StudentsService {
     if (updateStudentDto.dateOfBirth !== undefined) {
       updateData.dateOfBirth = updateStudentDto.dateOfBirth ? toDate(updateStudentDto.dateOfBirth as any) : null;
     }
+    delete updateData.matricule;
+    delete updateData.enrollmentYear;
     return this.studentsRepository.update(id, tenantId, schoolLevelId, updateData);
   }
 

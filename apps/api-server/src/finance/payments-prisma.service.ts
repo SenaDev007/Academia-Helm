@@ -66,6 +66,7 @@ export class PaymentsPrismaService {
         ...data,
         receiptNumber,
         status: 'completed',
+        transactionType: 'PAYMENT',
       },
       include: {
         student: true,
@@ -266,6 +267,70 @@ export class PaymentsPrismaService {
     }
 
     return `${prefix}${sequence.toString().padStart(6, '0')}`;
+  }
+
+  /**
+   * Annulation par écriture inverse (REVERSAL). Jamais de suppression.
+   * Crée un paiement inverse (montant négatif, transactionType REVERSAL) et met à jour le résumé.
+   */
+  async reversePayment(
+    paymentId: string,
+    tenantId: string,
+    params: { reversalReason: string; createdBy?: string }
+  ) {
+    const original = await this.prisma.payment.findFirst({
+      where: { id: paymentId, tenantId },
+      include: { student: true, studentFee: true },
+    });
+
+    if (!original) {
+      throw new NotFoundException(`Payment with ID ${paymentId} not found`);
+    }
+
+    if (original.transactionType === 'REVERSAL') {
+      throw new BadRequestException('Cannot reverse a reversal payment');
+    }
+
+    const existingReversal = await this.prisma.payment.findFirst({
+      where: { reversedFromId: original.id, tenantId },
+    });
+    if (existingReversal) {
+      throw new BadRequestException('This payment has already been reversed');
+    }
+
+    const reversalAmount = -Number(original.amount);
+    const receiptNumber = await this.generateReceiptNumber(tenantId);
+
+    const reversal = await this.prisma.payment.create({
+      data: {
+        tenantId: original.tenantId,
+        academicYearId: original.academicYearId,
+        studentId: original.studentId,
+        schoolLevelId: original.schoolLevelId,
+        feeConfigurationId: original.feeConfigurationId,
+        studentFeeId: original.studentFeeId,
+        amount: reversalAmount,
+        paymentMethod: original.paymentMethod,
+        paymentDate: new Date(),
+        receiptNumber: `ANNUL-${receiptNumber}`,
+        reference: `Annulation de ${original.receiptNumber}`,
+        status: 'completed',
+        transactionType: 'REVERSAL',
+        reversedFromId: original.id,
+        reversalReason: params.reversalReason,
+        createdBy: params.createdBy,
+      },
+      include: {
+        student: true,
+        reversedFrom: true,
+      },
+    });
+
+    if (original.studentFeeId) {
+      await this.updatePaymentSummary(original.studentFeeId, reversalAmount);
+    }
+
+    return reversal;
   }
 
   /**

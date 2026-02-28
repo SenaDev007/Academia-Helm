@@ -138,6 +138,7 @@ model Tenant {
   nationalExams                    NationalExam[]                    @relation("NationalExamTenant")
   offlineSyncSettings              OfflineSyncSettings?
   orderItems                       OrderItem[]
+  onlinePayments                   OnlinePayment[]
   orders                           Order[]
   orionAccessLogs                  OrionAccessLog[]
   orionAlerts                      OrionAlert[]
@@ -1216,6 +1217,7 @@ model Student {
   mediaSessions            MediaSession[]
   medicalRecords           MedicalRecord[]
   meetings                 Meeting[]                    @relation("MeetingStudent")
+  onlinePayments           OnlinePayment[]
   orders                   Order[]
   paymentSummaries         PaymentSummary[]
   payments                 Payment[]
@@ -1628,6 +1630,7 @@ model TuitionPayment {
   @@map("tuition_payments")
 }
 
+/// Annulation = écriture inverse (REVERSAL), jamais suppression. reversedFromId pointe vers le paiement annulé.
 model Payment {
   id                 String                @id @default(uuid())
   tenantId           String
@@ -1647,6 +1650,9 @@ model Payment {
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
   studentFeeId       String?
+  transactionType    String                @default("PAYMENT")
+  reversedFromId    String?
+  reversalReason     String?
   paymentAllocations PaymentAllocation[]
   notifications      PaymentNotification[]
   receipt            PaymentReceipt?
@@ -1658,10 +1664,14 @@ model Payment {
   studentFee         StudentFee?           @relation("StudentFeePayment", fields: [studentFeeId], references: [id])
   student            Student               @relation(fields: [studentId], references: [id], onDelete: Cascade)
   tenant             Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  reversedFrom       Payment?              @relation("PaymentReversal", fields: [reversedFromId], references: [id])
+  reversals          Payment[]             @relation("PaymentReversal")
 
   @@index([tenantId, schoolLevelId])
   @@index([studentId])
   @@index([studentFeeId])
+  @@index([transactionType])
+  @@index([reversedFromId])
   @@map("payments")
 }
 
@@ -1689,6 +1699,29 @@ model PaymentFlow {
   @@index([status])
   @@index([pspReference])
   @@map("payment_flows")
+}
+
+/// Paiements en ligne (Fedapay, etc.) — webhook crée Payment après confirmation.
+model OnlinePayment {
+  id          String   @id @default(uuid())
+  tenantId    String
+  studentId   String
+  amount      Decimal  @db.Decimal(10, 2)
+  provider    String
+  providerRef String
+  status      String
+  paymentId   String?
+  idempotencyKey String? @unique
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([studentId])
+  @@index([providerRef])
+  @@index([status])
+  @@map("online_payments")
 }
 
 model SchoolPaymentAccount {

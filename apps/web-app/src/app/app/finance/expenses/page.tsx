@@ -23,6 +23,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 
 export default function ExpensesPage() {
   const { academicYear, schoolLevel } = useModuleContext();
@@ -49,13 +50,12 @@ export default function ExpensesPage() {
     closeModal();
   };
 
-  const subModuleTabs = [
-    { id: 'fees', label: 'Configuration des frais', path: '/app/finance/fees' },
-    { id: 'payments', label: 'Paiements', path: '/app/finance/payments' },
-    { id: 'expenses', label: 'Dépenses', path: '/app/finance/expenses' },
-    { id: 'treasury', label: 'Trésorerie', path: '/app/finance/treasury' },
-    { id: 'collection', label: 'Recouvrement', path: '/app/finance/collection' },
-  ];
+  const subModuleTabs = FINANCE_SUBMODULE_TABS.map((t) => ({
+    id: t.id,
+    label: t.label,
+    path: t.path,
+    icon: <t.icon className="w-4 h-4" />,
+  }));
 
   const getStatusBadge = (status: string) => {
     const variants: Record<string, any> = {

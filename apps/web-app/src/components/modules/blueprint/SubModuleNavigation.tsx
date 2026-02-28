@@ -30,9 +30,21 @@ export interface SubModule {
   disabled?: boolean;
 }
 
+/** Tab format (alias pour compatibilité pages finance, etc.) */
+export interface SubModuleTab {
+  id: string;
+  label: string;
+  path: string;
+  icon?: ReactNode;
+}
+
 export interface SubModuleNavigationProps {
   /** Liste des sous-modules (3 à 7 max) */
-  modules: SubModule[];
+  modules?: SubModule[];
+  /** Alias : tabs avec path → converti en modules avec href */
+  tabs?: SubModuleTab[];
+  /** Alias : path actuel quand on utilise tabs */
+  currentPath?: string;
   /** Sous-module actif */
   activeModuleId?: string;
   /** Callback lors du changement */
@@ -42,7 +54,9 @@ export interface SubModuleNavigationProps {
 }
 
 export default function SubModuleNavigation({
-  modules,
+  modules: modulesProp,
+  tabs,
+  currentPath,
   activeModuleId,
   onModuleChange,
   className,
@@ -50,17 +64,17 @@ export default function SubModuleNavigation({
   const pathname = usePathname();
   const router = useRouter();
 
+  const modules: SubModule[] = modulesProp ?? (tabs?.map((t) => ({ id: t.id, label: t.label, href: t.path, icon: t.icon })) ?? []);
+  const pathForActive = currentPath ?? pathname;
+
   // Déterminer le module actif
   const getActiveModuleId = () => {
     if (activeModuleId) return activeModuleId;
-    
-    // Essayer de détecter depuis l'URL
     for (const module of modules) {
-      if (module.href && pathname?.includes(module.href)) {
+      if (module.href && pathForActive?.startsWith(module.href)) {
         return module.id;
       }
     }
-    
     return modules[0]?.id;
   };
 

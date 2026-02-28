@@ -24,6 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 
 export default function FeesPage() {
   const { academicYear, schoolLevel } = useModuleContext();
@@ -59,13 +60,12 @@ export default function FeesPage() {
     closeModal();
   };
 
-  const subModuleTabs = [
-    { id: 'fees', label: 'Configuration des frais', path: '/app/finance/fees' },
-    { id: 'payments', label: 'Paiements', path: '/app/finance/payments' },
-    { id: 'expenses', label: 'Dépenses', path: '/app/finance/expenses' },
-    { id: 'treasury', label: 'Trésorerie', path: '/app/finance/treasury' },
-    { id: 'collection', label: 'Recouvrement', path: '/app/finance/collection' },
-  ];
+  const subModuleTabs = FINANCE_SUBMODULE_TABS.map((t) => ({
+    id: t.id,
+    label: t.label,
+    path: t.path,
+    icon: <t.icon className="w-4 h-4" />,
+  }));
 
   return (
     <div className="space-y-6">

@@ -12,6 +12,7 @@ import {
   Param,
   Query,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { PaymentsPrismaService } from './payments-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -59,11 +60,6 @@ export class PaymentsPrismaController {
     });
   }
 
-  @Get(':id')
-  async findPaymentById(@Param('id') id: string, @TenantId() tenantId: string) {
-    return this.paymentsService.findPaymentById(id, tenantId);
-  }
-
   @Get('student/:studentId/summary')
   async getStudentPaymentSummary(
     @Param('studentId') studentId: string,
@@ -75,6 +71,30 @@ export class PaymentsPrismaController {
       academicYearId,
       tenantId
     );
+  }
+
+  @Get(':id')
+  async findPaymentById(@Param('id') id: string, @TenantId() tenantId: string) {
+    return this.paymentsService.findPaymentById(id, tenantId);
+  }
+
+  /**
+   * Annulation par écriture inverse (REVERSAL). Motif obligatoire.
+   */
+  @Post(':id/reverse')
+  async reversePayment(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() body: { reversalReason: string },
+  ) {
+    if (!body?.reversalReason?.trim()) {
+      throw new BadRequestException('reversalReason is required');
+    }
+    return this.paymentsService.reversePayment(id, tenantId, {
+      reversalReason: body.reversalReason.trim(),
+      createdBy: user?.id,
+    });
   }
 }
 

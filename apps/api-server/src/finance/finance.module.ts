@@ -5,6 +5,8 @@
  */
 
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { FeesPrismaService } from './fees-prisma.service';
 import { PaymentsPrismaService } from './payments-prisma.service';
 import { ExpensesPrismaService } from './expenses-prisma.service';
@@ -17,6 +19,15 @@ import { CollectionPrismaController } from './collection-prisma.controller';
 import { TreasuryPrismaController } from './treasury-prisma.controller';
 import { DatabaseModule } from '../database/database.module';
 import { SettingsModule } from '../settings/settings.module';
+// Sous-modules Finance (config frais, comptes, encaissements, recouvrement)
+import { FeeStructureController } from './fee-structure.controller';
+import { FeeStructureService } from './fee-structure.service';
+import { StudentAccountController } from './student-account.controller';
+import { StudentAccountService } from './student-account.service';
+import { FinanceTransactionController } from './finance-transaction.controller';
+import { FinanceTransactionService } from './finance-transaction.service';
+import { RecoveryReminderController } from './recovery-reminder.controller';
+import { RecoveryReminderService } from './recovery-reminder.service';
 // Module 4 - Frais & Priorité de Paiement
 import { PaymentAllocationService } from './payment-allocation.service';
 import { FeeInstallmentService } from './fee-installment.service';
@@ -41,10 +52,24 @@ import { StudentArrearService } from './student-arrear.service';
 import { FeeRegimeController } from './fee-regime.controller';
 import { StudentFeeProfileController } from './student-fee-profile.controller';
 import { StudentArrearController } from './student-arrear.controller';
+// Sous-modules 5–8
+import { FinanceExpenseService } from './finance-expense.service';
+import { FinanceExpenseController } from './finance-expense.controller';
+import { FinanceDailyClosureService } from './finance-daily-closure.service';
+import { FinanceDailyClosureController } from './finance-daily-closure.controller';
+import { FinancialSettingsService } from './financial-settings.service';
+import { FinancialSettingsController } from './financial-settings.controller';
+import { FinanceReportsService } from './finance-reports.service';
+import { FinanceReportsController } from './finance-reports.controller';
+import { FinanceAuditController } from './finance-audit.controller';
 
 @Module({
-  imports: [DatabaseModule, SettingsModule],
+  imports: [ConfigModule, ScheduleModule.forRoot(), DatabaseModule, SettingsModule],
   controllers: [
+    FeeStructureController,
+    StudentAccountController,
+    FinanceTransactionController,
+    RecoveryReminderController,
     FeesPrismaController,
     PaymentsPrismaController,
     ExpensesPrismaController,
@@ -64,6 +89,11 @@ import { StudentArrearController } from './student-arrear.controller';
     FeeRegimeController,
     StudentFeeProfileController,
     StudentArrearController,
+    FinanceExpenseController,
+    FinanceDailyClosureController,
+    FinancialSettingsController,
+    FinanceReportsController,
+    FinanceAuditController,
   ],
   providers: [
     FeesPrismaService,
@@ -71,6 +101,10 @@ import { StudentArrearController } from './student-arrear.controller';
     ExpensesPrismaService,
     CollectionPrismaService,
     TreasuryPrismaService,
+    FeeStructureService,
+    StudentAccountService,
+    FinanceTransactionService,
+    RecoveryReminderService,
     // Module 4 - Frais & Priorité de Paiement
     PaymentAllocationService,
     FeeInstallmentService,
@@ -84,6 +118,10 @@ import { StudentArrearController } from './student-arrear.controller';
     FeeRegimeService,
     StudentFeeProfileService,
     StudentArrearService,
+    FinanceExpenseService,
+    FinanceDailyClosureService,
+    FinancialSettingsService,
+    FinanceReportsService,
   ],
   exports: [
     FeesPrismaService,
@@ -91,6 +129,10 @@ import { StudentArrearController } from './student-arrear.controller';
     ExpensesPrismaService,
     CollectionPrismaService,
     TreasuryPrismaService,
+    FeeStructureService,
+    StudentAccountService,
+    FinanceTransactionService,
+    RecoveryReminderService,
     // Module 4 - Frais & Priorité de Paiement
     PaymentAllocationService,
     FeeInstallmentService,
@@ -98,6 +140,8 @@ import { StudentArrearController } from './student-arrear.controller';
     // Module 4 - Recouvrement & Reçus
     CollectionCaseService,
     ReceiptGenerationService,
+    FinancialSettingsService,
+    FinanceReportsService,
   ],
 })
 export class FinanceModule {}

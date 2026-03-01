@@ -39,6 +39,7 @@ import { StudentsLifecycleService } from './services/students-lifecycle.service'
 import { StudentsLifecycleController } from './controllers/students-lifecycle.controller';
 import { EducmasterExcelExportService } from './services/educmaster-excel-export.service';
 import { MatriculeService } from './services/matricule.service';
+import { FinanceModule } from '../finance/finance.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { MatriculeService } from './services/matricule.service';
     UsersModule, // ✅ Import pour que PermissionsGuard puisse résoudre UserRepository
     ModulesModule, // ✅ Import pour que ModuleAccessGuard puisse résoudre ModulesService
     OrionModule, // Pour intégration ORION sur le cycle de vie élèves
+    FinanceModule, // Comptes élèves : création auto StudentAccount à l'admission/réinscription
   ],
   controllers: [
     StudentsController,

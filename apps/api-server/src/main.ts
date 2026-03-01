@@ -16,6 +16,9 @@ async function bootstrap() {
       cwd: apiRoot,
       stdio: stdioMode,
     });
+    if (process.env.NODE_ENV === 'production') {
+      console.log('✅ Migrations appliquées (dynamique et automatique)');
+    }
   } catch (migrateErr) {
     try {
       execSync(`npx prisma db push --schema=${prismaSchema}`, {

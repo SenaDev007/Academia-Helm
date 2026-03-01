@@ -10,6 +10,7 @@ import {
   Wallet,
   BarChart3,
   Settings,
+  ShieldCheck,
 } from 'lucide-react';
 
 export const FINANCE_SUBMODULE_TABS = [
@@ -20,5 +21,6 @@ export const FINANCE_SUBMODULE_TABS = [
   { id: 'expenses', label: 'Dépenses', path: '/app/finance/expenses', icon: TrendingDown },
   { id: 'treasury', label: 'Clôture & Trésorerie', path: '/app/finance/treasury', icon: Wallet },
   { id: 'reports', label: 'Rapports financiers', path: '/app/finance/reports', icon: BarChart3 },
+  { id: 'audit', label: 'Contrôle & Audit', path: '/app/finance/audit', icon: ShieldCheck },
   { id: 'settings', label: 'Paramétrage & Audit', path: '/app/finance/settings', icon: Settings },
 ];

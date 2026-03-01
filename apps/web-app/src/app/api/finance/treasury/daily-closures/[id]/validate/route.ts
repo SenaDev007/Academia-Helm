@@ -9,13 +9,14 @@ import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
-export async function PUT(
+export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/finance/treasury/daily-closures/${params.id}/validate`, {
-      method: 'PUT',
+    const { id } = await params;
+    const response = await fetch(`${API_BASE_URL}/api/finance/daily-closures/${id}/validate`, {
+      method: 'PATCH',
       headers: {
         'Authorization': request.headers.get('Authorization') || '',
       },

@@ -7,6 +7,7 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { PrismaService } from '../../database/prisma.service';
 import { MatriculeService } from './matricule.service';
 import { PublicVerificationService } from './public-verification.service';
+import { StudentAccountService } from '../../finance/student-account.service';
 
 const ENROLLMENT_STATUS = {
   PRE_REGISTERED: 'PRE_REGISTERED',
@@ -27,6 +28,7 @@ export class StudentsLifecycleService {
     private readonly prisma: PrismaService,
     private readonly matriculeService: MatriculeService,
     private readonly publicVerificationService: PublicVerificationService,
+    private readonly studentAccountService: StudentAccountService,
   ) {}
 
   private async logAudit(
@@ -213,6 +215,13 @@ export class StudentsLifecycleService {
       this.logger.warn(`Token de vérification non créé à l'admission pour ${data.studentId}: ${(e as Error).message}`);
     }
 
+    // Comptes élèves : création automatique StudentAccount + AccountBreakdown à l'admission
+    try {
+      await this.studentAccountService.getOrCreate(tenantId, data.studentId, data.academicYearId);
+    } catch (e) {
+      this.logger.warn(`Compte élève non créé à l'admission pour ${data.studentId}: ${(e as Error).message}`);
+    }
+
     return this.prisma.student.findUnique({
       where: { id: data.studentId },
       include: {
@@ -259,6 +268,13 @@ export class StudentsLifecycleService {
       classId: newEnrollment.classId,
       previousArrears: newEnrollment.previousArrears,
     });
+
+    // Comptes élèves : création automatique StudentAccount à la réinscription
+    try {
+      await this.studentAccountService.getOrCreate(tenantId, data.studentId, data.academicYearId);
+    } catch (e) {
+      this.logger.warn(`Compte élève non créé à la réinscription pour ${data.studentId}: ${(e as Error).message}`);
+    }
 
     return this.prisma.student.findUnique({
       where: { id: data.studentId },
@@ -334,6 +350,13 @@ export class StudentsLifecycleService {
       previousArrears: newEnrollment.previousArrears,
     });
 
+    // Comptes élèves : création automatique pour l'année cible (promotion)
+    try {
+      await this.studentAccountService.getOrCreate(tenantId, data.studentId, data.toAcademicYearId);
+    } catch (e) {
+      this.logger.warn(`Compte élève non créé à la promotion pour ${data.studentId}: ${(e as Error).message}`);
+    }
+
     return this.prisma.student.findUnique({
       where: { id: data.studentId },
       include: {
@@ -390,6 +413,13 @@ export class StudentsLifecycleService {
       classId: newEnrollment.classId,
       previousArrears: newEnrollment.previousArrears,
     });
+
+    // Comptes élèves : création automatique pour l'année cible (redoublement)
+    try {
+      await this.studentAccountService.getOrCreate(tenantId, data.studentId, data.toAcademicYearId);
+    } catch (e) {
+      this.logger.warn(`Compte élève non créé au redoublement pour ${data.studentId}: ${(e as Error).message}`);
+    }
 
     return this.prisma.student.findUnique({
       where: { id: data.studentId },

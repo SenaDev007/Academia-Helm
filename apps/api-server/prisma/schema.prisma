@@ -98,6 +98,18 @@ model Tenant {
   feeConfigurations                FeeConfiguration[]
   feeDefinitions                   FeeDefinition[]
   feeRegimes                       FeeRegime[]                       @relation("FeeRegimeTenant")
+  feeStructures                    FeeStructure[]
+  studentAccounts                  StudentAccount[]
+  financeTransactions              FinanceTransaction[]
+  recoveryReminders                RecoveryReminder[]
+  financeExpenses                  FinanceExpense[]
+  financeBudgets                   FinanceBudget[]
+  financeDailyClosures             FinanceDailyClosure[]
+  financialReportExports          FinancialReportExport[]
+  financialSettings               FinancialSettings?
+  financialAuditLogs              FinancialAuditLog[]
+  financialAnomalies               FinancialAnomaly[]
+  cashRegisters                   CashRegister[]
   gedDocuments                     GedDocument[]
   generatedDocuments               GeneratedDocument[]
   gradeCalculations                GradeCalculation[]
@@ -366,6 +378,14 @@ model AcademicYear {
   feeConfigurations                FeeConfiguration[]
   feeDefinitions                   FeeDefinition[]                   @relation("FeeDefinitionAcademicYear")
   feeRegimes                       FeeRegime[]                       @relation("FeeRegimeAcademicYear")
+  feeStructures                    FeeStructure[]
+  studentAccounts                  StudentAccount[]
+  financeTransactions              FinanceTransaction[]
+  recoveryReminders                RecoveryReminder[]
+  financeExpenses                  FinanceExpense[]
+  financeBudgets                   FinanceBudget[]
+  financeDailyClosures             FinanceDailyClosure[]
+  financialReportExports           FinancialReportExport[]
   gedDocumentVersions              GedDocumentVersion[]              @relation("GedDocumentVersionAcademicYear")
   gedDocuments                     GedDocument[]
   generatedDocuments               GeneratedDocument[]
@@ -614,6 +634,82 @@ model Classroom {
   @@map("classrooms")
 }
 
+// ============================================================================
+// MODULE 2 — STRUCTURE ACADÉMIQUE (niveau → cycle → classe, par année scolaire)
+// ============================================================================
+
+/// Niveau scolaire : Maternelle / Primaire / Secondaire (par année).
+model AcademicLevel {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  name            String   // Maternelle | Primaire | Secondaire
+  orderIndex      Int      @default(0)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  cycles          AcademicCycle[]
+
+  @@unique([tenantId, academicYearId, name])
+  @@index([tenantId, academicYearId])
+  @@map("pedagogy_academic_levels")
+}
+
+/// Cycle : PS/MS/GS, CI-CM2, 6ème-Terminale (par niveau, par année).
+model AcademicCycle {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  levelId         String
+  name            String   // PS, MS, GS, CI, CP, 6ème, etc.
+  orderIndex      Int      @default(0)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  level           AcademicLevel @relation(fields: [levelId], references: [id], onDelete: Cascade)
+  classes         AcademicClass[]
+
+  @@unique([tenantId, academicYearId, levelId, name])
+  @@index([tenantId, academicYearId])
+  @@index([levelId])
+  @@map("pedagogy_academic_cycles")
+}
+
+/// Classe pédagogique (ex. CM2 A, 6ème B). Par année, avec salle et responsable.
+model AcademicClass {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  levelId         String
+  cycleId         String
+  name            String   // "CM2 A", "6ème B"
+  code            String   // CM2A, 6EMEB
+  capacity        Int?
+  roomId          String?
+  mainTeacherId   String?
+  languageTrack   String?  // FR | EN si bilingue
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  level           AcademicLevel @relation(fields: [levelId], references: [id], onDelete: Restrict)
+  cycle           AcademicCycle @relation(fields: [cycleId], references: [id], onDelete: Restrict)
+  room            Room?    @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  mainTeacher     Teacher? @relation("AcademicClassMainTeacher", fields: [mainTeacherId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, academicYearId, code])
+  @@index([tenantId, academicYearId])
+  @@index([levelId])
+  @@index([cycleId])
+  @@index([roomId])
+  @@map("pedagogy_academic_classes")
+}
+
 enum AcademicPeriodType {
   TRIMESTER
   SEMESTER
@@ -671,6 +767,7 @@ model SchoolLevel {
   feeConfigurations                FeeConfiguration[]
   feeDefinitions                   FeeDefinition[]                   @relation("FeeDefinitionSchoolLevel")
   feeRegimes                       FeeRegime[]                       @relation("FeeRegimeSchoolLevel")
+  feeStructures                    FeeStructure[]                    @relation("FeeStructureLevel")
   gedDocuments                     GedDocument[]
   generatedDocuments               GeneratedDocument[]
   gradeCalculations                GradeCalculation[]
@@ -827,9 +924,12 @@ model User {
   validatedComplianceRecords                ComplianceRecord[]                @relation("ComplianceRecordValidator")
   createdClosures                           DailyClosure[]                    @relation("DailyClosureCreator")
   validatedClosures                         DailyClosure[]                    @relation("DailyClosureValidator")
+  validatedFinanceDailyClosures             FinanceDailyClosure[]             @relation("FinanceDailyClosureValidator")
   validatedDailyLogs                        DailyLog[]                        @relation("DailyLogValidator")
   dataConsents                              DataConsent[]
   createdDataExports                        DataExport[]
+  generatedFinancialReportExports           FinancialReportExport[]           @relation("FinancialReportExportGenerator")
+  financialAuditLogsPerformed               FinancialAuditLog[]              @relation("FinancialAuditLogPerformer")
   createdDepartments                        Department[]
   deviceSessions                            DeviceSession[]
   createdDiscipline                         Discipline[]                      @relation("DisciplineCreator")
@@ -849,8 +949,12 @@ model User {
   examSupervisorUsers                       ExamSupervisor[]                  @relation("ExamSupervisorUser")
   approvedExpenses                          Expense[]                         @relation("ExpenseApprover")
   createdExpenses                           Expense[]
+  requestedFinanceExpenses                   FinanceExpense[]                  @relation("FinanceExpenseRequester")
+  approvedFinanceExpenses                   FinanceExpense[]                  @relation("FinanceExpenseApprover")
   createdFeeConfigurations                  FeeConfiguration[]
   createdFeeDefinitions                     FeeDefinition[]
+  feeStructuresCreated                     FeeStructure[]                     @relation("FeeStructureCreator")
+  feeOverridesCreated                      FeeOverride[]                      @relation("FeeOverrideCreator")
   gedDocumentVersions                       GedDocumentVersion[]
   gedDocumentsCreated                       GedDocument[]                     @relation("GedDocumentCreatedBy")
   gedDocumentsValidated                     GedDocument[]                     @relation("GedDocumentValidatedBy")
@@ -1221,6 +1325,8 @@ model Student {
   orders                   Order[]
   paymentSummaries         PaymentSummary[]
   payments                 Payment[]
+  feeOverrides             FeeOverride[]
+  studentAccounts          StudentAccount[]
   publicVerificationTokens PublicVerificationToken[]    @relation("PublicVerificationTokenStudent")
   rankings                 Ranking[]
   reportCards              ReportCard[]
@@ -1331,6 +1437,7 @@ model Class {
   educastContents            EducastContent[]            @relation("EducastContentClass")
   feeConfigurations          FeeConfiguration[]
   feeDefinitions             FeeDefinition[]             @relation("FeeDefinitionClass")
+  feeStructures             FeeStructure[]               @relation("FeeStructureClass")
   homeworkEntries            HomeworkEntry[]
   honorRolls                 HonorRoll[]
   incidents                  Incident[]
@@ -3651,10 +3758,188 @@ model ExpenseCategory {
   schoolLevel    SchoolLevel?      @relation(fields: [schoolLevelId], references: [id])
   tenant         Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   expenses       Expense[]         @relation("ExpenseCategoryExpense")
+  financeExpenses FinanceExpense[]
+  financeBudgets FinanceBudget[]
 
   @@index([tenantId])
   @@index([parentId])
   @@map("expense_categories")
+}
+
+/// Sous-module 5 — Statut dépense (workflow validation).
+enum ExpenseStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Sous-module 5 — Dépense institutionnelle (workflow, justificatif, budget).
+model FinanceExpense {
+  id               String        @id @default(uuid())
+  tenantId         String
+  academicYearId   String
+  categoryId       String
+  amount           Decimal       @db.Decimal(12, 2)
+  description      String
+  receiptUrl       String?
+  status           ExpenseStatus @default(PENDING)
+  requestedById    String
+  approvedById     String?
+  approvedAt       DateTime?
+  createdAt        DateTime      @default(now())
+  academicYear     AcademicYear  @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  category         ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  tenant           Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  requester        User          @relation("FinanceExpenseRequester", fields: [requestedById], references: [id], onDelete: Cascade)
+  approver         User?         @relation("FinanceExpenseApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, academicYearId])
+  @@index([categoryId])
+  @@index([status])
+  @@map("finance_expenses")
+}
+
+/// Sous-module 5 — Budget annuel par catégorie (Dépenses & Budget).
+model FinanceBudget {
+  id               String         @id @default(uuid())
+  tenantId         String
+  academicYearId   String
+  categoryId       String
+  allocatedAmount  Decimal        @db.Decimal(12, 2)
+  createdAt        DateTime       @default(now())
+  academicYear     AcademicYear   @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  category         ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  tenant           Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, academicYearId, categoryId])
+  @@index([tenantId, academicYearId])
+  @@map("finance_budgets")
+}
+
+/// Sous-module 6 — Clôture journalière (date unique tenant + année). Calcul auto, type MANUAL/AUTO, anomalie.
+enum ClosureType {
+  MANUAL
+  AUTO
+}
+
+model FinanceDailyClosure {
+  id               String         @id @default(uuid())
+  tenantId         String
+  academicYearId   String
+  date             DateTime       @db.Date
+  totalIncome      Decimal        @db.Decimal(12, 2)
+  totalExpense     Decimal        @db.Decimal(12, 2)
+  netBalance       Decimal        @db.Decimal(12, 2)
+  closureType      ClosureType    @default(MANUAL)
+  validatedById    String?
+  validatedAt      DateTime?
+  anomalyDetected  Boolean        @default(false)
+  anomalyNote      String?
+  physicalAmount   Decimal?       @db.Decimal(12, 2)
+  discrepancy      Decimal?       @db.Decimal(12, 2)
+  createdAt        DateTime       @default(now())
+  academicYear     AcademicYear   @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  tenant           Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  validator        User?          @relation("FinanceDailyClosureValidator", fields: [validatedById], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, academicYearId, date])
+  @@index([tenantId, academicYearId])
+  @@index([date])
+  @@map("finance_daily_closures")
+}
+
+/// Sous-module 7 — Log des exports de rapports financiers.
+model FinancialReportExport {
+  id              String        @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  reportType      String
+  generatedById   String
+  generatedAt     DateTime      @default(now())
+  academicYear    AcademicYear  @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  generator       User          @relation("FinancialReportExportGenerator", fields: [generatedById], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, academicYearId])
+  @@map("financial_report_exports")
+}
+
+/// Sous-module 8 — Paramétrage financier (seuils, relances, clôture auto, Fedapay).
+model FinancialSettings {
+  id                       String   @id @default(uuid())
+  tenantId                 String   @unique
+  academicYearId           String?
+  blockingThreshold        Decimal  @default(0) @db.Decimal(12, 2)
+  allowPartialPayment      Boolean  @default(true)
+  minimumInstallmentAmount Decimal? @db.Decimal(12, 2)
+  autoClosureEnabled       Boolean  @default(true)
+  autoClosureTime         String   @default("23:59")
+  reminderWarningDays     Int      @default(3)
+  reminderUrgentDays      Int      @default(7)
+  reminderFinalDays        Int      @default(15)
+  cancellationDelayHours  Int      @default(24)
+  budgetAlertThreshold     Int      @default(85)
+  expenseReceiptThreshold  Decimal? @db.Decimal(12, 2)
+  fedapayEnabled           Boolean  @default(false)
+  fedapayPublicKey         String?
+  fedapaySecretKey         String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  tenant                   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("financial_settings")
+}
+
+/// Extension — Audit financier (traçabilité absolue).
+model FinancialAuditLog {
+  id              String   @id @default(uuid())
+  tenantId         String
+  entityType       String
+  entityId         String
+  action           String
+  oldValue         Json?
+  newValue         Json?
+  performedById    String
+  performedAt      DateTime @default(now())
+  ipAddress        String?
+  deviceId         String?
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  performer        User     @relation("FinancialAuditLogPerformer", fields: [performedById], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, entityType, entityId])
+  @@index([performedAt])
+  @@map("financial_audit_logs")
+}
+
+/// Extension — Détection anomalie ORION (anti-fraude).
+model FinancialAnomaly {
+  id            String   @id @default(uuid())
+  tenantId      String
+  type          String
+  severity      String
+  referenceId   String
+  detectedAt    DateTime @default(now())
+  resolved      Boolean  @default(false)
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, type])
+  @@index([detectedAt])
+  @@map("financial_anomalies")
+}
+
+/// Extension — Multi-caisses.
+model CashRegister {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  transactions FinanceTransaction[]
+
+  @@index([tenantId])
+  @@map("cash_registers")
 }
 
 model CashClosure {
@@ -7036,6 +7321,78 @@ model FeeDefinition {
   @@map("fee_definitions")
 }
 
+/// Sous-module 1 — Types de frais (spec institutionnelle).
+enum FeeType {
+  INSCRIPTION
+  REINSCRIPTION
+  TUITION
+  ANNEX
+  EXCEPTIONAL
+}
+
+/// Sous-module 1 — Configuration des frais (spec institutionnelle). Priorité: Classe > Niveau > Override.
+model FeeStructure {
+  id               String                  @id @default(uuid())
+  tenantId         String
+  academicYearId   String
+  levelId          String?
+  classId          String?
+  name             String
+  feeType          FeeType
+  totalAmount      Decimal                 @db.Decimal(10, 2)
+  isInstallment    Boolean                 @default(false)
+  isMandatory      Boolean                 @default(true)
+  isActive         Boolean                 @default(true)
+  createdById      String?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  academicYear     AcademicYear           @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  class            Class?                  @relation("FeeStructureClass", fields: [classId], references: [id], onDelete: SetNull)
+  creator          User?                   @relation("FeeStructureCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  level            SchoolLevel?            @relation("FeeStructureLevel", fields: [levelId], references: [id], onDelete: SetNull)
+  tenant           Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  structureInstallments FeeStructureInstallment[]
+  overrides        FeeOverride[]
+  accountBreakdowns AccountBreakdown[]
+
+  @@index([tenantId, academicYearId])
+  @@index([levelId])
+  @@index([classId])
+  @@index([feeType])
+  @@map("fee_structures")
+}
+
+model FeeStructureInstallment {
+  id               String        @id @default(uuid())
+  feeStructureId   String
+  label            String
+  amount           Decimal       @db.Decimal(10, 2)
+  dueDate          DateTime      @db.Date
+  orderIndex       Int
+  feeStructure     FeeStructure  @relation(fields: [feeStructureId], references: [id], onDelete: Cascade)
+
+  @@index([feeStructureId])
+  @@map("fee_structure_installments")
+}
+
+/// Personnalisation élève (réduction, cas social). Justification obligatoire, audit, ORION.
+model FeeOverride {
+  id               String       @id @default(uuid())
+  feeStructureId   String
+  studentId        String
+  customAmount    Decimal      @db.Decimal(10, 2)
+  reason           String
+  createdById      String?
+  createdAt        DateTime     @default(now())
+  creator          User?        @relation("FeeOverrideCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  feeStructure     FeeStructure @relation(fields: [feeStructureId], references: [id], onDelete: Cascade)
+  student          Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([feeStructureId])
+  @@index([studentId])
+  @@map("fee_overrides")
+}
+
 model FeeRegime {
   id             String              @id @default(uuid())
   tenantId       String
@@ -7259,6 +7616,160 @@ model PaymentSummary {
   @@index([tenantId, academicYearId])
   @@index([studentId])
   @@map("payment_summaries")
+}
+
+/// Sous-module 2 — Statut du compte élève (spec institutionnelle).
+enum AccountStatus {
+  ACTIVE
+  PARTIAL
+  PAID
+  OVERDUE
+  BLOCKED
+  CLOSED
+}
+
+/// Sous-module 2 — Compte financier par élève et par année. Solde calculé automatiquement (trigger).
+model StudentAccount {
+  id               String              @id @default(uuid())
+  tenantId         String
+  studentId        String
+  academicYearId   String
+  totalDue         Decimal             @default(0) @db.Decimal(10, 2)
+  totalPaid        Decimal             @default(0) @db.Decimal(10, 2)
+  balance          Decimal             @default(0) @db.Decimal(10, 2)
+  arrearsAmount    Decimal             @default(0) @db.Decimal(10, 2)
+  status           AccountStatus      @default(ACTIVE)
+  isBlocked        Boolean             @default(false)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  academicYear     AcademicYear        @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  student          Student             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  tenant           Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  breakdowns       AccountBreakdown[]
+  recoveryReminders RecoveryReminder[]
+  transactions     FinanceTransaction[]
+
+  @@unique([studentId, academicYearId])
+  @@index([tenantId, academicYearId])
+  @@index([studentId])
+  @@index([status])
+  @@index([isBlocked])
+  @@map("student_accounts")
+}
+
+model AccountBreakdown {
+  id                String         @id @default(uuid())
+  studentAccountId  String
+  feeStructureId    String
+  initialAmount     Decimal        @db.Decimal(10, 2)
+  adjustedAmount    Decimal        @db.Decimal(10, 2)
+  paidAmount        Decimal        @default(0) @db.Decimal(10, 2)
+  remainingAmount   Decimal        @db.Decimal(10, 2)
+  createdAt         DateTime       @default(now())
+  feeStructure      FeeStructure   @relation(fields: [feeStructureId], references: [id], onDelete: Cascade)
+  studentAccount    StudentAccount @relation(fields: [studentAccountId], references: [id], onDelete: Cascade)
+  transactionAllocations FinanceTransactionAllocation[]
+
+  @@index([studentAccountId])
+  @@index([feeStructureId])
+  @@map("account_breakdowns")
+}
+
+/// Sous-module 3 — Type et moyen de paiement (spec institutionnelle).
+enum TransactionType {
+  PAYMENT
+  REVERSAL
+}
+
+enum PaymentMethod {
+  CASH
+  MOBILE_MONEY
+  WIRE
+  FEDAPAY
+}
+
+/// Sous-module 3 — Transaction d'encaissement liée au compte élève. Jamais de suppression (trigger).
+model FinanceTransaction {
+  id               String            @id @default(uuid())
+  tenantId         String
+  academicYearId   String
+  studentAccountId String
+  type             TransactionType
+  amount           Decimal           @db.Decimal(10, 2)
+  paymentMethod    PaymentMethod
+  reference        String?
+  reversedFromId   String?
+  cashierId        String
+  cashRegisterId   String?
+  deviceId         String?
+  receiptNumber    String          @unique
+  receiptUrl       String?
+  integrityHash    String?
+  createdAt        DateTime        @default(now())
+  academicYear     AcademicYear    @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  reversedFrom     FinanceTransaction?  @relation("FinanceTransactionReversal", fields: [reversedFromId], references: [id], onDelete: SetNull)
+  reversals        FinanceTransaction[] @relation("FinanceTransactionReversal")
+  studentAccount   StudentAccount  @relation(fields: [studentAccountId], references: [id], onDelete: Cascade)
+  tenant           Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cashRegister     CashRegister?   @relation(fields: [cashRegisterId], references: [id], onDelete: SetNull)
+  allocations      FinanceTransactionAllocation[]
+
+  @@index([tenantId, academicYearId])
+  @@index([studentAccountId])
+  @@index([type])
+  @@index([reversedFromId])
+  @@index([cashRegisterId])
+  @@map("finance_transactions")
+}
+
+/// Détail d'imputation par transaction (pour annulation correcte).
+model FinanceTransactionAllocation {
+  id                 String              @id @default(uuid())
+  financeTransactionId String
+  accountBreakdownId  String
+  amount             Decimal             @db.Decimal(10, 2)
+  financeTransaction  FinanceTransaction  @relation(fields: [financeTransactionId], references: [id], onDelete: Cascade)
+  accountBreakdown   AccountBreakdown    @relation(fields: [accountBreakdownId], references: [id], onDelete: Cascade)
+
+  @@unique([financeTransactionId, accountBreakdownId])
+  @@index([financeTransactionId])
+  @@index([accountBreakdownId])
+  @@map("finance_transaction_allocations")
+}
+
+/// Sous-module 4 — Niveau et canal de relance (spec institutionnelle).
+enum ReminderLevel {
+  WARNING
+  URGENT
+  FINAL_NOTICE
+}
+
+enum ReminderChannel {
+  SMS
+  WHATSAPP
+  EMAIL
+}
+
+/// Sous-module 4 — Relance recouvrement (niveaux WARNING, URGENT, FINAL_NOTICE).
+model RecoveryReminder {
+  id               String          @id @default(uuid())
+  tenantId         String
+  academicYearId   String
+  studentAccountId String
+  reminderLevel    ReminderLevel
+  amountDue        Decimal         @db.Decimal(10, 2)
+  sentVia          ReminderChannel
+  sentAt           DateTime        @default(now())
+  createdBySystem  Boolean         @default(true)
+  academicYear     AcademicYear   @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  studentAccount   StudentAccount @relation(fields: [studentAccountId], references: [id], onDelete: Cascade)
+  tenant           Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, academicYearId])
+  @@index([studentAccountId])
+  @@index([reminderLevel])
+  @@index([sentAt])
+  @@map("recovery_reminders")
 }
 
 model DailyClosure {

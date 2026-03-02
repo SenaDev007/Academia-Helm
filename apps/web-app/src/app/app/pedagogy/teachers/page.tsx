@@ -7,7 +7,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Users, Edit, Trash2, Eye } from 'lucide-react';
+import Link from 'next/link';
+import { Plus, Users, Edit, Trash2, Eye, ClipboardList } from 'lucide-react';
 import {
   ModuleContainer,
   FormModal,
@@ -74,16 +75,25 @@ export default function TeachersPage() {
           description: 'Gestion des enseignants et habilitations',
           icon: 'users',
           actions: (
-            <button
-              onClick={() => {
-                setSelectedTeacher(null);
-                setIsCreateModalOpen(true);
-              }}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Nouvel enseignant</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <Link
+                href="/app/pedagogy/assignments"
+                className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                <ClipboardList className="h-4 w-4" />
+                Affectations & charges
+              </Link>
+              <button
+                onClick={() => {
+                  setSelectedTeacher(null);
+                  setIsCreateModalOpen(true);
+                }}
+                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Nouvel enseignant</span>
+              </button>
+            </div>
           ),
         }}
         content={{

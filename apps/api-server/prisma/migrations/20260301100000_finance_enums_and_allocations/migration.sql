@@ -16,7 +16,10 @@ DO $$ BEGIN
 EXCEPTION
   WHEN duplicate_object THEN null;
 END $$;
-ALTER TABLE "student_accounts" ALTER COLUMN "status" TYPE "AccountStatus" USING "status"::"AccountStatus";
+-- Supprimer la valeur par défaut avant conversion, puis la rétablir (évite erreur 42804)
+ALTER TABLE "student_accounts" ALTER COLUMN "status" DROP DEFAULT;
+ALTER TABLE "student_accounts" ALTER COLUMN "status" TYPE "AccountStatus" USING "status"::text::"AccountStatus";
+ALTER TABLE "student_accounts" ALTER COLUMN "status" SET DEFAULT 'ACTIVE'::"AccountStatus";
 
 -- TransactionType & PaymentMethod (sous-module 3)
 DO $$ BEGIN

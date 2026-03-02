@@ -30,6 +30,28 @@ model Tenant {
   educationLevels                  EducationLevel[]
   educationSeries                  EducationSeries[]
   classrooms                       Classroom[]
+  pedagogyAcademicLevels          AcademicLevel[]                  @relation("TenantPedagogyLevels")
+  pedagogyAcademicCycles           AcademicCycle[]                   @relation("TenantPedagogyCycles")
+  pedagogyAcademicClasses          AcademicClass[]                  @relation("TenantPedagogyClasses")
+  pedagogyAcademicSeries           AcademicSeries[]                @relation("TenantPedagogySeries")
+  pedagogySeriesSubjects           SeriesSubject[]                 @relation("TenantSeriesSubjects")
+  pedagogySubjectPrograms          SubjectProgram[]                @relation("TenantSubjectPrograms")
+  roomMaintenances                RoomMaintenance[]
+  roomSchedules                   RoomSchedule[]
+  teacherAcademicProfiles         TeacherAcademicProfile[]          @relation("TenantTeacherAcademicProfiles")
+  teacherSubjectQualifications    TeacherSubjectQualification[]     @relation("TenantTeacherSubjectQualifications")
+  teacherLevelAuthorizations      TeacherLevelAuthorization[]       @relation("TenantTeacherLevelAuthorizations")
+  teacherAvailabilities           TeacherAvailability[]             @relation("TenantTeacherAvailabilities")
+  teachingAssignments             TeachingAssignment[]             @relation("TenantTeachingAssignments")
+  teachingJournals                TeachingJournal[]                @relation("TenantTeachingJournals")
+  classLogs                       ClassLog[]                       @relation("TenantClassLogs")
+  weeklyReports                   WeeklyReport[]                   @relation("TenantWeeklyReports")
+  pedagogicalAttachments          PedagogicalAttachment[]          @relation("TenantPedagogicalAttachments")
+  pedagogicalSignatures           PedagogicalSignature[]           @relation("TenantPedagogicalSignatures")
+  pedagogicalKpiSnapshots         PedagogicalKpiSnapshot[]         @relation("TenantPedagogicalKpiSnapshots")
+  orionPedagogicalInsights        OrionPedagogicalInsight[]         @relation("TenantOrionPedagogicalInsights")
+  orionRiskFlags                  OrionRiskFlag[]                  @relation("TenantOrionRiskFlags")
+  orionForecasts                  OrionForecast[]                   @relation("TenantOrionForecasts")
   activityLogs                     ActivityLog[]
   administrativeSeals              AdministrativeSeal[]              @relation("AdministrativeSealTenant")
   admissions                       Admission[]
@@ -505,6 +527,25 @@ model AcademicYear {
   weeklySemainiers                 WeeklySemainier[]
   subscriptionId                   String?                           @map("subscription_id")
   subscription                     Subscription?                     @relation(fields: [subscriptionId], references: [id])
+  academicLevels                   AcademicLevel[]
+  academicCycles                   AcademicCycle[]
+  academicClasses                  AcademicClass[]
+  academicSeries                   AcademicSeries[]
+  seriesSubjects                   SeriesSubject[]
+  subjectPrograms                  SubjectProgram[]
+  roomSchedules                    RoomSchedule[]
+  teacherAcademicProfiles         TeacherAcademicProfile[]
+  teacherSubjectQualifications    TeacherSubjectQualification[]
+  teacherLevelAuthorizations      TeacherLevelAuthorization[]
+  teacherAvailabilities           TeacherAvailability[]
+  teachingAssignments             TeachingAssignment[]
+  teachingJournals                TeachingJournal[]
+  classLogs                       ClassLog[]
+  weeklyReports                   WeeklyReport[]
+  pedagogicalKpiSnapshots         PedagogicalKpiSnapshot[]
+  orionPedagogicalInsights        OrionPedagogicalInsight[]
+  orionRiskFlags                  OrionRiskFlag[]
+  orionForecasts                  OrionForecast[]
 
   @@unique([tenantId, name])
   @@unique([tenantId, label])
@@ -648,9 +689,12 @@ model AcademicLevel {
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant          Tenant   @relation("TenantPedagogyLevels", fields: [tenantId], references: [id], onDelete: Cascade)
   academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   cycles          AcademicCycle[]
+  classes         AcademicClass[]
+  series          AcademicSeries[]
+  teacherLevelAuthorizations TeacherLevelAuthorization[]
 
   @@unique([tenantId, academicYearId, name])
   @@index([tenantId, academicYearId])
@@ -668,7 +712,7 @@ model AcademicCycle {
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant          Tenant   @relation("TenantPedagogyCycles", fields: [tenantId], references: [id], onDelete: Cascade)
   academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   level           AcademicLevel @relation(fields: [levelId], references: [id], onDelete: Cascade)
   classes         AcademicClass[]
@@ -695,12 +739,13 @@ model AcademicClass {
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant          Tenant   @relation("TenantPedagogyClasses", fields: [tenantId], references: [id], onDelete: Cascade)
   academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   level           AcademicLevel @relation(fields: [levelId], references: [id], onDelete: Restrict)
   cycle           AcademicCycle @relation(fields: [cycleId], references: [id], onDelete: Restrict)
   room            Room?    @relation(fields: [roomId], references: [id], onDelete: SetNull)
   mainTeacher     Teacher? @relation("AcademicClassMainTeacher", fields: [mainTeacherId], references: [id], onDelete: SetNull)
+  teachingAssignments TeachingAssignment[]
 
   @@unique([tenantId, academicYearId, code])
   @@index([tenantId, academicYearId])
@@ -708,6 +753,373 @@ model AcademicClass {
   @@index([cycleId])
   @@index([roomId])
   @@map("pedagogy_academic_classes")
+}
+
+// ============================================================================
+// MODULE 2 — MATIÈRES & PROGRAMMES (séries secondaire, programmes officiels)
+// ============================================================================
+
+/// Série secondaire (A, C, D, G2…). Uniquement pour niveau Secondaire.
+model AcademicSeries {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId   String
+  levelId         String
+  name            String   // A, C, D, G2
+  description     String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation("TenantPedagogySeries", fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  level           AcademicLevel @relation(fields: [levelId], references: [id], onDelete: Cascade)
+  seriesSubjects  SeriesSubject[]
+  teachingAssignments TeachingAssignment[]
+
+  @@unique([tenantId, academicYearId, levelId, name])
+  @@index([tenantId, academicYearId])
+  @@index([levelId])
+  @@map("pedagogy_academic_series")
+}
+
+/// Matière par série (coefficient + volume horaire).
+model SeriesSubject {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId   String
+  seriesId        String
+  subjectId       String
+  coefficient     Int
+  weeklyHours     Int
+  createdAt       DateTime @default(now())
+  tenant          Tenant   @relation("TenantSeriesSubjects", fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  series          AcademicSeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  subject         Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([seriesId, subjectId])
+  @@index([tenantId, academicYearId])
+  @@index([seriesId])
+  @@index([subjectId])
+  @@map("pedagogy_series_subjects")
+}
+
+/// Programme officiel (PDF) attaché à une matière, versionné.
+model SubjectProgram {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId   String
+  subjectId       String
+  documentUrl     String
+  version         String
+  approvedById    String?
+  approvedAt      DateTime?
+  createdAt       DateTime @default(now())
+  tenant          Tenant   @relation("TenantSubjectPrograms", fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  subject         Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, academicYearId])
+  @@index([subjectId])
+  @@map("pedagogy_subject_programs")
+}
+
+// ============================================================================
+// MODULE 2 — SOUS-MODULES 3 à 8 (Enseignants académiques, Affectations, EDT, Espace pédago, Contrôle, ORION)
+// ============================================================================
+
+/// Profil académique enseignant (charge max, statut pédagogique) — SM3
+model TeacherAcademicProfile {
+  id               String   @id @default(uuid())
+  tenantId         String
+  academicYearId   String
+  teacherId        String
+  maxWeeklyHours   Int
+  isActive         Boolean  @default(true)
+  isSemainier      Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  tenant           Tenant   @relation("TenantTeacherAcademicProfiles", fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear     AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  teacher          Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subjectQualifications TeacherSubjectQualification[]
+  levelAuthorizations   TeacherLevelAuthorization[]
+  availabilities       TeacherAvailability[]
+  teachingAssignments   TeachingAssignment[]
+
+  @@unique([tenantId, academicYearId, teacherId])
+  @@index([tenantId, academicYearId])
+  @@index([teacherId])
+  @@map("pedagogy_teacher_academic_profiles")
+}
+
+/// Matière autorisée pour un enseignant — SM3
+model TeacherSubjectQualification {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  profileId       String
+  subjectId       String
+  certified       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  tenant          Tenant   @relation("TenantTeacherSubjectQualifications", fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  profile         TeacherAcademicProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  subject         Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, subjectId])
+  @@index([tenantId, academicYearId])
+  @@map("pedagogy_teacher_subject_qualifications")
+}
+
+/// Niveau autorisé pour un enseignant — SM3
+model TeacherLevelAuthorization {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  profileId       String
+  levelId         String
+  createdAt       DateTime @default(now())
+  tenant          Tenant   @relation("TenantTeacherLevelAuthorizations", fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  profile         TeacherAcademicProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  level           AcademicLevel @relation(fields: [levelId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, levelId])
+  @@index([tenantId, academicYearId])
+  @@map("pedagogy_teacher_level_authorizations")
+}
+
+/// Disponibilité hebdomadaire enseignant — SM3
+model TeacherAvailability {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  profileId       String
+  dayOfWeek       Int
+  startTime       String
+  endTime         String
+  createdAt       DateTime @default(now())
+  tenant          Tenant   @relation("TenantTeacherAvailabilities", fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  profile         TeacherAcademicProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, academicYearId])
+  @@index([profileId])
+  @@index([profileId, dayOfWeek])
+  @@map("pedagogy_teacher_availabilities")
+}
+
+/// Affectation enseignant → classe + matière + volume horaire — SM4
+model TeachingAssignment {
+  id                String   @id @default(uuid())
+  tenantId          String
+  academicYearId    String
+  profileId         String
+  classId           String
+  subjectId         String
+  seriesId          String?
+  weeklyHours       Int
+  startDate         DateTime
+  endDate           DateTime?
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  tenant            Tenant   @relation("TenantTeachingAssignments", fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear      AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  profile           TeacherAcademicProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  academicClass     AcademicClass @relation(fields: [classId], references: [id], onDelete: Restrict)
+  subject           Subject  @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  series            AcademicSeries? @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, academicYearId, profileId, classId, subjectId])
+  @@index([tenantId, academicYearId])
+  @@index([profileId])
+  @@index([classId])
+  @@map("pedagogy_teaching_assignments")
+}
+
+/// Cahier journal (semaine) — SM6
+model TeachingJournal {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  teacherId       String
+  weekStartDate   DateTime @db.Date
+  content         String
+  status          String   @default("DRAFT")
+  submittedAt     DateTime?
+  approvedAt      DateTime?
+  approvedById    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation("TenantTeachingJournals", fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, academicYearId, teacherId, weekStartDate])
+  @@index([tenantId, academicYearId])
+  @@index([teacherId])
+  @@map("pedagogy_teaching_journals")
+}
+
+/// Cahier de texte (séance) — SM6
+model ClassLog {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  teacherId       String
+  classId         String
+  subjectId       String
+  lessonDate      DateTime @db.Date
+  topic           String
+  homework        String?
+  durationHours   Int
+  createdAt       DateTime @default(now())
+  tenant          Tenant   @relation("TenantClassLogs", fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, academicYearId])
+  @@index([teacherId])
+  @@index([classId])
+  @@index([lessonDate])
+  @@map("pedagogy_class_logs")
+}
+
+/// Cahier du semainier — SM6
+model WeeklyReport {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  teacherId       String
+  weekStartDate   DateTime @db.Date
+  summary         String
+  issues          String?
+  recommendations String?
+  status          String   @default("DRAFT")
+  submittedAt     DateTime?
+  approvedAt      DateTime?
+  approvedById    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation("TenantWeeklyReports", fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, academicYearId, teacherId, weekStartDate])
+  @@index([tenantId, academicYearId])
+  @@index([teacherId])
+  @@map("pedagogy_weekly_reports")
+}
+
+/// Pièce jointe pédagogique — SM6
+model PedagogicalAttachment {
+  id          String   @id @default(uuid())
+  tenantId    String
+  entityType  String
+  entityId    String
+  fileUrl     String
+  uploadedAt  DateTime @default(now())
+  tenant      Tenant   @relation("TenantPedagogicalAttachments", fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([entityType, entityId])
+  @@map("pedagogy_attachments")
+}
+
+/// Signature numérique document pédagogique — SM6
+model PedagogicalSignature {
+  id              String   @id @default(uuid())
+  tenantId        String
+  entityType      String
+  entityId        String
+  signedById      String
+  signedAt        DateTime @default(now())
+  signatureHash   String
+  tenant          Tenant   @relation("TenantPedagogicalSignatures", fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([entityType, entityId])
+  @@map("pedagogy_signatures")
+}
+
+/// Snapshot KPI pédagogiques (direction) — SM7
+model PedagogicalKpiSnapshot {
+  id                String   @id @default(uuid())
+  tenantId          String
+  academicYearId    String
+  teacherId         String?
+  classId           String?
+  lessonPlanRate    Float
+  journalRate       Float
+  classLogRate      Float
+  weeklyReportRate  Float
+  calculatedAt      DateTime @default(now())
+  tenant            Tenant   @relation("TenantPedagogicalKpiSnapshots", fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear      AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, academicYearId])
+  @@index([teacherId])
+  @@index([classId])
+  @@map("pedagogy_kpi_snapshots")
+}
+
+/// Insight ORION pédagogique — SM8
+model OrionPedagogicalInsight {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  scopeType       String
+  scopeId         String?
+  insightType     String
+  severity        String
+  title           String
+  description     String
+  confidenceScore  Float
+  createdAt       DateTime @default(now())
+  tenant          Tenant   @relation("TenantOrionPedagogicalInsights", fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, academicYearId])
+  @@index([scopeType])
+  @@index([severity])
+  @@map("orion_pedagogical_insights")
+}
+
+/// Flag risque ORION — SM8
+model OrionRiskFlag {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  entityType      String
+  entityId        String
+  riskCategory    String
+  riskScore       Float
+  level           String
+  createdAt       DateTime @default(now())
+  tenant          Tenant   @relation("TenantOrionRiskFlags", fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, academicYearId])
+  @@index([entityType])
+  @@index([level])
+  @@map("orion_risk_flags")
+}
+
+/// Prévision académique ORION — SM8
+model OrionForecast {
+  id                String   @id @default(uuid())
+  tenantId          String
+  academicYearId    String
+  entityType        String
+  entityId          String
+  predictedAverage  Float
+  riskProbability   Float
+  generatedAt       DateTime @default(now())
+  tenant            Tenant   @relation("TenantOrionForecasts", fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear      AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, academicYearId])
+  @@index([entityType])
+  @@map("orion_forecasts")
 }
 
 enum AcademicPeriodType {
@@ -1495,6 +1907,10 @@ model Subject {
   teacherSubjects      TeacherSubject[]      @relation("TeacherSubjectSubject")
   teachers             Teacher[]
   timetableEntries     TimetableEntry[]
+  seriesSubjects       SeriesSubject[]
+  subjectPrograms      SubjectProgram[]
+  teacherSubjectQualifications TeacherSubjectQualification[]
+  teachingAssignments  TeachingAssignment[]
 
   @@unique([tenantId, academicYearId, schoolLevelId, code])
   @@index([tenantId, academicYearId, schoolLevelId])
@@ -1640,6 +2056,8 @@ model Teacher {
   tenant                  Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   timetableEntries        TimetableEntry[]
   weeklyDutyAssignments   WeeklyDutyAssignment[]
+  mainTeacherAcademicClasses AcademicClass[]         @relation("AcademicClassMainTeacher")
+  teacherAcademicProfiles   TeacherAcademicProfile[]
 
   @@map("teachers")
 }
@@ -1934,12 +2352,54 @@ model Room {
   schoolLevel      SchoolLevel?      @relation(fields: [schoolLevelId], references: [id])
   tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   timetableEntries TimetableEntry[]
+  academicClasses  AcademicClass[]
+  maintenances     RoomMaintenance[]
+  schedules        RoomSchedule[]
 
   @@unique([tenantId, roomCode])
   @@index([tenantId, academicYearId])
   @@index([roomType])
   @@index([status])
   @@map("rooms")
+}
+
+/// Maintenance / indisponibilité d'une salle (Module 2).
+model RoomMaintenance {
+  id          String    @id @default(uuid())
+  tenantId    String
+  roomId      String
+  startDate   DateTime
+  endDate     DateTime?
+  reason      String
+  isActive    Boolean   @default(true)
+  createdAt   DateTime @default(now())
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  room        Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([roomId])
+  @@map("pedagogy_room_maintenances")
+}
+
+/// Occupation horaire salle — prévention conflits emploi du temps (Module 2, par année).
+model RoomSchedule {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  roomId          String
+  dayOfWeek       Int
+  startTime       String
+  endTime         String
+  classId         String?
+  createdAt       DateTime @default(now())
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  room            Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, academicYearId])
+  @@index([roomId])
+  @@index([roomId, dayOfWeek, startTime])
+  @@map("pedagogy_room_schedules")
 }
 
 model Message {

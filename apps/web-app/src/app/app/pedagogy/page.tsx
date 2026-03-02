@@ -7,7 +7,7 @@
 'use client';
 
 import { useState } from 'react';
-import { BookOpen, Users, Calendar, FileText, Book, Building2, Package } from 'lucide-react';
+import { BookOpen, Users, Calendar, FileText, Book, Building2, Package, Layers, ClipboardList, BarChart3, ShieldCheck } from 'lucide-react';
 import {
   ModuleContainer,
 } from '@/components/modules/blueprint';
@@ -17,67 +17,68 @@ import Link from 'next/link';
 export default function PedagogyPage() {
   const { academicYear, schoolLevel } = useModuleContext();
 
+  // Wireframe Module 2 — 8 sous-modules officiels
   const subModules = [
     {
+      id: 'academic-structure',
+      label: 'Structure académique',
+      href: '/app/pedagogy/academic-structure',
+      icon: 'layers',
+      description: 'Niveaux, cycles et classes par année scolaire',
+    },
+    {
       id: 'subjects',
-      label: 'Matières',
+      label: 'Matières & programmes',
       href: '/app/pedagogy/subjects',
       icon: 'bookOpen',
-      description: 'Gestion des matières par niveau',
+      description: 'Catalogue matières, coefficients, séries, programmes officiels',
     },
     {
-      id: 'teachers',
-      label: 'Enseignants',
+      id: 'teachers-academic',
+      label: 'Enseignants académiques',
       href: '/app/pedagogy/teachers',
       icon: 'users',
-      description: 'Gestion des enseignants et habilitations',
+      description: 'Profils pédagogiques, qualifications, niveaux autorisés, charge max',
     },
     {
-      id: 'rooms',
-      label: 'Salles & Infrastructures',
-      href: '/app/pedagogy/rooms',
-      icon: 'building',
-      description: 'Gestion des salles, occupation et planning',
+      id: 'assignments',
+      label: 'Affectations & charges',
+      href: '/app/pedagogy/assignments',
+      icon: 'clipboardList',
+      description: 'Affecter enseignant à classe/matière, volume horaire, période',
     },
     {
       id: 'timetables',
-      label: 'Emplois du temps',
+      label: 'Emploi du temps',
       href: '/app/pedagogy/timetables',
       icon: 'calendar',
-      description: 'Gestion des emplois du temps',
+      description: 'Grille hebdomadaire, conflits, versionnement, export',
     },
     {
-      id: 'lesson-plans',
-      label: 'Fiches pédagogiques',
-      href: '/app/pedagogy/lesson-plans',
+      id: 'pedagogical-workspace',
+      label: 'Espace pédagogique',
+      href: '/app/pedagogy/workspace',
       icon: 'fileText',
-      description: 'Fiches pédagogiques par matière',
+      description: 'Fiches, cahier journal, cahier de texte, semainier, validation',
     },
     {
-      id: 'daily-logs',
-      label: 'Cahiers journaux',
-      href: '/app/pedagogy/daily-logs',
-      icon: 'bookOpen',
-      description: 'Journal quotidien des enseignants',
+      id: 'control',
+      label: 'Contrôle direction',
+      href: '/app/pedagogy/control',
+      icon: 'shieldCheck',
+      description: 'Vue consolidée, fiches en attente, KPI, rapports exportables',
     },
     {
-      id: 'class-diaries',
-      label: 'Cahiers de textes',
-      href: '/app/pedagogy/class-diaries',
-      icon: 'book',
-      description: 'Devoirs et notes pour les élèves',
-    },
-    {
-      id: 'pedagogical-materials',
-      label: 'Matériel & Fournitures pédagogiques',
-      href: '/app/pedagogy/pedagogical-materials',
-      icon: 'package',
-      description: 'Gestion du matériel pédagogique et attributions aux enseignants',
+      id: 'orion-pedagogy',
+      label: 'Analytique ORION',
+      href: '/app/pedagogy/orion',
+      icon: 'barChart3',
+      description: 'KPI pédagogiques, alertes, prévisions, recommandations',
     },
   ];
 
   const getIcon = (iconName: string) => {
-    const icons: Record<string, any> = {
+    const icons: Record<string, React.ComponentType<{ className?: string }>> = {
       bookOpen: BookOpen,
       users: Users,
       calendar: Calendar,
@@ -85,6 +86,10 @@ export default function PedagogyPage() {
       book: Book,
       building: Building2,
       package: Package,
+      layers: Layers,
+      clipboardList: ClipboardList,
+      barChart3: BarChart3,
+      shieldCheck: ShieldCheck,
     };
     return icons[iconName] || BookOpen;
   };

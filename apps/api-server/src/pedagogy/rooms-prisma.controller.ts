@@ -79,6 +79,59 @@ export class RoomsPrismaController {
     return this.roomsService.setMaintenance(id, tenantId, body.reason);
   }
 
+  @Get(':id/maintenances')
+  async getMaintenances(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Query('activeOnly') activeOnly?: string,
+  ) {
+    return this.roomsService.findMaintenancesByRoom(
+      id,
+      tenantId,
+      activeOnly === 'true',
+    );
+  }
+
+  @Post('maintenances')
+  async createMaintenance(
+    @TenantId() tenantId: string,
+    @Body() body: { roomId: string; startDate: string; endDate?: string; reason: string },
+  ) {
+    return this.roomsService.createRoomMaintenance({
+      tenantId,
+      roomId: body.roomId,
+      startDate: new Date(body.startDate),
+      endDate: body.endDate ? new Date(body.endDate) : undefined,
+      reason: body.reason,
+    });
+  }
+
+  @Get(':id/schedules')
+  async getSchedules(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!academicYearId) return [];
+    return this.roomsService.findSchedulesByRoom(id, tenantId, academicYearId);
+  }
+
+  @Post('schedules')
+  async createSchedule(
+    @TenantId() tenantId: string,
+    @Body()
+    body: {
+      academicYearId: string;
+      roomId: string;
+      dayOfWeek: number;
+      startTime: string;
+      endTime: string;
+      classId?: string;
+    },
+  ) {
+    return this.roomsService.createRoomSchedule({ ...body, tenantId });
+  }
+
   @Get(':id/occupation')
   async getOccupation(
     @Param('id') id: string,

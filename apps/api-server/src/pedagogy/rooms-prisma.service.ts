@@ -403,6 +403,77 @@ export class RoomsPrismaService {
   }
 
   /**
+   * Module 2 - Maintenances salle (RoomMaintenance)
+   */
+  async createRoomMaintenance(data: {
+    tenantId: string;
+    roomId: string;
+    startDate: Date;
+    endDate?: Date;
+    reason: string;
+  }) {
+    await this.findRoomById(data.roomId, data.tenantId);
+    return this.prisma.roomMaintenance.create({
+      data: {
+        tenantId: data.tenantId,
+        roomId: data.roomId,
+        startDate: data.startDate,
+        endDate: data.endDate ?? null,
+        reason: data.reason,
+      },
+      include: { room: true },
+    });
+  }
+
+  async findMaintenancesByRoom(roomId: string, tenantId: string, activeOnly?: boolean) {
+    const where: any = { roomId, tenantId };
+    if (activeOnly) {
+      where.isActive = true;
+      where.OR = [{ endDate: null }, { endDate: { gte: new Date() } }];
+    }
+    return this.prisma.roomMaintenance.findMany({
+      where,
+      include: { room: true },
+      orderBy: { startDate: 'desc' },
+    });
+  }
+
+  /**
+   * Module 2 - Occupation hebdo salle (RoomSchedule) pour conflits EDT
+   */
+  async createRoomSchedule(data: {
+    tenantId: string;
+    academicYearId: string;
+    roomId: string;
+    dayOfWeek: number;
+    startTime: string;
+    endTime: string;
+    classId?: string;
+  }) {
+    await this.findRoomById(data.roomId, data.tenantId);
+    return this.prisma.roomSchedule.create({
+      data: {
+        tenantId: data.tenantId,
+        academicYearId: data.academicYearId,
+        roomId: data.roomId,
+        dayOfWeek: data.dayOfWeek,
+        startTime: data.startTime,
+        endTime: data.endTime,
+        classId: data.classId ?? null,
+      },
+      include: { room: true },
+    });
+  }
+
+  async findSchedulesByRoom(roomId: string, tenantId: string, academicYearId: string) {
+    return this.prisma.roomSchedule.findMany({
+      where: { roomId, tenantId, academicYearId },
+      include: { room: true },
+      orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
+    });
+  }
+
+  /**
    * Supprime une salle
    */
   async deleteRoom(id: string, tenantId: string) {

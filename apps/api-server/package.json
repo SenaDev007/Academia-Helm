@@ -62,7 +62,6 @@
     "@types/nodemailer": "^7.0.9",
     "@types/qrcode": "^1.5.6",
     "bcrypt": "^5.1.1",
-    "better-sqlite3": "^9.2.2",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.0",
     "exceljs": "^4.4.0",
@@ -81,6 +80,9 @@
     "twilio": "^5.11.2",
     "typeorm": "^0.3.17",
     "uuid": "^9.0.1"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^9.2.2"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.2.1",

@@ -1,6 +1,6 @@
 # Ignorer les dossiers qui ne sont pas nécessaires pour le déploiement
+# Ne pas ignorer apps/api-server/ ni apps/web-app/ : ils sont déployés sur Vercel (projets séparés)
 apps/desktop-app/
-apps/api-server/
 apps/mobile-app/
 apps/migration-tools/
 apps/next-app/

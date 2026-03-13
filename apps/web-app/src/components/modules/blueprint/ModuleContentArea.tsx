@@ -64,7 +64,7 @@ export default function ModuleContentArea({
         </div>
       )}
 
-      {/* Zone de contenu principale */}
+      {/* Zone de contenu principale — même espacement que module Élèves / Paramètres */}
       <div
         className={cn(
           'bg-white rounded-lg border border-gray-200 shadow-sm',
@@ -74,6 +74,7 @@ export default function ModuleContentArea({
           layout === 'grid' && 'p-5 sm:p-6 lg:p-8',
           layout === 'chart' && 'p-5 sm:p-6 lg:p-8',
           layout === 'form' && 'p-5 sm:p-6 lg:p-8',
+          layout === 'custom' && 'p-5 sm:p-6 lg:p-8',
         )}
       >
         {/* État de chargement */}

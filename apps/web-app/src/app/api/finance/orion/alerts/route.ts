@@ -10,20 +10,25 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const academicYearId = searchParams.get('academicYearId') ?? '';
-    const auth = request.headers.get('Authorization') || '';
+
+    const headers: HeadersInit = {};
+    const auth = request.headers.get('authorization') || request.headers.get('Authorization');
+    const cookie = request.headers.get('cookie');
+    if (auth) headers['Authorization'] = auth;
+    if (cookie) headers['cookie'] = cookie;
 
     const [receiptRes, arrearsRes, reductionsRes] = await Promise.allSettled([
       fetch(
         `${API_BASE_URL}/api/finance/orion/receipt-notifications/alerts?academicYearId=${academicYearId}`,
-        { headers: { Authorization: auth } }
+        { headers }
       ),
       fetch(
         `${API_BASE_URL}/api/finance/orion/arrears/alerts?academicYearId=${academicYearId}`,
-        { headers: { Authorization: auth } }
+        { headers }
       ),
       fetch(
         `${API_BASE_URL}/api/finance/orion/reductions/alerts?academicYearId=${academicYearId}`,
-        { headers: { Authorization: auth } }
+        { headers }
       ),
     ]);
 

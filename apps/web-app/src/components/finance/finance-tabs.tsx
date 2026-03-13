@@ -1,7 +1,8 @@
 /**
- * Onglets du module Finance & Économat — 8 sous-modules (spec Academia Helm)
+ * Onglets du module Finance & Économat — Dashboard + 8 sous-modules (spec Academia Helm)
  */
 import {
+  LayoutDashboard,
   DollarSign,
   Users,
   CreditCard,
@@ -14,6 +15,7 @@ import {
 } from 'lucide-react';
 
 export const FINANCE_SUBMODULE_TABS = [
+  { id: 'dashboard', label: 'Dashboard', path: '/app/finance', icon: LayoutDashboard },
   { id: 'fees', label: 'Configuration des frais', path: '/app/finance/fees', icon: DollarSign },
   { id: 'accounts', label: 'Comptes élèves', path: '/app/finance/accounts', icon: Users },
   { id: 'payments', label: 'Encaissements', path: '/app/finance/payments', icon: CreditCard },

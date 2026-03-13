@@ -28,9 +28,15 @@ export default function Error({
         <h1 className="text-3xl font-bold text-navy-900 mb-4">
           Une erreur s'est produite
         </h1>
-        <p className="text-slate-600 mb-8">
+        <p className="text-slate-600 mb-4">
           Désolé, une erreur inattendue s'est produite. Veuillez réessayer.
         </p>
+        {error?.message && (
+          <div className="mb-6 text-left bg-red-50 border border-red-200 rounded-md px-4 py-3 text-xs text-red-800 break-words">
+            <p className="font-semibold mb-1">Détail technique (à copier pour le support) :</p>
+            <pre className="whitespace-pre-wrap">{error.message}</pre>
+          </div>
+        )}
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <button
             onClick={reset}

@@ -15,6 +15,7 @@ import {
   ReadOnlyModal,
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { PEDAGOGY_SUBMODULE_TABS } from '@/components/pedagogy/pedagogy-tabs';
 
 interface Subject {
   id: string;
@@ -122,6 +123,17 @@ export default function SubjectsPage() {
               <span>Nouvelle matière</span>
             </button>
           ),
+        }}
+        subModules={{
+          modules: PEDAGOGY_SUBMODULE_TABS.map((tab) => {
+            const Icon = tab.icon;
+            return {
+              id: tab.id,
+              label: tab.label,
+              href: tab.path,
+              icon: <Icon className="w-4 h-4" />,
+            };
+          }),
         }}
         content={{
           layout: 'table',

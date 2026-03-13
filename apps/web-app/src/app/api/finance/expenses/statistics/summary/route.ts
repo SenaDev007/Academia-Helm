@@ -15,11 +15,13 @@ export async function GET(request: NextRequest) {
     const queryString = searchParams.toString();
     const url = `${API_BASE_URL}/api/finance/expenses/statistics/summary${queryString ? `?${queryString}` : ''}`;
 
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': request.headers.get('Authorization') || '',
-      },
-    });
+    const headers: HeadersInit = {};
+    const auth = request.headers.get('authorization') || request.headers.get('Authorization');
+    const cookie = request.headers.get('cookie');
+    if (auth) headers['Authorization'] = auth;
+    if (cookie) headers['cookie'] = cookie;
+
+    const response = await fetch(url, { headers });
 
     const data = await response.json();
     return NextResponse.json(data);

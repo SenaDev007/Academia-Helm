@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { ModuleContainer } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { PEDAGOGY_SUBMODULE_TABS } from '@/components/pedagogy/pedagogy-tabs';
 
 interface AcademicLevel {
   id: string;
@@ -177,6 +178,17 @@ export default function AcademicStructurePage() {
     return (
       <ModuleContainer
         header={{ title: 'Structure académique', description: 'Niveaux, cycles et classes', icon: 'bookOpen' }}
+        subModules={{
+          modules: PEDAGOGY_SUBMODULE_TABS.map((tab) => {
+            const Icon = tab.icon;
+            return {
+              id: tab.id,
+              label: tab.label,
+              href: tab.path,
+              icon: <Icon className="w-4 h-4" />,
+            };
+          }),
+        }}
         content={{ layout: 'custom', children: <p className="text-gray-500">Veuillez sélectionner une année scolaire.</p> }}
       />
     );
@@ -188,6 +200,17 @@ export default function AcademicStructurePage() {
         title: 'Structure académique',
         description: `Niveaux → Cycles → Classes — Année ${academicYear.label}`,
         icon: 'bookOpen',
+      }}
+      subModules={{
+        modules: PEDAGOGY_SUBMODULE_TABS.map((tab) => {
+          const Icon = tab.icon;
+          return {
+            id: tab.id,
+            label: tab.label,
+            href: tab.path,
+            icon: <Icon className="w-4 h-4" />,
+          };
+        }),
       }}
       content={{
         layout: 'custom',

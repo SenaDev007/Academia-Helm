@@ -10,6 +10,7 @@ pnpm-lock.yaml
 .env*.local
 .env.production
 .env.development
+.env.staging
 
 # Build outputs
 dist/
@@ -49,3 +50,5 @@ coverage/
 *.pem
 .cache/
 
+# Backend build outputs
+apps/api-server/lib/

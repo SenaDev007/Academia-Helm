@@ -67,15 +67,17 @@ export default function SubModuleNavigation({
   const modules: SubModule[] = modulesProp ?? (tabs?.map((t) => ({ id: t.id, label: t.label, href: t.path, icon: t.icon })) ?? []);
   const pathForActive = currentPath ?? pathname;
 
-  // Déterminer le module actif
+  // Déterminer le module actif (préférer le chemin le plus long pour /app/finance vs /app/finance/fees)
   const getActiveModuleId = () => {
     if (activeModuleId) return activeModuleId;
+    let best: { id: string; len: number } | null = null;
     for (const module of modules) {
       if (module.href && pathForActive?.startsWith(module.href)) {
-        return module.id;
+        const len = module.href.length;
+        if (!best || len > best.len) best = { id: module.id, len };
       }
     }
-    return modules[0]?.id;
+    return best?.id ?? modules[0]?.id;
   };
 
   const currentActiveId = getActiveModuleId();

@@ -39,9 +39,10 @@ async function bootstrap() {
   }
 
   // ✅ Optimisation : Désactiver les logs de démarrage en développement pour accélérer
-  const logger = process.env.NODE_ENV === 'production'
-    ? ['error', 'warn', 'log']
-    : ['error', 'warn'];
+  const logger: ('log' | 'error' | 'warn' | 'debug' | 'verbose')[] =
+    process.env.NODE_ENV === 'production'
+      ? ['error', 'warn', 'log']
+      : ['error', 'warn'];
 
   const app = await NestFactory.create(AppModule, {
     logger, // ✅ Réduire les logs pour accélérer le démarrage

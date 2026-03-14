@@ -414,7 +414,7 @@ export class AcademicYearSettingsService {
       null,
       'academic_year',
       'academic_year',
-      { activated: { old: false, new: true, yearName: year.name } },
+      { activated: { old: false, new: { value: true, yearName: year.name } } },
       userId,
     );
 
@@ -440,7 +440,7 @@ export class AcademicYearSettingsService {
       null,
       'academic_year',
       'academic_year',
-      { locked: { old: false, new: true, yearName: year.name } },
+      { locked: { old: false, new: { value: true, yearName: year.name } } },
       userId,
     );
 
@@ -513,12 +513,13 @@ export class AcademicYearSettingsService {
             tenantId,
             academicYearId: newYear.id,
             schoolLevelId: fee.schoolLevelId,
-            name: fee.name,
-            code: fee.code,
+            feeCategoryId: fee.feeCategoryId,
+            classId: fee.classId,
+            label: fee.label,
             amount: fee.amount,
-            currency: fee.currency,
             dueDate: fee.dueDate,
-            isRequired: fee.isRequired,
+            isMandatory: fee.isMandatory,
+            description: fee.description ?? undefined,
           },
         });
       }
@@ -532,12 +533,14 @@ export class AcademicYearSettingsService {
       {
         duplicated: {
           old: null,
-          new: newYear.name,
-          sourceYear: source.name,
-          options: {
-            duplicateClasses: data.duplicateClasses,
-            duplicateFees: data.duplicateFees,
-            duplicateSubjects: data.duplicateSubjects,
+          new: {
+            name: newYear.name,
+            sourceYear: source.name,
+            options: {
+              duplicateClasses: data.duplicateClasses,
+              duplicateFees: data.duplicateFees,
+              duplicateSubjects: data.duplicateSubjects,
+            },
           },
         },
       },
@@ -640,7 +643,7 @@ export class AcademicYearSettingsService {
       null,
       'academic_year',
       'academic_year',
-      { generated: { old: null, new: name, dates: { preEntryDate: dates.preEntryDate, officialStartDate: dates.officialStartDate, startDate: dates.startDate, endDate: dates.endDate } } },
+      { generated: { old: null, new: { name, dates: { preEntryDate: dates.preEntryDate, officialStartDate: dates.officialStartDate, startDate: dates.startDate, endDate: dates.endDate } } } },
       userId,
     );
 
@@ -720,7 +723,7 @@ export class AcademicYearSettingsService {
       null,
       'academic_year',
       'academic_year',
-      { closed: { old: false, new: true, yearName: year.name } },
+      { closed: { old: false, new: { value: true, yearName: year.name } } },
       userId,
     );
 

@@ -300,8 +300,7 @@ export class RolesPermissionsService {
       {
         permissionsUpdated: {
           old: currentPermissions,
-          new: permissionIds,
-          roleName: role.name,
+          new: { ids: permissionIds, roleName: role.name },
         },
       },
       userId,

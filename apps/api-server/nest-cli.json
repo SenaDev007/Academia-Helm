@@ -9,7 +9,7 @@
     "watchAssets": true,
     "assets": ["**/*.json", "**/*.hbs"],
     "builder": "swc",
-    "typeCheck": false
+    "typeCheck": true
   }
 }
 

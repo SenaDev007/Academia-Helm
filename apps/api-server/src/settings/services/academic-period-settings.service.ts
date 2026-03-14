@@ -171,7 +171,7 @@ export class AcademicPeriodSettingsService {
       null,
       'academic_period',
       'academic_period',
-      { updated: { id: period.id, name: period.name } },
+      { updated: { old: null, new: { id: period.id, name: period.name } } },
       userId,
     );
     return period;
@@ -191,7 +191,7 @@ export class AcademicPeriodSettingsService {
       null,
       'academic_period',
       'academic_period',
-      { activated: { id: period.id, name: period.name } },
+      { activated: { old: null, new: { id: period.id, name: period.name } } },
       userId,
     );
     return updated ?? period;
@@ -213,7 +213,7 @@ export class AcademicPeriodSettingsService {
       null,
       'academic_period',
       'academic_period',
-      { closed: { id: period.id, name: period.name } },
+      { closed: { old: null, new: { id: period.id, name: period.name } } },
       userId,
     );
     return updated;
@@ -286,7 +286,7 @@ export class AcademicPeriodSettingsService {
       null,
       'academic_period',
       'academic_period',
-      { default_trimesters_created: { academicYearId, names: periods.map((p) => p.name) } },
+      { default_trimesters_created: { old: null, new: { academicYearId, names: periods.map((p) => p.name) } } },
       userId,
     );
   }

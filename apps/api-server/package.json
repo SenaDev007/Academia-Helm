@@ -8,6 +8,7 @@
   "scripts": {
     "postinstall": "prisma generate --schema=prisma/schema.prisma",
     "build": "prisma generate --schema=prisma/schema.prisma && node node_modules/@nestjs/cli/bin/nest.js build",
+    "build:vercel": "npm run build && npx tsc --noEmit",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "node --max-old-space-size=4096 node_modules/@nestjs/cli/bin/nest.js start --watch",

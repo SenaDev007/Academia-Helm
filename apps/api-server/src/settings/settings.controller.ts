@@ -40,7 +40,6 @@ import { RolesPermissionsBootstrapService } from './services/roles-permissions-b
 import { BillingSettingsService } from './services/billing-settings.service';
 import { IdentityProfileService } from './services/identity-profile.service';
 import { StampsSignaturesService } from './services/stamps-signatures.service';
-import { StreamableFile } from '@nestjs/common';
 import { createReadStream } from 'fs';
 import { existsSync } from 'fs';
 

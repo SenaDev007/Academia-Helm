@@ -17,7 +17,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/database/prisma.service';
-import { Decimal } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import * as puppeteer from 'puppeteer';
 import * as path from 'path';
 import * as fs from 'fs/promises';
@@ -140,9 +140,9 @@ export class ReceiptNotificationService {
     const receiptPayment = payment.receipt.payment;
     const totalDue = receiptPayment?.paymentAllocations?.reduce(
       (sum: any, alloc: any) => sum.plus(alloc.studentFee?.totalAmount || 0),
-      new Decimal(0),
-    ) || new Decimal(0);
-    const totalPaid = new Decimal(payment.amount);
+      new Prisma.Decimal(0),
+    ) || new Prisma.Decimal(0);
+    const totalPaid = new Prisma.Decimal(payment.amount);
     const remainingBalance = totalDue.minus(totalPaid);
 
     // Préparer les données pour les templates
@@ -253,7 +253,7 @@ Merci pour votre confiance.
         level: enrollment?.schoolLevel?.label || 'N/A',
       },
       payment: {
-        amount: new Decimal(payment.amount.toString()).toNumber(),
+        amount: new Prisma.Decimal(payment.amount.toString()).toNumber(),
         method: payment.paymentMethod,
         date: new Date(payment.paymentDate).toLocaleDateString('fr-FR'),
         reference: payment.reference || 'N/A',
@@ -262,13 +262,13 @@ Merci pour votre confiance.
       allocations: payment.paymentAllocations.map((allocation: any) => ({
         feeType: allocation.studentFee.feeDefinition.feeCategory.code || 'N/A',
         feeLabel: allocation.studentFee.feeDefinition.label,
-        totalAmount: new Decimal(allocation.studentFee.totalAmount.toString()).toNumber(),
-        allocatedAmount: new Decimal(allocation.allocatedAmount.toString()).toNumber(),
-        balance: new Decimal(allocation.studentFee.totalAmount.toString())
+        totalAmount: new Prisma.Decimal(allocation.studentFee.totalAmount.toString()).toNumber(),
+        allocatedAmount: new Prisma.Decimal(allocation.allocatedAmount.toString()).toNumber(),
+        balance: new Prisma.Decimal(allocation.studentFee.totalAmount.toString())
           .minus(allocation.studentFee.paymentSummary?.paidAmount || 0)
           .toNumber(),
       })),
-      totalPaid: new Decimal(payment.amount.toString()).toNumber(),
+      totalPaid: new Prisma.Decimal(payment.amount.toString()).toNumber(),
       verificationToken: receipt.verificationToken,
       qrCodeUrl: receipt.verificationToken
         ? `${process.env.PUBLIC_URL || 'https://verify.academiahub.africa'}/receipt/${receipt.verificationToken}`

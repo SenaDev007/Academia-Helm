@@ -11,7 +11,7 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { PaymentAllocationService } from './payment-allocation.service';
-import { Decimal } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class PaymentsPrismaEnhancedService {
@@ -30,7 +30,7 @@ export class PaymentsPrismaEnhancedService {
     academicYearId: string;
     schoolLevelId: string;
     studentId: string;
-    amount: number | Decimal;
+    amount: number | Prisma.Decimal;
     paymentMethod: string; // CASH | TRANSFER | MOBILE_MONEY | CHEQUE
     paymentDate: Date;
     reference?: string;
@@ -49,7 +49,7 @@ export class PaymentsPrismaEnhancedService {
       throw new NotFoundException(`Student with ID ${data.studentId} not found`);
     }
 
-    const paymentAmount = new Decimal(data.amount.toString());
+    const paymentAmount = new Prisma.Decimal(data.amount.toString());
 
     // Générer un numéro de reçu unique
     const receiptNumber = await this.generateReceiptNumber(data.tenantId);

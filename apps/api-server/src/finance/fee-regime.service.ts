@@ -11,7 +11,7 @@
 
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/database/prisma.service';
-import { Decimal } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class FeeRegimeService {
@@ -145,7 +145,7 @@ export class FeeRegimeService {
       data: {
         feeRegimeId,
         ...data,
-        discountValue: new Decimal(data.discountValue),
+        discountValue: new Prisma.Decimal(data.discountValue),
       },
     });
   }
@@ -156,8 +156,8 @@ export class FeeRegimeService {
   async calculateDiscountedAmount(
     feeRegimeId: string,
     feeType: string,
-    originalAmount: Decimal,
-  ): Promise<Decimal> {
+    originalAmount: Prisma.Decimal,
+  ): Promise<Prisma.Decimal> {
     const regime = await this.getRegimeById(feeRegimeId);
     const rule = regime.rules.find((r) => r.feeType === feeType);
 
@@ -169,7 +169,7 @@ export class FeeRegimeService {
     if (rule.discountType === 'FIXED') {
       // Réduction fixe
       const discounted = originalAmount.minus(rule.discountValue);
-      return discounted.greaterThan(0) ? discounted : new Decimal(0);
+      return discounted.greaterThan(0) ? discounted : new Prisma.Decimal(0);
     } else if (rule.discountType === 'PERCENT') {
       // Réduction en pourcentage
       const discountAmount = originalAmount

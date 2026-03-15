@@ -11,7 +11,7 @@
 
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { Decimal } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class CollectionCaseService {
@@ -54,12 +54,12 @@ export class CollectionCaseService {
     }
 
     // Calculer les totaux
-    let totalDue = new Decimal(0);
-    let totalPaid = new Decimal(0);
+    let totalDue = new Prisma.Decimal(0);
+    let totalPaid = new Prisma.Decimal(0);
 
     for (const studentFee of studentFees) {
-      totalDue = totalDue.plus(new Decimal(studentFee.totalAmount.toString()));
-      const paid = studentFee.paymentSummary?.paidAmount || new Decimal(0);
+      totalDue = totalDue.plus(new Prisma.Decimal(studentFee.totalAmount.toString()));
+      const paid = studentFee.paymentSummary?.paidAmount || new Prisma.Decimal(0);
       totalPaid = totalPaid.plus(paid);
     }
 
@@ -119,8 +119,8 @@ export class CollectionCaseService {
 
     for (const studentFee of studentFees) {
       const installments = studentFee.feeDefinition.installments || [];
-      const paidAmount = studentFee.paymentSummary?.paidAmount || new Decimal(0);
-      const totalAmount = new Decimal(studentFee.totalAmount.toString());
+      const paidAmount = studentFee.paymentSummary?.paidAmount || new Prisma.Decimal(0);
+      const totalAmount = new Prisma.Decimal(studentFee.totalAmount.toString());
 
       if (paidAmount.lt(totalAmount)) {
         // Il reste des paiements à faire

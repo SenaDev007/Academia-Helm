@@ -4,8 +4,7 @@
  */
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { ClosureType } from '@prisma/client';
-import { Decimal } from '@prisma/client';
+import { ClosureType, Prisma } from '@prisma/client';
 import { Cron } from '@nestjs/schedule';
 
 @Injectable()
@@ -90,10 +89,10 @@ export class FinanceDailyClosureService {
     const computed = await this.computeDay(tenantId, academicYearId, dateOnly);
     let anomalyDetected = false;
     let anomalyNote: string | null = null;
-    let discrepancy: Decimal | null = null;
+    let discrepancy: Prisma.Decimal | null = null;
     if (physicalAmount != null) {
       const diff = physicalAmount - computed.netBalance;
-      discrepancy = new Decimal(diff);
+      discrepancy = new Prisma.Decimal(diff);
       if (Math.abs(diff) > 0.01) {
         anomalyDetected = true;
         anomalyNote = 'Ecart caisse: ' + diff.toFixed(2) + ' XOF';
@@ -104,15 +103,15 @@ export class FinanceDailyClosureService {
         tenantId,
         academicYearId,
         date: dateOnly,
-        totalIncome: new Decimal(computed.totalIncome),
-        totalExpense: new Decimal(computed.totalExpense),
-        netBalance: new Decimal(computed.netBalance),
+        totalIncome: new Prisma.Decimal(computed.totalIncome),
+        totalExpense: new Prisma.Decimal(computed.totalExpense),
+        netBalance: new Prisma.Decimal(computed.netBalance),
         closureType,
         validatedById: validatedById ?? null,
         validatedAt: validatedById ? new Date() : null,
         anomalyDetected,
         anomalyNote,
-        physicalAmount: physicalAmount != null ? new Decimal(physicalAmount) : null,
+        physicalAmount: physicalAmount != null ? new Prisma.Decimal(physicalAmount) : null,
         discrepancy,
       },
       include: { validator: { select: { id: true, firstName: true, lastName: true } } },

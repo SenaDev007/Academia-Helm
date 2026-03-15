@@ -11,7 +11,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/database/prisma.service';
-import { Decimal } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class FinanceOrionService {
@@ -335,7 +335,7 @@ export class FinanceOrionService {
     // Alerte : Montant total des arriérés élevé
     const totalArrears = arrears.reduce(
       (sum, a) => sum.plus(a.balanceDue),
-      new Decimal(0),
+      new Prisma.Decimal(0),
     );
 
     if (totalArrears.greaterThan(1000000)) { // 1 million FCFA

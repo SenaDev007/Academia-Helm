@@ -11,7 +11,7 @@
 
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/database/prisma.service';
-import { Decimal } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class StudentArrearService {
@@ -64,7 +64,7 @@ export class StudentArrearService {
               fromAcademicYearId,
               toAcademicYearId,
               amountDue: balance,
-              amountPaid: new Decimal(0),
+              amountPaid: new Prisma.Decimal(0),
               balanceDue: balance,
               status: 'OPEN',
             },
@@ -151,7 +151,7 @@ export class StudentArrearService {
   /**
    * Met à jour le statut d'un arriéré après paiement
    */
-  async updateArrearAfterPayment(arrearId: string, paymentAmount: Decimal) {
+  async updateArrearAfterPayment(arrearId: string, paymentAmount: Prisma.Decimal) {
     const arrear = await this.prisma.studentArrear.findUnique({
       where: { id: arrearId },
     });
@@ -174,7 +174,7 @@ export class StudentArrearService {
       where: { id: arrearId },
       data: {
         amountPaid: newAmountPaid,
-        balanceDue: newBalanceDue.greaterThan(0) ? newBalanceDue : new Decimal(0),
+        balanceDue: newBalanceDue.greaterThan(0) ? newBalanceDue : new Prisma.Decimal(0),
         status,
       },
     });
@@ -193,15 +193,15 @@ export class StudentArrearService {
 
     const totalDue = arrears.reduce(
       (sum, a) => sum.plus(a.amountDue),
-      new Decimal(0),
+      new Prisma.Decimal(0),
     );
     const totalPaid = arrears.reduce(
       (sum, a) => sum.plus(a.amountPaid),
-      new Decimal(0),
+      new Prisma.Decimal(0),
     );
     const totalBalance = arrears.reduce(
       (sum, a) => sum.plus(a.balanceDue),
-      new Decimal(0),
+      new Prisma.Decimal(0),
     );
 
     return {

@@ -15,7 +15,7 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/database/prisma.service';
 import { StudentArrearService } from './student-arrear.service';
-import { Decimal } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class PaymentAllocationService {
@@ -39,27 +39,27 @@ export class PaymentAllocationService {
     studentId: string,
     academicYearId: string,
     paymentId: string,
-    paymentAmount: Decimal,
+    paymentAmount: Prisma.Decimal,
   ): Promise<{
     allocations: Array<{
       targetType: string;
       targetId: string;
       studentFeeId?: string;
       studentArrearId?: string;
-      allocatedAmount: Decimal;
+      allocatedAmount: Prisma.Decimal;
       allocationOrder: number;
     }>;
-    remainingAmount: Decimal;
+    remainingAmount: Prisma.Decimal;
   }> {
     this.logger.log(`Allocating payment ${paymentId} for student ${studentId}`);
 
-    let remainingAmount = new Decimal(paymentAmount.toString());
+    let remainingAmount = new Prisma.Decimal(paymentAmount.toString());
     const allocations: Array<{
       targetType: string;
       targetId: string;
       studentFeeId?: string;
       studentArrearId?: string;
-      allocatedAmount: Decimal;
+      allocatedAmount: Prisma.Decimal;
       allocationOrder: number;
     }> = [];
 
@@ -72,7 +72,7 @@ export class PaymentAllocationService {
       for (const arrear of arrears) {
         if (remainingAmount.lte(0)) break;
 
-        const amountToAllocate = Decimal.min(remainingAmount, arrear.balanceDue);
+        const amountToAllocate = Prisma.Decimal.min(remainingAmount, arrear.balanceDue);
 
         if (amountToAllocate.gt(0)) {
           allocations.push({
@@ -129,8 +129,8 @@ export class PaymentAllocationService {
 
       // Vérifier si les frais d'inscription/réinscription sont soldés
       const unpaidRegistrationFees = registrationFees.filter(sf => {
-        const paidAmount = sf.paymentSummary?.paidAmount || new Decimal(0);
-        const balance = new Decimal(sf.totalAmount.toString()).minus(paidAmount);
+        const paidAmount = sf.paymentSummary?.paidAmount || new Prisma.Decimal(0);
+        const balance = new Prisma.Decimal(sf.totalAmount.toString()).minus(paidAmount);
         return balance.gt(0);
       });
 
@@ -141,9 +141,9 @@ export class PaymentAllocationService {
         for (const studentFee of unpaidRegistrationFees) {
           if (remainingAmount.lte(0)) break;
 
-          const paidAmount = studentFee.paymentSummary?.paidAmount || new Decimal(0);
-          const balance = new Decimal(studentFee.totalAmount.toString()).minus(paidAmount);
-          const amountToAllocate = Decimal.min(remainingAmount, balance);
+          const paidAmount = studentFee.paymentSummary?.paidAmount || new Prisma.Decimal(0);
+          const balance = new Prisma.Decimal(studentFee.totalAmount.toString()).minus(paidAmount);
+          const amountToAllocate = Prisma.Decimal.min(remainingAmount, balance);
 
           if (amountToAllocate.gt(0)) {
             allocations.push({
@@ -185,9 +185,9 @@ export class PaymentAllocationService {
       for (const { studentFee } of tuitionFeesWithInstallments) {
         if (remainingAmount.lte(0)) break;
 
-        const paidAmount = studentFee.paymentSummary?.paidAmount || new Decimal(0);
-        const balance = new Decimal(studentFee.totalAmount.toString()).minus(paidAmount);
-        const amountToAllocate = Decimal.min(remainingAmount, balance);
+        const paidAmount = studentFee.paymentSummary?.paidAmount || new Prisma.Decimal(0);
+        const balance = new Prisma.Decimal(studentFee.totalAmount.toString()).minus(paidAmount);
+        const amountToAllocate = Prisma.Decimal.min(remainingAmount, balance);
 
         if (amountToAllocate.gt(0)) {
           allocations.push({
@@ -223,7 +223,7 @@ export class PaymentAllocationService {
       targetId: string;
       studentFeeId?: string;
       studentArrearId?: string;
-      allocatedAmount: Decimal;
+      allocatedAmount: Prisma.Decimal;
       allocationOrder: number;
     }>,
   ): Promise<void> {
@@ -253,7 +253,7 @@ export class PaymentAllocationService {
    */
   private async updatePaymentSummary(
     studentFeeId: string,
-    allocatedAmount: Decimal,
+    allocatedAmount: Prisma.Decimal,
   ): Promise<void> {
     const studentFee = await this.prisma.studentFee.findUnique({
       where: { id: studentFeeId },
@@ -266,9 +266,9 @@ export class PaymentAllocationService {
       throw new NotFoundException(`StudentFee with ID ${studentFeeId} not found`);
     }
 
-    const currentPaidAmount = studentFee.paymentSummary?.paidAmount || new Decimal(0);
+    const currentPaidAmount = studentFee.paymentSummary?.paidAmount || new Prisma.Decimal(0);
     const newPaidAmount = currentPaidAmount.plus(allocatedAmount);
-    const balance = new Decimal(studentFee.totalAmount.toString()).minus(newPaidAmount);
+    const balance = new Prisma.Decimal(studentFee.totalAmount.toString()).minus(newPaidAmount);
 
     // Mettre à jour ou créer le résumé
     await this.prisma.paymentSummary.upsert({
@@ -334,8 +334,8 @@ export class PaymentAllocationService {
     });
 
     for (const fee of registrationFees) {
-      const paidAmount = fee.paymentSummary?.paidAmount || new Decimal(0);
-      const balance = new Decimal(fee.totalAmount.toString()).minus(paidAmount);
+      const paidAmount = fee.paymentSummary?.paidAmount || new Prisma.Decimal(0);
+      const balance = new Prisma.Decimal(fee.totalAmount.toString()).minus(paidAmount);
 
       if (balance.gt(0)) {
         return {

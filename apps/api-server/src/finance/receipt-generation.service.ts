@@ -14,7 +14,7 @@ import { PrismaService } from '@/database/prisma.service';
 import { ReceiptNotificationService } from './receipt-notification.service';
 import { AdministrativeSealsService } from '../settings/services/administrative-seals.service';
 import { ElectronicSignaturesService } from '../settings/services/electronic-signatures.service';
-import { Decimal } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
 import * as puppeteer from 'puppeteer';
 import * as path from 'path';
@@ -174,7 +174,7 @@ export class ReceiptGenerationService {
         level: enrollment?.schoolLevel?.label || 'N/A',
       },
       payment: {
-        amount: new Decimal(payment.amount.toString()).toNumber(),
+        amount: new Prisma.Decimal(payment.amount.toString()).toNumber(),
         method: payment.paymentMethod,
         date: new Date(payment.paymentDate).toLocaleDateString('fr-FR'),
         reference: payment.reference || 'N/A',
@@ -183,13 +183,13 @@ export class ReceiptGenerationService {
       allocations: payment.paymentAllocations.map((allocation: any) => ({
         feeType: allocation.studentFee.feeDefinition.feeCategory.code || 'N/A',
         feeLabel: allocation.studentFee.feeDefinition.label,
-        totalAmount: new Decimal(allocation.studentFee.totalAmount.toString()).toNumber(),
-        allocatedAmount: new Decimal(allocation.allocatedAmount.toString()).toNumber(),
-        balance: new Decimal(allocation.studentFee.totalAmount.toString())
+        totalAmount: new Prisma.Decimal(allocation.studentFee.totalAmount.toString()).toNumber(),
+        allocatedAmount: new Prisma.Decimal(allocation.allocatedAmount.toString()).toNumber(),
+        balance: new Prisma.Decimal(allocation.studentFee.totalAmount.toString())
           .minus(allocation.studentFee.paymentSummary?.paidAmount || 0)
           .toNumber(),
       })),
-      totalPaid: new Decimal(payment.amount.toString()).toNumber(),
+      totalPaid: new Prisma.Decimal(payment.amount.toString()).toNumber(),
       verificationToken: receipt.verificationToken,
       qrCodeUrl: receipt.verificationToken
         ? `${process.env.PUBLIC_URL || 'https://verify.academiahub.africa'}/receipt/${receipt.verificationToken}`

@@ -10,7 +10,7 @@
 
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { Decimal } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class FeeInstallmentService {
@@ -25,7 +25,7 @@ export class FeeInstallmentService {
     feeDefinitionId: string,
     installments: Array<{
       label: string;
-      amount: number | Decimal;
+      amount: number | Prisma.Decimal;
       dueDate: Date;
       orderIndex: number;
       isMandatory?: boolean;
@@ -53,11 +53,11 @@ export class FeeInstallmentService {
 
     // Vérifier que la somme des tranches correspond au montant total
     const totalInstallments = installments.reduce(
-      (sum, inst) => sum.plus(new Decimal(inst.amount.toString())),
-      new Decimal(0),
+      (sum, inst) => sum.plus(new Prisma.Decimal(inst.amount.toString())),
+      new Prisma.Decimal(0),
     );
 
-    if (!totalInstallments.equals(new Decimal(feeDefinition.amount.toString()))) {
+    if (!totalInstallments.equals(new Prisma.Decimal(feeDefinition.amount.toString()))) {
       throw new BadRequestException(
         `La somme des tranches (${totalInstallments}) doit correspondre au montant total (${feeDefinition.amount})`,
       );
@@ -112,7 +112,7 @@ export class FeeInstallmentService {
     installmentId: string,
     data: {
       label?: string;
-      amount?: number | Decimal;
+      amount?: number | Prisma.Decimal;
       dueDate?: Date;
       orderIndex?: number;
       isMandatory?: boolean;
@@ -171,7 +171,7 @@ export class FeeInstallmentService {
       throw new NotFoundException(`FeeDefinition with ID ${feeDefinitionId} not found`);
     }
 
-    const totalAmount = new Decimal(feeDefinition.amount.toString());
+    const totalAmount = new Prisma.Decimal(feeDefinition.amount.toString());
     const amountPerInstallment = totalAmount.dividedBy(numberOfInstallments);
 
     const installments = [];

@@ -3,8 +3,7 @@
  */
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { ExpenseStatus } from '@prisma/client';
-import { Decimal } from '@prisma/client';
+import { ExpenseStatus, Prisma } from '@prisma/client';
 
 @Injectable()
 export class FinanceExpenseService {
@@ -38,7 +37,7 @@ export class FinanceExpenseService {
         tenantId,
         academicYearId: data.academicYearId,
         categoryId: data.categoryId,
-        amount: new Decimal(data.amount),
+        amount: new Prisma.Decimal(data.amount),
         description: data.description,
         receiptUrl: data.receiptUrl ?? null,
         status: 'PENDING',
@@ -184,8 +183,8 @@ export class FinanceExpenseService {
   ) {
     return this.prisma.financeBudget.upsert({
       where: { tenantId_academicYearId_categoryId: { tenantId, academicYearId, categoryId } },
-      create: { tenantId, academicYearId, categoryId, allocatedAmount: new Decimal(allocatedAmount) },
-      update: { allocatedAmount: new Decimal(allocatedAmount) },
+      create: { tenantId, academicYearId, categoryId, allocatedAmount: new Prisma.Decimal(allocatedAmount) },
+      update: { allocatedAmount: new Prisma.Decimal(allocatedAmount) },
       include: { category: true },
     });
   }

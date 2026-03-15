@@ -61,13 +61,7 @@ export class ReceiptGenerationService {
         student: {
           include: {
             identifier: true,
-            tenant: {
-              include: {
-                schools: {
-                  take: 1,
-                },
-              },
-            },
+            tenant: true,
             studentEnrollments: {
               where: {
                 status: 'ACTIVE',
@@ -103,8 +97,14 @@ export class ReceiptGenerationService {
       throw new NotFoundException(`Payment with ID ${paymentId} not found`);
     }
 
-    // Vérifier si un reçu existe déjà
-    let receipt = payment.receipt;
+    // École du tenant (requête séparée : Prisma n'expose pas take sur Tenant.schools dans ce contexte)
+    const school = await this.prisma.school.findFirst({
+      where: { tenantId: payment.tenantId },
+      select: { name: true },
+    });
+
+    // Vérifier si un reçu existe déjà (inclus via include: { receipt: true } ci-dessus)
+    let receipt = (payment as { receipt?: unknown }).receipt;
     if (!receipt) {
       // Générer un numéro de reçu unique
       const receiptNumber = await this.generateReceiptNumber(payment.tenantId);
@@ -129,7 +129,7 @@ export class ReceiptGenerationService {
     }
 
     // Générer le PDF du reçu
-    const pdfPath = await this.generateReceiptPDF(receipt, payment);
+    const pdfPath = await this.generateReceiptPDF(receipt, payment, undefined, school);
 
     // Mettre à jour le chemin du PDF
     await this.prisma.paymentReceipt.update({
@@ -156,10 +156,15 @@ export class ReceiptGenerationService {
   /**
    * Génère le PDF du reçu avec Puppeteer
    */
-  private async generateReceiptPDF(receipt: any, payment: any, sealVersion?: any): Promise<string> {
+  private async generateReceiptPDF(
+    receipt: any,
+    payment: any,
+    sealVersion?: any,
+    school?: { name: string } | null,
+  ): Promise<string> {
     const student = payment.student;
     const enrollment = student.studentEnrollments?.[0];
-    const institution = student.tenant.schools?.[0]?.name || student.tenant.name;
+    const institution = school?.name || student.tenant?.name || 'Établissement';
 
     // Préparer les données pour le template
     const receiptData = {
@@ -534,7 +539,16 @@ export class ReceiptGenerationService {
     });
 
     // Régénérer le PDF avec mention DUPLICATA
-    const pdfPath = await this.generateReceiptPDF(duplicateReceipt, originalReceipt.payment);
+    const schoolForPdf = await this.prisma.school.findFirst({
+      where: { tenantId: originalReceipt.payment.tenantId },
+      select: { name: true },
+    });
+    const pdfPath = await this.generateReceiptPDF(
+      duplicateReceipt,
+      originalReceipt.payment,
+      undefined,
+      schoolForPdf,
+    );
 
     await this.prisma.paymentReceipt.update({
       where: { id: duplicateReceipt.id },

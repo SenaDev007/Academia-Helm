@@ -84,13 +84,13 @@ export class AuthService {
       };
     }
 
-    // Pour les autres utilisateurs, vérifier l'appartenance au tenant
+    // Pour les autres utilisateurs, refuser PLATFORM (réservé au PLATFORM_OWNER)
     if (loginDto.portal_type === PortalType.PLATFORM) {
       throw new ForbiddenException('Only PLATFORM_OWNER can use PLATFORM portal type');
     }
 
     // Si portal_type est SCHOOL, TEACHER ou PARENT, tenant_id est requis
-    if (loginDto.portal_type && loginDto.portal_type !== PortalType.PLATFORM) {
+    if (loginDto.portal_type) {
       if (!loginDto.tenant_id) {
         throw new ForbiddenException('Tenant ID is required for this portal type');
       }
@@ -110,9 +110,8 @@ export class AuthService {
       }
     }
 
-    // Si tenant_id est fourni (même sans portal_type), vérifier l'appartenance
-    // Cela permet de sécuriser le login standard avec tenant_id
-    if (loginDto.tenant_id && (!loginDto.portal_type || loginDto.portal_type === PortalType.PLATFORM)) {
+    // Si tenant_id est fourni sans portal_type, vérifier l'appartenance au tenant
+    if (loginDto.tenant_id && !loginDto.portal_type) {
       const tenant = await this.prisma.tenant.findUnique({
         where: { id: loginDto.tenant_id },
       });

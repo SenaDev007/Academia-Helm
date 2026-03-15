@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { BillingEventType } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
 
@@ -112,7 +113,7 @@ export class BillingSettingsService {
         updated.id,
         'subscription.billingCycle',
         'billing',
-        { oldValue: oldData.billingCycle, newValue: data.billingCycle },
+        { billingCycle: { old: oldData.billingCycle, new: data.billingCycle } },
         userId,
         ipAddress,
         userAgent,
@@ -125,7 +126,7 @@ export class BillingSettingsService {
         updated.id,
         'subscription.autoRenew',
         'billing',
-        { oldValue: oldData.autoRenew, newValue: data.autoRenew },
+        { autoRenew: { old: oldData.autoRenew, new: data.autoRenew } },
         userId,
         ipAddress,
         userAgent,
@@ -138,7 +139,7 @@ export class BillingSettingsService {
         updated.id,
         'subscription.bilingualEnabled',
         'billing',
-        { oldValue: oldData.bilingualEnabled, newValue: data.bilingualEnabled },
+        { bilingualEnabled: { old: oldData.bilingualEnabled, new: data.bilingualEnabled } },
         userId,
         ipAddress,
         userAgent,
@@ -193,7 +194,7 @@ export class BillingSettingsService {
       updated.id,
       'subscription.plan',
       'billing',
-      { oldValue: oldPlan, newValue: newPlan.name },
+      { plan: { old: oldPlan, new: newPlan.name } },
       userId,
       ipAddress,
       userAgent,
@@ -203,7 +204,7 @@ export class BillingSettingsService {
       data: {
         tenantId,
         subscriptionId: updated.id,
-        type: 'PLAN_CHANGE',
+        type: BillingEventType.ADJUSTMENT,
         amount: newAmount,
         channel: 'SYSTEM',
         metadata: {
@@ -331,7 +332,7 @@ export class BillingSettingsService {
       updated.id,
       'subscription.status',
       'billing',
-      { oldValue: existing.status, newValue: 'CANCELLED', reason },
+      { status: { old: existing.status, new: 'CANCELLED' } },
       userId,
       ipAddress,
       userAgent,
@@ -341,7 +342,7 @@ export class BillingSettingsService {
       data: {
         tenantId,
         subscriptionId: updated.id,
-        type: 'SUBSCRIPTION_CANCELLED',
+        type: BillingEventType.ADJUSTMENT,
         amount: 0,
         channel: 'SYSTEM',
         metadata: {
@@ -391,7 +392,7 @@ export class BillingSettingsService {
       updated.id,
       'subscription.status',
       'billing',
-      { oldValue: 'CANCELLED', newValue: 'ACTIVE' },
+      { status: { old: 'CANCELLED', new: 'ACTIVE' } },
       userId,
       ipAddress,
       userAgent,

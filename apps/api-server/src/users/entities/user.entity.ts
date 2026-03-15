@@ -43,6 +43,9 @@ export class User {
   status: string;
 
   @Column({ nullable: true })
+  role: string;
+
+  @Column({ nullable: true })
   lastLogin: Date;
 
   // Relations avec les rôles

@@ -4,7 +4,7 @@ import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../database/prisma.service';
 import { ConfigService } from '@nestjs/config';
-import { LoginDto } from './dto/login.dto';
+import { LoginDto, PortalType } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 
 @Injectable()
@@ -85,12 +85,12 @@ export class AuthService {
     }
 
     // Pour les autres utilisateurs, vérifier l'appartenance au tenant
-    if (loginDto.portal_type === 'PLATFORM') {
+    if (loginDto.portal_type === PortalType.PLATFORM) {
       throw new ForbiddenException('Only PLATFORM_OWNER can use PLATFORM portal type');
     }
 
     // Si portal_type est SCHOOL, TEACHER ou PARENT, tenant_id est requis
-    if (loginDto.portal_type && loginDto.portal_type !== 'PLATFORM') {
+    if (loginDto.portal_type && loginDto.portal_type !== PortalType.PLATFORM) {
       if (!loginDto.tenant_id) {
         throw new ForbiddenException('Tenant ID is required for this portal type');
       }
@@ -112,7 +112,7 @@ export class AuthService {
 
     // Si tenant_id est fourni (même sans portal_type), vérifier l'appartenance
     // Cela permet de sécuriser le login standard avec tenant_id
-    if (loginDto.tenant_id && (!loginDto.portal_type || loginDto.portal_type === 'PLATFORM')) {
+    if (loginDto.tenant_id && (!loginDto.portal_type || loginDto.portal_type === PortalType.PLATFORM)) {
       const tenant = await this.prisma.tenant.findUnique({
         where: { id: loginDto.tenant_id },
       });

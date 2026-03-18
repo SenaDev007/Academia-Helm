@@ -53,7 +53,7 @@ export default function PremiumHeader() {
       )}
     >
       <div className="max-w-7xl mx-auto">
-        <div className="flex items-center justify-between h-20 flex-nowrap px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-14 md:h-16 flex-nowrap px-4 sm:px-6 lg:px-8">
           {/* Logo */}
           <Link 
             href="/admin-login"
@@ -104,7 +104,7 @@ export default function PremiumHeader() {
                 href="/portal"
                 prefetch={true}
                 className={cn(
-                  'bg-blue-600 text-white px-6 py-2.5 rounded-md',
+                  'bg-blue-600 text-white px-6 py-2.5 rounded-md min-h-[44px]',
                   'font-semibold hover:bg-blue-700 transition-all duration-200',
                   'shadow-sm hover:shadow-md transform hover:-translate-y-0.5',
                   'inline-flex items-center space-x-2'
@@ -116,12 +116,12 @@ export default function PremiumHeader() {
             </div>
           </nav>
 
-          {/* Mobile Menu Button */}
+          {/* Mobile Menu Button — zone tap 44px min (spec responsive) */}
           <div className="lg:hidden">
             <button
               onClick={() => setIsMenuOpen(!isMenuOpen)}
               className={cn(
-                'p-2.5 rounded-lg',
+                'p-2.5 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center',
                 textColor('primary'),
                 'hover:bg-gray-100 transition-colors duration-200',
                 'focus:outline-none focus:ring-2 focus:ring-blue-900 focus:ring-offset-2'
@@ -170,7 +170,7 @@ export default function PremiumHeader() {
                 href="/portal"
                 onClick={() => setIsMenuOpen(false)}
                 className={cn(
-                  'bg-blue-600 text-white w-full py-3 rounded-md',
+                  'bg-blue-600 text-white w-full py-3 rounded-md min-h-[44px]',
                   'font-semibold hover:bg-blue-700 transition-all duration-200',
                   'shadow-sm hover:shadow-md',
                   'inline-flex items-center justify-center space-x-2'

@@ -27,7 +27,21 @@ module.exports = {
   ],
   theme: {
     extend: {
+      screens: {
+        xs: '375px',
+        sm: '640px',
+        md: '768px',
+        lg: '1024px',
+        xl: '1280px',
+        '2xl': '1536px',
+      },
       colors: {
+        helm: {
+          navy: '#0D1F6E',
+          navyl: '#1A3490',
+          gold: '#F5A623',
+          goldd: '#C07800',
+        },
         // BLEU PRINCIPAL — Royal Institutional Blue (60% de l'UI)
         blue: {
           900: '#0A2A5E', // Base — Autorité, structure principale
@@ -96,7 +110,7 @@ module.exports = {
         ],
       },
       fontSize: {
-        // Hiérarchie typographique officielle
+        // Hiérarchie typographique officielle (conservée)
         'h1': ['32px', { lineHeight: '40px', fontWeight: '700' }],
         'h2': ['24px', { lineHeight: '32px', fontWeight: '700' }],
         'h3': ['20px', { lineHeight: '28px', fontWeight: '600' }],
@@ -106,6 +120,13 @@ module.exports = {
         'body-small': ['12px', { lineHeight: '16px', fontWeight: '400' }],
         'label': ['14px', { lineHeight: '20px', fontWeight: '500' }],
         'caption': ['12px', { lineHeight: '16px', fontWeight: '400' }],
+        // Fluid typography (responsive)
+        'fluid-sm': ['clamp(0.75rem, 2vw, 0.875rem)', { lineHeight: '1.5' }],
+        'fluid-base': ['clamp(0.875rem, 2.5vw, 1rem)', { lineHeight: '1.6' }],
+        'fluid-lg': ['clamp(1rem, 3vw, 1.125rem)', { lineHeight: '1.5' }],
+        'fluid-xl': ['clamp(1.125rem, 4vw, 1.5rem)', { lineHeight: '1.4' }],
+        'fluid-2xl': ['clamp(1.5rem, 5vw, 2.25rem)', { lineHeight: '1.3' }],
+        'fluid-3xl': ['clamp(1.875rem, 6vw, 3rem)', { lineHeight: '1.2' }],
       },
       borderRadius: {
         'subtle': '6px',  // Boutons, inputs

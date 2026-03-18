@@ -12,7 +12,7 @@ export interface Objection {
 export const objections: Objection[] = [
   {
     objection: "C'est trop cher",
-    response: "💬 Je comprends cette réaction. En réalité, Academia Hub remplace plusieurs outils à la fois : gestion scolaire, finances, IA, offline, support. Sur le long terme, c'est une économie réelle."
+    response: "💬 Je comprends cette réaction. En réalité, Academia Helm remplace plusieurs outils à la fois : gestion scolaire, finances, IA, offline, support. Et tous les modules sont inclus dans le même prix, sans options cachées. Sur le long terme, c'est une économie réelle."
   },
   {
     objection: "Je veux réfléchir",
@@ -20,7 +20,7 @@ export const objections: Objection[] = [
   },
   {
     objection: "Je n'ai pas internet en permanence",
-    response: "🌍 Justement, Academia Hub fonctionne hors ligne. Vous continuez à travailler normalement et les données se synchronisent dès que la connexion revient."
+    response: "🌍 Justement, Academia Helm fonctionne en mode offline-first. Vous continuez à travailler normalement et les données se synchronisent dès que la connexion revient."
   },
   {
     objection: "Et si je ne paie pas à temps ?",

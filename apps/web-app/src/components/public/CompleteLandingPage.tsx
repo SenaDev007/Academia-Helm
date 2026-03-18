@@ -23,6 +23,7 @@ import AppIcon from '@/components/ui/AppIcon';
 import TypingAnimation from '@/components/ui/TypingAnimation';
 import { bgColor, textColor, typo, radius, shadow } from '@/lib/design-tokens';
 import { cn } from '@/lib/utils';
+import { HELM_PLANS, type HelmPlanKey } from '@/lib/services/HelmPricingService';
 
 // Chargement dynamique des composants lourds
 const VideoPlayerModal = dynamic(() => import('./VideoPlayerModal'), {
@@ -120,6 +121,186 @@ function ModuleCard({
   );
 }
 
+function LandingPlanCard({
+  planKey,
+  billingCycle,
+}: {
+  planKey: HelmPlanKey;
+  billingCycle: 'monthly' | 'annual';
+}) {
+  const plan = HELM_PLANS[planKey];
+  const isHighlighted = plan.highlighted;
+  const isNetwork = planKey === 'NETWORK';
+  const price =
+    billingCycle === 'monthly' ? plan.monthlyPrice : plan.annualPrice;
+
+  const studentsRange =
+    planKey === 'SEED'
+      ? '1 – 150 élèves'
+      : planKey === 'GROW'
+      ? '151 – 400 élèves'
+      : planKey === 'LEAD'
+      ? '401 – 800 élèves'
+      : 'Multi-campus';
+
+  const borderClass =
+    planKey === 'SEED'
+      ? 'border-blue-600/50 bg-gradient-to-b from-white to-blue-50/40'
+      : planKey === 'GROW'
+      ? 'border-gold-500 bg-gradient-to-b from-white to-amber-50/60'
+      : planKey === 'LEAD'
+      ? 'border-indigo-700/70 bg-gradient-to-b from-white to-indigo-50/60'
+      : 'border-slate-500/70 bg-gradient-to-b from-white to-slate-900/5';
+
+  const headerPillClass =
+    planKey === 'SEED'
+      ? 'bg-blue-50 text-blue-800'
+      : planKey === 'GROW'
+      ? 'bg-amber-50 text-amber-800'
+      : planKey === 'LEAD'
+      ? 'bg-indigo-50 text-indigo-800'
+      : 'bg-slate-100 text-slate-800';
+
+  const ctaClass = isNetwork
+    ? 'bg-slate-900 text-white hover:bg-slate-800'
+    : planKey === 'SEED'
+    ? 'bg-blue-600 text-white hover:bg-blue-700'
+    : planKey === 'GROW'
+    ? 'bg-amber-500 text-slate-900 hover:bg-amber-600'
+    : 'bg-indigo-700 text-white hover:bg-indigo-800';
+
+  return (
+    <div
+      className={cn(
+        'p-8 rounded-3xl border-2',
+        'shadow-xl hover:shadow-2xl hover:-translate-y-1',
+        'transition-all duration-300 ease-out',
+        'group relative overflow-hidden flex flex-col h-full',
+        borderClass,
+        isHighlighted && 'ring-4 ring-gold-400/40 shadow-[0_0_30px_rgba(245,166,35,0.4)]',
+      )}
+    >
+      {isHighlighted && (
+        <div className="absolute top-6 right-6 z-20">
+          <span className="inline-block px-4 py-1.5 bg-gradient-to-r from-gold-500 to-gold-600 text-white rounded-full text-xs font-bold shadow-lg">
+            Le plus choisi
+          </span>
+        </div>
+      )}
+
+      <div className="relative z-10 flex flex-col h-full">
+        <div className="mb-3">
+          <span
+            className={cn(
+              'inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide',
+              headerPillClass,
+            )}
+          >
+            {studentsRange}
+          </span>
+        </div>
+        <h3
+          className={cn(
+            typo('h2'),
+            'font-bold mb-1',
+            planKey === 'SEED'
+              ? 'text-blue-900'
+              : planKey === 'GROW'
+              ? 'text-amber-800'
+              : planKey === 'LEAD'
+              ? 'text-indigo-900'
+              : 'text-slate-900',
+          )}
+        >
+          {plan.name}
+        </h3>
+        <p
+          className={cn(
+            typo('small'),
+            'mb-4',
+            planKey === 'SEED'
+              ? 'text-blue-700'
+              : planKey === 'GROW'
+              ? 'text-amber-700'
+              : planKey === 'LEAD'
+              ? 'text-indigo-700'
+              : 'text-slate-600',
+          )}
+        >
+          {plan.tagline}
+        </p>
+
+        <div className="mb-6">
+          <div className="text-sm text-gray-500 mb-1">
+            {billingCycle === 'monthly' ? 'Abonnement mensuel' : 'Abonnement annuel'}
+          </div>
+          <div className="flex items-baseline justify-center gap-2">
+            <span className="text-4xl font-extrabold text-blue-700">
+              {price == null ? 'Sur devis' : plan[billingCycle === 'monthly' ? 'monthlyPrice' : 'annualPrice']!.toLocaleString('fr-FR')}
+            </span>
+            {price != null && (
+              <>
+                <span className="text-xl font-bold text-blue-600">FCFA</span>
+                <span className="text-base text-gray-600 font-medium">
+                  {billingCycle === 'monthly' ? '/ mois' : '/ an'}
+                </span>
+              </>
+            )}
+          </div>
+          {billingCycle === 'annual' && price != null && plan.monthlyPrice != null && (
+            <p className={`${typo('small')} text-gold-600 text-center font-medium mt-1`}>
+              Équivalent {Math.round(plan.annualPrice! / 12).toLocaleString('fr-FR')} FCFA/mois — 2 mois offerts
+            </p>
+          )}
+        </div>
+
+        <div className="mb-4 p-4 bg-blue-50 rounded-2xl border border-blue-200">
+          <p className={`${typo('base')} text-blue-900 font-semibold text-center`}>
+            9 modules inclus dans chaque plan
+          </p>
+        </div>
+
+        <ul className="space-y-3 mb-6 flex-grow">
+          {[
+            'Accès complet aux 9 modules (élèves, finances, ORION, QHSE, RH, etc.)',
+            'Mode offline / online',
+            'Support inclus',
+          ].map((item, index) => (
+            <li key={index} className="flex items-start space-x-3">
+              <div className="w-5 h-5 bg-green-50 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 border border-green-200">
+                <AppIcon name="success" size="submenu" className="text-green-600" />
+              </div>
+              <span className={`${typo('small')} text-gray-700 leading-relaxed`}>{item}</span>
+            </li>
+          ))}
+        </ul>
+
+        <div className="mb-4 p-3 bg-gray-50 rounded-xl border border-gray-200">
+          <p className={`${typo('small')} text-gray-600 text-center leading-relaxed`}>
+            Souscription initiale :{' '}
+            <span className="font-semibold text-blue-900">
+              {plan.setupFee.toLocaleString('fr-FR')} FCFA
+            </span>{' '}
+            (one-shot à l&apos;ouverture)
+          </p>
+        </div>
+
+        <Link
+          href={isNetwork ? '/contact-enterprise' : `/signup?plan=${planKey.toLowerCase()}`}
+          prefetch={true}
+          className={cn(
+            'w-full py-4 rounded-2xl font-semibold transition-all duration-300 inline-flex items-center justify-center shadow-lg hover:shadow-xl hover:scale-105',
+            ctaClass,
+          )}
+        >
+          {isNetwork ? 'Demander un devis' : `Choisir ${plan.name}`}
+          <AppIcon name="arrowRight" size="action" className="ml-2 text-white" />
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 export default function CompleteLandingPage() {
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
   const [pricingPeriod, setPricingPeriod] = useState<'monthly' | 'annual'>('monthly');
@@ -197,10 +378,10 @@ export default function CompleteLandingPage() {
   return (
     <div className="min-h-screen bg-white">
       <PremiumHeader />
-      <div className="h-20" />
+      <div className="h-14 md:h-16" aria-hidden />
 
-      {/* 1️⃣ HERO SECTION */}
-      <section className="relative min-h-screen flex items-center justify-center px-4 sm:px-6 lg:px-8 overflow-hidden">
+      {/* 1️⃣ HERO SECTION — responsive spec: flex-col lg:flex-row si deux blocs, conteneur max-w-7xl */}
+      <section className="relative min-h-screen flex flex-col items-center justify-center py-12 md:py-16 lg:py-24 px-4 sm:px-6 lg:px-8 overflow-hidden">
         {/* Background Image with Overlay */}
         <div className="absolute inset-0 z-0">
           <Image
@@ -220,20 +401,20 @@ export default function CompleteLandingPage() {
         <EducationalParticles />
         
         {/* Content */}
-        <div className="relative z-10 max-w-6xl mx-auto text-center -mt-8">
-          <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold text-white mb-8 max-w-5xl mx-auto leading-tight drop-shadow-2xl">
+        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center -mt-8 w-full">
+          <h1 className="text-2xl md:text-4xl lg:text-5xl font-black text-white mb-6 md:mb-8 max-w-5xl mx-auto leading-tight drop-shadow-2xl">
             Gérez votre école plus rapidement,
             <br />
             avec précision et facilité.
           </h1>
-          <p className={`${typo('large')} text-lg md:text-xl text-white/95 mb-12 max-w-3xl mx-auto leading-relaxed drop-shadow-md`}>
+          <p className="text-sm md:text-base text-white/95 mb-8 md:mb-12 max-w-3xl mx-auto leading-relaxed drop-shadow-md">
             La plateforme de pilotage éducatif nouvelle génération. Prenez le gouvernail de votre institution.
           </p>
-          <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
+          <div className="flex flex-col lg:flex-row justify-center items-center gap-4 lg:gap-8">
             <Link
               href="/signup"
               prefetch={true}
-              className="bg-blue-600 text-white px-10 py-4 rounded-md font-semibold hover:bg-blue-700 transition-all duration-300 inline-flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:scale-105"
+              className="w-full lg:w-auto min-h-[44px] bg-blue-600 text-white px-6 md:px-10 py-3.5 md:py-4 rounded-xl font-bold text-sm md:text-base hover:bg-blue-700 transition-all duration-300 inline-flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:scale-105"
               style={{
                 animation: 'shake-interval 3s ease-in-out infinite',
               }}
@@ -242,8 +423,9 @@ export default function CompleteLandingPage() {
               S'inscrire
             </Link>
             <button
+              type="button"
               onClick={() => setIsVideoModalOpen(true)}
-              className="bg-white/10 backdrop-blur-md text-white px-10 py-4 rounded-md border-2 border-white/30 font-semibold hover:bg-white/20 transition-all duration-300 inline-flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:scale-105"
+              className="w-full lg:w-auto min-h-[44px] bg-white/10 backdrop-blur-md text-white px-6 md:px-10 py-3.5 md:py-4 rounded-xl border-2 border-white/30 font-semibold hover:bg-white/20 transition-all duration-300 inline-flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:scale-105"
             >
               <AppIcon name="playCircle" size="action" className="text-white" />
               Voir Academia Helm
@@ -253,8 +435,8 @@ export default function CompleteLandingPage() {
       </section>
 
       {/* 2️⃣ SECTION — LE PROBLÈME */}
-      <section className="py-32 bg-gray-50 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-6xl mx-auto">
+      <section className="py-12 md:py-16 lg:py-24 bg-gray-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-20 -mt-4">
             <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-red-50 to-red-100 rounded-2xl mb-8 shadow-lg">
               <AppIcon name="warning" size="dashboard" className="text-crimson-600" />
@@ -275,7 +457,7 @@ export default function CompleteLandingPage() {
             </p>
           </div>
           
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 mb-16">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4 lg:gap-6 mb-12 md:mb-16">
             {[
               { text: 'Données administratives éparpillées', icon: 'spreadsheet' as const },
               { text: 'Finances difficiles à suivre', icon: 'finance' as const },
@@ -316,14 +498,14 @@ export default function CompleteLandingPage() {
       </section>
 
       {/* 3️⃣ SECTION — LA SOLUTION ACADEMIA HUB */}
-      <section className={`py-32 ${bgColor('sidebar')} ${textColor('inverse')} px-4 sm:px-6 lg:px-8 relative overflow-hidden`}>
+      <section className={`py-12 md:py-16 lg:py-24 ${bgColor('sidebar')} ${textColor('inverse')} relative overflow-hidden`}>
         {/* Decorative background elements */}
         <div className="absolute inset-0 opacity-5">
           <div className="absolute top-20 left-10 w-72 h-72 bg-gold-500 rounded-full blur-3xl"></div>
           <div className="absolute bottom-20 right-10 w-96 h-96 bg-blue-600 rounded-full blur-3xl"></div>
           </div>
         
-        <div className="max-w-4xl mx-auto text-center relative z-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10">
           <div className="inline-flex items-center justify-center mb-10">
             <Image
               src="/images/logo-Academia Hub.png"
@@ -335,7 +517,7 @@ export default function CompleteLandingPage() {
               sizes="(max-width: 768px) 80px, 120px"
             />
           </div>
-          <h2 className={`text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-8 leading-tight`}>
+          <h2 className="text-xl md:text-3xl lg:text-4xl font-bold text-white mb-6 md:mb-8 leading-tight">
             Un système de <span className="text-gold-500 relative inline-block">
               <span className="relative z-10">gouvernance scolaire</span>
               <span className="absolute bottom-1 left-0 right-0 h-4 bg-gold-500/20 -rotate-1"></span>
@@ -351,11 +533,11 @@ export default function CompleteLandingPage() {
         </div>
       </section>
 
-      {/* 4️⃣ SECTION — MODULES */}
-      <section className="py-32 bg-gradient-to-b from-white via-cloud to-white px-4 sm:px-6 lg:px-8">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-20">
-            <h2 className={`text-4xl md:text-5xl lg:text-6xl font-bold text-blue-900 mb-8 leading-tight`}>
+      {/* 4️⃣ SECTION — MODULES — grille grid-cols-1 md:2 lg:3 */}
+      <section className="py-12 md:py-16 lg:py-24 bg-gradient-to-b from-white via-cloud to-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12 md:mb-20">
+            <h2 className="text-xl md:text-3xl lg:text-4xl font-bold text-blue-900 mb-6 md:mb-8 leading-tight">
               Modules de gestion scolaire
             </h2>
             <p className={`${typo('large')} ${textColor('secondary')} max-w-3xl mx-auto mb-16 text-lg`}>
@@ -369,7 +551,7 @@ export default function CompleteLandingPage() {
             <div className="flex items-center justify-center mb-12">
               <div className="h-0.5 bg-gradient-to-r from-transparent via-blue-600 to-transparent flex-1 max-w-40"></div>
             </div>
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4 lg:gap-6">
               {[
                 { 
                   name: 'Tableau de Bord Central', 
@@ -436,15 +618,15 @@ export default function CompleteLandingPage() {
       </section>
 
       {/* 5️⃣ SECTION — ORION (IA DE DIRECTION) */}
-      <section className={`py-32 ${bgColor('sidebar')} ${textColor('inverse')} px-4 sm:px-6 lg:px-8 relative overflow-hidden`}>
+      <section className={`py-12 md:py-16 lg:py-24 ${bgColor('sidebar')} ${textColor('inverse')} relative overflow-hidden`}>
         {/* Decorative background elements */}
         <div className="absolute inset-0 opacity-5">
           <div className="absolute top-10 left-20 w-96 h-96 bg-gold-500 rounded-full blur-3xl"></div>
           <div className="absolute bottom-10 right-20 w-80 h-80 bg-blue-600 rounded-full blur-3xl"></div>
         </div>
         
-        <div className="max-w-6xl mx-auto relative z-10">
-          <div className="grid md:grid-cols-2 gap-16 items-start">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 lg:gap-16 items-start">
             <div>
               <div className="inline-flex flex-col items-center justify-center mb-4 relative">
                 <div className="absolute inset-0 bg-gold-500/10 rounded-full blur-2xl"></div>
@@ -538,10 +720,10 @@ export default function CompleteLandingPage() {
       </section>
 
       {/* 6️⃣ SECTION — OFFLINE & SÉCURITÉ */}
-      <section id="offline" ref={offlineSectionRef} className="py-32 bg-gradient-to-b from-white via-cloud to-white px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+      <section id="offline" ref={offlineSectionRef} className="py-12 md:py-16 lg:py-24 bg-gradient-to-b from-white via-cloud to-white relative overflow-hidden">
         {/* Animated particles background */}
         <SecurityParticles />
-        <div className="max-w-6xl mx-auto relative z-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="text-center mb-20">
             <h2 className={`text-4xl md:text-5xl lg:text-6xl font-bold ${textColor('primary')} mb-8 leading-tight`}>
               Fonctionne même <span className="text-blue-900 relative inline-block">
@@ -562,7 +744,7 @@ export default function CompleteLandingPage() {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-10">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10">
             <div 
               className={cn(
               bgColor('card'),
@@ -647,8 +829,8 @@ export default function CompleteLandingPage() {
         </div>
       </section>
 
-      {/* 7️⃣ SECTION — TARIFICATION */}
-      <section id="tarification" className={`py-32 ${bgColor('sidebar')} ${textColor('inverse')} px-4 sm:px-6 lg:px-8 relative overflow-hidden`}>
+      {/* 7️⃣ SECTION — TARIFICATION (alignée sur HELM SEED / GROW / LEAD / NETWORK) */}
+      <section id="tarification" className={`py-12 md:py-16 lg:py-24 ${bgColor('sidebar')} ${textColor('inverse')} relative overflow-hidden`}>
         {/* Decorative background elements */}
         <div className="absolute inset-0 opacity-5">
           <div className="absolute top-20 right-10 w-96 h-96 bg-gold-500 rounded-full blur-3xl"></div>
@@ -659,11 +841,14 @@ export default function CompleteLandingPage() {
           {/* Titre & Sous-titre */}
           <div className="text-center mb-16 -mt-8">
             <h2 className={`text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight text-white`}>
-              Une tarification claire, pensée pour les établissements sérieux
+              Pilotez votre école avec une tarification tout inclus
             </h2>
-            <p className={`${typo('large')} text-white/90 max-w-3xl mx-auto leading-relaxed mb-8`}>
-              Accédez à l'ensemble des modules Academia Helm avec une logique simple,
-              transparente et évolutive selon la taille de votre structure.
+            <p className={`${typo('large')} text-white/90 max-w-3xl mx-auto leading-relaxed mb-4`}>
+              Tous les plans incluent les 9 modules complets d&apos;Academia Helm : élèves, finances,
+              examens, RH, QHSE, communication, IA ORION et modules complémentaires.
+            </p>
+            <p className={`${typo('small')} text-white/80 max-w-2xl mx-auto`}>
+              La seule variable est le nombre d&apos;élèves inscrits dans votre établissement.
             </p>
             
             {/* Toggle Mensuel/Annuel */}
@@ -702,300 +887,12 @@ export default function CompleteLandingPage() {
             </div>
           </div>
 
-          {/* Cartes de Pricing */}
-          <div className="grid md:grid-cols-3 gap-8 mb-16">
-            {/* CARTE 1 — ÉCOLE INDIVIDUELLE */}
-            <div className={cn(
-              'bg-white p-8 rounded-3xl border-2 border-blue-200',
-              'shadow-xl hover:shadow-2xl',
-              'hover:border-blue-400 hover:-translate-y-1',
-              'transition-all duration-300 ease-out',
-              'group relative overflow-hidden',
-              'flex flex-col h-full'
-            )}>
-              {/* Decorative accent */}
-              <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/5 rounded-bl-full"></div>
-              
-              <div className="relative z-10 flex flex-col h-full">
-                {/* Icône */}
-                <div className="mb-4 flex justify-center">
-                  <div className="w-16 h-16 bg-gradient-to-br from-blue-600/20 to-blue-700/20 rounded-2xl flex items-center justify-center border-2 border-blue-600/30 shadow-lg">
-                    <AppIcon name="finance" size="dashboard" className="text-blue-600" />
-              </div>
-                </div>
-
-                {/* Tag */}
-                <div className="mb-4 flex justify-center">
-                  <span className="inline-block px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium">
-                    Idéal pour un établissement autonome
-                  </span>
-              </div>
-
-                {/* Titre */}
-                <h3 className={`${typo('h2')} text-gray-900 font-bold mb-4 text-center`}>École individuelle</h3>
-
-                {/* Prix */}
-              <div className="mb-6">
-                  {pricingPeriod === 'monthly' ? (
-                    <div className="flex items-baseline justify-center gap-2">
-                      <span className="text-4xl font-extrabold text-blue-700">15 000</span>
-                      <span className="text-xl font-bold text-blue-600">FCFA</span>
-                      <span className="text-base text-gray-600 font-medium">/ mois</span>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex items-baseline justify-center gap-2 mb-2">
-                        <span className="text-4xl font-extrabold text-blue-700">150 000</span>
-                        <span className="text-xl font-bold text-blue-600">FCFA</span>
-                        <span className="text-base text-gray-600 font-medium">/ an</span>
-                      </div>
-                      <p className={`${typo('small')} text-gold-600 text-center font-medium`}>
-                        Économisez 30 000 FCFA (2 mois offerts)
-                      </p>
-                    </>
-                  )}
-                </div>
-
-                {/* Highlight */}
-                <div className="mb-6 p-4 bg-blue-50 rounded-2xl border border-blue-200">
-                  <p className={`${typo('base')} text-blue-900 font-semibold text-center`}>
-                    Accès total à tous les modules
-                </p>
-              </div>
-
-                {/* Liste des fonctionnalités */}
-                <ul className="space-y-3 mb-6 flex-grow">
-                {[
-                    'Souscription initiale : 100 000 FCFA (one-shot)',
-                    'Accès à tous les modules sans restriction',
-                    'Gestion scolaire et financière complète',
-                    'ORION : pilotage & alertes direction',
-                    'ATLAS : assistance guidée',
-                    'Mode offline / online',
-                    'Sous-domaine dédié',
-                    'Support inclus',
-                ].map((item, index) => (
-                  <li key={index} className="flex items-start space-x-3">
-                      <div className="w-5 h-5 bg-green-50 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 border border-green-200">
-                        <AppIcon name="success" size="submenu" className="text-green-600" />
-                      </div>
-                      <span className={`${typo('small')} text-gray-700 leading-relaxed`}>{item}</span>
-                  </li>
-                ))}
-              </ul>
-
-                {/* Note de réassurance */}
-                <div className="mb-6 p-3 bg-gray-50 rounded-xl border border-gray-200">
-                  <p className={`${typo('small')} text-gray-600 text-center leading-relaxed`}>
-                    30 jours d'exploitation réelle après souscription, sans abonnement à payer.
-                  </p>
-                </div>
-
-                {/* CTA */}
-              <Link
-                href="/signup"
-                prefetch={true}
-                  className="bg-gradient-to-r from-blue-600 to-blue-700 text-white w-full py-4 rounded-2xl font-semibold hover:from-blue-700 hover:to-blue-800 transition-all duration-300 inline-flex items-center justify-center shadow-lg hover:shadow-xl hover:scale-105"
-              >
-                  Commencer maintenant
-              </Link>
-              </div>
-            </div>
-
-            {/* CARTE 2 — GROUPE SCOLAIRE (MISE EN VALEUR) */}
-            <div className={cn(
-              'bg-white p-8 rounded-3xl border-2 border-sky-400',
-              'hover:shadow-3xl',
-              'hover:border-sky-300',
-              'transition-all duration-300 ease-out',
-              'group relative overflow-hidden',
-              'flex flex-col h-full',
-              'ring-4 ring-sky-400/40',
-              'animate-recommended-card',
-              'shadow-[0_0_30px_rgba(56,189,248,0.4)]'
-            )}>
-              {/* Badge "Recommandé" */}
-              <div className="absolute top-6 right-6 z-20">
-                <span className="inline-block px-4 py-1.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-full text-xs font-bold shadow-lg">
-                  Recommandé
-                </span>
-              </div>
-
-              {/* Decorative accent */}
-              <div className="absolute top-0 right-0 w-40 h-40 bg-blue-600/10 rounded-bl-full"></div>
-              <div className="absolute top-0 left-0 w-24 h-24 bg-blue-500/10 rounded-br-full"></div>
-              
-              <div className="relative z-10 flex flex-col h-full">
-                {/* Icône */}
-                <div className="mb-4 flex justify-center">
-                  <div className="w-16 h-16 bg-gradient-to-br from-blue-600/20 to-blue-700/20 rounded-2xl flex items-center justify-center border-2 border-blue-600/30 shadow-lg">
-                    <AppIcon name="building" size="dashboard" className="text-blue-600" />
-                  </div>
-                </div>
-
-                {/* Tag */}
-                <div className="mb-4 flex justify-center">
-                  <span className="inline-block px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
-                    Optimisé pour les promoteurs multi-écoles
-                  </span>
-                </div>
-
-                {/* Titre */}
-                <h3 className={`${typo('h2')} text-gray-900 font-bold mb-4 text-center`}>Groupe scolaire</h3>
-
-                {/* Prix */}
-              <div className="mb-6">
-                  {pricingPeriod === 'monthly' ? (
-                    <div className="flex items-baseline justify-center gap-2">
-                      <span className="text-4xl font-extrabold text-blue-700">25 000</span>
-                      <span className="text-xl font-bold text-blue-600">FCFA</span>
-                      <span className="text-base text-gray-600 font-medium">/ mois</span>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex items-baseline justify-center gap-2 mb-2">
-                        <span className="text-4xl font-extrabold text-blue-700">250 000</span>
-                        <span className="text-xl font-bold text-blue-600">FCFA</span>
-                        <span className="text-base text-gray-600 font-medium">/ an</span>
-                      </div>
-                      <p className={`${typo('small')} text-gold-600 text-center font-medium`}>
-                        Économisez 50 000 FCFA (2 mois offerts)
-                      </p>
-                    </>
-                  )}
-                </div>
-
-                {/* Highlight */}
-                <div className="mb-6 p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl border-2 border-blue-300">
-                  <p className={`${typo('base')} text-blue-900 font-semibold text-center`}>
-                    Tarif groupe avantageux
-                </p>
-              </div>
-
-                {/* Liste des fonctionnalités */}
-                <ul className="space-y-3 mb-6 flex-grow">
-                  {[
-                    'Souscription initiale : 100 000 FCFA par école',
-                    'Gestion de 2 établissements',
-                    'Tous les modules activés',
-                    'Tableaux de bord consolidés',
-                    'ORION : vision groupe',
-                    'ATLAS : accompagnement des équipes',
-                    'Mode offline / online',
-                    'Sous-domaines dédiés',
-                    'Support prioritaire',
-                  ].map((item, index) => (
-                    <li key={index} className="flex items-start space-x-3">
-                      <div className="w-5 h-5 bg-green-50 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 border border-green-200">
-                        <AppIcon name="success" size="submenu" className="text-green-600" />
-                      </div>
-                      <span className={`${typo('small')} text-gray-700 leading-relaxed`}>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                {/* Note de réassurance */}
-                <div className="mb-6 p-3 bg-blue-50 rounded-xl border border-blue-200">
-                  <p className={`${typo('small')} text-blue-900 text-center leading-relaxed font-medium`}>
-                    Économisez 5 000 FCFA par mois par rapport au tarif standard.
-                  </p>
-                </div>
-
-                {/* CTA */}
-              <Link
-                href="/signup?plan=group"
-                prefetch={true}
-                  className="bg-gradient-to-r from-blue-600 to-blue-700 text-white w-full py-4 rounded-2xl font-semibold hover:from-blue-700 hover:to-blue-800 transition-all duration-300 inline-flex items-center justify-center shadow-lg hover:shadow-xl hover:scale-105"
-              >
-                  Créer un groupe scolaire
-              </Link>
-            </div>
-          </div>
-
-            {/* CARTE 3 — ENTERPRISE */}
-            <div className={cn(
-              'bg-white p-8 rounded-3xl border-2 border-blue-200',
-              'shadow-xl hover:shadow-2xl',
-              'hover:border-blue-400 hover:-translate-y-1',
-              'transition-all duration-300 ease-out',
-              'group relative overflow-hidden',
-              'flex flex-col h-full'
-            )}>
-              {/* Decorative accent */}
-              <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/5 rounded-bl-full"></div>
-              
-              <div className="relative z-10 flex flex-col h-full">
-                {/* Icône */}
-                <div className="mb-4 flex justify-center">
-                  <div className="w-16 h-16 bg-gradient-to-br from-gray-600/20 to-gray-700/20 rounded-2xl flex items-center justify-center border-2 border-gray-600/30 shadow-lg">
-                    <AppIcon name="rh" size="dashboard" className="text-gray-700" />
-                  </div>
-                </div>
-
-                {/* Tag */}
-                <div className="mb-4 flex justify-center">
-                  <span className="inline-block px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium">
-                    Pour +3 écoles
-                  </span>
-                </div>
-
-                {/* Titre */}
-                <h3 className={`${typo('h2')} text-gray-900 font-bold mb-4 text-center`}>Réseau éducatif / Enterprise</h3>
-
-                {/* Prix */}
-              <div className="mb-6">
-                  <div className="flex items-center justify-center mb-2">
-                    <span className="text-3xl font-extrabold text-gray-800">Sur devis</span>
-                  </div>
-                  <p className={`${typo('small')} text-gray-600 text-center`}>
-                    Tarification personnalisée selon vos besoins
-                  </p>
-                </div>
-
-                {/* Highlight */}
-                <div className="mb-6 p-4 bg-gray-50 rounded-2xl border border-gray-200">
-                  <p className={`${typo('base')} text-gray-900 font-semibold text-center`}>
-                    Offre personnalisée selon votre structure
-                  </p>
-                </div>
-
-                {/* Liste des fonctionnalités */}
-                <ul className="space-y-3 mb-6 flex-grow">
-                  {[
-                    'Gestion de 3 établissements et plus',
-                    'Accès complet à tous les modules',
-                    'Pilotage multi-écoles avancé',
-                    'ORION : KPI consolidés et alertes',
-                    'ATLAS : assistance personnalisée',
-                    'Options spécifiques selon besoins',
-                    'Accompagnement dédié',
-                  ].map((item, index) => (
-                    <li key={index} className="flex items-start space-x-3">
-                      <div className="w-5 h-5 bg-green-50 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 border border-green-200">
-                        <AppIcon name="success" size="submenu" className="text-green-600" />
-                      </div>
-                      <span className={`${typo('small')} text-gray-700 leading-relaxed`}>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                {/* Note de réassurance */}
-                <div className="mb-6 p-3 bg-gray-50 rounded-xl border border-gray-200">
-                  <p className={`${typo('small')} text-gray-600 text-center leading-relaxed`}>
-                    Une tarification adaptée, sans compromis sur la qualité.
-                  </p>
-                </div>
-
-                {/* CTA */}
-                <Link
-                  href="/contact-enterprise"
-                  prefetch={true}
-                  className="bg-gradient-to-r from-blue-600 to-blue-700 text-white w-full py-4 rounded-2xl font-semibold hover:from-blue-700 hover:to-blue-800 transition-all duration-300 inline-flex items-center justify-center shadow-lg hover:shadow-xl hover:scale-105"
-                >
-                  Demander un devis
-                </Link>
-              </div>
-            </div>
+          {/* Cartes de Pricing basées sur HELM_PLANS */}
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8 mb-12 md:mb-16">
+            <LandingPlanCard planKey="SEED" billingCycle={pricingPeriod} />
+            <LandingPlanCard planKey="GROW" billingCycle={pricingPeriod} />
+            <LandingPlanCard planKey="LEAD" billingCycle={pricingPeriod} />
+            <LandingPlanCard planKey="NETWORK" billingCycle={pricingPeriod} />
           </div>
 
           {/* BANDEAU FREE TRIAL */}
@@ -1177,7 +1074,7 @@ export default function CompleteLandingPage() {
         isOpen={isVideoModalOpen}
         onClose={() => setIsVideoModalOpen(false)}
         videoUrl="/videos/academia-hub-presentation.mp4"
-        thumbnailUrl="/images/Miniature Présentation Academia Helm.png"
+        thumbnailUrl="/images/Miniature Présentation Academia Hub.png"
         title="Présentation Academia Helm"
       />
 

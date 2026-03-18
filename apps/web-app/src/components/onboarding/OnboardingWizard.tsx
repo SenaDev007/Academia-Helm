@@ -47,6 +47,7 @@ import {
   Sparkles,
   TrendingDown,
 } from 'lucide-react';
+import { HELM_PLANS, getRecommendedPlan, type HelmPlanKey } from '@/lib/services/HelmPricingService';
 import FedaPayCheckout from './FedaPayCheckout';
 
 interface OnboardingData {
@@ -59,6 +60,7 @@ interface OnboardingData {
   email: string;
   bilingual: boolean;
   schoolsCount: number;
+  estimatedStudentCount: number;
   logoUrl?: string;
   /** Sous-domaine personnalisé (ex: mon-ecole → mon-ecole.academia-hub.pro) */
   preferredSubdomain?: string;
@@ -161,6 +163,7 @@ export default function OnboardingWizard() {
     email: '',
     bilingual: false,
     schoolsCount: 1,
+    estimatedStudentCount: 0,
     firstName: '',
     lastName: '',
     promoterPhone: '',
@@ -683,6 +686,9 @@ export default function OnboardingWizard() {
 
     if (stepNumber === 3) {
       if (!data.planCode) newErrors.planCode = 'Veuillez sélectionner un plan';
+      if (!data.estimatedStudentCount || data.estimatedStudentCount <= 0) {
+        newErrors.estimatedStudentCount = 'Veuillez saisir un effectif estimé (nombre d\'élèves)';
+      }
     }
 
     setErrors(newErrors);
@@ -2470,6 +2476,62 @@ export default function OnboardingWizard() {
               </div>
               
               <div className="mt-8 space-y-8">
+                {/* Section 0: Effectif estimé + plan recommandé */}
+                <div className="bg-gradient-to-br from-white via-blue-50 to-mist rounded-xl p-6 border border-blue-200">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+                    <div className="flex items-center">
+                      <School className="w-5 h-5 text-blue-700 mr-2" />
+                      <label className="text-base font-semibold text-blue-900">
+                        Effectif actuel estimé (nombre d&apos;élèves inscrits)
+                      </label>
+                    </div>
+                    {data.estimatedStudentCount > 0 && (
+                      <div className="inline-flex items-center px-3 py-1 rounded-full bg-blue-900 text-white text-xs font-semibold">
+                        Plan recommandé&nbsp;:
+                        <span className="ml-1 text-gold-300">
+                          {getRecommendedPlan(data.estimatedStudentCount)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="grid md:grid-cols-[2fr,1fr] gap-4 items-start">
+                    <div>
+                      <input
+                        type="number"
+                        min={1}
+                        placeholder="ex: 150"
+                        value={data.estimatedStudentCount || ''}
+                        onChange={(e) =>
+                          handleChange(
+                            'estimatedStudentCount',
+                            e.target.value ? parseInt(e.target.value, 10) || 0 : 0,
+                          )
+                        }
+                        className={`w-full px-4 py-3 border rounded-md focus:ring-2 focus:ring-blue-600 ${
+                          errors.estimatedStudentCount ? 'border-red-500' : 'border-gray-300'
+                        }`}
+                      />
+                      <p className="mt-2 text-xs text-graphite-600">
+                        Une estimation suffit. Le plan s&apos;ajustera automatiquement si votre école grandit.
+                      </p>
+                      {errors.estimatedStudentCount && (
+                        <p className="mt-1 text-sm text-red-600">{errors.estimatedStudentCount}</p>
+                      )}
+                    </div>
+                    {data.estimatedStudentCount > 0 && (
+                      <div className="text-sm text-graphite-700 bg-white/60 rounded-lg p-3 border border-blue-100">
+                        <p className="font-semibold text-blue-900 mb-1">
+                          {HELM_PLANS[getRecommendedPlan(data.estimatedStudentCount)].name}
+                        </p>
+                        <p>
+                          1–150 élèves → HELM SEED · 151–400 → HELM GROW · 401–800 → HELM LEAD · au‑delà →
+                          HELM NETWORK (contact commercial).
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 {/* Section 1: Période de facturation - Design premium avec cartes */}
                 <div className="bg-gradient-to-br from-blue-50 to-mist rounded-xl p-6 border border-blue-200">
                   <div className="flex items-center mb-5">

@@ -30,7 +30,8 @@ interface PilotageLayoutProps {
 }
 
 export default function PilotageLayout({ user, tenant, children }: PilotageLayoutProps) {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(true); // lg: expanded/collapsed
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false); // mobile: drawer overlay
   const { currentLevel } = useSchoolLevel();
 
   // Initialiser les services offline
@@ -60,29 +61,45 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
       {/* Toast Synchronisation */}
       <SyncToast />
 
-      {/* Top Bar - Fixe en haut, toujours visible */}
-      <PilotageTopBar user={user} tenant={tenant} />
+      {/* Top Bar - Fixe en haut, toujours visible — hamburger mobile */}
+      <PilotageTopBar
+        user={user}
+        tenant={tenant}
+        onMenuClick={() => setMobileDrawerOpen(true)}
+      />
 
       {/* Spacer pour éviter que le contenu passe sous la barre fixe (hauteur ~ barre) */}
       <div className="h-14 shrink-0" aria-hidden />
 
       {/* Zone principale + footer : flex-1 pour occuper l'espace et garder le footer en bas */}
       <div className="flex flex-1 min-h-0">
-        {/* Sidebar */}
+        {/* Mobile: backdrop drawer */}
+        {mobileDrawerOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+              aria-hidden
+              onClick={() => setMobileDrawerOpen(false)}
+            />
+          </>
+        )}
+        {/* Sidebar — 3 états: drawer mobile / icônes tablette / complète PC */}
         <PilotageSidebar
           isOpen={sidebarOpen}
           onToggle={() => setSidebarOpen(!sidebarOpen)}
           user={user}
+          mobileDrawerOpen={mobileDrawerOpen}
+          onCloseMobileDrawer={() => setMobileDrawerOpen(false)}
         />
 
-        {/* Main Content - scroll interne si contenu long */}
+        {/* Main Content — décalé selon breakpoint: 0 mobile, ml-16 tablette, ml-16/lg:ml-64 PC */}
         <main
-          className={`flex-1 min-h-0 transition-all duration-300 overflow-x-hidden overflow-y-auto ${
-            sidebarOpen ? 'ml-64' : 'ml-16'
+          className={`flex-1 min-h-0 transition-all duration-300 overflow-x-hidden overflow-y-auto md:ml-16 ${
+            sidebarOpen ? 'lg:ml-64' : 'lg:ml-16'
           }`}
         >
           <div
-            className="px-6 py-6 sm:px-8 lg:px-10 xl:px-12 max-w-[1600px] mx-auto"
+            className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto w-full"
             key={currentLevel?.id ?? 'no-level'}
           >
             {children}
@@ -90,9 +107,9 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
         </main>
       </div>
 
-      {/* Footer — toujours en bas de l'app (shrink-0 pour ne pas être compressé) */}
-      <footer className={`shrink-0 bg-white border-t border-gray-200 px-6 py-3 sm:px-8 lg:px-10 xl:px-12 flex items-center transition-all duration-300 ${
-        sidebarOpen ? 'ml-64' : 'ml-16'
+      {/* Footer — décalé comme main (responsive) */}
+      <footer className={`shrink-0 bg-white border-t border-gray-200 px-4 py-3 sm:px-6 md:px-8 lg:px-10 xl:px-12 flex items-center transition-all duration-300 md:ml-16 ${
+        sidebarOpen ? 'lg:ml-64' : 'lg:ml-16'
       }`}>
         <div className="flex items-center justify-between text-xs text-gray-600 w-full">
           <div className="flex items-center space-x-4">

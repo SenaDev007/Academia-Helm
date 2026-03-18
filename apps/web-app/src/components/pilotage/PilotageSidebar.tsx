@@ -12,7 +12,7 @@
 
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -46,6 +46,8 @@ interface PilotageSidebarProps {
   isOpen: boolean;
   onToggle: () => void;
   user?: User;
+  mobileDrawerOpen?: boolean;
+  onCloseMobileDrawer?: () => void;
 }
 
 /** Mapping path → featureCode (optionnel). Sans featureCode = toujours affiché. */
@@ -71,7 +73,13 @@ const SUPPLEMENTARY_MODULES = [
   { path: '/app/shop', label: 'Boutique', icon: ShoppingBag, featureCode: 'SHOP' },
 ];
 
-export default function PilotageSidebar({ isOpen, onToggle, user }: PilotageSidebarProps) {
+export default function PilotageSidebar({
+  isOpen,
+  onToggle,
+  user,
+  mobileDrawerOpen = false,
+  onCloseMobileDrawer,
+}: PilotageSidebarProps) {
   const pathname = usePathname();
   const { currentLevel } = useSchoolLevel();
   const { enabledSet, loading } = useEnabledFeatureCodes();
@@ -105,33 +113,49 @@ export default function PilotageSidebar({ isOpen, onToggle, user }: PilotageSide
     return pathname.startsWith(path);
   };
 
-  return (
-    <aside
-      className={`fixed left-0 top-[60px] h-[calc(100vh-60px)] bg-gradient-to-b from-blue-900 via-blue-900 to-blue-800 text-white transition-all duration-300 ease-in-out z-40 shadow-xl ${
-        isOpen ? 'w-64' : 'w-16'
-      }`}
-    >
-      <div className="flex flex-col h-full">
-        {/* Toggle button */}
-        <div className="flex items-center justify-end p-3 border-b border-blue-700/50">
+  // Fermer le drawer mobile à la navigation
+  useEffect(() => {
+    onCloseMobileDrawer?.();
+  }, [pathname, onCloseMobileDrawer]);
+
+  // Sur mobile drawer ou PC étendu : afficher les libellés
+  const effectiveOpen = mobileDrawerOpen || isOpen;
+
+  const sidebarContent = (
+    <div className="flex flex-col h-full">
+      {/* Toggle button — visible uniquement sur lg */}
+      <div className="hidden lg:flex items-center justify-end p-3 border-b border-blue-700/50">
+        <button
+          onClick={onToggle}
+          className="p-2 rounded-lg hover:bg-blue-800/80 transition-all duration-200 text-white hover:scale-105 active:scale-95 min-h-[44px] min-w-[44px] flex items-center justify-center"
+          aria-label="Réduire la barre latérale"
+        >
+          {isOpen ? (
+            <ChevronLeft className="w-5 h-5" />
+          ) : (
+            <ChevronRight className="w-5 h-5" />
+          )}
+        </button>
+      </div>
+      {/* Mobile: bouton fermer en haut du drawer */}
+      {onCloseMobileDrawer && (
+        <div className="flex lg:hidden items-center justify-between p-3 border-b border-blue-700/50">
+          <span className="text-sm font-semibold text-white">Menu</span>
           <button
-            onClick={onToggle}
-            className="p-2 rounded-lg hover:bg-blue-800/80 transition-all duration-200 text-white hover:scale-105 active:scale-95"
-            aria-label="Toggle sidebar"
+            onClick={onCloseMobileDrawer}
+            className="p-2 rounded-lg hover:bg-blue-800/80 min-h-[44px] min-w-[44px] flex items-center justify-center text-white"
+            aria-label="Fermer le menu"
           >
-            {isOpen ? (
-              <ChevronLeft className="w-5 h-5" />
-            ) : (
-              <ChevronRight className="w-5 h-5" />
-            )}
+            <ChevronLeft className="w-5 h-5" />
           </button>
         </div>
+      )}
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto p-3 space-y-1 scrollbar-thin scrollbar-thumb-blue-700 scrollbar-track-transparent">
           {/* Modules Principaux - déroulant */}
           <div className="mb-6">
-            {isOpen ? (
+            {effectiveOpen ? (
               <>
                 <button
                   type="button"
@@ -157,22 +181,23 @@ export default function PilotageSidebar({ isOpen, onToggle, user }: PilotageSide
                 <Link
                   key={item.path}
                   href={item.path}
+                  onClick={onCloseMobileDrawer}
                   className={`group flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
                     active
                       ? 'bg-gradient-to-r from-blue-700 to-blue-600 text-white shadow-md shadow-blue-900/30'
                       : 'text-blue-100 hover:bg-blue-800/60 hover:text-white hover:translate-x-1'
                   }`}
-                  title={!isOpen ? item.label : undefined}
+                  title={!effectiveOpen ? item.label : undefined}
                 >
                   <Icon className={`w-5 h-5 flex-shrink-0 transition-transform duration-200 ${
                     active ? 'scale-110' : 'group-hover:scale-105'
                   }`} />
-                  {isOpen && (
+                  {effectiveOpen && (
                     <span className={`text-sm font-medium transition-all duration-200 whitespace-nowrap overflow-hidden text-ellipsis flex-1 ${
                       active ? 'font-semibold' : ''
                     }`} title={item.label}>{item.label}</span>
                   )}
-                  {active && isOpen && (
+                  {active && effectiveOpen && (
                     <div className="ml-auto w-1.5 h-1.5 bg-white rounded-full flex-shrink-0"></div>
                   )}
                 </Link>
@@ -201,29 +226,30 @@ export default function PilotageSidebar({ isOpen, onToggle, user }: PilotageSide
           {/* Module Général (Direction) */}
           {generalModule && (
             <div className="mb-6">
-              {isOpen && (
+              {effectiveOpen && (
                 <p className="text-xs font-semibold text-blue-300/70 uppercase tracking-wider mb-3 px-3">
                   Direction
                 </p>
               )}
               <Link
                 href={generalModule.path}
+                onClick={onCloseMobileDrawer}
                 className={`group flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-200 border-l-2 ${
                   isActive(generalModule.path)
                     ? 'bg-gradient-to-r from-blue-700 to-blue-600 text-white border-gold-500 shadow-md shadow-blue-900/30'
                     : 'text-blue-100 hover:bg-blue-800/60 hover:text-white hover:translate-x-1 border-transparent'
                 }`}
-                title={!isOpen ? generalModule.label : undefined}
+                title={!effectiveOpen ? generalModule.label : undefined}
               >
                 <Network className={`w-5 h-5 flex-shrink-0 transition-transform duration-200 ${
                   isActive(generalModule.path) ? 'scale-110' : 'group-hover:scale-105'
                 }`} />
-                {isOpen && (
+                {effectiveOpen && (
                   <span className={`text-sm font-medium transition-all duration-200 whitespace-nowrap overflow-hidden text-ellipsis flex-1 ${
                     isActive(generalModule.path) ? 'font-semibold' : ''
                   }`} title={generalModule.label}>{generalModule.label}</span>
                 )}
-                {isActive(generalModule.path) && isOpen && (
+                {isActive(generalModule.path) && effectiveOpen && (
                   <div className="ml-auto w-1.5 h-1.5 bg-gold-500 rounded-full flex-shrink-0"></div>
                 )}
               </Link>
@@ -232,7 +258,7 @@ export default function PilotageSidebar({ isOpen, onToggle, user }: PilotageSide
 
           {/* Modules Supplémentaires - déroulant */}
           <div className="mb-6">
-            {isOpen ? (
+            {effectiveOpen ? (
               <>
                 <button
                   type="button"
@@ -263,12 +289,12 @@ export default function PilotageSidebar({ isOpen, onToggle, user }: PilotageSide
                       ? 'bg-gradient-to-r from-blue-700 to-blue-600 text-white shadow-md shadow-blue-900/30'
                       : 'text-blue-100 hover:bg-blue-800/60 hover:text-white hover:translate-x-1'
                   }`}
-                  title={!isOpen ? item.label : undefined}
+                  title={!effectiveOpen ? item.label : undefined}
                 >
                   <Icon className={`w-5 h-5 flex-shrink-0 transition-transform duration-200 ${
                     active ? 'scale-110' : 'group-hover:scale-105'
                   }`} />
-                  {isOpen && (
+                  {effectiveOpen && (
                     <span className={`text-sm font-medium transition-all duration-200 whitespace-nowrap overflow-hidden text-ellipsis flex-1 ${
                       active ? 'font-semibold' : ''
                     }`} title={item.label}>{item.label}</span>
@@ -304,22 +330,23 @@ export default function PilotageSidebar({ isOpen, onToggle, user }: PilotageSide
           <div className="mt-auto pt-4 border-t border-blue-700/50">
             <Link
               href="/app/settings"
+              onClick={onCloseMobileDrawer}
               className={`group flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
                 isActive('/app/settings')
                   ? 'bg-gradient-to-r from-blue-700 to-blue-600 text-white shadow-md shadow-blue-900/30'
                   : 'text-blue-100 hover:bg-blue-800/60 hover:text-white hover:translate-x-1'
               }`}
-              title={!isOpen ? 'Paramètres' : undefined}
+              title={!effectiveOpen ? 'Paramètres' : undefined}
             >
               <Settings className={`w-5 h-5 flex-shrink-0 transition-transform duration-200 ${
                 isActive('/app/settings') ? 'scale-110' : 'group-hover:scale-105'
               }`} />
-              {isOpen && (
+              {effectiveOpen && (
                 <span className={`text-sm font-medium transition-all duration-200 whitespace-nowrap overflow-hidden text-ellipsis flex-1 ${
                   isActive('/app/settings') ? 'font-semibold' : ''
                 }`} title="Paramètres">Paramètres</span>
               )}
-              {isActive('/app/settings') && isOpen && (
+              {isActive('/app/settings') && effectiveOpen && (
                 <div className="ml-auto w-1.5 h-1.5 bg-white rounded-full flex-shrink-0"></div>
               )}
             </Link>
@@ -328,7 +355,7 @@ export default function PilotageSidebar({ isOpen, onToggle, user }: PilotageSide
 
         {/* Footer - Niveau actif */}
         <div className="mt-auto border-t border-blue-700/50 bg-blue-900/30 backdrop-blur-sm">
-          {isOpen && currentLevel && (
+          {effectiveOpen && currentLevel && (
             <div className="p-4">
               <p className="text-xs text-blue-300/70 mb-1.5 font-medium">Niveau actif</p>
               <div className="flex items-center space-x-2">
@@ -343,7 +370,82 @@ export default function PilotageSidebar({ isOpen, onToggle, user }: PilotageSide
           )}
         </div>
       </div>
-    </aside>
+  );
+
+  return (
+    <>
+      {/* 1. Mobile : drawer overlay (visible quand mobileDrawerOpen) */}
+      {mobileDrawerOpen && (
+        <aside
+          className="fixed left-0 top-0 h-full w-72 z-50 lg:hidden flex flex-col bg-gradient-to-b from-blue-900 via-blue-900 to-blue-800 text-white shadow-2xl transition-transform duration-300"
+          role="dialog"
+          aria-label="Menu de navigation"
+        >
+          {sidebarContent}
+        </aside>
+      )}
+
+      {/* 2. Tablette : icônes seules (md → lg) */}
+      <aside
+        className="hidden md:flex lg:hidden fixed left-0 top-[56px] h-[calc(100vh-56px)] w-16 flex-col bg-gradient-to-b from-blue-900 to-blue-800 text-white z-40 shadow-xl py-4 gap-1"
+        aria-label="Navigation raccourcie"
+      >
+        <nav className="flex-1 overflow-y-auto p-2 space-y-1">
+          {mainModules.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.path}
+                href={item.path}
+                className="flex items-center justify-center p-2.5 rounded-lg transition-all duration-200 text-blue-100 hover:bg-blue-800/60 hover:text-white min-h-[44px] min-w-[44px]"
+                title={item.label}
+              >
+                <Icon className="w-5 h-5 flex-shrink-0" />
+              </Link>
+            );
+          })}
+          {generalModule && (
+            <Link
+              href={generalModule.path}
+              className="flex items-center justify-center p-2.5 rounded-lg transition-all duration-200 text-blue-100 hover:bg-blue-800/60 hover:text-white min-h-[44px] min-w-[44px]"
+              title={generalModule.label}
+            >
+              <Network className="w-5 h-5 flex-shrink-0" />
+            </Link>
+          )}
+          {supplementaryModules.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.path}
+                href={item.path}
+                className="flex items-center justify-center p-2.5 rounded-lg transition-all duration-200 text-blue-100 hover:bg-blue-800/60 hover:text-white min-h-[44px] min-w-[44px]"
+                title={item.label}
+              >
+                <Icon className="w-5 h-5 flex-shrink-0" />
+              </Link>
+            );
+          })}
+        </nav>
+        <Link
+          href="/app/settings"
+          className="flex items-center justify-center p-2.5 rounded-lg text-blue-100 hover:bg-blue-800/60 hover:text-white min-h-[44px] min-w-[44px] mt-auto border-t border-blue-700/50"
+          title="Paramètres"
+        >
+          <Settings className="w-5 h-5 flex-shrink-0" />
+        </Link>
+      </aside>
+
+      {/* 3. PC : sidebar complète ou icônes (lg+) */}
+      <aside
+        className={`hidden lg:flex fixed left-0 top-[56px] h-[calc(100vh-56px)] bg-gradient-to-b from-blue-900 via-blue-900 to-blue-800 text-white transition-all duration-300 ease-in-out z-40 shadow-xl flex-col ${
+          isOpen ? 'w-64' : 'w-16'
+        }`}
+        aria-label="Navigation principale"
+      >
+        {sidebarContent}
+      </aside>
+    </>
   );
 }
 

@@ -19,6 +19,10 @@ model Tenant {
   subscriptionStatus               String                            @default("TRIAL")
   status                           String                            @default("active")
   subscriptionPlan                 String                            @default("free")
+  // Nouveau modèle de pricing Helm - champs d'effectif et de langue
+  estimatedStudentCount            Int?
+  studentCountCache                Int                               @default(0)
+  lastCountUpdate                  DateTime?
   createdAt                        DateTime                          @default(now())
   updatedAt                        DateTime                          @updatedAt
   trialEndsAt                      DateTime?
@@ -309,6 +313,9 @@ model Tenant {
   whatsappLogs                     WhatsappLog[]
   billingReminderLogs              BillingReminderLog[]
   PricingOverride                  PricingOverride[]
+
+  // Relation optionnelle vers HelmSubscription (nouveau moteur de subscription Helm)
+  helmSubscriptions                HelmSubscription[]
 
   @@index([subdomain])
   @@index([slug])
@@ -9445,6 +9452,114 @@ model SubscriptionPlan {
   Subscription     Subscription[]
 
   @@map("subscription_plans")
+}
+
+// ============================================================================
+// HELM SUBSCRIPTION MODEL (PATCH PRICING V2)
+// ============================================================================
+
+enum HelmPlan {
+  SEED
+  GROW
+  LEAD
+  NETWORK
+}
+
+enum HelmBillingCycle {
+  MONTHLY
+  ANNUAL
+}
+
+enum HelmSubscriptionStatus {
+  ACTIVE
+  GRACE_PERIOD
+  SUSPENDED
+  CANCELLED
+  TRIALING
+}
+
+enum HelmUpgradeReason {
+  STUDENT_COUNT_EXCEEDED
+  MANUAL_REQUEST
+  ADMIN_FORCED
+}
+
+model HelmSubscription {
+  id                 String                @id @default(uuid())
+  tenantId           String                @unique
+  plan               HelmPlan              @default(SEED)
+  billingCycle       HelmBillingCycle      @default(MONTHLY)
+  status             HelmSubscriptionStatus @default(ACTIVE)
+  // Tarification (FCFA)
+  monthlyAmount      Int
+  annualAmount       Int
+  setupFee           Int
+  // Dates
+  startDate          DateTime              @default(now())
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  trialEnd           DateTime?
+  cancelledAt        DateTime?
+  // Effectif
+  lastStudentCount   Int                   @default(0)
+  lastCountCheckedAt DateTime?
+  upgradeGraceEnd    DateTime?
+  pendingUpgradePlan HelmPlan?
+  // Add-ons actifs (JSON)
+  activeAddons       Json                  @default("[]")
+  // Paiement / Fedapay
+  fedapayCustomerId  String?
+  fedapaySubId       String?
+  lastPaymentDate    DateTime?
+  lastPaymentAmount  Int?
+  // Relations
+  tenant             Tenant                @relation(fields: [tenantId], references: [id])
+  upgradeHistory     HelmUpgradeEvent[]
+  invoices           HelmInvoice[]
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([plan])
+}
+
+model HelmUpgradeEvent {
+  id             String           @id @default(uuid())
+  subscriptionId String
+  tenantId       String
+  fromPlan       HelmPlan
+  toPlan         HelmPlan
+  reason         HelmUpgradeReason
+  studentCountAt Int
+  notifiedAt     DateTime         @default(now())
+  confirmedAt    DateTime?
+  gracePeriodEnd DateTime
+  suspendedAt    DateTime?
+  subscription   HelmSubscription @relation(fields: [subscriptionId], references: [id])
+  createdAt      DateTime         @default(now())
+
+  @@index([tenantId])
+  @@index([subscriptionId])
+}
+
+model HelmInvoice {
+  id             String           @id @default(uuid())
+  subscriptionId String
+  tenantId       String
+  amount         Int
+  currency       String           @default("XOF")
+  plan           HelmPlan
+  billingCycle   HelmBillingCycle
+  period         String           // ex: "2026-03"
+  fedapayTxId    String?
+  paidAt         DateTime?
+  status         String           @default("PENDING")
+  subscription   HelmSubscription @relation(fields: [subscriptionId], references: [id])
+  createdAt      DateTime         @default(now())
+
+  @@index([tenantId])
+  @@index([period])
 }
 
 model BillingEvent {

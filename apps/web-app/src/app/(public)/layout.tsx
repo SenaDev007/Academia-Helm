@@ -11,8 +11,8 @@ export default function PublicLayout({
 }) {
   return (
     <div className="min-h-screen bg-white">
-      {/* Spacer pour le header fixe */}
-      <div className="h-20" />
+      {/* Spacer pour le header fixe (responsive h-14 md:h-16) */}
+      <div className="h-14 md:h-16" />
       {children}
     </div>
   );

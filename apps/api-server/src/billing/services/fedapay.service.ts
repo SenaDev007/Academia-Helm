@@ -732,6 +732,17 @@ export class FedaPayService implements OnModuleInit {
     
     this.logger.log(`🔍 DEBUG createOnboardingPaymentSession - currency before createTransaction: "${currency}"`);
 
+    // Préparer le contexte Helm à partir du priceSnapshot (plan/code + période)
+    const helmPlanFromSnapshot =
+      typeof priceSnapshot?.planCode === 'string'
+        ? String(priceSnapshot.planCode).toUpperCase()
+        : undefined;
+    const helmBillingCycleFromSnapshot =
+      typeof priceSnapshot?.periodType === 'string' &&
+      String(priceSnapshot.periodType).toUpperCase() === 'YEARLY'
+        ? 'ANNUAL'
+        : 'MONTHLY';
+
     const transaction = await this.createTransaction({
       amount,
       currency, // Devise récupérée dynamiquement
@@ -742,8 +753,14 @@ export class FedaPayService implements OnModuleInit {
         draftId,
         paymentId: payment.id,
         reference,
-        type: 'onboarding_initial_payment',
+        // Type utilisé par handlePaymentSuccess → handleOnboardingPaymentSuccess
+        type: 'onboarding',
         webhookUrl,
+        // Contexte Helm pour la création de HelmSubscription/HelmInvoice après paiement
+        helmPlan: helmPlanFromSnapshot || null,
+        helmBillingCycle: helmBillingCycleFromSnapshot,
+        helmBilingualAddon: !!draft.bilingual,
+        helmSchoolsCount: draft.schoolsCount || 1,
         // Note: currency ne doit PAS être dans metadata, il doit être uniquement dans transaction.currency
       },
       customer: {

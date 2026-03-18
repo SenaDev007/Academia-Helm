@@ -66,8 +66,8 @@ export function DataTable<T>({
   }
 
   return (
-    <div className={cn('rounded-lg border border-gray-200 overflow-hidden', className)}>
-      <Table>
+    <div className={cn('overflow-x-auto -mx-4 sm:mx-0 rounded-xl border border-gray-200', className)}>
+      <Table className="min-w-full text-xs md:text-sm">
         <TableHeader>
           <TableRow>
             {Object.values(columns).map((column) => (

@@ -42,26 +42,20 @@ interface EnterpriseQuoteForm {
 }
 
 const QUICK_REPLIES: QuickReply[] = [
-  { id: 'pricing', label: 'Tarification & abonnements', emoji: '📌', category: 'billing' },
-  { id: 'trial', label: 'Free trial (3 jours)', emoji: '🧪', category: 'trial' },
+  { id: 'pricing', label: 'Voir les plans & tarifs', emoji: '📌', category: 'billing' },
+  { id: 'modules', label: 'Les 9 modules inclus', emoji: '📊', category: 'features' },
   { id: 'payment', label: 'Paiement & Fedapay', emoji: '💳', category: 'payment' },
+  { id: 'trial', label: 'Demander une démo', emoji: '🧪', category: 'trial' },
   { id: 'groups', label: 'Groupes scolaires', emoji: '🏫', category: 'groups' },
-  { id: 'features', label: 'Fonctionnalités & modules', emoji: '📊', category: 'features' },
   { id: 'ai', label: 'ORION & ATLAS (IA)', emoji: '🤖', category: 'ai' },
   { id: 'security', label: 'Sécurité & données', emoji: '🔒', category: 'security' },
   { id: 'contact', label: 'Parler à un conseiller', emoji: '📞', category: 'contact' },
 ];
 
-const WELCOME_MESSAGE = `👋 Bonjour et bienvenue sur Academia Helm !
+const WELCOME_MESSAGE = `👋 Bonjour ! Je suis **SARA**, l'assistante IA d'Academia Helm.
 
-Je suis **SARA**, votre assistante conversationnelle.
-Je suis là pour répondre à toutes vos questions sur :
-• La plateforme et ses fonctionnalités
-• La tarification et les abonnements
-• Le free trial de 3 jours
-• Les groupes scolaires et offres Enterprise
+Je peux vous renseigner sur nos plans (de 14 900 à 39 900 FCFA/mois, tous modules inclus), les 9 modules, le free trial guidé, ou organiser une démonstration pour votre école.
 
-Je peux vous guider vers la meilleure solution pour votre établissement.
 Comment puis-je vous aider aujourd'hui ? 😊`;
 
 export default function SupportChatWidget() {
@@ -125,6 +119,97 @@ export default function SupportChatWidget() {
 
   // Charger les données FAQ
   const faq = faqData as FAQData;
+
+  const buildAnthropicHistory = (nextUserMessage?: string) => {
+    const history = messages
+      .slice(-20)
+      .map((m) => ({
+        role: m.type === 'user' ? ('user' as const) : ('assistant' as const),
+        content: m.content,
+      }));
+
+    if (nextUserMessage && nextUserMessage.trim()) {
+      history.push({ role: 'user', content: nextUserMessage.trim() });
+    }
+
+    return history;
+  };
+
+  const tryGenerateDynamicSaraAnswer = async (
+    nextUserMessage: string,
+  ): Promise<string | null> => {
+    try {
+      const res = await fetch('/api/public/sara/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: buildAnthropicHistory(nextUserMessage) }),
+      });
+
+      if (!res.ok) return null;
+      const data = await res.json();
+      const text = typeof data?.text === 'string' ? data.text.trim() : '';
+      return text || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const streamDynamicSaraAnswer = async (
+    nextUserMessage: string,
+    onDelta: (delta: string) => void,
+  ): Promise<string | null> => {
+    try {
+      const res = await fetch('/api/public/sara/chat/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: buildAnthropicHistory(nextUserMessage) }),
+      });
+      if (!res.ok || !res.body) return null;
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finalText: string | null = null;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const chunks = buffer.split('\n\n');
+        buffer = chunks.pop() || '';
+
+        for (const chunk of chunks) {
+          const line = chunk
+            .split('\n')
+            .map((l) => l.trim())
+            .find((l) => l.startsWith('data:'));
+          if (!line) continue;
+          const jsonStr = line.replace(/^data:\s*/, '');
+          if (!jsonStr) continue;
+
+          let evt: any;
+          try {
+            evt = JSON.parse(jsonStr);
+          } catch {
+            continue;
+          }
+
+          if (evt?.type === 'delta' && typeof evt?.text === 'string') {
+            onDelta(evt.text);
+          } else if (evt?.type === 'final' && typeof evt?.text === 'string') {
+            finalText = evt.text;
+          } else if (evt?.type === 'error') {
+            return null;
+          }
+        }
+      }
+
+      return finalText;
+    } catch {
+      return null;
+    }
+  };
 
   /**
    * Convertit le markdown **texte** en HTML avec balises <strong>
@@ -270,7 +355,26 @@ export default function SupportChatWidget() {
 
       const category = intentToCategoryMap[intent.id];
       if (category && faq[category]?.questions?.length > 0) {
-        answer = faq[category].questions[0].a;
+        // Cas spécial : pricing → retourner un résumé structuré des plans Helm
+        if (intent.id === 'pricing_general') {
+          answer =
+            "📌 **Grille Academia Helm — tout inclus, sans modules cachés**\n\n" +
+            "• **HELM SEED** (1–150 élèves)\n" +
+            "  - Souscription initiale : 75 000 FCFA (une seule fois)\n" +
+            "  - Abonnement : 14 900 FCFA / mois ou 149 000 FCFA / an\n\n" +
+            "• **HELM GROW** (151–400 élèves) — plan le plus choisi\n" +
+            "  - Souscription initiale : 100 000 FCFA\n" +
+            "  - Abonnement : 24 900 FCFA / mois ou 249 000 FCFA / an\n\n" +
+            "• **HELM LEAD** (401–800 élèves)\n" +
+            "  - Souscription initiale : 150 000 FCFA\n" +
+            "  - Abonnement : 39 900 FCFA / mois ou 399 000 FCFA / an\n\n" +
+            "• **HELM NETWORK** (2+ écoles / multi-campus)\n" +
+            "  - Souscription initiale : 200 000 FCFA\n" +
+            "  - Tarif sur devis selon le nombre de campus\n\n" +
+            "Tous les plans incluent les 9 modules complets (élèves, finances, IA ORION, QHSE, communication, etc.).";
+        } else {
+          answer = faq[category].questions[0].a;
+        }
       }
     }
 
@@ -562,19 +666,53 @@ Nous vous recontacterons sous 24h ! 😊`,
     setShowQuickReplies(false);
     setIsTyping(true);
 
-    setTimeout(() => {
+    setTimeout(async () => {
+      // 1) Réponse dynamique via Anthropic (streaming si possible)
+      const botId = (Date.now() + 1).toString();
+      setMessages((prev) => [
+        ...prev,
+        { id: botId, type: 'bot', content: '', timestamp: new Date() },
+      ]);
+
+      let streamedContent = '';
+      const streamedFinal = await streamDynamicSaraAnswer(userQuestion, (delta) => {
+        streamedContent += delta;
+        setMessages((prev) =>
+          prev.map((m) => (m.id === botId ? { ...m, content: streamedContent } : m)),
+        );
+      });
+
+      if (streamedFinal) {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === botId ? { ...m, content: streamedFinal } : m)),
+        );
+        setIsTyping(false);
+        return;
+      }
+
+      // 1bis) Fallback dyn non-stream (au cas où)
+      const dynamic = await tryGenerateDynamicSaraAnswer(userQuestion);
+      if (dynamic) {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === botId ? { ...m, content: dynamic } : m)),
+        );
+        setIsTyping(false);
+        return;
+      }
+
+      // 2) Fallback local (intents/FAQ)
       const answer = findAnswer(userQuestion);
 
       if (answer === 'ENTERPRISE_QUOTE') {
         setIsTyping(false);
+        setMessages((prev) => prev.filter((m) => m.id !== botId));
         handleEnterpriseQuoteRequest();
         return;
       }
 
-      const botMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        type: 'bot',
-        content: answer || `Je comprends votre question. Pourriez-vous être plus précis ? 
+      const fallbackText =
+        answer ||
+        `Je comprends votre question. Pourriez-vous être plus précis ? 
 
 Vous pouvez aussi utiliser les boutons ci-dessous pour accéder rapidement aux informations :
 • 📌 Tarification & abonnements
@@ -587,10 +725,10 @@ Vous pouvez aussi utiliser les boutons ci-dessous pour accéder rapidement aux i
 • 📞 Parler à un conseiller
 
 Ou reformulez votre question, je ferai de mon mieux pour vous aider ! 😊`,
-        timestamp: new Date(),
-      };
+      setMessages((prev) =>
+        prev.map((m) => (m.id === botId ? { ...m, content: fallbackText } : m)),
+      );
       setIsTyping(false);
-      setMessages((prev) => [...prev, botMessage]);
     }, 500);
   };
 

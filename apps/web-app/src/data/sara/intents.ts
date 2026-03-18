@@ -21,8 +21,8 @@ export const intents: Intent[] = [
   },
   {
     id: "about_product",
-    description: "Comprendre ce qu'est Academia Hub",
-    keywords: ["academia hub", "plateforme", "logiciel", "solution", "c'est quoi", "présentation", "qu'est-ce", "définition"],
+    description: "Comprendre ce qu'est Academia Helm",
+    keywords: ["academia helm", "academia hub", "plateforme", "logiciel", "solution", "c'est quoi", "présentation", "qu'est-ce", "définition"],
     priority: 1
   },
   {

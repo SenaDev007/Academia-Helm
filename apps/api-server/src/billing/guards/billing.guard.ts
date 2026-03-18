@@ -294,7 +294,7 @@ export class BillingGuard implements CanActivate {
 
     const subscription = await this.prisma.subscription.findUnique({
       where: { tenantId },
-      include: { plan: true },
+      include: { subscriptionPlan: true },
     });
 
     if (subscription) {

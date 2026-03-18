@@ -7,7 +7,7 @@
  * Aucune dépendance Electron ou Desktop
  */
 
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import localFont from 'next/font/local';
 import './globals.css';
 import { InstallPromptWrapper } from '@/components/pwa/InstallPromptWrapper';
@@ -116,14 +116,20 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true },
 };
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  themeColor: '#0D1F6E',
+};
+
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <html lang="fr">
-      <body className={inter.className}>
+    <html lang="fr" className="scroll-smooth">
+      <body className={`${inter.className} antialiased overflow-x-hidden`}>
         {children}
         <InstallPromptWrapper />
       </body>

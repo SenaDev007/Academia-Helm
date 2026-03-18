@@ -34,7 +34,7 @@ export default function PatronatExamensLanding() {
         <div className="relative z-10 max-w-6xl mx-auto text-center -mt-8">
           <div className="inline-flex items-center justify-center mb-8">
             <Image
-              src="/images/logo-Academia Helm.png"
+              src="/images/logo-Academia Hub.png"
               alt="Academia Helm - Logo institutionnel"
               width={120}
               height={120}
@@ -146,7 +146,7 @@ export default function PatronatExamensLanding() {
         <div className="max-w-6xl mx-auto text-center relative z-10">
           <div className="inline-flex items-center justify-center mb-10">
             <Image
-              src="/images/logo-Academia Helm.png"
+              src="/images/logo-Academia Hub.png"
               alt="Academia Helm - Logo de la plateforme institutionnelle"
               width={120}
               height={120}
@@ -491,7 +491,7 @@ export default function PatronatExamensLanding() {
             <div className="absolute inset-0 bg-blue-500 rounded-full blur-xl opacity-75 animate-pulse"></div>
             <div className="relative z-10 w-32 h-32 flex items-center justify-center">
               <Image
-                src="/images/logo-Academia Helm.png"
+                src="/images/logo-Academia Hub.png"
                 alt="Academia Helm - Logo institutionnel"
                 width={128}
                 height={128}

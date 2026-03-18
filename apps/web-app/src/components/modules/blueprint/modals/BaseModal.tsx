@@ -111,12 +111,13 @@ export default function BaseModal({
         aria-hidden="true"
       />
 
-      {/* Modal */}
-      <div className="flex min-h-full items-center justify-center p-4">
+      {/* Modal — bottom-sheet mobile, centré md+ (spec responsive) */}
+      <div className="flex min-h-full items-end md:items-center justify-center p-0 md:p-4">
         <div
           ref={modalRef}
           className={cn(
-            'relative bg-white rounded-lg shadow-xl w-full',
+            'relative bg-white shadow-xl w-full max-h-[90vh] overflow-y-auto',
+            'rounded-t-2xl md:rounded-lg',
             sizeClasses[size],
             className
           )}
@@ -125,8 +126,10 @@ export default function BaseModal({
           aria-labelledby="modal-title"
           aria-describedby={subtitle ? 'modal-subtitle' : undefined}
         >
+          {/* Drag handle mobile (spec responsive) */}
+          <div className="md:hidden w-10 h-1 bg-gray-300 rounded-full mx-auto mb-4 mt-3 flex-shrink-0" aria-hidden />
           {/* Header */}
-          <div className="flex items-start justify-between px-6 py-4 border-b border-gray-200">
+          <div className="flex items-start justify-between px-4 md:px-6 py-4 border-b border-gray-200">
             <div className="flex-1 min-w-0">
               <h2
                 id="modal-title"

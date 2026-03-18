@@ -12,10 +12,10 @@ export interface TableProps extends React.HTMLAttributes<HTMLTableElement> {}
 const Table = React.forwardRef<HTMLTableElement, TableProps>(
   ({ className, ...props }, ref) => {
     return (
-      <div className="relative w-full overflow-auto">
+      <div className="relative w-full overflow-x-auto">
         <table
           ref={ref}
-          className={cn('w-full caption-bottom text-sm', className)}
+          className={cn('w-full caption-bottom text-xs md:text-sm', className)}
           {...props}
         />
       </div>
@@ -80,7 +80,7 @@ const TableHead = React.forwardRef<HTMLTableCellElement, TableHeadProps>(
       <th
         ref={ref}
         className={cn(
-          'h-12 px-4 text-left align-middle font-medium text-gray-500 [&:has([role=checkbox])]:pr-0',
+          'h-12 px-3 md:px-6 py-3 md:py-4 text-left align-middle font-medium text-gray-500 text-xs md:text-sm [&:has([role=checkbox])]:pr-0',
           className
         )}
         {...props}
@@ -98,7 +98,7 @@ const TableCell = React.forwardRef<HTMLTableCellElement, TableCellProps>(
     return (
       <td
         ref={ref}
-        className={cn('p-4 align-middle [&:has([role=checkbox])]:pr-0', className)}
+        className={cn('px-3 md:px-6 py-3 md:py-4 align-middle text-xs md:text-sm [&:has([role=checkbox])]:pr-0', className)}
         {...props}
       />
     );

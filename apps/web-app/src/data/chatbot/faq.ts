@@ -1,5 +1,5 @@
 /**
- * FAQ Data for Chatbot - Academia Hub
+ * FAQ Data for Chatbot - Academia Helm
  * 
  * Base de connaissances structurée pour le chatbot de support
  * Utilisable tel quel (clé → réponse)
@@ -30,19 +30,19 @@ export interface FAQData {
 
 export const faqData: FAQData = {
   about: {
-    title: "🏫 À propos d'Academia Hub",
+    title: "🏫 À propos d'Academia Helm",
     questions: [
       {
-        q: "Qu'est-ce qu'Academia Hub ?",
-        a: "🎓 Academia Hub est une plateforme SaaS complète de gestion scolaire (administration, finances, pédagogie, RH), conçue pour les écoles africaines modernes."
+        q: "Qu'est-ce qu'Academia Helm ?",
+        a: "🎓 Academia Helm est une plateforme SaaS complète de gestion scolaire (administration, finances, pédagogie, RH), conçue pour les écoles africaines modernes."
       },
       {
         q: "À qui s'adresse la plateforme ?",
-        a: "🏫 Academia Hub s'adresse aux directeurs, promoteurs et équipes administratives d'écoles privées ou publiques."
+        a: "🏫 Academia Helm s'adresse aux directeurs, promoteurs et équipes administratives d'écoles privées ou publiques."
       },
       {
         q: "Est-ce une application installable ?",
-        a: "🌍 Academia Hub est une application web SaaS utilisable en ligne et hors ligne. Les données sont synchronisées automatiquement dès que la connexion est rétablie."
+        a: "🌍 Academia Helm est une application web SaaS utilisable en ligne et hors ligne. Les données sont synchronisées automatiquement dès que la connexion est rétablie."
       }
     ]
   },
@@ -67,12 +67,12 @@ export const faqData: FAQData = {
     title: "💼 Souscription initiale",
     questions: [
       {
-        q: "Pourquoi une souscription de 100 000 FCFA ?",
-        a: "🚀 Elle permet l'activation réelle de votre établissement : données réelles, sous-domaine, modules complets, offline et accès aux IA."
+        q: "Pourquoi une souscription initiale ?",
+        a: "🚀 Elle permet l'activation réelle de votre établissement : données réelles, sous-domaine, modules complets, mode offline et accès aux IA. Le montant varie selon le plan (75 000 à 200 000 FCFA)."
       },
       {
         q: "Est-ce payé une seule fois ?",
-        a: "✅ Oui. La souscription est payée une seule fois à l'activation."
+        a: "✅ Oui. La souscription initiale est payée une seule fois à l'activation, quel que soit le plan."
       }
     ]
   },

@@ -5,10 +5,10 @@
  */
 
 export const closingResponses = {
-  trial_close: "🧪 Le plus simple est de commencer par le free trial de 3 jours. Vous découvrirez Academia Hub sans engagement, avec un accompagnement guidé. Souhaitez-vous démarrer maintenant ?",
-  activation_close: "🚀 Vous pouvez activer votre établissement dès maintenant. La souscription est payée une seule fois, et vous bénéficiez ensuite de 30 jours d'exploitation réelle sans abonnement. Voulez-vous que je vous guide ?",
-  pricing_reassurance: "💡 Academia Hub est un système complet, tout est inclus. Il n'y a aucun module caché ni frais surprise. Vous investissez dans une plateforme durable, pas dans une simple application.",
-  annual_push: "📅 Beaucoup de promoteurs choisissent l'abonnement annuel : il offre 2 mois gratuits et une tranquillité totale. Souhaitez-vous voir cette option ?",
+  trial_close: "🧪 Le plus simple est de commencer par une démo guidée ou un free trial. Vous découvrirez Academia Helm sans engagement, avec tous les modules déjà inclus. Souhaitez-vous que je vous envoie le lien d'inscription ?",
+  activation_close: "🚀 Vous pouvez activer votre établissement dès maintenant. La souscription initiale est payée une seule fois, puis votre abonnement dépend simplement de l'effectif de l'école. Voulez-vous que je vous guide vers la page d'activation ?",
+  pricing_reassurance: "💡 Academia Helm fonctionne avec une grille simple : 4 plans selon le nombre d'élèves, tous les modules inclus, sans option cachée ni frais surprise. Vous savez exactement ce que vous payez, pour une plateforme complète de pilotage. Voulez-vous que je vous résume les 4 plans ?",
+  annual_push: "📅 Beaucoup de promoteurs choisissent l'abonnement annuel : il offre 2 mois gratuits par rapport au mensuel et une tranquillité totale sur l'année scolaire. Souhaitez-vous voir la différence entre mensuel et annuel pour votre cas ?",
   enterprise_close: "📄 À partir de 3 écoles, nous proposons une offre personnalisée. Cela vous garantit un tarif adapté à votre structure. Voulez-vous demander un devis maintenant ?",
   human_handoff: "📞 Si vous le souhaitez, je peux vous mettre en relation avec un conseiller pour en discuter directement. Préférez-vous WhatsApp ou email ?"
 };

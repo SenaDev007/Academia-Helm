@@ -31,9 +31,10 @@ interface SchoolIdentity {
 interface PilotageTopBarProps {
   user: User;
   tenant: Tenant;
+  onMenuClick?: () => void;
 }
 
-export default function PilotageTopBar({ user, tenant }: PilotageTopBarProps) {
+export default function PilotageTopBar({ user, tenant, onMenuClick }: PilotageTopBarProps) {
   const router = useRouter();
   const isOnline = useOffline();
   const { isSyncing, pendingCount } = useSyncStatus();
@@ -114,13 +115,26 @@ export default function PilotageTopBar({ user, tenant }: PilotageTopBarProps) {
   }, [profileDropdownOpen]);
 
   return (
-    <header className="bg-white border-b border-gray-200 fixed top-0 left-0 right-0 z-50 shadow-sm backdrop-blur-sm bg-white/95">
-      <div className="px-6 py-3">
-        <div className="flex items-center justify-between">
-          {/* Gauche : Logo École + Contexte */}
-          <div className="flex items-center space-x-6">
+    <header className="bg-white border-b border-gray-200 fixed top-0 left-0 right-0 z-50 shadow-sm backdrop-blur-sm bg-white/95 sticky top-0">
+      <div className="px-4 py-3 sm:px-6">
+        <div className="flex items-center justify-between gap-2">
+          {/* Gauche : Hamburger mobile + Logo École + Contexte */}
+          <div className="flex items-center gap-2 sm:gap-4 md:gap-6 min-w-0 flex-1">
+            {/* Hamburger — visible mobile/tablette uniquement (spec: ouvrir drawer) */}
+            {onMenuClick && (
+              <button
+                type="button"
+                onClick={onMenuClick}
+                className="md:hidden p-2 rounded-lg hover:bg-gray-100 min-h-[44px] min-w-[44px] flex items-center justify-center flex-shrink-0 text-gray-600"
+                aria-label="Ouvrir le menu"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+            )}
             {/* Logo et Nom de l'École */}
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
               <div className="relative">
                 {schoolIdentity?.logoUrl ? (
                   <Image
@@ -145,8 +159,8 @@ export default function PilotageTopBar({ user, tenant }: PilotageTopBarProps) {
             {/* Séparateur */}
             <div className="h-8 w-px bg-gradient-to-b from-transparent via-gray-300 to-transparent" />
 
-            {/* Sélecteurs de Contexte */}
-            <div className="flex items-center space-x-3">
+            {/* Sélecteurs de Contexte — masqués sur très petit écran, visibles sm+ */}
+            <div className="hidden sm:flex items-center space-x-2 md:space-x-3">
               <AcademicYearSelector />
               <SchoolLevelSelector />
               <AcademicTrackSelector />

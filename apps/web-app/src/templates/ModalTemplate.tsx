@@ -93,12 +93,12 @@ export default function ModalTemplate({
         aria-hidden="true"
       />
 
-      {/* Modal */}
-      <div className="flex min-h-full items-center justify-center p-4">
+      {/* Modal — bottom-sheet mobile, centré md+ (spec responsive) */}
+      <div className="flex min-h-full items-end md:items-center justify-center p-0 md:p-4">
         <div
           ref={modalRef}
           className={cn(
-            'relative bg-white rounded-2xl shadow-2xl w-full',
+            'relative bg-white shadow-2xl w-full max-h-[90vh] overflow-y-auto rounded-t-2xl md:rounded-2xl',
             sizeClasses[size],
             'transform transition-all'
           )}

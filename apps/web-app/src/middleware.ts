@@ -103,7 +103,6 @@ async function resolveTenant(subdomain: string): Promise<{ id: string; slug: str
 }
 
 const publicRoutes = [
-  '/',
   '/modules',
   '/tarification',
   '/securite',
@@ -152,12 +151,28 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
+  // Assets statiques : ne jamais appliquer le multi-tenant/redirect
+  // (important sur Vercel/Linux + domaines preview)
+  if (
+    pathname.startsWith('/images/') ||
+    pathname.startsWith('/fonts/') ||
+    pathname.startsWith('/uploads/') ||
+    pathname === '/sw.js' ||
+    pathname === '/workbox-*.js' ||
+    pathname === '/manifest.json' ||
+    pathname === '/robots.txt' ||
+    pathname === '/sitemap.xml'
+  ) {
+    return response;
+  }
+
+  // Route racine `/` toujours accessible, même avec subdomain (landing page principale)
+  if (pathname === '/') {
+    return response;
+  }
+
   // Routes publiques
   if (publicRoutes.some(route => pathname.startsWith(route))) {
-    // La route racine `/` est toujours accessible, même avec subdomain (landing page principale)
-    if (pathname === '/') {
-      return response;
-    }
     
     if (!subdomain) {
       return response;
@@ -303,6 +318,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!api|_next/static|_next/image|favicon.ico).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|images/|fonts/|uploads/|sw.js|manifest.json|robots.txt|sitemap.xml).*)',
   ],
 };

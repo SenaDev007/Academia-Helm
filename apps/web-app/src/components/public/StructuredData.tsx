@@ -1,15 +1,33 @@
 /**
  * Structured Data Component
- * 
+ *
  * Ajoute les données structurées JSON-LD pour le SEO
  * Composant serveur uniquement (pas de 'use client')
  */
 
-import { generateOrganizationSchema, generateSoftwareApplicationSchema } from '@/lib/seo';
+import {
+  generateOrganizationSchema,
+  generateSoftwareApplicationSchema,
+  generateWebSiteSchema,
+} from '@/lib/seo';
+import {
+  generateReviewsOnlyGraph,
+  mergeOrganizationAggregateForReviews,
+} from '@/lib/seo/reviews-jsonld';
+import type { PlatformReviewPublic } from '@/types/platform-review';
 
-export default function StructuredData() {
-  const organizationSchema = generateOrganizationSchema();
+type Props = {
+  platformReviews?: PlatformReviewPublic[];
+};
+
+export default function StructuredData({ platformReviews = [] }: Props) {
+  const organizationSchema = mergeOrganizationAggregateForReviews(
+    generateOrganizationSchema() as Record<string, unknown>,
+    platformReviews,
+  );
+  const webSiteSchema = generateWebSiteSchema();
   const softwareSchema = generateSoftwareApplicationSchema();
+  const reviewsGraph = generateReviewsOnlyGraph(platformReviews);
 
   return (
     <>
@@ -19,9 +37,18 @@ export default function StructuredData() {
       />
       <script
         type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(webSiteSchema) }}
+      />
+      <script
+        type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareSchema) }}
       />
+      {reviewsGraph ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(reviewsGraph) }}
+        />
+      ) : null}
     </>
   );
 }
-

@@ -1,32 +1,19 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import { Request } from 'express';
+import { resolveRequestTenantId } from '../utils/resolve-request-tenant-id';
 
 /**
- * Decorator pour récupérer le tenant_id depuis la requête
- * 
- * Usage:
- * @Get()
- * async findAll(@TenantId() tenantId: string) {
- *   return this.service.findAll(tenantId);
- * }
- */
-export const TenantId = createParamDecorator(
-  (data: unknown, ctx: ExecutionContext): string => {
-    const request = ctx.switchToHttp().getRequest();
-    return request.tenantId;
-  },
-);
-
-/**
- * Decorator pour récupérer l'objet tenant complet
+ * Objet minimal { id } pour les contrôleurs qui attendaient request.tenant (souvent absent).
+ * Si un tenant complet est attaché plus tard sur la requête, il est utilisé en priorité.
  */
 export const Tenant = createParamDecorator(
-  (data: unknown, ctx: ExecutionContext) => {
-    const request = ctx.switchToHttp().getRequest();
-    return request.tenant;
+  (data: unknown, ctx: ExecutionContext): { id: string } | undefined => {
+    const request = ctx.switchToHttp().getRequest<Request>();
+    const full = request['tenant'] as { id: string } | undefined;
+    if (full) return full;
+    const id = resolveRequestTenantId(request);
+    return id ? { id } : undefined;
   },
 );
 
-/**
- * Alias pour Tenant (pour compatibilité)
- */
 export const GetTenant = Tenant;

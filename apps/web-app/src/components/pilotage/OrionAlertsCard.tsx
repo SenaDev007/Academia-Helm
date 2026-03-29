@@ -33,10 +33,13 @@ export default function OrionAlertsCard({ academicYearId, schoolLevelId }: Orion
         );
         if (response.ok) {
           const data = await response.json();
-          setAlerts(data);
+          setAlerts(Array.isArray(data) ? data : []);
+        } else {
+          setAlerts([]);
         }
       } catch (error) {
         console.error('Failed to load ORION alerts:', error);
+        setAlerts([]);
       } finally {
         setIsLoading(false);
       }

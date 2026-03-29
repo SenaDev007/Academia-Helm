@@ -8,7 +8,16 @@
 
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { settingsKeys } from '@/lib/query/settings-keys';
+import { academicYearsKeys } from '@/lib/query/academic-years-keys';
+import {
+  buildAcademicYearsSnapshot,
+  hydrateAcademicYearsFromBootstrap,
+} from '@/lib/query/academic-years-fetch';
+import type { SettingsBootstrapPayload } from '@/lib/query/fetch-settings-bootstrap';
+import { useSettingsBootstrapQuery } from '@/hooks/useSettingsBootstrapQuery';
 import { useSearchParams, usePathname, useRouter } from 'next/navigation';
 import NextImage from 'next/image';
 import { 
@@ -23,6 +32,7 @@ import { ModuleHeader } from '@/components/modules/blueprint';
 import GeneratedStampsSignatures from '@/components/settings/GeneratedStampsSignatures';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import * as settingsService from '@/services/settings.service';
+import { SETTINGS_SCHOOL_LEVELS_UPDATED_EVENT } from '@/lib/settings/events';
 import { formatGradeLabel } from '@/lib/utils';
 
 /** Format d’affichage des dates d’année scolaire (conforme calendrier officiel, évite décalage timezone) */
@@ -55,6 +65,8 @@ function formatRoleDisplayName(name: string | null | undefined): string {
 type TabId = 'identity' | 'academic-year' | 'structure' | 'bilingual' | 'features' | 
              'roles' | 'communication' | 'billing' | 'security' | 'seals' | 'orion' | 'atlas' | 'offline' | 'appareils' | 'history';
 
+const SCHOOL_IDENTITY_UPDATED_EVENT = 'settings-school-identity-updated';
+
 interface Toast {
   type: 'success' | 'error';
   message: string;
@@ -64,6 +76,7 @@ export default function SettingsPage() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { user, tenant } = useAppSession();
   const urlTenantId = searchParams.get('tenant_id');
   const isPlatformOwner = user?.role === 'PLATFORM_OWNER';
@@ -77,7 +90,9 @@ export default function SettingsPage() {
   const [loadingTenantsPO, setLoadingTenantsPO] = useState(false);
 
   const [activeTab, setActiveTab] = useState<TabId>('identity');
-  const [loading, setLoading] = useState(true);
+  /** Prêt après première application du bootstrap (évite flash formulaires vides). */
+  const [pageReady, setPageReady] = useState(false);
+  const shouldApplyBootstrapRef = useRef(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
 
@@ -229,41 +244,194 @@ export default function SettingsPage() {
     setTimeout(() => setToast(null), 4000);
   }, []);
 
+  const notifySchoolIdentityUpdated = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(new CustomEvent(SCHOOL_IDENTITY_UPDATED_EVENT));
+  }, []);
+
+  const notifySchoolLevelsUpdated = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(new CustomEvent(SETTINGS_SCHOOL_LEVELS_UPDATED_EVENT));
+  }, []);
+
+  const {
+    data: bootstrapData,
+    isError: bootstrapQueryFailed,
+    error: bootstrapQueryError,
+  } = useSettingsBootstrapQuery(effectiveTenantId);
+
+  const applyBootstrapPayload = useCallback(
+    (data: SettingsBootstrapPayload) => {
+      const {
+        general,
+        featuresData,
+        security,
+        orion,
+        atlas,
+        offline,
+        historyData,
+        academicYearsResult,
+        structure,
+        bilingual,
+        communication,
+        rolesData,
+        permissionsData,
+        usersData,
+        billing,
+        plans,
+        invoicesData,
+        identity,
+        identityHist,
+        educationHierarchy,
+        bilingualExtras,
+      } = data;
+
+      setGeneralSettings(general);
+      setIdentityForm(general || {});
+
+      if (identity) {
+        const id = identity as Record<string, unknown>;
+        setIdentityProfile(identity);
+        setIdentityForm({
+          schoolName: (id.schoolName as string) || '',
+          schoolAcronym: (id.schoolAcronym as string) || '',
+          schoolType: (id.schoolType as string) || 'PRIVEE',
+          authorizationNumber: (id.authorizationNumber as string) || '',
+          foundationDate:
+            typeof id.foundationDate === 'string' ? id.foundationDate.split('T')[0] : '',
+          devise: (id.slogan as string) || '',
+          address: (id.address as string) || '',
+          city: (id.city as string) || '',
+          department: (id.department as string) || '',
+          country: (id.country as string) || 'BJ',
+          postalCode: (id.postalCode as string) || '',
+          phonePrimary: (id.phonePrimary as string) || '',
+          phoneSecondary: (id.phoneSecondary as string) || '',
+          email: (id.email as string) || '',
+          website: (id.website as string) || '',
+          currency: (id.currency as string) || 'XOF',
+          timezone: (id.timezone as string) || 'Africa/Porto-Novo',
+          logoUrl: (id.logoUrl as string) || '',
+        });
+      }
+      setIdentityVersions(identityHist?.versions || []);
+      setFeatures(Array.isArray(featuresData) ? featuresData : []);
+      setSecuritySettings(security);
+      setSecurityForm(security || {});
+      setOrionSettings(orion);
+      setOrionForm(orion || {});
+      setAtlasSettings(atlas);
+      setAtlasForm(atlas || {});
+      setOfflineSyncSettings(offline);
+      setOfflineForm(offline || {});
+      setHistory(Array.isArray(historyData) ? historyData : []);
+      const years = (academicYearsResult?.years ?? []) as any[];
+      const activeYear = (academicYearsResult?.activeYear ?? null) as any;
+      const yearList = years || [];
+      const hasActiveInList = activeYear && yearList.some((y: any) => y.id === activeYear.id);
+      setAcademicYears(
+        hasActiveInList ? yearList : (activeYear ? [activeYear, ...yearList] : yearList),
+      );
+      setActiveAcademicYear(activeYear || null);
+      const defaultYearId = activeYear?.id ?? yearList[0]?.id ?? null;
+      setPeriodYearId(defaultYearId);
+
+      const edu = educationHierarchy as { levels?: any[] } | null | undefined;
+      if (edu?.levels) {
+        setEducationStructure(edu as any);
+      } else {
+        setEducationStructure((edu || { levels: [] }) as any);
+      }
+
+      setBilingualBillingImpact(bilingualExtras?.impact ?? null);
+      setBilingualMigrationNeeded(
+        bilingualExtras?.migrationNeeded !== undefined && bilingualExtras?.migrationNeeded !== null
+          ? bilingualExtras.migrationNeeded
+          : null,
+      );
+
+      setPedagogicalStructure(structure);
+      setStructureForm(structure || {});
+      setBilingualSettings(bilingual);
+      setBilingualForm(bilingual || {});
+      setCommunicationSettings(communication);
+      setCommunicationForm(communication || {});
+      const finalRoles = Array.isArray(rolesData) ? rolesData : [];
+      const finalPermissions = Array.isArray(permissionsData) ? permissionsData : [];
+      const needsBootstrap = finalRoles.length === 0 || finalPermissions.length === 0;
+      const finalUsers = Array.isArray(usersData) ? usersData : [];
+
+      setRoles(finalRoles);
+      setPermissions(finalPermissions);
+      setUsersWithRoles(finalUsers);
+      setBillingSettings(billing);
+      setBillingForm(billing || {});
+      setAvailablePlans((Array.isArray(plans) ? plans : plans ?? []) as any[]);
+      setInvoices((Array.isArray(invoicesData) ? invoicesData : invoicesData ?? []) as any[]);
+
+      if (needsBootstrap) {
+        void (async () => {
+          try {
+            await settingsService.ensureRbacInitialized();
+            const [rolesAfter, permsAfter, usersAfter] = await Promise.all([
+              settingsService.getRoles(effectiveTenantId ?? undefined).catch(() => []),
+              settingsService.getPermissions().catch(() => []),
+              effectiveTenantId
+                ? settingsService.getUsersWithRoles(effectiveTenantId).catch(() => [])
+                : Promise.resolve(finalUsers),
+            ]);
+            const r = Array.isArray(rolesAfter) ? rolesAfter : [];
+            const p = Array.isArray(permsAfter) ? permsAfter : [];
+            const u = Array.isArray(usersAfter) ? usersAfter : finalUsers;
+            setRoles(r);
+            setPermissions(p);
+            setUsersWithRoles(u);
+            if (r.length > 0 || p.length > 0) {
+              showToast('success', 'Rôles et permissions initialisés et enregistrés en BDD');
+            }
+          } catch (e: unknown) {
+            const msg =
+              e instanceof Error ? e.message : "Impossible d'initialiser les rôles (vérifiez l'API)";
+            showToast('error', msg);
+          }
+        })();
+      }
+    },
+    [effectiveTenantId, showToast],
+  );
+
   useEffect(() => {
-    loadAllSettings();
+    setPageReady(false);
+    shouldApplyBootstrapRef.current = true;
   }, [effectiveTenantId]);
 
-  // Recharger les années scolaires depuis le backend à chaque ouverture de l’onglet (dates dynamiques)
+  const settingsErrorToastShownRef = useRef(false);
   useEffect(() => {
-    if (activeTab !== 'academic-year') return;
-    if (!effectiveTenantId) {
-      setAcademicYears([]);
-      setActiveAcademicYear(null);
-      setPeriodYearId(null);
-      setAcademicPeriods([]);
+    if (!bootstrapQueryFailed) {
+      settingsErrorToastShownRef.current = false;
       return;
     }
-    let cancelled = false;
-    (async () => {
-      try {
-        const [years, activeYear] = await Promise.all([
-          settingsService.getAcademicYears(effectiveTenantId).catch(() => []),
-          settingsService.getActiveAcademicYear(effectiveTenantId).catch(() => null),
-        ]);
-        if (cancelled) return;
-        const yearList = years || [];
-        const hasActiveInList = activeYear && yearList.some((y: any) => y.id === activeYear.id);
-        setAcademicYears(hasActiveInList ? yearList : (activeYear ? [activeYear, ...yearList] : yearList));
-        setActiveAcademicYear(activeYear || null);
-        setPeriodYearId((prev) => prev || activeYear?.id || yearList[0]?.id || null);
-      } catch (_) {}
-    })();
-    return () => { cancelled = true; };
-  }, [activeTab, effectiveTenantId]);
+    if (settingsErrorToastShownRef.current) return;
+    settingsErrorToastShownRef.current = true;
+    console.error('Error loading settings:', bootstrapQueryError);
+    showToast('error', 'Erreur lors du chargement des paramètres');
+    setPageReady(true);
+  }, [bootstrapQueryFailed, bootstrapQueryError, showToast]);
 
-  // Charger les périodes académiques de l'année sélectionnée
   useEffect(() => {
-    if (activeTab !== 'academic-year' || !periodYearId || !effectiveTenantId) {
+    if (!bootstrapData) return;
+    if (!shouldApplyBootstrapRef.current) return;
+    shouldApplyBootstrapRef.current = false;
+    hydrateAcademicYearsFromBootstrap(queryClient, effectiveTenantId, bootstrapData);
+    applyBootstrapPayload(bootstrapData);
+    setPageReady(true);
+  }, [bootstrapData, effectiveTenantId, queryClient, applyBootstrapPayload]);
+
+  const loading = !pageReady;
+
+  /** Périodes : rechargées dès que l’année sélectionnée change (préchargées au montage via le bootstrap). */
+  useEffect(() => {
+    if (!periodYearId || !effectiveTenantId) {
       if (!periodYearId) setAcademicPeriods([]);
       return;
     }
@@ -276,32 +444,15 @@ export default function SettingsPage() {
         if (!cancelled) setAcademicPeriods([]);
       }
     })();
-    return () => { cancelled = true; };
-  }, [activeTab, periodYearId, effectiveTenantId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [periodYearId, effectiveTenantId]);
 
-  // Charger la structure pédagogique hiérarchique (onglet Structure)
-  useEffect(() => {
-    if (activeTab !== 'structure' || !effectiveTenantId) {
-      if (activeTab !== 'structure') setEducationStructure(null);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await settingsService.getEducationStructure(effectiveTenantId);
-        if (!cancelled && res?.levels) setEducationStructure(res);
-        else if (!cancelled) setEducationStructure(res || { levels: [] });
-      } catch (_) {
-        if (!cancelled) setEducationStructure({ levels: [] });
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [activeTab, effectiveTenantId]);
-
-  // Charger les classes physiques pour l'année sélectionnée (onglet Structure)
+  /** Classes physiques : préchargées au montage ; rechargement si année structure ou année active change. */
   useEffect(() => {
     const yearId = structureYearId || activeAcademicYear?.id;
-    if (activeTab !== 'structure' || !yearId || !effectiveTenantId) {
+    if (!yearId || !effectiveTenantId) {
       if (!structureYearId && !activeAcademicYear?.id) setEducationClassrooms([]);
       return;
     }
@@ -314,8 +465,10 @@ export default function SettingsPage() {
         if (!cancelled) setEducationClassrooms([]);
       }
     })();
-    return () => { cancelled = true; };
-  }, [activeTab, structureYearId, activeAcademicYear?.id, effectiveTenantId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [structureYearId, activeAcademicYear?.id, effectiveTenantId]);
 
   // Charger la liste des établissements pour le PO (onglet Année scolaire)
   useEffect(() => {
@@ -343,30 +496,6 @@ export default function SettingsPage() {
     return () => { cancelled = true; };
   }, [isPlatformOwner, activeTab]);
 
-  // Charger impact tarifaire et statut migration (onglet Option bilingue)
-  useEffect(() => {
-    if (activeTab !== 'bilingual') return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const [impact, migration] = await Promise.all([
-          settingsService.getBilingualBillingImpact(effectiveTenantId ?? undefined).catch(() => null),
-          settingsService.getBilingualCheckMigration(effectiveTenantId ?? undefined).catch(() => ({ migrationNeeded: false })),
-        ]);
-        if (!cancelled) {
-          setBilingualBillingImpact(impact || null);
-          setBilingualMigrationNeeded((migration as any)?.migrationNeeded ?? null);
-        }
-      } catch (_) {
-        if (!cancelled) {
-          setBilingualBillingImpact(null);
-          setBilingualMigrationNeeded(null);
-        }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [activeTab, effectiveTenantId]);
-
   useEffect(() => {
     if (activeTab !== 'appareils') return;
     let cancelled = false;
@@ -380,126 +509,6 @@ export default function SettingsPage() {
       .finally(() => { if (!cancelled) setDevicesLoading(false); });
     return () => { cancelled = true; };
   }, [activeTab]);
-
-  const loadAllSettings = async () => {
-    try {
-      setLoading(true);
-      const [general, featuresData, security, orion, atlas, offline, historyData, academicYearsResult, structure, bilingual, communication, rolesData, permissionsData, usersData, billing, plans, invoicesData, identity, identityHist] = 
-        await Promise.all([
-          settingsService.getGeneralSettings().catch(() => null),
-          settingsService.getFeatures(effectiveTenantId ?? undefined).catch(() => []),
-          settingsService.getSecuritySettings().catch(() => null),
-          settingsService.getOrionSettings().catch(() => null),
-          settingsService.getAtlasSettings().catch(() => null),
-          settingsService.getOfflineSyncSettings().catch(() => null),
-          settingsService.getSettingsHistory({ limit: 50 }).catch(() => []),
-          effectiveTenantId
-            ? Promise.all([
-                settingsService.getAcademicYears(effectiveTenantId).catch(() => []),
-                settingsService.getActiveAcademicYear(effectiveTenantId).catch(() => null),
-              ]).then(([y, a]) => ({ years: y, activeYear: a }))
-            : Promise.resolve({ years: [], activeYear: null }),
-          settingsService.getPedagogicalStructure(effectiveTenantId ?? undefined).catch(() => null),
-          settingsService.getBilingualSettings(effectiveTenantId ?? undefined).catch(() => null),
-          settingsService.getCommunicationSettings().catch(() => null),
-          settingsService.getRoles(effectiveTenantId ?? undefined).catch(() => []),
-          settingsService.getPermissions().catch(() => []),
-          settingsService.getUsersWithRoles(effectiveTenantId ?? undefined).catch(() => []),
-          settingsService.getBillingSettings().catch(() => null),
-          settingsService.getAvailablePlans().catch(() => []),
-          settingsService.getBillingInvoices({ limit: 10 }).catch(() => []),
-          settingsService.getActiveIdentityProfile(effectiveTenantId ?? undefined).catch(() => null),
-          settingsService.getIdentityHistory({ limit: 20 }, effectiveTenantId ?? undefined).catch(() => ({ versions: [] })),
-        ]);
-
-      setGeneralSettings(general);
-      setIdentityForm(general || {});
-      
-      // Identité versionnée
-      if (identity) {
-        setIdentityProfile(identity);
-        setIdentityForm({
-          schoolName: identity.schoolName || '',
-          schoolAcronym: identity.schoolAcronym || '',
-          schoolType: identity.schoolType || 'PRIVEE',
-          authorizationNumber: identity.authorizationNumber || '',
-          foundationDate: identity.foundationDate?.split('T')[0] || '',
-          devise: identity.slogan || '',
-          address: identity.address || '',
-          city: identity.city || '',
-          department: identity.department || '',
-          country: identity.country || 'BJ',
-          postalCode: identity.postalCode || '',
-          phonePrimary: identity.phonePrimary || '',
-          phoneSecondary: identity.phoneSecondary || '',
-          email: identity.email || '',
-          website: identity.website || '',
-          currency: identity.currency || 'XOF',
-          timezone: identity.timezone || 'Africa/Porto-Novo',
-          logoUrl: identity.logoUrl || '',
-        });
-      }
-      setIdentityVersions(identityHist?.versions || []);
-      setFeatures(Array.isArray(featuresData) ? featuresData : []);
-      setSecuritySettings(security);
-      setSecurityForm(security || {});
-      setOrionSettings(orion);
-      setOrionForm(orion || {});
-      setAtlasSettings(atlas);
-      setAtlasForm(atlas || {});
-      setOfflineSyncSettings(offline);
-      setOfflineForm(offline || {});
-      setHistory(historyData || []);
-      const years = academicYearsResult?.years ?? [];
-      const activeYear = academicYearsResult?.activeYear ?? null;
-      const yearList = years || [];
-      const hasActiveInList = activeYear && yearList.some((y: any) => y.id === activeYear.id);
-      setAcademicYears(
-        hasActiveInList ? yearList : (activeYear ? [activeYear, ...yearList] : yearList)
-      );
-      setActiveAcademicYear(activeYear || null);
-      setPedagogicalStructure(structure);
-      setStructureForm(structure || {});
-      setBilingualSettings(bilingual);
-      setBilingualForm(bilingual || {});
-      setCommunicationSettings(communication);
-      setCommunicationForm(communication || {});
-      let finalRoles = Array.isArray(rolesData) ? rolesData : [];
-      let finalPermissions = Array.isArray(permissionsData) ? permissionsData : [];
-      const needsBootstrap = finalRoles.length === 0 || finalPermissions.length === 0;
-      let finalUsers = Array.isArray(usersData) ? usersData : [];
-      if (needsBootstrap) {
-        try {
-          await settingsService.ensureRbacInitialized();
-          const [rolesAfter, permsAfter, usersAfter] = await Promise.all([
-            settingsService.getRoles(effectiveTenantId ?? undefined).catch(() => []),
-            settingsService.getPermissions().catch(() => []),
-            effectiveTenantId ? settingsService.getUsersWithRoles(effectiveTenantId).catch(() => []) : Promise.resolve(finalUsers),
-          ]);
-          finalRoles = Array.isArray(rolesAfter) ? rolesAfter : [];
-          finalPermissions = Array.isArray(permsAfter) ? permsAfter : [];
-          if (Array.isArray(usersAfter)) finalUsers = usersAfter;
-          if (finalRoles.length > 0 || finalPermissions.length > 0) {
-            showToast('success', 'Rôles et permissions initialisés et enregistrés en BDD');
-          }
-        } catch (e: any) {
-          showToast('error', e?.message || 'Impossible d\'initialiser les rôles (vérifiez l\'API)');
-        }
-      }
-      setRoles(finalRoles);
-      setPermissions(finalPermissions);
-      setUsersWithRoles(finalUsers);
-      setBillingSettings(billing);
-      setBillingForm(billing || {});
-      setAvailablePlans(plans || []);
-      setInvoices(invoicesData || []);
-    } catch (error) {
-      console.error('Error loading settings:', error);
-      showToast('error', 'Erreur lors du chargement des paramètres');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleSaveIdentity = async () => {
     if (!changeReason.trim()) {
@@ -517,6 +526,7 @@ export default function SettingsPage() {
       showToast('success', `Nouvelle version ${newVersion.version} créée`);
       setIdentityProfile(newVersion);
       setChangeReason('');
+      notifySchoolIdentityUpdated();
       // Recharger l'historique
       const histData = await settingsService.getIdentityHistory({ limit: 20 }, effectiveTenantId ?? undefined);
       setIdentityVersions(histData?.versions || []);
@@ -534,6 +544,7 @@ export default function SettingsPage() {
       const restored = await settingsService.activateIdentityVersion(versionId, `Restauration de la version ${versionNum}`, effectiveTenantId ?? undefined);
       showToast('success', `Version ${restored.version} restaurée`);
       setIdentityProfile(restored);
+      notifySchoolIdentityUpdated();
       // Mettre à jour le formulaire
       setIdentityForm({
         schoolName: restored.schoolName || '',
@@ -577,6 +588,23 @@ export default function SettingsPage() {
       ]);
       setAcademicYears(years || []);
       setActiveAcademicYear(active || null);
+      queryClient.setQueryData(
+        academicYearsKeys.snapshot(effectiveTenantId ?? 'no-tenant'),
+        buildAcademicYearsSnapshot(years, active),
+      );
+      queryClient.setQueryData<SettingsBootstrapPayload>(
+        settingsKeys.bootstrap(effectiveTenantId),
+        (prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            academicYearsResult: {
+              years: years ?? [],
+              activeYear: active ?? null,
+            },
+          };
+        },
+      );
     } catch (_) {}
   };
 
@@ -838,6 +866,7 @@ export default function SettingsPage() {
       showToast('success', 'Structure pédagogique enregistrée');
       const updated = await settingsService.getPedagogicalStructure(effectiveTenantId ?? undefined);
       setPedagogicalStructure(updated);
+      notifySchoolLevelsUpdated();
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
     } finally {
@@ -851,6 +880,7 @@ export default function SettingsPage() {
       const res = await settingsService.initializeEducationStructure(effectiveTenantId ?? undefined);
       setEducationStructure(res || { levels: res?.levels ?? [] });
       showToast('success', 'Structure pédagogique initialisée (niveaux, cycles, classes pédagogiques).');
+      notifySchoolLevelsUpdated();
     } catch (error: any) {
       showToast('error', error.message || 'Erreur');
     } finally {
@@ -865,6 +895,7 @@ export default function SettingsPage() {
       const res = await settingsService.getEducationStructure(effectiveTenantId ?? undefined);
       if (res?.levels) setEducationStructure(res);
       showToast('success', isEnabled ? 'Niveau activé' : 'Niveau désactivé');
+      notifySchoolLevelsUpdated();
     } catch (error: any) {
       showToast('error', error.message || 'Erreur');
     } finally {

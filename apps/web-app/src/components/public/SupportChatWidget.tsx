@@ -724,7 +724,7 @@ Vous pouvez aussi utiliser les boutons ci-dessous pour accéder rapidement aux i
 • 🔒 Sécurité & données
 • 📞 Parler à un conseiller
 
-Ou reformulez votre question, je ferai de mon mieux pour vous aider ! 😊`,
+Ou reformulez votre question, je ferai de mon mieux pour vous aider ! 😊`;
       setMessages((prev) =>
         prev.map((m) => (m.id === botId ? { ...m, content: fallbackText } : m)),
       );

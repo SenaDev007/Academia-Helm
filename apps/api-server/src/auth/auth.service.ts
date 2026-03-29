@@ -77,7 +77,7 @@ export class AuthService {
           email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
-          role: user.role,
+          role: this.jwtRole(user),
           isPlatformOwner: true,
         },
         ...tokens,
@@ -141,9 +141,9 @@ export class AuthService {
           email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
-          role: user.role,
+          role: this.jwtRole(user),
           tenantId: loginDto.tenant_id || null,
-          isPlatformOwner: false,
+          isPlatformOwner: this.isPlatformOwner(user),
         },
         ...tokens,
       };
@@ -188,7 +188,7 @@ export class AuthService {
     const payload = {
       sub: user.id,
       email: user.email,
-      role: user.role,
+      role: this.jwtRole(user),
       // ❌ PAS de tenantId ici - sera ajouté après sélection
     };
 
@@ -205,7 +205,7 @@ export class AuthService {
     const payload = {
       sub: user.id,
       email: user.email,
-      role: user.role,
+      role: this.jwtRole(user),
       tenantId: tenantId,
       academicYearId: academicYearId || null,
       contextLocked: true, // Indique que le contexte est verrouillé
@@ -235,6 +235,12 @@ export class AuthService {
     if (platformOwnerEmail && user.email === platformOwnerEmail) return true;
     if (user.role === 'PLATFORM_OWNER' || user.role === 'SUPER_ADMIN') return true;
     return false;
+  }
+
+  /** Rôle exposé dans le JWT et les réponses API (évite SUPER_DIRECTOR pour le compte dev owner) */
+  private jwtRole(user: any): string {
+    if (this.isPlatformOwner(user)) return 'PLATFORM_OWNER';
+    return user?.role ?? 'USER';
   }
 
   /**
@@ -436,7 +442,7 @@ export class AuthService {
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
-        role: user.role,
+        role: this.jwtRole(user),
         isPlatformOwner: isOwner,
       },
       tenant: {

@@ -10,13 +10,10 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 export async function POST(request: NextRequest) {
   try {
     const headers = await getProxyAuthHeaders(request);
-    if (!headers['Authorization']) {
-      return NextResponse.json({ error: 'Non authentifié', code: 'UNAUTHORIZED' }, { status: 401 });
-    }
     const url = new URL(`${API_BASE_URL}/settings/education/structure/initialize`);
     const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
     if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
-    const response = await fetch(url.toString(), { method: 'POST', headers });
+    const response = await fetch(url.toString(), { method: 'POST', headers, cache: 'no-store' });
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (error) {

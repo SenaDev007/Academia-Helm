@@ -13,6 +13,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Search, Building2, MapPin, GraduationCap, Loader, CheckCircle, ChevronDown, X } from 'lucide-react';
 import Image from 'next/image';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 
 interface School {
   id: string;
@@ -36,6 +37,7 @@ export default function SchoolSearch({
   selectedSchool,
   portalType,
 }: SchoolSearchProps) {
+  const reduceMotion = useReducedMotion();
   const [searchQuery, setSearchQuery] = useState('');
   const [allSchools, setAllSchools] = useState<School[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -198,8 +200,20 @@ export default function SchoolSearch({
           </div>
 
           {/* Dropdown avec résultats */}
-          {showDropdown && (
-            <div className="absolute z-50 w-full mt-2 bg-white border-2 border-gray-200 rounded-lg shadow-xl max-h-96 overflow-hidden flex flex-col">
+          <AnimatePresence>
+            {showDropdown && (
+              <motion.div
+                key="school-dropdown"
+                initial={
+                  reduceMotion ? false : { opacity: 0, y: -8, scale: 0.98 }
+                }
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={
+                  reduceMotion ? undefined : { opacity: 0, y: -6, scale: 0.99 }
+                }
+                transition={{ duration: reduceMotion ? 0 : 0.2, ease: 'easeOut' }}
+                className="absolute z-50 mt-2 flex max-h-96 w-full flex-col overflow-hidden rounded-lg border-2 border-gray-200 bg-white shadow-xl"
+              >
               {/* Header avec compteur */}
               <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
                 <span className="text-sm font-medium text-gray-700">
@@ -280,12 +294,18 @@ export default function SchoolSearch({
                   </div>
                 )}
               </div>
-            </div>
-          )}
+            </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       ) : (
         /* École sélectionnée */
-        <div className="p-4 bg-gradient-to-r from-blue-50 to-blue-100 border-2 border-blue-300 rounded-lg">
+        <motion.div
+          initial={reduceMotion ? false : { opacity: 0, scale: 0.98 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: reduceMotion ? 0 : 0.22, ease: 'easeOut' }}
+          className="rounded-lg border-2 border-blue-300 bg-gradient-to-r from-blue-50 to-blue-100 p-4"
+        >
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3 flex-1 min-w-0">
               {selectedSchool.logoUrl ? (
@@ -330,7 +350,7 @@ export default function SchoolSearch({
               <X className="w-5 h-5 text-gray-600 hover:text-gray-900" />
             </button>
           </div>
-        </div>
+        </motion.div>
       )}
     </div>
   );

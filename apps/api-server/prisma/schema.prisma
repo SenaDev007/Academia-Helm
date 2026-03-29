@@ -316,6 +316,7 @@ model Tenant {
 
   // Relation optionnelle vers HelmSubscription (nouveau moteur de subscription Helm)
   helmSubscriptions                HelmSubscription[]
+  reviews                          Review[]
 
   @@index([subdomain])
   @@index([slug])
@@ -9780,4 +9781,61 @@ model PricingOverride {
   @@index([isActive])
   @@index([expiresAt])
   @@map("pricing_overrides")
+}
+
+/// Témoignages marketing plateforme (landing publique) — avis vérifiés en interne avant publication.
+model PlatformMarketingReview {
+  id                 String    @id @default(uuid())
+  quote              String    @db.Text
+  authorLabel        String    @map("author_label")
+  roleLabel          String    @map("role_label")
+  organizationLabel  String    @map("organization_label")
+  rating             Int
+  sortOrder          Int       @default(0) @map("sort_order")
+  published          Boolean   @default(false)
+  verifiedAt         DateTime? @map("verified_at")
+  collectMethod      String?   @map("collect_method")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  @@index([published, sortOrder])
+  @@map("platform_marketing_reviews")
+}
+
+/// Avis / témoignages style Trustpilot (landing + collecte in-app)
+model Review {
+  id          String       @id @default(cuid())
+  authorName  String
+  authorRole  String?
+  schoolName  String
+  city        String
+  photoUrl    String?
+  rating      Int
+  comment     String       @db.Text
+  status      ReviewStatus @default(PENDING)
+  featured    Boolean      @default(false)
+  source      ReviewSource @default(IN_APP)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  publishedAt DateTime?
+  tenantId    String?
+  tenant      Tenant?      @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([rating])
+  @@index([featured])
+  @@map("reviews")
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ARCHIVED
+}
+
+enum ReviewSource {
+  IN_APP
+  MANUAL
+  IMPORT
 }

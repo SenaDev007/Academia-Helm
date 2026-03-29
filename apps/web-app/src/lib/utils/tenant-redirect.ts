@@ -15,7 +15,7 @@
  * ============================================================================
  */
 
-import { getAppEnvironment, type AppEnvironment } from './urls';
+import { getAppEnvironment, getAppBaseUrl, type AppEnvironment } from './app-base-url';
 
 /**
  * Configuration de redirection tenant
@@ -86,7 +86,6 @@ export function getTenantRedirectUrl(config: TenantRedirectConfig): string {
 
   // En local : utiliser les query params (pas de DNS requis)
   if (env === 'local') {
-    const { getAppBaseUrl } = require('./urls');
     const baseUrl = getAppBaseUrl();
     const url = new URL(path, baseUrl);
 

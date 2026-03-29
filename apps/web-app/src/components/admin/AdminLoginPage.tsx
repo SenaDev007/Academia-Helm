@@ -11,6 +11,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Shield, Loader, AlertCircle, Lock } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { adminAuthService, initializeDefaultAdminCredentials } from '@/lib/admin/admin-auth.service';
 
 interface LoginCredentials {
@@ -132,10 +133,15 @@ export default function AdminLoginPage() {
   if (isInitializing) {
     return (
       <div className="w-full h-screen flex items-center justify-center bg-blue-900 px-4">
-        <div className="text-center text-white">
+        <motion.div
+          className="text-center text-white"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25, ease: 'easeOut' }}
+        >
           <Loader className="w-8 h-8 animate-spin mx-auto mb-4" />
           <p>Initialisation...</p>
-        </div>
+        </motion.div>
       </div>
     );
   }
@@ -143,10 +149,19 @@ export default function AdminLoginPage() {
   return (
     <div className="w-full h-screen flex items-center justify-center bg-blue-900 px-4">
       <div className="w-full max-w-md">
-        <div className="bg-white rounded-2xl shadow-2xl p-8 border-2 border-gold-500/20">
+        <motion.div
+          className="bg-white rounded-2xl shadow-2xl p-8 border-2 border-gold-500/20"
+          initial={{ opacity: 0, y: 18, scale: 0.985 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.35, ease: 'easeOut' }}
+        >
           {/* Logo et Header */}
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center mb-4">
+            <motion.div
+              className="inline-flex items-center justify-center mb-4"
+              animate={{ y: [0, -3, 0] }}
+              transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
+            >
               <Image
                 src="/images/logo-Academia Hub.png"
                 alt="Academia Helm"
@@ -155,17 +170,21 @@ export default function AdminLoginPage() {
                 className="w-20 h-20 object-contain"
                 priority
               />
-            </div>
+            </motion.div>
             <h1 className="text-3xl font-bold text-blue-900 mb-2">Super Admin</h1>
             <p className="text-sm text-graphite-700">Accès sécurisé au panneau d'administration</p>
           </div>
 
           {/* Error Message */}
           {error && (
-            <div className="mb-6 bg-red-50 border-2 border-red-200 rounded-lg p-4 flex items-start space-x-3">
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6 bg-red-50 border-2 border-red-200 rounded-lg p-4 flex items-start space-x-3"
+            >
               <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
               <p className="text-sm text-red-800 font-medium">{error}</p>
-            </div>
+            </motion.div>
           )}
 
           {/* Login Form */}
@@ -210,9 +229,11 @@ export default function AdminLoginPage() {
               </div>
             </div>
 
-            <button
+            <motion.button
               type="submit"
               disabled={isLoading}
+              whileHover={{ y: -1.5 }}
+              whileTap={{ scale: 0.99 }}
               className="w-full bg-blue-900 text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-800 transition-all flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
             >
               {isLoading ? (
@@ -226,7 +247,7 @@ export default function AdminLoginPage() {
                   Accéder au panneau admin
                 </>
               )}
-            </button>
+            </motion.button>
           </form>
 
           {/* Identifiants provisoires (TEST) */}
@@ -245,7 +266,7 @@ export default function AdminLoginPage() {
               Accès réservé aux Super Administrateurs uniquement
             </p>
           </div>
-        </div>
+        </motion.div>
 
         {/* Footer */}
         <div className="mt-6 text-center space-y-2">

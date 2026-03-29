@@ -9,10 +9,13 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { motion } from 'framer-motion';
 import { PostLoginLoading } from './PostLoginLoading';
 import { LoadingScreen } from './LoadingScreen';
 import { getLoadingMessage } from '@/lib/loading/loading-messages';
 import type { PostLoginFlowResult } from '@/lib/loading/post-login-flow.service';
+import { getPageSlideMotion } from '@/lib/motion/presets';
+import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 
 export interface PostLoginFlowWrapperProps {
   children: React.ReactNode;
@@ -35,6 +38,8 @@ export function PostLoginFlowWrapper({
   const [isInitialized, setIsInitialized] = useState(false);
   const [flowResult, setFlowResult] = useState<PostLoginFlowResult | null>(null);
   const [error, setError] = useState<any>(null);
+  const { shouldReduceMotion } = useMotionBudget();
+  const pageMotion = getPageSlideMotion(shouldReduceMotion);
 
   useEffect(() => {
     // Le flow sera exécuté par PostLoginLoading
@@ -81,5 +86,13 @@ export function PostLoginFlowWrapper({
   }
 
   // Afficher le contenu une fois initialisé
-  return <>{children}</>;
+  return (
+    <motion.div
+      initial={pageMotion.initial}
+      animate={pageMotion.animate}
+      transition={pageMotion.transition}
+    >
+      {children}
+    </motion.div>
+  );
 }

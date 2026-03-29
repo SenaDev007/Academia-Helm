@@ -15,7 +15,10 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { motion } from 'framer-motion';
 import { useTenantContext } from '@/contexts/TenantContext';
+import { getPageSlideMotion } from '@/lib/motion/presets';
+import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 
 interface DashboardGuardProps {
   children: React.ReactNode;
@@ -25,6 +28,8 @@ interface DashboardGuardProps {
 export function DashboardGuard({ children, requiredRole }: DashboardGuardProps) {
   const { context, isLoading, error } = useTenantContext();
   const router = useRouter();
+  const { shouldReduceMotion } = useMotionBudget();
+  const pageMotion = getPageSlideMotion(shouldReduceMotion);
 
   useEffect(() => {
     // Attendre le chargement du contexte
@@ -72,11 +77,15 @@ export function DashboardGuard({ children, requiredRole }: DashboardGuardProps) 
   // Afficher un loader pendant le chargement
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
+        <motion.div
+          className="text-center"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">Chargement du contexte...</p>
-        </div>
+        </motion.div>
       </div>
     );
   }
@@ -84,11 +93,15 @@ export function DashboardGuard({ children, requiredRole }: DashboardGuardProps) 
   // Afficher une erreur si le contexte n'est pas disponible
   if (error || !context) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
+        <motion.div
+          className="text-center"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
           <p className="text-red-600">Erreur de chargement du contexte</p>
           <p className="text-gray-600 mt-2">{error || 'Contexte non disponible'}</p>
-        </div>
+        </motion.div>
       </div>
     );
   }
@@ -98,5 +111,13 @@ export function DashboardGuard({ children, requiredRole }: DashboardGuardProps) 
     return null; // La redirection est gérée dans useEffect
   }
 
-  return <>{children}</>;
+  return (
+    <motion.div
+      initial={pageMotion.initial}
+      animate={pageMotion.animate}
+      transition={pageMotion.transition}
+    >
+      {children}
+    </motion.div>
+  );
 }

@@ -36,15 +36,21 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException();
     }
 
-    // Attach tenantId, roles, permissions, and portalType to user object for use in guards/interceptors
+    // Tenant du JWT enrichi (après select-tenant) prime sur la colonne User (souvent null pour multi-contexte)
+    const tenantIdFromToken =
+      typeof payload.tenantId === 'string' && payload.tenantId.length > 0
+        ? payload.tenantId
+        : user.tenantId;
+
     return {
       id: user.id,
       email: user.email,
-      tenantId: user.tenantId,
+      tenantId: tenantIdFromToken ?? null,
+      role: payload.role ?? (user as { role?: string }).role,
       isSuperAdmin: user.isSuperAdmin,
       roles: user.roles || [],
       permissions: this.extractPermissions(user.roles || []),
-      portalType: payload.portalType || null, // Type de portail depuis le token JWT
+      portalType: payload.portalType || null,
     };
   }
 

@@ -9,8 +9,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import type { LoadingMessage, LoadingStep } from '@/lib/loading/loading-messages';
+import { getMotionDuration } from '@/lib/motion/presets';
+import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 
 export interface LoadingScreenProps {
   message?: LoadingMessage;
@@ -31,6 +34,7 @@ export function LoadingScreen({
 }: LoadingScreenProps) {
   const [displayProgress, setDisplayProgress] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
+  const { shouldReduceMotion } = useMotionBudget();
 
   // Détecter mobile
   useEffect(() => {
@@ -78,21 +82,33 @@ export function LoadingScreen({
   return (
     <div
       className={cn(
-        'fixed inset-0 z-50 flex items-center justify-center',
+        'fixed inset-0 z-50 flex items-center justify-center overflow-hidden',
         variants[variant],
         className
       )}
     >
+      <motion.div
+        className="pointer-events-none absolute inset-0"
+        animate={shouldReduceMotion ? { opacity: 0.2 } : { opacity: [0.18, 0.28, 0.18] }}
+        transition={shouldReduceMotion ? { duration: 0 } : { duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+      >
+        <div className="absolute -top-20 -left-12 w-72 h-72 bg-[#f5b335]/20 rounded-full blur-3xl" />
+        <div className="absolute -bottom-24 -right-14 w-80 h-80 bg-[#1d4fa5]/22 rounded-full blur-3xl" />
+      </motion.div>
       <div className={cn(containerClass, 'text-center')}>
         {/* Logo Academia Helm */}
         <div className="mb-8 flex justify-center">
-          <div className="relative">
-            <img 
+          <motion.div
+            className="relative"
+            animate={shouldReduceMotion ? { y: 0, scale: 1 } : { y: [0, -4, 0], scale: [1, 1.03, 1] }}
+            transition={shouldReduceMotion ? { duration: 0 } : { duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            <img
               src="/images/logo-Academia Hub.png" 
               alt="Academia Helm" 
               className="h-20 w-20 object-contain animate-pulse"
             />
-          </div>
+          </motion.div>
         </div>
 
         {/* Message principal */}
@@ -109,9 +125,11 @@ export function LoadingScreen({
         {showProgress && (
           <div className="mb-4">
             <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-blue-600 rounded-full transition-all duration-300 ease-out"
+              <motion.div
+                className="h-full bg-gradient-to-r from-[#0b2f73] via-[#1d4fa5] to-[#f5b335] rounded-full transition-all duration-300 ease-out"
                 style={{ width: `${displayProgress}%` }}
+                animate={shouldReduceMotion ? { filter: 'brightness(1)' } : { filter: ['brightness(1)', 'brightness(1.12)', 'brightness(1)'] }}
+                transition={shouldReduceMotion ? { duration: 0 } : { duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
               />
             </div>
             {progress > 0 && (
@@ -122,9 +140,21 @@ export function LoadingScreen({
 
         {/* Indicateur de chargement animé */}
         <div className="flex justify-center space-x-1 mt-6">
-          <div className="h-2 w-2 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '0ms' }} />
-          <div className="h-2 w-2 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '150ms' }} />
-          <div className="h-2 w-2 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '300ms' }} />
+          <motion.div
+            className="h-2 w-2 rounded-full bg-[#0b2f73]"
+            animate={shouldReduceMotion ? { y: 0 } : { y: [0, -5, 0] }}
+            transition={shouldReduceMotion ? { duration: 0 } : { duration: getMotionDuration(false, 'slow'), repeat: Infinity, delay: 0 }}
+          />
+          <motion.div
+            className="h-2 w-2 rounded-full bg-[#1d4fa5]"
+            animate={shouldReduceMotion ? { y: 0 } : { y: [0, -5, 0] }}
+            transition={shouldReduceMotion ? { duration: 0 } : { duration: getMotionDuration(false, 'slow'), repeat: Infinity, delay: 0.15 }}
+          />
+          <motion.div
+            className="h-2 w-2 rounded-full bg-[#f5b335]"
+            animate={shouldReduceMotion ? { y: 0 } : { y: [0, -5, 0] }}
+            transition={shouldReduceMotion ? { duration: 0 } : { duration: getMotionDuration(false, 'slow'), repeat: Infinity, delay: 0.3 }}
+          />
         </div>
       </div>
     </div>

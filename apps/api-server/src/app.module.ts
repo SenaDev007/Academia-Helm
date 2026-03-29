@@ -50,6 +50,7 @@ import { PortalModule } from './portal/portal.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { BillingModule } from './billing/billing.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
+import { ReviewsModule } from './reviews/reviews.module';
 import { GeneralModule } from './modules/general/general.module';
 import { ModulesModule } from './modules/modules.module';
 import { ContextModule } from './common/context/context.module';
@@ -231,6 +232,9 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     
     // Onboarding module (School onboarding)
     OnboardingModule,
+
+    // Avis / témoignages (landing Trustpilot)
+    ReviewsModule,
   ],
   controllers: [AppController],
   providers: [

@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { GraduationCap, Mail, ArrowLeft, Loader, CheckCircle } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -25,13 +26,22 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="w-full max-w-md">
-      <div className="bg-white rounded-lg shadow-lg p-8">
+    <motion.div
+      className="w-full max-w-md"
+      initial={{ opacity: 0, y: 18, scale: 0.99 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.3, ease: 'easeOut' }}
+    >
+      <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-xl p-8 border border-blue-100">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-navy-900 rounded-lg mb-4">
+          <motion.div
+            className="inline-flex items-center justify-center w-16 h-16 bg-navy-900 rounded-lg mb-4"
+            animate={{ y: [0, -2, 0] }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+          >
             <GraduationCap className="w-8 h-8 text-white" />
-          </div>
+          </motion.div>
           <h1 className="text-2xl font-bold text-navy-900">Academia Helm</h1>
           <p className="text-sm text-slate-600 mt-2">Réinitialisation du mot de passe</p>
         </div>
@@ -58,9 +68,11 @@ export default function ForgotPasswordPage() {
                 />
               </div>
 
-              <button
+              <motion.button
                 type="submit"
                 disabled={isLoading}
+                whileHover={{ y: -1 }}
+                whileTap={{ scale: 0.99 }}
                 className="w-full bg-blue-600 text-white px-6 py-3 rounded-md font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isLoading ? (
@@ -74,11 +86,15 @@ export default function ForgotPasswordPage() {
                     Envoyer le lien
                   </>
                 )}
-              </button>
+              </motion.button>
             </form>
           </>
         ) : (
-          <div className="text-center">
+          <motion.div
+            className="text-center"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
             <CheckCircle className="w-16 h-16 text-green-600 mx-auto mb-4" />
             <h2 className="text-xl font-bold text-navy-900 mb-2">
               Email envoyé
@@ -86,7 +102,7 @@ export default function ForgotPasswordPage() {
             <p className="text-sm text-slate-600 mb-6">
               Si un compte existe avec cet email, vous recevrez un lien de réinitialisation.
             </p>
-          </div>
+          </motion.div>
         )}
 
         <div className="mt-6 text-center">
@@ -99,7 +115,7 @@ export default function ForgotPasswordPage() {
           </Link>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

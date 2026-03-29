@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -53,8 +54,13 @@ export default function FeeStructureModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50">
+      <motion.div
+        initial={{ opacity: 0, y: 16, scale: 0.99 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.22, ease: 'easeOut' }}
+        className="bg-white rounded-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto border border-blue-100 shadow-2xl"
+      >
         <h3 className="text-lg font-semibold mb-4">Nouveau frais</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -128,7 +134,7 @@ export default function FeeStructureModal({
             <Button type="submit">Créer</Button>
           </div>
         </form>
-      </div>
+      </motion.div>
     </div>
   );
 }

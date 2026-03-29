@@ -1,9 +1,12 @@
+'use client';
+
 /**
  * ============================================================================
  * APP STUDENTS PAGE
  * ============================================================================
- * 
+ *
  * ✅ Optimisé avec lazy loading pour performance
+ * Client Component requis (Next 16 : `dynamic` + `ssr: false` interdit dans les RSC).
  */
 
 import dynamic from 'next/dynamic';

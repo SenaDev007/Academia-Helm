@@ -83,7 +83,8 @@ export default function PilotageSidebar({
   const pathname = usePathname();
   const { currentLevel } = useSchoolLevel();
   const { enabledSet, loading } = useEnabledFeatureCodes();
-  const isSuperDirector = user?.role === 'SUPER_DIRECTOR';
+  const isSuperDirector =
+    user?.role === 'SUPER_DIRECTOR' || user?.role === 'PLATFORM_OWNER';
   const [mainModulesOpen, setMainModulesOpen] = useState(true);
   const [supplementaryModulesOpen, setSupplementaryModulesOpen] = useState(true);
 
@@ -361,7 +362,9 @@ export default function PilotageSidebar({
               <div className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-gold-500 rounded-full animate-pulse"></div>
                 <p className="text-sm font-semibold text-white">
-                  {currentLevel.code === 'MATERNELLE' ? 'Maternelle' :
+                  {currentLevel.code === 'ALL' ? 'Tous les niveaux' :
+                   currentLevel.code === 'TOUS_LES_NIVEAUX' ? 'Tous les niveaux' :
+                   currentLevel.code === 'MATERNELLE' ? 'Maternelle' :
                    currentLevel.code === 'PRIMAIRE' ? 'Primaire' :
                    currentLevel.code === 'SECONDAIRE' ? 'Secondaire' : currentLevel.code}
                 </p>

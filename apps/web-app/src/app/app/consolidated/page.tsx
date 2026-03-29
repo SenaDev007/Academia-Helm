@@ -6,14 +6,12 @@
  */
 
 import { getServerSession } from '@/lib/auth/session';
-import { extractSubdomain } from '@/lib/tenant/resolver';
 import ConsolidatedKpiPage from '@/components/dashboard/ConsolidatedKpiPage';
 import { redirect } from 'next/navigation';
 
 export default async function Page() {
   const session = await getServerSession();
-  const subdomain = extractSubdomain();
-  
+
   if (!session) {
     redirect('/login');
   }

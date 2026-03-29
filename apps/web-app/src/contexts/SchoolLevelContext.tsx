@@ -15,6 +15,7 @@ export interface SchoolLevel {
 }
 
 const STORAGE_KEY = 'currentSchoolLevelId';
+import { SETTINGS_SCHOOL_LEVELS_UPDATED_EVENT } from '@/lib/settings/events';
 
 interface SchoolLevelContextType {
   currentLevel: SchoolLevel | null;
@@ -32,47 +33,58 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
   const availableLevelsRef = useRef<SchoolLevel[]>([]);
   availableLevelsRef.current = availableLevels;
 
-  useEffect(() => {
-    const loadSchoolLevels = async () => {
-      try {
-        const response = await fetch('/api/school-levels');
-        if (response.ok) {
-          const levels: SchoolLevel[] = await response.json();
-          const activeLevels = levels.filter((l) => l.isActive);
+  const loadSchoolLevels = useCallback(async () => {
+    try {
+      const response = await fetch('/api/school-levels', { cache: 'no-store' });
+      if (response.ok) {
+        const levels: SchoolLevel[] = await response.json();
+        const activeLevels = levels.filter((l) => l.isActive);
 
-          // Option virtuelle "Tous les niveaux" réservée aux rôles de plateforme.
-          // Pour l'instant on l'ajoute toujours côté client; le backend gère 'ALL'.
-          const allLevelsOption: SchoolLevel = {
-            id: 'ALL',
-            code: 'ALL',
-            label: 'Tous les niveaux',
-            isActive: true,
-          };
+        // Option virtuelle "Tous les niveaux" réservée aux rôles de plateforme.
+        // Pour l'instant on l'ajoute toujours côté client; le backend gère 'ALL'.
+        const allLevelsOption: SchoolLevel = {
+          id: 'ALL',
+          code: 'ALL',
+          label: 'Tous les niveaux',
+          isActive: true,
+        };
 
-          const withAll = [allLevelsOption, ...activeLevels];
-          setAvailableLevels(withAll);
+        const withAll = [allLevelsOption, ...activeLevels];
+        setAvailableLevels(withAll);
 
-          const savedLevelId = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
-          const selectedLevel = savedLevelId
-            ? withAll.find((l) => l.id === savedLevelId) || withAll[0]
-            : withAll[0];
+        const savedLevelId = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
+        const selectedLevel = savedLevelId
+          ? withAll.find((l) => l.id === savedLevelId) || withAll[0]
+          : withAll[0];
 
-          if (selectedLevel) {
-            setCurrentLevelState(selectedLevel);
-            if (typeof window !== 'undefined') {
-              localStorage.setItem(STORAGE_KEY, selectedLevel.id);
-            }
+        if (selectedLevel) {
+          setCurrentLevelState(selectedLevel);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(STORAGE_KEY, selectedLevel.id);
           }
         }
-      } catch (error) {
-        console.error('Failed to load school levels:', error);
-      } finally {
-        setIsLoading(false);
       }
-    };
-
-    loadSchoolLevels();
+    } catch (error) {
+      console.error('Failed to load school levels:', error);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadSchoolLevels();
+  }, [loadSchoolLevels]);
+
+  useEffect(() => {
+    const onSchoolLevelsUpdated = () => {
+      setIsLoading(true);
+      void loadSchoolLevels();
+    };
+    window.addEventListener(SETTINGS_SCHOOL_LEVELS_UPDATED_EVENT, onSchoolLevelsUpdated);
+    return () => {
+      window.removeEventListener(SETTINGS_SCHOOL_LEVELS_UPDATED_EVENT, onSchoolLevelsUpdated);
+    };
+  }, [loadSchoolLevels]);
 
   const setCurrentLevel = useCallback((levelId: string) => {
     const levels = availableLevelsRef.current;

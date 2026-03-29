@@ -12,6 +12,9 @@ import localFont from 'next/font/local';
 import './globals.css';
 import { InstallPromptWrapper } from '@/components/pwa/InstallPromptWrapper';
 import { BRAND } from '@/lib/brand';
+import { buildSiteVerification, getPublicSiteUrl, DEFAULT_OG_IMAGE_PATH } from '@/lib/seo';
+import { buildHreflangLanguages } from '@/lib/seo/locales';
+import { cn } from "@/lib/utils";
 
 // ✅ POLICES LOCALES - Téléchargées depuis Google Fonts et stockées localement
 // 
@@ -73,24 +76,37 @@ const inter = localFont({
   ],
   display: 'swap', // ✅ Afficher le texte immédiatement avec fallback
   fallback: ['system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'], // ✅ Fallback système
-  variable: '--font-inter', // ✅ Variable CSS pour utilisation optionnelle
+  variable: '--font-sans', // Aligné Shadcn / design system (--font-sans)
   preload: true, // ✅ Précharger les polices locales (rapide, pas de timeout)
-  adjustFontFallback: true, // ✅ Ajuster le fallback automatiquement
 });
 
 // Titre par défaut unique (un seul titre, pas de template pour éviter toute concaténation)
 const defaultTitle = `${BRAND.name} - ${BRAND.subtitle}`;
 const defaultDescription = `${BRAND.description}. ${BRAND.slogan}`;
 
+const siteUrl = getPublicSiteUrl();
+const verification = buildSiteVerification();
+
 // eslint-disable-next-line @next/next/no-head-element
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'),
+  metadataBase: new URL(siteUrl),
   title: defaultTitle,
   description: defaultDescription,
-  keywords: ['pilotage éducatif', 'plateforme éducation', BRAND.name, 'gestion établissement'],
-  authors: [{ name: BRAND.name }],
+  keywords: [
+    'pilotage éducatif',
+    'plateforme éducation',
+    'gestion établissement scolaire',
+    'logiciel école',
+    'ORION IA',
+    BRAND.name,
+    'Bénin',
+    'Afrique de l’Ouest',
+  ],
+  authors: [{ name: BRAND.name, url: siteUrl }],
   creator: 'YEHI OR Tech',
   publisher: BRAND.name,
+  category: 'technology',
+  ...(verification ? { verification } : {}),
   icons: {
     icon: [
       { url: '/images/logo-Academia-Hub.ico', sizes: 'any' },
@@ -103,17 +119,36 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     locale: 'fr_FR',
-    url: 'https://academiahelm.com',
+    url: siteUrl,
     siteName: BRAND.name,
     title: defaultTitle,
     description: defaultDescription,
+    images: [
+      {
+        url: DEFAULT_OG_IMAGE_PATH,
+        width: 1200,
+        height: 630,
+        alt: defaultTitle,
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
     title: defaultTitle,
     description: BRAND.description,
+    images: [DEFAULT_OG_IMAGE_PATH],
   },
-  robots: { index: true, follow: true },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+  },
 };
 
 export const viewport: Viewport = {
@@ -128,7 +163,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="fr" className="scroll-smooth">
+    <html lang="fr" className={cn('scroll-smooth', 'font-sans', inter.variable)}>
       <body className={`${inter.className} antialiased overflow-x-hidden`}>
         {children}
         <InstallPromptWrapper />

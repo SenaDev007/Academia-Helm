@@ -4,9 +4,19 @@
  * Page officielle des mentions légales d'Academia Helm
  */
 
+import type { Metadata } from 'next';
 import PremiumHeader from '@/components/layout/PremiumHeader';
 import InstitutionalFooter from '@/components/public/InstitutionalFooter';
 import { bgColor, textColor, typo } from '@/lib/design-tokens';
+import { generateSEOMetadata } from '@/lib/seo';
+
+export const metadata: Metadata = generateSEOMetadata({
+  title: 'Mentions légales',
+  description:
+    'Mentions légales d’Academia Helm : éditeur, hébergement, propriété intellectuelle et contact.',
+  keywords: ['mentions légales Academia Helm', 'éditeur plateforme scolaire'],
+  path: '/legal/mentions',
+});
 
 // Force dynamic rendering to avoid build timeouts
 export const dynamic = 'force-dynamic';

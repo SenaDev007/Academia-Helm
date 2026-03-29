@@ -15,13 +15,30 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AcademicStructurePrismaService } from './academic-structure-prisma.service';
+import { DuplicateStructureDto } from './dto/duplicate-structure.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('api/pedagogy/academic-structure')
 @UseGuards(JwtAuthGuard)
 export class AcademicStructurePrismaController {
   constructor(private readonly service: AcademicStructurePrismaService) {}
+
+  /** Duplication annuelle : structure source → année cible (transaction + audit). */
+  @Post('duplicate')
+  async duplicateStructure(
+    @TenantId() tenantId: string,
+    @Body() body: DuplicateStructureDto,
+    @CurrentUser() user: { id?: string },
+  ) {
+    return this.service.duplicateStructure(
+      tenantId,
+      body.fromAcademicYearId,
+      body.toAcademicYearId,
+      user?.id ?? null,
+    );
+  }
 
   // ---------- Levels ----------
   @Get('levels')

@@ -12,10 +12,10 @@ import { getApiBaseUrl } from '@/lib/utils/urls';
 const API_URL = getApiBaseUrl();
 
 /**
- * Extrait le sous-domaine depuis les headers
+ * Extrait le sous-domaine depuis les headers (async — Next 15+ / `headers()`)
  */
-export function extractSubdomain(): string | null {
-  const headersList = headers();
+export async function extractSubdomain(): Promise<string | null> {
+  const headersList = await headers();
   const host = headersList.get('host') || headersList.get('x-forwarded-host');
   
   if (!host) return null;
@@ -74,8 +74,8 @@ export async function resolveTenant(subdomain: string | null): Promise<Tenant | 
 /**
  * Vérifie si la requête est pour le domaine principal (pas un sous-domaine)
  */
-export function isMainDomain(): boolean {
-  const subdomain = extractSubdomain();
+export async function isMainDomain(): Promise<boolean> {
+  const subdomain = await extractSubdomain();
   return subdomain === null;
 }
 

@@ -2,24 +2,34 @@
  * ============================================================================
  * PORTAL ACCESS PAGE - ACCÉDER À UN PORTAIL
  * ============================================================================
- * 
- * Page centrale pour accéder aux différents portails Academia Helm
- * 3 cartes : École, Enseignant, Parents & Élèves
- * 
+ *
+ * Page centrale pour accéder aux différents portails Academia Helm.
+ * Refonte motion (Framer Motion) : entrées échelonnées, cartes interactives,
+ * transitions entre choix du portail et recherche d’établissement.
+ *
  * ============================================================================
  */
 
 'use client';
 
-import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Building2, GraduationCap, Users, ArrowRight, Shield, Code2, X } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import {
+  Building2,
+  GraduationCap,
+  Users,
+  ArrowRight,
+  Shield,
+  Code2,
+  X,
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import PremiumHeader from '@/components/layout/PremiumHeader';
 import SchoolSearch from '@/components/portal/SchoolSearch';
 import { useTenantRedirect } from '@/lib/hooks/useTenantRedirect';
 import { BRAND } from '@/lib/brand';
 import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-email';
+import { useMotionBudget } from '@/lib/motion/use-motion-budget';
+import { getModalMotion, getMotionDuration } from '@/lib/motion/presets';
 
 type PortalType = 'SCHOOL' | 'TEACHER' | 'PARENT' | null;
 
@@ -41,20 +51,106 @@ interface DevTenant {
   slug: string;
 }
 
+/** Aligné charte Academia Helm (landing / portail) */
+const NAVY = '#1E3A5F';
+const GOLD = '#C9A84C';
+
 export default function PortalPage() {
   const [selectedPortal, setSelectedPortal] = useState<PortalType>(null);
   const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
   const [devPanelOpen, setDevPanelOpen] = useState(false);
   const [devTenants, setDevTenants] = useState<DevTenant[]>([]);
   const [devTenantsLoading, setDevTenantsLoading] = useState(false);
-  const [selectedDevTenant, setSelectedDevTenant] = useState<DevTenant | null>(null);
+  const [selectedDevTenant, setSelectedDevTenant] = useState<DevTenant | null>(
+    null,
+  );
   const [devEmail, setDevEmail] = useState('');
   const [devPassword, setDevPassword] = useState('');
   const [isDevLoggingIn, setIsDevLoggingIn] = useState(false);
   const { redirectToTenant } = useTenantRedirect();
-  const router = useRouter();
+  const { shouldReduceMotion } = useMotionBudget();
+
+  const dur = useMemo(
+    () => getMotionDuration(shouldReduceMotion, 'normal'),
+    [shouldReduceMotion],
+  );
+
+  const heroVariants = useMemo(
+    () => ({
+      hidden: { opacity: shouldReduceMotion ? 1 : 0 },
+      show: {
+        opacity: 1,
+        transition: {
+          staggerChildren: shouldReduceMotion ? 0 : 0.1,
+          delayChildren: shouldReduceMotion ? 0 : 0.06,
+        },
+      },
+    }),
+    [shouldReduceMotion],
+  );
+
+  const heroItem = useMemo(
+    () => ({
+      hidden: {
+        opacity: shouldReduceMotion ? 1 : 0,
+        y: shouldReduceMotion ? 0 : 18,
+        filter: shouldReduceMotion ? 'blur(0px)' : 'blur(6px)',
+      },
+      show: {
+        opacity: 1,
+        y: 0,
+        filter: 'blur(0px)',
+        transition: { duration: dur, ease: 'easeOut' as const },
+      },
+    }),
+    [shouldReduceMotion, dur],
+  );
+
+  const cardSpring = useMemo(
+    () => ({
+      type: 'spring' as const,
+      stiffness: shouldReduceMotion ? 500 : 280,
+      damping: shouldReduceMotion ? 50 : 22,
+    }),
+    [shouldReduceMotion],
+  );
+
+  const portalCards = useMemo(
+    () =>
+      [
+        {
+          type: 'SCHOOL' as const,
+          title: 'Portail École',
+          subtitle: 'Direction • Administration • Promoteur',
+          Icon: Building2,
+          iconBg: 'from-blue-500/20 to-blue-600/10',
+          iconColor: 'text-blue-600',
+          accentBar: 'bg-blue-500',
+          cta: 'text-blue-600 group-hover:text-blue-700',
+        },
+        {
+          type: 'TEACHER' as const,
+          title: 'Portail Enseignant',
+          subtitle: 'Enseignants & Encadreurs',
+          Icon: GraduationCap,
+          iconBg: 'from-emerald-500/20 to-emerald-600/10',
+          iconColor: 'text-emerald-600',
+          accentBar: 'bg-emerald-500',
+          cta: 'text-emerald-600 group-hover:text-emerald-700',
+        },
+        {
+          type: 'PARENT' as const,
+          title: 'Portail Parents & Élèves',
+          subtitle: 'Suivi scolaire & paiements',
+          Icon: Users,
+          iconBg: 'from-violet-500/20 to-violet-600/10',
+          iconColor: 'text-violet-600',
+          accentBar: 'bg-violet-500',
+          cta: 'text-violet-600 group-hover:text-violet-700',
+        },
+      ] as const,
+    [],
+  );
 
   useEffect(() => {
     if (devPanelOpen && devTenants.length === 0) {
@@ -69,7 +165,6 @@ export default function PortalPage() {
     }
   }, [devPanelOpen]);
 
-  // Pré-remplir l'email avec le dernier utilisé pour cet établissement (un par tenant, isolation stricte)
   useEffect(() => {
     if (!selectedDevTenant) {
       setDevEmail('');
@@ -84,7 +179,6 @@ export default function PortalPage() {
   const handlePortalSelect = (portal: PortalType) => {
     setSelectedPortal(portal);
     setSelectedSchool(null);
-    setSearchQuery('');
   };
 
   const handleSchoolSelect = (school: School) => {
@@ -94,7 +188,6 @@ export default function PortalPage() {
   const handleContinue = async () => {
     if (!selectedSchool || !selectedPortal) return;
 
-    // Rediriger vers le tenant avec logging automatique
     await redirectToTenant({
       tenantSlug: selectedSchool.slug,
       tenantId: selectedSchool.id,
@@ -107,7 +200,6 @@ export default function PortalPage() {
   const handleBack = () => {
     setSelectedPortal(null);
     setSelectedSchool(null);
-    setSearchQuery('');
   };
 
   const handleDevPanelOpen = () => {
@@ -153,282 +245,504 @@ export default function PortalPage() {
       const tenantKey = selectedDevTenant.tenantId || selectedDevTenant.id;
       saveEmailForTenant(devEmail.trim(), tenantKey);
       window.location.href = '/app';
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[Dev Login] Error:', error);
-      alert(`Erreur: ${error.message || 'Impossible de se connecter'}`);
+      const message =
+        error instanceof Error ? error.message : 'Impossible de se connecter';
+      alert(`Erreur: ${message}`);
       setIsDevLoggingIn(false);
     }
   };
 
+  const modalMotion = getModalMotion(shouldReduceMotion);
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
-      <PremiumHeader />
-      
-      <main className="pt-20 pb-16">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Header Section */}
-          <div className="text-center mb-12">
-            <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
-              Accéder à votre portail
-            </h1>
-            <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-              Sélectionnez votre espace sécurisé {BRAND.name}. {BRAND.subtitle}.
-            </p>
-            <p className="text-base text-gray-500 mt-2 font-medium">
-              {BRAND.slogan}
-            </p>
-          </div>
-
-          {/* Bouton Mode Développement : ouvre le modal (école + identifiants), ne soumet pas */}
-          <div className="mb-8 flex justify-center">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                handleDevPanelOpen();
+    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-white to-blue-50/80 text-slate-900">
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.35]"
+        aria-hidden
+      >
+        {!shouldReduceMotion ? (
+          <>
+            <motion.div
+              className="absolute -left-24 top-24 h-72 w-72 rounded-full bg-blue-400/25 blur-3xl"
+              animate={{ x: [0, 24, 0], y: [0, -12, 0] }}
+              transition={{
+                duration: 14,
+                repeat: Infinity,
+                ease: 'easeInOut',
               }}
-              className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-6 py-3 rounded-lg font-semibold hover:from-amber-600 hover:to-orange-600 transition-all duration-300 inline-flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:scale-105 border-2 border-amber-400 relative group"
-              title="Ouvrir la fenêtre : choisir une école puis saisir vos identifiants"
+            />
+            <motion.div
+              className="absolute -right-20 bottom-32 h-80 w-80 rounded-full bg-amber-300/20 blur-3xl"
+              animate={{ x: [0, -18, 0], y: [0, 16, 0] }}
+              transition={{
+                duration: 18,
+                repeat: Infinity,
+                ease: 'easeInOut',
+              }}
+            />
+            <motion.div
+              className="absolute left-1/2 top-1/3 h-64 w-64 -translate-x-1/2 rounded-full blur-3xl"
+              style={{ backgroundColor: `${NAVY}1a` }}
+              animate={{ scale: [1, 1.08, 1], opacity: [0.2, 0.32, 0.2] }}
+              transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
+            />
+          </>
+        ) : null}
+      </div>
+
+      <PremiumHeader />
+
+      <main className="relative z-[1] pb-20 pt-24 md:pt-28">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <motion.div
+            className="mb-12 text-center"
+            variants={heroVariants}
+            initial="hidden"
+            animate="show"
+          >
+            <motion.div variants={heroItem}>
+            <span
+              className="mb-4 inline-flex rounded-full border px-4 py-1 text-xs font-semibold uppercase tracking-wide"
+              style={{
+                color: NAVY,
+                borderColor: `${GOLD}66`,
+                background: `linear-gradient(90deg, ${GOLD}22, ${GOLD}3d)`,
+              }}
             >
-              <Code2 className="w-5 h-5 group-hover:rotate-12 transition-transform duration-300" />
-              <span>Mode Développement</span>
-              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow-md animate-pulse">
-                DEV
-              </span>
-            </button>
-          </div>
-
-          {/* Modal : 1) Choisir une école  2) Email / Mot de passe → Connexion */}
-          {devPanelOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={handleDevPanelClose}>
-              <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 relative" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                    <Code2 className="w-5 h-5 text-amber-500" />
-                    Connexion en mode développement
-                  </h3>
-                  <button type="button" onClick={handleDevPanelClose} className="text-gray-400 hover:text-gray-600 p-1">
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-                <p className="text-sm text-gray-600 mb-4">
-                  Choisissez d’abord l’école (tenant), puis saisissez vos identifiants pour vous connecter à l’app avec ce contexte.
-                </p>
-                <form onSubmit={handleDevLogin} className="space-y-4">
-                  {/* 1. Sélection de l'école */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">École</label>
-                    <select
-                      value={selectedDevTenant?.id ?? ''}
-                      onChange={(e) => {
-                        const t = devTenants.find((x) => x.id === e.target.value);
-                        setSelectedDevTenant(t ?? null);
-                      }}
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-                      required
-                    >
-                      <option value="">— Choisir une école —</option>
-                      {devTenantsLoading && <option disabled>Chargement…</option>}
-                      {!devTenantsLoading && devTenants.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.schoolName || t.tenantName || t.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  {/* 2. Email (mémorisé par établissement : un seul par tenant, jamais les emails d'un autre tenant) */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                    <input
-                      type="email"
-                      name={selectedDevTenant ? `email_${selectedDevTenant.id}` : 'email'}
-                      autoComplete="email"
-                      value={devEmail}
-                      onChange={(e) => setDevEmail(e.target.value)}
-                      placeholder="votre@email.com"
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-                      required
-                    />
-                    {selectedDevTenant && getSavedEmailForTenant(selectedDevTenant.tenantId || selectedDevTenant.id) && (
-                      <p className="text-xs text-gray-500 mt-1">Dernière connexion pour cet établissement (ce poste uniquement).</p>
-                    )}
-                  </div>
-                  {/* 3. Mot de passe */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Mot de passe</label>
-                    <input
-                      type="password"
-                      value={devPassword}
-                      onChange={(e) => setDevPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-                      required
-                    />
-                  </div>
-                  <div className="flex gap-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={handleDevPanelClose}
-                      className="flex-1 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50"
-                    >
-                      Annuler
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isDevLoggingIn}
-                      className="flex-1 px-4 py-2 rounded-lg bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isDevLoggingIn ? 'Connexion…' : 'Se connecter'}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-
-          {/* Portal Cards */}
-          {!selectedPortal ? (
-            <div className="grid md:grid-cols-3 gap-6 mb-12">
-              {/* Portail École */}
-              <div
-                onClick={() => handlePortalSelect('SCHOOL')}
-                className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 p-8 cursor-pointer border-2 border-transparent hover:border-blue-500 group"
+              Portails sécurisés
+            </span>
+            </motion.div>
+            <motion.h1
+              variants={heroItem}
+              className="mb-4 text-4xl font-extrabold tracking-tight text-slate-900 md:text-5xl"
+              style={{ color: NAVY }}
+            >
+              Accéder à votre portail
+            </motion.h1>
+            <motion.p
+              variants={heroItem}
+              className="mx-auto max-w-2xl text-lg text-slate-600"
+            >
+              Sélectionnez votre espace sécurisé {BRAND.name}. {BRAND.subtitle}.
+            </motion.p>
+            <motion.p
+              variants={heroItem}
+              className="mt-2 text-base font-medium text-slate-500"
+            >
+              {BRAND.slogan}
+            </motion.p>
+            <motion.div variants={heroItem} className="mt-8 flex justify-center">
+              <motion.button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleDevPanelOpen();
+                }}
+                whileHover={
+                  shouldReduceMotion
+                    ? undefined
+                    : { scale: 1.03, boxShadow: '0 20px 40px rgba(245,179,53,0.35)' }
+                }
+                whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
+                transition={cardSpring}
+                className="group relative inline-flex items-center justify-center gap-2 rounded-xl border-2 border-amber-400 bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-3 font-semibold text-white shadow-lg"
+                title="Ouvrir la fenêtre : choisir une école puis saisir vos identifiants"
               >
-                <div className="flex flex-col items-center text-center">
-                  <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-200 transition-colors">
-                    <Building2 className="w-8 h-8 text-blue-600" />
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">
-                    Portail École
-                  </h3>
-                  <p className="text-sm text-gray-600 mb-4">
-                    Direction • Administration • Promoteur
-                  </p>
-                  <div className="flex items-center text-blue-600 font-medium text-sm group-hover:text-blue-700">
-                    <span>Accéder</span>
-                    <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Portail Enseignant */}
-              <div
-                onClick={() => handlePortalSelect('TEACHER')}
-                className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 p-8 cursor-pointer border-2 border-transparent hover:border-green-500 group"
-              >
-                <div className="flex flex-col items-center text-center">
-                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4 group-hover:bg-green-200 transition-colors">
-                    <GraduationCap className="w-8 h-8 text-green-600" />
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">
-                    Portail Enseignant
-                  </h3>
-                  <p className="text-sm text-gray-600 mb-4">
-                    Enseignants & Encadreurs
-                  </p>
-                  <div className="flex items-center text-green-600 font-medium text-sm group-hover:text-green-700">
-                    <span>Accéder</span>
-                    <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Portail Parents & Élèves */}
-              <div
-                onClick={() => handlePortalSelect('PARENT')}
-                className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 p-8 cursor-pointer border-2 border-transparent hover:border-purple-500 group"
-              >
-                <div className="flex flex-col items-center text-center">
-                  <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mb-4 group-hover:bg-purple-200 transition-colors">
-                    <Users className="w-8 h-8 text-purple-600" />
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">
-                    Portail Parents & Élèves
-                  </h3>
-                  <p className="text-sm text-gray-600 mb-4">
-                    Suivi scolaire & paiements
-                  </p>
-                  <div className="flex items-center text-purple-600 font-medium text-sm group-hover:text-purple-700">
-                    <span>Accéder</span>
-                    <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            /* School Selection */
-            <div className="max-w-2xl mx-auto">
-              <div className="bg-white rounded-xl shadow-lg p-8">
-                {/* Back Button */}
-                <button
-                  onClick={handleBack}
-                  className="text-gray-600 hover:text-gray-900 mb-6 flex items-center space-x-2"
+                <motion.span
+                  animate={
+                    shouldReduceMotion ? undefined : { rotate: [0, -8, 8, 0] }
+                  }
+                  transition={{
+                    duration: 2.8,
+                    repeat: Infinity,
+                    ease: 'easeInOut',
+                  }}
                 >
-                  <ArrowRight className="w-4 h-4 rotate-180" />
-                  <span>Retour</span>
-                </button>
+                  <Code2 className="h-5 w-5" />
+                </motion.span>
+                <span>Mode Développement</span>
+                <span className="absolute -right-1 -top-1 rounded-full bg-red-500 px-2 py-0.5 text-xs font-bold text-white shadow-md">
+                  DEV
+                </span>
+              </motion.button>
+            </motion.div>
+          </motion.div>
 
-                {/* Portal Header */}
-                <div className="mb-6">
-                  <div className="flex items-center space-x-3 mb-2">
-                    {selectedPortal === 'SCHOOL' && (
-                      <>
-                        <Building2 className="w-6 h-6 text-blue-600" />
-                        <h2 className="text-2xl font-bold text-gray-900">Portail École</h2>
-                      </>
-                    )}
-                    {selectedPortal === 'TEACHER' && (
-                      <>
-                        <GraduationCap className="w-6 h-6 text-green-600" />
-                        <h2 className="text-2xl font-bold text-gray-900">Portail Enseignant</h2>
-                      </>
-                    )}
-                    {selectedPortal === 'PARENT' && (
-                      <>
-                        <Users className="w-6 h-6 text-purple-600" />
-                        <h2 className="text-2xl font-bold text-gray-900">Portail Parents & Élèves</h2>
-                      </>
-                    )}
-                  </div>
-                  <p className="text-sm text-gray-600">
-                    Recherchez votre établissement pour continuer
-                  </p>
-                </div>
-
-                {/* School Search */}
-                <SchoolSearch
-                  onSchoolSelect={handleSchoolSelect}
-                  selectedSchool={selectedSchool}
-                  portalType={selectedPortal}
-                />
-
-                {/* Continue Button */}
-                {selectedSchool && (
-                  <div className="mt-6">
-                    <button
-                      onClick={handleContinue}
-                      className="w-full bg-blue-600 text-white px-6 py-3 rounded-md font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center space-x-2"
+          <AnimatePresence>
+            {devPanelOpen ? (
+              <motion.div
+                key="dev-overlay"
+                role="presentation"
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: dur }}
+                onClick={handleDevPanelClose}
+              >
+                <motion.div
+                  key="dev-modal"
+                  className="relative w-full max-w-md rounded-2xl border border-slate-200/80 bg-white p-6 shadow-2xl"
+                  {...modalMotion}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="mb-6 flex items-center justify-between">
+                    <h3 className="flex items-center gap-2 text-lg font-bold text-slate-900">
+                      <Code2 className="h-5 w-5 text-amber-500" />
+                      Connexion en mode développement
+                    </h3>
+                    <motion.button
+                      type="button"
+                      whileTap={{ scale: 0.92 }}
+                      onClick={handleDevPanelClose}
+                      className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                      aria-label="Fermer"
                     >
-                      <span>Continuer vers la connexion</span>
-                      <ArrowRight className="w-5 h-5" />
-                    </button>
+                      <X className="h-5 w-5" />
+                    </motion.button>
                   </div>
-                )}
-              </div>
-            </div>
-          )}
+                  <p className="mb-4 text-sm text-slate-600">
+                    Choisissez d’abord l’école (tenant), puis saisissez vos
+                    identifiants pour vous connecter à l’app avec ce contexte.
+                  </p>
+                  <form onSubmit={handleDevLogin} className="space-y-4">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700">
+                        École
+                      </label>
+                      <select
+                        value={selectedDevTenant?.id ?? ''}
+                        onChange={(e) => {
+                          const t = devTenants.find(
+                            (x) => x.id === e.target.value,
+                          );
+                          setSelectedDevTenant(t ?? null);
+                        }}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30"
+                        required
+                      >
+                        <option value="">— Choisir une école —</option>
+                        {devTenantsLoading && (
+                          <option disabled>Chargement…</option>
+                        )}
+                        {!devTenantsLoading &&
+                          devTenants.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.schoolName || t.tenantName || t.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700">
+                        Email
+                      </label>
+                      <input
+                        type="email"
+                        name={
+                          selectedDevTenant
+                            ? `email_${selectedDevTenant.id}`
+                            : 'email'
+                        }
+                        autoComplete="email"
+                        value={devEmail}
+                        onChange={(e) => setDevEmail(e.target.value)}
+                        placeholder="votre@email.com"
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30"
+                        required
+                      />
+                      {selectedDevTenant &&
+                        getSavedEmailForTenant(
+                          selectedDevTenant.tenantId ||
+                            selectedDevTenant.id,
+                        ) && (
+                          <p className="mt-1 text-xs text-slate-500">
+                            Dernière connexion pour cet établissement (ce poste
+                            uniquement).
+                          </p>
+                        )}
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700">
+                        Mot de passe
+                      </label>
+                      <input
+                        type="password"
+                        value={devPassword}
+                        onChange={(e) => setDevPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30"
+                        required
+                      />
+                    </div>
+                    <div className="flex gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={handleDevPanelClose}
+                        className="flex-1 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        Annuler
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isDevLoggingIn}
+                        className="flex-1 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isDevLoggingIn ? 'Connexion…' : 'Se connecter'}
+                      </button>
+                    </div>
+                  </form>
+                </motion.div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
 
-          {/* Security Notice */}
-          <div className="mt-12 text-center">
-            <div className="inline-flex items-center space-x-2 text-sm text-gray-600 bg-white/80 backdrop-blur-sm px-4 py-2 rounded-full border border-gray-200">
-              <Shield className="w-4 h-4 text-green-600" />
-              <span>Vous êtes sur un portail officiel sécurisé {BRAND.name}</span>
+          <AnimatePresence mode="wait">
+            {!selectedPortal ? (
+              <motion.div
+                key="portal-grid"
+                initial={
+                  shouldReduceMotion
+                    ? false
+                    : { opacity: 0, y: 12 }
+                }
+                animate={{ opacity: 1, y: 0 }}
+                exit={
+                  shouldReduceMotion
+                    ? undefined
+                    : { opacity: 0, y: -10, transition: { duration: dur * 0.85 } }
+                }
+                transition={{ duration: dur, ease: 'easeOut' }}
+                className="mx-auto mb-12 grid w-full max-w-lg grid-cols-1 gap-4 sm:max-w-none sm:gap-5 md:max-w-4xl md:grid-cols-2 md:gap-6 xl:max-w-6xl xl:grid-cols-3"
+              >
+                {portalCards.map((card, index) => {
+                  const Icon = card.Icon;
+                  return (
+                    <motion.div
+                      key={card.type}
+                      initial={
+                        shouldReduceMotion
+                          ? false
+                          : { opacity: 0, y: 22 }
+                      }
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{
+                        delay: shouldReduceMotion ? 0 : 0.08 + index * 0.07,
+                        duration: dur,
+                        ease: 'easeOut',
+                      }}
+                      whileHover={
+                        shouldReduceMotion
+                          ? undefined
+                          : {
+                              y: -6,
+                              transition: cardSpring,
+                            }
+                      }
+                      whileTap={shouldReduceMotion ? undefined : { scale: 0.99 }}
+                      onClick={() => handlePortalSelect(card.type)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handlePortalSelect(card.type);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-md outline-none ring-slate-200/60 transition-shadow focus-visible:ring-2 focus-visible:ring-[#C9A84C] focus-visible:ring-offset-2 hover:border-slate-300 hover:shadow-xl md:min-h-[280px] xl:min-h-[300px] ${
+                        index === 2
+                          ? 'md:col-span-2 md:mx-auto md:max-w-md xl:col-span-1 xl:mx-0 xl:max-w-none'
+                          : ''
+                      }`}
+                    >
+                      <div
+                        className={`absolute left-0 top-0 h-1 w-full ${card.accentBar} opacity-90`}
+                        aria-hidden
+                      />
+                      <div className="flex h-full flex-row items-center gap-4 p-5 sm:p-6 md:flex-col md:items-center md:justify-between md:px-8 md:py-8 md:text-center">
+                        <motion.div
+                          className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br shadow-inner sm:h-16 sm:w-16 ${card.iconBg} ring-1 ring-white/80 md:mb-1`}
+                          whileHover={
+                            shouldReduceMotion
+                              ? undefined
+                              : { scale: 1.06, rotate: -2 }
+                          }
+                          transition={cardSpring}
+                        >
+                          <Icon className={`h-7 w-7 sm:h-8 sm:w-8 ${card.iconColor}`} />
+                        </motion.div>
+                        <div className="min-w-0 flex-1 md:flex md:flex-1 md:flex-col md:items-center">
+                          <h3
+                            className="text-lg font-bold leading-snug sm:text-xl"
+                            style={{ color: NAVY }}
+                          >
+                            {card.title}
+                          </h3>
+                          <p className="mt-1.5 text-sm leading-relaxed text-slate-600 md:mt-2">
+                            {card.subtitle}
+                          </p>
+                          <div
+                            className={`mt-4 inline-flex min-h-[44px] items-center text-sm font-semibold md:mt-auto ${card.cta}`}
+                          >
+                            <span>Accéder</span>
+                            <motion.span
+                              className="ml-2 inline-flex"
+                              initial={false}
+                              whileHover={{ x: shouldReduceMotion ? 0 : 4 }}
+                            >
+                              <ArrowRight className="h-4 w-4" aria-hidden />
+                            </motion.span>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </motion.div>
+            ) : (
+              <motion.div
+                key="school-flow"
+                initial={
+                  shouldReduceMotion
+                    ? false
+                    : { opacity: 0, x: 28 }
+                }
+                animate={{ opacity: 1, x: 0 }}
+                exit={
+                  shouldReduceMotion
+                    ? undefined
+                    : { opacity: 0, x: -20, transition: { duration: dur * 0.85 } }
+                }
+                transition={{ duration: dur, ease: 'easeOut' }}
+                className="mx-auto max-w-2xl"
+              >
+                <div className="rounded-2xl border border-slate-200/80 bg-white/95 p-8 shadow-xl ring-1 ring-slate-200/40 backdrop-blur-sm">
+                  <motion.button
+                    type="button"
+                    onClick={handleBack}
+                    whileHover={
+                      shouldReduceMotion ? undefined : { x: -3 }
+                    }
+                    className="mb-6 flex items-center gap-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900"
+                  >
+                    <ArrowRight className="h-4 w-4 rotate-180" />
+                    <span>Retour</span>
+                  </motion.button>
+
+                  <div className="mb-6">
+                    <div className="mb-2 flex items-center gap-3">
+                      {selectedPortal === 'SCHOOL' && (
+                        <>
+                          <Building2 className="h-7 w-7 text-blue-600" />
+                          <h2
+                            className="text-2xl font-bold"
+                            style={{ color: NAVY }}
+                          >
+                            Portail École
+                          </h2>
+                        </>
+                      )}
+                      {selectedPortal === 'TEACHER' && (
+                        <>
+                          <GraduationCap className="h-7 w-7 text-emerald-600" />
+                          <h2
+                            className="text-2xl font-bold"
+                            style={{ color: NAVY }}
+                          >
+                            Portail Enseignant
+                          </h2>
+                        </>
+                      )}
+                      {selectedPortal === 'PARENT' && (
+                        <>
+                          <Users className="h-7 w-7 text-violet-600" />
+                          <h2
+                            className="text-2xl font-bold"
+                            style={{ color: NAVY }}
+                          >
+                            Portail Parents & Élèves
+                          </h2>
+                        </>
+                      )}
+                    </div>
+                    <p className="text-sm text-slate-600">
+                      Recherchez votre établissement pour continuer
+                    </p>
+                  </div>
+
+                  <SchoolSearch
+                    onSchoolSelect={handleSchoolSelect}
+                    selectedSchool={selectedSchool}
+                    portalType={selectedPortal}
+                  />
+
+                  <AnimatePresence>
+                    {selectedSchool ? (
+                      <motion.div
+                        key="continue"
+                        initial={
+                          shouldReduceMotion ? false : { opacity: 0, y: 12 }
+                        }
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={
+                          shouldReduceMotion
+                            ? undefined
+                            : { opacity: 0, y: 8 }
+                        }
+                        transition={{ duration: dur, ease: 'easeOut' }}
+                        className="mt-6"
+                      >
+                        <motion.button
+                          type="button"
+                          onClick={() => void handleContinue()}
+                          whileHover={
+                            shouldReduceMotion
+                              ? undefined
+                              : { scale: 1.01, boxShadow: '0 12px 28px rgba(11,47,115,0.25)' }
+                          }
+                          whileTap={shouldReduceMotion ? undefined : { scale: 0.99 }}
+                          className="flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 font-semibold text-white shadow-md transition-colors"
+                          style={{
+                            background: `linear-gradient(135deg, ${NAVY}, #144798)`,
+                          }}
+                        >
+                          <span>Continuer vers la connexion</span>
+                          <ArrowRight className="h-5 w-5" />
+                        </motion.button>
+                      </motion.div>
+                    ) : null}
+                  </AnimatePresence>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <motion.div
+            initial={
+              shouldReduceMotion ? false : { opacity: 0, y: 8 }
+            }
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              delay: shouldReduceMotion ? 0 : 0.25,
+              duration: dur,
+            }}
+            className="mt-14 flex justify-center"
+          >
+            <div
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200/90 bg-white/90 px-5 py-2.5 text-sm text-slate-600 shadow-sm backdrop-blur-sm"
+              style={{ boxShadow: `0 0 0 1px ${GOLD}22` }}
+            >
+              <Shield className="h-4 w-4 text-emerald-600" />
+              <span>
+                Vous êtes sur un portail officiel sécurisé {BRAND.name}
+              </span>
             </div>
-          </div>
+          </motion.div>
         </div>
       </main>
     </div>
   );
 }
-

@@ -70,10 +70,10 @@ export class BillingReminderService {
         include: {
           tenant: {
             include: {
-              settings: true, // Pour paramètres communication tenant
+              settingsCommunication: true,
             },
           },
-          subscriptionPlan: true, // Relation vers SubscriptionPlan (pas le champ scalaire 'plan')
+          subscriptionPlan: true,
         },
       });
 
@@ -271,7 +271,8 @@ export class BillingReminderService {
     }
 
     const tenant = subscription.tenant;
-    const plan = subscription.plan;
+    const planName =
+      subscription.subscriptionPlan?.name ?? (subscription.plan as string) ?? 'Plan';
 
     // 2. Récupérer le promoteur (user avec role PROMOTER)
     const promoter = await this.prisma.user.findFirst({
@@ -303,20 +304,17 @@ export class BillingReminderService {
       return false;
     }
 
-    // 3. Récupérer les paramètres communication tenant
-    const tenantSettings = tenant.settings || {};
-    const communicationSettings = (tenantSettings as any)?.communication || {};
-    
-    // Canaux activés par défaut, peuvent être désactivés par tenant
-    const smsEnabled = communicationSettings.smsEnabled !== false;
-    const emailEnabled = communicationSettings.emailEnabled !== false;
-    const whatsappEnabled = communicationSettings.whatsappEnabled !== false;
+    // 3. Paramètres communication tenant (table settings_communication)
+    const sc = tenant.settingsCommunication;
+    const smsEnabled = sc?.smsEnabled !== false;
+    const emailEnabled = sc?.emailEnabled !== false;
+    const whatsappEnabled = sc?.whatsappEnabled !== false;
 
     const renewalUrl = `${this.configService.get<string>('FRONTEND_URL', 'https://app.academia-hub.com')}/billing/renew`;
     
     const message = this.buildReminderMessage(
       tenant.name,
-      plan.name,
+      planName,
       daysRemaining,
       subscription.status,
       renewalUrl,
@@ -351,7 +349,7 @@ export class BillingReminderService {
       try {
         const emailContent = this.emailService.formatBillingReminderEmail({
           schoolName: tenant.name,
-          planName: plan.name,
+          planName,
           daysRemaining,
           status: subscription.status,
           promoterEmail: promoter.email,
@@ -376,7 +374,7 @@ export class BillingReminderService {
       try {
         const whatsappMessage = this.whatsappService.formatBillingReminderMessage({
           schoolName: tenant.name,
-          planName: plan.name,
+          planName,
           daysRemaining,
           status: subscription.status,
         });

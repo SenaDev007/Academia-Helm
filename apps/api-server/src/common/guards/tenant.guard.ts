@@ -52,19 +52,19 @@ export class TenantGuard implements CanActivate {
       return true;
     }
 
-    // ✅ PLATFORM_OWNER peut bypasser
     const user = request['user'] as any;
-    if (user && (user.role === 'PLATFORM_OWNER' || user.role === 'SUPER_ADMIN')) {
-      return true;
-    }
+    const isPlatform =
+      user && (user.role === 'PLATFORM_OWNER' || user.role === 'SUPER_ADMIN');
 
     const tenantId = this.extractTenantId(request);
 
     if (!tenantId) {
+      if (isPlatform) {
+        return true;
+      }
       throw new UnauthorizedException('Tenant ID not found');
     }
 
-    // Attach tenantId to request for use in controllers/services
     request['tenantId'] = tenantId;
     return true;
   }

@@ -12,6 +12,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { AlertCircle, Info, CheckCircle, Users, FileText, BookOpen, Camera } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { formatGradeLabel } from '@/lib/utils';
 import { localDb } from '@/lib/offline/local-db.service';
 
@@ -1177,7 +1178,12 @@ export default function StudentEnrollmentForm({
       )}
 
       {/* Actions - footer sticky pour garder les boutons visibles */}
-      <div className="sticky bottom-0 bg-white/95 backdrop-blur flex items-center justify-between pt-4 border-t border-gray-200">
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.22, ease: 'easeOut' }}
+        className="sticky bottom-0 bg-white/95 backdrop-blur flex items-center justify-between pt-4 border-t border-gray-200"
+      >
         <div>
           {step > 1 && (
             <button
@@ -1200,29 +1206,33 @@ export default function StudentEnrollmentForm({
             Annuler
           </button>
           {step < 6 ? (
-            <button
+            <motion.button
               type="button"
               onClick={handleNext}
               disabled={isSubmitting}
+              whileHover={{ y: -1 }}
+              whileTap={{ scale: 0.99 }}
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
             >
               Suivant
-            </button>
+            </motion.button>
           ) : (
-            <button
+            <motion.button
               type="button"
               onClick={handleSubmit}
               disabled={isSubmitting || !formData.feeRegimeId}
+              whileHover={{ y: -1 }}
+              whileTap={{ scale: 0.99 }}
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center space-x-2"
             >
               {isSubmitting && (
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
               )}
               <span>{operation === 'PRE_REGISTER' ? 'Enregistrer la pré-inscription' : "Enregistrer l'admission"}</span>
-            </button>
+            </motion.button>
           )}
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

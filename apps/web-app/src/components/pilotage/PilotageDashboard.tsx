@@ -17,6 +17,7 @@
 
 import { useState, useEffect } from 'react';
 import { Users, TrendingUp, AlertTriangle, DollarSign, BookOpen, Clock } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { useAcademicYear } from '@/hooks/useAcademicYear';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import OrionAlertsCard from './OrionAlertsCard';
@@ -70,7 +71,11 @@ export default function PilotageDashboard({ tenantId }: PilotageDashboardProps) 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.24, ease: 'easeOut' }}
+      >
         <h1 className="text-3xl font-bold text-navy-900 mb-2">
           Tableau de pilotage
         </h1>
@@ -79,22 +84,40 @@ export default function PilotageDashboard({ tenantId }: PilotageDashboardProps) 
                                  currentLevel.code === 'PRIMAIRE' ? 'Primaire' :
                                  currentLevel.code === 'SECONDAIRE' ? 'Secondaire' : currentLevel.code}
         </p>
-      </div>
+      </motion.div>
 
       {/* KPI Clés */}
-      <KPICards data={kpiData} isLoading={isLoading} />
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.26, ease: 'easeOut', delay: 0.05 }}
+      >
+        <KPICards data={kpiData} isLoading={isLoading} />
+      </motion.div>
 
       {/* Analyses Rapides */}
-      <QuickAnalytics 
-        academicYearId={currentYear.id}
-        schoolLevelId={currentLevel.id}
-      />
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.26, ease: 'easeOut', delay: 0.1 }}
+      >
+        <QuickAnalytics
+          academicYearId={currentYear.id}
+          schoolLevelId={currentLevel.id}
+        />
+      </motion.div>
 
       {/* Alertes & Actions ORION */}
-      <OrionAlertsCard 
-        academicYearId={currentYear.id}
-        schoolLevelId={currentLevel.id}
-      />
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.26, ease: 'easeOut', delay: 0.15 }}
+      >
+        <OrionAlertsCard
+          academicYearId={currentYear.id}
+          schoolLevelId={currentLevel.id}
+        />
+      </motion.div>
     </div>
   );
 }

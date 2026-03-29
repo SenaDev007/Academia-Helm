@@ -7,15 +7,14 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, ReactNode } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
+import { useAppSession } from '@/contexts/AppSessionContext';
+import { academicYearsKeys } from '@/lib/query/academic-years-keys';
+import { fetchAcademicYearsSnapshot } from '@/lib/query/academic-years-fetch';
+import type { AcademicYear } from '@/types/academic-year';
 
-export interface AcademicYear {
-  id: string;
-  name: string;
-  label?: string;
-  startDate: string;
-  endDate: string;
-  isCurrent: boolean;
-}
+export type { AcademicYear };
 
 const STORAGE_KEY = 'currentAcademicYearId';
 
@@ -29,51 +28,46 @@ interface AcademicYearContextType {
 const AcademicYearContext = createContext<AcademicYearContextType | undefined>(undefined);
 
 export function AcademicYearProvider({ children }: { children: ReactNode }) {
+  const searchParams = useSearchParams();
+  const { user, tenant } = useAppSession();
+  const urlTenantId = searchParams.get('tenant_id');
+  const isPlatformOwner = user?.role === 'PLATFORM_OWNER';
+  const effectiveTenantId =
+    (isPlatformOwner || !tenant?.id ? urlTenantId || tenant?.id : tenant?.id) ?? undefined;
+  const tenantKey = effectiveTenantId ?? 'no-tenant';
+
+  const {
+    data: availableYears = [],
+    isLoading,
+    isFetching,
+  } = useQuery({
+    queryKey: academicYearsKeys.snapshot(tenantKey),
+    queryFn: () => fetchAcademicYearsSnapshot(effectiveTenantId),
+    staleTime: 2 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+  });
+
   const [currentYear, setCurrentYearState] = useState<AcademicYear | null>(null);
-  const [availableYears, setAvailableYears] = useState<AcademicYear[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const availableYearsRef = useRef<AcademicYear[]>([]);
   availableYearsRef.current = availableYears;
 
   useEffect(() => {
-    const loadAcademicYears = async () => {
-      try {
-        const response = await fetch('/api/academic-years', { cache: 'no-store', credentials: 'include' });
-        if (response.ok) {
-          const data = await response.json();
-          const years: AcademicYear[] = Array.isArray(data)
-            ? data.map((y: { id: string; name: string; startDate?: string; endDate?: string; isCurrent?: boolean }) => ({
-                id: y.id,
-                name: y.name,
-                label: y.name,
-                startDate: y.startDate ?? '',
-                endDate: y.endDate ?? '',
-                isCurrent: Boolean(y.isCurrent),
-              }))
-            : [];
-          setAvailableYears(years);
+    if (!availableYears.length) {
+      if (!isLoading) setCurrentYearState(null);
+      return;
+    }
+    const activeYear = availableYears.find((y) => y.isCurrent);
+    const savedYearId = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
+    const selectedYear =
+      activeYear ?? (savedYearId ? availableYears.find((y) => y.id === savedYearId) : null) ?? availableYears[0] ?? null;
 
-          const activeYear = years.find((y) => y.isCurrent);
-          const savedYearId = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
-          const selectedYear =
-            activeYear ?? (savedYearId ? years.find((y) => y.id === savedYearId) : null) ?? years[0] ?? null;
-
-          if (selectedYear) {
-            setCurrentYearState(selectedYear);
-            if (typeof window !== 'undefined') {
-              localStorage.setItem(STORAGE_KEY, selectedYear.id);
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Failed to load academic years:', error);
-      } finally {
-        setIsLoading(false);
+    if (selectedYear) {
+      setCurrentYearState(selectedYear);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY, selectedYear.id);
       }
-    };
-
-    loadAcademicYears();
-  }, []);
+    }
+  }, [availableYears, isLoading]);
 
   const setCurrentYear = useCallback((yearId: string) => {
     const years = availableYearsRef.current;
@@ -86,14 +80,16 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const loading = isLoading || (isFetching && availableYears.length === 0);
+
   const value = useMemo<AcademicYearContextType>(
     () => ({
       currentYear,
       setCurrentYear,
       availableYears,
-      isLoading,
+      isLoading: loading,
     }),
-    [currentYear, setCurrentYear, availableYears, isLoading]
+    [currentYear, setCurrentYear, availableYears, loading]
   );
 
   return <AcademicYearContext.Provider value={value}>{children}</AcademicYearContext.Provider>;

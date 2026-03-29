@@ -25,7 +25,8 @@ export default function TenantSwitcher({ user, currentTenant }: TenantSwitcherPr
   const [isLoading, setIsLoading] = useState(false);
   const [isSwitching, setIsSwitching] = useState(false);
 
-  const isSuperDirector = user.role === 'SUPER_DIRECTOR';
+  const isSuperDirector =
+    user.role === 'SUPER_DIRECTOR' || user.role === 'PLATFORM_OWNER';
 
   useEffect(() => {
     if (isSuperDirector && user.accessibleTenants) {

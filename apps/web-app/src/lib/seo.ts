@@ -1,14 +1,54 @@
 /**
  * SEO Utilities
- * 
- * Fonctions utilitaires pour le SEO
+ *
+ * URL canonique, métadonnées, JSON-LD.
+ * Définir NEXT_PUBLIC_APP_URL en production (sans slash final).
  */
 
-import { Metadata } from 'next';
+import type { Metadata } from 'next';
 import { BRAND } from './brand';
+import { buildHreflangLanguages } from './seo/locales';
 
-const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.academiahelm.com';
-const defaultImage = BRAND.logoPath;
+/**
+ * Métadonnées de vérification (Google Search Console, Bing, etc.)
+ * Variables optionnelles : NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION, NEXT_PUBLIC_BING_SITE_VERIFICATION, NEXT_PUBLIC_YANDEX_SITE_VERIFICATION
+ */
+export function buildSiteVerification(): Metadata['verification'] | undefined {
+  const google = process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION?.trim();
+  const bing = process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION?.trim();
+  const yandex = process.env.NEXT_PUBLIC_YANDEX_SITE_VERIFICATION?.trim();
+  if (!google && !bing && !yandex) return undefined;
+  return {
+    ...(google ? { google } : {}),
+    ...(yandex ? { yandex } : {}),
+    ...(bing ? { other: { 'msvalidate.01': bing } } : {}),
+  };
+}
+
+/** Image Open Graph dédiée (1200×630 recommandé) — `public/images/og-academia-helm.png` */
+export const DEFAULT_OG_IMAGE_PATH = '/images/og-academia-helm.png';
+
+const defaultImage = DEFAULT_OG_IMAGE_PATH;
+
+/**
+ * URL publique absolue du site (build & runtime serveur).
+ */
+export function getPublicSiteUrl(): string {
+  const raw =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (process.env.NEXT_PUBLIC_BASE_DOMAIN
+      ? `https://${process.env.NEXT_PUBLIC_BASE_DOMAIN.replace(/^https?:\/\//, '')}`
+      : '');
+
+  if (raw) {
+    return raw.replace(/\/+$/, '');
+  }
+  if (process.env.NODE_ENV === 'development') {
+    const port = process.env.PORT || '3001';
+    return `http://localhost:${port}`.replace(/\/+$/, '');
+  }
+  return 'https://www.academiahelm.com';
+}
 
 export interface SEOConfig {
   title: string;
@@ -32,8 +72,10 @@ export function generateSEOMetadata(config: SEOConfig): Metadata {
     noIndex = false,
   } = config;
 
+  const siteUrl = getPublicSiteUrl();
+  const pathSegment = path === '' || path.startsWith('/') ? path : `/${path}`;
   const fullTitle = title.includes(BRAND.name) ? title : `${title} | ${BRAND.name}`;
-  const url = `${baseUrl}${path}`;
+  const url = `${siteUrl}${pathSegment}`;
 
   return {
     title: fullTitle,
@@ -85,6 +127,7 @@ export function generateSEOMetadata(config: SEOConfig): Metadata {
         },
     alternates: {
       canonical: url,
+      languages: buildHreflangLanguages(siteUrl, pathSegment),
     },
   };
 }
@@ -93,12 +136,13 @@ export function generateSEOMetadata(config: SEOConfig): Metadata {
  * Génère le JSON-LD structured data pour une organisation
  */
 export function generateOrganizationSchema() {
+  const siteUrl = getPublicSiteUrl();
   return {
     '@context': 'https://schema.org',
     '@type': 'Organization',
     name: BRAND.name,
-    url: baseUrl,
-    logo: `${baseUrl}${defaultImage}`,
+    url: siteUrl,
+    logo: `${siteUrl}${BRAND.logoPath}`,
     description: BRAND.description,
     address: {
       '@type': 'PostalAddress',
@@ -120,25 +164,41 @@ export function generateOrganizationSchema() {
 }
 
 /**
- * Génère le JSON-LD structured data pour un SoftwareApplication
+ * JSON-LD WebSite (page d'accueil / domaine)
+ */
+export function generateWebSiteSchema() {
+  const siteUrl = getPublicSiteUrl();
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: BRAND.name,
+    url: siteUrl,
+    description: `${BRAND.description}. ${BRAND.slogan}`,
+    inLanguage: 'fr-FR',
+    publisher: {
+      '@type': 'Organization',
+      name: BRAND.name,
+      logo: {
+        '@type': 'ImageObject',
+        url: `${siteUrl}${BRAND.logoPath}`,
+      },
+    },
+  };
+}
+
+/**
+ * JSON-LD SoftwareApplication (sans note agrégée fictive — conformité Google)
  */
 export function generateSoftwareApplicationSchema() {
+  const siteUrl = getPublicSiteUrl();
   return {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
     name: BRAND.name,
     applicationCategory: 'EducationalApplication',
     operatingSystem: 'Web',
-    offers: {
-      '@type': 'Offer',
-      price: '15000',
-      priceCurrency: 'XOF',
-    },
-    aggregateRating: {
-      '@type': 'AggregateRating',
-      ratingValue: '4.8',
-      ratingCount: '85',
-    },
+    url: siteUrl,
+    description: `${BRAND.description}. ${BRAND.slogan}`,
   };
 }
 

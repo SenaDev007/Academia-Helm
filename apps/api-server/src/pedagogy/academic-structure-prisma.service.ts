@@ -3,14 +3,115 @@
  * Structure académique : Niveaux → Cycles → Classes (par année scolaire).
  */
 
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+
+export interface DuplicateStructureResult {
+  fromAcademicYearId: string;
+  toAcademicYearId: string;
+  levelsCopied: number;
+  cyclesCopied: number;
+  classesCopied: number;
+  seriesCopied: number;
+  seriesSubjectsCopied: number;
+}
+
+/**
+ * Niveaux Paramètres (education_levels.name) → libellés Module 2 (pedagogy_academic_levels.name).
+ * Doit rester aligné avec EducationStructureService (MATERNELLE, PRIMAIRE, SECONDAIRE).
+ */
+const EDUCATION_CODE_TO_PEDAGOGY: Record<string, { name: string; orderIndex: number }> = {
+  MATERNELLE: { name: 'Maternelle', orderIndex: 0 },
+  PRIMAIRE: { name: 'Primaire', orderIndex: 1 },
+  SECONDAIRE: { name: 'Secondaire', orderIndex: 2 },
+};
 
 @Injectable()
 export class AcademicStructurePrismaService {
+  private readonly logger = new Logger(AcademicStructurePrismaService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Recopie l’activation des niveaux depuis Paramètres (EducationLevel.isEnabled)
+   * vers les niveaux pédagogiques de l’année (AcademicLevel.isActive).
+   * Idempotent — appelée à chaque lecture des niveaux.
+   */
+  private async syncAcademicLevelsFromEducationSettings(
+    tenantId: string,
+    academicYearId: string,
+  ): Promise<void> {
+    try {
+      const eduLevels = await this.prisma.educationLevel.findMany({
+        where: { tenantId },
+        orderBy: { order: 'asc' },
+      });
+      if (eduLevels.length === 0) return;
+
+      const year = await this.prisma.academicYear.findFirst({
+        where: { id: academicYearId, tenantId },
+      });
+      if (!year) return;
+
+      await this.prisma.$transaction(async (tx) => {
+        for (const el of eduLevels) {
+          const mapped = EDUCATION_CODE_TO_PEDAGOGY[el.name];
+          if (!mapped) continue;
+
+          const existing = await tx.academicLevel.findFirst({
+            where: {
+              tenantId,
+              academicYearId,
+              name: mapped.name,
+            },
+          });
+
+          if (existing) {
+            await tx.academicLevel.update({
+              where: { id: existing.id },
+              data: {
+                isActive: el.isEnabled,
+                orderIndex: mapped.orderIndex,
+              },
+            });
+          } else {
+            await tx.academicLevel.create({
+              data: {
+                tenantId,
+                academicYearId,
+                name: mapped.name,
+                orderIndex: mapped.orderIndex,
+                isActive: el.isEnabled,
+              },
+            });
+          }
+        }
+
+        const activeCount = await tx.academicLevel.count({
+          where: { tenantId, academicYearId, isActive: true },
+        });
+        if (activeCount === 0) {
+          const first = await tx.academicLevel.findFirst({
+            where: { tenantId, academicYearId },
+            orderBy: { orderIndex: 'asc' },
+          });
+          if (first) {
+            await tx.academicLevel.update({
+              where: { id: first.id },
+              data: { isActive: true },
+            });
+          }
+        }
+      });
+    } catch (e) {
+      this.logger.warn(
+        `syncAcademicLevelsFromEducationSettings: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
   async findAllLevels(tenantId: string, academicYearId: string) {
+    await this.syncAcademicLevelsFromEducationSettings(tenantId, academicYearId);
     return this.prisma.academicLevel.findMany({
       where: { tenantId, academicYearId },
       include: { cycles: { orderBy: { orderIndex: 'asc' } } },
@@ -225,5 +326,202 @@ export class AcademicStructurePrismaService {
 
   async deactivateClass(id: string, tenantId: string) {
     return this.updateClass(id, tenantId, { isActive: false });
+  }
+
+  /**
+   * Copie la structure pédagogique (niveaux, cycles, classes, séries, matières par série)
+   * d'une année source vers une année cible. Les salles et responsables de classe ne sont pas recopiés.
+   */
+  async duplicateStructure(
+    tenantId: string,
+    fromAcademicYearId: string,
+    toAcademicYearId: string,
+    userId?: string | null,
+  ): Promise<DuplicateStructureResult> {
+    if (fromAcademicYearId === toAcademicYearId) {
+      throw new BadRequestException("L'année source et l'année cible doivent être différentes.");
+    }
+
+    const [fromYear, toYear] = await Promise.all([
+      this.prisma.academicYear.findFirst({ where: { id: fromAcademicYearId, tenantId } }),
+      this.prisma.academicYear.findFirst({ where: { id: toAcademicYearId, tenantId } }),
+    ]);
+    if (!fromYear) {
+      throw new NotFoundException('Année source introuvable pour ce tenant.');
+    }
+    if (!toYear) {
+      throw new NotFoundException('Année cible introuvable pour ce tenant.');
+    }
+
+    const existingTargetLevels = await this.prisma.academicLevel.count({
+      where: { tenantId, academicYearId: toAcademicYearId },
+    });
+    if (existingTargetLevels > 0) {
+      throw new BadRequestException(
+        "L'année cible contient déjà une structure pédagogique. Supprimez ou videz-la avant duplication.",
+      );
+    }
+
+    const sourceLevels = await this.prisma.academicLevel.findMany({
+      where: { tenantId, academicYearId: fromAcademicYearId },
+      orderBy: { orderIndex: 'asc' },
+    });
+    if (sourceLevels.length === 0) {
+      throw new BadRequestException("L'année source ne contient aucun niveau à copier.");
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const levelMap = new Map<string, string>();
+      for (const l of sourceLevels) {
+        const created = await tx.academicLevel.create({
+          data: {
+            tenantId,
+            academicYearId: toAcademicYearId,
+            name: l.name,
+            orderIndex: l.orderIndex,
+            isActive: l.isActive,
+          },
+        });
+        levelMap.set(l.id, created.id);
+      }
+
+      const sourceCycles = await tx.academicCycle.findMany({
+        where: { tenantId, academicYearId: fromAcademicYearId },
+        orderBy: { orderIndex: 'asc' },
+      });
+      const cycleMap = new Map<string, string>();
+      for (const c of sourceCycles) {
+        const newLevelId = levelMap.get(c.levelId);
+        if (!newLevelId) {
+          throw new BadRequestException(
+            `Cycle "${c.name}" : niveau source introuvable (données incohérentes).`,
+          );
+        }
+        const created = await tx.academicCycle.create({
+          data: {
+            tenantId,
+            academicYearId: toAcademicYearId,
+            levelId: newLevelId,
+            name: c.name,
+            orderIndex: c.orderIndex,
+            isActive: c.isActive,
+          },
+        });
+        cycleMap.set(c.id, created.id);
+      }
+
+      const sourceSeries = await tx.academicSeries.findMany({
+        where: { tenantId, academicYearId: fromAcademicYearId },
+        orderBy: { name: 'asc' },
+      });
+      const seriesMap = new Map<string, string>();
+      for (const s of sourceSeries) {
+        const newLevelId = levelMap.get(s.levelId);
+        if (!newLevelId) {
+          throw new BadRequestException(
+            `Série "${s.name}" : niveau source introuvable (données incohérentes).`,
+          );
+        }
+        const created = await tx.academicSeries.create({
+          data: {
+            tenantId,
+            academicYearId: toAcademicYearId,
+            levelId: newLevelId,
+            name: s.name,
+            description: s.description,
+            isActive: s.isActive,
+          },
+        });
+        seriesMap.set(s.id, created.id);
+      }
+
+      const sourceSeriesSubjects = await tx.seriesSubject.findMany({
+        where: { tenantId, academicYearId: fromAcademicYearId },
+      });
+      let seriesSubjectsCopied = 0;
+      for (const ss of sourceSeriesSubjects) {
+        const newSeriesId = seriesMap.get(ss.seriesId);
+        if (!newSeriesId) continue;
+        await tx.seriesSubject.create({
+          data: {
+            tenantId,
+            academicYearId: toAcademicYearId,
+            seriesId: newSeriesId,
+            subjectId: ss.subjectId,
+            coefficient: ss.coefficient,
+            weeklyHours: ss.weeklyHours,
+          },
+        });
+        seriesSubjectsCopied += 1;
+      }
+
+      const sourceClasses = await tx.academicClass.findMany({
+        where: { tenantId, academicYearId: fromAcademicYearId },
+        orderBy: [{ cycle: { orderIndex: 'asc' } }, { name: 'asc' }],
+      });
+      for (const cl of sourceClasses) {
+        const newLevelId = levelMap.get(cl.levelId);
+        const newCycleId = cycleMap.get(cl.cycleId);
+        if (!newLevelId || !newCycleId) {
+          throw new BadRequestException(
+            `Classe "${cl.name}" : niveau ou cycle source introuvable (données incohérentes).`,
+          );
+        }
+        await tx.academicClass.create({
+          data: {
+            tenantId,
+            academicYearId: toAcademicYearId,
+            levelId: newLevelId,
+            cycleId: newCycleId,
+            name: cl.name,
+            code: cl.code,
+            capacity: cl.capacity,
+            roomId: null,
+            mainTeacherId: null,
+            languageTrack: cl.languageTrack,
+            isActive: cl.isActive,
+          },
+        });
+      }
+
+      return {
+        levelsCopied: sourceLevels.length,
+        cyclesCopied: sourceCycles.length,
+        classesCopied: sourceClasses.length,
+        seriesCopied: sourceSeries.length,
+        seriesSubjectsCopied,
+      };
+    });
+
+    await this.syncAcademicLevelsFromEducationSettings(tenantId, toAcademicYearId);
+
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          tenantId,
+          userId: userId ?? null,
+          action: 'DUPLICATE',
+          resource: 'pedagogy/academic-structure',
+          resourceId: toAcademicYearId,
+          tableName: 'pedagogy_structure_duplicate',
+          recordId: toAcademicYearId,
+          changes: {
+            fromAcademicYearId,
+            toAcademicYearId,
+            ...result,
+          },
+        },
+      });
+    } catch (e) {
+      this.logger.warn(
+        `Audit log duplicate structure failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+
+    return {
+      fromAcademicYearId,
+      toAcademicYearId,
+      ...result,
+    };
   }
 }

@@ -30,15 +30,16 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const headers = await getProxyAuthHeaders(request);
-    const hasAuth = headers['Authorization'] || headers['Cookie'];
-    if (!hasAuth) {
-      return NextResponse.json({ error: 'Non authentifié', code: 'UNAUTHORIZED' }, { status: 401 });
-    }
     const body = await request.json().catch(() => ({}));
     const url = new URL(`${API_BASE_URL}/settings/education/classrooms`);
     const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
     if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
-    const response = await fetch(url.toString(), { method: 'POST', headers, body: JSON.stringify(body) });
+    const response = await fetch(url.toString(), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      cache: 'no-store',
+    });
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (error) {

@@ -1,3 +1,5 @@
+'use client';
+
 import { useState } from 'react';
 import HelmPricingCard from './HelmPricingCard';
 import type { HelmPlanKey } from '@/lib/services/HelmPricingService';

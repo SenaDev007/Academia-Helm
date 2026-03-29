@@ -4,8 +4,18 @@
  * Page publique affichant les Conditions Générales d'Utilisation
  */
 
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import PremiumHeader from '@/components/layout/PremiumHeader';
+import { generateSEOMetadata } from '@/lib/seo';
+
+export const metadata: Metadata = generateSEOMetadata({
+  title: 'Conditions générales d’utilisation (CGU)',
+  description:
+    'Conditions générales d’utilisation de la plateforme Academia Helm (pilotage éducatif, comptes, responsabilités).',
+  keywords: ['CGU Academia Helm', 'conditions utilisation logiciel école'],
+  path: '/legal/cgu',
+});
 
 export default function CGUPage() {
   return (

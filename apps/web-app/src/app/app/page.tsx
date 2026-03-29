@@ -29,6 +29,7 @@ export default async function AppPage() {
   // Afficher le dashboard selon le rôle
   const renderDashboard = () => {
     switch (user.role) {
+      case 'PLATFORM_OWNER':
       case 'SUPER_DIRECTOR':
       case 'DIRECTOR':
         return <DirectorDashboard tenantId={tenantId} />;

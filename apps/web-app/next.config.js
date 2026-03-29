@@ -1,12 +1,15 @@
+const path = require('path');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  reactStrictMode: true,
-  swcMinify: true,
-  
-  // MODE PROD SAFE - Désactivation temporaire des bloqueurs CI
-  eslint: {
-    ignoreDuringBuilds: true,
+  /** Monorepo : ancrer Turbopack sur cette app (évite lockfile racine). */
+  turbopack: {
+    root: path.resolve(__dirname),
   },
+  reactStrictMode: true,
+
+  // MODE PROD SAFE - Désactivation temporaire des bloqueurs CI
+  // ESLint : plus dans next.config (Next 16) — `next lint` / eslint.config à part
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -32,7 +35,7 @@ const nextConfig = {
   
   // ✅ Optimisation des bundles
   experimental: {
-    optimizePackageImports: ['lucide-react', '@headlessui/react'], // ✅ Tree-shaking optimisé
+    optimizePackageImports: ['lucide-react', '@base-ui/react'], // Tree-shaking (packages lourds côté UI)
   },
   
   // ✅ Optimisation de la compilation
@@ -97,14 +100,53 @@ const nextConfig = {
 
   // Timeout plus long pour la génération des pages statiques (build volumineux)
   staticPageGenerationTimeout: 180,
+
+  /**
+   * Dev : proxifier les avis vers l’API Nest (même origine côté navigateur → pas de CORS).
+   * Cible : {origin}/api/reviews/* (préfixe global Nest).
+   * Désactiver : NEXT_PUBLIC_REVIEWS_DEV_PROXY=0
+   */
+  async rewrites() {
+    if (process.env.NODE_ENV !== 'development') return [];
+    if (process.env.NEXT_PUBLIC_REVIEWS_DEV_PROXY === '0') return [];
+
+    const explicit =
+      process.env.API_SERVER_ORIGIN?.trim() ||
+      process.env.REVIEWS_PROXY_TARGET?.trim();
+    let origin = explicit?.replace(/\/$/, '') || '';
+
+    if (!origin && process.env.NEXT_PUBLIC_API_URL) {
+      const m = process.env.NEXT_PUBLIC_API_URL.trim().match(
+        /^(https?:\/\/[^/]+)/i,
+      );
+      if (m) origin = m[1];
+    }
+
+    if (!origin) return [];
+
+    return [
+      {
+        source: '/reviews/:path*',
+        destination: `${origin}/api/reviews/:path*`,
+      },
+    ];
+  },
 };
 
-// Configuration PWA uniquement en production
+// PWA en prod ; bundle analyzer si ANALYZE=true (audit poids JS pour la perf)
+const withBundleAnalyzer = require('@next/bundle-analyzer')({
+  enabled: process.env.ANALYZE === 'true',
+});
+
+let exportedConfig = nextConfig;
 if (process.env.NODE_ENV === 'production') {
   const withPWA = require('next-pwa')({
     dest: 'public',
     register: true,
     skipWaiting: true,
+    clientsClaim: true,
+    // Invalide le cache SW à chaque déploiement (utile quand on change des fichiers d'images)
+    cacheId: process.env.VERCEL_GIT_COMMIT_SHA || `local-${Date.now()}`,
     runtimeCaching: [
       {
         urlPattern: /^https?.*/,
@@ -120,8 +162,8 @@ if (process.env.NODE_ENV === 'production') {
       },
     ],
   });
-  module.exports = withPWA(nextConfig);
-} else {
-  module.exports = nextConfig;
+  exportedConfig = withPWA(nextConfig);
 }
+
+module.exports = withBundleAnalyzer(exportedConfig);
 

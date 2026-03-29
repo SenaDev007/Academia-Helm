@@ -103,6 +103,7 @@ async function resolveTenant(subdomain: string): Promise<{ id: string; slug: str
 }
 
 const publicRoutes = [
+  '/en',
   '/modules',
   '/tarification',
   '/securite',
@@ -114,6 +115,7 @@ const publicRoutes = [
   '/onboarding-error',
   '/onboarding',
   '/testimonials', // Route publique pour les témoignages
+  '/avis', // Formulaire public pour laisser un avis
 ];
 
 // Routes admin (ne nécessitent pas de subdomain)
@@ -189,9 +191,10 @@ export async function middleware(request: NextRequest) {
     // En local, vérifier le paramètre tenant dans l'URL
     const isLocal = process.env.NODE_ENV === 'development';
     const tenantParam = request.nextUrl.searchParams.get('tenant');
+    const tenantIdParam = request.nextUrl.searchParams.get('tenant_id');
     
     // Si pas de subdomain ET pas de tenant param → vérifier la session
-    if (!subdomain && !tenantParam) {
+    if (!subdomain && !tenantParam && !tenantIdParam) {
       // Si la session contient un tenant valide, autoriser l'accès
       if (user?.tenantId) {
         // Ajouter le tenant dans l'URL pour cohérence
@@ -233,8 +236,27 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/portal', mainDomain));
     }
 
+    // En local/sans sous-domaine, après login réussi, prioriser le tenant de session.
+    // Cela évite les faux "tenant-not-found" quand l'URL contient un UUID tenant_id.
+    if (!subdomain && user?.tenantId) {
+      const sameTenantById = tenantIdParam ? tenantIdParam === user.tenantId : true;
+      const sameTenantBySlug = tenantParam
+        ? tenantParam === user.tenantSlug || tenantParam === user.tenantId
+        : true;
+
+      if (sameTenantById && sameTenantBySlug) {
+        const tenantResponse = NextResponse.next();
+        tenantResponse.headers.set('X-Tenant-ID', user.tenantId);
+        if (user.tenantSlug) {
+          tenantResponse.headers.set('X-Tenant-Slug', user.tenantSlug);
+        }
+        tenantResponse.headers.set('X-User-ID', user.id);
+        return tenantResponse;
+      }
+    }
+
     // Résoudre le tenant (subdomain ou param)
-    const tenantIdentifier = subdomain || tenantParam;
+    const tenantIdentifier = subdomain || tenantParam || tenantIdParam;
     
     if (!tenantIdentifier) {
       const mainDomain = getAppBaseUrl();

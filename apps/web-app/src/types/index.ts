@@ -51,6 +51,7 @@ export type UserRole =
   | 'director' 
   | 'teacher' 
   | 'secretary' 
+  | 'PLATFORM_OWNER'
   | 'SUPER_DIRECTOR'
   | 'SUPER_ADMIN'; // Rôle unique pour le fondateur (YEHI OR Tech)
 

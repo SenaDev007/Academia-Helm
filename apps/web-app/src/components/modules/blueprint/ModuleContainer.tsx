@@ -12,10 +12,13 @@
 'use client';
 
 import { ReactNode } from 'react';
+import { motion } from 'framer-motion';
 import ModuleHeader, { ModuleHeaderProps } from './ModuleHeader';
 import SubModuleNavigation, { SubModuleNavigationProps } from './SubModuleNavigation';
 import ModuleContentArea, { ModuleContentAreaProps } from './ModuleContentArea';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { getPageSlideMotion } from '@/lib/motion/presets';
+import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 
 export interface ModuleContainerProps {
   /** Props du header */
@@ -50,9 +53,16 @@ export default function ModuleContainer({
 }: ModuleContainerProps) {
   // Le contexte module est automatiquement fourni par useModuleContext
   // Il contient : academicYear, schoolLevel, academicTrack, tenant
+  const { shouldReduceMotion } = useMotionBudget();
+  const pageMotion = getPageSlideMotion(shouldReduceMotion);
 
   return (
-    <div className={`space-y-6 ${className || ''}`}>
+    <motion.div
+      className={`space-y-6 ${className || ''}`}
+      initial={pageMotion.initial}
+      animate={pageMotion.animate}
+      transition={pageMotion.transition}
+    >
       {/* Header du module */}
       <ModuleHeader {...header} />
 
@@ -67,7 +77,7 @@ export default function ModuleContainer({
 
       {/* Contenu avant le footer (optionnel) */}
       {beforeFooter && <div>{beforeFooter}</div>}
-    </div>
+    </motion.div>
   );
 }
 

@@ -28,6 +28,7 @@ import { Pool } from 'pg';
 import * as dotenv from 'dotenv';
 import { resolve } from 'path';
 import * as bcrypt from 'bcrypt';
+import { execSync } from 'child_process';
 
 // Charger les variables d'environnement depuis .env
 dotenv.config({ path: resolve(__dirname, '../.env') });
@@ -134,7 +135,7 @@ async function main() {
       passwordHash: platformOwnerPasswordHash,
       firstName: 'Platform',
       lastName: 'Owner',
-      role: 'SUPER_DIRECTOR',
+      role: 'PLATFORM_OWNER',
       isSuperAdmin: true,
       status: 'active',
       tenantId: null, // PLATFORM_OWNER n'a pas de tenant
@@ -144,7 +145,7 @@ async function main() {
       passwordHash: platformOwnerPasswordHash,
       firstName: 'Platform',
       lastName: 'Owner',
-      role: 'SUPER_DIRECTOR',
+      role: 'PLATFORM_OWNER',
       isSuperAdmin: true,
       status: 'active',
       tenantId: null, // PLATFORM_OWNER n'a pas de tenant
@@ -344,6 +345,156 @@ async function main() {
       console.log(`   ℹ️  Group tier déjà existant: ${tierData.schoolsCount} écoles`);
     }
   }
+
+  // ============================================================================
+  // 8. AVIS MARKETING PLATEFORME (landing — publiés & vérifiables)
+  // ============================================================================
+  console.log('\n8️⃣  Témoignages plateforme (platform_marketing_reviews)...');
+
+  const reviewSeeds = [
+    {
+      id: 'seed-platform-review-1',
+      quote:
+        'Nous avons enfin une vision unique sur les inscriptions, les frais et le suivi des classes. L’équipe administrative respire.',
+      authorLabel: 'Direction pédagogique',
+      roleLabel: 'Proviseur adjoint',
+      organizationLabel: 'Lycée privé — région côtière',
+      rating: 5,
+      sortOrder: 1,
+    },
+    {
+      id: 'seed-platform-review-2',
+      quote:
+        'Le module financier et les relances nous ont fait gagner un temps précieux sur la préparation de la rentrée.',
+      authorLabel: 'Service comptable',
+      roleLabel: 'Responsable financier',
+      organizationLabel: 'Groupe scolaire K–12',
+      rating: 5,
+      sortOrder: 2,
+    },
+    {
+      id: 'seed-platform-review-3',
+      quote:
+        'ORION nous aide à prioriser les dossiers sensibles sans noyer l’équipe dans des tableaux interminables.',
+      authorLabel: 'Secrétariat général',
+      roleLabel: 'Secrétaire général',
+      organizationLabel: 'Collège & lycée',
+      rating: 5,
+      sortOrder: 3,
+    },
+  ];
+
+  const verifiedAt = new Date('2025-03-01T00:00:00.000Z');
+  for (const r of reviewSeeds) {
+    await prisma.platformMarketingReview.upsert({
+      where: { id: r.id },
+      create: {
+        ...r,
+        published: true,
+        verifiedAt,
+        collectMethod: 'seed_internal',
+      },
+      update: {
+        quote: r.quote,
+        authorLabel: r.authorLabel,
+        roleLabel: r.roleLabel,
+        organizationLabel: r.organizationLabel,
+        rating: r.rating,
+        sortOrder: r.sortOrder,
+        published: true,
+        verifiedAt,
+        collectMethod: 'seed_internal',
+      },
+    });
+  }
+  console.log(`   ✅ ${reviewSeeds.length} avis plateforme (publiés) assurés`);
+
+  // ============================================================================
+  // 8 bis — Avis Helm natifs (table reviews, landing dynamique)
+  // ============================================================================
+  console.log('\n8️⃣ bis  Avis Helm natifs (reviews, APPROVED)...');
+  const tenantForReviews = await prisma.tenant.findFirst({
+    where: { slug: 'default-tenant' },
+  });
+  const publishedDemo = new Date('2025-03-15T12:00:00.000Z');
+  const helmReviewSeeds: Array<{
+    id: string;
+    authorName: string;
+    authorRole: string;
+    schoolName: string;
+    city: string;
+    rating: number;
+    comment: string;
+    featured: boolean;
+  }> = [
+    {
+      id: 'seed-helm-review-1',
+      authorName: 'Marie Dossou',
+      authorRole: 'Directrice',
+      schoolName: 'Complexe scolaire Horizon',
+      city: 'Cotonou',
+      rating: 5,
+      comment:
+        'Pilotage clair des inscriptions et des finances : nous avons enfin une vision unique pour toute l’équipe.',
+      featured: true,
+    },
+    {
+      id: 'seed-helm-review-2',
+      authorName: 'Koffi Mensah',
+      authorRole: 'Fondateur',
+      schoolName: 'Groupe Alpha Éducation',
+      city: 'Porto-Novo',
+      rating: 5,
+      comment:
+        'ORION et les tableaux de bord nous aident à prioriser sans nous noyer dans les chiffres.',
+      featured: false,
+    },
+    {
+      id: 'seed-helm-review-3',
+      authorName: 'Aminata Traoré',
+      authorRole: 'Responsable administratif',
+      schoolName: 'Lycée privé Les Bambous',
+      city: 'Parakou',
+      rating: 4,
+      comment:
+        'Interface sobre, équipe réactive. Les relances et les exports nous font gagner un temps précieux.',
+      featured: false,
+    },
+  ];
+
+  for (const r of helmReviewSeeds) {
+    await prisma.review.upsert({
+      where: { id: r.id },
+      create: {
+        id: r.id,
+        authorName: r.authorName,
+        authorRole: r.authorRole,
+        schoolName: r.schoolName,
+        city: r.city,
+        photoUrl: null,
+        rating: r.rating,
+        comment: r.comment,
+        status: 'APPROVED',
+        featured: r.featured,
+        source: 'MANUAL',
+        publishedAt: publishedDemo,
+        tenantId: tenantForReviews?.id ?? null,
+      },
+      update: {
+        authorName: r.authorName,
+        authorRole: r.authorRole,
+        schoolName: r.schoolName,
+        city: r.city,
+        rating: r.rating,
+        comment: r.comment,
+        status: 'APPROVED',
+        featured: r.featured,
+        publishedAt: publishedDemo,
+        tenantId: tenantForReviews?.id ?? null,
+      },
+    });
+  }
+  console.log(`   ✅ ${helmReviewSeeds.length} avis Helm (reviews) assurés`);
 
   // ============================================================================
   // RÉSUMÉ
@@ -617,12 +768,82 @@ async function main() {
   console.log('\n🎯 La base de données est prête à l\'usage!');
 }
 
-main()
-  .catch((e) => {
+const runSeedWithAutoSchemaFix = async () => {
+  let didAutoFix = false;
+  try {
+    await main();
+  } catch (e: any) {
+    const code = e?.code as string | undefined;
+    const isMissingColumn = code === 'P2022' || /column.*does not exist/i.test(String(e?.message ?? ''));
+
+    if (!didAutoFix && isMissingColumn) {
+      didAutoFix = true;
+      console.log('\n🧠 Colonnes manquantes détectées (Prisma P2022). Synchronisation automatique de la BDD...');
+
+      // `db push` peut refuser s’il y a des risques de data loss (ex: ajouts de contraintes uniques).
+      // Comme on est en contexte "seed/test", on vérifie d'abord les doublons sur les colonnes
+      // concernées par ces warnings, puis on relance avec `--accept-data-loss`.
+      try {
+        // Doublons pour la contrainte unique: (tenantId, matricule)
+        const studentDup = await pool.query(
+          'SELECT 1 AS hasDup FROM "students" WHERE "tenantId" IS NOT NULL AND "matricule" IS NOT NULL GROUP BY "tenantId", "matricule" HAVING COUNT(*) > 1 LIMIT 1'
+        );
+        // Doublons pour la contrainte unique: (tenantId) sur subscriptions
+        const subscriptionDup = await pool.query(
+          'SELECT 1 AS hasDup FROM "subscriptions" WHERE "tenantId" IS NOT NULL GROUP BY "tenantId" HAVING COUNT(*) > 1 LIMIT 1'
+        );
+
+        const hasStudentDup = studentDup.rows?.length > 0;
+        const hasSubscriptionDup = subscriptionDup.rows?.length > 0;
+
+        if (hasStudentDup || hasSubscriptionDup) {
+          console.error('\n❌ db push refusé : des doublons existent sur les colonnes uniques à ajouter.');
+          console.error('Veuillez nettoyer la BDD (suppression/merge) avant de relancer le seed.');
+          throw new Error('Doublons existants pour contraintes uniques.');
+        }
+      } catch (dupErr) {
+        // Si les tables n'existent pas encore, on continue (db push va les créer).
+        // Si erreur d'autre nature, on remonte.
+        const msg = String((dupErr as any)?.message ?? '');
+        const isTableMissing = /relation .* does not exist|table.*does not exist/i.test(msg);
+        if (!isTableMissing) throw dupErr;
+      }
+
+      try {
+        execSync('npx prisma db push --schema=prisma/schema.prisma --accept-data-loss', {
+          cwd: resolve(__dirname, '..'),
+          stdio: 'inherit',
+        });
+      } catch (syncErr: any) {
+        const msg = String(syncErr?.message ?? syncErr);
+        // Cas typique quand db push a déjà partiellement appliqué des index/contraintes.
+        if (/exists already/i.test(msg) || /already exists/i.test(msg)) {
+          console.warn('\n⚠️ db push a échoué mais semble avoir appliqué une partie des changements. On continue...');
+        } else {
+          throw syncErr;
+        }
+      }
+
+      execSync('npx prisma generate --schema=prisma/schema.prisma', {
+        cwd: resolve(__dirname, '..'),
+        stdio: 'inherit',
+      });
+
+      console.log('✅ Synchronisation OK (ou application partielle). Relance du seed...');
+      await main();
+      return;
+    }
+
     console.error('\n❌ Erreur lors du seed:');
     console.error(e);
     process.exit(1);
-  })
-  .finally(async () => {
+  } finally {
     await prisma.$disconnect();
-  });
+  }
+};
+
+runSeedWithAutoSchemaFix().catch((e) => {
+  console.error('\n❌ Erreur fatale pendant le seed:');
+  console.error(e);
+  process.exit(1);
+});

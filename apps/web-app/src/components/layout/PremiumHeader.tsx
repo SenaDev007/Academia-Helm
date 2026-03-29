@@ -48,8 +48,8 @@ export default function PremiumHeader() {
       className={cn(
         'fixed top-0 left-0 right-0 z-50 transition-all duration-300',
         isScrolled
-          ? 'bg-white/95 backdrop-blur-md shadow-lg border-b border-gray-100'
-          : 'bg-white border-b border-gray-200 shadow-sm'
+          ? 'bg-[#0b2f73]/92 backdrop-blur-md shadow-xl border-b border-amber-300/30'
+          : 'bg-[#0b2f73] border-b border-[#144798] shadow-sm'
       )}
     >
       <div className="max-w-7xl mx-auto">
@@ -64,16 +64,16 @@ export default function PremiumHeader() {
                     <Image
                       src="/images/logo-Academia Hub.png"
                       alt={`${BRAND.name} - ${BRAND.subtitle}`}
-                      width={52}
-                      height={52}
-                      className="h-14 w-auto transition-opacity duration-200 group-hover:opacity-90"
+                      width={40}
+                      height={40}
+                      className="h-10 md:h-11 w-auto transition-opacity duration-200 group-hover:opacity-90"
                       priority
-                      sizes="(max-width: 768px) 40px, 52px"
+                      sizes="(max-width: 768px) 32px, 40px"
                     />
             </div>
-            <div className={`${textColor('primary')} font-bold leading-none`}>
-              <span className="text-xl md:text-2xl block">Academia</span>
-              <span className="text-xs md:text-sm block -mt-2">Helm</span>
+            <div className="font-bold leading-none">
+              <span className="text-base sm:text-lg md:text-xl block text-white">Academia</span>
+              <span className="text-[10px] sm:text-xs md:text-sm block -mt-1.5 text-amber-300">Helm</span>
             </div>
           </Link>
 
@@ -87,31 +87,31 @@ export default function PremiumHeader() {
                 className={cn(
                   'relative px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200',
                   item.isInstitutional
-                    ? 'text-blue-800 font-semibold border border-blue-200 hover:border-blue-300 hover:bg-blue-50'
+                    ? 'text-amber-300 font-semibold border border-amber-300/40 hover:border-amber-300/70 hover:bg-white/10'
                     : isActive(item.path)
-                    ? 'text-blue-900 bg-cloud'
-                    : 'text-graphite-700 hover:text-blue-900 hover:bg-cloud'
+                    ? 'text-white bg-white/15'
+                    : 'text-blue-100 hover:text-white hover:bg-white/10'
                 )}
               >
                 {item.label}
                 {isActive(item.path) && !item.isInstitutional && (
-                  <span className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-blue-900 rounded-full" />
+                  <span className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-amber-300 rounded-full" />
                 )}
               </Link>
             ))}
-            <div className="ml-8 pl-8 border-l border-gray-200 flex-shrink-0 flex items-center space-x-3">
+            <div className="ml-8 pl-8 border-l border-white/20 flex-shrink-0 flex items-center space-x-3">
               <Link
                 href="/portal"
                 prefetch={true}
                 className={cn(
-                  'bg-blue-600 text-white px-6 py-2.5 rounded-md min-h-[44px]',
-                  'font-semibold hover:bg-blue-700 transition-all duration-200',
+                  'bg-[#f5b335] text-[#0b2f73] px-6 py-2.5 rounded-md min-h-[44px]',
+                  'font-semibold hover:bg-[#f7c359] transition-all duration-200',
                   'shadow-sm hover:shadow-md transform hover:-translate-y-0.5',
                   'inline-flex items-center space-x-2'
                 )}
               >
                 <span>Accéder à un portail</span>
-                <AppIcon name="login" size="submenu" className="text-white" />
+                <AppIcon name="login" size="submenu" className="text-[#0b2f73]" />
               </Link>
             </div>
           </nav>
@@ -122,9 +122,9 @@ export default function PremiumHeader() {
               onClick={() => setIsMenuOpen(!isMenuOpen)}
               className={cn(
                 'p-2.5 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center',
-                textColor('primary'),
-                'hover:bg-gray-100 transition-colors duration-200',
-                'focus:outline-none focus:ring-2 focus:ring-blue-900 focus:ring-offset-2'
+                'text-white',
+                'hover:bg-white/10 transition-colors duration-200',
+                'focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-2 focus:ring-offset-[#0b2f73]'
               )}
               aria-label="Toggle menu"
               aria-expanded={ariaExpanded}
@@ -132,7 +132,7 @@ export default function PremiumHeader() {
               {isMenuOpen ? (
                 <AppIcon name="close" size="menu" className="text-blue-900" />
               ) : (
-                <AppIcon name="menu" size="menu" className="text-blue-900" />
+                <AppIcon name="menu" size="menu" className="text-white" />
               )}
             </button>
           </div>
@@ -146,7 +146,7 @@ export default function PremiumHeader() {
           isMenuOpen ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'
         )}
       >
-        <div className={cn(bgColor('card'), 'border-t border-gray-200 shadow-lg')}>
+        <div className="border-t border-white/20 shadow-lg bg-[#0b2f73]">
           <nav className="flex flex-col px-4 py-4 space-y-1">
             {menuItems.map((item) => (
               <Link
@@ -156,10 +156,10 @@ export default function PremiumHeader() {
                 className={cn(
                   'px-4 py-3 rounded-lg text-base font-medium transition-all duration-200',
                   item.isInstitutional
-                    ? 'text-blue-800 font-semibold border border-blue-200 bg-blue-50 hover:bg-blue-100'
+                    ? 'text-amber-300 font-semibold border border-amber-300/40 bg-white/10 hover:bg-white/20'
                     : isActive(item.path)
-                    ? 'text-blue-900 bg-cloud font-semibold'
-                    : 'text-graphite-700 hover:text-blue-900 hover:bg-cloud'
+                    ? 'text-white bg-white/15 font-semibold'
+                    : 'text-blue-100 hover:text-white hover:bg-white/10'
                 )}
               >
                 {item.label}
@@ -170,14 +170,14 @@ export default function PremiumHeader() {
                 href="/portal"
                 onClick={() => setIsMenuOpen(false)}
                 className={cn(
-                  'bg-blue-600 text-white w-full py-3 rounded-md min-h-[44px]',
-                  'font-semibold hover:bg-blue-700 transition-all duration-200',
+                  'bg-[#f5b335] text-[#0b2f73] w-full py-3 rounded-md min-h-[44px]',
+                  'font-semibold hover:bg-[#f7c359] transition-all duration-200',
                   'shadow-sm hover:shadow-md',
                   'inline-flex items-center justify-center space-x-2'
                 )}
               >
                 <span>Accéder à un portail</span>
-                <AppIcon name="login" size="submenu" className="text-white" />
+                <AppIcon name="login" size="submenu" className="text-[#0b2f73]" />
               </Link>
             </div>
           </nav>

@@ -118,17 +118,35 @@ export default function StudentsModulePage() {
   /** Onglet actif (Dashboard par défaut à l'ouverture du module) */
   const [activeSubModuleId, setActiveSubModuleId] = useState<string>('dashboard');
   const studentFormRef = useRef<HTMLFormElement>(null);
+  const statsUnauthorizedRef = useRef(false);
+  const isStatsLoadingRef = useRef(false);
+  const lastStatsRequestKeyRef = useRef<string | null>(null);
+  const isStudentsLoadingRef = useRef(false);
+  const lastStudentsRequestKeyRef = useRef<string | null>(null);
 
   // ============================================================================
   // EFFECTS
   // ============================================================================
 
   useEffect(() => {
-    if (academicYear && schoolLevel) {
+    if (academicYear?.id && schoolLevel?.id) {
       loadStudents();
       loadStatistics();
     }
-  }, [academicYear, schoolLevel, filters]);
+  }, [
+    academicYear?.id,
+    schoolLevel?.id,
+    filters.classId,
+    filters.status,
+    filters.search,
+    filters.regimeType,
+    filters.hasArrears,
+  ]);
+
+  useEffect(() => {
+    // Réautoriser les appels stats lors d'un changement de contexte.
+    statsUnauthorizedRef.current = false;
+  }, [academicYear?.id, schoolLevel?.id]);
 
   // Classes chargées depuis la BDD (configurées dans Paramètres), filtrées par niveau scolaire
   useEffect(() => {
@@ -154,6 +172,16 @@ export default function StudentsModulePage() {
     const loadStudents = async () => {
     if (!academicYear || !schoolLevel) return;
 
+      const requestKey = JSON.stringify({
+        academicYearId: academicYear.id,
+        schoolLevelId: schoolLevel.id,
+        ...filters,
+      });
+      if (isStudentsLoadingRef.current && lastStudentsRequestKeyRef.current === requestKey) {
+        return;
+      }
+      isStudentsLoadingRef.current = true;
+      lastStudentsRequestKeyRef.current = requestKey;
       setIsLoading(true);
       try {
       const params = new URLSearchParams({
@@ -174,12 +202,14 @@ export default function StudentsModulePage() {
       } catch (error) {
         console.error('Failed to load students:', error);
       } finally {
+        isStudentsLoadingRef.current = false;
         setIsLoading(false);
       }
     };
 
   const loadStatistics = async () => {
     if (!academicYear || !schoolLevel) return;
+    if (statsUnauthorizedRef.current) return;
 
     try {
       const params = new URLSearchParams({
@@ -187,13 +217,27 @@ export default function StudentsModulePage() {
         schoolLevelId: schoolLevel.id,
       });
 
+      const requestKey = params.toString();
+      if (isStatsLoadingRef.current && lastStatsRequestKeyRef.current === requestKey) {
+        return;
+      }
+      isStatsLoadingRef.current = true;
+      lastStatsRequestKeyRef.current = requestKey;
+
       const response = await fetch(`/api/students/statistics?${params}`);
       if (response.ok) {
+        statsUnauthorizedRef.current = false;
         const data = await response.json();
         setStatistics(data);
+      } else if (response.status === 401) {
+        // Stopper les boucles d'appels quand le backend refuse le contexte.
+        statsUnauthorizedRef.current = true;
+        setStatistics(null);
       }
     } catch (error) {
       console.error('Failed to load statistics:', error);
+    } finally {
+      isStatsLoadingRef.current = false;
     }
   };
 

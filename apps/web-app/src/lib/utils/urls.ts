@@ -9,72 +9,9 @@
  * ============================================================================
  */
 
-export type AppEnvironment = 'local' | 'production';
-
-/**
- * Détecte l'environnement actuel
- */
-export function getAppEnvironment(): AppEnvironment {
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (hostname === 'localhost' || hostname === '127.0.0.1') return 'local';
-    return 'production';
-  }
-  const env = process.env.NEXT_PUBLIC_ENV || process.env.NODE_ENV;
-  if (env === 'development' || !env) return 'local';
-  return 'production';
-}
-
-/**
- * Récupère l'URL de base de l'application
- * 
- * ⚠️ IMPORTANT : Ne jamais utiliser localhost en dur
- * Utilise uniquement les variables d'environnement
- * 
- * @returns URL de base (ex: https://academia-hub.com)
- * @throws Error si NEXT_PUBLIC_APP_URL n'est pas défini en production
- */
-export function getAppBaseUrl(): string {
-  // PRIORITÉ 1 : Variable d'environnement explicite (TOUJOURS UTILISÉE SI DÉFINIE)
-  const envUrl = process.env.NEXT_PUBLIC_APP_URL;
-  if (envUrl) {
-    return envUrl;
-  }
-  
-  const env = getAppEnvironment();
-
-  if (env === 'production') {
-    if (typeof window !== 'undefined') {
-      return `${window.location.protocol}//${window.location.host}`;
-    }
-    const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN;
-    if (baseDomain) {
-      const cleanDomain = baseDomain.replace(/^https?:\/\//, '');
-      return `https://${cleanDomain}`;
-    }
-    throw new Error(
-      'NEXT_PUBLIC_APP_URL or NEXT_PUBLIC_BASE_DOMAIN must be set in production. ' +
-      'Please configure your environment variables.'
-    );
-  }
-
-  if (env === 'local') {
-    // En local, essayer de détecter depuis window si disponible
-    if (typeof window !== 'undefined') {
-      return `${window.location.protocol}//${window.location.host}`;
-    }
-    
-    // Dernier recours : utiliser le port par défaut Next.js
-    // ⚠️ Ceci est un fallback de développement uniquement
-    const port = process.env.PORT || '3001';
-    return `http://localhost:${port}`;
-  }
-  
-  // Ne devrait jamais arriver ici
-  throw new Error(
-    'Unable to determine app base URL. Please set NEXT_PUBLIC_APP_URL or NEXT_PUBLIC_BASE_DOMAIN.'
-  );
-}
+export type { AppEnvironment } from './app-base-url';
+export { getAppEnvironment, getAppBaseUrl } from './app-base-url';
+import { getAppEnvironment, getAppBaseUrl } from './app-base-url';
 
 /**
  * Récupère l'URL de base de l'API

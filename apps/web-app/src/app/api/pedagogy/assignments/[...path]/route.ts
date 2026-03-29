@@ -3,7 +3,9 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
+import { readProxyBodyText } from '@/lib/api/pedagogy-proxy-body';
 
 const API_URL = getApiBaseUrlForRoutes();
 
@@ -21,20 +23,15 @@ async function forward(
   request.nextUrl.searchParams.forEach((value, key) => {
     url.searchParams.append(key, value);
   });
-  const headers: HeadersInit = { 'Content-Type': 'application/json' };
-  const auth = request.headers.get('authorization') || request.headers.get('Authorization');
-  const cookie = request.headers.get('cookie');
-  const tenantId = request.headers.get('x-tenant-id');
-  if (auth) (headers as Record<string, string>)['Authorization'] = auth;
-  if (cookie) (headers as Record<string, string>)['cookie'] = cookie;
-  if (tenantId) (headers as Record<string, string>)['X-Tenant-ID'] = tenantId;
+  const headers = await getProxyAuthHeaders(request);
 
   try {
     const options: RequestInit = { method, headers, cache: 'no-store' };
-    if (method !== 'GET' && request.body) {
-      options.body = await request.text();
+    const bodyText = await readProxyBodyText(request, method);
+    if (bodyText !== undefined) {
+      options.body = bodyText;
     }
-    const res = await fetch(url.toString(), options);
+    const res = await fetch(normalizeApiUrl(url.toString()), options);
     const data = await res.json().catch(() => ({}));
     return NextResponse.json(data, { status: res.status });
   } catch (e) {

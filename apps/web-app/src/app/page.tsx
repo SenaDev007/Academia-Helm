@@ -6,8 +6,13 @@
  */
 
 import { Metadata } from 'next';
-import CompleteLandingPage from '@/components/public/CompleteLandingPage';
+import PremiumLandingPage from '@/components/public/PremiumLandingPage';
 import StructuredData from '@/components/public/StructuredData';
+import { getPublicSiteUrl, DEFAULT_OG_IMAGE_PATH } from '@/lib/seo';
+import { buildHreflangLanguages } from '@/lib/seo/locales';
+import { fetchPublishedPlatformReviews } from '@/lib/public/platform-reviews';
+
+const siteUrl = getPublicSiteUrl();
 
 export const metadata: Metadata = {
   title: 'Academia Helm - Plateforme de pilotage éducatif',
@@ -29,7 +34,7 @@ export const metadata: Metadata = {
     siteName: 'Academia Helm',
     images: [
       {
-        url: '/images/logo-Academia Hub.png',
+        url: DEFAULT_OG_IMAGE_PATH,
         width: 1200,
         height: 630,
         alt: 'Academia Helm - Plateforme de pilotage éducatif',
@@ -42,21 +47,24 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'Academia Helm - Plateforme de pilotage éducatif',
     description: 'La plateforme de pilotage éducatif nouvelle génération.',
-    images: ['/images/logo-Academia Hub.png'],
+    images: [DEFAULT_OG_IMAGE_PATH],
   },
   alternates: {
-    canonical: '/',
+    canonical: siteUrl,
+    languages: buildHreflangLanguages(siteUrl, ''),
   },
 };
 
 // Force dynamic rendering to avoid build timeouts
 export const dynamic = 'force-dynamic';
 
-export default function HomePage() {
+export default async function HomePage() {
+  const platformReviews = await fetchPublishedPlatformReviews();
+
   return (
     <>
-      <StructuredData />
-      <CompleteLandingPage />
+      <StructuredData platformReviews={platformReviews} />
+      <PremiumLandingPage />
     </>
   );
 }

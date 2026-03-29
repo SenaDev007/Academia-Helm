@@ -16,6 +16,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { usePathname } from 'next/navigation';
+import { getPageSlideMotion } from '@/lib/motion/presets';
+import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import PilotageTopBar from './PilotageTopBar';
 import PilotageSidebar from './PilotageSidebar';
 import { OfflineStatusBadge } from '@/components/offline/OfflineStatusBadge';
@@ -33,6 +37,9 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
   const [sidebarOpen, setSidebarOpen] = useState(true); // lg: expanded/collapsed
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false); // mobile: drawer overlay
   const { currentLevel } = useSchoolLevel();
+  const pathname = usePathname();
+  const { shouldReduceMotion } = useMotionBudget();
+  const pageMotion = getPageSlideMotion(shouldReduceMotion);
 
   // Initialiser les services offline
   useEffect(() => {
@@ -98,12 +105,18 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
             sidebarOpen ? 'lg:ml-64' : 'lg:ml-16'
           }`}
         >
-          <div
+          <AnimatePresence mode="wait">
+            <motion.div
             className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto w-full"
-            key={currentLevel?.id ?? 'no-level'}
-          >
-            {children}
-          </div>
+            key={`${pathname}-${currentLevel?.id ?? 'no-level'}`}
+            initial={pageMotion.initial}
+            animate={pageMotion.animate}
+            exit={pageMotion.exit}
+            transition={pageMotion.transition}
+            >
+              {children}
+            </motion.div>
+          </AnimatePresence>
         </main>
       </div>
 

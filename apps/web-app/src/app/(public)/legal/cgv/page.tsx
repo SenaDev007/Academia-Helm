@@ -4,8 +4,18 @@
  * Page publique affichant les Conditions Générales de Vente
  */
 
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import PremiumHeader from '@/components/layout/PremiumHeader';
+import { generateSEOMetadata } from '@/lib/seo';
+
+export const metadata: Metadata = generateSEOMetadata({
+  title: 'Conditions générales de vente (CGV)',
+  description:
+    'Conditions générales de vente des abonnements et services Academia Helm pour les établissements.',
+  keywords: ['CGV Academia Helm', 'conditions vente SaaS éducation'],
+  path: '/legal/cgv',
+});
 
 export default function CGVPage() {
   return (

@@ -4,9 +4,19 @@
  * Page officielle de la politique de confidentialité d'Academia Helm
  */
 
+import type { Metadata } from 'next';
 import PremiumHeader from '@/components/layout/PremiumHeader';
 import InstitutionalFooter from '@/components/public/InstitutionalFooter';
 import { bgColor, textColor, typo } from '@/lib/design-tokens';
+import { generateSEOMetadata } from '@/lib/seo';
+
+export const metadata: Metadata = generateSEOMetadata({
+  title: 'Politique de confidentialité',
+  description:
+    'Politique de confidentialité et traitement des données personnelles sur Academia Helm (RGPD, hébergement, droits des utilisateurs).',
+  keywords: ['confidentialité Academia Helm', 'données personnelles école', 'RGPD'],
+  path: '/legal/privacy',
+});
 
 // Force dynamic rendering to avoid build timeouts
 export const dynamic = 'force-dynamic';

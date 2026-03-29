@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     const url = new URL(`${API_BASE_URL}/settings/users`);
     const fromQuery = request.nextUrl?.searchParams?.toString();
     if (fromQuery) url.search = fromQuery;
-    const response = await fetch(normalizeApiUrl(url.toString()), { headers });
+    const response = await fetch(normalizeApiUrl(url.toString()), { headers, cache: 'no-store' });
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (error) {

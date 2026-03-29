@@ -1,115 +1,38 @@
-import { MetadataRoute } from 'next';
+import type { MetadataRoute } from 'next';
+import { getPublicSiteUrl } from '@/lib/seo';
+
+type SitemapEntry = MetadataRoute.Sitemap[number];
+
+const now = () => new Date();
+
+function entry(path: string, opts: Omit<SitemapEntry, 'url'>): SitemapEntry {
+  const base = getPublicSiteUrl();
+  const pathPart = path.startsWith('/') ? path : `/${path}`;
+  return {
+    url: `${base}${pathPart === '/' ? '' : pathPart}` || base,
+    ...opts,
+  };
+}
 
 /**
- * Sitemap dynamique qui détecte automatiquement toutes les pages publiques
- * 
- * Les nouvelles pages dans app/(public)/ sont automatiquement détectées
- * et ajoutées au sitemap avec des priorités par défaut
+ * Pages publiques à indexer (hors flux onboarding, auth, app).
  */
-export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.academiahub.com';
-
-  // Pages statiques avec priorités définies
-  const staticPages: MetadataRoute.Sitemap = [
-    {
-      url: baseUrl,
-      lastModified: new Date(),
-      changeFrequency: 'weekly',
-      priority: 1,
-    },
-    {
-      url: `${baseUrl}/modules`,
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: 0.9,
-    },
-    {
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: 0.9,
-    },
-    {
-      url: `${baseUrl}/securite`,
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: 0.8,
-    },
-    {
-      url: `${baseUrl}/orion`,
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: 0.8,
-    },
-    {
-      url: `${baseUrl}/contact`,
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: 0.7,
-    },
-    {
-      url: `${baseUrl}/signup`,
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: 0.9,
-    },
-    {
-      url: `${baseUrl}/legal/cgu`,
-      lastModified: new Date(),
-      changeFrequency: 'yearly',
-      priority: 0.3,
-    },
-    {
-      url: `${baseUrl}/legal/cgv`,
-      lastModified: new Date(),
-      changeFrequency: 'yearly',
-      priority: 0.3,
-    },
-    {
-      url: `${baseUrl}/legal/privacy`,
-      lastModified: new Date(),
-      changeFrequency: 'yearly',
-      priority: 0.3,
-    },
-    {
-      url: `${baseUrl}/legal/mentions`,
-      lastModified: new Date(),
-      changeFrequency: 'yearly',
-      priority: 0.3,
-    },
+export default function sitemap(): MetadataRoute.Sitemap {
+  return [
+    entry('/', { lastModified: now(), changeFrequency: 'weekly', priority: 1 }),
+    entry('/en', { lastModified: now(), changeFrequency: 'monthly', priority: 0.85 }),
+    entry('/pricing', { lastModified: now(), changeFrequency: 'weekly', priority: 0.95 }),
+    entry('/modules', { lastModified: now(), changeFrequency: 'monthly', priority: 0.9 }),
+    entry('/signup', { lastModified: now(), changeFrequency: 'monthly', priority: 0.9 }),
+    entry('/tarification', { lastModified: now(), changeFrequency: 'monthly', priority: 0.85 }),
+    entry('/orion', { lastModified: now(), changeFrequency: 'monthly', priority: 0.85 }),
+    entry('/patronat-examens', { lastModified: now(), changeFrequency: 'monthly', priority: 0.8 }),
+    entry('/securite', { lastModified: now(), changeFrequency: 'monthly', priority: 0.8 }),
+    entry('/contact', { lastModified: now(), changeFrequency: 'monthly', priority: 0.75 }),
+    entry('/testimonials', { lastModified: now(), changeFrequency: 'monthly', priority: 0.65 }),
+    entry('/legal/cgu', { lastModified: now(), changeFrequency: 'yearly', priority: 0.35 }),
+    entry('/legal/cgv', { lastModified: now(), changeFrequency: 'yearly', priority: 0.35 }),
+    entry('/legal/privacy', { lastModified: now(), changeFrequency: 'yearly', priority: 0.35 }),
+    entry('/legal/mentions', { lastModified: now(), changeFrequency: 'yearly', priority: 0.35 }),
   ];
-
-  // Note: La détection automatique des pages est gérée par Next.js
-  // Les nouvelles pages dans app/(public)/ sont automatiquement accessibles
-  // via les routes Next.js. Pour les ajouter au sitemap, il suffit de les
-  // ajouter manuellement ici ou d'utiliser un système de génération dynamique.
-  
-  // Pour l'instant, on retourne les pages statiques.
-  // Les développeurs doivent ajouter leurs nouvelles pages ici.
-  // Un script automatique peut être créé pour scanner et générer ce fichier.
-  
-  return staticPages;
 }
-
-/**
- * Détermine la priorité par défaut selon le chemin
- */
-function getDefaultPriority(path: string): number {
-  // Pages importantes
-  if (path.includes('signup') || path.includes('modules')) {
-    return 0.9;
-  }
-  
-  // Pages secondaires
-  if (path.includes('securite') || path.includes('orion') || path.includes('contact')) {
-    return 0.8;
-  }
-  
-  // Pages légales
-  if (path.includes('legal')) {
-    return 0.3;
-  }
-  
-  // Par défaut
-  return 0.7;
-}
-

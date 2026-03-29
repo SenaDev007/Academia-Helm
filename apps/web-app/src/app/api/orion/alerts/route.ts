@@ -24,17 +24,28 @@ export async function GET(request: NextRequest) {
     const response = await fetch(url, { headers });
 
     if (!response.ok) {
-      // En mode dégradé, retourner une liste vide plutôt qu'une 500
-      console.error('ORION alerts backend returned', response.status);
-      return NextResponse.json({ alerts: [] });
+      // En mode dégradé, retourner une liste vide plutôt qu'une 500.
+      // IMPORTANT: les consommateurs attendent un tableau (et font .slice/.length).
+      // Éviter le spam terminal en cas de 401 attendu (droits ORION non accordés).
+      if (response.status !== 401) {
+        console.error('ORION alerts backend returned', response.status);
+      }
+      return NextResponse.json([]);
     }
 
     const data = await response.json();
-    return NextResponse.json(data);
+    // Normaliser la forme de la réponse pour toujours renvoyer un tableau.
+    if (Array.isArray(data)) {
+      return NextResponse.json(data);
+    }
+    if (data && Array.isArray((data as any).alerts)) {
+      return NextResponse.json((data as any).alerts);
+    }
+    return NextResponse.json([]);
   } catch (error) {
     console.error('Error fetching ORION alerts:', error);
     // Mode dégradé : pas d'erreur bloquante pour le dashboard
-    return NextResponse.json({ alerts: [] });
+    return NextResponse.json([]);
   }
 }
 

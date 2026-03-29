@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     const url = new URL(`${API_BASE_URL}/settings/identity`);
     const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
     if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
-    const response = await fetch(url.toString(), { headers, cache: 'no-store' });
+    const response = await fetch(normalizeApiUrl(url.toString()), { headers, cache: 'no-store' });
     const data = await response.json().catch(() => (null));
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
@@ -29,21 +29,15 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const headers = await getProxyAuthHeaders(request);
-    const hasAuth = headers['Authorization'] || headers['Cookie'];
-    if (!hasAuth) {
-      return NextResponse.json(
-        { error: 'Session expirée ou non authentifié.', code: 'UNAUTHORIZED' },
-        { status: 401 }
-      );
-    }
     const body = await request.json().catch(() => ({}));
     const url = new URL(`${API_BASE_URL}/settings/identity`);
     const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
     if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
-    const response = await fetch(url.toString(), {
+    const response = await fetch(normalizeApiUrl(url.toString()), {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
+      cache: 'no-store',
     });
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });

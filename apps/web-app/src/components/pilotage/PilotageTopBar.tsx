@@ -12,7 +12,7 @@
 
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Image from 'next/image';
 import { Bell, RefreshCw, User, LogOut, Wifi, WifiOff, AlertCircle, ChevronDown, Settings, HelpCircle, School } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -34,6 +34,21 @@ interface PilotageTopBarProps {
   onMenuClick?: () => void;
 }
 
+const SCHOOL_IDENTITY_UPDATED_EVENT = 'settings-school-identity-updated';
+
+function formatRoleLabel(role?: string) {
+  if (!role) return '—';
+  const labels: Record<string, string> = {
+    PLATFORM_OWNER: 'Propriétaire plateforme',
+    SUPER_DIRECTOR: 'Promoteur',
+    DIRECTOR: 'Directeur',
+    ADMIN: 'Administrateur',
+    TEACHER: 'Enseignant',
+    ACCOUNTANT: 'Comptable',
+  };
+  return labels[role] ?? role;
+}
+
 export default function PilotageTopBar({ user, tenant, onMenuClick }: PilotageTopBarProps) {
   const router = useRouter();
   const isOnline = useOffline();
@@ -43,30 +58,38 @@ export default function PilotageTopBar({ user, tenant, onMenuClick }: PilotageTo
   const [schoolIdentity, setSchoolIdentity] = useState<SchoolIdentity | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Charger l'identité de l'école
-  useEffect(() => {
-    const loadSchoolIdentity = async () => {
-      try {
-        const response = await fetch('/api/settings/identity', {
-          credentials: 'include',
-        });
-        if (response.ok) {
-          const data = await response.json();
-          if (data) {
-            setSchoolIdentity({
-              schoolName: data.schoolName,
-              schoolAcronym: data.schoolAcronym,
-              logoUrl: data.logoUrl,
-            });
-          }
+  const loadSchoolIdentity = useCallback(async () => {
+    try {
+      const response = await fetch('/api/settings/identity', {
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data) {
+          setSchoolIdentity({
+            schoolName: data.schoolName,
+            schoolAcronym: data.schoolAcronym,
+            logoUrl: data.logoUrl,
+          });
         }
-      } catch (error) {
-        console.error('Failed to load school identity:', error);
       }
-    };
-
-    loadSchoolIdentity();
+    } catch (error) {
+      console.error('Failed to load school identity:', error);
+    }
   }, []);
+
+  // Charger l'identité de l'école + écouter les mises à jour depuis le module Paramètres
+  useEffect(() => {
+    loadSchoolIdentity();
+    const onIdentityUpdated = () => {
+      void loadSchoolIdentity();
+    };
+    window.addEventListener(SCHOOL_IDENTITY_UPDATED_EVENT, onIdentityUpdated);
+    return () => {
+      window.removeEventListener(SCHOOL_IDENTITY_UPDATED_EVENT, onIdentityUpdated);
+    };
+  }, [loadSchoolIdentity]);
 
   // Charger les alertes ORION
   useEffect(() => {
@@ -75,7 +98,7 @@ export default function PilotageTopBar({ user, tenant, onMenuClick }: PilotageTo
         const response = await fetch('/api/orion/alerts?status=active');
         if (response.ok) {
           const alerts = await response.json();
-          setOrionAlertsCount(alerts.length || 0);
+          setOrionAlertsCount(Array.isArray(alerts) ? alerts.length : 0);
         }
       } catch (error) {
         console.error('Failed to load ORION alerts:', error);
@@ -115,7 +138,7 @@ export default function PilotageTopBar({ user, tenant, onMenuClick }: PilotageTo
   }, [profileDropdownOpen]);
 
   return (
-    <header className="bg-white border-b border-gray-200 fixed top-0 left-0 right-0 z-50 shadow-sm backdrop-blur-sm bg-white/95 sticky top-0">
+    <header className="bg-white border-b border-gray-200 fixed top-0 left-0 right-0 z-50 shadow-sm backdrop-blur-sm bg-white/95">
       <div className="px-4 py-3 sm:px-6">
         <div className="flex items-center justify-between gap-2">
           {/* Gauche : Hamburger mobile + Logo École + Contexte */}
@@ -224,7 +247,7 @@ export default function PilotageTopBar({ user, tenant, onMenuClick }: PilotageTo
                   <p className="text-sm font-semibold text-gray-900">
                     {user.firstName} {user.lastName}
                   </p>
-                  <p className="text-xs text-gray-500">{user.role}</p>
+                  <p className="text-xs text-gray-500">{formatRoleLabel(user.role)}</p>
                 </div>
                 <div className="relative">
                   <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-blue-700 rounded-full flex items-center justify-center shadow-md group-hover:shadow-lg transition-shadow">
@@ -243,7 +266,7 @@ export default function PilotageTopBar({ user, tenant, onMenuClick }: PilotageTo
                       {user.firstName} {user.lastName}
                     </p>
                     <p className="text-xs text-gray-500 mt-0.5">{user.email}</p>
-                    <p className="text-xs text-blue-600 font-medium mt-1">{user.role}</p>
+                    <p className="text-xs text-blue-600 font-medium mt-1">{formatRoleLabel(user.role)}</p>
                   </div>
                   
                   <div className="py-1">

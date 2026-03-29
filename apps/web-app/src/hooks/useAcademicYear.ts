@@ -13,7 +13,7 @@
 
 import { useAcademicYearContext } from '@/contexts/AcademicYearContext';
 
-export type { AcademicYear } from '@/contexts/AcademicYearContext';
+export type { AcademicYear } from '@/types/academic-year';
 
 export function useAcademicYear() {
   return useAcademicYearContext();

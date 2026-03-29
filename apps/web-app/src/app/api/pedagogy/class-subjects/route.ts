@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 const API_URL = getApiBaseUrlForRoutes();
 
@@ -28,10 +29,10 @@ export async function GET(request: NextRequest) {
       }
     });
 
+    const headers = await getProxyAuthHeaders(request);
     const response = await fetch(url.toString(), {
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
+      cache: 'no-store',
     });
 
     if (!response.ok) {
@@ -56,12 +57,12 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
+    const headers = await getProxyAuthHeaders(request);
     const response = await fetch(`${API_URL}/api/pedagogy/class-subjects`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(body),
+      cache: 'no-store',
     });
 
     if (!response.ok) {

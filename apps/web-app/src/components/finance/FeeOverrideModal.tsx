@@ -1,10 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { getModalMotion } from '@/lib/motion/presets';
+import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 
 export default function FeeOverrideModal({
   structures,
@@ -19,6 +22,8 @@ export default function FeeOverrideModal({
   const [reason, setReason] = useState('');
   const [students, setStudents] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const { shouldReduceMotion } = useMotionBudget();
+  const modalMotion = getModalMotion(shouldReduceMotion);
 
   useEffect(() => {
     fetch('/api/students?limit=200', { credentials: 'include' })
@@ -52,8 +57,13 @@ export default function FeeOverrideModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 max-w-lg w-full">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50">
+      <motion.div
+        initial={modalMotion.initial}
+        animate={modalMotion.animate}
+        transition={modalMotion.transition}
+        className="bg-white rounded-xl p-6 max-w-lg w-full border border-blue-100 shadow-2xl"
+      >
         <h3 className="text-lg font-semibold mb-4">Personnalisation élève</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -93,7 +103,7 @@ export default function FeeOverrideModal({
             <Button type="submit" disabled={loading}>{loading ? 'Envoi...' : 'Valider'}</Button>
           </div>
         </form>
-      </div>
+      </motion.div>
     </div>
   );
 }

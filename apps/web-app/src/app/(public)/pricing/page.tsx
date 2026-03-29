@@ -3,7 +3,17 @@
  * Alignée sur la spec HELM Pricing Landing Page.
  */
 
+import type { Metadata } from 'next';
 import PremiumHeader from '@/components/layout/PremiumHeader';
+import { generateSEOMetadata } from '@/lib/seo';
+
+export const metadata: Metadata = generateSEOMetadata({
+  title: 'Tarifs et offres',
+  description:
+    'Découvrez les offres Academia Helm : 9 modules inclus, tarification claire selon le nombre d’élèves. Pilotez votre établissement sans surprise.',
+  keywords: ['tarifs Academia Helm', 'prix logiciel école', 'abonnement gestion scolaire', 'SaaS éducation'],
+  path: '/pricing',
+});
 import HelmPricingGrid from '@/components/pricing/HelmPricingGrid';
 import HelmModulesSection from '@/components/pricing/HelmModulesSection';
 import HelmAddonsSection from '@/components/pricing/HelmAddonsSection';

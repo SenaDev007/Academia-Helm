@@ -13,6 +13,8 @@ import { PortalSessionService } from './services/portal-session.service';
 import { OrionInitService } from './services/orion-init.service';
 import { PortalAuthService } from './services/portal-auth.service';
 import { PublicPortalController } from './controllers/public-portal.controller';
+import { PublicPlatformReviewsController } from './controllers/public-platform-reviews.controller';
+import { PlatformMarketingReviewService } from './services/platform-marketing-review.service';
 import { PortalController } from './controllers/portal.controller';
 import { PortalLogController } from './controllers/portal-log.controller';
 import { PortalAuthController } from './controllers/portal-auth.controller';
@@ -34,12 +36,14 @@ import { OrionModule } from '../orion/orion.module';
   ],
   providers: [
     PrismaService,
+    PlatformMarketingReviewService,
     SchoolSearchService,
     PortalSessionService,
     OrionInitService,
     PortalAuthService,
   ],
   controllers: [
+    PublicPlatformReviewsController,
     PublicPortalController,
     PortalController,
     PortalAuthController,

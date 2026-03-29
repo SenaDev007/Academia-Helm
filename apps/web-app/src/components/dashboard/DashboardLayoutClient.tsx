@@ -7,6 +7,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { usePathname } from 'next/navigation';
+import { getPageSlideMotion } from '@/lib/motion/presets';
+import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import type { User, Tenant } from '@/types';
 import DashboardSidebar from './DashboardSidebar';
 import DashboardHeader from './DashboardHeader';
@@ -24,6 +28,9 @@ export default function DashboardLayoutClient({
   children,
 }: DashboardLayoutClientProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const pathname = usePathname();
+  const { shouldReduceMotion } = useMotionBudget();
+  const pageMotion = getPageSlideMotion(shouldReduceMotion);
 
   // Initialiser les services offline
   useEffect(() => {
@@ -55,7 +62,17 @@ export default function DashboardLayoutClient({
       <div className={`transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-16'}`}>
         <DashboardHeader user={user} tenant={tenant} />
         <main className="p-6">
-          {children}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={pathname}
+              initial={pageMotion.initial}
+              animate={pageMotion.animate}
+              exit={pageMotion.exit}
+              transition={pageMotion.transition}
+            >
+              {children}
+            </motion.div>
+          </AnimatePresence>
         </main>
       </div>
       {/* Indicateur Offline */}

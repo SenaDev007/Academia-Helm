@@ -69,7 +69,7 @@ export class ReviewsService {
       }),
     ]);
 
-    const total = agg._count?._all ?? 0;
+    const total = agg._count ?? 0;
     const average =
       total > 0 && agg._avg?.rating != null
         ? Math.round(agg._avg.rating * 10) / 10

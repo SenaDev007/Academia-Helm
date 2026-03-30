@@ -60,9 +60,7 @@ export class ReceiptNotificationService {
             identifier: true,
             tenant: {
               include: {
-                schools: {
-                  take: 1,
-                },
+                schools: true,
               },
             },
             studentEnrollments: {
@@ -87,6 +85,21 @@ export class ReceiptNotificationService {
           },
         },
         academicYear: true,
+        paymentAllocations: {
+          include: {
+            studentFee: {
+              include: {
+                feeDefinition: {
+                  include: {
+                    feeCategory: true,
+                  },
+                },
+                paymentSummary: true,
+              },
+            },
+          },
+          orderBy: { allocationOrder: 'asc' },
+        },
         receipt: {
           include: {
             payment: {
@@ -238,7 +251,7 @@ Merci pour votre confiance.
   private async generateReceiptImage(receipt: any, payment: any): Promise<string> {
     const student = payment.student;
     const enrollment = student.studentEnrollments?.[0];
-    const institution = student.tenant.schools?.[0]?.name || student.tenant.name;
+    const institution = student.tenant.schools?.name || student.tenant.name;
 
     // Préparer les données pour le template
     const receiptData = {

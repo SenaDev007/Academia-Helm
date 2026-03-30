@@ -125,17 +125,27 @@ class OfflineSyncService {
    * Récupère le tenantId
    */
   private async getTenantId(): Promise<string | null> {
-    // À implémenter selon votre système d'auth
-    // Exemple : depuis session, localStorage, etc.
-    if (typeof window !== 'undefined') {
-      const session = localStorage.getItem('session');
-      if (session) {
-        try {
-          const parsed = JSON.parse(session);
-          return parsed.tenantId || null;
-        } catch {
-          return null;
-        }
+    if (typeof window === 'undefined') return null;
+
+    const rawTenantCookie = document.cookie
+      .split('; ')
+      .find((row) => row.startsWith('x-tenant-id='))
+      ?.split('=')[1];
+    if (rawTenantCookie) {
+      try {
+        return decodeURIComponent(rawTenantCookie);
+      } catch {
+        return rawTenantCookie;
+      }
+    }
+
+    const session = localStorage.getItem('session');
+    if (session) {
+      try {
+        const parsed = JSON.parse(session);
+        return parsed.tenantId || null;
+      } catch {
+        return null;
       }
     }
     return null;

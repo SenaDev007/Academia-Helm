@@ -16,6 +16,10 @@ export async function fetchPublishedPlatformReviews(): Promise<PlatformReviewPub
     const res = await fetch(backendReviewsUrl(), {
       next: { revalidate: 120 },
       headers: { Accept: 'application/json' },
+      signal:
+        typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+          ? AbortSignal.timeout(12_000)
+          : undefined,
     });
     if (!res.ok) return [];
     const data = (await res.json()) as { reviews?: unknown };

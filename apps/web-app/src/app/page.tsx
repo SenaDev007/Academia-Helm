@@ -10,8 +10,6 @@ import PremiumLandingPage from '@/components/public/PremiumLandingPage';
 import StructuredData from '@/components/public/StructuredData';
 import { getPublicSiteUrl, DEFAULT_OG_IMAGE_PATH } from '@/lib/seo';
 import { buildHreflangLanguages } from '@/lib/seo/locales';
-import { fetchPublishedPlatformReviews } from '@/lib/public/platform-reviews';
-
 const siteUrl = getPublicSiteUrl();
 
 export const metadata: Metadata = {
@@ -55,15 +53,11 @@ export const metadata: Metadata = {
   },
 };
 
-// Force dynamic rendering to avoid build timeouts
-export const dynamic = 'force-dynamic';
-
-export default async function HomePage() {
-  const platformReviews = await fetchPublishedPlatformReviews();
-
+// Pas de fetch SSR vers l’API (évite blocage si API down) ; avis = client dans ReviewsSection.
+export default function HomePage() {
   return (
     <>
-      <StructuredData platformReviews={platformReviews} />
+      <StructuredData platformReviews={[]} />
       <PremiumLandingPage />
     </>
   );

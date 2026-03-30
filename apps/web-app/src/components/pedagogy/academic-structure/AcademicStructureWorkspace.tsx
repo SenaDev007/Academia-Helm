@@ -72,10 +72,8 @@ interface SeriesRow {
 
 interface RoomRow {
   id: string;
-  name?: string;
   roomName?: string;
   roomCode?: string;
-  type?: string;
   roomType?: string;
   capacity?: number | null;
   status?: string;
@@ -97,11 +95,11 @@ function isCanonicalLevelName(name: string): boolean {
 }
 
 function roomDisplayName(r: RoomRow): string {
-  return r.name ?? r.roomName ?? r.roomCode ?? '—';
+  return r.roomName ?? r.roomCode ?? '—';
 }
 
 function roomTypeDisplay(r: RoomRow): string {
-  return r.type ?? r.roomType ?? '—';
+  return r.roomType ?? '—';
 }
 
 export function AcademicStructureWorkspace() {
@@ -123,6 +121,7 @@ export function AcademicStructureWorkspace() {
   const [dupFrom, setDupFrom] = useState<string>('');
   const [dupTo, setDupTo] = useState<string>('');
   const [dupRunning, setDupRunning] = useState(false);
+  const [dupConfirmed, setDupConfirmed] = useState(false);
 
   const [cycleModal, setCycleModal] = useState<
     | null
@@ -130,6 +129,17 @@ export function AcademicStructureWorkspace() {
     | { mode: 'edit'; cycle: AcademicCycleRow }
   >(null);
   const [cycleForm, setCycleForm] = useState({ levelId: '', name: '', orderIndex: 0 });
+
+  const [levelModal, setLevelModal] = useState<
+    | null
+    | { mode: 'create' }
+    | { mode: 'edit'; level: AcademicLevelRow }
+  >(null);
+  const [levelForm, setLevelForm] = useState({
+    name: '',
+    orderIndex: 0,
+    isActive: true,
+  });
 
   const [classModal, setClassModal] = useState<
     | null
@@ -151,12 +161,18 @@ export function AcademicStructureWorkspace() {
   >(null);
   const [seriesForm, setSeriesForm] = useState({ name: '', description: '' });
 
-  const [roomModal, setRoomModal] = useState<null | { mode: 'create' }>(null);
+  const [roomModal, setRoomModal] = useState<
+    null | { mode: 'create' } | { mode: 'edit'; room: RoomRow }
+  >(null);
   const [roomForm, setRoomForm] = useState({
-    name: '',
-    type: 'CLASSROOM',
+    roomCode: '',
+    roomName: '',
+    roomType: 'CLASSROOM',
     capacity: '' as string | number,
   });
+
+  const [trackDraft, setTrackDraft] = useState<Record<string, string>>({});
+  const [trackSaving, setTrackSaving] = useState<Record<string, boolean>>({});
 
   const secondaryLevelId = useMemo(() => {
     const l = levels.find((x) => /secondaire/i.test(x.name));
@@ -235,11 +251,11 @@ export function AcademicStructureWorkspace() {
   }, [yearId, secondaryLevelId]);
 
   const loadRooms = useCallback(async () => {
+    if (!yearId) return;
     setLoading(true);
     try {
-      const res = await fetch('/api/rooms', { credentials: 'include', cache: 'no-store' });
-      if (!res.ok) throw new Error('Salles indisponibles');
-      const data = (await res.json()) as RoomRow[];
+      const q = new URLSearchParams({ academicYearId: yearId }).toString();
+      const data = await pedagogyFetch<RoomRow[]>(`/api/rooms?${q}`);
       setRooms(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error(e);
@@ -248,7 +264,7 @@ export function AcademicStructureWorkspace() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [yearId]);
 
   useEffect(() => {
     if (tab === 'levels') loadLevels();
@@ -314,6 +330,59 @@ export function AcademicStructureWorkspace() {
         });
       }
       setNotice({ type: 'ok', text: 'Niveaux officiels ajoutés.' });
+      await loadLevels();
+    } catch (e) {
+      setNotice({ type: 'err', text: (e as Error).message });
+    }
+  };
+
+  const openCreateLevel = () => {
+    setLevelForm({
+      name: '',
+      orderIndex: levels.length,
+      isActive: true,
+    });
+    setLevelModal({ mode: 'create' });
+  };
+
+  const openEditLevel = (level: AcademicLevelRow) => {
+    setLevelForm({
+      name: level.name,
+      orderIndex: level.orderIndex,
+      isActive: level.isActive,
+    });
+    setLevelModal({ mode: 'edit', level });
+  };
+
+  const saveLevel = async () => {
+    if (!yearId) return;
+    if (!levelForm.name.trim()) {
+      setNotice({ type: 'err', text: 'Nom du niveau requis.' });
+      return;
+    }
+    try {
+      if (levelModal?.mode === 'create') {
+        await pedagogyFetch(academicStructureUrl('levels'), {
+          method: 'POST',
+          body: {
+            academicYearId: yearId,
+            name: levelForm.name.trim(),
+            orderIndex: Number(levelForm.orderIndex) || 0,
+          },
+        });
+        setNotice({ type: 'ok', text: 'Niveau créé.' });
+      } else if (levelModal?.mode === 'edit') {
+        await pedagogyFetch(academicStructureUrl(`levels/${levelModal.level.id}`), {
+          method: 'PUT',
+          body: {
+            name: levelForm.name.trim(),
+            orderIndex: Number(levelForm.orderIndex) || 0,
+            isActive: !!levelForm.isActive,
+          },
+        });
+        setNotice({ type: 'ok', text: 'Niveau mis à jour.' });
+      }
+      setLevelModal(null);
       await loadLevels();
     } catch (e) {
       setNotice({ type: 'err', text: (e as Error).message });
@@ -447,6 +516,22 @@ export function AcademicStructureWorkspace() {
     }
   };
 
+  const saveLanguageTrack = async (cls: AcademicClassRow, next: string) => {
+    try {
+      setTrackSaving((m) => ({ ...m, [cls.id]: true }));
+      await pedagogyFetch(academicStructureUrl(`classes/${cls.id}`), {
+        method: 'PUT',
+        body: { languageTrack: next || null },
+      });
+      setNotice({ type: 'ok', text: 'Piste linguistique mise à jour.' });
+      await loadClasses();
+    } catch (e) {
+      setNotice({ type: 'err', text: (e as Error).message });
+    } finally {
+      setTrackSaving((m) => ({ ...m, [cls.id]: false }));
+    }
+  };
+
   const saveSeries = async () => {
     if (!yearId || !secondaryLevelId || !seriesForm.name.trim()) {
       setNotice({ type: 'err', text: 'Nom de série requis (niveau Secondaire requis).' });
@@ -493,24 +578,40 @@ export function AcademicStructureWorkspace() {
   };
 
   const saveRoom = async () => {
-    if (!roomForm.name.trim()) {
-      setNotice({ type: 'err', text: 'Nom de salle requis.' });
+    if (!yearId) return;
+    if (!roomForm.roomCode.trim() || !roomForm.roomName.trim()) {
+      setNotice({ type: 'err', text: 'Code et nom de salle requis.' });
       return;
     }
     try {
       const cap =
         roomForm.capacity === '' ? undefined : Math.max(1, Number(roomForm.capacity) || 1);
-      await pedagogyFetch('/api/rooms', {
-        method: 'POST',
-        body: {
-          name: roomForm.name.trim(),
-          type: roomForm.type,
-          capacity: cap,
-          status: 'available',
-        },
-      });
+      const body = {
+        academicYearId: yearId,
+        roomCode: roomForm.roomCode.trim(),
+        roomName: roomForm.roomName.trim(),
+        roomType: roomForm.roomType,
+        capacity: cap,
+        status: 'ACTIVE',
+      };
+      if (roomModal?.mode === 'create') {
+        await pedagogyFetch('/api/rooms', { method: 'POST', body });
+        setNotice({ type: 'ok', text: 'Salle créée.' });
+      } else if (roomModal?.mode === 'edit') {
+        await pedagogyFetch(`/api/rooms/${roomModal.room.id}`, { method: 'PUT', body });
+        setNotice({ type: 'ok', text: 'Salle mise à jour.' });
+      }
       setRoomModal(null);
-      setNotice({ type: 'ok', text: 'Salle créée.' });
+      await loadRooms();
+    } catch (e) {
+      setNotice({ type: 'err', text: (e as Error).message });
+    }
+  };
+
+  const deleteRoom = async (roomId: string) => {
+    try {
+      await pedagogyFetch(`/api/rooms/${roomId}`, { method: 'DELETE' });
+      setNotice({ type: 'ok', text: 'Salle supprimée.' });
       await loadRooms();
     } catch (e) {
       setNotice({ type: 'err', text: (e as Error).message });
@@ -527,19 +628,20 @@ export function AcademicStructureWorkspace() {
   ];
 
   const addAction = () => {
-    if (tab === 'cycles') openCreateCycle();
+    if (tab === 'levels') openCreateLevel();
+    else if (tab === 'cycles') openCreateCycle();
     else if (tab === 'classes') openCreateClass();
     else if (tab === 'series') {
       setSeriesForm({ name: '', description: '' });
       setSeriesModal({ mode: 'create' });
     } else if (tab === 'rooms') {
-      setRoomForm({ name: '', type: 'CLASSROOM', capacity: '' });
+      setRoomForm({ roomCode: '', roomName: '', roomType: 'CLASSROOM', capacity: '' });
       setRoomModal({ mode: 'create' });
     }
   };
 
   const showAdd =
-    tab === 'cycles' || tab === 'classes' || tab === 'series' || tab === 'rooms';
+    tab === 'levels' || tab === 'cycles' || tab === 'classes' || tab === 'series' || tab === 'rooms';
 
   const refreshAfterDuplicateTo = async (targetYearId: string) => {
     if (targetYearId !== yearId) return;
@@ -659,6 +761,7 @@ export function AcademicStructureWorkspace() {
               const next = idx >= 0 && idx < sorted.length - 1 ? sorted[idx + 1] : sorted[sorted.length - 1];
               setDupFrom(prev?.id ?? '');
               setDupTo(next?.id ?? yearId);
+              setDupConfirmed(false);
               setDupOpen(true);
             }}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
@@ -770,14 +873,24 @@ export function AcademicStructureWorkspace() {
                           Régler dans Paramètres
                         </Link>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => toggleLevel(l)}
-                          className="text-sm font-medium hover:underline"
-                          style={{ color: PRIMARY }}
-                        >
-                          {l.isActive ? 'Désactiver' : 'Activer'}
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => openEditLevel(l)}
+                            className="mr-3 text-sm font-medium hover:underline"
+                            style={{ color: PRIMARY }}
+                          >
+                            Modifier
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => toggleLevel(l)}
+                            className="text-sm font-medium hover:underline"
+                            style={{ color: PRIMARY }}
+                          >
+                            {l.isActive ? 'Désactiver' : 'Activer'}
+                          </button>
+                        </>
                       )}
                     </td>
                   </tr>
@@ -934,13 +1047,39 @@ export function AcademicStructureWorkspace() {
                 <tr className="bg-slate-50 text-left text-xs font-semibold uppercase text-slate-500">
                   <th className="px-3 py-2">Classe</th>
                   <th className="px-3 py-2">Piste</th>
+                  <th className="px-3 py-2 text-right">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {classes.map((c) => (
                   <tr key={c.id} className="border-t border-slate-100">
                     <td className="px-3 py-2 font-medium">{c.name}</td>
-                    <td className="px-3 py-2">{c.languageTrack ?? '—'}</td>
+                    <td className="px-3 py-2">
+                      <select
+                        className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                        value={trackDraft[c.id] ?? c.languageTrack ?? ''}
+                        onChange={(e) =>
+                          setTrackDraft((m) => ({ ...m, [c.id]: e.target.value }))
+                        }
+                      >
+                        <option value="">—</option>
+                        <option value="FR">FR</option>
+                        <option value="EN">EN</option>
+                      </select>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        type="button"
+                        disabled={!!trackSaving[c.id]}
+                        className="text-sm font-medium hover:underline disabled:opacity-50"
+                        style={{ color: PRIMARY }}
+                        onClick={() =>
+                          saveLanguageTrack(c, trackDraft[c.id] ?? c.languageTrack ?? '')
+                        }
+                      >
+                        {trackSaving[c.id] ? 'En cours…' : 'Enregistrer'}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1015,26 +1154,54 @@ export function AcademicStructureWorkspace() {
           <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase text-slate-500">
+                <th className="px-4 py-3">Code</th>
                 <th className="px-4 py-3">Salle</th>
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Capacité</th>
                 <th className="px-4 py-3">Statut</th>
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {rooms.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-10 text-center text-slate-500">
+                  <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
                     Aucune salle enregistrée.
                   </td>
                 </tr>
               ) : (
                 rooms.map((r) => (
                   <tr key={r.id} className="border-b border-slate-100 hover:bg-slate-50/80">
+                    <td className="px-4 py-3 font-mono text-xs text-slate-600">{r.roomCode ?? '—'}</td>
                     <td className="px-4 py-3 font-medium">{roomDisplayName(r)}</td>
                     <td className="px-4 py-3">{roomTypeDisplay(r)}</td>
                     <td className="px-4 py-3">{r.capacity ?? '—'}</td>
                     <td className="px-4 py-3">{r.status ?? '—'}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        className="mr-3 text-sm font-medium hover:underline"
+                        style={{ color: PRIMARY }}
+                        onClick={() => {
+                          setRoomForm({
+                            roomCode: r.roomCode ?? '',
+                            roomName: r.roomName ?? '',
+                            roomType: r.roomType ?? 'CLASSROOM',
+                            capacity: r.capacity ?? '',
+                          });
+                          setRoomModal({ mode: 'edit', room: r });
+                        }}
+                      >
+                        Modifier
+                      </button>
+                      <button
+                        type="button"
+                        className="text-sm font-medium text-amber-700 hover:underline"
+                        onClick={() => deleteRoom(r.id)}
+                      >
+                        Supprimer
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
@@ -1042,6 +1209,66 @@ export function AcademicStructureWorkspace() {
           </table>
         </div>
       )}
+
+      <BaseModal
+        title={levelModal?.mode === 'edit' ? 'Modifier le niveau' : 'Nouveau niveau'}
+        isOpen={levelModal != null}
+        onClose={() => setLevelModal(null)}
+        showContext={false}
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setLevelModal(null)}
+              className="rounded-lg border border-slate-200 px-4 py-2 text-sm"
+            >
+              Annuler
+            </button>
+            <button
+              type="button"
+              onClick={saveLevel}
+              className="rounded-lg px-4 py-2 text-sm font-medium text-white"
+              style={{ backgroundColor: PRIMARY }}
+            >
+              Enregistrer
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <label className="block text-sm">
+            <span className="text-slate-600">Nom du niveau</span>
+            <input
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+              value={levelForm.name}
+              onChange={(e) => setLevelForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder="Ex. Secondaire technique"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="text-slate-600">Ordre d&apos;affichage</span>
+            <input
+              type="number"
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+              value={levelForm.orderIndex}
+              onChange={(e) =>
+                setLevelForm((f) => ({ ...f, orderIndex: Number(e.target.value) }))
+              }
+            />
+          </label>
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={levelForm.isActive}
+              onChange={(e) => setLevelForm((f) => ({ ...f, isActive: e.target.checked }))}
+            />
+            <span className="text-slate-700">Niveau actif</span>
+          </label>
+          <p className="text-xs text-slate-500">
+            Les niveaux officiels (Maternelle/Primaire/Secondaire) se gèrent via Paramètres.
+          </p>
+        </div>
+      </BaseModal>
 
       <BaseModal
         title={cycleModal?.mode === 'edit' ? 'Modifier le cycle' : 'Nouveau cycle'}
@@ -1275,7 +1502,7 @@ export function AcademicStructureWorkspace() {
       </BaseModal>
 
       <BaseModal
-        title="Nouvelle salle"
+        title={roomModal?.mode === 'edit' ? 'Modifier la salle' : 'Nouvelle salle'}
         isOpen={roomModal != null}
         onClose={() => setRoomModal(null)}
         showContext={false}
@@ -1294,36 +1521,47 @@ export function AcademicStructureWorkspace() {
               className="rounded-lg px-4 py-2 text-sm font-medium text-white"
               style={{ backgroundColor: PRIMARY }}
             >
-              Créer
+              Enregistrer
             </button>
           </div>
         }
       >
-        <div className="space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block text-sm">
+            <span className="text-slate-600">Code</span>
+            <input
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 font-mono"
+              value={roomForm.roomCode}
+              onChange={(e) => setRoomForm((f) => ({ ...f, roomCode: e.target.value }))}
+              placeholder="Ex. S01"
+              disabled={roomModal?.mode === 'edit'}
+            />
+          </label>
           <label className="block text-sm">
             <span className="text-slate-600">Nom</span>
             <input
               className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
-              value={roomForm.name}
-              onChange={(e) => setRoomForm((f) => ({ ...f, name: e.target.value }))}
+              value={roomForm.roomName}
+              onChange={(e) => setRoomForm((f) => ({ ...f, roomName: e.target.value }))}
+              placeholder="Ex. Salle 01"
             />
           </label>
           <label className="block text-sm">
             <span className="text-slate-600">Type</span>
             <select
               className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
-              value={roomForm.type}
-              onChange={(e) => setRoomForm((f) => ({ ...f, type: e.target.value }))}
+              value={roomForm.roomType}
+              onChange={(e) => setRoomForm((f) => ({ ...f, roomType: e.target.value }))}
             >
               <option value="CLASSROOM">Salle de classe</option>
               <option value="LAB">Laboratoire</option>
-              <option value="COMPUTER_ROOM">Salle informatique</option>
-              <option value="LIBRARY">Bibliothèque</option>
-              <option value="MULTIPURPOSE">Salle polyvalente</option>
+              <option value="IT">Informatique</option>
+              <option value="EXAM">Examen</option>
+              <option value="OTHER">Autre</option>
             </select>
           </label>
           <label className="block text-sm">
-            <span className="text-slate-600">Capacité</span>
+            <span className="text-slate-600">Capacité (optionnel)</span>
             <input
               type="number"
               min={1}
@@ -1332,6 +1570,9 @@ export function AcademicStructureWorkspace() {
               onChange={(e) => setRoomForm((f) => ({ ...f, capacity: e.target.value }))}
             />
           </label>
+          <p className="text-xs text-slate-500 sm:col-span-2">
+            Les salles sont filtrées sur l’année scolaire active.
+          </p>
         </div>
       </BaseModal>
 
@@ -1352,7 +1593,7 @@ export function AcademicStructureWorkspace() {
             </button>
             <button
               type="button"
-              disabled={dupRunning || dupFrom === dupTo}
+              disabled={dupRunning || dupFrom === dupTo || !dupConfirmed}
               onClick={runDuplicate}
               className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
               style={{ backgroundColor: PRIMARY }}
@@ -1403,6 +1644,18 @@ export function AcademicStructureWorkspace() {
         {dupFrom === dupTo && (
           <p className="mt-3 text-sm text-amber-800">Choisissez deux années distinctes.</p>
         )}
+        <label className="mt-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={dupConfirmed}
+            onChange={(e) => setDupConfirmed(e.target.checked)}
+          />
+          <span>
+            Je confirme que l’année cible est <strong>vide</strong> (aucun niveau/cycle/classe déjà créé),
+            et que je veux lancer la duplication.
+          </span>
+        </label>
       </BaseModal>
     </div>
   );

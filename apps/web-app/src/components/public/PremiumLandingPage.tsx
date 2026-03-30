@@ -95,8 +95,7 @@ function AnimatedHeadline({
               <motion.span
                 key={`${char}-${wordIndex}-${charIndex}`}
                 initial={{ opacity: 0, y: 16, filter: 'blur(6px)' }}
-                whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                viewport={{ once: true, amount: 0.7 }}
+                animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
                 transition={{
                   duration: 0.38,
                   ease: 'easeOut',
@@ -244,7 +243,7 @@ export default function PremiumLandingPage() {
             style={{ y: heroY, opacity: heroOpacity }}
             className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center"
           >
-            <motion.div variants={staggerContainer} initial="hidden" animate="show">
+            <motion.div variants={staggerContainer} initial={false} animate="show">
               <p className="inline-flex items-center rounded-full bg-amber-400/20 border border-amber-300/50 text-amber-200 px-4 py-1 text-sm font-semibold mb-6">
                 Plateforme de pilotage éducatif
               </p>
@@ -293,7 +292,7 @@ export default function PremiumLandingPage() {
 
             <motion.div
               variants={fadeUp}
-              initial="hidden"
+              initial={false}
               animate="show"
               transition={{ duration: 0.6, delay: 0.15 }}
               className="relative"

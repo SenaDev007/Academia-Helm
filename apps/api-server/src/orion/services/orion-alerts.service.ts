@@ -1121,19 +1121,27 @@ export class OrionAlertsService {
       where.acknowledged = filters.acknowledged;
     }
 
-    return this.prisma.orionAlert.findMany({
-      where,
-      include: {
-        academicYear: { select: { id: true, label: true } },
-        schoolLevel: { select: { id: true, code: true, label: true } },
-        acknowledgedUser: { select: { id: true, firstName: true, lastName: true } },
-      },
-      orderBy: [
-        { severity: 'desc' }, // CRITICAL en premier
-        { createdAt: 'desc' },
-      ],
-      take: 50,
-    });
+    try {
+      return await this.prisma.orionAlert.findMany({
+        where,
+        include: {
+          academicYear: { select: { id: true, label: true } },
+          schoolLevel: { select: { id: true, code: true, label: true } },
+          acknowledgedUser: { select: { id: true, firstName: true, lastName: true } },
+        },
+        orderBy: [
+          { severity: 'desc' }, // CRITICAL en premier
+          { createdAt: 'desc' },
+        ],
+        take: 50,
+      });
+    } catch (error) {
+      // Mode dégradé : en dev, la table ORION peut ne pas exister (migrations incomplètes).
+      // Ne pas bloquer l'app : renvoyer une liste vide et laisser l'observabilité au logging serveur.
+      // eslint-disable-next-line no-console
+      console.warn('ORION getActiveAlerts failed (degraded mode):', (error as Error)?.message);
+      return [];
+    }
   }
 
   /**

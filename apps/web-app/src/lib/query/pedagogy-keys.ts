@@ -11,8 +11,8 @@ export const pedagogyKeys = {
     [...pedagogyKeys.all, 'orion-advanced', 'dashboard', academicYearId] as const,
   orionKpis: (academicYearId: string) =>
     [...pedagogyKeys.all, 'orion', 'kpis', academicYearId] as const,
-  structureLevels: (academicYearId: string) =>
-    [...pedagogyKeys.all, 'academic-structure', 'levels', academicYearId] as const,
+  structureLevels: (academicYearId: string, tenantId?: string) =>
+    [...pedagogyKeys.all, 'academic-structure', 'levels', academicYearId, tenantId ?? ''] as const,
   subjectsList: () => [...pedagogyKeys.all, 'subjects'] as const,
   timetablesList: (academicYearId: string) =>
     [...pedagogyKeys.all, 'timetables', academicYearId] as const,

@@ -63,9 +63,7 @@ export class ReceiptGenerationService {
             identifier: true,
             tenant: {
               include: {
-                schools: {
-                  take: 1,
-                },
+                schools: true,
               },
             },
             studentEnrollments: {
@@ -159,7 +157,7 @@ export class ReceiptGenerationService {
   private async generateReceiptPDF(receipt: any, payment: any, sealVersion?: any): Promise<string> {
     const student = payment.student;
     const enrollment = student.studentEnrollments?.[0];
-    const institution = student.tenant.schools?.[0]?.name || student.tenant.name;
+    const institution = student.tenant.schools?.name || student.tenant.name;
 
     // Préparer les données pour le template
     const receiptData = {

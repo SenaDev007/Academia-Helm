@@ -19,6 +19,7 @@ import {
   Users,
 } from 'lucide-react';
 import BaseModal from '@/components/modules/blueprint/modals/BaseModal';
+import { useAppSession } from '@/contexts/AppSessionContext';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAcademicYear } from '@/hooks/useAcademicYear';
 import {
@@ -103,9 +104,19 @@ function roomTypeDisplay(r: RoomRow): string {
 }
 
 export function AcademicStructureWorkspace() {
+  const searchParams = useSearchParams();
+  const { user, tenant } = useAppSession();
   const { academicYear, isBilingualEnabled } = useModuleContext();
   const { availableYears } = useAcademicYear();
   const yearId = academicYear?.id ?? '';
+
+  /** Aligné Paramètres : PO / admin plateforme peuvent cibler un tenant (URL ?tenant_id=) ; sinon JWT / session. */
+  const tenantQuery = useMemo(() => {
+    const cross = ['PLATFORM_OWNER', 'PLATFORM_ADMIN', 'SUPER_ADMIN'].includes(user?.role ?? '');
+    const id = cross ? searchParams.get('tenant_id') || tenant?.id : tenant?.id;
+    const s = id && String(id).trim();
+    return s ? { tenant_id: s } : ({} as Record<string, string>);
+  }, [user?.role, searchParams, tenant?.id]);
 
   const [tab, setTab] = useState<TabId>('levels');
   const [notice, setNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
@@ -184,7 +195,7 @@ export function AcademicStructureWorkspace() {
     setLoading(true);
     try {
       const data = await pedagogyFetch<AcademicLevelRow[]>(
-        academicStructureUrl('levels', { academicYearId: yearId }),
+        academicStructureUrl('levels', { academicYearId: yearId, ...tenantQuery }),
       );
       setLevels(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -194,14 +205,14 @@ export function AcademicStructureWorkspace() {
     } finally {
       setLoading(false);
     }
-  }, [yearId]);
+  }, [yearId, tenantQuery]);
 
   const loadCycles = useCallback(async () => {
     if (!yearId) return;
     setLoading(true);
     try {
       const data = await pedagogyFetch<AcademicCycleRow[]>(
-        academicStructureUrl('cycles', { academicYearId: yearId }),
+        academicStructureUrl('cycles', { academicYearId: yearId, ...tenantQuery }),
       );
       setCycles(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -211,14 +222,14 @@ export function AcademicStructureWorkspace() {
     } finally {
       setLoading(false);
     }
-  }, [yearId]);
+  }, [yearId, tenantQuery]);
 
   const loadClasses = useCallback(async () => {
     if (!yearId) return;
     setLoading(true);
     try {
       const data = await pedagogyFetch<AcademicClassRow[]>(
-        academicStructureUrl('classes', { academicYearId: yearId }),
+        academicStructureUrl('classes', { academicYearId: yearId, ...tenantQuery }),
       );
       setClasses(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -228,7 +239,7 @@ export function AcademicStructureWorkspace() {
     } finally {
       setLoading(false);
     }
-  }, [yearId]);
+  }, [yearId, tenantQuery]);
 
   const loadSeries = useCallback(async () => {
     if (!yearId || !secondaryLevelId) {
@@ -238,7 +249,7 @@ export function AcademicStructureWorkspace() {
     setLoading(true);
     try {
       const data = await pedagogyFetch<SeriesRow[]>(
-        academicSeriesUrl('', { academicYearId: yearId, levelId: secondaryLevelId }),
+        academicSeriesUrl('', { academicYearId: yearId, levelId: secondaryLevelId, ...tenantQuery }),
       );
       setSeries(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -248,7 +259,7 @@ export function AcademicStructureWorkspace() {
     } finally {
       setLoading(false);
     }
-  }, [yearId, secondaryLevelId]);
+  }, [yearId, secondaryLevelId, tenantQuery]);
 
   const loadRooms = useCallback(async () => {
     if (!yearId) return;
@@ -324,7 +335,7 @@ export function AcademicStructureWorkspace() {
       for (let i = 0; i < names.length; i++) {
         const name = names[i];
         if (levels.some((l) => normalizeLevelKey(l.name) === normalizeLevelKey(name))) continue;
-        await pedagogyFetch(academicStructureUrl('levels'), {
+        await pedagogyFetch(academicStructureUrl('levels', { ...tenantQuery }), {
           method: 'POST',
           body: { academicYearId: yearId, name, orderIndex: i },
         });
@@ -362,7 +373,7 @@ export function AcademicStructureWorkspace() {
     }
     try {
       if (levelModal?.mode === 'create') {
-        await pedagogyFetch(academicStructureUrl('levels'), {
+        await pedagogyFetch(academicStructureUrl('levels', { ...tenantQuery }), {
           method: 'POST',
           body: {
             academicYearId: yearId,
@@ -372,7 +383,7 @@ export function AcademicStructureWorkspace() {
         });
         setNotice({ type: 'ok', text: 'Niveau créé.' });
       } else if (levelModal?.mode === 'edit') {
-        await pedagogyFetch(academicStructureUrl(`levels/${levelModal.level.id}`), {
+        await pedagogyFetch(academicStructureUrl(`levels/${levelModal.level.id}`, { ...tenantQuery }), {
           method: 'PUT',
           body: {
             name: levelForm.name.trim(),
@@ -396,7 +407,7 @@ export function AcademicStructureWorkspace() {
       return;
     }
     try {
-      await pedagogyFetch(academicStructureUrl(`levels/${level.id}`), {
+      await pedagogyFetch(academicStructureUrl(`levels/${level.id}`, { ...tenantQuery }), {
         method: 'PUT',
         body: { isActive: !level.isActive },
       });
@@ -420,7 +431,7 @@ export function AcademicStructureWorkspace() {
     if (!yearId || !cycleForm.levelId || !cycleForm.name.trim()) return;
     try {
       if (cycleModal?.mode === 'create') {
-        await pedagogyFetch(academicStructureUrl('cycles'), {
+        await pedagogyFetch(academicStructureUrl('cycles', { ...tenantQuery }), {
           method: 'POST',
           body: {
             academicYearId: yearId,
@@ -430,7 +441,7 @@ export function AcademicStructureWorkspace() {
           },
         });
       } else if (cycleModal?.mode === 'edit') {
-        await pedagogyFetch(academicStructureUrl(`cycles/${cycleModal.cycle.id}`), {
+        await pedagogyFetch(academicStructureUrl(`cycles/${cycleModal.cycle.id}`, { ...tenantQuery }), {
           method: 'PUT',
           body: {
             name: cycleForm.name.trim(),
@@ -483,9 +494,9 @@ export function AcademicStructureWorkspace() {
         languageTrack: classForm.languageTrack || undefined,
       };
       if (classModal?.mode === 'create') {
-        await pedagogyFetch(academicStructureUrl('classes'), { method: 'POST', body });
+        await pedagogyFetch(academicStructureUrl('classes', { ...tenantQuery }), { method: 'POST', body });
       } else if (classModal?.mode === 'edit') {
-        await pedagogyFetch(academicStructureUrl(`classes/${classModal.cls.id}`), {
+        await pedagogyFetch(academicStructureUrl(`classes/${classModal.cls.id}`, { ...tenantQuery }), {
           method: 'PUT',
           body: {
             name: classForm.name.trim(),
@@ -507,7 +518,9 @@ export function AcademicStructureWorkspace() {
 
   const deactivateClass = async (id: string) => {
     try {
-      await pedagogyFetch(academicStructureUrl(`classes/${id}/deactivate`), { method: 'PUT' });
+      await pedagogyFetch(academicStructureUrl(`classes/${id}/deactivate`, { ...tenantQuery }), {
+        method: 'PUT',
+      });
       setNotice({ type: 'ok', text: 'Classe désactivée.' });
       await loadClasses();
       await loadLevels();
@@ -519,7 +532,7 @@ export function AcademicStructureWorkspace() {
   const saveLanguageTrack = async (cls: AcademicClassRow, next: string) => {
     try {
       setTrackSaving((m) => ({ ...m, [cls.id]: true }));
-      await pedagogyFetch(academicStructureUrl(`classes/${cls.id}`), {
+      await pedagogyFetch(academicStructureUrl(`classes/${cls.id}`, { ...tenantQuery }), {
         method: 'PUT',
         body: { languageTrack: next || null },
       });
@@ -539,7 +552,7 @@ export function AcademicStructureWorkspace() {
     }
     try {
       if (seriesModal?.mode === 'create') {
-        await pedagogyFetch(academicSeriesUrl(''), {
+        await pedagogyFetch(academicSeriesUrl('', { ...tenantQuery }), {
           method: 'POST',
           body: {
             academicYearId: yearId,
@@ -549,7 +562,7 @@ export function AcademicStructureWorkspace() {
           },
         });
       } else if (seriesModal?.mode === 'edit') {
-        await pedagogyFetch(academicSeriesUrl(seriesModal.row.id), {
+        await pedagogyFetch(academicSeriesUrl(seriesModal.row.id, { ...tenantQuery }), {
           method: 'PUT',
           body: {
             name: seriesForm.name.trim(),
@@ -567,7 +580,7 @@ export function AcademicStructureWorkspace() {
 
   const toggleSeriesActive = async (row: SeriesRow) => {
     try {
-      await pedagogyFetch(academicSeriesUrl(row.id), {
+      await pedagogyFetch(academicSeriesUrl(row.id, { ...tenantQuery }), {
         method: 'PUT',
         body: { isActive: !row.isActive },
       });
@@ -669,7 +682,7 @@ export function AcademicStructureWorkspace() {
         classesCopied: number;
         seriesCopied: number;
         seriesSubjectsCopied: number;
-      }>(academicStructureUrl('duplicate'), {
+      }>(academicStructureUrl('duplicate', { ...tenantQuery }), {
         method: 'POST',
         body: { fromAcademicYearId: dupFrom, toAcademicYearId: dupTo },
       });

@@ -1,7 +1,8 @@
 'use client';
 
-import { type ComponentType } from 'react';
+import { type ComponentType, useMemo } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   AlertCircle,
   ArrowRight,
@@ -19,6 +20,7 @@ import {
   Users,
   Building2,
 } from 'lucide-react';
+import { useAppSession } from '@/contexts/AppSessionContext';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import {
   usePedagogyDashboardQueries,
@@ -258,8 +260,15 @@ function ProgressRow({
 const SHORTCUT_EXCLUDE = new Set(['dashboard', 'control', 'orion-pedagogy']);
 
 export default function PedagogyModuleDashboard() {
+  const searchParams = useSearchParams();
+  const { user, tenant } = useAppSession();
   const { academicYear, schoolLevel, isLoading: contextLoading } = useModuleContext();
   const invalidatePedagogy = useInvalidatePedagogyDashboard();
+  const tenantIdForStructure = useMemo(() => {
+    const cross = ['PLATFORM_OWNER', 'PLATFORM_ADMIN', 'SUPER_ADMIN'].includes(user?.role ?? '');
+    const id = cross ? searchParams.get('tenant_id') || tenant?.id : tenant?.id;
+    return id && String(id).trim() ? String(id).trim() : undefined;
+  }, [user?.role, searchParams, tenant?.id]);
   const {
     control: controlSlice,
     orionAdv: orionAdvSlice,
@@ -270,7 +279,7 @@ export default function PedagogyModuleDashboard() {
     timetableCount,
     roomCount,
     loading,
-  } = usePedagogyDashboardQueries(academicYear?.id);
+  } = usePedagogyDashboardQueries(academicYear?.id, tenantIdForStructure);
 
   const control = controlSlice as LoadSlice<ControlDashboard> | null;
   const orionAdv = orionAdvSlice as LoadSlice<OrionAdvancedDash> | null;

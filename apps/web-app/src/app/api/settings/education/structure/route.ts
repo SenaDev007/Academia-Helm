@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const headers = await getProxyAuthHeaders(request);
-    if (!headers['Authorization']) {
+    if (!headers['Authorization'] && !headers['Cookie']) {
       return NextResponse.json({ error: 'Non authentifie', code: 'UNAUTHORIZED' }, { status: 401 });
     }
     const url = new URL(`${API_BASE_URL}/settings/education/structure/initialize`);

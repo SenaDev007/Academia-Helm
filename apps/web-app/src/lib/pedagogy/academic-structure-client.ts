@@ -13,11 +13,26 @@ export async function pedagogyFetch<T>(
     cache: 'no-store',
     ...(options?.body && { body: JSON.stringify(options.body) }),
   });
+  const text = await res.text();
   if (!res.ok) {
-    const err = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
-    throw new Error(err.message ?? err.error ?? res.statusText);
+    let err: { message?: string; error?: string } = {};
+    if (text.trim()) {
+      try {
+        err = JSON.parse(text) as { message?: string; error?: string };
+      } catch {
+        err = {};
+      }
+    }
+    throw new Error(err.message ?? err.error ?? res.statusText || 'Erreur réseau');
   }
-  return res.json() as Promise<T>;
+  if (!text.trim()) {
+    return null as T;
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error('Réponse invalide du serveur');
+  }
 }
 
 export function academicStructureUrl(

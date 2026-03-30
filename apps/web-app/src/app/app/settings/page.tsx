@@ -79,8 +79,14 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const { user, tenant } = useAppSession();
   const urlTenantId = searchParams.get('tenant_id');
+  /** Rôles pouvant cibler un autre tenant (query) ou retomber sur le tenant du JWT */
+  const isCrossTenantRole =
+    user?.role === 'PLATFORM_OWNER' ||
+    user?.role === 'PLATFORM_ADMIN' ||
+    user?.role === 'SUPER_ADMIN';
+  const effectiveTenantId =
+    isCrossTenantRole || !tenant?.id ? urlTenantId || tenant?.id : tenant?.id;
   const isPlatformOwner = user?.role === 'PLATFORM_OWNER';
-  const effectiveTenantId = (isPlatformOwner || !tenant?.id) ? (urlTenantId || tenant?.id) : tenant?.id;
   /** Spec : Appareils autorisés accessible par PLATFORM_OWNER, PLATFORM_ADMIN, Promoteur, DIRECTOR, ADMIN */
   const canAccessDevices =
     !!user?.role &&

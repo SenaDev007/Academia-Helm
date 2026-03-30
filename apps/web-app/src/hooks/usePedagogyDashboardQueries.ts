@@ -34,7 +34,10 @@ const STALE_MS = 60 * 1000;
 /**
  * Agrégats parallèles du tableau de bord pédagogique (cache TanStack Query, invalidation globale possible).
  */
-export function usePedagogyDashboardQueries(academicYearId: string | undefined) {
+export function usePedagogyDashboardQueries(
+  academicYearId: string | undefined,
+  tenantIdForStructure?: string,
+) {
   const enabled = !!academicYearId;
   const y = academicYearId ?? '';
 
@@ -65,10 +68,10 @@ export function usePedagogyDashboardQueries(academicYearId: string | undefined) 
         staleTime: STALE_MS,
       },
       {
-        queryKey: pedagogyKeys.structureLevels(y),
+        queryKey: pedagogyKeys.structureLevels(y, tenantIdForStructure),
         queryFn: async () => {
           const levels = await fetchJson<Array<{ id: string; cycles?: { id: string }[] }>>(
-            pedagogyStructureLevelsUrl(y),
+            pedagogyStructureLevelsUrl(y, tenantIdForStructure),
           );
           const arr = Array.isArray(levels) ? levels : [];
           const cycles = arr.reduce(

@@ -30,8 +30,9 @@ export function pedagogyOrionKpisUrl(academicYearId: string) {
   return `/api/pedagogy/orion/kpis?academicYearId=${encodeURIComponent(academicYearId)}`;
 }
 
-export function pedagogyStructureLevelsUrl(academicYearId: string) {
-  return `/api/pedagogy/academic-structure/levels?academicYearId=${encodeURIComponent(academicYearId)}`;
+export function pedagogyStructureLevelsUrl(academicYearId: string, tenantId?: string) {
+  const t = tenantId ? `&tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return `/api/pedagogy/academic-structure/levels?academicYearId=${encodeURIComponent(academicYearId)}${t}`;
 }
 
 export function timetablesForYearUrl(academicYearId: string) {

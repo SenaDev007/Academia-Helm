@@ -8,11 +8,22 @@ import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 import { readProxyBodyText } from '@/lib/api/pedagogy-proxy-body';
 
-const API_URL = getApiBaseUrlForRoutes();
+/** Cookies / session lus côté serveur : évite une réponse 401 si la route est traitée comme statique. */
+export const dynamic = 'force-dynamic';
 
-function buildBackendUrl(pathSegments: string[]): string {
+function buildBackendUrl(apiBase: string, pathSegments: string[]): string {
   const path = pathSegments.length ? pathSegments.join('/') : '';
-  return `${API_URL}/api/pedagogy/academic-structure${path ? `/${path}` : ''}`;
+  return `${apiBase}/api/pedagogy/academic-structure${path ? `/${path}` : ''}`;
+}
+
+async function parseBackendJson(res: Response): Promise<unknown> {
+  const text = await res.text();
+  if (!text.trim()) return {};
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return { error: 'Réponse backend invalide' };
+  }
 }
 
 async function forward(
@@ -20,7 +31,8 @@ async function forward(
   pathSegments: string[],
   method: string
 ) {
-  const url = new URL(buildBackendUrl(pathSegments));
+  const apiBase = getApiBaseUrlForRoutes();
+  const url = new URL(buildBackendUrl(apiBase, pathSegments));
   request.nextUrl.searchParams.forEach((value, key) => {
     url.searchParams.append(key, value);
   });
@@ -33,7 +45,7 @@ async function forward(
       options.body = bodyText;
     }
     const res = await fetch(normalizeApiUrl(url.toString()), options);
-    const data = await res.json().catch(() => ({}));
+    const data = await parseBackendJson(res);
     return NextResponse.json(data, { status: res.status });
   } catch (e) {
     console.error('Academic structure API error:', e);
@@ -49,7 +61,7 @@ export async function GET(
   { params }: { params: Promise<{ path: string[] }> }
 ) {
   const { path } = await params;
-  return forward(request, path, 'GET');
+  return forward(request, path ?? [], 'GET');
 }
 
 export async function POST(
@@ -57,7 +69,7 @@ export async function POST(
   { params }: { params: Promise<{ path: string[] }> }
 ) {
   const { path } = await params;
-  return forward(request, path, 'POST');
+  return forward(request, path ?? [], 'POST');
 }
 
 export async function PUT(
@@ -65,7 +77,7 @@ export async function PUT(
   { params }: { params: Promise<{ path: string[] }> }
 ) {
   const { path } = await params;
-  return forward(request, path, 'PUT');
+  return forward(request, path ?? [], 'PUT');
 }
 
 export async function DELETE(

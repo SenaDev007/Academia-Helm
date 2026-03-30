@@ -1542,12 +1542,21 @@ export class SettingsController {
   private resolveTidOptional(tenantId: string | undefined, user: any, req: any): string | null {
     const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
     const roleStr = (user?.role as string)?.toUpperCase();
-    const canCrossTenant = roleStr === 'PLATFORM_OWNER' || roleStr === 'SUPER_ADMIN' || user?.isSuperAdmin === true;
+    const canCrossTenant =
+      roleStr === 'PLATFORM_OWNER' ||
+      roleStr === 'PLATFORM_ADMIN' ||
+      roleStr === 'SUPER_ADMIN' ||
+      user?.isSuperAdmin === true;
     if (canCrossTenant) {
       const fromHeader = req?.headers?.['x-tenant-id'];
       const fromQuery = req?.query?.tenant_id;
-      const override = tenantId ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader) ?? (Array.isArray(fromQuery) ? fromQuery[0] : fromQuery);
+      const override =
+        tenantId ??
+        (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader) ??
+        (Array.isArray(fromQuery) ? fromQuery[0] : fromQuery);
       if (override && typeof override === 'string') return override;
+      // Sinon : tenant du JWT (ex. directeur, ou PO après sélection d'établissement)
+      if (fromUser && typeof fromUser === 'string') return fromUser;
       return null;
     }
     if (!fromUser || typeof fromUser !== 'string') throw new BadRequestException('Contexte tenant manquant.');

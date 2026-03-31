@@ -47,7 +47,7 @@ export function getPublicSiteUrl(): string {
     const port = process.env.PORT || '3001';
     return `http://localhost:${port}`.replace(/\/+$/, '');
   }
-  return 'https://www.academiahelm.com';
+  return 'https://academiahelm.com';
 }
 
 export interface SEOConfig {

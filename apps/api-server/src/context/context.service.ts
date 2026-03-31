@@ -74,11 +74,10 @@ export class ContextService {
             name: true,
             logo: true,
             address: true,
-            phone: true,
-            email: true,
+            primaryPhone: true,
+            primaryEmail: true,
             educationLevels: true,
           },
-          take: 1,
         },
       },
     });
@@ -121,7 +120,17 @@ export class ContextService {
         type: tenant.type,
         status: tenant.status,
         country: tenant.country,
-        school: tenant.schools?.[0] || null,
+        school: tenant.schools
+          ? {
+              id: tenant.schools.id,
+              name: tenant.schools.name,
+              logo: tenant.schools.logo,
+              address: tenant.schools.address,
+              phone: tenant.schools.primaryPhone,
+              email: tenant.schools.primaryEmail,
+              educationLevels: tenant.schools.educationLevels,
+            }
+          : null,
       },
       user: {
         id: user.id,
@@ -257,26 +266,24 @@ export class ContextService {
     // Pour l'instant, retourner un résumé basique
 
     try {
-      // Compter les alertes critiques
-      const criticalAlerts = await this.prisma.auditLog.count({
+      const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const yearFilter = academicYearId ? { academicYearId } : {};
+
+      // Drapeaux de risque ORION (le modèle AuditLog n'a pas de champ level)
+      const criticalAlerts = await this.prisma.orionRiskFlag.count({
         where: {
-          tenantId: tenantId,
-          level: 'critical',
-          createdAt: {
-            gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Derniers 7 jours
-          },
+          tenantId,
+          ...yearFilter,
+          level: 'RED',
+          createdAt: { gte: since },
         },
       });
 
-      // Compter les incohérences de données
       const dataInconsistencies = await this.prisma.auditLog.count({
         where: {
-          tenantId: tenantId,
+          tenantId,
           resource: 'DATA_INTEGRITY',
-          level: 'warning',
-          createdAt: {
-            gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-          },
+          createdAt: { gte: since },
         },
       });
 

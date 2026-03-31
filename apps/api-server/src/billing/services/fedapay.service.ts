@@ -788,7 +788,7 @@ export class FedaPayService implements OnModuleInit {
 
     this.logger.log(`💳 Payment session created (API): ${payment.id} - Reference: ${reference} - URL: ${transaction.paymentUrl}`);
 
-    const paymentPageUrl = transaction.paymentUrl ?? transaction.payment_url ?? transaction.url;
+    const paymentPageUrl = transaction.paymentUrl;
     if (!paymentPageUrl) {
       this.logger.warn('⚠️ FedaPay n\'a pas renvoyé d\'URL de paiement (transaction.paymentUrl)');
     }
@@ -838,7 +838,7 @@ export class FedaPayService implements OnModuleInit {
         tenant: {
           include: {
             users: {
-              where: { roles: { has: 'PROMOTER' } },
+              where: { role: 'PROMOTER' },
               take: 1,
             },
           },
@@ -940,6 +940,11 @@ export class FedaPayService implements OnModuleInit {
 
     // Récupérer les infos du promoteur pour le customer
     const promoter = subscription.tenant.users[0];
+    const schoolSettings = await this.prisma.schoolSettings.findUnique({
+      where: { tenantId: subscription.tenantId },
+      select: { phone: true },
+    });
+    const contactPhone = schoolSettings?.phone ?? '';
 
     const transaction = await this.createTransaction({
       amount,
@@ -960,7 +965,7 @@ export class FedaPayService implements OnModuleInit {
         email: promoter.email,
         firstname: promoter.firstName || '',
         lastname: promoter.lastName || '',
-        phone_number: promoter.phone || '',
+        phone_number: contactPhone,
       } : undefined,
     });
 
@@ -1005,7 +1010,7 @@ export class FedaPayService implements OnModuleInit {
    * 5. Reference connue
    * 6. Idempotence
    */
-  async handleWebhook(payload: any, signatureHeader: string, rawBody?: string) {
+  async handleWebhookLegacy(payload: any, signatureHeader: string, rawBody?: string) {
     // 1. Vérifier la signature (OBLIGATOIRE) – FedaPay signe le body brut exact
     const payloadString = rawBody != null && rawBody.length > 0
       ? rawBody
@@ -1068,12 +1073,15 @@ export class FedaPayService implements OnModuleInit {
       try {
         await this.prisma.paymentWebhookLog.create({
           data: {
+            reference: transactionReference,
             provider: 'fedapay',
             eventType: event,
             payload: payload as any,
-            status: 'ERROR',
-            errorMessage: error.message,
             processedAt: new Date(),
+            metadata: {
+              status: 'ERROR',
+              errorMessage: error.message,
+            },
           },
         });
       } catch (logError) {
@@ -1091,7 +1099,7 @@ export class FedaPayService implements OnModuleInit {
    * 
    * Documentation FedaPay : https://docs.fedapay.com/api/transactions#create-a-transaction
    */
-  async createRenewalPaymentSession(subscriptionId: string) {
+  async createRenewalPaymentSessionLegacy(subscriptionId: string) {
     const subscription = await this.prisma.subscription.findUnique({
       where: { id: subscriptionId },
       include: {
@@ -1099,7 +1107,7 @@ export class FedaPayService implements OnModuleInit {
         tenant: {
           include: {
             users: {
-              where: { roles: { has: 'PROMOTER' } },
+              where: { role: 'PROMOTER' },
               take: 1,
             },
           },
@@ -1201,6 +1209,11 @@ export class FedaPayService implements OnModuleInit {
 
     // Récupérer les infos du promoteur pour le customer
     const promoter = subscription.tenant.users[0];
+    const schoolSettings = await this.prisma.schoolSettings.findUnique({
+      where: { tenantId: subscription.tenantId },
+      select: { phone: true },
+    });
+    const contactPhone = schoolSettings?.phone ?? '';
 
     const transaction = await this.createTransaction({
       amount,
@@ -1221,7 +1234,7 @@ export class FedaPayService implements OnModuleInit {
         email: promoter.email,
         firstname: promoter.firstName || '',
         lastname: promoter.lastName || '',
-        phone_number: promoter.phone || '',
+        phone_number: contactPhone,
       } : undefined,
     });
 
@@ -1346,12 +1359,15 @@ export class FedaPayService implements OnModuleInit {
       try {
         await this.prisma.paymentWebhookLog.create({
           data: {
+            reference: transactionReference,
             provider: 'fedapay',
             eventType: event,
             payload: payload as any,
-            status: 'ERROR',
-            errorMessage: error.message,
             processedAt: new Date(),
+            metadata: {
+              status: 'ERROR',
+              errorMessage: error.message,
+            },
           },
         });
       } catch (logError) {
@@ -1476,12 +1492,12 @@ export class FedaPayService implements OnModuleInit {
       where: { id: paymentId },
       data: {
         status: 'COMPLETED',
-        transactionId: transaction.id,
-        completedAt: new Date(),
         metadata: {
           ...(existingPayment.metadata as any || {}),
           transactionReference: paymentReference,
           transactionData: transaction,
+          transactionId: transaction.id,
+          completedAt: new Date().toISOString(),
         },
       },
     });
@@ -1546,24 +1562,27 @@ export class FedaPayService implements OnModuleInit {
     const billingEvent = await this.prisma.billingEvent.update({
       where: { id: billingEventId },
       data: {
-        status: 'COMPLETED',
-        completedAt: new Date(),
         metadata: {
           ...(existingBillingEvent.metadata as any || {}),
           transactionReference: paymentReference,
           transactionData: transaction,
+          status: 'COMPLETED',
+          completedAt: new Date().toISOString(),
         },
       },
     });
 
     // Mettre à jour l'abonnement
     if (billingEvent.subscriptionId) {
+      const eventMeta = (existingBillingEvent.metadata as any) || {};
+      const cycle = eventMeta.cycle === 'YEARLY' ? 'YEARLY' : 'MONTHLY';
+      const days = cycle === 'YEARLY' ? 365 : 30;
       await this.prisma.subscription.update({
         where: { id: billingEvent.subscriptionId },
         data: {
           status: 'ACTIVE',
           currentPeriodStart: new Date(),
-          currentPeriodEnd: new Date(Date.now() + (metadata.cycle === 'YEARLY' ? 365 : 30) * 24 * 60 * 60 * 1000),
+          currentPeriodEnd: new Date(Date.now() + days * 24 * 60 * 60 * 1000),
         },
       });
     }

@@ -60,6 +60,7 @@ Comment puis-je vous aider aujourd'hui ? 😊`;
 
 export default function SupportChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
+  const [hideFloatingButton, setHideFloatingButton] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -104,6 +105,61 @@ export default function SupportChatWidget() {
   if (isAuthenticated) {
     return null;
   }
+
+  /**
+   * Mobile UX: quand le CTA sticky de la Hero est visible, masquer le bouton flottant Sara
+   * pour éviter toute superposition et préserver la conversion.
+   *
+   * Contraintes:
+   * - Mobile uniquement (<= 768px)
+   * - Desktop inchangé
+   * - Aucune modification de logique métier du chat (ouverture, messages, IA, etc.)
+   */
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const mq = window.matchMedia('(max-width: 768px)');
+    let observer: IntersectionObserver | null = null;
+
+    const teardown = () => {
+      if (observer) observer.disconnect();
+      observer = null;
+    };
+
+    const setup = () => {
+      teardown();
+      if (!mq.matches) {
+        setHideFloatingButton(false);
+        return;
+      }
+
+      const cta = document.getElementById('hero-cta-sticky');
+      if (!cta) {
+        setHideFloatingButton(false);
+        return;
+      }
+
+      observer = new IntersectionObserver(
+        (entries) => {
+          const entry = entries[0];
+          setHideFloatingButton(!!entry?.isIntersecting);
+        },
+        {
+          root: null,
+          threshold: 0.01,
+        },
+      );
+
+      observer.observe(cta);
+    };
+
+    setup();
+    mq.addEventListener('change', setup);
+    return () => {
+      mq.removeEventListener('change', setup);
+      teardown();
+    };
+  }, []);
 
   useEffect(() => {
     if (isOpen && messagesEndRef.current) {
@@ -749,7 +805,12 @@ Ou reformulez votre question, je ferai de mon mieux pour vous aider ! 😊`;
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
-          className="fixed bottom-6 right-6 z-50 w-16 h-16 bg-blue-600 text-white rounded-full shadow-2xl hover:shadow-3xl hover:scale-110 transition-all duration-300 flex items-center justify-center group hover:bg-blue-700"
+          className={cn(
+            'fixed bottom-6 right-6 z-50 w-16 h-16 bg-blue-600 text-white rounded-full shadow-2xl hover:shadow-3xl hover:scale-110 transition-all duration-300 flex items-center justify-center group hover:bg-blue-700',
+            // Masquage doux (mobile uniquement) quand le CTA sticky Hero est visible
+            hideFloatingButton && 'opacity-0 scale-90 pointer-events-none transition-[opacity,transform] duration-200',
+            !hideFloatingButton && 'opacity-100 scale-100 transition-[opacity,transform] duration-200',
+          )}
           aria-label="Ouvrir le chat de support"
         >
           <AppIcon name="messageCircle" size="dashboard" className="text-white" />

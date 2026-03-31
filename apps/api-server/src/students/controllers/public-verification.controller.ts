@@ -11,6 +11,7 @@ import { Controller, Get, Param, Req, NotFoundException } from '@nestjs/common';
 import { PublicVerificationService } from '../services/public-verification.service';
 import { Public } from '@/auth/decorators/public.decorator';
 import { Throttle } from '@nestjs/throttler';
+import type { Request } from 'express';
 
 @Controller('api/public/verify')
 export class PublicVerificationController {
@@ -26,8 +27,8 @@ export class PublicVerificationController {
   @Public()
   @Throttle({ short: { limit: 20, ttl: 60000 } })
   @Get('v/:token')
-  async verifyByToken(@Param('token') token: string, @Req() req: { ip?: string }) {
-    const ip = req.ip ?? req?.headers?.['x-forwarded-for'] ?? null;
+  async verifyByToken(@Param('token') token: string, @Req() req: Request) {
+    const ip = (req.ip || (req.headers['x-forwarded-for'] as string) || null) as string | null;
     const result = await this.verificationService.verifyToken(token, ip);
     if (!result.isValid) {
       throw new NotFoundException({
@@ -48,8 +49,8 @@ export class PublicVerificationController {
   @Public()
   @Throttle({ short: { limit: 20, ttl: 60000 } })
   @Get(':token')
-  async verifyToken(@Param('token') token: string, @Req() req: { ip?: string; headers?: Record<string, string> }) {
-    const ip = req.ip ?? (req.headers && (req.headers['x-forwarded-for'] as string)) ?? null;
+  async verifyToken(@Param('token') token: string, @Req() req: Request) {
+    const ip = (req.ip || (req.headers['x-forwarded-for'] as string) || null) as string | null;
     const result = await this.verificationService.verifyToken(token, ip);
     if (!result.isValid) {
       throw new NotFoundException({

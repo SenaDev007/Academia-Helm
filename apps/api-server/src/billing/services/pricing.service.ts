@@ -481,7 +481,7 @@ export class PricingService {
   async calculateRenewalPrice(subscriptionId: string): Promise<PricingResult> {
     const subscription = await this.prisma.subscription.findUnique({
       where: { id: subscriptionId },
-      include: { plan: true },
+      include: { subscriptionPlan: true },
     });
 
     if (!subscription) {

@@ -691,8 +691,6 @@ export class StudentsLifecycleService {
         gender: student.gender,
         nationality: student.nationality,
         placeOfBirth: student.placeOfBirth,
-        legalDocumentType: student.legalDocumentType,
-        legalDocumentNumber: student.legalDocumentNumber,
         regimeType: student.regimeType,
         status: student.status,
       },

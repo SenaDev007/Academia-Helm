@@ -55,9 +55,7 @@ export class StudentDossierService {
         },
         tenant: {
           include: {
-            schools: {
-              take: 1,
-            },
+            schools: true,
           },
         },
       },
@@ -216,14 +214,12 @@ export class StudentDossierService {
         gender: student.gender,
         nationality: student.nationality,
         placeOfBirth: student.placeOfBirth ?? null,
-        legalDocumentType: student.legalDocumentType ?? null,
-        legalDocumentNumber: student.legalDocumentNumber ?? null,
         npi: student.npi ?? null,
         regimeType: student.regimeType ?? null,
         studentCode: student.studentCode ?? null,
         matricule: student.identifier?.globalMatricule || student.studentCode || null,
         status: student.status,
-        institution: student.tenant.schools?.[0]?.name || student.tenant.name,
+        institution: student.tenant.schools?.name || student.tenant.name,
       },
       academicRecords,
       disciplinarySummaries,

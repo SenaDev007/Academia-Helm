@@ -15,12 +15,16 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { PricingService } from './pricing.service';
 
 @Injectable()
 export class SubscriptionService {
   private readonly logger = new Logger(SubscriptionService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pricingService: PricingService,
+  ) {}
 
   /**
    * Crée une souscription en trial pour un nouveau tenant
@@ -47,17 +51,23 @@ export class SubscriptionService {
     // Créer la souscription
     const subscription = await this.prisma.subscription.create({
       data: {
-        tenantId,
-        planId,
+        tenant: { connect: { id: tenantId } },
+        subscriptionPlan: { connect: { id: planId } },
+        plan: plan.code,
         status: 'TRIAL_ACTIVE',
+        startDate: now,
         trialStart: now,
         trialEnd,
+        amount: initialPaymentAmount,
+        currency: 'XOF',
+        billingCycle: 'MONTHLY',
+        autoRenew: true,
         schoolsCount: 1, // Par défaut, sera mis à jour selon le plan
         bilingualEnabled: false, // Sera mis à jour selon les options
         devOverride: false,
       },
       include: {
-        plan: true,
+        subscriptionPlan: true,
         tenant: true,
       },
     });
@@ -95,7 +105,7 @@ export class SubscriptionService {
   ) {
     const subscription = await this.prisma.subscription.findUnique({
       where: { id: subscriptionId },
-      include: { plan: true },
+      include: { subscriptionPlan: true },
     });
 
     if (!subscription) {
@@ -120,7 +130,7 @@ export class SubscriptionService {
         trialEnd: null, // Le trial est terminé
       },
       include: {
-        plan: true,
+        subscriptionPlan: true,
         tenant: true,
       },
     });
@@ -147,7 +157,7 @@ export class SubscriptionService {
         },
       },
       include: {
-        plan: true,
+        subscriptionPlan: true,
         tenant: true,
       },
     });
@@ -180,7 +190,7 @@ export class SubscriptionService {
         },
       },
       include: {
-        plan: true,
+        subscriptionPlan: true,
         tenant: true,
       },
     });
@@ -211,7 +221,7 @@ export class SubscriptionService {
     const subscription = await this.prisma.subscription.findUnique({
       where: { tenantId },
       include: {
-        plan: true,
+        subscriptionPlan: true,
         tenant: true,
       },
     });
@@ -246,10 +256,10 @@ export class SubscriptionService {
         id: subscription.id,
         status: subscription.status,
         plan: {
-          code: subscription.plan.code,
-          name: subscription.plan.name,
-          monthlyPrice: subscription.plan.monthlyPrice,
-          yearlyPrice: subscription.plan.yearlyPrice,
+          code: subscription.subscriptionPlan?.code ?? subscription.plan,
+          name: subscription.subscriptionPlan?.name ?? subscription.plan,
+          monthlyPrice: subscription.subscriptionPlan?.monthlyPrice ?? null,
+          yearlyPrice: subscription.subscriptionPlan?.yearlyPrice ?? null,
         },
         trialStart: subscription.trialStart,
         trialEnd: subscription.trialEnd,

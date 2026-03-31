@@ -193,13 +193,12 @@ export class BillingReminderService {
   ) {
     try {
       const tenant = subscription.tenant;
-      const plan = subscription.plan;
+      const plan = subscription.subscriptionPlan;
       const expirationDate = subscription.trialEnd || subscription.currentPeriodEnd;
       
       // Créer l'alerte ORION via OrionAlertsService
       if (this.orionAlertsService) {
-        await this.orionAlertsService.createAlert({
-          tenantId: subscription.tenantId,
+        await this.orionAlertsService.saveAlert(subscription.tenantId, {
           alertType: 'FINANCIAL',
           severity: 'WARNING',
           title: 'Risque de Non-Renouvellement',
@@ -274,6 +273,13 @@ export class BillingReminderService {
     const planName =
       subscription.subscriptionPlan?.name ?? (subscription.plan as string) ?? 'Plan';
 
+    // Téléphone de contact établissement (User n'a pas de champ phone dans le schéma)
+    const schoolSettings = await this.prisma.schoolSettings.findUnique({
+      where: { tenantId: subscription.tenantId },
+      select: { phone: true },
+    });
+    const contactPhone = schoolSettings?.phone ?? null;
+
     // 2. Récupérer le promoteur (user avec role PROMOTER)
     const promoter = await this.prisma.user.findFirst({
       where: {
@@ -330,17 +336,17 @@ export class BillingReminderService {
     const errors: string[] = [];
 
     // 4.1. SMS
-    if (smsEnabled && promoter.phone) {
+    if (smsEnabled && contactPhone) {
       try {
         await this.smsService.sendSms({
-          to: promoter.phone,
+          to: contactPhone,
           message: message,
         });
         results.sms = true;
-        this.logger.log(`✅ SMS reminder sent to ${promoter.phone}`);
+        this.logger.log(`✅ SMS reminder sent to ${contactPhone}`);
       } catch (error: any) {
         errors.push(`SMS: ${error.message}`);
-        this.logger.error(`Failed to send SMS reminder to ${promoter.phone}:`, error);
+        this.logger.error(`Failed to send SMS reminder to ${contactPhone}:`, error);
       }
     }
 
@@ -352,7 +358,7 @@ export class BillingReminderService {
           planName,
           daysRemaining,
           status: subscription.status,
-          promoterEmail: promoter.email,
+          renewalUrl,
         });
 
         await this.emailService.sendEmail({
@@ -370,24 +376,25 @@ export class BillingReminderService {
     }
 
     // 4.3. WhatsApp
-    if (whatsappEnabled && promoter.phone) {
+    if (whatsappEnabled && contactPhone) {
       try {
         const whatsappMessage = this.whatsappService.formatBillingReminderMessage({
           schoolName: tenant.name,
           planName,
           daysRemaining,
           status: subscription.status,
+          renewalUrl,
         });
 
         await this.whatsappService.sendWhatsApp({
-          to: promoter.phone,
+          to: contactPhone,
           message: whatsappMessage,
         });
         results.whatsapp = true;
-        this.logger.log(`✅ WhatsApp reminder sent to ${promoter.phone}`);
+        this.logger.log(`✅ WhatsApp reminder sent to ${contactPhone}`);
       } catch (error: any) {
         errors.push(`WhatsApp: ${error.message}`);
-        this.logger.error(`Failed to send WhatsApp reminder to ${promoter.phone}:`, error);
+        this.logger.error(`Failed to send WhatsApp reminder to ${contactPhone}:`, error);
       }
     }
 
@@ -406,7 +413,7 @@ export class BillingReminderService {
         metadata: {
           promoterId: promoter.id,
           promoterEmail: promoter.email,
-          promoterPhone: promoter.phone,
+          contactPhone,
           communicationSettings: {
             smsEnabled,
             emailEnabled,
@@ -470,10 +477,10 @@ L'équipe Academia Helm
       include: {
         tenant: {
           include: {
-            settings: true,
+            settingsCommunication: true,
           },
         },
-        plan: true,
+        subscriptionPlan: true,
       },
     });
 

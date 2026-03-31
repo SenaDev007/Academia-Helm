@@ -48,7 +48,7 @@ export class AcademicYear {
     // ✅ Lazy import pour éviter la référence circulaire
     const { Quarter } = require('../../quarters/entities/quarter.entity');
     return Quarter;
-  }, (quarter) => quarter.academicYear)
+  }, (quarter: any) => quarter.academicYear)
   quarters: Quarter[];
 
   @CreateDateColumn()

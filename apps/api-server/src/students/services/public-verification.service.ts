@@ -208,6 +208,7 @@ export class PublicVerificationService {
       id: string;
       firstName: string;
       lastName: string;
+      fullName: string;
       dateOfBirth?: Date;
       gender?: string;
       photo?: string;
@@ -233,9 +234,7 @@ export class PublicVerificationService {
             identifier: true,
             tenant: {
               include: {
-                schools: {
-                  take: 1,
-                },
+                schools: true,
               },
             },
             studentEnrollments: {
@@ -292,7 +291,7 @@ export class PublicVerificationService {
 
     const student = verificationToken.student;
     const enrollment = student.studentEnrollments?.[0];
-    const institution = student.tenant.schools?.[0]?.name || student.tenant.name;
+    const institution = student.tenant.schools?.name || student.tenant.name;
 
     const fullName = [student.firstName, student.lastName].filter(Boolean).join(' ').trim();
     return {
@@ -310,7 +309,6 @@ export class PublicVerificationService {
         academicYear: student.academicYear.name,
         status: student.status,
         institution,
-        school: institution,
       },
       isValid: true,
       isExpired: false,

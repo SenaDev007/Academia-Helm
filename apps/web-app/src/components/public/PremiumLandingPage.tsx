@@ -584,7 +584,10 @@ export default function PremiumLandingPage() {
         </div>
       </section>
 
-      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 md:hidden w-[calc(100%-2rem)] max-w-md">
+      <div
+        id="hero-cta-sticky"
+        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 md:hidden w-[calc(100%-2rem)] max-w-md"
+      >
         <motion.div
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}

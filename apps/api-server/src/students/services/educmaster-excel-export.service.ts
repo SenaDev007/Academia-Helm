@@ -114,7 +114,8 @@ export class EducmasterExcelExportService {
       this.writeSheet(sheet, columns, students, cls.name);
     }
 
-    const buffer = (await workbook.xlsx.writeBuffer()) as Buffer;
+    const raw = await workbook.xlsx.writeBuffer();
+    const buffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as any);
     const niveauScolaire = this.fileNameSegment(
       this.levelNameForFile(schoolLevel.name || schoolLevel.code || 'Niveau'),
     );
@@ -262,7 +263,6 @@ export class EducmasterExcelExportService {
         gender: string | null;
         placeOfBirth: string | null;
         nationality: string | null;
-        legalDocumentNumber: string | null;
         npi: string | null;
       };
       guardians: Array<{

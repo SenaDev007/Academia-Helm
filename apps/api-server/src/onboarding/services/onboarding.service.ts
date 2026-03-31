@@ -312,7 +312,7 @@ export class OnboardingService {
       schoolsCount: draft.schoolsCount,
       subscriptionPrice: pricingResult.amount, // Prix de l'abonnement (après 30 jours)
       initialPayment, // Prix initial (100k FCFA)
-      breakdown: pricingResult.breakdown, // Breakdown complet pour audit
+      breakdown: pricingResult.breakdown as unknown as Prisma.InputJsonValue, // Breakdown complet pour audit
       currency: 'XOF',
     };
 
@@ -320,7 +320,7 @@ export class OnboardingService {
       where: { id: draftId },
       data: {
         selectedPlanId: data.planId,
-        priceSnapshot,
+        priceSnapshot: priceSnapshot as unknown as Prisma.InputJsonValue,
         status: 'PENDING_PAYMENT',
       },
     });
@@ -450,6 +450,7 @@ export class OnboardingService {
       const schoolsCount = draft.schoolsCount || 1;
       const tenants = [];
       const subscriptions = [];
+      const periodType = ((draft.priceSnapshot as any)?.periodType as 'MONTHLY' | 'YEARLY') || 'MONTHLY';
 
       // Sous-domaine du premier tenant : préférer celui choisi par l'utilisateur si valide et disponible
       let firstTenantSubdomain: string;
@@ -565,13 +566,22 @@ export class OnboardingService {
 
         // Créer la souscription en trial pour ce tenant
         const pricing = draft.priceSnapshot as any;
+        const trialStart = new Date();
+        const trialEnd = new Date(trialStart);
+        trialEnd.setDate(trialEnd.getDate() + 30);
         const subscription = await tx.subscription.create({
           data: {
-            tenantId: tenant.id,
-            planId: draft.selectedPlanId!,
+            tenant: { connect: { id: tenant.id } },
+            subscriptionPlan: { connect: { id: draft.selectedPlanId! } },
+            plan: (pricing?.planCode as string) || 'UNKNOWN',
             status: 'TRIAL_ACTIVE',
-            trialStart: new Date(),
-            trialEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 jours
+            startDate: trialStart,
+            trialStart,
+            trialEnd, // 30 jours
+            amount: Number(payment.amount) || 0,
+            currency: 'XOF',
+            billingCycle: periodType === 'YEARLY' ? 'YEARLY' : 'MONTHLY',
+            autoRenew: true,
             bilingualEnabled: draft.bilingual,
             schoolsCount: 1, // Chaque tenant représente 1 école
             devOverride: false,
@@ -686,7 +696,6 @@ export class OnboardingService {
           passwordHash: draft.promoterPasswordHash,
           firstName: draft.promoterFirstName || '',
           lastName: draft.promoterLastName || '',
-          phone: draft.promoterPhone || '',
           role: 'PROMOTER',
           tenantId: tenants[0].id, // Premier tenant comme tenant principal
           status: 'active',

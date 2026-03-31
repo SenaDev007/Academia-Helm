@@ -85,21 +85,21 @@ export class SchoolLevel {
     // ✅ Lazy import pour éviter la référence circulaire
     const { Class } = require('../../classes/entities/class.entity');
     return Class;
-  }, (classEntity) => classEntity.schoolLevel)
+  }, (classEntity: any) => classEntity.schoolLevel)
   classes: Class[];
 
   @OneToMany(() => {
     // ✅ Lazy import pour éviter la référence circulaire
     const { Teacher } = require('../../teachers/entities/teacher.entity');
     return Teacher;
-  }, (teacher) => teacher.schoolLevel)
+  }, (teacher: any) => teacher.schoolLevel)
   teachers: Teacher[];
 
   @OneToMany(() => {
     // ✅ Lazy import pour éviter la référence circulaire
     const { Subject } = require('../../subjects/entities/subject.entity');
     return Subject;
-  }, (subject) => subject.schoolLevel)
+  }, (subject: any) => subject.schoolLevel)
   subjects: Subject[];
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })

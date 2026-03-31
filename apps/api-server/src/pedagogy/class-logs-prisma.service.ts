@@ -28,7 +28,6 @@ export class ClassLogsPrismaService {
     }
     return this.prisma.classLog.findMany({
       where,
-      include: this.include,
       orderBy: { lessonDate: 'desc' },
     });
   }
@@ -81,7 +80,6 @@ export class ClassLogsPrismaService {
     return this.prisma.classLog.update({
       where: { id },
       data: updateData,
-      include: this.include,
     });
   }
 

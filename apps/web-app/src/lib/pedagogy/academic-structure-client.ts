@@ -23,7 +23,8 @@ export async function pedagogyFetch<T>(
         err = {};
       }
     }
-    throw new Error(err.message ?? err.error ?? res.statusText || 'Erreur réseau');
+    const message = err.message ?? err.error ?? res.statusText ?? 'Erreur réseau';
+    throw new Error(message);
   }
   if (!text.trim()) {
     return null as T;

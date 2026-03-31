@@ -3,13 +3,19 @@
   "buildCommand": "npm run build",
   "installCommand": "npm install",
   "regions": ["cdg1"],
+  "builds": [
+    { "src": "api/index.ts", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/(.*)", "dest": "api/index.ts" }
+  ],
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
         {
           "key": "Access-Control-Allow-Origin",
-          "value": "https://academia-helm-web.vercel.app"
+          "value": "https://academiahelm.com"
         },
         {
           "key": "Access-Control-Allow-Methods",
@@ -17,7 +23,7 @@
         },
         {
           "key": "Access-Control-Allow-Headers",
-          "value": "Content-Type,Authorization,x-tenant-slug"
+          "value": "Content-Type,Authorization,x-tenant-slug,x-tenant-id"
         }
       ]
     }

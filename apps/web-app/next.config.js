@@ -140,27 +140,32 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 
 let exportedConfig = nextConfig;
 if (process.env.NODE_ENV === 'production') {
-  const withPWA = require('next-pwa')({
+  // @ducanh2912/next-pwa (Workbox 7) : évite l'erreur Vercel
+  // « assignWith is not defined » lors de la génération du SW avec next-pwa + Workbox 6.
+  const withPWA = require('@ducanh2912/next-pwa').default({
     dest: 'public',
     register: true,
-    skipWaiting: true,
-    clientsClaim: true,
-    // Invalide le cache SW à chaque déploiement (utile quand on change des fichiers d'images)
-    cacheId: process.env.VERCEL_GIT_COMMIT_SHA || `local-${Date.now()}`,
-    runtimeCaching: [
-      {
-        urlPattern: /^https?.*/,
-        handler: 'NetworkFirst',
-        options: {
-          cacheName: 'offlineCache',
-          expiration: {
-            maxEntries: 200,
-            maxAgeSeconds: 24 * 60 * 60, // 24 heures
+    extendDefaultRuntimeCaching: false,
+    workboxOptions: {
+      skipWaiting: true,
+      clientsClaim: true,
+      cleanupOutdatedCaches: true,
+      cacheId: process.env.VERCEL_GIT_COMMIT_SHA || `local-${Date.now()}`,
+      runtimeCaching: [
+        {
+          urlPattern: /^https?.*/,
+          handler: 'NetworkFirst',
+          options: {
+            cacheName: 'offlineCache',
+            expiration: {
+              maxEntries: 200,
+              maxAgeSeconds: 24 * 60 * 60, // 24 heures
+            },
+            networkTimeoutSeconds: 10,
           },
-          networkTimeoutSeconds: 10,
         },
-      },
-    ],
+      ],
+    },
   });
   exportedConfig = withPWA(nextConfig);
 }

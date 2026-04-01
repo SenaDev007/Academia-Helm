@@ -4,6 +4,9 @@
   "description": "Academia Helm - Backend API Server (NestJS)",
   "author": "YEHI OR Tech <yehiortech@gmail.com>",
   "private": true,
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "license": "UNLICENSED",
   "scripts": {
     "postinstall": "prisma generate --schema=prisma/schema.prisma",

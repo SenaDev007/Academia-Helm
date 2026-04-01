@@ -58,6 +58,7 @@
   },
   "devDependencies": {
     "@ducanh2912/next-pwa": "^10.2.9",
+    "@netlify/plugin-nextjs": "^5.15.9",
     "@next/bundle-analyzer": "^16.2.1",
     "@types/js-cookie": "^3.0.6",
     "@types/node": "^20.14.0",

@@ -31,12 +31,15 @@ export default function PremiumHeader() {
   }, []);
 
   const isActive = (path: string) => {
-    return pathname === path || pathname.startsWith(path);
+    if (path.includes('#')) return false;
+    if (path === '/') return pathname === '/';
+    return pathname === path || pathname.startsWith(`${path}/`);
   };
 
   const menuItems: Array<{ path: string; label: string; isInstitutional?: boolean }> = [
     { path: '/', label: 'Accueil' },
     { path: '/modules', label: 'Modules' },
+    { path: '/blog', label: 'Blog' },
     { path: '/#tarification', label: 'Tarification' },
     { path: '/patronat-examens', label: 'Patronat & Examens', isInstitutional: true },
     { path: '/securite', label: 'Sécurité & Méthode' },
@@ -56,7 +59,7 @@ export default function PremiumHeader() {
         <div className="flex items-center justify-between h-14 md:h-16 flex-nowrap px-4 sm:px-6 lg:px-8">
           {/* Logo */}
           <Link 
-            href="/admin-login"
+            href="/"
             prefetch={true}
             className="flex items-center space-x-1 group transition-transform duration-200 hover:scale-105 flex-shrink-0"
           >

@@ -19,9 +19,11 @@ import {
   Users,
   ArrowRight,
   Sparkles,
+  BookOpen,
 } from 'lucide-react';
 import PremiumHeader from '../layout/PremiumHeader';
 import InstitutionalFooter from './InstitutionalFooter';
+import { BLOG_POSTS } from '@/content/blog/posts';
 
 const SupportChatWidget = dynamic(() => import('./SupportChatWidget'), {
   ssr: false,
@@ -149,6 +151,9 @@ const modules = [
   { title: 'RH & Personnel', text: 'Contrats, présence, rôles, habilitations et administration RH.' },
   { title: 'Communication', text: 'Canaux, messages, automatisations et communication institutionnelle.' },
 ];
+
+/** Aperçu blog sur la landing (les articles MDX auto-générés apparaissent aussi sur /blog). */
+const featuredBlogPosts = BLOG_POSTS.slice(0, 3);
 
 export default function PremiumLandingPage() {
   const { scrollYProgress } = useScroll();
@@ -422,6 +427,65 @@ export default function PremiumLandingPage() {
               </motion.article>
             ))}
           </motion.div>
+        </div>
+      </section>
+
+      <section className="border-t border-slate-100 bg-white py-16 md:py-24">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="mb-10 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="mb-4 inline-flex items-center gap-2 rounded-full bg-blue-50 px-4 py-1.5 text-sm font-semibold text-[#0b2f73]">
+                <BookOpen className="h-4 w-4" aria-hidden />
+                Ressources
+              </p>
+              <h2 className="text-3xl font-extrabold text-[#0b2f73] md:text-4xl">
+                Blog & expertise gestion scolaire
+              </h2>
+              <p className="mt-3 max-w-2xl text-lg text-slate-600">
+                Guides pratiques : digitalisation, finance, pilotage d&apos;établissement — pensés pour les écoles en
+                Afrique.
+              </p>
+            </div>
+            <Link
+              href="/blog"
+              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[#0b2f73] px-6 py-3 font-semibold text-white transition-colors hover:bg-[#144798]"
+            >
+              Voir tous les articles
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+            {featuredBlogPosts.map((post) => (
+              <Link
+                key={post.slug}
+                href={`/blog/${post.slug}`}
+                className="group rounded-2xl border border-slate-200 bg-slate-50/90 p-6 transition-all hover:border-[#0b2f73]/25 hover:shadow-lg"
+              >
+                <h3 className="line-clamp-2 text-lg font-bold text-[#0b2f73] group-hover:text-[#144798]">
+                  {post.title}
+                </h3>
+                <p className="mt-2 line-clamp-3 text-sm text-slate-600">{post.description}</p>
+                <span className="mt-4 inline-flex items-center text-sm font-semibold text-[#0b2f73]">
+                  Lire l&apos;article
+                  <ArrowRight className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                </span>
+              </Link>
+            ))}
+          </div>
+          <p className="mt-8 text-center text-sm text-slate-500">
+            Pages SEO :{' '}
+            <Link href="/gestion-scolaire" className="font-medium text-[#0b2f73] underline-offset-2 hover:underline">
+              gestion scolaire
+            </Link>
+            {' · '}
+            <Link href="/logiciel-gestion-ecole" className="font-medium text-[#0b2f73] underline-offset-2 hover:underline">
+              logiciel gestion école
+            </Link>
+            {' · '}
+            <Link href="/logiciel-ecole-afrique" className="font-medium text-[#0b2f73] underline-offset-2 hover:underline">
+              logiciel école Afrique
+            </Link>
+          </p>
         </div>
       </section>
 

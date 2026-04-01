@@ -180,6 +180,7 @@ export default function InstitutionalFooter() {
               <ul className="space-y-2 sm:space-y-3">
                 {[
                   { label: 'Fonctionnalités', href: '/modules' },
+                  { label: 'Blog & ressources', href: '/blog' },
                   { label: 'Tarification', href: '/#tarification' },
                   { label: 'Sécurité', href: '/securite' },
                   { label: 'Mode offline', href: '/#offline' },

@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
+import PremiumHeader from '@/components/layout/PremiumHeader';
+import InstitutionalFooter from '@/components/public/InstitutionalFooter';
 import Breadcrumbs from '@/components/seo/Breadcrumbs';
 import CTA from '@/components/seo/CTA';
 import JsonLd from '@/components/seo/JsonLd';
@@ -84,6 +86,8 @@ export default async function BlogPostPage({
   const ctaLabel = ctaLabelForVariant(variant);
 
   return (
+    <>
+      <PremiumHeader />
     <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
       <Breadcrumbs
         items={[
@@ -187,6 +191,10 @@ export default async function BlogPostPage({
         </p>
       </section>
     </main>
+      <div className="bg-[#08255a] border-t border-amber-400/20">
+        <InstitutionalFooter />
+      </div>
+    </>
   );
 }
 

@@ -2,11 +2,6 @@ node_modules
 dist
 .env
 .env.*
+*.log
 .git
 .gitignore
-*.md
-coverage
-.nyc_output
-*.log
-.vscode
-.idea

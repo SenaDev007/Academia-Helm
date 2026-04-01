@@ -59,25 +59,14 @@ async function bootstrap() {
   // Global validation pipe
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true, // Strip properties that don't have decorators
-      forbidNonWhitelisted: true, // Throw error if non-whitelisted properties are present
-      transform: true, // Automatically transform payloads to DTO instances
-      transformOptions: {
-        enableImplicitConversion: true,
-      },
+      whitelist: true,
+      transform: true,
     }),
   );
 
-  // CORS configuration
-  // ⚠️ IMPORTANT : Ne jamais utiliser localhost en dur
-  // FRONTEND_URL doit être défini dans les variables d'environnement
-  const frontendUrl = process.env.FRONTEND_URL;
-  if (!frontendUrl) {
-    console.warn('⚠️  FRONTEND_URL not set. CORS may not work correctly in production.');
-  }
-
   app.enableCors({
-    origin: frontendUrl || '*', // En développement uniquement, utiliser * si non défini
+    origin: ['https://academiahelm.com', 'https://www.academiahelm.com'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
   });
 
@@ -98,14 +87,9 @@ async function bootstrap() {
     console.warn('⚠️  Triggers Module 1 (non bloquant):', (err as Error)?.message);
   }
 
-  const port = process.env.PORT || 3000;
-  // Écouter sur toutes les interfaces (0.0.0.0) pour permettre les connexions depuis Next.js
-  await app.listen(port, '0.0.0.0');
-
-  // Logger l'URL sans hardcoder localhost
-  const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
-  const host = process.env.HOST || 'localhost';
-  console.log(`🚀 Academia Helm API Server is running on: ${protocol}://${host}:${port}/api`);
+  // ⚠️ CRITIQUE pour Fly.io — ne jamais changer
+  await app.listen(process.env.PORT || 3000, '0.0.0.0');
+  console.log(`Academia Helm API démarrée sur le port ${process.env.PORT || 3000}`);
 }
 
 bootstrap();

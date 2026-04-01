@@ -70,6 +70,7 @@ import { ContextInterceptor } from './common/interceptors/context.interceptor';
 import { SchoolLevelEnforcementInterceptor } from './common/interceptors/school-level-enforcement.interceptor';
 import { AcademicYearEnforcementInterceptor } from './common/interceptors/academic-year-enforcement.interceptor';
 import { PerformanceLoggingInterceptor } from './common/interceptors/performance-logging.interceptor';
+import { HealthController } from './health/health.controller';
 
 @Module({
   imports: [
@@ -236,7 +237,7 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     // Avis / témoignages (landing Trustpilot)
     ReviewsModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, HealthController],
   providers: [
     AppService,
     {

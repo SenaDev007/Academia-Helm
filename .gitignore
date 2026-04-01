@@ -52,3 +52,7 @@ coverage/
 
 # Backend build outputs
 apps/api-server/lib/
+
+# PWA build outputs (next-pwa)
+apps/web-app/public/sw.js
+apps/web-app/public/workbox-*.js

@@ -2,10 +2,6 @@ const path = require('path');
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  /** Monorepo : ancrer Turbopack sur cette app (évite lockfile racine). */
-  turbopack: {
-    root: path.resolve(__dirname),
-  },
   reactStrictMode: true,
 
   // MODE PROD SAFE - Désactivation temporaire des bloqueurs CI

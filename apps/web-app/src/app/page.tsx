@@ -15,6 +15,7 @@ const siteUrl = getPublicSiteUrl();
 export const metadata: Metadata = {
   title: 'Academia Helm - Plateforme de pilotage éducatif',
   description: 'La plateforme de pilotage éducatif nouvelle génération. Prenez le gouvernail de votre institution.',
+  robots: { index: true, follow: true },
   keywords: [
     'pilotage éducatif',
     'logiciel école',

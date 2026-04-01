@@ -10,7 +10,6 @@ export const metadata: Metadata = generateSEOMetadata({
   title: 'Mot de passe oublié',
   description: 'Réinitialisez le mot de passe de votre compte Academia Helm.',
   path: '/forgot-password',
-  noIndex: true,
 });
 
 export default function Page() {

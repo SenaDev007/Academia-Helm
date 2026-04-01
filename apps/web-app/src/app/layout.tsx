@@ -81,16 +81,17 @@ const inter = localFont({
   preload: true, // ✅ Précharger les polices locales (rapide, pas de timeout)
 });
 
-// Titre par défaut unique (un seul titre, pas de template pour éviter toute concaténation)
-const defaultTitle = `${BRAND.name} - ${BRAND.subtitle}`;
-const defaultDescription = `${BRAND.description}. ${BRAND.slogan}`;
+// Titre / description SEO (landing publique)
+const defaultTitle = 'Academia Helm — Logiciel de gestion scolaire en Afrique';
+const defaultDescription =
+  'Pilotez votre école privée avec Academia Helm : gestion des élèves, finances, examens, RH et IA de direction ORION.';
 
 const siteUrl = getPublicSiteUrl();
 const verification = buildSiteVerification();
 
 // eslint-disable-next-line @next/next/no-head-element
 export const metadata: Metadata = {
-  metadataBase: new URL(siteUrl),
+  metadataBase: new URL('https://academiahelm.com'),
   title: defaultTitle,
   description: defaultDescription,
   keywords: [

@@ -22,9 +22,13 @@ import {
 } from 'lucide-react';
 import PremiumHeader from '../layout/PremiumHeader';
 import InstitutionalFooter from './InstitutionalFooter';
-import ReviewsSection from '@/components/landing/ReviewsSection';
 
 const SupportChatWidget = dynamic(() => import('./SupportChatWidget'), {
+  ssr: false,
+  loading: () => null,
+});
+
+const ReviewsSection = dynamic(() => import('@/components/landing/ReviewsSection'), {
   ssr: false,
   loading: () => null,
 });
@@ -203,6 +207,7 @@ export default function PremiumLandingPage() {
           fill
           className="object-cover opacity-45"
           priority
+          sizes="100vw"
         />
         <div className="absolute inset-0 bg-[#0b2f73]/64" />
         <div className="absolute inset-0 opacity-12 bg-[radial-gradient(circle_at_top_right,#f5b335_0%,transparent_45%)]" />
@@ -306,7 +311,7 @@ export default function PremiumLandingPage() {
                   <video
                     className="w-full h-72 md:h-80 object-cover bg-[#071d49]"
                     controls
-                    preload="metadata"
+                    preload="none"
                     playsInline
                     poster="/images/Miniature Présentation Academia Hub.png"
                   >
@@ -480,6 +485,7 @@ export default function PremiumLandingPage() {
                   width={52}
                   height={52}
                   className="w-12 h-12 object-contain"
+                  sizes="48px"
                 />
                 <p className="font-semibold text-amber-200">Simulation ORION</p>
               </div>

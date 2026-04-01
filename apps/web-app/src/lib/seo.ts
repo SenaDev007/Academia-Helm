@@ -202,3 +202,29 @@ export function generateSoftwareApplicationSchema() {
   };
 }
 
+/**
+ * JSON-LD Product (SaaS) — utile pour enrichir la compréhension du produit.
+ */
+export function generateProductSchema() {
+  const siteUrl = getPublicSiteUrl();
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name: 'Academia Helm',
+    description: `${BRAND.description}. ${BRAND.slogan}`,
+    brand: {
+      '@type': 'Brand',
+      name: BRAND.name,
+    },
+    image: [`${siteUrl}${DEFAULT_OG_IMAGE_PATH}`],
+    url: siteUrl,
+    category: 'EducationalApplication',
+    offers: {
+      '@type': 'Offer',
+      url: `${siteUrl}/tarification`,
+      priceCurrency: 'XOF',
+      availability: 'https://schema.org/InStock',
+    },
+  };
+}
+

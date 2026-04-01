@@ -7,6 +7,7 @@
 
 import {
   generateOrganizationSchema,
+  generateProductSchema,
   generateSoftwareApplicationSchema,
   generateWebSiteSchema,
 } from '@/lib/seo';
@@ -27,6 +28,7 @@ export default function StructuredData({ platformReviews = [] }: Props) {
   );
   const webSiteSchema = generateWebSiteSchema();
   const softwareSchema = generateSoftwareApplicationSchema();
+  const productSchema = generateProductSchema();
   const reviewsGraph = generateReviewsOnlyGraph(platformReviews);
 
   return (
@@ -42,6 +44,10 @@ export default function StructuredData({ platformReviews = [] }: Props) {
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareSchema) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(productSchema) }}
       />
       {reviewsGraph ? (
         <script

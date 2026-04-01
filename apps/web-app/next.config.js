@@ -3,6 +3,7 @@ const path = require('path');
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  outputFileTracingRoot: path.join(__dirname, '..', '..'),
 
   // MODE PROD SAFE - Désactivation temporaire des bloqueurs CI
   // ESLint : plus dans next.config (Next 16) — `next lint` / eslint.config à part

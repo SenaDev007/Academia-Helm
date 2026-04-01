@@ -10,8 +10,8 @@
  */
 
 export type { AppEnvironment } from './app-base-url';
-export { getAppEnvironment, getAppBaseUrl } from './app-base-url';
-import { getAppEnvironment, getAppBaseUrl } from './app-base-url';
+export { getAppEnvironment, getAppBaseUrl, isNextProductionBuild } from './app-base-url';
+import { getAppEnvironment, getAppBaseUrl, isNextProductionBuild } from './app-base-url';
 
 /**
  * Récupère l'URL de base de l'API
@@ -28,7 +28,16 @@ export function getApiBaseUrl(): string {
   if (envUrl) {
     return envUrl;
   }
-  
+
+  if (isNextProductionBuild()) {
+    const apiDomain = process.env.NEXT_PUBLIC_API_DOMAIN;
+    if (apiDomain) {
+      const cleanDomain = apiDomain.replace(/^https?:\/\//, '');
+      return `https://${cleanDomain}/api`;
+    }
+    return `${getAppBaseUrl()}/api`;
+  }
+
   const env = getAppEnvironment();
   
   if (env === 'production') {
@@ -84,7 +93,11 @@ export function getBaseDomain(): string {
     // Retirer le protocole si présent
     return baseDomain.replace(/^https?:\/\//, '');
   }
-  
+
+  if (isNextProductionBuild()) {
+    return 'next-build.invalid';
+  }
+
   const env = getAppEnvironment();
   
   if (env === 'production') {

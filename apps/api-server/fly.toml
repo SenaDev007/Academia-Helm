@@ -1,9 +1,6 @@
 app = "academia-helm-api"
 primary_region = "jnb"
 
-[build]
-  dockerfile = "Dockerfile"
-
 [env]
   NODE_ENV = "production"
   PORT = "3000"

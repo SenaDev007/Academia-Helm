@@ -48,9 +48,9 @@ services:
   # 2. API SERVER (DÉMARRE APRÈS POSTGRESQL)
   # ============================================================================
   api-server:
-    build:
-      context: ./apps/api-server
-      dockerfile: Dockerfile.dev
+    # Plus de Dockerfile dans apps/api-server (déploiement Railway via Railpack) — image Node officielle
+    image: node:22-bookworm
+    working_dir: /app
     container_name: academia-hub-api
     ports:
       - "3000:3000"
@@ -83,7 +83,7 @@ services:
       - ./apps/api-server:/app
       - /app/node_modules
       - /app/dist
-    command: sh -c "npx prisma migrate deploy && npm run start:dev"
+    command: sh -c "npm ci && npx prisma migrate deploy && npm run start:dev"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/ready"]
       interval: 10s

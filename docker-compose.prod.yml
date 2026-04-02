@@ -32,11 +32,13 @@ services:
       - academia-network
 
   api-server:
-    build:
-      context: ./apps/api-server
-      dockerfile: Dockerfile
-    image: academia-hub-api:latest
+    # Plus de Dockerfile api-server (déploiement prod recommandé : Railway Railpack). Build depuis les sources montées.
+    image: node:22-bookworm
+    working_dir: /app
+    volumes:
+      - ./apps/api-server:/app
     container_name: academia-hub-api
+    command: sh -c "npm ci && npm run build && node dist/main.js"
     restart: unless-stopped
     ports:
       - "${API_PORT:-3000}:3000"

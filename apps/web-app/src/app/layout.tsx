@@ -109,13 +109,16 @@ export const metadata: Metadata = {
   publisher: BRAND.name,
   category: 'technology',
   ...(verification ? { verification } : {}),
+  appleWebApp: {
+    title: 'Academia Helm',
+  },
   icons: {
     icon: [
-      { url: '/images/logo-Academia-Hub.ico', sizes: 'any' },
-      { url: BRAND.logoPath, sizes: '512x512', type: 'image/png' },
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/icon.png', type: 'image/png' },
     ],
-    shortcut: '/images/logo-Academia-Hub.ico',
-    apple: [{ url: BRAND.logoPath, sizes: '512x512', type: 'image/png' }],
+    apple: [{ url: '/apple-icon.png' }],
+    shortcut: '/favicon.ico',
   },
   manifest: '/manifest.json',
   openGraph: {
@@ -166,6 +169,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="fr" className={cn('scroll-smooth', 'font-sans', inter.variable)}>
+      <head>
+        <meta name="apple-mobile-web-app-title" content="Academia Helm" />
+      </head>
       <body className={`${inter.className} antialiased overflow-x-hidden`}>
         {children}
         <InstallPromptWrapper />

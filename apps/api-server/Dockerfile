@@ -3,9 +3,11 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 COPY prisma ./prisma/
-RUN npm ci
+# `npm ci` exécute `postinstall` (prisma generate) → éviter la double génération au build
+RUN npm ci --ignore-scripts
 COPY . .
-RUN npx prisma generate
+# Générer Prisma une seule fois (nécessaire pour `npm run build`)
+RUN npx prisma generate --schema=prisma/schema.prisma
 RUN npm run build
 
 FROM node:22-alpine AS production

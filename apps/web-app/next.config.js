@@ -1,9 +1,14 @@
 const path = require('path');
 
+/** Netlify (@netlify/plugin-nextjs) : pas de mode standalone (Docker/VPS uniquement). */
+const isNetlify = process.env.NETLIFY === 'true';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  outputFileTracingRoot: path.join(__dirname, '..', '..'),
+  outputFileTracingRoot: isNetlify
+    ? undefined
+    : path.join(__dirname, '..', '..'),
 
   // MODE PROD SAFE - Désactivation temporaire des bloqueurs CI
   // ESLint : plus dans next.config (Next 16) — `next lint` / eslint.config à part
@@ -96,8 +101,8 @@ const nextConfig = {
     NEXT_PUBLIC_PLATFORM: process.env.NEXT_PUBLIC_PLATFORM || 'web',
   },
   
-  // Build standalone pour déploiement Node (OVH, VPS, etc.)
-  output: 'standalone',
+  // Build standalone pour déploiement Node (OVH, VPS, Docker) — pas sur Netlify
+  output: isNetlify ? undefined : 'standalone',
 
   // Timeout plus long pour la génération des pages statiques (build volumineux)
   staticPageGenerationTimeout: 180,

@@ -430,64 +430,67 @@ export default function PremiumLandingPage() {
         </div>
       </section>
 
-      <section className="border-t border-slate-100 bg-white py-16 md:py-24">
+      <motion.section
+        initial="hidden"
+        whileInView="show"
+        viewport={{ once: true, amount: 0.18 }}
+        variants={staggerContainer}
+        className="border-t border-slate-100 bg-white py-16 md:py-24"
+      >
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-10 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-            <div>
-              <p className="mb-4 inline-flex items-center gap-2 rounded-full bg-blue-50 px-4 py-1.5 text-sm font-semibold text-[#0b2f73]">
+            <motion.div variants={fadeUp}>
+              <motion.p
+                variants={fadeUp}
+                className="mb-4 inline-flex items-center gap-2 rounded-full bg-blue-50 px-4 py-1.5 text-sm font-semibold text-[#0b2f73]"
+              >
                 <BookOpen className="h-4 w-4" aria-hidden />
                 Ressources
-              </p>
-              <h2 className="text-3xl font-extrabold text-[#0b2f73] md:text-4xl">
+              </motion.p>
+              <motion.h2 variants={fadeUp} className="text-3xl font-extrabold text-[#0b2f73] md:text-4xl">
                 Blog & expertise gestion scolaire
-              </h2>
-              <p className="mt-3 max-w-2xl text-lg text-slate-600">
+              </motion.h2>
+              <motion.p variants={fadeUp} className="mt-3 max-w-2xl text-lg text-slate-600">
                 Guides pratiques : digitalisation, finance, pilotage d&apos;établissement — pensés pour les écoles en
                 Afrique.
-              </p>
-            </div>
-            <Link
-              href="/blog"
-              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[#0b2f73] px-6 py-3 font-semibold text-white transition-colors hover:bg-[#144798]"
-            >
-              Voir tous les articles
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            {featuredBlogPosts.map((post) => (
+              </motion.p>
+            </motion.div>
+            <motion.div variants={fadeUp} whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }}>
               <Link
-                key={post.slug}
-                href={`/blog/${post.slug}`}
-                className="group rounded-2xl border border-slate-200 bg-slate-50/90 p-6 transition-all hover:border-[#0b2f73]/25 hover:shadow-lg"
+                href="/blog"
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[#0b2f73] px-6 py-3 font-semibold text-white transition-colors hover:bg-[#144798]"
               >
-                <h3 className="line-clamp-2 text-lg font-bold text-[#0b2f73] group-hover:text-[#144798]">
-                  {post.title}
-                </h3>
-                <p className="mt-2 line-clamp-3 text-sm text-slate-600">{post.description}</p>
-                <span className="mt-4 inline-flex items-center text-sm font-semibold text-[#0b2f73]">
-                  Lire l&apos;article
-                  <ArrowRight className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                </span>
+                Voir tous les articles
+                <ArrowRight className="h-4 w-4" />
               </Link>
-            ))}
+            </motion.div>
           </div>
-          <p className="mt-8 text-center text-sm text-slate-500">
-            Pages SEO :{' '}
-            <Link href="/gestion-scolaire" className="font-medium text-[#0b2f73] underline-offset-2 hover:underline">
-              gestion scolaire
-            </Link>
-            {' · '}
-            <Link href="/logiciel-gestion-ecole" className="font-medium text-[#0b2f73] underline-offset-2 hover:underline">
-              logiciel gestion école
-            </Link>
-            {' · '}
-            <Link href="/logiciel-ecole-afrique" className="font-medium text-[#0b2f73] underline-offset-2 hover:underline">
-              logiciel école Afrique
-            </Link>
-          </p>
+          <motion.div variants={fadeUp} className="grid grid-cols-1 gap-6 md:grid-cols-3">
+            {featuredBlogPosts.map((post) => (
+              <motion.div
+                key={post.slug}
+                variants={fadeUp}
+                whileHover={{ y: -6, scale: 1.01 }}
+                transition={{ type: 'spring', stiffness: 240, damping: 18 }}
+              >
+                <Link
+                  href={`/blog/${post.slug}`}
+                  className="group block rounded-2xl border border-slate-200 bg-slate-50/90 p-6 transition-all hover:border-[#0b2f73]/25 hover:shadow-lg"
+                >
+                  <h3 className="line-clamp-2 text-lg font-bold text-[#0b2f73] group-hover:text-[#144798]">
+                    {post.title}
+                  </h3>
+                  <p className="mt-2 line-clamp-3 text-sm text-slate-600">{post.description}</p>
+                  <span className="mt-4 inline-flex items-center text-sm font-semibold text-[#0b2f73]">
+                    Lire l&apos;article
+                    <ArrowRight className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                  </span>
+                </Link>
+              </motion.div>
+            ))}
+          </motion.div>
         </div>
-      </section>
+      </motion.section>
 
       <section className="py-16 md:py-24 bg-[#0b2f73] text-white relative overflow-hidden">
         <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_80%_30%,#f5b335_0%,transparent_45%)]" />

@@ -7,6 +7,7 @@ import InstitutionalFooter from '@/components/public/InstitutionalFooter';
 import Breadcrumbs from '@/components/seo/Breadcrumbs';
 import CTA from '@/components/seo/CTA';
 import JsonLd from '@/components/seo/JsonLd';
+import { ArticleLayout } from '@/components/articles/ArticleLayout';
 import { generateSEOMetadata } from '@/lib/seo';
 import { buildFaqJsonLd } from '@/lib/seo/faq-jsonld';
 import { BLOG_POSTS, getBlogPost } from '@/content/blog/posts';
@@ -15,6 +16,7 @@ import LeadMagnet from '@/components/LeadMagnet';
 import StickyCTA from '@/components/StickyCTA';
 import { extractFaqFromMdx } from '@/lib/blog/faq-from-mdx';
 import { ctaLabelForVariant, getAbVariant } from '@/lib/seo/ab-testing';
+import type { Article } from '@/types/article';
 
 export async function generateStaticParams() {
   const mdxSlugs = await getAllBlogSlugs();
@@ -22,17 +24,19 @@ export async function generateStaticParams() {
   return Array.from(merged).map((slug) => ({ slug }));
 }
 
-export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
-  const mdx = await getBlogPostBySlug(params.slug);
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug: rawSlug } = await params;
+  const slug = decodeURIComponent(rawSlug).replace(/\/+$/, '');
+  const mdx = await getBlogPostBySlug(slug);
   if (mdx) {
     return generateSEOMetadata({
       title: mdx.frontmatter.title,
       description: mdx.frontmatter.description,
       keywords: mdx.frontmatter.keywords ?? [],
-      path: `/blog/${params.slug}`,
+      path: `/blog/${slug}`,
     });
   }
-  const post = getBlogPost(params.slug);
+  const post = getBlogPost(slug);
   if (!post) return {};
   return generateSEOMetadata({ title: post.title, description: post.description, keywords: post.keywords, path: `/blog/${post.slug}` });
 }
@@ -52,11 +56,13 @@ export default async function BlogPostPage({
   params,
   searchParams,
 }: {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
   searchParams?: Record<string, string | string[] | undefined>;
 }) {
-  const mdxPost = await getBlogPostBySlug(params.slug);
-  const fallbackPost = getBlogPost(params.slug);
+  const { slug: rawSlug } = await params;
+  const slug = decodeURIComponent(rawSlug).replace(/\/+$/, '');
+  const mdxPost = await getBlogPostBySlug(slug);
+  const fallbackPost = getBlogPost(slug);
   if (!mdxPost && !fallbackPost) notFound();
 
   const title = mdxPost?.frontmatter.title ?? fallbackPost!.title;
@@ -64,6 +70,51 @@ export default async function BlogPostPage({
   const publishedAt = mdxPost?.frontmatter.publishedAt ?? fallbackPost!.publishedAt;
   const updatedAt = mdxPost?.frontmatter.updatedAt ?? fallbackPost!.updatedAt;
   const keywords = mdxPost?.frontmatter.keywords ?? fallbackPost!.keywords;
+
+  const coverImageUrl = '/images/articles/default-cover.jpg';
+
+  function estimateReadingTimeMinutes(text: string) {
+    const words = text.trim().split(/\s+/).filter(Boolean).length;
+    return Math.max(3, Math.round(words / 200));
+  }
+
+  const readingTime = mdxPost
+    ? estimateReadingTimeMinutes(mdxPost.content)
+    : estimateReadingTimeMinutes(
+        [fallbackPost!.h1, ...fallbackPost!.sections.flatMap((s) => [s.heading, ...s.paragraphs])]
+          .filter(Boolean)
+          .join(' '),
+      );
+
+  const article: Article = {
+    id: `blog-${slug}`,
+    slug: `blog/${slug}`,
+    title,
+    description,
+    content: mdxPost?.content,
+    coverImage: {
+      url: coverImageUrl,
+      alt: title,
+      credit: 'Academia Helm',
+    },
+    author: {
+      name: 'Équipe Academia Helm',
+      role: 'Rédaction & expertise gestion scolaire',
+      avatar: '/images/team/academia-helm-team.png',
+    },
+    category: 'Blog',
+    tags: (keywords ?? []).slice(0, 12),
+    publishedAt,
+    updatedAt: updatedAt ?? publishedAt,
+    readingTime,
+    status: 'published',
+    seo: {
+      title,
+      description,
+      canonical: `https://academiahelm.com/blog/${slug}`,
+      ogImage: coverImageUrl,
+    },
+  };
 
   const faqFromMdx = mdxPost ? extractFaqFromMdx(mdxPost.content) : [];
   const faqForJson =
@@ -88,29 +139,10 @@ export default async function BlogPostPage({
   return (
     <>
       <PremiumHeader />
-    <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
-      <Breadcrumbs
-        items={[
-          { label: 'Accueil', href: '/' },
-          { label: 'Blog', href: '/blog' },
-          { label: title },
-        ]}
-      />
-
       <JsonLd data={faqJsonLd} />
+      <ArticleLayout article={article}>
+        <Breadcrumbs items={[{ label: 'Accueil', href: '/' }, { label: 'Blog', href: '/blog' }, { label: title }]} />
 
-      <header className="mb-10">
-        <p className="text-sm text-gray-500">
-          Publié le {new Date(publishedAt).toLocaleDateString('fr-FR')}
-          {updatedAt ? ` · Mis à jour le ${new Date(updatedAt).toLocaleDateString('fr-FR')}` : ''}
-        </p>
-        <h1 className="mt-2 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
-          {mdxPost ? title : fallbackPost!.h1}
-        </h1>
-        <p className="mt-4 text-lg text-gray-700">{description}</p>
-      </header>
-
-      <article className="prose prose-gray max-w-none">
         {mdxContent ? (
           <>{mdxContent}</>
         ) : (
@@ -174,23 +206,22 @@ export default async function BlogPostPage({
           Si vous cherchez un logiciel de gestion scolaire adapté à l’Afrique (finance, scolarité, examens, RH),
           Academia Helm est conçu pour passer du “papier/Excel” à un pilotage clair.
         </p>
-      </article>
 
-      <LeadMagnet sourceSlug={params.slug} keywords={keywords ?? []} ctaLabel={ctaLabel} />
-      <CTA />
-      <StickyCTA ctaLabel={ctaLabel} />
+        <LeadMagnet sourceSlug={slug} keywords={keywords ?? []} ctaLabel={ctaLabel} />
+        <CTA />
+        <StickyCTA ctaLabel={ctaLabel} />
 
-      <section className="mt-10 rounded-2xl border border-gray-200 bg-gray-50 p-6">
-        <h2 className="text-lg font-semibold text-gray-900">Explorer d’autres articles</h2>
-        <p className="mt-2 text-gray-700">
-          Retour au{' '}
-          <Link href="/blog" className="text-blue-700 hover:underline">
-            blog
-          </Link>
-          .
-        </p>
-      </section>
-    </main>
+        <section className="mt-10 rounded-2xl border border-gray-200 bg-gray-50 p-6">
+          <h2 className="text-lg font-semibold text-gray-900">Explorer d’autres articles</h2>
+          <p className="mt-2 text-gray-700">
+            Retour au{' '}
+            <Link href="/blog" className="text-blue-700 hover:underline">
+              blog
+            </Link>
+            .
+          </p>
+        </section>
+      </ArticleLayout>
       <div className="bg-[#08255a] border-t border-amber-400/20">
         <InstitutionalFooter />
       </div>

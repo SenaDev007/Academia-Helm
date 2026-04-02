@@ -2,11 +2,11 @@
  * ============================================================================
  * PORTAL ACCESS PAGE - ACCÉDER À UN PORTAIL
  * ============================================================================
- *
+ * 
  * Page centrale pour accéder aux différents portails Academia Helm.
  * Refonte motion (Framer Motion) : entrées échelonnées, cartes interactives,
  * transitions entre choix du portail et recherche d’établissement.
- *
+ * 
  * ============================================================================
  */
 
@@ -293,7 +293,7 @@ export default function PortalPage() {
       </div>
 
       <PremiumHeader />
-
+      
       <main className="relative z-[1] pb-20 pt-24 md:pt-28">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
           <motion.div
@@ -335,12 +335,12 @@ export default function PortalPage() {
             </motion.p>
             <motion.div variants={heroItem} className="mt-8 flex justify-center">
               <motion.button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleDevPanelOpen();
-                }}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleDevPanelOpen();
+              }}
                 whileHover={
                   shouldReduceMotion
                     ? undefined
@@ -349,8 +349,8 @@ export default function PortalPage() {
                 whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
                 transition={cardSpring}
                 className="group relative inline-flex items-center justify-center gap-2 rounded-xl border-2 border-amber-400 bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-3 font-semibold text-white shadow-lg"
-                title="Ouvrir la fenêtre : choisir une école puis saisir vos identifiants"
-              >
+              title="Ouvrir la fenêtre : choisir une école puis saisir vos identifiants"
+            >
                 <motion.span
                   animate={
                     shouldReduceMotion ? undefined : { rotate: [0, -8, 8, 0] }
@@ -363,10 +363,10 @@ export default function PortalPage() {
                 >
                   <Code2 className="h-5 w-5" />
                 </motion.span>
-                <span>Mode Développement</span>
+              <span>Mode Développement</span>
                 <span className="absolute -right-1 -top-1 rounded-full bg-red-500 px-2 py-0.5 text-xs font-bold text-white shadow-md">
-                  DEV
-                </span>
+                DEV
+              </span>
               </motion.button>
             </motion.div>
           </motion.div>
@@ -392,8 +392,8 @@ export default function PortalPage() {
                   <div className="mb-6 flex items-center justify-between">
                     <h3 className="flex items-center gap-2 text-lg font-bold text-slate-900">
                       <Code2 className="h-5 w-5 text-amber-500" />
-                      Connexion en mode développement
-                    </h3>
+                    Connexion en mode développement
+                  </h3>
                     <motion.button
                       type="button"
                       whileTap={{ scale: 0.92 }}
@@ -403,57 +403,57 @@ export default function PortalPage() {
                     >
                       <X className="h-5 w-5" />
                     </motion.button>
-                  </div>
+                </div>
                   <p className="mb-4 text-sm text-slate-600">
                     Choisissez d’abord l’école (tenant), puis saisissez vos
                     identifiants pour vous connecter à l’app avec ce contexte.
-                  </p>
-                  <form onSubmit={handleDevLogin} className="space-y-4">
-                    <div>
+                </p>
+                <form onSubmit={handleDevLogin} className="space-y-4">
+                  <div>
                       <label className="mb-1 block text-sm font-medium text-slate-700">
                         École
                       </label>
-                      <select
-                        value={selectedDevTenant?.id ?? ''}
-                        onChange={(e) => {
+                    <select
+                      value={selectedDevTenant?.id ?? ''}
+                      onChange={(e) => {
                           const t = devTenants.find(
                             (x) => x.id === e.target.value,
                           );
-                          setSelectedDevTenant(t ?? null);
-                        }}
+                        setSelectedDevTenant(t ?? null);
+                      }}
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30"
-                        required
-                      >
-                        <option value="">— Choisir une école —</option>
+                      required
+                    >
+                      <option value="">— Choisir une école —</option>
                         {devTenantsLoading && (
                           <option disabled>Chargement…</option>
                         )}
                         {!devTenantsLoading &&
                           devTenants.map((t) => (
-                            <option key={t.id} value={t.id}>
-                              {t.schoolName || t.tenantName || t.name}
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-                    <div>
+                        <option key={t.id} value={t.id}>
+                          {t.schoolName || t.tenantName || t.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
                       <label className="mb-1 block text-sm font-medium text-slate-700">
                         Email
                       </label>
-                      <input
-                        type="email"
+                    <input
+                      type="email"
                         name={
                           selectedDevTenant
                             ? `email_${selectedDevTenant.id}`
                             : 'email'
                         }
-                        autoComplete="email"
-                        value={devEmail}
-                        onChange={(e) => setDevEmail(e.target.value)}
-                        placeholder="votre@email.com"
+                      autoComplete="email"
+                      value={devEmail}
+                      onChange={(e) => setDevEmail(e.target.value)}
+                      placeholder="votre@email.com"
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30"
-                        required
-                      />
+                      required
+                    />
                       {selectedDevTenant &&
                         getSavedEmailForTenant(
                           selectedDevTenant.tenantId ||
@@ -463,45 +463,45 @@ export default function PortalPage() {
                             Dernière connexion pour cet établissement (ce poste
                             uniquement).
                           </p>
-                        )}
-                    </div>
-                    <div>
+                    )}
+                  </div>
+                  <div>
                       <label className="mb-1 block text-sm font-medium text-slate-700">
                         Mot de passe
                       </label>
-                      <input
-                        type="password"
-                        value={devPassword}
-                        onChange={(e) => setDevPassword(e.target.value)}
-                        placeholder="••••••••"
+                    <input
+                      type="password"
+                      value={devPassword}
+                      onChange={(e) => setDevPassword(e.target.value)}
+                      placeholder="••••••••"
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30"
-                        required
-                      />
-                    </div>
-                    <div className="flex gap-3 pt-2">
-                      <button
-                        type="button"
-                        onClick={handleDevPanelClose}
+                      required
+                    />
+                  </div>
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={handleDevPanelClose}
                         className="flex-1 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                      >
-                        Annuler
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={isDevLoggingIn}
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isDevLoggingIn}
                         className="flex-1 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {isDevLoggingIn ? 'Connexion…' : 'Se connecter'}
-                      </button>
-                    </div>
-                  </form>
+                    >
+                      {isDevLoggingIn ? 'Connexion…' : 'Se connecter'}
+                    </button>
+                  </div>
+                </form>
                 </motion.div>
               </motion.div>
             ) : null}
           </AnimatePresence>
 
           <AnimatePresence mode="wait">
-            {!selectedPortal ? (
+          {!selectedPortal ? (
               <motion.div
                 key="portal-grid"
                 initial={
@@ -580,14 +580,14 @@ export default function PortalPage() {
                             style={{ color: NAVY }}
                           >
                             {card.title}
-                          </h3>
+                  </h3>
                           <p className="mt-1.5 text-sm leading-relaxed text-slate-600 md:mt-2">
                             {card.subtitle}
                           </p>
                           <div
                             className={`mt-4 inline-flex min-h-[44px] items-center text-sm font-semibold md:mt-auto ${card.cta}`}
                           >
-                            <span>Accéder</span>
+                    <span>Accéder</span>
                             <motion.span
                               className="ml-2 inline-flex"
                               initial={false}
@@ -595,9 +595,9 @@ export default function PortalPage() {
                             >
                               <ArrowRight className="h-4 w-4" aria-hidden />
                             </motion.span>
-                          </div>
-                        </div>
-                      </div>
+                  </div>
+                </div>
+              </div>
                     </motion.div>
                   );
                 })}
@@ -622,20 +622,20 @@ export default function PortalPage() {
                 <div className="rounded-2xl border border-slate-200/80 bg-white/95 p-8 shadow-xl ring-1 ring-slate-200/40 backdrop-blur-sm">
                   <motion.button
                     type="button"
-                    onClick={handleBack}
+                  onClick={handleBack}
                     whileHover={
                       shouldReduceMotion ? undefined : { x: -3 }
                     }
                     className="mb-6 flex items-center gap-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900"
-                  >
+                >
                     <ArrowRight className="h-4 w-4 rotate-180" />
-                    <span>Retour</span>
+                  <span>Retour</span>
                   </motion.button>
 
-                  <div className="mb-6">
+                <div className="mb-6">
                     <div className="mb-2 flex items-center gap-3">
-                      {selectedPortal === 'SCHOOL' && (
-                        <>
+                    {selectedPortal === 'SCHOOL' && (
+                      <>
                           <Building2 className="h-7 w-7 text-blue-600" />
                           <h2
                             className="text-2xl font-bold"
@@ -643,10 +643,10 @@ export default function PortalPage() {
                           >
                             Portail École
                           </h2>
-                        </>
-                      )}
-                      {selectedPortal === 'TEACHER' && (
-                        <>
+                      </>
+                    )}
+                    {selectedPortal === 'TEACHER' && (
+                      <>
                           <GraduationCap className="h-7 w-7 text-emerald-600" />
                           <h2
                             className="text-2xl font-bold"
@@ -654,10 +654,10 @@ export default function PortalPage() {
                           >
                             Portail Enseignant
                           </h2>
-                        </>
-                      )}
-                      {selectedPortal === 'PARENT' && (
-                        <>
+                      </>
+                    )}
+                    {selectedPortal === 'PARENT' && (
+                      <>
                           <Users className="h-7 w-7 text-violet-600" />
                           <h2
                             className="text-2xl font-bold"
@@ -665,19 +665,19 @@ export default function PortalPage() {
                           >
                             Portail Parents & Élèves
                           </h2>
-                        </>
-                      )}
-                    </div>
-                    <p className="text-sm text-slate-600">
-                      Recherchez votre établissement pour continuer
-                    </p>
+                      </>
+                    )}
                   </div>
+                    <p className="text-sm text-slate-600">
+                    Recherchez votre établissement pour continuer
+                  </p>
+                </div>
 
-                  <SchoolSearch
-                    onSchoolSelect={handleSchoolSelect}
-                    selectedSchool={selectedSchool}
-                    portalType={selectedPortal}
-                  />
+                <SchoolSearch
+                  onSchoolSelect={handleSchoolSelect}
+                  selectedSchool={selectedSchool}
+                  portalType={selectedPortal}
+                />
 
                   <AnimatePresence>
                     {selectedSchool ? (
@@ -708,14 +708,14 @@ export default function PortalPage() {
                           style={{
                             background: `linear-gradient(135deg, ${NAVY}, #144798)`,
                           }}
-                        >
-                          <span>Continuer vers la connexion</span>
+                    >
+                      <span>Continuer vers la connexion</span>
                           <ArrowRight className="h-5 w-5" />
                         </motion.button>
                       </motion.div>
                     ) : null}
                   </AnimatePresence>
-                </div>
+                  </div>
               </motion.div>
             )}
           </AnimatePresence>

@@ -1,49 +1,34 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import Breadcrumbs from '@/components/seo/Breadcrumbs';
+import { ArticleLayout } from '@/components/articles/ArticleLayout';
+import { getArticleBySlug } from '@/data/articles';
+import { notFound } from 'next/navigation';
 
-export const metadata: Metadata = {
-  title: "Gestion d’établissement scolaire : piloter sans chaos | Academia Helm",
-  description:
-    "Gestion d’établissement scolaire en Afrique de l’Ouest : process, KPI, recouvrement Mobile Money, bulletins et RH. Méthode claire pour structurer votre école.",
-  alternates: {
-    canonical: 'https://academiahelm.com/gestion-etablissement-scolaire',
-  },
-};
+const article = getArticleBySlug('gestion-etablissement-scolaire');
+
+export const metadata: Metadata = article
+  ? {
+      title: article.seo.title,
+      description: article.seo.description,
+      alternates: { canonical: article.seo.canonical },
+      openGraph: {
+        title: article.seo.title,
+        description: article.seo.description,
+        images: [{ url: article.seo.ogImage ?? article.coverImage.url }],
+        type: 'article',
+        publishedTime: article.publishedAt,
+        modifiedTime: article.updatedAt,
+      },
+    }
+  : {};
 
 export default function Page() {
+  if (!article) notFound();
+
   return (
-    <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
+    <ArticleLayout article={article}>
       <Breadcrumbs items={[{ label: 'Accueil', href: '/' }, { label: 'Gestion d’établissement scolaire' }]} />
-
-      <header className="mb-10">
-        <span className="inline-block bg-blue-100 text-blue-800 text-xs font-semibold px-3 py-1 rounded-full mb-3">
-          Pilotage & organisation
-        </span>
-        <h1 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
-          Gestion d’établissement scolaire : process, KPI et recouvrement pour piloter sans chaos
-        </h1>
-        <p className="mt-4 text-lg text-gray-700">
-          Vous dirigez une école privée au Bénin, en Côte d’Ivoire, au Sénégal, au Togo ou au Burkina Faso ? Entre les
-          cahiers, Excel, les logiciels obsolètes et les urgences quotidiennes, la gestion devient vite “réactive”.
-        </p>
-        <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-gray-600">8 min de lecture</p>
-          <Link
-            href="/signup"
-            className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white hover:bg-blue-700"
-          >
-            Tester gratuitement Academia Helm
-          </Link>
-        </div>
-        <p className="mt-5 text-lg text-gray-700">
-          L’objectif de ce guide : vous donner une structure simple (process + contrôle interne + KPI) pour sécuriser
-          votre recouvrement Mobile Money, sortir les bulletins à temps, réduire l’absentéisme et retrouver une direction
-          sereine.
-        </p>
-      </header>
-
-      <section className="border-t border-gray-100 my-10" />
 
       <section>
         <span className="inline-block bg-blue-100 text-blue-800 text-xs font-semibold px-3 py-1 rounded-full mb-3">
@@ -341,7 +326,7 @@ export default function Page() {
           </Link>
         </div>
       </section>
-    </main>
+    </ArticleLayout>
   );
 }
 

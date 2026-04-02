@@ -1,52 +1,39 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import Breadcrumbs from '@/components/seo/Breadcrumbs';
+import { ArticleLayout } from '@/components/articles/ArticleLayout';
+import { getArticleBySlug } from '@/data/articles';
+import { notFound } from 'next/navigation';
 
-export const metadata: Metadata = {
-  title: 'Gestion scolaire en Afrique : méthode & pilotage | Academia Helm',
-  description:
-    "Gestion scolaire en Afrique de l’Ouest : recouvrement Mobile Money, bulletins, absentéisme, RH et process. Guide concret pour diriger votre école privée.",
-  alternates: {
-    canonical: 'https://academiahelm.com/gestion-scolaire',
-  },
-};
+const article = getArticleBySlug('gestion-scolaire');
+
+export const metadata: Metadata = article
+  ? {
+      title: article.seo.title,
+      description: article.seo.description,
+      alternates: { canonical: article.seo.canonical },
+      openGraph: {
+        title: article.seo.title,
+        description: article.seo.description,
+        images: [{ url: article.seo.ogImage ?? article.coverImage.url }],
+        type: 'article',
+        publishedTime: article.publishedAt,
+        modifiedTime: article.updatedAt,
+      },
+    }
+  : {};
 
 export default function Page() {
+  if (!article) notFound();
+
   return (
-    <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
+    <ArticleLayout article={article}>
       <Breadcrumbs
         items={[
           { label: 'Accueil', href: '/' },
           { label: 'Gestion scolaire en Afrique' },
         ]}
       />
-
-      <header className="mb-10">
-        <span className="inline-block bg-blue-100 text-blue-800 text-xs font-semibold px-3 py-1 rounded-full mb-3">
-          Gestion scolaire & pilotage
-        </span>
-        <h1 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
-          Gestion scolaire en Afrique : piloter votre établissement avec des process et des KPI
-        </h1>
-        <p className="mt-4 text-lg text-gray-700">
-          Au Bénin, en Côte d’Ivoire, au Sénégal, au Togo ou au Burkina Faso, la direction scolaire doit gérer une
-          réalité exigeante : cahiers, Excel, paiements Mobile Money, parents pressés, bulletins en retard et
-          absentéisme.
-        </p>
-        <p className="mt-3 text-lg text-gray-700">
-          Dans ce guide, vous obtenez une méthode claire : quoi structurer en premier, quels indicateurs suivre et
-          comment digitaliser sans bloquer vos équipes.
-        </p>
-        <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-gray-600">9 min de lecture</p>
-          <Link
-            href="/signup"
-            className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white hover:bg-blue-700"
-          >
-            Tester gratuitement Academia Helm
-          </Link>
-        </div>
-      </header>
 
       <section className="border-t border-gray-100 my-10" />
 
@@ -318,7 +305,7 @@ export default function Page() {
           </Link>
         </div>
       </section>
-    </main>
+    </ArticleLayout>
   );
 }
 

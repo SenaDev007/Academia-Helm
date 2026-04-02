@@ -1,47 +1,34 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import Breadcrumbs from '@/components/seo/Breadcrumbs';
+import { ArticleLayout } from '@/components/articles/ArticleLayout';
+import { getArticleBySlug } from '@/data/articles';
+import { notFound } from 'next/navigation';
 
-export const metadata: Metadata = {
-  title: 'Logiciel de gestion d’école : guide & critères | Academia Helm',
-  description:
-    "Logiciel de gestion d’école en Afrique de l’Ouest : finance, recouvrement Mobile Money, bulletins, RH et pilotage. Critères et déploiement en 48h.",
-  alternates: {
-    canonical: 'https://academiahelm.com/logiciel-gestion-ecole',
-  },
-};
+const article = getArticleBySlug('logiciel-gestion-ecole');
+
+export const metadata: Metadata = article
+  ? {
+      title: article.seo.title,
+      description: article.seo.description,
+      alternates: { canonical: article.seo.canonical },
+      openGraph: {
+        title: article.seo.title,
+        description: article.seo.description,
+        images: [{ url: article.seo.ogImage ?? article.coverImage.url }],
+        type: 'article',
+        publishedTime: article.publishedAt,
+        modifiedTime: article.updatedAt,
+      },
+    }
+  : {};
 
 export default function Page() {
-  return (
-    <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
-      <Breadcrumbs items={[{ label: 'Accueil', href: '/' }, { label: 'Logiciel de gestion d’école' }]} />
+  if (!article) notFound();
 
-      <header className="mb-10">
-        <span className="inline-block bg-blue-100 text-blue-800 text-xs font-semibold px-3 py-1 rounded-full mb-3">
-          Logiciel de gestion d’école
-        </span>
-        <h1 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
-          Logiciel de gestion d’école : choisir une solution utile dès la première semaine
-        </h1>
-        <p className="mt-4 text-lg text-gray-700">
-          Si vous dirigez une école privée au Bénin, en Côte d’Ivoire, au Sénégal, au Togo ou au Burkina Faso, vous avez
-          probablement déjà vécu le même scénario : cahiers, Excel, retards de bulletins, recouvrement incertain et
-          parents qui demandent des preuves.
-        </p>
-        <p className="mt-3 text-lg text-gray-700">
-          Ce guide vous donne une méthode simple : critères de choix, fonctionnalités indispensables, erreurs à éviter
-          et déploiement progressif. Objectif : des gains visibles, avec une mise en place en moins de 48h.
-        </p>
-        <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-gray-600">10 min de lecture</p>
-          <Link
-            href="/signup"
-            className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white hover:bg-blue-700"
-          >
-            Tester gratuitement Academia Helm
-          </Link>
-        </div>
-      </header>
+  return (
+    <ArticleLayout article={article}>
+      <Breadcrumbs items={[{ label: 'Accueil', href: '/' }, { label: 'Logiciel de gestion d’école' }]} />
 
       <section className="border-t border-gray-100 my-10" />
 
@@ -315,7 +302,7 @@ export default function Page() {
           </Link>
         </div>
       </section>
-    </main>
+    </ArticleLayout>
   );
 }
 

@@ -17,6 +17,8 @@ import StickyCTA from '@/components/StickyCTA';
 import { extractFaqFromMdx } from '@/lib/blog/faq-from-mdx';
 import { ctaLabelForVariant, getAbVariant } from '@/lib/seo/ab-testing';
 import type { Article } from '@/types/article';
+import { BLOG_DEFAULT_COVER, DEFAULT_ARTICLE_AUTHOR_AVATAR } from '@/data/articles';
+import { ArticleFaq, ArticleSection } from '@/components/articles/blocks/ArticleBlocks';
 
 export async function generateStaticParams() {
   const mdxSlugs = await getAllBlogSlugs();
@@ -57,7 +59,7 @@ export default async function BlogPostPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams?: Record<string, string | string[] | undefined>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined>;
 }) {
   const { slug: rawSlug } = await params;
   const slug = decodeURIComponent(rawSlug).replace(/\/+$/, '');
@@ -71,7 +73,7 @@ export default async function BlogPostPage({
   const updatedAt = mdxPost?.frontmatter.updatedAt ?? fallbackPost!.updatedAt;
   const keywords = mdxPost?.frontmatter.keywords ?? fallbackPost!.keywords;
 
-  const coverImageUrl = '/images/articles/default-cover.jpg';
+  const coverImageUrl = BLOG_DEFAULT_COVER;
 
   function estimateReadingTimeMinutes(text: string) {
     const words = text.trim().split(/\s+/).filter(Boolean).length;
@@ -100,7 +102,7 @@ export default async function BlogPostPage({
     author: {
       name: 'Équipe Academia Helm',
       role: 'Rédaction & expertise gestion scolaire',
-      avatar: '/images/team/academia-helm-team.png',
+      avatar: DEFAULT_ARTICLE_AUTHOR_AVATAR,
     },
     category: 'Blog',
     tags: (keywords ?? []).slice(0, 12),
@@ -133,7 +135,11 @@ export default async function BlogPostPage({
   const mdxContent = mdxPost ? await renderBlogMdx(mdxPost.content) : null;
 
   const h = await headers();
-  const variant = getAbVariant(toURLSearchParams(searchParams), h.get('cookie'));
+  const resolvedSearchParams = (await Promise.resolve(searchParams ?? {})) as Record<
+    string,
+    string | string[] | undefined
+  >;
+  const variant = getAbVariant(toURLSearchParams(resolvedSearchParams), h.get('cookie'));
   const ctaLabel = ctaLabelForVariant(variant);
 
   return (
@@ -148,64 +154,60 @@ export default async function BlogPostPage({
         ) : (
           <>
             {fallbackPost!.sections.map((s) => (
-              <section key={s.heading}>
-                <h2>{s.heading}</h2>
+              <ArticleSection key={s.heading} title={s.heading}>
                 {s.paragraphs.map((p, idx) => (
                   <p key={idx}>{p}</p>
                 ))}
-              </section>
+              </ArticleSection>
             ))}
 
-            <h2>FAQ</h2>
-            {fallbackPost!.faq.map((f) => (
-              <section key={f.question}>
-                <h3>{f.question}</h3>
-                <p>{f.answer}</p>
-              </section>
-            ))}
+            <ArticleFaq title="FAQ" items={fallbackPost!.faq} />
           </>
         )}
 
-        <h2>Ressources liées</h2>
-        <p>
-          Pages piliers :{' '}
-          <Link href="/gestion-scolaire" className="text-blue-700 hover:underline">
-            gestion scolaire
-          </Link>
-          ,{' '}
-          <Link href="/logiciel-gestion-ecole" className="text-blue-700 hover:underline">
-            logiciel de gestion d’école
-          </Link>
-          ,{' '}
-          <Link href="/logiciel-ecole-afrique" className="text-blue-700 hover:underline">
-            logiciel école Afrique
-          </Link>
-          ,{' '}
-          <Link href="/gestion-etablissement-scolaire" className="text-blue-700 hover:underline">
-            gestion d’établissement scolaire
-          </Link>
-          .
-        </p>
-        <p>
-          Le produit :{' '}
-          <Link href="/modules" className="text-blue-700 hover:underline">
-            modules
-          </Link>{' '}
-          ·{' '}
-          <Link href="/tarification" className="text-blue-700 hover:underline">
-            tarification
-          </Link>{' '}
-          ·{' '}
-          <Link href="/contact" className="text-blue-700 hover:underline">
-            contact
-          </Link>
-          .
-        </p>
-        <h2>Tester Academia Helm</h2>
-        <p>
-          Si vous cherchez un logiciel de gestion scolaire adapté à l’Afrique (finance, scolarité, examens, RH),
-          Academia Helm est conçu pour passer du “papier/Excel” à un pilotage clair.
-        </p>
+        <ArticleSection eyebrow="Ressources" title="Ressources liées">
+          <p>
+            Pages piliers :{' '}
+            <Link href="/gestion-scolaire" className="font-semibold text-blue-700 hover:underline">
+              gestion scolaire
+            </Link>
+            ,{' '}
+            <Link href="/logiciel-gestion-ecole" className="font-semibold text-blue-700 hover:underline">
+              logiciel de gestion d’école
+            </Link>
+            ,{' '}
+            <Link href="/logiciel-ecole-afrique" className="font-semibold text-blue-700 hover:underline">
+              logiciel école Afrique
+            </Link>
+            ,{' '}
+            <Link href="/gestion-etablissement-scolaire" className="font-semibold text-blue-700 hover:underline">
+              gestion d’établissement scolaire
+            </Link>
+            .
+          </p>
+          <p>
+            Le produit :{' '}
+            <Link href="/modules" className="font-semibold text-blue-700 hover:underline">
+              modules
+            </Link>{' '}
+            ·{' '}
+            <Link href="/tarification" className="font-semibold text-blue-700 hover:underline">
+              tarification
+            </Link>{' '}
+            ·{' '}
+            <Link href="/contact" className="font-semibold text-blue-700 hover:underline">
+              contact
+            </Link>
+            .
+          </p>
+        </ArticleSection>
+
+        <ArticleSection eyebrow="Démo" title="Tester Academia Helm">
+          <p>
+            Si vous cherchez un logiciel de gestion scolaire adapté à l’Afrique (finance, scolarité, examens, RH),
+            Academia Helm est conçu pour passer du “papier/Excel” à un pilotage clair.
+          </p>
+        </ArticleSection>
 
         <LeadMagnet sourceSlug={slug} keywords={keywords ?? []} ctaLabel={ctaLabel} />
         <CTA />

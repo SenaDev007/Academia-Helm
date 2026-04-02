@@ -1,0 +1,37 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1600" y2="900" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B2B6B"/>
+      <stop offset="0.55" stop-color="#0EA5E9"/>
+      <stop offset="1" stop-color="#22C55E"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="210" y1="170" x2="1410" y2="780" gradientUnits="userSpaceOnUse">
+      <stop stop-color="white" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="white" stop-opacity="0.08"/>
+    </linearGradient>
+    <filter id="blur" x="-50" y="-50" width="1700" height="1000" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="28"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <g filter="url(#blur)" opacity="0.9">
+    <circle cx="360" cy="260" r="220" fill="#F59E0B" fill-opacity="0.20"/>
+    <circle cx="1260" cy="250" r="260" fill="#7C3AED" fill-opacity="0.18"/>
+    <circle cx="1180" cy="730" r="320" fill="#38BDF8" fill-opacity="0.18"/>
+  </g>
+
+  <rect x="170" y="150" width="1260" height="610" rx="44" fill="url(#glass)" stroke="white" stroke-opacity="0.16"/>
+
+  <!-- Paper + pen -->
+  <g transform="translate(360 250)" opacity="0.95">
+    <rect x="0" y="0" width="520" height="520" rx="40" fill="white" fill-opacity="0.10" stroke="white" stroke-opacity="0.18"/>
+    <rect x="70" y="90" width="380" height="18" rx="9" fill="white" fill-opacity="0.30"/>
+    <rect x="70" y="140" width="320" height="18" rx="9" fill="white" fill-opacity="0.22"/>
+    <rect x="70" y="210" width="380" height="18" rx="9" fill="white" fill-opacity="0.26"/>
+    <rect x="70" y="260" width="350" height="18" rx="9" fill="white" fill-opacity="0.20"/>
+    <rect x="70" y="330" width="260" height="18" rx="9" fill="white" fill-opacity="0.18"/>
+    <path d="M390 420l80-80 38 38-80 80-50 12 12-50Z" fill="white" fill-opacity="0.22" stroke="white" stroke-opacity="0.22"/>
+  </g>
+</svg>
+

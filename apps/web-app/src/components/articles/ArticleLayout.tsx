@@ -1,6 +1,10 @@
+'use client';
+
 import type { Article } from '@/types/article';
 import { ArticleHeader } from './ArticleHeader';
 import { ShareButtons } from './ShareButtons';
+import { motion } from 'framer-motion';
+import { ArticleDivider } from './blocks/ArticleBlocks';
 
 interface ArticleLayoutProps {
   article: Article;
@@ -11,7 +15,7 @@ export function ArticleLayout({ article, children }: ArticleLayoutProps) {
   const articleUrl = `https://academiahelm.com/${article.slug}`;
 
   return (
-    <article>
+    <article className="bg-white">
       <ArticleHeader
         title={article.title}
         description={article.description}
@@ -23,10 +27,23 @@ export function ArticleLayout({ article, children }: ArticleLayoutProps) {
         coverImage={article.coverImage}
       />
 
-      <div className="max-w-4xl mx-auto px-4 prose prose-lg prose-blue">{children}</div>
+      <div className="mx-auto max-w-5xl px-4 pb-12 pt-10 md:pb-16">
+        <motion.div
+          initial="hidden"
+          animate="show"
+          variants={{
+            hidden: {},
+            show: { transition: { staggerChildren: 0.06, delayChildren: 0.05 } },
+          }}
+          className="space-y-10"
+        >
+          {children}
+        </motion.div>
 
-      <div className="max-w-4xl mx-auto px-4">
-        <ShareButtons url={articleUrl} title={article.title} />
+        <ArticleDivider />
+        <div className="mx-auto max-w-5xl">
+          <ShareButtons url={articleUrl} title={article.title} />
+        </div>
       </div>
     </article>
   );

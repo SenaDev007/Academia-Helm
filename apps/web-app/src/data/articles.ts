@@ -1,7 +1,14 @@
 import type { Article } from '@/types/article';
+import { BRAND } from '@/lib/brand';
+import { DEFAULT_OG_IMAGE_PATH } from '@/lib/seo';
 
-const DEFAULT_COVER = '/images/articles/default-cover.jpg';
-const DEFAULT_AUTHOR_AVATAR = '/images/team/academia-helm-team.png';
+/** Assets réels sous `public/images/` (évite les 404 en dev si les JPG dédiés n’existent pas). */
+export const DEFAULT_ARTICLE_COVER = DEFAULT_OG_IMAGE_PATH;
+export const DEFAULT_ARTICLE_AUTHOR_AVATAR = BRAND.logoPath;
+export const BLOG_DEFAULT_COVER = '/images/articles/blog.svg';
+
+const DEFAULT_COVER = DEFAULT_ARTICLE_COVER;
+const DEFAULT_AUTHOR_AVATAR = DEFAULT_ARTICLE_AUTHOR_AVATAR;
 
 export const articlesData: Article[] = [
   {
@@ -11,9 +18,9 @@ export const articlesData: Article[] = [
     description:
       "Maîtrisez la gestion de votre école privée : organisation, finances, RH, examens et pilotage. Guide complet 2026.",
     coverImage: {
-      url: DEFAULT_COVER,
+      url: '/images/articles/gestion-etablissement-scolaire.svg',
       alt: "Gestion d'établissement scolaire en Afrique de l'Ouest",
-      credit: 'Unsplash',
+      credit: 'Academia Helm',
     },
     author: {
       name: 'Équipe Academia Helm',
@@ -30,7 +37,7 @@ export const articlesData: Article[] = [
       title: "Gestion d'établissement scolaire : guide complet 2026 | Academia Helm",
       description: "Maîtrisez la gestion de votre école privée en Afrique de l'Ouest : process, KPI, recouvrement et contrôle.",
       canonical: 'https://academiahelm.com/gestion-etablissement-scolaire',
-      ogImage: DEFAULT_COVER,
+      ogImage: '/images/articles/gestion-etablissement-scolaire.svg',
     },
   },
   {
@@ -40,9 +47,9 @@ export const articlesData: Article[] = [
     description:
       "Structurez recouvrement, bulletins, absentéisme et communication parents. Guide terrain pour direction d'école en Afrique de l'Ouest.",
     coverImage: {
-      url: DEFAULT_COVER,
+      url: '/images/articles/gestion-scolaire.svg',
       alt: 'Gestion scolaire moderne pour écoles privées en Afrique de l’Ouest',
-      credit: 'Unsplash',
+      credit: 'Academia Helm',
     },
     author: {
       name: 'Équipe Academia Helm',
@@ -60,7 +67,7 @@ export const articlesData: Article[] = [
       description:
         "Gestion scolaire en Afrique de l'Ouest : recouvrement Mobile Money, bulletins, absentéisme et process. Méthode concrète.",
       canonical: 'https://academiahelm.com/gestion-scolaire',
-      ogImage: DEFAULT_COVER,
+      ogImage: '/images/articles/gestion-scolaire.svg',
     },
   },
   {
@@ -70,9 +77,9 @@ export const articlesData: Article[] = [
     description:
       "Mobile Money, offline, sécurité, vitesse mobile : les critères terrain pour choisir un logiciel d’école en Afrique de l’Ouest.",
     coverImage: {
-      url: DEFAULT_COVER,
+      url: '/images/articles/logiciel-ecole-afrique.svg',
       alt: "Logiciel d'école en Afrique de l'Ouest : Mobile Money, bulletins et pilotage",
-      credit: 'Unsplash',
+      credit: 'Academia Helm',
     },
     author: {
       name: 'Équipe Academia Helm',
@@ -90,7 +97,7 @@ export const articlesData: Article[] = [
       description:
         "Choisir un logiciel école en Afrique de l'Ouest : vitesse mobile, Mobile Money, bulletins, sécurité et déploiement rapide.",
       canonical: 'https://academiahelm.com/logiciel-ecole-afrique',
-      ogImage: DEFAULT_COVER,
+      ogImage: '/images/articles/logiciel-ecole-afrique.svg',
     },
   },
   {
@@ -100,9 +107,9 @@ export const articlesData: Article[] = [
     description:
       "Fonctionnalités clés, critères d’adoption, sécurité et ROI. Déployez un logiciel de gestion d’école en Afrique de l’Ouest en moins de 48h.",
     coverImage: {
-      url: DEFAULT_COVER,
+      url: '/images/articles/logiciel-gestion-ecole.svg',
       alt: "Logiciel de gestion d'école : finance, scolarité, examens et RH",
-      credit: 'Unsplash',
+      credit: 'Academia Helm',
     },
     author: {
       name: 'Équipe Academia Helm',
@@ -120,7 +127,7 @@ export const articlesData: Article[] = [
       description:
         "Logiciel de gestion d'école en Afrique de l'Ouest : finance, Mobile Money, bulletins, RH et pilotage. Méthode et critères.",
       canonical: 'https://academiahelm.com/logiciel-gestion-ecole',
-      ogImage: DEFAULT_COVER,
+      ogImage: '/images/articles/logiciel-gestion-ecole.svg',
     },
   },
 ];

@@ -4,6 +4,15 @@ import Breadcrumbs from '@/components/seo/Breadcrumbs';
 import { ArticleLayout } from '@/components/articles/ArticleLayout';
 import { getArticleBySlug } from '@/data/articles';
 import { notFound } from 'next/navigation';
+import {
+  ArticleCallout,
+  ArticleDivider,
+  ArticleFaq,
+  ArticleInlineCta,
+  ArticleKpiCard,
+  ArticleKpiGrid,
+  ArticleSection,
+} from '@/components/articles/blocks/ArticleBlocks';
 
 const article = getArticleBySlug('gestion-scolaire');
 
@@ -35,244 +44,193 @@ export default function Page() {
         ]}
       />
 
-      <section className="border-t border-gray-100 my-10" />
+      <ArticleDivider />
 
-      <section>
-        <span className="inline-block bg-blue-100 text-blue-800 text-xs font-semibold px-3 py-1 rounded-full mb-3">
-          Introduction
-        </span>
-        <h2 className="text-2xl font-bold text-gray-900">1) Passer du “réactif” au pilotage</h2>
-        <p className="mt-4 text-gray-700">
+      <ArticleSection eyebrow="Introduction" title="1) Passer du “réactif” au pilotage">
+        <p>
           La gestion scolaire n’est pas un empilement de tâches. C’est un système : des process simples, des données
           fiables et des décisions traçables. Sans ça, vous passez vos journées à “éteindre des feux”.
         </p>
-        <p className="mt-3 text-gray-700">
+        <p>
           Dans la région (Afrique de l’Ouest francophone), le point dur revient souvent : recouvrement, bulletins,
           discipline/absences, et communication parents. Ce guide vous donne un plan clair pour structurer ces flux.
         </p>
-        <div className="bg-blue-50 border-l-4 border-blue-600 p-4 rounded-r-lg my-6">
-          <p className="text-gray-800">
-            Objectif : obtenir des quick wins visibles (reçus, relances, bulletins) pour que l’équipe adopte le système
-            au quotidien.
-          </p>
-        </div>
-      </section>
+        <ArticleCallout>
+          Objectif : obtenir des quick wins visibles (reçus, relances, bulletins) pour que l’équipe adopte le système au
+          quotidien.
+        </ArticleCallout>
+      </ArticleSection>
 
-      <section>
-        <span className="inline-block bg-blue-100 text-blue-800 text-xs font-semibold px-3 py-1 rounded-full mb-3">
-          Finance
-        </span>
-        <h2 className="text-2xl font-bold text-gray-900">2) Recouvrement des frais : sécuriser la trésorerie</h2>
-        <p className="mt-4 text-gray-700">
-          Le recouvrement est le moteur de votre stabilité. Quand il repose sur un cahier ou un fichier Excel,
-          l’impayé devient invisible. Et quand il est invisible, il explose en fin de trimestre.
+      <ArticleSection eyebrow="Finance" title="2) Recouvrement des frais : sécuriser la trésorerie">
+        <p>
+          Le recouvrement est le moteur de votre stabilité. Quand il repose sur un cahier ou un fichier Excel, l’impayé
+          devient invisible. Et quand il est invisible, il explose en fin de trimestre.
         </p>
-        <p className="mt-3 text-gray-700">
+        <p>
           Le bon pilotage : échéances claires, reçus instantanés, relances, et un reporting par classe. Avec Mobile
           Money, la traçabilité (paiement ↔ reçu ↔ solde) doit être irréprochable.
         </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 my-6">
-          <div className="rounded-xl border border-gray-200 p-5">
-            <p className="text-sm text-gray-600">Impact typique</p>
-            <p className="text-4xl font-bold text-blue-700">+12%</p>
-            <p className="mt-2 text-gray-700">de taux de recouvrement avec suivi hebdomadaire.</p>
-          </div>
-          <div className="rounded-xl border border-gray-200 p-5">
-            <p className="text-sm text-gray-600">Preuve & confiance</p>
-            <p className="mt-2 text-gray-700">Reçus numérotés, clôture quotidienne, historique des annulations.</p>
-          </div>
-        </div>
-      </section>
+        <ArticleKpiGrid>
+          <ArticleKpiCard label="Impact typique" value="+12%" description="de taux de recouvrement avec suivi hebdomadaire." />
+          <ArticleKpiCard
+            label="Preuve & confiance"
+            value="Reçus"
+            description="Reçus numérotés, clôture quotidienne, historique des annulations."
+          />
+        </ArticleKpiGrid>
+      </ArticleSection>
 
-      <div className="bg-blue-600 text-white rounded-xl p-6 my-8 flex flex-col md:flex-row items-center justify-between gap-4">
-        <p className="font-semibold">
-          Academia Helm gère le recouvrement automatiquement.{' '}
-          <Link href="/modules" className="underline">
-            Découvrez nos modules
-          </Link>
-          .
-        </p>
-        <Link href="/signup" className="inline-flex rounded-lg bg-white/10 px-5 py-2.5 font-semibold hover:bg-white/15">
-          Tester gratuitement
-        </Link>
-      </div>
+      <ArticleInlineCta
+        text={
+          <>
+            Academia Helm gère le recouvrement automatiquement.{' '}
+            <Link href="/modules" className="underline">
+              Découvrez nos modules
+            </Link>
+            .
+          </>
+        }
+        primary={{ href: '/signup', label: 'Tester gratuitement' }}
+      />
 
-      <section>
-        <span className="inline-block bg-blue-100 text-blue-800 text-xs font-semibold px-3 py-1 rounded-full mb-3">
-          Bulletins
-        </span>
-        <h2 className="text-2xl font-bold text-gray-900">3) Examens & bulletins : produire sans stress</h2>
-        <p className="mt-4 text-gray-700">
+      <ArticleSection eyebrow="Bulletins" title="3) Examens & bulletins : produire sans stress">
+        <p>
           Les bulletins en retard abîment la relation parents. Le vrai problème est le flux : saisie tardive, validation
           floue, corrections sans trace. Un process clair fait gagner du temps et protège l’établissement.
         </p>
-        <p className="mt-3 text-gray-700">
+        <p>
           Une fois centralisé, vous passez de “travail de fin de trimestre” à “pilotage continu”. Les bulletins sont
           générés en quelques clics, et la direction voit ce qui bloque.
         </p>
-        <blockquote className="text-xl font-medium text-gray-700 italic border-l-4 border-yellow-400 pl-4 my-8">
+        <ArticleCallout tone="warning">
           “La qualité perçue d’une école se joue sur la régularité : reçus, notes, bulletins, réponses.”
-        </blockquote>
-      </section>
+        </ArticleCallout>
+      </ArticleSection>
 
-      <section>
-        <span className="inline-block bg-blue-100 text-blue-800 text-xs font-semibold px-3 py-1 rounded-full mb-3">
-          Absentéisme
-        </span>
-        <h2 className="text-2xl font-bold text-gray-900">4) Absentéisme & discipline : agir tôt</h2>
-        <p className="mt-4 text-gray-700">
-          Quand l’absence est notée sur papier, elle n’existe pas pour le pilotage. Vous découvrez les dérives trop
-          tard, et vous subissez les conflits. Un suivi simple (retards, absences, incidents) rend les décisions justes.
+      <ArticleSection eyebrow="Absentéisme" title="4) Absentéisme & discipline : agir tôt">
+        <p>
+          Quand l’absence est notée sur papier, elle n’existe pas pour le pilotage. Vous découvrez les dérives trop tard,
+          et vous subissez les conflits. Un suivi simple (retards, absences, incidents) rend les décisions justes.
         </p>
-        <p className="mt-3 text-gray-700">
+        <p>
           Avec une donnée fiable, vous déclenchez des actions : rappel, rencontre parent, mesure éducative. Des écoles
-          observent jusqu’à <span className="font-semibold">-8% d’absentéisme</span> quand le suivi est structuré.
+          observent jusqu’à <span className="font-semibold text-slate-900">-8% d’absentéisme</span> quand le suivi est
+          structuré.
         </p>
-        <div className="bg-blue-50 border-l-4 border-blue-600 p-4 rounded-r-lg my-6">
-          <p className="font-semibold text-gray-900 mb-2">Exemple terrain</p>
-          <p className="text-gray-800">
-            Au Sénégal ou en Côte d’Ivoire, une classe instable pénalise tout le niveau. Un tableau de bord par classe
-            permet de cibler les actions sans “punir tout le monde”.
-          </p>
-        </div>
-      </section>
+        <ArticleCallout title="Exemple terrain">
+          Au Sénégal ou en Côte d’Ivoire, une classe instable pénalise tout le niveau. Un tableau de bord par classe
+          permet de cibler les actions sans “punir tout le monde”.
+        </ArticleCallout>
+      </ArticleSection>
 
-      <div className="bg-blue-600 text-white rounded-xl p-6 my-8 flex flex-col md:flex-row items-center justify-between gap-4">
-        <p className="font-semibold">
-          Academia Helm gère le suivi élèves automatiquement.{' '}
-          <Link href="/modules" className="underline">
-            Découvrez nos modules
-          </Link>
-          .
-        </p>
-        <Link href="/contact" className="inline-flex rounded-lg bg-white/10 px-5 py-2.5 font-semibold hover:bg-white/15">
-          Parler à un expert
-        </Link>
-      </div>
+      <ArticleInlineCta
+        text={
+          <>
+            Academia Helm gère le suivi élèves automatiquement.{' '}
+            <Link href="/modules" className="underline">
+              Découvrez nos modules
+            </Link>
+            .
+          </>
+        }
+        primary={{ href: '/contact', label: 'Parler à un expert' }}
+      />
 
-      <section>
-        <span className="inline-block bg-blue-100 text-blue-800 text-xs font-semibold px-3 py-1 rounded-full mb-3">
-          Organisation
-        </span>
-        <h2 className="text-2xl font-bold text-gray-900">5) Process & contrôle interne : éviter les fuites</h2>
-        <p className="mt-4 text-gray-700">
-          Le contrôle interne protège votre école : validations sur remises, historique des actions sensibles, clôture
-          de caisse, et règles de correction. Même sans intention, l’erreur coûte cher quand l’école grandit.
+      <ArticleSection eyebrow="Organisation" title="5) Process & contrôle interne : éviter les fuites">
+        <p>
+          Le contrôle interne protège votre école : validations sur remises, historique des actions sensibles, clôture de
+          caisse, et règles de correction. Même sans intention, l’erreur coûte cher quand l’école grandit.
         </p>
-        <p className="mt-3 text-gray-700">
+        <p>
           L’idée n’est pas d’ajouter des étapes. C’est de rendre les décisions traçables, et d’éviter que tout repose sur
           une seule personne.
         </p>
-        <div className="bg-blue-50 border-l-4 border-blue-600 p-4 rounded-r-lg my-6">
-          <p className="font-semibold text-gray-900 mb-2">Encadré direction</p>
-          <ul className="list-disc pl-6 text-gray-800 space-y-1">
+        <ArticleCallout title="Encadré direction">
+          <ul className="list-disc pl-5">
             <li>Séparer encaissement et validation</li>
             <li>Clôture quotidienne</li>
             <li>Journal des actions (annulation, remise, correction)</li>
           </ul>
-        </div>
-      </section>
+        </ArticleCallout>
+      </ArticleSection>
 
-      <section>
-        <span className="inline-block bg-blue-100 text-blue-800 text-xs font-semibold px-3 py-1 rounded-full mb-3">
-          Déploiement
-        </span>
-        <h2 className="text-2xl font-bold text-gray-900">6) Déployer sans bloquer l’école (en moins de 48h)</h2>
-        <p className="mt-4 text-gray-700">
+      <ArticleSection eyebrow="Déploiement" title="6) Déployer sans bloquer l’école (en moins de 48h)">
+        <p>
           Déployez par étapes : finance → dossiers élèves → examens/bulletins → RH. Chaque étape doit générer un gain
           visible (reçu immédiat, relance, bulletin fiable). C’est ainsi que l’adoption devient naturelle.
         </p>
-        <p className="mt-3 text-gray-700">
+        <p>
           Pour le périmètre fonctionnel, consultez{' '}
-          <Link href="/modules" className="text-blue-700 hover:underline">
+          <Link href="/modules" className="font-semibold text-blue-700 hover:underline">
             découvrez nos modules
           </Link>{' '}
           et{' '}
-          <Link href="/tarification" className="text-blue-700 hover:underline">
+          <Link href="/tarification" className="font-semibold text-blue-700 hover:underline">
             voir la tarification
           </Link>
           . Pour aller plus loin,{' '}
-          <Link href="/orion" className="text-blue-700 hover:underline">
+          <Link href="/orion" className="font-semibold text-blue-700 hover:underline">
             ORION, notre IA de direction
           </Link>{' '}
           vous aide à décider plus vite.
         </p>
-      </section>
+      </ArticleSection>
 
-      <section className="border-t border-gray-100 my-10" />
+      <ArticleDivider />
 
-      <section>
-        <h2 className="text-2xl font-bold text-gray-900">FAQ — Gestion scolaire en Afrique</h2>
-        <div className="mt-6 space-y-6">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">Par quoi commencer pour améliorer la gestion scolaire ?</h3>
-            <p className="mt-2 text-gray-700">
-              Commencez par la finance et les dossiers élèves : c’est le socle qui simplifie tout le reste. Une fois les
-              reçus, les soldes et les listes fiables, vous gagnez du temps au guichet et vous réduisez les tensions.
-              Ensuite, vous industrialisez notes et bulletins.
-            </p>
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">Comment réduire les impayés dans une école ?</h3>
-            <p className="mt-2 text-gray-700">
-              Avec des échéances claires, des relances structurées et une traçabilité complète (paiement ↔ reçu ↔ solde).
-              Les parents paient plus facilement quand l’information est simple et transparente. Suivez le taux de
-              recouvrement chaque semaine, pas seulement en fin de trimestre.
-            </p>
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">Quel rôle joue Mobile Money dans la gestion scolaire ?</h3>
-            <p className="mt-2 text-gray-700">
-              Mobile Money accélère les paiements, mais il exige une preuve claire. Sans rapprochement automatique, vous
-              créez des contestations et du travail manuel. Un bon système relie chaque transaction à l’élève, à la
-              classe et au reçu.
-            </p>
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">Pourquoi les bulletins sortent-ils en retard ?</h3>
-            <p className="mt-2 text-gray-700">
-              Le flux n’est pas verrouillé : saisies tardives, validations floues, corrections sans historique. Quand le
-              process est clair, les bulletins sont générés en quelques clics. La direction voit immédiatement ce qui
-              bloque et peut agir.
-            </p>
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">La digitalisation fonctionne-t-elle avec une connexion instable ?</h3>
-            <p className="mt-2 text-gray-700">
-              Oui, si l’outil est pensé pour la réalité terrain : performance mobile, tolérance réseau et sauvegardes.
-              L’essentiel est de ne pas bloquer la caisse et les opérations quotidiennes. C’est un critère de choix
-              important en Afrique de l’Ouest.
-            </p>
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">Combien de temps pour mettre en place un logiciel ?</h3>
-            <p className="mt-2 text-gray-700">
-              En commençant par les flux essentiels (finance + dossiers), une mise en place peut se faire en moins de 48h,
-              puis vous étendez progressivement. Le secret : obtenir vite des bénéfices visibles pour sécuriser l’adoption
-              de l’équipe.
-            </p>
-          </div>
-        </div>
-      </section>
+      <ArticleFaq
+        title="FAQ — Gestion scolaire en Afrique"
+        items={[
+          {
+            question: 'Par quoi commencer pour améliorer la gestion scolaire ?',
+            answer:
+              'Commencez par la finance et les dossiers élèves : c’est le socle qui simplifie tout le reste. Une fois les reçus, les soldes et les listes fiables, vous gagnez du temps au guichet et vous réduisez les tensions. Ensuite, vous industrialisez notes et bulletins.',
+          },
+          {
+            question: 'Comment réduire les impayés dans une école ?',
+            answer:
+              'Avec des échéances claires, des relances structurées et une traçabilité complète (paiement ↔ reçu ↔ solde). Les parents paient plus facilement quand l’information est simple et transparente. Suivez le taux de recouvrement chaque semaine, pas seulement en fin de trimestre.',
+          },
+          {
+            question: 'Quel rôle joue Mobile Money dans la gestion scolaire ?',
+            answer:
+              'Mobile Money accélère les paiements, mais il exige une preuve claire. Sans rapprochement automatique, vous créez des contestations et du travail manuel. Un bon système relie chaque transaction à l’élève, à la classe et au reçu.',
+          },
+          {
+            question: 'Pourquoi les bulletins sortent-ils en retard ?',
+            answer:
+              'Le flux n’est pas verrouillé : saisies tardives, validations floues, corrections sans historique. Quand le process est clair, les bulletins sont générés en quelques clics. La direction voit immédiatement ce qui bloque et peut agir.',
+          },
+          {
+            question: 'La digitalisation fonctionne-t-elle avec une connexion instable ?',
+            answer:
+              'Oui, si l’outil est pensé pour la réalité terrain : performance mobile, tolérance réseau et sauvegardes. L’essentiel est de ne pas bloquer la caisse et les opérations quotidiennes. C’est un critère de choix important en Afrique de l’Ouest.',
+          },
+          {
+            question: 'Combien de temps pour mettre en place un logiciel ?',
+            answer:
+              'En commençant par les flux essentiels (finance + dossiers), une mise en place peut se faire en moins de 48h, puis vous étendez progressivement. Le secret : obtenir vite des bénéfices visibles pour sécuriser l’adoption de l’équipe.',
+          },
+        ]}
+      />
 
-      <section className="border-t border-gray-100 my-10" />
+      <ArticleDivider />
 
-      <section>
-        <h2 className="text-lg font-semibold text-gray-900">Pages complémentaires</h2>
-        <p className="mt-2 text-gray-700">
-          <Link href="/logiciel-gestion-ecole" className="text-blue-700 hover:underline">
+      <ArticleSection eyebrow="Maillage interne" title="Pages complémentaires">
+        <p>
+          <Link href="/logiciel-gestion-ecole" className="font-semibold text-blue-700 hover:underline">
             Logiciel de gestion d’école
           </Link>{' '}
           ·{' '}
-          <Link href="/gestion-etablissement-scolaire" className="text-blue-700 hover:underline">
+          <Link href="/gestion-etablissement-scolaire" className="font-semibold text-blue-700 hover:underline">
             Gestion d’établissement scolaire
           </Link>{' '}
           ·{' '}
-          <Link href="/logiciel-ecole-afrique" className="text-blue-700 hover:underline">
+          <Link href="/logiciel-ecole-afrique" className="font-semibold text-blue-700 hover:underline">
             Logiciel école Afrique
           </Link>
         </p>
-      </section>
+      </ArticleSection>
 
       <section className="mt-10 rounded-2xl border border-gray-200 bg-gray-50 p-8">
         <h2 className="text-2xl font-bold text-gray-900">Passez à une gestion scolaire moderne</h2>

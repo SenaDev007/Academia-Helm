@@ -5,3 +5,13 @@ dist
 *.log
 .git
 .gitignore
+README.md
+DEPLOY.md
+deploy.sh
+test
+**/*.spec.ts
+**/*.test.ts
+coverage
+.eslintrc*
+.prettierrc*
+jest.config*

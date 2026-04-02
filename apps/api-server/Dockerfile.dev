@@ -4,10 +4,10 @@
 # Dockerfile pour le développement de l'API Server
 # ============================================================================
 
-FROM node:22-alpine
+FROM node:22-slim
 
 # Installer les dépendances système
-RUN apk add --no-cache curl
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
 # Définir le répertoire de travail
 WORKDIR /app

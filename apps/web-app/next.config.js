@@ -1,7 +1,7 @@
 const path = require('path');
 
 /** Netlify (@netlify/plugin-nextjs) : pas de mode standalone (Docker/VPS uniquement). */
-const isNetlify = process.env.NETLIFY === 'true';
+const isNetlify = !!process.env.NETLIFY;
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

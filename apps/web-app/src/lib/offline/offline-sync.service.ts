@@ -18,10 +18,9 @@ class OfflineSyncService {
 
   constructor() {
     // Écouter les changements de connexion
-    networkDetectionService.onConnectionChange((online) => {
-      if (online) {
-        // Lancer la synchronisation quand la connexion revient
-        this.sync();
+    networkDetectionService.onConnectionChange(async (online) => {
+      if (online && (await this.getTenantId())) {
+        await this.sync();
       }
     });
 
@@ -61,10 +60,8 @@ class OfflineSyncService {
     this.isSyncing = true;
     try {
       const tenantId = await this.getTenantId();
-      if (!tenantId) {
-        console.warn('[Sync] No tenant ID available');
-        return;
-      }
+      // Pas de tenant : pages publiques ou session sans établissement — comportement attendu, pas de log.
+      if (!tenantId) return;
       const deviceId = this.getDeviceId();
       const result = await runSync(tenantId, deviceId);
       const total = result.pushed + result.conflicts + result.errors;
@@ -117,7 +114,9 @@ class OfflineSyncService {
       }
     }, interval30s);
     this.syncInterval = window.setInterval(async () => {
-      if (networkDetectionService.isConnected() && !this.isSyncing) await this.sync();
+      if (!networkDetectionService.isConnected() || this.isSyncing) return;
+      if (!(await this.getTenantId())) return;
+      await this.sync();
     }, 5 * 60 * 1000);
   }
 

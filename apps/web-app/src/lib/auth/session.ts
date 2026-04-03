@@ -9,6 +9,8 @@ import type { AuthSession, User, Tenant } from '@/types';
 
 const SESSION_COOKIE = 'academia_session';
 const TOKEN_COOKIE = 'academia_token';
+/** Cookie non-httpOnly : lu côté client (axios, sync offline). Doit rester aligné avec la session. */
+const TENANT_ID_COOKIE = 'x-tenant-id';
 
 /**
  * Récupère la session depuis les cookies (Server Component)
@@ -65,6 +67,19 @@ export async function setServerSession(session: AuthSession): Promise<void> {
     maxAge: 60 * 60 * 24 * 7, // 7 jours
     path: '/',
   });
+
+  const tenantId = session.tenant?.id || session.user?.tenantId;
+  if (tenantId && String(tenantId).trim() !== '') {
+    cookieStore.set(TENANT_ID_COOKIE, String(tenantId), {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 7,
+      path: '/',
+    });
+  } else {
+    cookieStore.delete(TENANT_ID_COOKIE);
+  }
 }
 
 /**
@@ -74,6 +89,7 @@ export async function clearServerSession(): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.delete(SESSION_COOKIE);
   cookieStore.delete(TOKEN_COOKIE);
+  cookieStore.delete(TENANT_ID_COOKIE);
 }
 
 /**

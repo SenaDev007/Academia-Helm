@@ -19,8 +19,11 @@ export function getAppEnvironment(): AppEnvironment {
     if (hostname === 'localhost' || hostname === '127.0.0.1') return 'local';
     return 'production';
   }
+  // `NEXT_PUBLIC_ENV` peut valoir `local`, `preview`, `staging`, etc.
+  // Dans notre cas, `local` doit impérativement être traité comme environnement local,
+  // sinon on construit des URLs de prod et les routes proxy peuvent boucler.
   const env = process.env.NEXT_PUBLIC_ENV || process.env.NODE_ENV;
-  if (env === 'development' || !env) return 'local';
+  if (env === 'local' || env === 'development' || !env) return 'local';
   return 'production';
 }
 

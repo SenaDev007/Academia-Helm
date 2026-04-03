@@ -198,6 +198,28 @@ export class EducationStructureService {
   }
 
   /**
+   * Le nom doit être unique par (tenant, année) — voir @@unique sur Classroom.
+   * Si le nom proposé existe déjà, on suffixe " (2)", " (3)", …
+   */
+  private async allocateUniqueClassroomName(
+    tenantId: string,
+    academicYearId: string,
+    baseName: string,
+  ): Promise<string> {
+    let candidate = baseName;
+    let n = 2;
+    for (;;) {
+      const clash = await this.prisma.classroom.findFirst({
+        where: { tenantId, academicYearId, name: candidate },
+        select: { id: true },
+      });
+      if (!clash) return candidate;
+      candidate = `${baseName} (${n})`;
+      n += 1;
+    }
+  }
+
+  /**
    * Liste des classes physiques pour une année scolaire.
    */
   async getClassrooms(tenantId: string, academicYearId: string) {
@@ -233,7 +255,8 @@ export class EducationStructureService {
     if (!grade || grade.cycle.level.tenantId !== tenantId)
       throw new NotFoundException('Classe pédagogique (grade) non trouvée.');
 
-    const name = (data.name || '').trim() || `${grade.name} A`;
+    const rawName = (data.name || '').trim() || `${grade.name} A`;
+    const name = await this.allocateUniqueClassroomName(tenantId, academicYearId, rawName);
     const code = (data.code || '').trim() || name.replace(/\s+/g, '_').toUpperCase();
 
     return this.prisma.classroom.create({

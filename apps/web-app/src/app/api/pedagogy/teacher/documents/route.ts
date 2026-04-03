@@ -5,16 +5,14 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { nestDoublePrefixedControllerUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
-
-const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const queryString = searchParams.toString();
-    const url = `${API_BASE_URL}/api/pedagogy/teacher/documents${queryString ? `?${queryString}` : ''}`;
+    const url = `${nestDoublePrefixedControllerUrl('pedagogy/teacher/documents')}${queryString ? `?${queryString}` : ''}`;
 
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(url, { headers, cache: 'no-store' });
@@ -32,7 +30,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const searchParams = request.nextUrl.searchParams;
     const queryString = searchParams.toString();
-    const url = `${API_BASE_URL}/api/pedagogy/teacher/documents${queryString ? `?${queryString}` : ''}`;
+    const url = `${nestDoublePrefixedControllerUrl('pedagogy/teacher/documents')}${queryString ? `?${queryString}` : ''}`;
 
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(url, {

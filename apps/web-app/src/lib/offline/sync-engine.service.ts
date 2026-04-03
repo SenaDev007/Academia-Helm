@@ -6,7 +6,11 @@
  * - PostgreSQL = source de vérité, local = cache temporaire
  */
 
+import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { outboxService } from './outbox.service';
+
+/** Alias local (même comportement) — évite ReferenceError si un vieux bundle référence encore `clientBearerHeaders`. */
+const clientBearerHeaders = getClientAuthorizationHeader;
 import { localDb } from './local-db.service';
 import type { OutboxEvent, SyncEntityType, SyncOperationType } from '@/types';
 
@@ -44,13 +48,6 @@ export interface SyncState {
 
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 1000;
-
-function clientBearerHeaders(): Record<string, string> {
-  if (typeof window === 'undefined') return {};
-  const raw = localStorage.getItem('accessToken');
-  const t = raw?.trim();
-  return t ? { Authorization: `Bearer ${t}` } : {};
-}
 
 async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
   let lastError: Error | null = null;

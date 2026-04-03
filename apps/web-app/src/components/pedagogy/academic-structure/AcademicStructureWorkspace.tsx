@@ -22,13 +22,17 @@ import BaseModal from '@/components/modules/blueprint/modals/BaseModal';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAcademicYear } from '@/hooks/useAcademicYear';
+import { getBilingualSettings } from '@/services/settings.service';
 import {
   pedagogyFetch,
   academicStructureUrl,
   academicSeriesUrl,
 } from '@/lib/pedagogy/academic-structure-client';
 import { cn } from '@/lib/utils';
-import { SETTINGS_SCHOOL_LEVELS_UPDATED_EVENT } from '@/lib/settings/events';
+import {
+  SETTINGS_SCHOOL_LEVELS_UPDATED_EVENT,
+  SETTINGS_BILINGUAL_UPDATED_EVENT,
+} from '@/lib/settings/events';
 
 const PRIMARY = '#1A2BA6';
 const ACCENT = '#F5A623';
@@ -106,7 +110,7 @@ function roomTypeDisplay(r: RoomRow): string {
 export function AcademicStructureWorkspace() {
   const searchParams = useSearchParams();
   const { user, tenant } = useAppSession();
-  const { academicYear, isBilingualEnabled } = useModuleContext();
+  const { academicYear } = useModuleContext();
   const { availableYears } = useAcademicYear();
   const yearId = academicYear?.id ?? '';
 
@@ -126,6 +130,21 @@ export function AcademicStructureWorkspace() {
     const q = params.toString();
     return `/app/settings${q ? `?${q}` : ''}`;
   }, [tenantQuery]);
+
+  const settingsHrefBilingual = useMemo(() => {
+    const params = new URLSearchParams();
+    if (tenantQuery.tenant_id) params.set('tenant_id', tenantQuery.tenant_id);
+    params.set('tab', 'bilingual');
+    const q = params.toString();
+    return `/app/settings${q ? `?${q}` : ''}`;
+  }, [tenantQuery]);
+
+  /** Option bilingue depuis Paramètres (settings_bilingual), pas le seul feature flag tenant. */
+  const [bilingualSettings, setBilingualSettings] = useState<{
+    isEnabled: boolean;
+    defaultLanguage?: string;
+  } | null>(null);
+  const bilingualEnabled = bilingualSettings?.isEnabled ?? false;
 
   const [tab, setTab] = useState<TabId>('levels');
   const [notice, setNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
@@ -148,7 +167,12 @@ export function AcademicStructureWorkspace() {
     | { mode: 'create' }
     | { mode: 'edit'; cycle: AcademicCycleRow }
   >(null);
-  const [cycleForm, setCycleForm] = useState({ levelId: '', name: '', orderIndex: 0 });
+  const [cycleForm, setCycleForm] = useState({
+    levelId: '',
+    name: '',
+    orderIndex: 0,
+    isActive: true,
+  });
 
   const [levelModal, setLevelModal] = useState<
     | null
@@ -286,6 +310,28 @@ export function AcademicStructureWorkspace() {
     }
   }, [yearId]);
 
+  const loadBilingualSettings = useCallback(async () => {
+    const tid = tenantQuery.tenant_id || tenant?.id;
+    if (!tid) {
+      setBilingualSettings(null);
+      return;
+    }
+    try {
+      const raw = await getBilingualSettings(tid);
+      if (raw && typeof raw === 'object' && 'isEnabled' in raw) {
+        const r = raw as { isEnabled?: boolean; defaultLanguage?: string };
+        setBilingualSettings({
+          isEnabled: Boolean(r.isEnabled),
+          defaultLanguage: typeof r.defaultLanguage === 'string' ? r.defaultLanguage : undefined,
+        });
+      } else {
+        setBilingualSettings(null);
+      }
+    } catch {
+      setBilingualSettings(null);
+    }
+  }, [tenantQuery.tenant_id, tenant?.id]);
+
   useEffect(() => {
     if (tab === 'levels') loadLevels();
     else if (tab === 'cycles') {
@@ -296,12 +342,14 @@ export function AcademicStructureWorkspace() {
       loadCycles();
       loadClasses();
       loadRooms();
+      void loadBilingualSettings();
     } else if (tab === 'sections') {
-      loadClasses();
+      void loadClasses();
+      void loadBilingualSettings();
     } else if (tab === 'series') {
       loadLevels();
     } else if (tab === 'rooms') loadRooms();
-  }, [tab, loadLevels, loadCycles, loadClasses, loadSeries, loadRooms]);
+  }, [tab, loadLevels, loadCycles, loadClasses, loadSeries, loadRooms, loadBilingualSettings]);
 
   useEffect(() => {
     if (tab === 'series' && secondaryLevelId) loadSeries();
@@ -313,6 +361,7 @@ export function AcademicStructureWorkspace() {
       void loadLevels();
       if (tab === 'cycles') void loadCycles();
       if (tab === 'classes') {
+        void loadLevels();
         void loadCycles();
         void loadClasses();
       }
@@ -321,6 +370,16 @@ export function AcademicStructureWorkspace() {
     window.addEventListener(SETTINGS_SCHOOL_LEVELS_UPDATED_EVENT, onSettingsLevelsChanged);
     return () => window.removeEventListener(SETTINGS_SCHOOL_LEVELS_UPDATED_EVENT, onSettingsLevelsChanged);
   }, [tab, loadLevels, loadCycles, loadClasses, loadSeries]);
+
+  /** Après enregistrement Paramètres → Bilingue : pistes + liste classes. */
+  useEffect(() => {
+    const onBilingualUpdated = () => {
+      void loadBilingualSettings();
+      if (tab === 'sections' || tab === 'classes') void loadClasses();
+    };
+    window.addEventListener(SETTINGS_BILINGUAL_UPDATED_EVENT, onBilingualUpdated);
+    return () => window.removeEventListener(SETTINGS_BILINGUAL_UPDATED_EVENT, onBilingualUpdated);
+  }, [tab, loadBilingualSettings, loadClasses]);
 
   /** Retour sur l’onglet : resynchroniser avec le backend (sync Paramètres → niveaux pédagogiques). */
   useEffect(() => {
@@ -428,16 +487,45 @@ export function AcademicStructureWorkspace() {
   };
 
   const openCreateCycle = () => {
+    if (levels.length === 0) {
+      setNotice({
+        type: 'err',
+        text: 'Créez au moins un niveau avant d’ajouter des cycles.',
+      });
+      return;
+    }
+    const firstLevelId = levels[0]?.id ?? '';
     setCycleForm({
-      levelId: levels[0]?.id ?? '',
+      levelId: firstLevelId,
       name: '',
-      orderIndex: cycles.filter((c) => c.level?.id === levels[0]?.id).length,
+      orderIndex: cycles.filter((c) => c.level?.id === firstLevelId).length,
+      isActive: true,
     });
     setCycleModal({ mode: 'create' });
   };
 
+  const openEditCycle = (cycle: AcademicCycleRow) => {
+    setCycleForm({
+      levelId: cycle.level?.id ?? '',
+      name: cycle.name,
+      orderIndex: cycle.orderIndex,
+      isActive: cycle.isActive,
+    });
+    setCycleModal({ mode: 'edit', cycle });
+  };
+
   const saveCycle = async () => {
     if (!yearId || !cycleForm.levelId || !cycleForm.name.trim()) return;
+    if (cycleModal?.mode === 'create') {
+      const hasActiveCycle = cycles.some((c) => c.isActive);
+      if (!hasActiveCycle && !cycleForm.isActive) {
+        setNotice({
+          type: 'err',
+          text: 'Au moins un cycle doit rester actif : cochez « Cycle actif » ou activez un cycle existant.',
+        });
+        return;
+      }
+    }
     try {
       if (cycleModal?.mode === 'create') {
         await pedagogyFetch(academicStructureUrl('cycles', { ...tenantQuery }), {
@@ -447,6 +535,7 @@ export function AcademicStructureWorkspace() {
             levelId: cycleForm.levelId,
             name: cycleForm.name.trim(),
             orderIndex: Number(cycleForm.orderIndex) || 0,
+            isActive: !!cycleForm.isActive,
           },
         });
       } else if (cycleModal?.mode === 'edit') {
@@ -455,6 +544,7 @@ export function AcademicStructureWorkspace() {
           body: {
             name: cycleForm.name.trim(),
             orderIndex: Number(cycleForm.orderIndex) || 0,
+            isActive: !!cycleForm.isActive,
           },
         });
       }
@@ -462,6 +552,24 @@ export function AcademicStructureWorkspace() {
       setNotice({ type: 'ok', text: 'Cycle enregistré.' });
       await loadCycles();
       await loadLevels();
+    } catch (e) {
+      setNotice({ type: 'err', text: (e as Error).message });
+    }
+  };
+
+  const toggleCycle = async (cycle: AcademicCycleRow) => {
+    const activeCount = cycles.filter((c) => c.isActive).length;
+    if (cycle.isActive && activeCount <= 1) {
+      setNotice({ type: 'err', text: 'Au moins un cycle doit rester actif.' });
+      return;
+    }
+    try {
+      await pedagogyFetch(academicStructureUrl(`cycles/${cycle.id}`, { ...tenantQuery }), {
+        method: 'PUT',
+        body: { isActive: !cycle.isActive },
+      });
+      setNotice({ type: 'ok', text: 'Cycle mis à jour.' });
+      await loadCycles();
     } catch (e) {
       setNotice({ type: 'err', text: (e as Error).message });
     }
@@ -485,6 +593,13 @@ export function AcademicStructureWorkspace() {
   const saveClass = async () => {
     if (!yearId || !classForm.levelId || !classForm.cycleId || !classForm.name.trim() || !classForm.code.trim()) {
       setNotice({ type: 'err', text: 'Complétez niveau, cycle, nom et code.' });
+      return;
+    }
+    if (classForm.languageTrack.trim().toUpperCase() === 'EN' && !bilingualEnabled) {
+      setNotice({
+        type: 'err',
+        text: 'Activez l’option bilingue dans Paramètres pour la piste EN.',
+      });
       return;
     }
     try {
@@ -539,6 +654,13 @@ export function AcademicStructureWorkspace() {
   };
 
   const saveLanguageTrack = async (cls: AcademicClassRow, next: string) => {
+    if (next.trim().toUpperCase() === 'EN' && !bilingualEnabled) {
+      setNotice({
+        type: 'err',
+        text: 'Activez l’option bilingue dans Paramètres pour attribuer la piste EN.',
+      });
+      return;
+    }
     try {
       setTrackSaving((m) => ({ ...m, [cls.id]: true }));
       await pedagogyFetch(academicStructureUrl(`classes/${cls.id}`, { ...tenantQuery }), {
@@ -925,13 +1047,41 @@ export function AcademicStructureWorkspace() {
 
       {!loading && tab === 'cycles' && (
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-2 border-b border-slate-100 bg-slate-50/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-slate-600">
+              Les cycles structurent la scolarité <strong>par niveau</strong> (ex. CI, CP, 6ème…). Ils
+              s’appuient sur les{' '}
+              <button
+                type="button"
+                className="font-semibold underline decoration-slate-300 hover:decoration-slate-500"
+                onClick={() => setTab('levels')}
+              >
+                niveaux
+              </button>{' '}
+              définis pour l’année. Pour l’officiel (Maternelle / Primaire / Secondaire), ajustez aussi la{' '}
+              <Link href={settingsHref} className="font-semibold underline" style={{ color: PRIMARY }}>
+                structure pédagogique
+              </Link>{' '}
+              en paramètres.
+            </p>
+            {levels.length === 0 && (
+              <button
+                type="button"
+                onClick={() => setTab('levels')}
+                className="shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium text-white"
+                style={{ backgroundColor: ACCENT }}
+              >
+                Aller aux niveaux
+              </button>
+            )}
+          </div>
           <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-3">Cycle</th>
                 <th className="px-4 py-3">Niveau</th>
                 <th className="px-4 py-3">Ordre</th>
-                <th className="px-4 py-3">Actif</th>
+                <th className="px-4 py-3">Statut</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
@@ -939,7 +1089,9 @@ export function AcademicStructureWorkspace() {
               {cycles.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-10 text-center text-slate-500">
-                    Aucun cycle. Ajoutez par exemple CI, CP, 6ème… selon votre niveau.
+                    {levels.length === 0
+                      ? 'Créez d’abord des niveaux pour cette année, puis ajoutez des cycles (CI, CP, 6ème…).'
+                      : 'Aucun cycle. Utilisez « Ajouter » pour créer vos cycles par niveau.'}
                   </td>
                 </tr>
               ) : (
@@ -947,23 +1099,35 @@ export function AcademicStructureWorkspace() {
                   <tr key={c.id} className="border-b border-slate-100 hover:bg-slate-50/80">
                     <td className="px-4 py-3 font-medium text-slate-900">{c.name}</td>
                     <td className="px-4 py-3 text-slate-600">{c.level?.name ?? '—'}</td>
-                    <td className="px-4 py-3">{c.orderIndex}</td>
-                    <td className="px-4 py-3">{c.isActive ? 'Oui' : 'Non'}</td>
+                    <td className="px-4 py-3 text-slate-600">{c.orderIndex}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={cn(
+                          'rounded-full px-2 py-0.5 text-xs font-medium',
+                          c.isActive
+                            ? 'bg-emerald-100 text-emerald-900'
+                            : 'bg-slate-200 text-slate-700',
+                        )}
+                      >
+                        {c.isActive ? 'Actif' : 'Inactif'}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <button
                         type="button"
-                        className="text-sm font-medium hover:underline"
+                        onClick={() => openEditCycle(c)}
+                        className="mr-3 text-sm font-medium hover:underline"
                         style={{ color: PRIMARY }}
-                        onClick={() => {
-                          setCycleForm({
-                            levelId: c.level?.id ?? '',
-                            name: c.name,
-                            orderIndex: c.orderIndex,
-                          });
-                          setCycleModal({ mode: 'edit', cycle: c });
-                        }}
                       >
                         Modifier
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleCycle(c)}
+                        className="text-sm font-medium hover:underline"
+                        style={{ color: PRIMARY }}
+                      >
+                        {c.isActive ? 'Désactiver' : 'Activer'}
                       </button>
                     </td>
                   </tr>
@@ -976,6 +1140,15 @@ export function AcademicStructureWorkspace() {
 
       {!loading && tab === 'classes' && (
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3">
+            <p className="text-sm text-slate-600">
+              Les classes pédagogiques correspondent aux <strong>grades</strong> de la{' '}
+              <Link href={settingsHref} className="font-semibold underline" style={{ color: PRIMARY }}>
+                structure pédagogique
+              </Link>{' '}
+              (niveaux → cycles → grades). Libellés, codes, rattachements niveau/cycle et capacité (somme des classes physiques du grade pour cette année en paramètres) sont resynchronisés à chaque chargement de cet onglet.
+            </p>
+          </div>
           <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -993,7 +1166,7 @@ export function AcademicStructureWorkspace() {
               {classes.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
-                    Aucune classe. Créez des cycles puis des classes.
+                    Aucune classe. Définissez les grades dans la structure pédagogique (paramètres) ou ajoutez une classe manuellement.
                   </td>
                 </tr>
               ) : (
@@ -1057,11 +1230,15 @@ export function AcademicStructureWorkspace() {
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <h3 className="text-base font-semibold text-slate-900">Sections &amp; pistes linguistiques</h3>
           <p className="mt-2 text-sm text-slate-600">
-            Les sections bilingues (ex. 6ème A — FR / EN) sont gérées via le champ{' '}
-            <strong>Piste</strong> sur chaque classe (FR, EN).{' '}
-            {isBilingualEnabled
-              ? 'Le mode bilingue est activé pour votre établissement.'
-              : 'Activez le bilingue dans les paramètres pour verrouiller la politique linguistique.'}
+            Les pistes linguistiques (FR / EN) sur chaque classe sont alignées sur l’
+            <Link href={settingsHrefBilingual} className="font-semibold underline" style={{ color: PRIMARY }}>
+              option bilingue
+            </Link>{' '}
+            en paramètres. À chaque chargement, les pistes sont harmonisées (langue par défaut, désactivation du
+            EN si le bilingue est coupé).{' '}
+            {bilingualEnabled
+              ? 'Le mode bilingue est activé : vous pouvez attribuer FR ou EN par classe.'
+              : 'Sans option bilingue, seule la langue par défaut des paramètres s’applique (souvent FR).'}
           </p>
           <div className="mt-4 overflow-x-auto rounded-lg border border-slate-100">
             <table className="min-w-full text-sm">
@@ -1086,7 +1263,7 @@ export function AcademicStructureWorkspace() {
                       >
                         <option value="">—</option>
                         <option value="FR">FR</option>
-                        <option value="EN">EN</option>
+                        {bilingualEnabled && <option value="EN">EN</option>}
                       </select>
                     </td>
                     <td className="px-3 py-2 text-right">
@@ -1352,6 +1529,22 @@ export function AcademicStructureWorkspace() {
               onChange={(e) => setCycleForm((f) => ({ ...f, orderIndex: Number(e.target.value) }))}
             />
           </label>
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={cycleForm.isActive}
+              onChange={(e) => setCycleForm((f) => ({ ...f, isActive: e.target.checked }))}
+            />
+            <span className="text-slate-700">Cycle actif</span>
+          </label>
+          {cycleModal?.mode === 'edit' && cycleModal.cycle.level?.name && (
+            <p className="text-xs text-slate-500">
+              Niveau : <strong>{cycleModal.cycle.level.name}</strong> (non modifiable ici)
+            </p>
+          )}
+          <p className="text-xs text-slate-500">
+            L’ordre et le statut s’appliquent dans les listes et filtres (classes, sections…).
+          </p>
         </div>
       </BaseModal>
 
@@ -1451,13 +1644,13 @@ export function AcademicStructureWorkspace() {
               >
                 <option value="">—</option>
                 <option value="FR">FR</option>
-                <option value="EN">EN</option>
+                {bilingualEnabled && <option value="EN">EN</option>}
               </select>
-            {isBilingualEnabled && (
-              <span className="mt-1 block text-xs text-slate-500">
-                Mode bilingue activé au niveau établissement.
-              </span>
-            )}
+            <span className="mt-1 block text-xs text-slate-500">
+              {bilingualEnabled
+                ? 'Option bilingue activée (Paramètres).'
+                : 'Piste EN disponible après activation dans Paramètres → Bilingue.'}
+            </span>
           </label>
           <label className="block text-sm sm:col-span-2">
             <span className="text-slate-600">Salle (optionnel)</span>

@@ -28,6 +28,7 @@ interface BackendLoginResponse {
   };
   accessToken: string;
   refreshToken: string;
+  serverSessionId?: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -147,6 +148,12 @@ export async function POST(request: NextRequest) {
       success: true,
       user,
       tenant,
+      /** Pour pedagogyFetch / sync (Bearer) — aligné sur select-tenant */
+      accessToken: backendData.accessToken,
+      refreshToken: backendData.refreshToken,
+      /** Ligne PostgreSQL `sessions` (refresh JWT) */
+      serverSessionId: backendData.serverSessionId,
+      expiresAt,
     });
   } catch (error: any) {
     console.error('[Login API] Error:', error);

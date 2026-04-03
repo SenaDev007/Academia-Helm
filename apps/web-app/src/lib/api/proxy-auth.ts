@@ -8,6 +8,8 @@ import { getServerToken, getServerSession } from '@/lib/auth/session';
 
 const TOKEN_COOKIE = 'academia_token';
 const SESSION_COOKIE = 'academia_session';
+/** Cookie non-httpOnly (aligné session) — utilisé par le client ; le proxy doit le refléter en X-Tenant-ID pour TenantGuard Nest. */
+const TENANT_ID_COOKIE = 'x-tenant-id';
 
 export type ProxyAuthHeaders = Record<string, string> & {
   Authorization?: string;
@@ -106,7 +108,8 @@ export async function getProxyAuthHeaders(request: NextRequest): Promise<ProxyAu
     };
   }
 
-  const authHeader = request.headers.get('Authorization');
+  const authHeader =
+    request.headers.get('Authorization') ?? request.headers.get('authorization');
   const requestCookieToken = request.cookies.get(TOKEN_COOKIE)?.value?.trim();
   const cookieToken = normalizeJwt(
     requestCookieToken ??
@@ -117,13 +120,14 @@ export async function getProxyAuthHeaders(request: NextRequest): Promise<ProxyAu
   const sessionToken = await getServerToken();
   const session = await getServerSession();
   const sessionTokenAlt = session?.token ? normalizeJwt(session.token) : '';
+  const parsedTokenNorm = parsedSession.token ? normalizeJwt(parsedSession.token) : '';
 
   const rawToken =
     bearerFromAuthorizationHeader(authHeader) ||
-    (cookieToken || null) ||
-    (sessionToken ? normalizeJwt(sessionToken) : null) ||
     (sessionTokenAlt || null) ||
-    parsedSession.token ||
+    (sessionToken ? normalizeJwt(sessionToken) : null) ||
+    (cookieToken || null) ||
+    parsedTokenNorm ||
     '';
 
   const token = rawToken ? `Bearer ${rawToken}` : '';
@@ -149,10 +153,15 @@ export async function getProxyAuthHeaders(request: NextRequest): Promise<ProxyAu
     typeof session?.user?.tenantId === 'string' && session.user.tenantId.trim()
       ? session.user.tenantId.trim()
       : undefined;
+  const tidFromTenantCookie =
+    request.cookies.get(TENANT_ID_COOKIE)?.value?.trim() ||
+    cookieStore.get(TENANT_ID_COOKIE)?.value?.trim() ||
+    undefined;
   const tenantId =
     (tidFromSessionObj && String(tidFromSessionObj).trim()) ||
     tidFromUser ||
     parsedSession.tenantId ||
+    tidFromTenantCookie ||
     request.headers.get('x-tenant-id') ||
     request.nextUrl?.searchParams?.get('tenant_id') ||
     undefined;

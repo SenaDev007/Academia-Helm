@@ -32,7 +32,10 @@ import { ModuleHeader } from '@/components/modules/blueprint';
 import GeneratedStampsSignatures from '@/components/settings/GeneratedStampsSignatures';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import * as settingsService from '@/services/settings.service';
-import { SETTINGS_SCHOOL_LEVELS_UPDATED_EVENT } from '@/lib/settings/events';
+import {
+  SETTINGS_SCHOOL_LEVELS_UPDATED_EVENT,
+  SETTINGS_BILINGUAL_UPDATED_EVENT,
+} from '@/lib/settings/events';
 import { formatGradeLabel } from '@/lib/utils';
 
 /** Format d’affichage des dates d’année scolaire (conforme calendrier officiel, évite décalage timezone) */
@@ -1102,6 +1105,9 @@ export default function SettingsPage() {
       showToast('success', 'Paramètres bilingues enregistrés');
       const updated = await settingsService.getBilingualSettings(effectiveTenantId ?? undefined);
       setBilingualSettings(updated);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(SETTINGS_BILINGUAL_UPDATED_EVENT));
+      }
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
     } finally {

@@ -157,6 +157,10 @@ export async function POST(request: NextRequest) {
       success: true,
       user: backendData.user,
       tenant,
+      accessToken: backendData.accessToken,
+      refreshToken: backendData.refreshToken,
+      serverSessionId: (backendData as { serverSessionId?: string }).serverSessionId,
+      expiresAt,
     });
   } catch (error: any) {
     console.error('[Dev Login API] Error:', error);

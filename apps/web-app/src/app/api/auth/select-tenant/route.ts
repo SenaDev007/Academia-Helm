@@ -52,9 +52,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(data, { status: response.status });
     }
 
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
     // Mettre à jour la session cookie avec le tenant choisi (user + tenant + token)
     if (data.user && data.tenant && data.accessToken) {
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
       await setServerSession({
         user: {
           id: data.user.id,
@@ -89,6 +90,8 @@ export async function POST(request: NextRequest) {
       tenant: data.tenant,
       accessToken: data.accessToken,
       refreshToken: data.refreshToken,
+      serverSessionId: data.serverSessionId as string | undefined,
+      expiresAt,
     });
   } catch (error: any) {
     console.error('Error in select tenant:', error);

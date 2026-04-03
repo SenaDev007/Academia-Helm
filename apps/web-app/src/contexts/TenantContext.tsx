@@ -14,6 +14,11 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { offlineCacheService } from '../services/offline-cache.service';
+import {
+  clearClientSessionSync,
+  tryRefreshAccessToken,
+  hasLocalSessionHints,
+} from '@/lib/auth/client-access-token';
 
 export interface AppContext {
   user: {
@@ -89,52 +94,79 @@ export function TenantContextProvider({ children }: { children: ReactNode }) {
       setIsLoading(true);
       setError(null);
 
-      // Vérifier si on a un token
-      const token = localStorage.getItem('accessToken');
-      if (!token) {
-        throw new Error('No access token found');
-      }
-
-      // Essayer de charger depuis le cache d'abord (si offline)
+      /**
+       * 1) Hors ligne : pas d’appel réseau — uniquement le cache (JWT périmé = normal).
+       *    La première connexion sur l’appareil doit avoir enregistré ce cache via bootstrap.
+       */
       if (offlineCacheService.isOffline()) {
         const cachedContext = offlineCacheService.getCachedContext();
         if (cachedContext) {
-          console.log('📦 Using cached context (offline mode)');
+          console.log('📦 Contexte depuis le cache (mode hors ligne)');
           setContext(cachedContext);
-          setIsLoading(false);
           return;
         }
+        setError(
+          'Aucun contexte en cache pour le mode hors ligne. Connectez-vous une fois en ligne sur cet appareil.',
+        );
+        return;
       }
 
-      // Appeler l'endpoint bootstrap
+      /**
+       * 2) En ligne : access token manquant → tentative de refresh avant bootstrap.
+       */
+      let token = localStorage.getItem('accessToken')?.trim() ?? '';
+      if (!token) {
+        const refreshed = await tryRefreshAccessToken();
+        if (refreshed) {
+          token = localStorage.getItem('accessToken')?.trim() ?? '';
+        }
+      }
+      if (!token) {
+        if (hasLocalSessionHints()) {
+          const cachedContext = offlineCacheService.getCachedContext();
+          if (cachedContext) {
+            console.log('📦 Pas de JWT — contexte depuis cache (session locale)');
+            setContext(cachedContext);
+            return;
+          }
+        }
+        throw new Error('No access token found');
+      }
+
       const response = await fetch('/api/context/bootstrap', {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          Authorization: `Bearer ${token}`,
         },
       });
 
       if (!response.ok) {
-        // Si offline, essayer le cache
-        if (offlineCacheService.isOffline()) {
+        if (response.status === 401) {
+          const refreshed = await tryRefreshAccessToken();
+          if (refreshed) {
+            const retry = await fetch('/api/context/bootstrap', {
+              headers: {
+                Authorization: `Bearer ${localStorage.getItem('accessToken') ?? ''}`,
+              },
+            });
+            if (retry.ok) {
+              const data = await retry.json();
+              setContext(data);
+              offlineCacheService.cacheContext(data);
+              return;
+            }
+          }
           const cachedContext = offlineCacheService.getCachedContext();
           if (cachedContext) {
-            console.log('📦 Using cached context (offline fallback)');
+            console.warn('📦 Bootstrap 401 — contexte en cache jusqu’à nouvelle connexion');
             setContext(cachedContext);
-            setIsLoading(false);
             return;
           }
-        }
-
-        if (response.status === 401) {
-          // Token invalide ou expiré
-          localStorage.removeItem('accessToken');
-          localStorage.removeItem('refreshToken');
+          clearClientSessionSync();
           offlineCacheService.clearContextCache();
           router.push('/auth/login');
           return;
         }
         if (response.status === 403) {
-          // Pas de tenant sélectionné
           router.push('/auth/select-tenant');
           return;
         }
@@ -143,24 +175,19 @@ export function TenantContextProvider({ children }: { children: ReactNode }) {
 
       const data = await response.json();
       setContext(data);
-      
-      // Mettre en cache le contexte
       offlineCacheService.cacheContext(data);
     } catch (err: any) {
       console.error('Error loading context:', err);
-      
-      // Essayer le cache en dernier recours
+
       const cachedContext = offlineCacheService.getCachedContext();
       if (cachedContext) {
-        console.log('📦 Using cached context (error fallback)');
+        console.log('📦 Contexte depuis cache (erreur réseau ou serveur)');
         setContext(cachedContext);
-        setIsLoading(false);
         return;
       }
 
       setError(err.message || 'Failed to load context');
-      
-      // Si erreur critique, rediriger vers login
+
       if (err.message?.includes('No access token')) {
         router.push('/auth/login');
       }
@@ -181,8 +208,7 @@ export function TenantContextProvider({ children }: { children: ReactNode }) {
    */
   const clearContext = () => {
     setContext(null);
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
+    clearClientSessionSync();
     offlineCacheService.clearContextCache();
     router.push('/auth/login');
   };

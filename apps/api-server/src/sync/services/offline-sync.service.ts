@@ -1,4 +1,5 @@
 import { Injectable, Logger, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
 import { SchemaValidatorService } from '../schema-validator.service';
 import {
@@ -30,6 +31,7 @@ export class OfflineSyncService {
     private prisma: PrismaService,
     private schemaValidator: SchemaValidatorService,
     private conflictDetection: ConflictDetectionService,
+    private configService: ConfigService,
   ) {}
 
   /**
@@ -47,6 +49,8 @@ export class OfflineSyncService {
     request: OfflineSyncRequestDto,
     userId: string,
     ipAddress?: string,
+    /** Tenant courant du JWT (après select-tenant / enrichissement), aligné sur JwtStrategy */
+    authTenantId?: string | null,
   ): Promise<OfflineSyncResponseDto> {
     const syncId = uuidv4();
     this.logger.log(`[${syncId}] Début synchronisation offline pour tenant ${request.tenantId}`);
@@ -83,7 +87,7 @@ export class OfflineSyncService {
     }
 
     // ÉTAPE 2: VÉRIFICATION TENANT & PERMISSIONS
-    await this.validateTenantAndPermissions(request.tenantId, userId);
+    await this.validateTenantAndPermissions(request.tenantId, userId, authTenantId);
 
     // ÉTAPE 3: TRAITEMENT DES OPÉRATIONS PAR BATCH (Transaction)
     const results: OfflineOperationResultDto[] = [];
@@ -223,8 +227,9 @@ export class OfflineSyncService {
     request: SyncPullRequestDto,
     userId: string,
     ipAddress?: string,
+    authTenantId?: string | null,
   ): Promise<SyncPullResponseDto> {
-    await this.validateTenantAndPermissions(request.tenant_id, userId);
+    await this.validateTenantAndPermissions(request.tenant_id, userId, authTenantId);
 
     const since = new Date(request.last_sync_at);
 
@@ -270,21 +275,40 @@ export class OfflineSyncService {
     };
   }
 
+  /** Aligné sur AuthService.selectTenant (PLATFORM_OWNER + accès tenant). */
+  private isPlatformOwner(user: { email?: string | null; role?: string | null }): boolean {
+    const platformOwnerEmail = this.configService.get<string>('PLATFORM_OWNER_EMAIL');
+    if (platformOwnerEmail && user.email === platformOwnerEmail) return true;
+    if (user.role === 'PLATFORM_OWNER' || user.role === 'SUPER_ADMIN') return true;
+    return false;
+  }
+
   /**
-   * Valide le tenant et les permissions de l'utilisateur
+   * Valide le tenant et les permissions de l'utilisateur.
+   * `authTenantId` = tenant du JWT (req.user) : après select-tenant, il peut différer de User.tenantId en BDD.
    */
-  private async validateTenantAndPermissions(tenantId: string, userId: string): Promise<void> {
-    // Vérifier que l'utilisateur appartient au tenant
+  private async validateTenantAndPermissions(
+    tenantId: string,
+    userId: string,
+    authTenantId?: string | null,
+  ): Promise<void> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { tenantId: true, role: true, status: true },
+      select: { tenantId: true, role: true, status: true, email: true },
     });
 
     if (!user) {
       throw new ForbiddenException('Utilisateur non trouvé');
     }
 
-    if (user.tenantId !== tenantId) {
+    const hasTenantAccess =
+      this.isPlatformOwner(user) ||
+      user.tenantId === tenantId ||
+      (typeof authTenantId === 'string' &&
+        authTenantId.length > 0 &&
+        authTenantId === tenantId);
+
+    if (!hasTenantAccess) {
       throw new ForbiddenException('Accès interdit: tenant non autorisé');
     }
 

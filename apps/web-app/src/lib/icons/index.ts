@@ -140,6 +140,8 @@ export const IconMapping = {
   
   // Modules supplémentaires
   library: BookOpen,
+  /** Alias camelCase (config / JSON) */
+  bookOpen: BookOpen,
   laboratory: Beaker,
   transport: Bus,
   infirmary: Activity,

@@ -3,15 +3,15 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { nestDoublePrefixedControllerUrl, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 import { readProxyBodyText } from '@/lib/api/pedagogy-proxy-body';
 
-const API_URL = getApiBaseUrlForRoutes();
-
 function buildBackendUrl(pathSegments: string[]): string {
   const path = pathSegments.length ? pathSegments.join('/') : '';
-  return `${API_URL}/api/pedagogy/orion-advanced${path ? `/${path}` : ''}`;
+  return nestDoublePrefixedControllerUrl(
+    `pedagogy/orion-advanced${path ? `/${path}` : ''}`,
+  );
 }
 
 async function forward(

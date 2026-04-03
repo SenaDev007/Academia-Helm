@@ -110,6 +110,9 @@ export async function POST(request: NextRequest) {
         user,
         tenant,
         portalType: data.portalType,
+        accessToken: data.token,
+        portalSessionId: data.sessionId,
+        expiresAt,
       });
     }
 

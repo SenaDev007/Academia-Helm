@@ -22,6 +22,7 @@ import {
   OfflineSyncResponseDto,
 } from './dto/offline-sync.dto';
 import { SyncPullRequestDto, SyncPullResponseDto } from './dto/sync-pull.dto';
+import { Public } from '../auth/decorators/public.decorator';
 
 @Controller('sync')
 @UseGuards(JwtAuthGuard)
@@ -68,7 +69,12 @@ export class SyncController {
       throw new BadRequestException('tenantId mismatch between request and authentication');
     }
     const ip = (req as any).ip ?? req.socket?.remoteAddress ?? undefined;
-    return this.offlineSyncService.syncOfflineOperations(request, user.id, ip);
+    return this.offlineSyncService.syncOfflineOperations(
+      request,
+      user.id,
+      ip,
+      user?.tenantId ?? null,
+    );
   }
 
   /**
@@ -86,7 +92,7 @@ export class SyncController {
       throw new BadRequestException('tenant_id mismatch');
     }
     const ip = (req as any).ip ?? req.socket?.remoteAddress ?? undefined;
-    return this.offlineSyncService.pull(body, user.id, ip);
+    return this.offlineSyncService.pull(body, user.id, ip, user?.tenantId ?? null);
   }
 
   /**
@@ -132,7 +138,9 @@ export class SyncController {
 
   /**
    * Récupère le hash du schéma Prisma actuel
+   * Public : nécessaire avant push/pull quand le JWT n’est pas encore propagé au client sync.
    */
+  @Public()
   @Get('schema-hash')
   async getSchemaHash(): Promise<{ hash: string }> {
     return {

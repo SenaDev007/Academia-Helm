@@ -28,6 +28,7 @@ import SchoolSearch from '@/components/portal/SchoolSearch';
 import { useTenantRedirect } from '@/lib/hooks/useTenantRedirect';
 import { BRAND } from '@/lib/brand';
 import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-email';
+import { persistClientSession } from '@/lib/auth/client-access-token';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getModalMotion, getMotionDuration } from '@/lib/motion/presets';
 
@@ -242,6 +243,14 @@ export default function PortalPage() {
       if (!response.ok || !data.success) {
         throw new Error(data.message || 'Connexion impossible');
       }
+      persistClientSession({
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        serverSessionId: data.serverSessionId,
+        user: data.user,
+        tenant: data.tenant,
+        expiresAt: data.expiresAt,
+      });
       const tenantKey = selectedDevTenant.tenantId || selectedDevTenant.id;
       saveEmailForTenant(devEmail.trim(), tenantKey);
       window.location.href = '/app';

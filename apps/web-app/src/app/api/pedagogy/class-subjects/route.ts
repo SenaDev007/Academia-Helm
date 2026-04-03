@@ -5,10 +5,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { nestDoublePrefixedControllerUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
-
-const API_URL = getApiBaseUrlForRoutes();
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,7 +20,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const url = new URL(`${API_URL}/api/pedagogy/class-subjects/${classId}`);
+    const url = new URL(
+      `${nestDoublePrefixedControllerUrl('pedagogy')}/class-subjects/${classId}`,
+    );
     searchParams.forEach((value, key) => {
       if (key !== 'classId') {
         url.searchParams.append(key, value);
@@ -58,12 +58,15 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(`${API_URL}/api/pedagogy/class-subjects`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      cache: 'no-store',
-    });
+    const response = await fetch(
+      `${nestDoublePrefixedControllerUrl('pedagogy')}/class-subjects`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        cache: 'no-store',
+      },
+    );
 
     if (!response.ok) {
       return NextResponse.json(

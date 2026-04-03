@@ -88,7 +88,14 @@ export class AcademicStructurePrismaController {
   @Post('cycles')
   async createCycle(
     @TenantId() tenantId: string,
-    @Body() body: { academicYearId: string; levelId: string; name: string; orderIndex?: number },
+    @Body()
+    body: {
+      academicYearId: string;
+      levelId: string;
+      name: string;
+      orderIndex?: number;
+      isActive?: boolean;
+    },
   ) {
     return this.service.createCycle({ ...body, tenantId });
   }

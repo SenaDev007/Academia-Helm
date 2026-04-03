@@ -27,6 +27,17 @@ export function getApiBaseUrlForRoutes(): string {
 }
 
 /**
+ * URL vers un contrôleur Nest déclaré avec `@Controller('api/...')`.
+ * Avec `setGlobalPrefix('api')`, la route effective est `/api/api/...`.
+ * `getApiBaseUrl()` se termine déjà par `/api` — il faut donc un segment `/api` supplémentaire.
+ */
+export function nestDoublePrefixedControllerUrl(path: string): string {
+  const base = getApiBaseUrlForRoutes().replace(/\/$/, '');
+  const p = path.replace(/^\//, '');
+  return `${base}/api/${p}`;
+}
+
+/**
  * Construit une URL API complète à partir d'un chemin
  * 
  * @param path - Chemin relatif (ex: "/auth/login")

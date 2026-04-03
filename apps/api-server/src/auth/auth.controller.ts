@@ -1,4 +1,5 @@
 import { Controller, Post, Body, Get, UseGuards, HttpCode, HttpStatus, ForbiddenException, Req } from '@nestjs/common';
+import { Request } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
@@ -16,16 +17,22 @@ export class AuthController {
 
   @Public()
   @Post('register')
-  async register(@Body() registerDto: RegisterDto) {
-    return this.authService.register(registerDto);
+  async register(@Body() registerDto: RegisterDto, @Req() req: Request) {
+    return this.authService.register(registerDto, {
+      ipAddress: req.ip || req.socket?.remoteAddress,
+      userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : undefined,
+    });
   }
 
   @Public()
   @UseGuards(LocalAuthGuard)
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto);
+  async login(@Body() loginDto: LoginDto, @Req() req: Request) {
+    return this.authService.login(loginDto, {
+      ipAddress: req.ip || req.socket?.remoteAddress,
+      userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : undefined,
+    });
   }
 
   @Post('logout')
@@ -34,6 +41,8 @@ export class AuthController {
     return { message: 'Logged out successfully' };
   }
 
+  /** Public : le client envoie uniquement le refresh JWT (pas d’Authorization). */
+  @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   async refresh(@Body('refreshToken') refreshToken: string) {
@@ -123,7 +132,10 @@ export class AuthController {
     }
 
     const userId = req.user.sub || req.user.id;
-    return this.authService.selectTenant(userId, tenantId);
+    return this.authService.selectTenant(userId, tenantId, {
+      ipAddress: req.ip || req.socket?.remoteAddress,
+      userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : undefined,
+    });
   }
 }
 

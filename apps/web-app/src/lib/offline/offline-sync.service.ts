@@ -141,8 +141,11 @@ class OfflineSyncService {
     const session = localStorage.getItem('session');
     if (session) {
       try {
-        const parsed = JSON.parse(session);
-        return parsed.tenantId || null;
+        const parsed = JSON.parse(session) as {
+          tenantId?: string;
+          tenant?: { id?: string };
+        };
+        return parsed.tenantId || parsed.tenant?.id || null;
       } catch {
         return null;
       }

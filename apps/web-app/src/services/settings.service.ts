@@ -4,6 +4,8 @@
  * ============================================================================
  */
 
+import { getClientAuthorizationHeader, tryRefreshAccessToken } from '@/lib/auth/client-access-token';
+
 const BASE_URL = '/api/settings';
 
 function getErrorMessage(error: { message?: unknown; error?: string }, fallback: string): string {
@@ -14,15 +16,39 @@ function getErrorMessage(error: { message?: unknown; error?: string }, fallback:
   return fallback;
 }
 
+function settingsAuthHeaders(extra?: HeadersInit): Record<string, string> {
+  const base: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...getClientAuthorizationHeader(),
+  };
+  if (!extra) return base;
+  if (extra instanceof Headers) {
+    extra.forEach((v, k) => {
+      base[k] = v;
+    });
+    return base;
+  }
+  if (Array.isArray(extra)) {
+    for (const [k, v] of extra) base[k] = v;
+    return base;
+  }
+  return { ...base, ...(extra as Record<string, string>) };
+}
+
 async function fetchWithAuth(url: string, options: RequestInit = {}) {
-  const response = await fetch(url, {
+  let response = await fetch(url, {
     ...options,
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
+    headers: settingsAuthHeaders(options.headers),
   });
+
+  if (response.status === 401 && (await tryRefreshAccessToken())) {
+    response = await fetch(url, {
+      ...options,
+      credentials: 'include',
+      headers: settingsAuthHeaders(options.headers),
+    });
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: 'Une erreur est survenue' }));
@@ -34,17 +60,27 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
 
 /** Appels sans cache pour données toujours à jour (ex. années scolaires depuis le backend) */
 async function fetchWithAuthNoCache(url: string, options: RequestInit = {}) {
-  const response = await fetch(url, {
+  const noCacheHeaders = (): Record<string, string> => ({
+    ...settingsAuthHeaders(options.headers),
+    'Cache-Control': 'no-cache',
+    Pragma: 'no-cache',
+  });
+
+  let response = await fetch(url, {
     ...options,
     cache: 'no-store',
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'no-cache',
-      'Pragma': 'no-cache',
-      ...options.headers,
-    },
+    headers: noCacheHeaders(),
   });
+
+  if (response.status === 401 && (await tryRefreshAccessToken())) {
+    response = await fetch(url, {
+      ...options,
+      cache: 'no-store',
+      credentials: 'include',
+      headers: noCacheHeaders(),
+    });
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: 'Une erreur est survenue' }));

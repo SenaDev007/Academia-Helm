@@ -28,20 +28,24 @@ export function SettingsBootstrapPrefetch() {
 
   useEffect(() => {
     if (!effectiveTenantId) return;
-    void queryClient
-      .prefetchQuery({
-        queryKey: settingsKeys.bootstrap(effectiveTenantId),
-        queryFn: () => fetchSettingsBootstrap(effectiveTenantId),
-        staleTime: BOOTSTRAP_STALE_MS,
-      })
-      .then(() => {
-        const data = queryClient.getQueryData<SettingsBootstrapPayload>(
-          settingsKeys.bootstrap(effectiveTenantId),
-        );
-        if (data?.academicYearsResult) {
-          hydrateAcademicYearsFromBootstrap(queryClient, effectiveTenantId, data);
-        }
-      });
+    /** Court délai pour laisser localStorage/cookies alignés après redirection login (Bearer pour le proxy). */
+    const t = window.setTimeout(() => {
+      void queryClient
+        .prefetchQuery({
+          queryKey: settingsKeys.bootstrap(effectiveTenantId),
+          queryFn: () => fetchSettingsBootstrap(effectiveTenantId),
+          staleTime: BOOTSTRAP_STALE_MS,
+        })
+        .then(() => {
+          const data = queryClient.getQueryData<SettingsBootstrapPayload>(
+            settingsKeys.bootstrap(effectiveTenantId),
+          );
+          if (data?.academicYearsResult) {
+            hydrateAcademicYearsFromBootstrap(queryClient, effectiveTenantId, data);
+          }
+        });
+    }, 80);
+    return () => clearTimeout(t);
   }, [effectiveTenantId, queryClient]);
 
   return null;

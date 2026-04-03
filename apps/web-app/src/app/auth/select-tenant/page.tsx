@@ -59,8 +59,8 @@ export default function SelectTenantPage() {
       if (!response.ok) {
         if (response.status === 401) {
           if (typeof window !== 'undefined') {
-            localStorage.removeItem('accessToken');
-            localStorage.removeItem('refreshToken');
+            const { clearClientSessionSync } = await import('@/lib/auth/client-access-token');
+            clearClientSessionSync();
           }
           router.push('/auth/login');
           return;
@@ -104,9 +104,16 @@ export default function SelectTenantPage() {
         throw new Error(data.message || data.error || 'Failed to select tenant');
       }
 
-      if (data.accessToken && typeof window !== 'undefined') {
-        localStorage.setItem('accessToken', data.accessToken);
-        localStorage.setItem('refreshToken', data.refreshToken || '');
+      if (typeof window !== 'undefined') {
+        const { persistClientSession } = await import('@/lib/auth/client-access-token');
+        persistClientSession({
+          accessToken: data.accessToken,
+          refreshToken: data.refreshToken,
+          serverSessionId: data.serverSessionId,
+          user: data.user,
+          tenant: data.tenant,
+          expiresAt: data.expiresAt,
+        });
       }
 
       router.push(redirectTo);

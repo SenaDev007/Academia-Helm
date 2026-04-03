@@ -17,7 +17,8 @@ interface CacheEntry<T> {
 
 class OfflineCacheService {
   private readonly contextCacheKey = `${CACHE_PREFIX}context_${CACHE_VERSION}`;
-  private readonly contextCacheTTL = 24 * 60 * 60 * 1000; // 24 heures
+  /** Aligné usage hors ligne prolongé (cf. maxOfflineDays côté paramètres). */
+  private readonly contextCacheTTL = 7 * 24 * 60 * 60 * 1000; // 7 jours
 
   /**
    * Vérifie si le navigateur supporte le localStorage

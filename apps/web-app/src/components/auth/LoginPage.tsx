@@ -29,6 +29,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { BRAND } from '@/lib/brand';
 import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-email';
+import { persistClientSession } from '@/lib/auth/client-access-token';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getMotionDuration } from '@/lib/motion/presets';
 
@@ -199,6 +200,15 @@ export default function LoginPage() {
       throw new Error(data.message || 'Erreur lors de la connexion');
     }
 
+    persistClientSession({
+      accessToken: data.accessToken,
+      refreshToken: data.refreshToken,
+      serverSessionId: data.serverSessionId,
+      user: data.user,
+      tenant: data.tenant,
+      expiresAt: data.expiresAt,
+    });
+
     const tenantKey = data.tenant?.id || tenantIdFromUrl || tenantSlug || 'platform';
     saveEmailForTenant(schoolCredentials.email, tenantKey);
 
@@ -252,6 +262,14 @@ export default function LoginPage() {
       throw new Error(data.message || data.error || 'Erreur lors de la connexion');
     }
 
+    persistClientSession({
+      accessToken: data.accessToken,
+      portalSessionId: data.portalSessionId,
+      user: data.user,
+      tenant: data.tenant,
+      expiresAt: data.expiresAt,
+    });
+
     const tenantKey = data.tenant?.id || tenantIdForApi || 'platform';
     saveEmailForTenant(schoolCredentials.email, tenantKey);
 
@@ -284,6 +302,14 @@ export default function LoginPage() {
     if (!response.ok || !data.success) {
       throw new Error(data.message || data.error || 'Erreur lors de la connexion');
     }
+
+    persistClientSession({
+      accessToken: data.accessToken,
+      portalSessionId: data.portalSessionId,
+      user: data.user,
+      tenant: data.tenant,
+      expiresAt: data.expiresAt,
+    });
 
     const redirectUrl =
       tenantSlug || tenantIdFromUrl
@@ -342,6 +368,14 @@ export default function LoginPage() {
     if (!response.ok || !data.success) {
       throw new Error(data.message || data.error || 'Code OTP invalide');
     }
+
+    persistClientSession({
+      accessToken: data.accessToken,
+      portalSessionId: data.portalSessionId,
+      user: data.user,
+      tenant: data.tenant,
+      expiresAt: data.expiresAt,
+    });
 
     const redirectUrl =
       tenantSlug || tenantIdFromUrl

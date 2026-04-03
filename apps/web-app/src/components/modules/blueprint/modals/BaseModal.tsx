@@ -125,8 +125,8 @@ export default function BaseModal({
             <motion.div
               ref={modalRef}
               className={cn(
-                'relative bg-white/98 shadow-2xl w-full max-h-[90vh] overflow-y-auto',
-                'rounded-t-2xl md:rounded-2xl border border-white/70',
+                'relative isolate bg-white shadow-2xl w-full max-h-[90vh] overflow-y-auto',
+                'rounded-t-2xl md:rounded-2xl border border-slate-200',
                 sizeClasses[size],
                 className
               )}
@@ -139,11 +139,14 @@ export default function BaseModal({
               exit={modalMotion.exit}
               transition={modalMotion.transition}
             >
-              <div className="absolute inset-0 pointer-events-none rounded-t-2xl md:rounded-2xl bg-[radial-gradient(circle_at_top_right,rgba(245,179,53,0.10),transparent_42%)]" />
+              <div
+                className="absolute inset-0 pointer-events-none rounded-t-2xl md:rounded-2xl bg-[radial-gradient(circle_at_top_right,rgba(245,179,53,0.08),transparent_50%)]"
+                aria-hidden
+              />
               {/* Drag handle mobile */}
-              <div className="md:hidden w-10 h-1 bg-gray-300 rounded-full mx-auto mb-4 mt-3 flex-shrink-0" aria-hidden />
+              <div className="relative z-[1] md:hidden w-10 h-1 bg-gray-300 rounded-full mx-auto mb-4 mt-3 flex-shrink-0" aria-hidden />
               {/* Header */}
-              <div className="relative flex items-start justify-between px-4 md:px-6 py-4 border-b border-gray-200/80">
+              <div className="relative z-[1] flex items-start justify-between bg-white px-4 md:px-6 py-4 border-b border-slate-200">
                 <div className="flex-1 min-w-0">
                   <h2
                     id="modal-title"
@@ -191,13 +194,13 @@ export default function BaseModal({
               </div>
 
               {/* Body */}
-              <div className="relative px-6 py-4 max-h-[60vh] overflow-y-auto">
+              <div className="relative z-[1] bg-white px-6 py-4 max-h-[60vh] overflow-y-auto">
                 {children}
               </div>
 
               {/* Footer */}
               {footer && (
-                <div className="relative flex items-center justify-end space-x-3 px-6 py-4 border-t border-gray-200/80 bg-gray-50/80 backdrop-blur">
+                <div className="relative z-[1] flex items-center justify-end space-x-3 px-6 py-4 border-t border-slate-200 bg-slate-50">
                   {footer}
                 </div>
               )}

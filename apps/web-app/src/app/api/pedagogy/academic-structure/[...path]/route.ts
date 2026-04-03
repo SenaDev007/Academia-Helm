@@ -4,16 +4,18 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { nestDoublePrefixedControllerUrl, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 import { readProxyBodyText } from '@/lib/api/pedagogy-proxy-body';
 
 /** Cookies / session lus côté serveur : évite une réponse 401 si la route est traitée comme statique. */
 export const dynamic = 'force-dynamic';
 
-function buildBackendUrl(apiBase: string, pathSegments: string[]): string {
+function buildBackendUrl(pathSegments: string[]): string {
   const path = pathSegments.length ? pathSegments.join('/') : '';
-  return `${apiBase}/api/pedagogy/academic-structure${path ? `/${path}` : ''}`;
+  return nestDoublePrefixedControllerUrl(
+    `pedagogy/academic-structure${path ? `/${path}` : ''}`,
+  );
 }
 
 async function parseBackendJson(res: Response): Promise<unknown> {
@@ -31,8 +33,7 @@ async function forward(
   pathSegments: string[],
   method: string
 ) {
-  const apiBase = getApiBaseUrlForRoutes();
-  const url = new URL(buildBackendUrl(apiBase, pathSegments));
+  const url = new URL(buildBackendUrl(pathSegments));
   request.nextUrl.searchParams.forEach((value, key) => {
     url.searchParams.append(key, value);
   });

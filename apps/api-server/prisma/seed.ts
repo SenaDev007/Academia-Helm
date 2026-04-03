@@ -27,7 +27,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import * as dotenv from 'dotenv';
 import { resolve } from 'path';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { execSync } from 'child_process';
 
 // Charger les variables d'environnement depuis .env

@@ -3,7 +3,7 @@
  * Usage: npx ts-node prisma/generate-seed-cspeb-sql.ts
  */
 
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import * as fs from 'fs';
 import * as path from 'path';
 

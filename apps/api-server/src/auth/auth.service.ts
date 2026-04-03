@@ -1,11 +1,16 @@
 import { Injectable, UnauthorizedException, ForbiddenException, NotFoundException, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../database/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { LoginDto, PortalType } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+
+export type SessionPersistMeta = {
+  ipAddress?: string;
+  userAgent?: string;
+};
 
 @Injectable()
 export class AuthService {
@@ -18,7 +23,7 @@ export class AuthService {
     private configService: ConfigService,
   ) {}
 
-  async register(registerDto: RegisterDto) {
+  async register(registerDto: RegisterDto, meta?: SessionPersistMeta) {
     // Hash password
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
 
@@ -30,6 +35,7 @@ export class AuthService {
 
     // Generate tokens
     const tokens = this.generateTokens(user);
+    const sessionRecord = await this.persistWebSession(user.id, tokens.refreshToken, meta);
 
     return {
       user: {
@@ -40,10 +46,36 @@ export class AuthService {
         tenantId: user.tenantId,
       },
       ...tokens,
+      ...(sessionRecord ? { serverSessionId: sessionRecord.id } : {}),
     };
   }
 
-  async login(loginDto: LoginDto) {
+  /**
+   * Enregistre la session côté PostgreSQL (table sessions), alignée sur le refresh token JWT.
+   */
+  private async persistWebSession(
+    userId: string,
+    refreshToken: string,
+    meta?: SessionPersistMeta,
+  ): Promise<{ id: string } | null> {
+    try {
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      return await this.prisma.session.create({
+        data: {
+          userId,
+          token: refreshToken,
+          expiresAt,
+          ipAddress: meta?.ipAddress ?? null,
+          userAgent: meta?.userAgent ?? null,
+        },
+      });
+    } catch (err: any) {
+      this.logger.warn(`persistWebSession failed: ${err?.message ?? err}`);
+      return null;
+    }
+  }
+
+  async login(loginDto: LoginDto, meta?: SessionPersistMeta) {
     try {
       // Find user by email
       const user = await this.usersService.findByEmail(loginDto.email);
@@ -70,7 +102,8 @@ export class AuthService {
       
       // Generate tokens SANS tenantId pour PLATFORM_OWNER
       const tokens = this.generateTokens(user);
-      
+      const sessionRecord = await this.persistWebSession(user.id, tokens.refreshToken, meta);
+
       return {
         user: {
           id: user.id,
@@ -81,6 +114,7 @@ export class AuthService {
           isPlatformOwner: true,
         },
         ...tokens,
+        ...(sessionRecord ? { serverSessionId: sessionRecord.id } : {}),
       };
     }
 
@@ -135,6 +169,8 @@ export class AuthService {
       ? this.generateEnrichedToken(user, loginDto.tenant_id)
       : this.generateTokens(user);
 
+      const sessionRecord = await this.persistWebSession(user.id, tokens.refreshToken, meta);
+
       return {
         user: {
           id: user.id,
@@ -146,6 +182,7 @@ export class AuthService {
           isPlatformOwner: this.isPlatformOwner(user),
         },
         ...tokens,
+        ...(sessionRecord ? { serverSessionId: sessionRecord.id } : {}),
       };
     } catch (error: any) {
       // ✅ Gestion d'erreur Prisma avec message clair
@@ -387,7 +424,7 @@ export class AuthService {
    * 
    * Vérifie que l'utilisateur a le droit d'accéder à ce tenant
    */
-  async selectTenant(userId: string, tenantId: string): Promise<any> {
+  async selectTenant(userId: string, tenantId: string, meta?: SessionPersistMeta): Promise<any> {
     const user = await this.usersService.findOne(userId);
     if (!user) {
       throw new NotFoundException('User not found');
@@ -428,6 +465,7 @@ export class AuthService {
 
     // Générer un nouveau token enrichi avec le tenant
     const tokens = this.generateEnrichedToken(user, tenantId, academicYearId);
+    const sessionRecord = await this.persistWebSession(userId, tokens.refreshToken, meta);
 
     // Logger la sélection de tenant
     this.logger.log(
@@ -458,6 +496,7 @@ export class AuthService {
         endDate: academicYear.endDate,
       } : null,
       ...tokens,
+      ...(sessionRecord ? { serverSessionId: sessionRecord.id } : {}),
     };
   }
 }

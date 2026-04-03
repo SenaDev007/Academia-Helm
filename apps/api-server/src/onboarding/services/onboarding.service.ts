@@ -27,7 +27,7 @@ import { OrionAlertsService } from '../../orion/services/orion-alerts.service';
 import { PricingService } from '../../billing/services/pricing.service';
 import { OtpService } from './otp.service';
 import { DRAFT_EXPIRY_HOURS } from './draft-cleanup.service';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()

@@ -15,14 +15,13 @@ RUN apt-get update -qq && \
     rm -rf /var/lib/apt/lists
 
 COPY package-lock.json package.json ./
-
-# ⚠️ CRITIQUE : copier prisma AVANT npm ci
-# sinon postinstall échoue
 COPY prisma ./prisma/
+RUN test -f prisma/schema.prisma
 
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 
-RUN npm ci --include=dev
+# --ignore-scripts : évite postinstall (prisma generate) avant que prisma soit copié si l’ordre des layers diverge
+RUN npm ci --ignore-scripts --include=dev
 
 RUN npx prisma generate
 

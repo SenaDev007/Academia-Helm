@@ -45,6 +45,13 @@ export interface SyncState {
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 1000;
 
+function clientBearerHeaders(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  const raw = localStorage.getItem('accessToken');
+  const t = raw?.trim();
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
 async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
   let lastError: Error | null = null;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -54,6 +61,7 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
+          ...clientBearerHeaders(),
           ...options.headers,
         },
       });

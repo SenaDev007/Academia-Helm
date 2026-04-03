@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import type { NextRequest } from 'next/server';
 
 // Endpoint mock pour les features par tenant.
@@ -7,9 +6,9 @@ import type { NextRequest } from 'next/server';
 
 export async function GET(
   _req: NextRequest,
-  context: { params: { code: string } },
+  context: { params: Promise<{ code: string }> },
 ) {
-  const { code } = context.params;
+  const { code } = await context.params;
 
   // Activer ou non certaines features en dur si besoin
   if (code === 'BILINGUAL_TRACK') {

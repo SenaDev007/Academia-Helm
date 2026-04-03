@@ -118,6 +118,15 @@ export function AcademicStructureWorkspace() {
     return s ? { tenant_id: s } : ({} as Record<string, string>);
   }, [user?.role, searchParams, tenant?.id]);
 
+  /** Lien Paramètres → onglet Structure (activation des niveaux officiels). */
+  const settingsHref = useMemo(() => {
+    const params = new URLSearchParams();
+    if (tenantQuery.tenant_id) params.set('tenant_id', tenantQuery.tenant_id);
+    params.set('tab', 'structure');
+    const q = params.toString();
+    return `/app/settings${q ? `?${q}` : ''}`;
+  }, [tenantQuery]);
+
   const [tab, setTab] = useState<TabId>('levels');
   const [notice, setNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 

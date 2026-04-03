@@ -3,13 +3,15 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 const API_URL = getApiBaseUrlForRoutes();
 
 function buildBackendUrl(pathSegments: string[]): string {
   const path = pathSegments.length ? pathSegments.join('/') : '';
-  return `${API_URL}/api/sync${path ? `/${path}` : ''}`;
+  // getApiBaseUrl() se termine déjà par /api — ne pas dupliquer le segment /api
+  return `${API_URL}/sync${path ? `/${path}` : ''}`;
 }
 
 export async function GET(
@@ -17,12 +19,8 @@ export async function GET(
   { params }: { params: Promise<{ path: string[] }> }
 ) {
   const { path } = await params;
-  const url = buildBackendUrl(path);
-  const headers: HeadersInit = { 'Content-Type': 'application/json' };
-  const auth = request.headers.get('authorization') || request.headers.get('Authorization');
-  const cookie = request.headers.get('cookie');
-  if (auth) headers['Authorization'] = auth;
-  if (cookie) headers['cookie'] = cookie;
+  const url = normalizeApiUrl(buildBackendUrl(path));
+  const headers = await getProxyAuthHeaders(request);
 
   try {
     const res = await fetch(url, { method: 'GET', headers, cache: 'no-store' });
@@ -39,12 +37,8 @@ export async function POST(
   { params }: { params: Promise<{ path: string[] }> }
 ) {
   const { path } = await params;
-  const url = buildBackendUrl(path);
-  const headers: HeadersInit = { 'Content-Type': 'application/json' };
-  const auth = request.headers.get('authorization') || request.headers.get('Authorization');
-  const cookie = request.headers.get('cookie');
-  if (auth) headers['Authorization'] = auth;
-  if (cookie) headers['cookie'] = cookie;
+  const url = normalizeApiUrl(buildBackendUrl(path));
+  const headers = await getProxyAuthHeaders(request);
 
   try {
     const body = await request.text();

@@ -65,6 +65,11 @@ function formatRoleDisplayName(name: string | null | undefined): string {
 type TabId = 'identity' | 'academic-year' | 'structure' | 'bilingual' | 'features' | 
              'roles' | 'communication' | 'billing' | 'security' | 'seals' | 'orion' | 'atlas' | 'offline' | 'appareils' | 'history';
 
+const SETTINGS_TAB_IDS: TabId[] = [
+  'identity', 'academic-year', 'structure', 'bilingual', 'features',
+  'roles', 'communication', 'billing', 'security', 'seals', 'orion', 'atlas', 'offline', 'appareils', 'history',
+];
+
 const SCHOOL_IDENTITY_UPDATED_EVENT = 'settings-school-identity-updated';
 
 interface Toast {
@@ -96,6 +101,13 @@ export default function SettingsPage() {
   const [loadingTenantsPO, setLoadingTenantsPO] = useState(false);
 
   const [activeTab, setActiveTab] = useState<TabId>('identity');
+
+  const tabFromUrl = searchParams.get('tab');
+  useEffect(() => {
+    if (tabFromUrl && SETTINGS_TAB_IDS.includes(tabFromUrl as TabId)) {
+      setActiveTab(tabFromUrl as TabId);
+    }
+  }, [tabFromUrl]);
   /** Prêt après première application du bootstrap (évite flash formulaires vides). */
   const [pageReady, setPageReady] = useState(false);
   const shouldApplyBootstrapRef = useRef(true);

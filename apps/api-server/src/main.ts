@@ -1,9 +1,10 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, RequestMethod, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const logger = new Logger('Bootstrap');
+  const app = await NestFactory.create(AppModule, { logger: ['error', 'warn', 'log'] });
 
   app.enableCors({
     origin: [
@@ -20,12 +21,17 @@ async function bootstrap() {
     }),
   );
 
-  app.setGlobalPrefix('api');
+  // Préfixe /api pour le métier ; / et /health restent à la racine (Railway, Fly, load balancers)
+  app.setGlobalPrefix('api', {
+    exclude: [
+      { path: '/', method: RequestMethod.GET },
+      { path: 'health', method: RequestMethod.GET },
+    ],
+  });
 
-  // ⚠️ CRITIQUE Render
-  const port = process.env.PORT ?? 3000;
+  const port = Number(process.env.PORT ?? process.env.API_PORT ?? 3000);
   await app.listen(port, '0.0.0.0');
-  console.log(`API démarrée sur le port ${port}`);
+  logger.log(`Academia Helm API listening on http://0.0.0.0:${port} (PORT=${process.env.PORT ?? 'unset'})`);
 }
 bootstrap();
 

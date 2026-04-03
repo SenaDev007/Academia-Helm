@@ -3,7 +3,6 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -70,8 +69,6 @@ import { ContextInterceptor } from './common/interceptors/context.interceptor';
 import { SchoolLevelEnforcementInterceptor } from './common/interceptors/school-level-enforcement.interceptor';
 import { AcademicYearEnforcementInterceptor } from './common/interceptors/academic-year-enforcement.interceptor';
 import { PerformanceLoggingInterceptor } from './common/interceptors/performance-logging.interceptor';
-import { HealthController } from './health/health.controller';
-
 @Module({
   imports: [
     // Configuration
@@ -237,9 +234,8 @@ import { HealthController } from './health/health.controller';
     // Avis / témoignages (landing Trustpilot)
     ReviewsModule,
   ],
-  controllers: [AppController, HealthController],
+  controllers: [AppController],
   providers: [
-    AppService,
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard, // ✅ Authentification JWT (seul guard global)

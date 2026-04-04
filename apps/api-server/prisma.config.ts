@@ -26,4 +26,8 @@ export default defineConfig({
     // Prisma 7 : URL directe (migrations) — même repli que pour le build CI
     directUrl,
   },
+  // Prisma 7 : `prisma db seed` lit la commande ici (plus seulement package.json)
+  migrations: {
+    seed: 'npx ts-node prisma/seed.ts',
+  },
 })

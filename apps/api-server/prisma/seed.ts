@@ -41,7 +41,10 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
-console.log('🔍 DATABASE_URL chargée:', process.env.DATABASE_URL ? `${process.env.DATABASE_URL.substring(0, 30)}...` : 'NON DÉFINIE');
+console.log(
+  '🔍 DATABASE_URL:',
+  process.env.DATABASE_URL ? 'définie (masquée)' : 'NON DÉFINIE',
+);
 
 // Créer un pool PostgreSQL et l'adapter Prisma (comme dans PrismaService)
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });

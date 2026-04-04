@@ -79,7 +79,7 @@ export class BillingController {
    * 
    * ⚠️ CRITIQUE : Route publique, vérification signature obligatoire
    * 
-   * Endpoint : POST /billing/fedapay/webhook
+   * Endpoint : POST /billing/fedapay/webhook (URL publique prod : https://api.academiahelm.com/api/billing/fedapay/webhook)
    */
   @Public()
   @Post('fedapay/webhook')

@@ -397,6 +397,27 @@ export class FedaPayService implements OnModuleInit {
   }
 
   /**
+   * Base publique de l’API pour les webhooks FedaPay (joignable depuis Internet).
+   * Ordre : FEDAPAY_WEBHOOK_BASE_URL → PUBLIC_API_URL → API_URL.
+   * Ex. prod : https://api.academiahelm.com → https://api.academiahelm.com/api/billing/fedapay/webhook
+   */
+  private getFedaPayWebhookApiBaseUrl(): string {
+    return (
+      this.configService.get<string>('FEDAPAY_WEBHOOK_BASE_URL') ||
+      this.configService.get<string>('PUBLIC_API_URL') ||
+      this.configService.get<string>('API_URL') ||
+      ''
+    )
+      .trim()
+      .replace(/\/$/, '');
+  }
+
+  /** URL complète du webhook (identique à celle déclarée dans le dashboard FedaPay). */
+  private buildFedaPayWebhookUrl(): string {
+    return `${this.getFedaPayWebhookApiBaseUrl()}/api/billing/fedapay/webhook`;
+  }
+
+  /**
    * Crée une transaction FedaPay en utilisant le SDK officiel.
    * 
    * Important : la transaction est toujours créée même si les infos client sont incomplètes
@@ -756,7 +777,7 @@ export class FedaPayService implements OnModuleInit {
 
     const callbackUrl = `${frontendUrl}/signup/confirmation?draftId=${encodeURIComponent(draftId)}&paymentId=${encodeURIComponent(payment.id)}`;
     const cancelUrl = `${frontendUrl}/signup/annulation?draftId=${encodeURIComponent(draftId)}`;
-    const webhookUrl = `${apiUrl}/api/billing/fedapay/webhook`;
+    const webhookUrl = this.buildFedaPayWebhookUrl();
 
     const imageUrl = `${frontendUrl}/images/Souscription%20initiale.jpg`;
 
@@ -974,7 +995,7 @@ export class FedaPayService implements OnModuleInit {
       throw new BadRequestException('FRONTEND_URL et API_URL doivent être configurés');
     }
     const callbackUrl = `${frontendUrl}/billing/renewal/callback?subscriptionId=${subscriptionId}&billingEventId=${billingEvent.id}`;
-    const webhookUrl = `${apiUrl}/api/billing/fedapay/webhook`;
+    const webhookUrl = this.buildFedaPayWebhookUrl();
 
     // URL de l'image pour l'abonnement mensuel
     const imageUrl = `${frontendUrl}/images/Abonnement%20mensuel.jpg`;
@@ -1251,7 +1272,7 @@ export class FedaPayService implements OnModuleInit {
       throw new BadRequestException('FRONTEND_URL et API_URL doivent être configurés');
     }
     const callbackUrl = `${frontendUrl}/billing/renewal/callback?subscriptionId=${subscriptionId}&billingEventId=${billingEvent.id}`;
-    const webhookUrl = `${apiUrl}/api/billing/fedapay/webhook`;
+    const webhookUrl = this.buildFedaPayWebhookUrl();
 
     // URL de l'image pour l'abonnement mensuel
     const imageUrl = `${frontendUrl}/images/Abonnement%20mensuel.jpg`;

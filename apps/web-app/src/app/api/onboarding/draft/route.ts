@@ -47,7 +47,22 @@ export async function POST(request: NextRequest) {
       throw fetchError;
     }
 
-    const data = await response.json();
+    const raw = await response.text();
+    let data: Record<string, unknown> = {};
+    if (raw) {
+      try {
+        data = JSON.parse(raw) as Record<string, unknown>;
+      } catch {
+        console.error('❌ [Onboarding Draft] Réponse non-JSON du backend:', raw.slice(0, 500));
+        return NextResponse.json(
+          {
+            error: 'Réponse invalide du serveur API',
+            message: `HTTP ${response.status} — le backend n’a pas renvoyé du JSON (vérifiez les migrations Prisma et les logs Railway).`,
+          },
+          { status: 502 },
+        );
+      }
+    }
 
     if (!response.ok) {
       console.error('❌ [Onboarding Draft] Backend error:', {

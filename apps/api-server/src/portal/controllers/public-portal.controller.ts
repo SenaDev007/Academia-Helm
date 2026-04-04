@@ -5,7 +5,7 @@
  */
 
 import { Controller, Get, Query, Req } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { Public } from '../../auth/decorators/public.decorator';
 import { SchoolSearchService } from '../services/school-search.service';
 
@@ -18,10 +18,12 @@ export class PublicPortalController {
 
   /**
    * Liste tous les établissements actifs (pour sélecteur)
+   * SkipThrottle : le front appelle via le BFF Next (Vercel) → Nest voit peu d’IPs sortantes ;
+   * un plafond strict (ex. 10/min) faisait partager le quota entre tous les utilisateurs (portail vide / erreurs).
    */
   @Public() // ✅ Décorateur au niveau méthode pour garantir la détection
   @Get('list')
-  @Throttle({ medium: { limit: 10, ttl: 60000 } }) // 10 requêtes par minute
+  @SkipThrottle()
   async listAllSchools() {
     console.log('[PublicPortalController] listAllSchools called - Route is public');
     return this.schoolSearchService.listAllSchools();
@@ -33,7 +35,7 @@ export class PublicPortalController {
    */
   @Public() // ✅ Décorateur au niveau méthode pour garantir la détection
   @Get('search')
-  @Throttle({ medium: { limit: 20, ttl: 60000 } }) // 20 requêtes par minute
+  @Throttle({ medium: { limit: 120, ttl: 60000 } })
   async searchSchools(
     @Query('q') searchTerm: string,
     @Req() request: any,

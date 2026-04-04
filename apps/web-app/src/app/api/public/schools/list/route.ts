@@ -7,11 +7,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 
-const API_BASE_URL = getApiBaseUrlForRoutes();
-
 export async function GET(request: NextRequest) {
   try {
-    // Construire l'URL correctement
+    const API_BASE_URL = getApiBaseUrlForRoutes();
+    // Construire l'URL correctement (évalué à chaque requête : env Vercel / cold start)
     const apiUrl = API_BASE_URL.endsWith('/api') 
       ? `${API_BASE_URL}/public/schools/list`
       : `${API_BASE_URL}/api/public/schools/list`;

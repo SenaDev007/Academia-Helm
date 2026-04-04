@@ -18,7 +18,13 @@
  *   - npx ts-node prisma/seed.ts (depuis apps/api-server)
  * 
  * ⚠️ Assurez-vous que DATABASE_URL est configurée dans .env
- * 
+ *
+ * Synchronisation schéma (dev uniquement) :
+ *   Si le schéma n’est pas à jour (ex. erreur P2022), le seed peut lancer
+ *   `prisma db push` **uniquement** lorsque `SEED_AUTO_DB_PUSH=true`.
+ *   Par défaut cette étape est désactivée : utilisez `prisma migrate deploy`
+ *   en staging/prod, ou activez la variable en local si vous en avez besoin.
+ *
  * ============================================================================
  */
 
@@ -29,6 +35,11 @@ import * as dotenv from 'dotenv';
 import { resolve } from 'path';
 import * as bcrypt from 'bcryptjs';
 import { execSync } from 'child_process';
+
+function isSeedAutoDbPushEnabled(): boolean {
+  const v = process.env.SEED_AUTO_DB_PUSH?.trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes';
+}
 
 // Charger les variables d'environnement depuis .env
 dotenv.config({ path: resolve(__dirname, '../.env') });
@@ -780,8 +791,25 @@ const runSeedWithAutoSchemaFix = async () => {
     const isMissingColumn = code === 'P2022' || /column.*does not exist/i.test(String(e?.message ?? ''));
 
     if (!didAutoFix && isMissingColumn) {
+      if (!isSeedAutoDbPushEnabled()) {
+        console.error(
+          '\n❌ Schéma BDD non aligné avec le client Prisma (ex. colonne manquante / P2022).',
+        );
+        console.error(
+          '   • Staging / prod : exécutez `npx prisma migrate deploy` puis relancez le seed.',
+        );
+        console.error(
+          '   • Dev local : définissez SEED_AUTO_DB_PUSH=true pour autoriser un `prisma db push` automatique.',
+        );
+        console.error('\n   Détail :', e?.message ?? e);
+        await prisma.$disconnect().catch(() => {});
+        process.exit(1);
+      }
+
       didAutoFix = true;
-      console.log('\n🧠 Colonnes manquantes détectées (Prisma P2022). Synchronisation automatique de la BDD...');
+      console.log(
+        '\n🧠 Colonnes manquantes détectées (Prisma P2022). SEED_AUTO_DB_PUSH=true → synchronisation BDD (db push)...',
+      );
 
       // `db push` peut refuser s’il y a des risques de data loss (ex: ajouts de contraintes uniques).
       // Comme on est en contexte "seed/test", on vérifie d'abord les doublons sur les colonnes

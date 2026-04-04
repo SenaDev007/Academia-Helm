@@ -16,6 +16,7 @@
  */
 
 import { getAppEnvironment, getAppBaseUrl, type AppEnvironment } from './app-base-url';
+import { API_URL } from '@/lib/api-config';
 
 /**
  * Configuration de redirection tenant
@@ -180,8 +181,7 @@ async function logTenantRedirect(log: RedirectLog): Promise<void> {
   try {
     // En production, envoyer au backend pour stockage
     if (getAppEnvironment() !== 'local') {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || '/api';
-      await fetch(`${apiUrl}/portal/redirect-log`, {
+      await fetch(`${API_URL}/portal/redirect-log`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -300,8 +300,7 @@ export async function hasTenantAccess(
   }
   
   try {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || '/api';
-    const response = await fetch(`${apiUrl}/auth/check-tenant-access`, {
+    const response = await fetch(`${API_URL}/auth/check-tenant-access`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

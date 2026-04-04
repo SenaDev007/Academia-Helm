@@ -1,13 +1,13 @@
 import type { Article } from '@/types/article';
 import { articlesData } from '@/data/articles';
+import { API_URL } from '@/lib/api-config';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
 const USE_API = process.env.NEXT_PUBLIC_USE_CMS === 'true';
 
 export async function getAllArticles(): Promise<Article[]> {
   if (USE_API) {
     try {
-      const res = await fetch(`${API_URL}/api/articles`, { next: { revalidate: 3600 } });
+      const res = await fetch(`${API_URL}/articles`, { next: { revalidate: 3600 } });
       if (!res.ok) throw new Error();
       return res.json();
     } catch {
@@ -20,7 +20,7 @@ export async function getAllArticles(): Promise<Article[]> {
 export async function getArticle(slug: string): Promise<Article | null> {
   if (USE_API) {
     try {
-      const res = await fetch(`${API_URL}/api/articles/${slug}`, { next: { revalidate: 3600 } });
+      const res = await fetch(`${API_URL}/articles/${slug}`, { next: { revalidate: 3600 } });
       if (!res.ok) throw new Error();
       return res.json();
     } catch {

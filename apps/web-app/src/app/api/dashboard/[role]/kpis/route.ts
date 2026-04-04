@@ -5,15 +5,14 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { role: string } }
+  { params }: { params: Promise<{ role: string }> }
 ) {
   try {
-    const { role } = params;
+    const { role } = await params;
     const authHeader = request.headers.get('authorization');
     
     if (!authHeader) {
@@ -26,7 +25,8 @@ export async function GET(
     const searchParams = request.nextUrl.searchParams;
     const academicYearId = searchParams.get('academicYearId');
 
-    const url = new URL(`${API_URL}/api/dashboard/${role}/kpis`);
+    const apiBase = getApiBaseUrlForRoutes();
+    const url = new URL(`${apiBase}/dashboard/${role}/kpis`);
     if (academicYearId) {
       url.searchParams.append('academicYearId', academicYearId);
     }

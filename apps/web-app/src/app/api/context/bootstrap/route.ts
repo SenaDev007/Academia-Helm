@@ -9,8 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 
 export async function GET(request: NextRequest) {
   try {
@@ -24,7 +23,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Appeler l'API backend
-    const response = await fetch(`${API_URL}/api/context/bootstrap`, {
+    const apiBase = getApiBaseUrlForRoutes();
+    const response = await fetch(`${apiBase}/context/bootstrap`, {
       method: 'GET',
       headers: {
         'Authorization': authHeader,

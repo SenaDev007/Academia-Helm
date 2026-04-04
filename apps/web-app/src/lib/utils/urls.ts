@@ -23,6 +23,34 @@ export function normalizeToNestApiRoot(url: string): string {
   return `${u}/api`;
 }
 
+/** Origine Nest en local pour les appels serveur → serveur (évite la boucle proxy Next). */
+function getLocalNestApiRootFallback(): string {
+  const port = process.env.API_PORT || '3000';
+  return `http://127.0.0.1:${port}/api`;
+}
+
+/**
+ * True si l’URL API pointe vers le même hôte:port que le front Next en local
+ * (ex. NEXT_PUBLIC_API_URL=http://localhost:3001 alors que Next écoute sur 3001).
+ * Dans ce cas, fetch depuis une route API Next réappelle Next → timeout.
+ */
+function localNestApiConflictsWithNextWeb(nestApiRoot: string): boolean {
+  if (getAppEnvironment() !== 'local') return false;
+  try {
+    const app = new URL(getAppBaseUrl());
+    const apiOriginStr = nestApiRoot.replace(/\/api\/?$/, '');
+    const api = new URL(apiOriginStr);
+    const loopback = (h: string) =>
+      h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '::1';
+    const normHost = (h: string) => (loopback(h) ? '__loopback__' : h);
+    const appPort = app.port || (app.protocol === 'https:' ? '443' : '80');
+    const apiPort = api.port || (api.protocol === 'https:' ? '443' : '80');
+    return normHost(app.hostname) === normHost(api.hostname) && appPort === apiPort;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Récupère l'URL de base de l'API
  * 
@@ -36,7 +64,11 @@ export function getApiBaseUrl(): string {
   // PRIORITÉ 1 : Variable d'environnement explicite (TOUJOURS UTILISÉE SI DÉFINIE)
   const envUrl = process.env.NEXT_PUBLIC_API_URL;
   if (envUrl) {
-    return normalizeToNestApiRoot(envUrl);
+    const normalized = normalizeToNestApiRoot(envUrl);
+    if (localNestApiConflictsWithNextWeb(normalized)) {
+      return getLocalNestApiRootFallback();
+    }
+    return normalized;
   }
 
   if (isNextProductionBuild()) {

@@ -3,6 +3,8 @@ generator client {
   previewFeatures = ["postgresqlExtensions"]
 }
 
+// Prisma 7 : les URLs ne sont plus dans ce fichier — utiliser prisma.config.ts
+// (DATABASE_URL pooler Neon + DIRECT_URL hôte direct pour migrate).
 datasource db {
   provider   = "postgresql"
   extensions = [uuid_ossp(map: "uuid-ossp", schema: "public")]

@@ -21,12 +21,18 @@ import { DatabaseTriggersBootstrapService } from './database-triggers-bootstrap.
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
-        // ⚠️ IMPORTANT:
-        // - `DIRECT_URL` (5432) est généralement le meilleur choix pour TypeORM en local
-        // - `DATABASE_URL` peut parfois pointer vers un pooler/port différent
-        const directUrl = configService.get<string>('DIRECT_URL');
-        const databaseUrl = configService.get<string>('DATABASE_URL');
+        const databaseUrl =
+          configService.get<string>('DATABASE_URL') || process.env.DATABASE_URL;
+        const directUrl =
+          configService.get<string>('DIRECT_URL') || process.env.DIRECT_URL;
+        // Neon : préférer la connexion directe pour TypeORM si les deux sont définies
         const typeOrmUrl = directUrl || databaseUrl;
+
+        if (!typeOrmUrl?.trim()) {
+          throw new Error(
+            'DATABASE_URL (ou DIRECT_URL) doit être défini — requis pour Neon / Railway ; pas de fallback localhost.',
+          );
+        }
 
         const base = {
           type: 'postgres' as const,
@@ -34,7 +40,8 @@ import { DatabaseTriggersBootstrapService } from './database-triggers-bootstrap.
           synchronize: false,
           logging: false,
           ssl:
-            configService.get<string>('DB_SSL') === 'true'
+            configService.get<string>('DB_SSL') === 'true' ||
+            /\.neon\.tech|sslmode=require|sslmode=verify/i.test(typeOrmUrl)
               ? { rejectUnauthorized: false }
               : false,
           autoLoadEntities: true,
@@ -48,20 +55,9 @@ import { DatabaseTriggersBootstrapService } from './database-triggers-bootstrap.
           },
         };
 
-        if (typeOrmUrl) {
-          return {
-            ...base,
-            url: typeOrmUrl,
-          };
-        }
-
         return {
           ...base,
-          host: configService.get<string>('DB_HOST', 'localhost'),
-          port: configService.get<number>('DB_PORT', 5432),
-          username: configService.get<string>('DB_USERNAME', 'postgres'),
-          password: configService.get<string>('DB_PASSWORD', 'postgres'),
-          database: configService.get<string>('DB_DATABASE', 'academia_helm'),
+          url: typeOrmUrl,
         };
       },
       inject: [ConfigService],

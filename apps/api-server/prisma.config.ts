@@ -15,6 +15,7 @@ import { defineConfig } from 'prisma/config'
 const BUILD_TIME_URL =
   'postgresql://prisma_build:prisma_build@127.0.0.1:5432/prisma_build?schema=public'
 
+/** Équivalent Neon / Railway : pooler pour l’app, direct pour migrate (repli sur DATABASE_URL). */
 const databaseUrl = process.env.DATABASE_URL || BUILD_TIME_URL
 const directUrl =
   process.env.DIRECT_URL || process.env.DATABASE_URL || BUILD_TIME_URL
@@ -23,7 +24,6 @@ export default defineConfig({
   schema: 'prisma/schema.prisma',
   datasource: {
     url: databaseUrl,
-    // Prisma 7 : URL directe (migrations) — même repli que pour le build CI
     directUrl,
   },
   // Prisma 7 : `prisma db seed` lit la commande ici (plus seulement package.json)

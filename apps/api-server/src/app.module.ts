@@ -39,6 +39,7 @@ import { OrionModule } from './orion/orion.module';
 import { QhsModule } from './qhs/qhs.module';
 import { SettingsModule } from './settings/settings.module';
 import { MeetingsModule } from './meetings/meetings.module';
+import { MediaModule } from './media/media.module';
 import { ModulesComplementairesModule } from './modules-complementaires/modules-complementaires.module';
 import { KpiObjectivesModule } from './kpi-objectives/kpi-objectives.module';
 import { PedagogyModule } from './pedagogy/pedagogy.module';
@@ -180,6 +181,9 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     
     // Module Transversal — Réunions (Administratives, Pédagogiques & Parents)
     MeetingsModule,
+
+    // Médias — optimisation d’images (Sharp), réutilisable plateforme
+    MediaModule,
     
     // Module 9 - Modules Complémentaires
     ModulesComplementairesModule,

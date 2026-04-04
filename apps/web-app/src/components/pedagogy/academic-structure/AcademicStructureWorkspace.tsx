@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  BookOpen,
   Building2,
   Copy,
   GraduationCap,
@@ -67,12 +68,26 @@ interface AcademicClassRow {
   room?: { id: string; roomCode: string; roomName: string } | null;
 }
 
+interface SeriesSubjectLink {
+  id: string;
+  coefficient: number;
+  weeklyHours: number;
+  subject: { id: string; name: string; code?: string };
+}
+
 interface SeriesRow {
   id: string;
   name: string;
   description?: string | null;
   isActive: boolean;
-  level?: { name: string };
+  level?: { id?: string; name: string };
+  seriesSubjects?: SeriesSubjectLink[];
+}
+
+interface SubjectCatalogRow {
+  id: string;
+  name: string;
+  code: string;
 }
 
 interface RoomRow {
@@ -205,6 +220,19 @@ export function AcademicStructureWorkspace() {
   >(null);
   const [seriesForm, setSeriesForm] = useState({ name: '', description: '' });
 
+  const [seriesSubjectsModal, setSeriesSubjectsModal] = useState<SeriesRow | null>(null);
+  const [subjectsCatalog, setSubjectsCatalog] = useState<SubjectCatalogRow[]>([]);
+  const [subjectsCatalogLoading, setSubjectsCatalogLoading] = useState(false);
+  const [seriesSubjectsBusy, setSeriesSubjectsBusy] = useState(false);
+  const [newSeriesSubject, setNewSeriesSubject] = useState({
+    subjectId: '',
+    coefficient: 1,
+    weeklyHours: 2,
+  });
+  const [seriesSubjectEdits, setSeriesSubjectEdits] = useState<
+    Record<string, { coefficient: number; weeklyHours: number }>
+  >({});
+
   const [roomModal, setRoomModal] = useState<
     null | { mode: 'create' } | { mode: 'edit'; room: RoomRow }
   >(null);
@@ -219,8 +247,10 @@ export function AcademicStructureWorkspace() {
   const [trackSaving, setTrackSaving] = useState<Record<string, boolean>>({});
 
   const secondaryLevelId = useMemo(() => {
-    const l = levels.find((x) => /secondaire/i.test(x.name));
-    return l?.id;
+    const byRegex = levels.find((x) => /secondaire/i.test(x.name));
+    if (byRegex) return byRegex.id;
+    const byCanon = levels.find((x) => normalizeLevelKey(x.name) === 'SECONDAIRE');
+    return byCanon?.id;
   }, [levels]);
 
   const loadLevels = useCallback(async () => {
@@ -351,9 +381,15 @@ export function AcademicStructureWorkspace() {
     } else if (tab === 'rooms') loadRooms();
   }, [tab, loadLevels, loadCycles, loadClasses, loadSeries, loadRooms, loadBilingualSettings]);
 
+  /** Recharger les séries quand les niveaux changent (ex. après Paramètres) : `secondaryLevelId` dépend de `levels`. */
   useEffect(() => {
-    if (tab === 'series' && secondaryLevelId) loadSeries();
-  }, [tab, secondaryLevelId, loadSeries]);
+    if (tab !== 'series' || !yearId) return;
+    if (!secondaryLevelId) {
+      setSeries([]);
+      return;
+    }
+    void loadSeries();
+  }, [tab, yearId, secondaryLevelId, loadSeries, levels]);
 
   /** Après changement des niveaux dans Paramètres → Structure (EducationLevel). */
   useEffect(() => {
@@ -365,11 +401,11 @@ export function AcademicStructureWorkspace() {
         void loadCycles();
         void loadClasses();
       }
-      if (tab === 'series') void loadSeries();
+      /** Séries : `loadSeries` est déclenché par l’effet qui dépend de `levels` une fois le GET niveaux terminé. */
     };
     window.addEventListener(SETTINGS_SCHOOL_LEVELS_UPDATED_EVENT, onSettingsLevelsChanged);
     return () => window.removeEventListener(SETTINGS_SCHOOL_LEVELS_UPDATED_EVENT, onSettingsLevelsChanged);
-  }, [tab, loadLevels, loadCycles, loadClasses, loadSeries]);
+  }, [tab, loadLevels, loadCycles, loadClasses]);
 
   /** Après enregistrement Paramètres → Bilingue : pistes + liste classes. */
   useEffect(() => {
@@ -381,15 +417,37 @@ export function AcademicStructureWorkspace() {
     return () => window.removeEventListener(SETTINGS_BILINGUAL_UPDATED_EVENT, onBilingualUpdated);
   }, [tab, loadBilingualSettings, loadClasses]);
 
-  /** Retour sur l’onglet : resynchroniser avec le backend (sync Paramètres → niveaux pédagogiques). */
+  /** Retour sur l’onglet navigateur : resynchroniser avec le backend (Paramètres → pédagogie). */
   useEffect(() => {
     const onVis = () => {
       if (document.visibilityState !== 'visible' || !yearId) return;
       if (tab === 'levels') void loadLevels();
+      else if (tab === 'cycles') {
+        void loadLevels();
+        void loadCycles();
+      } else if (tab === 'classes') {
+        void loadLevels();
+        void loadCycles();
+        void loadClasses();
+        void loadRooms();
+        void loadBilingualSettings();
+      } else if (tab === 'sections') {
+        void loadClasses();
+        void loadBilingualSettings();
+      } else if (tab === 'series') void loadLevels();
+      else if (tab === 'rooms') void loadRooms();
     };
     document.addEventListener('visibilitychange', onVis);
     return () => document.removeEventListener('visibilitychange', onVis);
-  }, [tab, yearId, loadLevels]);
+  }, [
+    tab,
+    yearId,
+    loadLevels,
+    loadCycles,
+    loadClasses,
+    loadRooms,
+    loadBilingualSettings,
+  ]);
 
   const canonicalMissing = useMemo(() => {
     const keys = new Set(levels.map((l) => normalizeLevelKey(l.name)));
@@ -718,6 +776,126 @@ export function AcademicStructureWorkspace() {
       await loadSeries();
     } catch (e) {
       setNotice({ type: 'err', text: (e as Error).message });
+    }
+  };
+
+  const refreshSeriesDetail = useCallback(
+    async (seriesId: string): Promise<SeriesRow | null> => {
+      try {
+        return await pedagogyFetch<SeriesRow>(academicSeriesUrl(seriesId, { ...tenantQuery }));
+      } catch {
+        return null;
+      }
+    },
+    [tenantQuery],
+  );
+
+  const openSeriesSubjectsModal = async (row: SeriesRow) => {
+    setSeriesSubjectsModal(row);
+    setNewSeriesSubject({ subjectId: '', coefficient: 1, weeklyHours: 2 });
+    if (!yearId) return;
+    setSubjectsCatalogLoading(true);
+    try {
+      const qs = new URLSearchParams({ academicYearId: yearId });
+      if (tenantQuery.tenant_id) qs.set('tenant_id', tenantQuery.tenant_id);
+      const data = await pedagogyFetch<SubjectCatalogRow[]>(`/api/subjects?${qs}`);
+      setSubjectsCatalog(Array.isArray(data) ? data : []);
+    } catch {
+      setSubjectsCatalog([]);
+      setNotice({ type: 'err', text: 'Impossible de charger les matières.' });
+    } finally {
+      setSubjectsCatalogLoading(false);
+    }
+    const fresh = await refreshSeriesDetail(row.id);
+    if (fresh) setSeriesSubjectsModal(fresh);
+  };
+
+  const seriesSubjectsFingerprint = useMemo(() => {
+    const subs = seriesSubjectsModal?.seriesSubjects;
+    if (!subs?.length) return '';
+    return subs.map((l) => `${l.id}:${l.coefficient}:${l.weeklyHours}`).join('|');
+  }, [seriesSubjectsModal?.seriesSubjects]);
+
+  useEffect(() => {
+    const subs = seriesSubjectsModal?.seriesSubjects;
+    if (!subs?.length) {
+      setSeriesSubjectEdits({});
+      return;
+    }
+    const m: Record<string, { coefficient: number; weeklyHours: number }> = {};
+    for (const l of subs) {
+      m[l.id] = { coefficient: l.coefficient, weeklyHours: l.weeklyHours };
+    }
+    setSeriesSubjectEdits(m);
+  }, [seriesSubjectsModal?.id, seriesSubjectsFingerprint]);
+
+  const addSubjectToSeries = async () => {
+    if (!seriesSubjectsModal || !yearId || !newSeriesSubject.subjectId.trim()) {
+      setNotice({ type: 'err', text: 'Choisissez une matière à associer.' });
+      return;
+    }
+    setSeriesSubjectsBusy(true);
+    try {
+      await pedagogyFetch(academicSeriesUrl('subjects', { ...tenantQuery }), {
+        method: 'POST',
+        body: {
+          academicYearId: yearId,
+          seriesId: seriesSubjectsModal.id,
+          subjectId: newSeriesSubject.subjectId.trim(),
+          coefficient: Math.max(0, Math.round(Number(newSeriesSubject.coefficient) || 1)),
+          weeklyHours: Math.max(0, Math.round(Number(newSeriesSubject.weeklyHours) || 0)),
+        },
+      });
+      setNotice({ type: 'ok', text: 'Matière ajoutée à la série.' });
+      await loadSeries();
+      const updated = await refreshSeriesDetail(seriesSubjectsModal.id);
+      if (updated) setSeriesSubjectsModal(updated);
+      setNewSeriesSubject((s) => ({ ...s, subjectId: '' }));
+    } catch (e) {
+      setNotice({ type: 'err', text: (e as Error).message });
+    } finally {
+      setSeriesSubjectsBusy(false);
+    }
+  };
+
+  const saveSeriesSubjectLink = async (linkId: string) => {
+    const ed = seriesSubjectEdits[linkId];
+    if (!ed || !seriesSubjectsModal) return;
+    setSeriesSubjectsBusy(true);
+    try {
+      await pedagogyFetch(academicSeriesUrl(`subjects/${linkId}`, { ...tenantQuery }), {
+        method: 'PUT',
+        body: {
+          coefficient: Math.max(0, Math.round(ed.coefficient)),
+          weeklyHours: Math.max(0, Math.round(ed.weeklyHours)),
+        },
+      });
+      setNotice({ type: 'ok', text: 'Coefficients / horaires mis à jour.' });
+      await loadSeries();
+      const updated = await refreshSeriesDetail(seriesSubjectsModal.id);
+      if (updated) setSeriesSubjectsModal(updated);
+    } catch (e) {
+      setNotice({ type: 'err', text: (e as Error).message });
+    } finally {
+      setSeriesSubjectsBusy(false);
+    }
+  };
+
+  const removeSeriesSubjectLink = async (linkId: string) => {
+    if (!seriesSubjectsModal) return;
+    setSeriesSubjectsBusy(true);
+    try {
+      await pedagogyFetch(academicSeriesUrl(`subjects/${linkId}`, { ...tenantQuery }), {
+        method: 'DELETE',
+      });
+      setNotice({ type: 'ok', text: 'Matière retirée de la série.' });
+      await loadSeries();
+      const updated = await refreshSeriesDetail(seriesSubjectsModal.id);
+      if (updated) setSeriesSubjectsModal(updated);
+    } catch (e) {
+      setNotice({ type: 'err', text: (e as Error).message });
+    } finally {
+      setSeriesSubjectsBusy(false);
     }
   };
 
@@ -1291,59 +1469,87 @@ export function AcademicStructureWorkspace() {
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           {!secondaryLevelId ? (
             <p className="p-6 text-sm text-amber-800">
-              Ajoutez d&apos;abord le niveau <strong>Secondaire</strong> pour gérer les séries.
+              Ajoutez d&apos;abord le niveau <strong>Secondaire</strong> (nom contenant « Secondaire » ou libellé
+              canonique SECONDAIRE) pour gérer les séries.
             </p>
           ) : (
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase text-slate-500">
-                  <th className="px-4 py-3">Série</th>
-                  <th className="px-4 py-3">Description</th>
-                  <th className="px-4 py-3">Actif</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {series.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-4 py-10 text-center text-slate-500">
-                      Aucune série (A, C, D…). Ajoutez une série pour le secondaire.
-                    </td>
+            <>
+              <div className="flex flex-col gap-2 border-b border-slate-100 bg-slate-50/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-slate-600">
+                  Les séries du second cycle secondaire (A, C, D…) peuvent être reliées aux{' '}
+                  <strong>matières</strong> de l&apos;année (coefficient et volume horaire hebdomadaire). Les
+                  matières sont issues du référentiel de l&apos;année scolaire active.
+                </p>
+              </div>
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase text-slate-500">
+                    <th className="px-4 py-3">Série</th>
+                    <th className="px-4 py-3">Description</th>
+                    <th className="px-4 py-3">Matières</th>
+                    <th className="px-4 py-3">Actif</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
-                ) : (
-                  series.map((s) => (
-                    <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50/80">
-                      <td className="px-4 py-3 font-medium">{s.name}</td>
-                      <td className="px-4 py-3 text-slate-600">{s.description ?? '—'}</td>
-                      <td className="px-4 py-3">{s.isActive ? 'Oui' : 'Non'}</td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          className="mr-2 text-sm font-medium hover:underline"
-                          style={{ color: PRIMARY }}
-                          onClick={() => {
-                            setSeriesForm({
-                              name: s.name,
-                              description: s.description ?? '',
-                            });
-                            setSeriesModal({ mode: 'edit', row: s });
-                          }}
-                        >
-                          Modifier
-                        </button>
-                        <button
-                          type="button"
-                          className="text-sm text-slate-600 hover:underline"
-                          onClick={() => toggleSeriesActive(s)}
-                        >
-                          {s.isActive ? 'Désactiver' : 'Activer'}
-                        </button>
+                </thead>
+                <tbody>
+                  {series.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-10 text-center text-slate-500">
+                        Aucune série (A, C, D…). Ajoutez une série pour le secondaire.
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    series.map((s) => {
+                      const n = s.seriesSubjects?.length ?? 0;
+                      return (
+                        <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50/80">
+                          <td className="px-4 py-3 font-medium">{s.name}</td>
+                          <td className="px-4 py-3 text-slate-600">{s.description ?? '—'}</td>
+                          <td className="px-4 py-3 text-slate-700">
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                              {n} matière{n !== 1 ? 's' : ''}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">{s.isActive ? 'Oui' : 'Non'}</td>
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              type="button"
+                              className="mr-2 inline-flex items-center gap-1 text-sm font-medium hover:underline"
+                              style={{ color: PRIMARY }}
+                              onClick={() => void openSeriesSubjectsModal(s)}
+                            >
+                              <BookOpen className="h-3.5 w-3.5" />
+                              Matières
+                            </button>
+                            <button
+                              type="button"
+                              className="mr-2 text-sm font-medium hover:underline"
+                              style={{ color: PRIMARY }}
+                              onClick={() => {
+                                setSeriesForm({
+                                  name: s.name,
+                                  description: s.description ?? '',
+                                });
+                                setSeriesModal({ mode: 'edit', row: s });
+                              }}
+                            >
+                              Modifier
+                            </button>
+                            <button
+                              type="button"
+                              className="text-sm text-slate-600 hover:underline"
+                              onClick={() => toggleSeriesActive(s)}
+                            >
+                              {s.isActive ? 'Désactiver' : 'Activer'}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </>
           )}
         </div>
       )}
@@ -1713,6 +1919,223 @@ export function AcademicStructureWorkspace() {
               onChange={(e) => setSeriesForm((f) => ({ ...f, description: e.target.value }))}
             />
           </label>
+        </div>
+      </BaseModal>
+
+      <BaseModal
+        title={
+          seriesSubjectsModal ? `Matières — ${seriesSubjectsModal.name}` : 'Matières de la série'
+        }
+        isOpen={seriesSubjectsModal != null}
+        onClose={() => !seriesSubjectsBusy && setSeriesSubjectsModal(null)}
+        showContext={false}
+        footer={
+          <div className="flex justify-end">
+            <button
+              type="button"
+              disabled={seriesSubjectsBusy}
+              onClick={() => setSeriesSubjectsModal(null)}
+              className="rounded-lg border border-slate-200 px-4 py-2 text-sm disabled:opacity-50"
+            >
+              Fermer
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          {subjectsCatalogLoading ? (
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Chargement des matières…
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto rounded-lg border border-slate-100">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="bg-slate-50 text-left text-xs font-semibold uppercase text-slate-500">
+                      <th className="px-3 py-2">Matière</th>
+                      <th className="px-3 py-2">Coeff.</th>
+                      <th className="px-3 py-2">H/sem.</th>
+                      <th className="px-3 py-2 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {!seriesSubjectsModal?.seriesSubjects?.length ? (
+                      <tr>
+                        <td colSpan={4} className="px-3 py-6 text-center text-slate-500">
+                          Aucune matière liée. Ajoutez-en une ci-dessous.
+                        </td>
+                      </tr>
+                    ) : (
+                      seriesSubjectsModal.seriesSubjects.map((link) => {
+                        const ed = seriesSubjectEdits[link.id];
+                        const coef = ed?.coefficient ?? link.coefficient;
+                        const hrs = ed?.weeklyHours ?? link.weeklyHours;
+                        return (
+                          <tr key={link.id} className="border-t border-slate-100">
+                            <td className="px-3 py-2 font-medium">
+                              {link.subject.name}
+                              {link.subject.code ? (
+                                <span className="ml-1 text-xs font-normal text-slate-500">
+                                  ({link.subject.code})
+                                </span>
+                              ) : null}
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                type="number"
+                                min={0}
+                                className="w-20 rounded border border-slate-200 px-2 py-1"
+                                value={coef}
+                                disabled={seriesSubjectsBusy}
+                                onChange={(e) =>
+                                  setSeriesSubjectEdits((m) => ({
+                                    ...m,
+                                    [link.id]: {
+                                      coefficient: Number(e.target.value) || 0,
+                                      weeklyHours: m[link.id]?.weeklyHours ?? link.weeklyHours,
+                                    },
+                                  }))
+                                }
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                type="number"
+                                min={0}
+                                className="w-20 rounded border border-slate-200 px-2 py-1"
+                                value={hrs}
+                                disabled={seriesSubjectsBusy}
+                                onChange={(e) =>
+                                  setSeriesSubjectEdits((m) => ({
+                                    ...m,
+                                    [link.id]: {
+                                      coefficient: m[link.id]?.coefficient ?? link.coefficient,
+                                      weeklyHours: Number(e.target.value) || 0,
+                                    },
+                                  }))
+                                }
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <button
+                                type="button"
+                                disabled={seriesSubjectsBusy}
+                                className="mr-2 text-xs font-medium hover:underline"
+                                style={{ color: PRIMARY }}
+                                onClick={() => void saveSeriesSubjectLink(link.id)}
+                              >
+                                Enregistrer
+                              </button>
+                              <button
+                                type="button"
+                                disabled={seriesSubjectsBusy}
+                                className="text-xs text-amber-700 hover:underline"
+                                onClick={() => void removeSeriesSubjectLink(link.id)}
+                              >
+                                Retirer
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 p-3">
+                <p className="mb-2 text-xs font-semibold uppercase text-slate-500">
+                  Associer une matière
+                </p>
+                {subjectsCatalog.length === 0 ? (
+                  <p className="text-sm text-slate-600">
+                    Aucune matière pour cette année scolaire. Créez des matières (référentiel) puis revenez
+                    ici.
+                  </p>
+                ) : (
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+                    <label className="block min-w-[200px] flex-1 text-sm">
+                      <span className="text-slate-600">Matière</span>
+                      <select
+                        className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+                        value={newSeriesSubject.subjectId}
+                        disabled={seriesSubjectsBusy}
+                        onChange={(e) =>
+                          setNewSeriesSubject((s) => ({ ...s, subjectId: e.target.value }))
+                        }
+                      >
+                        <option value="">Choisir…</option>
+                        {subjectsCatalog
+                          .filter(
+                            (sub) =>
+                              !seriesSubjectsModal?.seriesSubjects?.some(
+                                (l) => l.subject.id === sub.id,
+                              ),
+                          )
+                          .map((sub) => (
+                            <option key={sub.id} value={sub.id}>
+                              {sub.name} ({sub.code})
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <label className="block w-24 text-sm">
+                      <span className="text-slate-600">Coeff.</span>
+                      <input
+                        type="number"
+                        min={0}
+                        className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+                        value={newSeriesSubject.coefficient}
+                        disabled={seriesSubjectsBusy}
+                        onChange={(e) =>
+                          setNewSeriesSubject((s) => ({
+                            ...s,
+                            coefficient: Number(e.target.value) || 0,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="block w-24 text-sm">
+                      <span className="text-slate-600">H/sem.</span>
+                      <input
+                        type="number"
+                        min={0}
+                        className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+                        value={newSeriesSubject.weeklyHours}
+                        disabled={seriesSubjectsBusy}
+                        onChange={(e) =>
+                          setNewSeriesSubject((s) => ({
+                            ...s,
+                            weeklyHours: Number(e.target.value) || 0,
+                          }))
+                        }
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={
+                        seriesSubjectsBusy ||
+                        !newSeriesSubject.subjectId ||
+                        subjectsCatalog.filter(
+                          (sub) =>
+                            !seriesSubjectsModal?.seriesSubjects?.some(
+                              (l) => l.subject.id === sub.id,
+                            ),
+                        ).length === 0
+                      }
+                      onClick={() => void addSubjectToSeries()}
+                      className="rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      style={{ backgroundColor: PRIMARY }}
+                    >
+                      Ajouter
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </BaseModal>
 

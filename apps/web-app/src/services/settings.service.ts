@@ -746,7 +746,7 @@ export async function getAcademicYearPeriods(academicYearId: string, tenantId?: 
 /** Crée les 3 trimestres par défaut pour une année qui n'a pas encore de périodes. */
 export async function createDefaultAcademicPeriods(academicYearId: string, tenantId?: string | null): Promise<AcademicPeriod[]> {
   const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
-  const res = await fetchWithAuth(`${BASE_URL}/academic-years/${academicYearId}/periods/create-default${qs}`, { method: 'POST' });
+  const res = await fetchWithAuth(`${BASE_URL}/academic-years/${academicYearId}/periods/bootstrap${qs}`, { method: 'POST' });
   return Array.isArray(res) ? res : [];
 }
 

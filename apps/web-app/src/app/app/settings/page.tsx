@@ -37,6 +37,8 @@ import {
   SETTINGS_BILINGUAL_UPDATED_EVENT,
 } from '@/lib/settings/events';
 import { formatGradeLabel } from '@/lib/utils';
+import { compressImageFileToDataUrl } from '@/lib/media';
+import { PlatformImage } from '@/components/media/PlatformImage';
 
 /** Format d’affichage des dates d’année scolaire (conforme calendrier officiel, évite décalage timezone) */
 function toInputDate(date: Date | string | null | undefined): string {
@@ -1620,14 +1622,39 @@ export default function SettingsPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="border border-dashed border-gray-300 rounded-lg p-3 text-center">
                   {identityForm.logoUrl ? (
-                    <NextImage src={identityForm.logoUrl} alt="Logo" width={64} height={64} className="mx-auto object-contain mb-2" unoptimized loading="lazy" />
+                    <PlatformImage
+                      src={identityForm.logoUrl}
+                      alt="Logo"
+                      width={64}
+                      height={64}
+                      className="mx-auto object-contain mb-2"
+                    />
                   ) : (
                     <Image className="w-12 h-12 mx-auto text-gray-300 mb-2" />
                   )}
                   <p className="text-xs font-medium text-gray-700 mb-2">Logo officiel</p>
                   <label className="cursor-pointer inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 rounded hover:bg-gray-200">
                     <Upload className="w-3 h-3" /> Téléverser
-                    <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if(f) { const r = new FileReader(); r.onloadend = () => setIdentityForm({ ...identityForm, logoUrl: r.result as string }); r.readAsDataURL(f); }}} />
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0];
+                        e.target.value = '';
+                        if (!f) return;
+                        try {
+                          const dataUrl = await compressImageFileToDataUrl(f, {
+                            maxEdge: 1024,
+                            quality: 0.82,
+                            mimeType: 'image/jpeg',
+                          });
+                          setIdentityForm((prev) => ({ ...prev, logoUrl: dataUrl }));
+                        } catch {
+                          showToast('error', 'Impossible de traiter cette image. Essayez un autre fichier (JPG, PNG).');
+                        }
+                      }}
+                    />
                   </label>
                 </div>
               </div>
@@ -1644,7 +1671,9 @@ export default function SettingsPage() {
               </h4>
               <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
                 <div className="flex items-start gap-4 mb-4">
-                  {identityForm.logoUrl && <NextImage src={identityForm.logoUrl} alt="Logo" width={64} height={64} className="object-contain" unoptimized loading="lazy" />}
+                  {identityForm.logoUrl && (
+                    <PlatformImage src={identityForm.logoUrl} alt="Logo" width={64} height={64} className="object-contain" />
+                  )}
                   <div className="flex-1">
                     <h5 className="font-bold text-lg">{identityForm.schoolName || 'Nom de l\'établissement'}</h5>
                     {identityForm.schoolAcronym && <p className="text-sm text-gray-600">({identityForm.schoolAcronym})</p>}

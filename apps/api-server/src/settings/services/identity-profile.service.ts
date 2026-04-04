@@ -106,70 +106,77 @@ export class IdentityProfileService {
     const nextVersion = (currentVersion?.version || 0) + 1;
 
     // Transaction : désactiver l'ancienne, créer la nouvelle
-    const newProfile = await this.prisma.$transaction(async (tx) => {
-      // Désactiver l'ancienne version active
-      if (currentVersion?.isActive) {
-        await tx.tenantIdentityProfile.update({
-          where: { id: currentVersion.id },
-          data: {
-            isActive: false,
-            deactivatedAt: now,
-            deactivatedBy: userId,
-          },
+    // logoUrl en base64 peut être lourd → dépasse souvent le timeout Prisma par défaut (5 s).
+    const newProfile = await this.prisma.$transaction(
+      async (tx) => {
+        // Désactiver l'ancienne version active
+        if (currentVersion?.isActive) {
+          await tx.tenantIdentityProfile.update({
+            where: { id: currentVersion.id },
+            data: {
+              isActive: false,
+              deactivatedAt: now,
+              deactivatedBy: userId,
+            },
+          });
+        }
+
+        // Tous les champs du formulaire sont persistés en base (schéma TenantIdentityProfile)
+        const foundationDate =
+          data.foundationDate != null && String(data.foundationDate).trim() !== ''
+            ? new Date(data.foundationDate)
+            : null;
+        const opt = (v: string | null | undefined) => (v != null && String(v).trim() !== '' ? String(v).trim() : null);
+        const reqStr = (v: string | null | undefined, def: string) =>
+          (v != null && String(v).trim() !== '' ? String(v).trim() : null) ?? def;
+
+        const createData = {
+          tenant: { connect: { id: tenantId } },
+          version: nextVersion,
+          isActive: true,
+          // Identité juridique
+          schoolName: reqStr(data.schoolName, currentVersion?.schoolName ?? 'Établissement'),
+          schoolAcronym: opt(data.schoolAcronym),
+          schoolType: reqStr(data.schoolType, 'PRIVEE'),
+          authorizationNumber: opt(data.authorizationNumber),
+          foundationDate,
+          slogan: opt(data.slogan),
+          // Localisation
+          address: opt(data.address),
+          city: opt(data.city),
+          department: opt(data.department),
+          country: reqStr(data.country, 'BJ'),
+          postalCode: opt(data.postalCode),
+          // Contacts
+          phonePrimary: opt(data.phonePrimary),
+          phoneSecondary: opt(data.phoneSecondary),
+          email: opt(data.email),
+          website: opt(data.website),
+          // Paramètres régionaux
+          currency: reqStr(data.currency, 'XOF'),
+          timezone: reqStr(data.timezone, 'Africa/Porto-Novo'),
+          // Visuels officiels
+          logoUrl: opt(data.logoUrl),
+          stampUrl: null,
+          directorSignatureUrl: null,
+          // Métadonnées
+          createdBy: userId,
+          activatedAt: now,
+          activatedBy: userId,
+          changeReason: (changeReason && String(changeReason).trim()) || 'Nouvelle version créée',
+        };
+
+        const created = await tx.tenantIdentityProfile.create({
+          data: createData,
         });
-      }
 
-      // Tous les champs du formulaire sont persistés en base (schéma TenantIdentityProfile)
-      const foundationDate =
-        data.foundationDate != null && String(data.foundationDate).trim() !== ''
-          ? new Date(data.foundationDate)
-          : null;
-      const opt = (v: string | null | undefined) => (v != null && String(v).trim() !== '' ? String(v).trim() : null);
-      const reqStr = (v: string | null | undefined, def: string) =>
-        (v != null && String(v).trim() !== '' ? String(v).trim() : null) ?? def;
-
-      const createData = {
-        tenant: { connect: { id: tenantId } },
-        version: nextVersion,
-        isActive: true,
-        // Identité juridique
-        schoolName: reqStr(data.schoolName, currentVersion?.schoolName ?? 'Établissement'),
-        schoolAcronym: opt(data.schoolAcronym),
-        schoolType: reqStr(data.schoolType, 'PRIVEE'),
-        authorizationNumber: opt(data.authorizationNumber),
-        foundationDate,
-        slogan: opt(data.slogan),
-        // Localisation
-        address: opt(data.address),
-        city: opt(data.city),
-        department: opt(data.department),
-        country: reqStr(data.country, 'BJ'),
-        postalCode: opt(data.postalCode),
-        // Contacts
-        phonePrimary: opt(data.phonePrimary),
-        phoneSecondary: opt(data.phoneSecondary),
-        email: opt(data.email),
-        website: opt(data.website),
-        // Paramètres régionaux
-        currency: reqStr(data.currency, 'XOF'),
-        timezone: reqStr(data.timezone, 'Africa/Porto-Novo'),
-        // Visuels officiels
-        logoUrl: opt(data.logoUrl),
-        stampUrl: null,
-        directorSignatureUrl: null,
-        // Métadonnées
-        createdBy: userId,
-        activatedAt: now,
-        activatedBy: userId,
-        changeReason: (changeReason && String(changeReason).trim()) || 'Nouvelle version créée',
-      };
-
-      const created = await tx.tenantIdentityProfile.create({
-        data: createData,
-      });
-
-      return created;
-    });
+        return created;
+      },
+      {
+        maxWait: 15_000,
+        timeout: 60_000,
+      },
+    );
 
     // Audit log : tous les champs identité enregistrés en historique (newProfile = ligne créée en base)
     const oldP = currentVersion ?? null;

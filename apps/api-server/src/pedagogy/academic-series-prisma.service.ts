@@ -1,11 +1,16 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { AcademicStructurePrismaService } from './academic-structure-prisma.service';
 
 @Injectable()
 export class AcademicSeriesPrismaService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly academicStructure: AcademicStructurePrismaService,
+  ) {}
 
   async findAllSeries(tenantId: string, academicYearId: string, levelId?: string) {
+    await this.academicStructure.syncAcademicSeriesFromEducationSettings(tenantId, academicYearId);
     const where: Record<string, unknown> = { tenantId, academicYearId };
     if (levelId) where.levelId = levelId;
     return this.prisma.academicSeries.findMany({
@@ -53,6 +58,16 @@ export class AcademicSeriesPrismaService {
   }
 
   async getSeriesOrThrow(id: string, tenantId: string) {
+    const row = await this.prisma.academicSeries.findFirst({
+      where: { id, tenantId },
+      select: { academicYearId: true },
+    });
+    if (row?.academicYearId) {
+      await this.academicStructure.syncAcademicSeriesFromEducationSettings(
+        tenantId,
+        row.academicYearId,
+      );
+    }
     const s = await this.prisma.academicSeries.findFirst({
       where: { id, tenantId },
       include: { level: true, seriesSubjects: { include: { subject: true } } },

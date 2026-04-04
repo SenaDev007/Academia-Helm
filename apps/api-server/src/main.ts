@@ -1,10 +1,20 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger, RequestMethod, ValidationPipe } from '@nestjs/common';
+import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
+
+/** Défaut Express ~100 ko — insuffisant pour identité + logos base64 (POST /settings/identity). */
+const BODY_LIMIT = process.env.JSON_BODY_LIMIT ?? '10mb';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
-  const app = await NestFactory.create(AppModule, { logger: ['error', 'warn', 'log'] });
+  const app = await NestFactory.create(AppModule, {
+    logger: ['error', 'warn', 'log'],
+    bodyParser: false,
+  });
+
+  app.use(json({ limit: BODY_LIMIT }));
+  app.use(urlencoded({ extended: true, limit: BODY_LIMIT }));
 
   app.enableCors({
     origin: [

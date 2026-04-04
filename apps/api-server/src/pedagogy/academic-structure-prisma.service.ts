@@ -451,6 +451,109 @@ export class AcademicStructurePrismaService {
     }
   }
 
+  /** 2nd cycle du secondaire (Paramètres) : libellés type « 2nd cycle », « 2ème cycle ». */
+  private isEducationSecondCycleCycleName(cycleName: string): boolean {
+    const key = normalizeCycleNameKey(cycleName);
+    if (key.includes('2nd') && key.includes('cycle')) return true;
+    if (key.includes('2ème') && key.includes('cycle')) return true;
+    if (key.includes('2eme') && key.includes('cycle')) return true;
+    const compact = key.replace(/\s/g, '');
+    return (
+      compact === '2ndcycle' ||
+      compact === '2èmecycle' ||
+      compact === '2emecycle' ||
+      globalOrderIndexForCanonicalCycleName(cycleName) === 9
+    );
+  }
+
+  /**
+   * Recopie les séries Paramètres (EducationSeries référencées par les grades du 2nd cycle secondaire)
+   * vers pedagogy_academic_series pour l’année. Création / mise à jour du libellé (description) ; ne supprime pas
+   * les séries pédagogiques existantes (préservation des liens matières). Idempotent — à appeler avant lecture des séries.
+   */
+  async syncAcademicSeriesFromEducationSettings(
+    tenantId: string,
+    academicYearId: string,
+  ): Promise<void> {
+    try {
+      await this.syncAcademicLevelsFromEducationSettings(tenantId, academicYearId);
+
+      const secondaryLevel = await this.prisma.academicLevel.findFirst({
+        where: { tenantId, academicYearId, name: 'Secondaire' },
+      });
+      if (!secondaryLevel) return;
+
+      const eduSecondary = await this.prisma.educationLevel.findFirst({
+        where: { tenantId, name: 'SECONDAIRE' },
+        include: {
+          cycles: {
+            orderBy: { order: 'asc' },
+            include: {
+              grades: {
+                orderBy: { order: 'asc' },
+                include: { series: true },
+              },
+            },
+          },
+        },
+      });
+      if (!eduSecondary) return;
+
+      const year = await this.prisma.academicYear.findFirst({
+        where: { id: academicYearId, tenantId },
+      });
+      if (!year) return;
+
+      const byCode = new Map<string, { code: string; label: string | null }>();
+      for (const ec of eduSecondary.cycles) {
+        if (!this.isEducationSecondCycleCycleName(ec.name)) continue;
+        for (const eg of ec.grades) {
+          const s = eg.series;
+          if (!s?.code) continue;
+          const code = s.code.trim();
+          if (!code) continue;
+          byCode.set(code, { code, label: s.name ?? null });
+        }
+      }
+
+      await this.prisma.$transaction(async (tx) => {
+        for (const { code, label } of byCode.values()) {
+          const existing = await tx.academicSeries.findFirst({
+            where: {
+              tenantId,
+              academicYearId,
+              levelId: secondaryLevel.id,
+              name: code,
+            },
+          });
+          if (existing) {
+            if (label != null && existing.description !== label) {
+              await tx.academicSeries.update({
+                where: { id: existing.id },
+                data: { description: label },
+              });
+            }
+          } else {
+            await tx.academicSeries.create({
+              data: {
+                tenantId,
+                academicYearId,
+                levelId: secondaryLevel.id,
+                name: code,
+                description: label,
+                isActive: true,
+              },
+            });
+          }
+        }
+      });
+    } catch (e) {
+      this.logger.warn(
+        `syncAcademicSeriesFromEducationSettings: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
   private async assertEnglishTrackAllowedIfNeeded(
     tenantId: string,
     languageTrack: string | null | undefined,

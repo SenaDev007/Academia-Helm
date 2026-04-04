@@ -11,12 +11,14 @@ import {
   Body,
   Param,
   Req,
+  Headers,
   HttpCode,
   HttpStatus,
   UseGuards,
   Logger,
   BadRequestException,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { SubscriptionService } from './services/subscription.service';
 import { FedaPayService } from './services/fedapay.service';
@@ -83,24 +85,61 @@ export class BillingController {
   @Post('fedapay/webhook')
   @HttpCode(HttpStatus.OK)
   async handleFedaPayWebhook(
+    @Headers('x-fedapay-signature') xFedaPaySignature: string | string[] | undefined,
     @Body() body: any,
-    @Req() req: any,
+    @Req() req: Request,
   ) {
-    // FedaPay signe le body brut : on utilise req.rawBody si disponible (main.ts : rawBody: true)
-    const rawBody = req.rawBody != null
-      ? (Buffer.isBuffer(req.rawBody) ? req.rawBody.toString('utf8') : String(req.rawBody))
-      : (typeof body === 'string' ? body : JSON.stringify(body));
-    const signatureRaw = req.headers['x-fedapay-signature'] ?? req.headers['x-signature'] ?? req.headers['signature'] ?? req.headers['x-webhook-signature'];
+    // FedaPay signe le body brut : req.rawBody si le middleware raw body est activé
+    const rawBody =
+      (req as any).rawBody != null
+        ? Buffer.isBuffer((req as any).rawBody)
+          ? (req as any).rawBody.toString('utf8')
+          : String((req as any).rawBody)
+        : typeof body === 'string'
+          ? body
+          : JSON.stringify(body);
+
+    const fromHeader = Array.isArray(xFedaPaySignature) ? xFedaPaySignature[0] : xFedaPaySignature;
+    const signatureRaw =
+      fromHeader ??
+      req.headers['x-fedapay-signature'] ??
+      req.headers['x-signature'] ??
+      req.headers['signature'] ??
+      req.headers['x-webhook-signature'];
     const signatureHeader = Array.isArray(signatureRaw) ? signatureRaw[0] : signatureRaw;
 
-    if (!signatureHeader || typeof signatureHeader !== 'string') {
-      this.logger.error('❌ Missing webhook signature');
-      throw new BadRequestException('Missing webhook signature');
+    // Vérification signature (secret FEDAPAY_WEBHOOK_SECRET côté service / Railway, jamais en dur)
+    await this.fedapayService.assertValidFedaPayWebhookSignature(rawBody, signatureHeader);
+
+    if (signatureHeader && typeof signatureHeader === 'string') {
+      this.logger.log(`📥 FedaPay webhook received with signature: ${signatureHeader.substring(0, 30)}...`);
     }
 
-    this.logger.log(`📥 FedaPay webhook received with signature: ${signatureHeader.substring(0, 30)}...`);
+    const { event: type, transaction: data, transactionId, transactionReference } =
+      this.fedapayService.parseFedaPayWebhookPayload(body);
 
-    return this.fedapayService.handleWebhook(body, signatureHeader, rawBody);
+    this.logger.log(
+      `📥 FedaPay webhook received: ${type} - Transaction ID: ${transactionId} - Reference: ${transactionReference}`,
+    );
+
+    switch (type) {
+      case 'transaction.approved':
+      case 'transaction.completed':
+        await this.fedapayService.handlePaymentSuccessWebhook(data);
+        break;
+      case 'transaction.declined':
+      case 'transaction.failed':
+        await this.fedapayService.handlePaymentFailedWebhook(data);
+        break;
+      case 'transaction.canceled':
+        await this.fedapayService.handlePaymentCanceledWebhook(data);
+        break;
+      default:
+        this.logger.warn(`⚠️  Unhandled FedaPay event: ${type}`);
+        break;
+    }
+
+    return { received: true };
   }
 
   /**

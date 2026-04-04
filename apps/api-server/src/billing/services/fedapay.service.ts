@@ -18,13 +18,27 @@ import { OnboardingService } from '../../onboarding/services/onboarding.service'
 import { PricingService } from './pricing.service';
 import { FedaPay, Transaction, Webhook } from 'fedapay';
 
+function isValidUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.protocol === 'https:' ||
+      parsed.hostname === 'localhost' ||
+      parsed.hostname.includes('ngrok') ||
+      parsed.hostname.includes('localtunnel')
+    );
+  } catch {
+    return false;
+  }
+}
+
 @Injectable()
 export class FedaPayService implements OnModuleInit {
   private readonly logger = new Logger(FedaPayService.name);
   private readonly apiKey: string;
   private readonly publicKey: string;
-  private readonly apiBaseUrl: string;
-  private readonly isLiveMode: boolean;
+  private apiBaseUrl: string;
+  private isLiveMode: boolean;
 
   constructor(
     private readonly configService: ConfigService,
@@ -88,12 +102,25 @@ export class FedaPayService implements OnModuleInit {
     
     // S'assurer qu'il n'y a pas de slash à la fin
     baseUrl = baseUrl.replace(/\/$/, '');
+
+    const fedapayEnvExplicit = (this.configService.get<string>('FEDAPAY_ENVIRONMENT') || '').trim().toLowerCase();
+    if (fedapayEnvExplicit === 'sandbox') {
+      baseUrl = 'https://sandbox-api.fedapay.com';
+    } else if (fedapayEnvExplicit === 'live') {
+      baseUrl = 'https://api.fedapay.com';
+    }
     
     // Détecter le mode sandbox : FEDAPAY_SANDBOX=true, ou URL "sandbox", ou clé sk_sandbox_/sk_test_/pk_test_
     const envSandbox = this.configService.get<string>('FEDAPAY_SANDBOX') === 'true';
     const urlIsSandbox = baseUrl.includes('sandbox');
     const keyIsSandbox = this.apiKey.startsWith('sk_sandbox_') || this.apiKey.startsWith('sk_test_') || this.apiKey.startsWith('pk_test_');
-    this.isLiveMode = !envSandbox && !urlIsSandbox && !keyIsSandbox;
+    if (fedapayEnvExplicit === 'sandbox') {
+      this.isLiveMode = false;
+    } else if (fedapayEnvExplicit === 'live') {
+      this.isLiveMode = true;
+    } else {
+      this.isLiveMode = !envSandbox && !urlIsSandbox && !keyIsSandbox;
+    }
     if (envSandbox) {
       baseUrl = 'https://sandbox-api.fedapay.com';
       this.logger.warn('⚠️  FEDAPAY_SANDBOX=true : mode sandbox forcé, montant plafonné à 20 000 XOF');
@@ -151,16 +178,30 @@ export class FedaPayService implements OnModuleInit {
       return;
     }
 
-    // Configurer la clé API du SDK
+    // Configurer la clé API du SDK (clé uniquement via variables d’environnement, jamais en dur)
     FedaPay.setApiKey(this.apiKey);
 
-    // Déterminer l'environnement (sandbox ou live) depuis la propriété de classe
-    const environment = this.isLiveMode ? 'live' : 'sandbox';
+    const explicit = (this.configService.get<string>('FEDAPAY_ENVIRONMENT') || '').trim().toLowerCase();
+    const environment: 'live' | 'sandbox' =
+      explicit === 'sandbox'
+        ? 'sandbox'
+        : explicit === 'live'
+          ? 'live'
+          : process.env.NODE_ENV === 'production'
+            ? 'live'
+            : 'sandbox';
 
-    // Configurer l'environnement du SDK
     FedaPay.setEnvironment(environment);
 
+    // Aligner fetch direct et logique montants avec le SDK (tests sandbox sur hôte prod : FEDAPAY_ENVIRONMENT=sandbox)
+    this.isLiveMode = environment === 'live';
+    this.apiBaseUrl = this.isLiveMode ? 'https://api.fedapay.com' : 'https://sandbox-api.fedapay.com';
+
     this.logger.log(`✅ FedaPay SDK configured for ${environment.toUpperCase()} environment.`);
+
+    if (explicit === 'sandbox' && process.env.NODE_ENV === 'production') {
+      this.logger.log('🧪 FEDAPAY_ENVIRONMENT=sandbox sur hôte production : paiements de test FedaPay (non live).');
+    }
     
     if (this.isLiveMode) {
       this.logger.warn('⚠️  ⚠️  ⚠️  MODE LIVE/PRODUCTION ACTIVÉ - Les transactions seront réelles ! ⚠️  ⚠️  ⚠️');
@@ -370,6 +411,7 @@ export class FedaPayService implements OnModuleInit {
     amount: number;
     description: string;
     callbackUrl: string;
+    cancelUrl?: string;
     currency?: string;
     metadata?: Record<string, any>;
     customer?: {
@@ -415,6 +457,7 @@ export class FedaPayService implements OnModuleInit {
         amount: amountInteger,
         currency: { iso: currencyCode }, // Format SDK: { iso: 'XOF' }
         callback_url: data.callbackUrl,
+        ...(data.cancelUrl?.trim() && { cancel_url: data.cancelUrl.trim() }),
         // En sandbox FedaPay le mode unifié est 'momo_test' (numéros 64000001/66000001 pour succès).
         // En production utiliser 'mtn_open', 'moov_open', etc.
         mode: data.metadata?.mode || (this.isLiveMode ? 'mtn_open' : 'momo_test'),
@@ -704,23 +747,16 @@ export class FedaPayService implements OnModuleInit {
 
     // Mode API : Créer la transaction FedaPay (toujours, même si infos promoteur incomplètes).
     // Le formulaire FedaPay s'ouvrira et l'utilisateur pourra remplir/modifier (ex. autre numéro).
-    const frontendUrl = (this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3001').trim().replace(/\/$/, '');
-    const apiUrl = (this.configService.get<string>('API_URL') || 'http://localhost:3000').trim().replace(/\/$/, '');
-    const callbackUrl = `${frontendUrl}/onboarding/callback?draftId=${draftId}`;
-    const webhookUrl = `${apiUrl}/api/billing/fedapay/webhook`;
+    const frontendUrl = (this.configService.get<string>('FRONTEND_URL') || '').trim().replace(/\/$/, '');
+    const apiUrl = (this.configService.get<string>('API_URL') || '').trim().replace(/\/$/, '');
 
-    // FedaPay ne peut pas appeler localhost : callback et webhook doivent être des URLs publiques (ngrok, localtunnel, etc.)
-    const isCallbackLocalhost = /localhost|127\.0\.0\.1/i.test(frontendUrl);
-    const isWebhookLocalhost = /localhost|127\.0\.0\.1/i.test(apiUrl);
-    if (isCallbackLocalhost || isWebhookLocalhost) {
-      this.logger.error('❌ FRONTEND_URL ou API_URL pointe vers localhost. FedaPay ne peut pas rediriger ni envoyer les webhooks.');
-      this.logger.error(`   FRONTEND_URL=${frontendUrl}, API_URL=${apiUrl}`);
-      this.logger.error('   En dev : utilisez ngrok/localtunnel et mettez à jour .env puis redémarrez l\'API.');
-      throw new BadRequestException(
-        'Configuration incorrecte : FRONTEND_URL et API_URL doivent être des URLs accessibles depuis Internet (ex. ngrok, localtunnel). ' +
-        'Mettez à jour le .env et redémarrez l\'API.'
-      );
+    if (!frontendUrl || !apiUrl || !isValidUrl(frontendUrl) || !isValidUrl(apiUrl)) {
+      throw new BadRequestException('FRONTEND_URL et API_URL doivent être configurés');
     }
+
+    const callbackUrl = `${frontendUrl}/signup/confirmation?draftId=${encodeURIComponent(draftId)}&paymentId=${encodeURIComponent(payment.id)}`;
+    const cancelUrl = `${frontendUrl}/signup/annulation?draftId=${encodeURIComponent(draftId)}`;
+    const webhookUrl = `${apiUrl}/api/billing/fedapay/webhook`;
 
     const imageUrl = `${frontendUrl}/images/Souscription%20initiale.jpg`;
 
@@ -748,6 +784,7 @@ export class FedaPayService implements OnModuleInit {
       currency, // Devise récupérée dynamiquement
       description: `Paiement initial Academia Helm - ${draft.schoolName}`,
       callbackUrl,
+      cancelUrl,
       imageUrl, // Image pour la page de paiement
       metadata: {
         draftId,
@@ -931,9 +968,13 @@ export class FedaPayService implements OnModuleInit {
     }
 
     // Mode API : Créer la transaction FedaPay dynamiquement
-    const frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://localhost:3001');
+    const frontendUrl = (this.configService.get<string>('FRONTEND_URL') || '').trim().replace(/\/$/, '');
+    const apiUrl = (this.configService.get<string>('API_URL') || '').trim().replace(/\/$/, '');
+    if (!frontendUrl || !apiUrl || !isValidUrl(frontendUrl) || !isValidUrl(apiUrl)) {
+      throw new BadRequestException('FRONTEND_URL et API_URL doivent être configurés');
+    }
     const callbackUrl = `${frontendUrl}/billing/renewal/callback?subscriptionId=${subscriptionId}&billingEventId=${billingEvent.id}`;
-    const webhookUrl = `${this.configService.get<string>('API_URL', 'http://localhost:3000')}/api/billing/fedapay/webhook`;
+    const webhookUrl = `${apiUrl}/api/billing/fedapay/webhook`;
 
     // URL de l'image pour l'abonnement mensuel
     const imageUrl = `${frontendUrl}/images/Abonnement%20mensuel.jpg`;
@@ -1060,6 +1101,10 @@ export class FedaPayService implements OnModuleInit {
         case 'transaction.declined':
         case 'transaction.failed':
           await this.handlePaymentFailure(transaction);
+          return { received: true, processed: false };
+
+        case 'transaction.canceled':
+          await this.handlePaymentCanceled(transaction);
           return { received: true, processed: false };
 
         default:
@@ -1200,9 +1245,13 @@ export class FedaPayService implements OnModuleInit {
     }
 
     // Mode API : Créer la transaction FedaPay dynamiquement
-    const frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://localhost:3001');
+    const frontendUrl = (this.configService.get<string>('FRONTEND_URL') || '').trim().replace(/\/$/, '');
+    const apiUrl = (this.configService.get<string>('API_URL') || '').trim().replace(/\/$/, '');
+    if (!frontendUrl || !apiUrl || !isValidUrl(frontendUrl) || !isValidUrl(apiUrl)) {
+      throw new BadRequestException('FRONTEND_URL et API_URL doivent être configurés');
+    }
     const callbackUrl = `${frontendUrl}/billing/renewal/callback?subscriptionId=${subscriptionId}&billingEventId=${billingEvent.id}`;
-    const webhookUrl = `${this.configService.get<string>('API_URL', 'http://localhost:3000')}/api/billing/fedapay/webhook`;
+    const webhookUrl = `${apiUrl}/api/billing/fedapay/webhook`;
 
     // URL de l'image pour l'abonnement mensuel
     const imageUrl = `${frontendUrl}/images/Abonnement%20mensuel.jpg`;
@@ -1286,36 +1335,63 @@ export class FedaPayService implements OnModuleInit {
   }
 
   /**
-   * Traite un webhook FedaPay
-   * 
-   * ⚠️ CRITIQUE : Vérifications de sécurité obligatoires
-   * 1. Signature webhook
-   * 2. Event type
-   * 3. Transaction status
-   * 4. Montant
-   * 5. Reference connue
-   * 6. Idempotence
+   * Vérifie la signature HMAC FedaPay (body brut + en-tête). Lève si invalide.
+   * Le secret est lu via ConfigService (variable FEDAPAY_WEBHOOK_SECRET sur Railway, jamais en dur).
    */
-  async handleWebhook(payload: any, signatureHeader: string, rawBody?: string) {
-    // 1. Vérifier la signature (OBLIGATOIRE) – FedaPay signe le body brut exact
-    const payloadString = rawBody != null && rawBody.length > 0
-      ? rawBody
-      : (typeof payload === 'string' ? payload : JSON.stringify(payload));
-    const skipVerify = this.configService.get<string>('FEDAPAY_WEBHOOK_SKIP_VERIFY') === 'true' && process.env.NODE_ENV !== 'production';
+  async assertValidFedaPayWebhookSignature(
+    payloadString: string,
+    signatureHeader: string | undefined,
+  ): Promise<void> {
+    if (!signatureHeader || typeof signatureHeader !== 'string') {
+      throw new BadRequestException('Missing webhook signature');
+    }
+    const skipVerify =
+      this.configService.get<string>('FEDAPAY_WEBHOOK_SKIP_VERIFY') === 'true' &&
+      process.env.NODE_ENV !== 'production';
     let isValid = await this.verifyWebhookSignature(payloadString, signatureHeader);
     if (!isValid && skipVerify) {
-      this.logger.warn('⚠️  FedaPay webhook signature verification SKIPPED (FEDAPAY_WEBHOOK_SKIP_VERIFY=true, dev only)');
+      this.logger.warn(
+        '⚠️  FedaPay webhook signature verification SKIPPED (FEDAPAY_WEBHOOK_SKIP_VERIFY=true, dev only)',
+      );
       isValid = true;
     }
     if (!isValid) {
-      this.logger.error('❌ Invalid FedaPay webhook signature. Vérifiez FEDAPAY_WEBHOOK_SECRET (secret du webhook dans le dashboard FedaPay pour cette URL).');
-      this.logger.error(`   rawBody length: ${payloadString.length}, header prefix: ${(signatureHeader || '').substring(0, 40)}...`);
+      this.logger.error(
+        '❌ Invalid FedaPay webhook signature. Vérifiez FEDAPAY_WEBHOOK_SECRET (secret du webhook dans le dashboard FedaPay pour cette URL).',
+      );
+      this.logger.error(
+        `   rawBody length: ${payloadString.length}, header prefix: ${(signatureHeader || '').substring(0, 40)}...`,
+      );
       throw new BadRequestException('Invalid webhook signature');
     }
+  }
 
-    // 2. Extraire l'événement et la transaction (FedaPay envoie name + entity)
-    const event = payload.name || payload.event || payload.type;
-    const transaction = payload.entity || payload.data || payload.transaction || payload;
+  /** Appelé par le contrôleur après vérification de signature (équivalent handlePaymentSuccess). */
+  async handlePaymentSuccessWebhook(transaction: any) {
+    return this.handlePaymentSuccess(transaction);
+  }
+
+  /** Échec / refus — équivalent handlePaymentFailure. */
+  async handlePaymentFailedWebhook(transaction: any) {
+    await this.handlePaymentFailure(transaction);
+  }
+
+  /** Annulation côté FedaPay. */
+  async handlePaymentCanceledWebhook(transaction: any) {
+    await this.handlePaymentCanceled(transaction);
+  }
+
+  /**
+   * Extrait et valide name/type + entity depuis le JSON webhook FedaPay.
+   */
+  parseFedaPayWebhookPayload(body: any): {
+    event: string;
+    transaction: any;
+    transactionId: string | undefined;
+    transactionReference: string;
+  } {
+    const event = body.name || body.event || body.type;
+    const transaction = body.entity || body.data || body.transaction || body;
 
     if (!event) {
       throw new BadRequestException('Missing event type in webhook payload');
@@ -1332,30 +1408,25 @@ export class FedaPayService implements OnModuleInit {
       throw new BadRequestException('Missing transaction reference in webhook payload');
     }
 
+    return { event, transaction, transactionId, transactionReference };
+  }
+
+  /**
+   * Traite le corps du webhook une fois la signature validée (transaction.approved | declined | canceled).
+   */
+  async processVerifiedFedaPayWebhook(payload: any) {
+    const { event, transaction, transactionId, transactionReference } =
+      this.parseFedaPayWebhookPayload(payload);
+
     this.logger.log(
-      `📥 FedaPay webhook received: ${event} - Transaction ID: ${transactionId} - Reference: ${transactionReference}`
+      `📥 FedaPay webhook received: ${event} - Transaction ID: ${transactionId} - Reference: ${transactionReference}`,
     );
 
-    // 3. Traiter selon le type d'événement
     try {
-      switch (event) {
-        case 'transaction.approved':
-        case 'transaction.completed':
-          return await this.handlePaymentSuccess(transaction);
-
-        case 'transaction.declined':
-        case 'transaction.failed':
-          await this.handlePaymentFailure(transaction);
-          return { received: true, processed: false };
-
-        default:
-          this.logger.warn(`⚠️  Unhandled FedaPay event: ${event}`);
-          return { received: true, processed: false, event };
-      }
+      return await this.dispatchFedaPayWebhookByEventType(event, transaction, payload);
     } catch (error: any) {
       this.logger.error(`❌ Error processing webhook: ${error.message}`, error.stack);
-      
-      // Enregistrer l'erreur dans le log
+
       try {
         await this.prisma.paymentWebhookLog.create({
           data: {
@@ -1376,6 +1447,56 @@ export class FedaPayService implements OnModuleInit {
 
       throw error;
     }
+  }
+
+  /**
+   * Routage des événements FedaPay (utilisé par processVerifiedFedaPayWebhook et par le contrôleur).
+   */
+  async dispatchFedaPayWebhookByEventType(
+    event: string,
+    transaction: any,
+    _payload?: any,
+  ): Promise<any> {
+    switch (event) {
+      case 'transaction.approved':
+      case 'transaction.completed':
+        return await this.handlePaymentSuccess(transaction);
+
+      case 'transaction.declined':
+      case 'transaction.failed':
+        await this.handlePaymentFailure(transaction);
+        return { received: true, processed: false };
+
+      case 'transaction.canceled':
+        await this.handlePaymentCanceled(transaction);
+        return { received: true, processed: false };
+
+      default:
+        this.logger.warn(`⚠️  Unhandled FedaPay event: ${event}`);
+        return { received: true, processed: false, event };
+    }
+  }
+
+  /**
+   * Traite un webhook FedaPay
+   * 
+   * ⚠️ CRITIQUE : Vérifications de sécurité obligatoires
+   * 1. Signature webhook
+   * 2. Event type
+   * 3. Transaction status
+   * 4. Montant
+   * 5. Reference connue
+   * 6. Idempotence
+   */
+  async handleWebhook(payload: any, signatureHeader: string, rawBody?: string) {
+    const payloadString =
+      rawBody != null && rawBody.length > 0
+        ? rawBody
+        : typeof payload === 'string'
+          ? payload
+          : JSON.stringify(payload);
+    await this.assertValidFedaPayWebhookSignature(payloadString, signatureHeader);
+    return this.processVerifiedFedaPayWebhook(payload);
   }
 
   /**
@@ -1646,5 +1767,26 @@ export class FedaPayService implements OnModuleInit {
     if (errorMessage.includes('phone') || errorMessage.includes('mobile')) {
       this.logger.error(`💡 Suggestion: Vérifier que le numéro de téléphone est valide pour le sandbox FedaPay`);
     }
+  }
+
+  private async handlePaymentCanceled(transaction: any) {
+    const paymentReference = transaction.reference || transaction.id;
+    const transactionId = transaction.id || transaction.transaction_id;
+
+    await this.prisma.paymentWebhookLog.create({
+      data: {
+        reference: paymentReference,
+        provider: 'fedapay',
+        eventType: 'transaction.canceled',
+        processed: false,
+        payload: transaction,
+        metadata: {
+          transactionId,
+          status: 'CANCELED',
+        },
+      },
+    });
+
+    this.logger.warn(`⚠️  Payment canceled: ${paymentReference}`);
   }
 }

@@ -14,6 +14,16 @@ export { getAppEnvironment, getAppBaseUrl, isNextProductionBuild } from './app-b
 import { getAppEnvironment, getAppBaseUrl, isNextProductionBuild } from './app-base-url';
 
 /**
+ * Assure une URL de base pointant vers le préfixe global Nest `/api`.
+ * Accepte `https://api.example.com` ou `https://api.example.com/api`.
+ */
+export function normalizeToNestApiRoot(url: string): string {
+  const u = url.trim().replace(/\/+$/, '');
+  if (u.endsWith('/api')) return u;
+  return `${u}/api`;
+}
+
+/**
  * Récupère l'URL de base de l'API
  * 
  * ⚠️ IMPORTANT : Ne jamais utiliser localhost en dur
@@ -26,7 +36,7 @@ export function getApiBaseUrl(): string {
   // PRIORITÉ 1 : Variable d'environnement explicite (TOUJOURS UTILISÉE SI DÉFINIE)
   const envUrl = process.env.NEXT_PUBLIC_API_URL;
   if (envUrl) {
-    return envUrl;
+    return normalizeToNestApiRoot(envUrl);
   }
 
   if (isNextProductionBuild()) {

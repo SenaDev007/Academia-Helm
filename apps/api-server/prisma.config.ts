@@ -2,6 +2,13 @@ import 'dotenv/config'
 import { defineConfig } from 'prisma/config'
 
 /**
+ * Neon / P1001 « Can’t reach database server » :
+ * - Ajoutez `?sslmode=require` (souvent `&channel_binding=require` si Neon le fournit).
+ * - Augmentez le délai cold start : `&connect_timeout=60` (ou 120).
+ * - Définissez `DIRECT_URL` avec l’hôte **sans** `-pooler` (onglet Neon « direct ») pour
+ *   `migrate deploy` ; gardez le pooler dans `DATABASE_URL` pour l’app.
+ * - Sous Git Bash Windows, si ça échoue encore, testez la même commande dans **PowerShell**.
+ *
  * `prisma generate` ne se connecte pas à la base, mais Prisma charge quand même
  * prisma.config.ts — sur Docker/Railway, DATABASE_URL n’existe pas au build.
  */

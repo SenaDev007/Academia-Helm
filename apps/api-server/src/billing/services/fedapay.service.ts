@@ -1853,6 +1853,7 @@ export class FedaPayService implements OnModuleInit {
       noreplyFrom,
       supportFrom,
       supportEmail: supportFrom,
+      siteUrl: frontend,
       portalUrl: `${frontend}/portal`,
       signupUrl: `${frontend}/signup`,
     };
@@ -1912,6 +1913,7 @@ export class FedaPayService implements OnModuleInit {
           ? snap.planName
           : 'Academia Helm';
     const links = {
+      siteUrl: cfg.siteUrl,
       portalUrl: cfg.portalUrl,
       signupUrl: cfg.signupUrl,
       supportEmail: cfg.supportEmail,
@@ -1948,6 +1950,7 @@ export class FedaPayService implements OnModuleInit {
       return;
     }
     const links = {
+      siteUrl: cfg.siteUrl,
       portalUrl: cfg.portalUrl,
       signupUrl: cfg.signupUrl,
       supportEmail: cfg.supportEmail,
@@ -1981,6 +1984,7 @@ export class FedaPayService implements OnModuleInit {
       return;
     }
     const links = {
+      siteUrl: cfg.siteUrl,
       portalUrl: cfg.portalUrl,
       signupUrl: cfg.signupUrl,
       supportEmail: cfg.supportEmail,

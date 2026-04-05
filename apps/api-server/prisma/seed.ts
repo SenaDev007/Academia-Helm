@@ -136,6 +136,30 @@ async function main() {
   console.log(`   ✅ Tenant CSPEB créé: ${tenantCspeb.name} (${tenantCspeb.slug})`);
 
   // ============================================================================
+  // 2b2. TENANT PLATFORM OWNER (TESTS PROD / DROPDOWN PORTAIL) - IDEMPOTENT
+  // ============================================================================
+  console.log('\n2b2. Création du tenant YEHI OR Tech (tests platform owner)...');
+  const tenantYehi = await prisma.tenant.upsert({
+    where: { subdomain: 'yehi-or-tech' },
+    update: {
+      name: 'YEHI OR Tech — Platform Owner',
+      status: 'active',
+      type: 'SCHOOL',
+    },
+    create: {
+      name: 'YEHI OR Tech — Platform Owner',
+      slug: 'yehi-or-tech',
+      subdomain: 'yehi-or-tech',
+      countryId: country.id,
+      type: 'SCHOOL',
+      subscriptionStatus: 'TRIAL',
+      status: 'active',
+      subscriptionPlan: 'free',
+    },
+  });
+  console.log(`   ✅ Tenant YEHI OR Tech: ${tenantYehi.name} (subdomain: ${tenantYehi.subdomain})`);
+
+  // ============================================================================
   // 2c. CRÉER L'UTILISATEUR PLATFORM_OWNER - IDEMPOTENT
   // ============================================================================
   console.log('\n2c. Création de l\'utilisateur PLATFORM_OWNER...');

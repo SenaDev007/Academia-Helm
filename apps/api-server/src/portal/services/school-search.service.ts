@@ -9,13 +9,33 @@
  */
 
 import { Injectable, Logger, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 
 @Injectable()
 export class SchoolSearchService {
   private readonly logger = new Logger(SchoolSearchService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
+  ) {}
+
+  /**
+   * Liste publique portail : en prod, seuls les tenants `status: active` sauf si
+   * PLATFORM_OWNER_MODE=true ou environnement non-production (tests / plateforme).
+   * (Le modèle Tenant n’a pas deletedAt / isActive — le filtre métier est `status`.)
+   */
+  private buildPublicSchoolListWhere(): Prisma.TenantWhereInput {
+    const platformOwner =
+      this.configService.get<string>('PLATFORM_OWNER_MODE')?.trim().toLowerCase() === 'true';
+    const nodeEnv = this.configService.get<string>('NODE_ENV') || 'development';
+    if (platformOwner || nodeEnv !== 'production') {
+      return {};
+    }
+    return { status: 'active' };
+  }
 
   /**
    * Recherche publique d'établissements
@@ -105,11 +125,8 @@ export class SchoolSearchService {
     this.logger.log('Listing all active schools');
 
     try {
-      // Récupérer tous les tenants actifs (pas seulement type SCHOOL, pour inclure tous les établissements)
       const tenants = await this.prisma.tenant.findMany({
-      where: {
-        status: 'active',
-      },
+      where: this.buildPublicSchoolListWhere(),
       include: {
         schools: {
           select: {

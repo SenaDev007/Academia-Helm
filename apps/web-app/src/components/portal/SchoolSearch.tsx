@@ -48,7 +48,8 @@ export default function SchoolSearch({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Charger la liste complète des écoles au montage
+  // Liste des établissements : route App Router → BFF qui appelle Nest
+  // (NEXT_PUBLIC_API_URL / getApiBaseUrl côté serveur dans route.ts, pas de localhost en dur ici).
   useEffect(() => {
     const loadAllSchools = async () => {
       setIsLoading(true);

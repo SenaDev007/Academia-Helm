@@ -22,6 +22,7 @@ import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { SubscriptionService } from './services/subscription.service';
 import { FedaPayService } from './services/fedapay.service';
+import { BillingService } from './billing.service';
 import { Public } from '../auth/decorators/public.decorator';
 
 @Controller('billing')
@@ -31,6 +32,7 @@ export class BillingController {
   constructor(
     private readonly subscriptionService: SubscriptionService,
     private readonly fedapayService: FedaPayService,
+    private readonly billingService: BillingService,
   ) {}
 
   /**
@@ -108,6 +110,10 @@ export class BillingController {
       req.headers['x-webhook-signature'];
     const signatureHeader = Array.isArray(signatureRaw) ? signatureRaw[0] : signatureRaw;
 
+    this.logger.log('=== WEBHOOK REÇU ===');
+    this.logger.log(`Event (name): ${body?.name ?? body?.event ?? body?.type}`);
+    this.logger.log(`Entity ID: ${body?.entity?.id}`);
+
     // Vérification signature (secret FEDAPAY_WEBHOOK_SECRET côté service / Railway, jamais en dur)
     await this.fedapayService.assertValidFedaPayWebhookSignature(rawBody, signatureHeader);
 
@@ -119,20 +125,23 @@ export class BillingController {
       this.fedapayService.parseFedaPayWebhookPayload(body);
 
     this.logger.log(
-      `📥 FedaPay webhook received: ${type} - Transaction ID: ${transactionId} - Reference: ${transactionReference}`,
+      `📥 FedaPay webhook parsed: ${type} - Transaction ID: ${transactionId} - Reference: ${transactionReference}`,
     );
 
     switch (type) {
       case 'transaction.approved':
       case 'transaction.completed':
-        await this.fedapayService.handlePaymentSuccessWebhook(data);
+        this.logger.log(`✅ Transaction approuvée / complétée: ${data?.reference ?? transactionReference}`);
+        await this.billingService.handlePaymentSuccess(data);
         break;
       case 'transaction.declined':
       case 'transaction.failed':
-        await this.fedapayService.handlePaymentFailedWebhook(data);
+        this.logger.log(`❌ Transaction refusée / échouée: ${data?.reference ?? transactionReference}`);
+        await this.billingService.handlePaymentFailed(data);
         break;
       case 'transaction.canceled':
-        await this.fedapayService.handlePaymentCanceledWebhook(data);
+        this.logger.log(`⚠️ Transaction annulée: ${data?.reference ?? transactionReference}`);
+        await this.billingService.handlePaymentCanceled(data);
         break;
       default:
         this.logger.warn(`⚠️  Unhandled FedaPay event: ${type}`);

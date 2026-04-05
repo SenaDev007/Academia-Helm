@@ -48,6 +48,7 @@ export class FedaPayService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly pricingService: PricingService,
     private readonly emailService: EmailService,
+    @Inject(forwardRef(() => BillingService))
     private readonly billingService: BillingService,
     @Inject(forwardRef(() => OnboardingService))
     private readonly onboardingService: OnboardingService,
@@ -338,7 +339,7 @@ export class FedaPayService implements OnModuleInit {
         if (payment && payment.status !== 'SUCCESS') {
           // Traiter le paiement comme un webhook (vérifications + activation)
           try {
-            await this.handlePaymentSuccess(transaction);
+            await this.billingService.handlePaymentSuccess(transaction);
             this.logger.log(`✅ Transaction verified and processed: ${transactionId}`);
           } catch (error: any) {
             // Si déjà traité, c'est OK (idempotence)
@@ -529,12 +530,24 @@ export class FedaPayService implements OnModuleInit {
           }),
         };
         transactionData.metadata = meta;
+        // Répercuter dans custom_metadata tout ce qui doit réapparaître dans les webhooks FedaPay
         const cm: Record<string, unknown> = {};
-        if (meta.draftId != null) cm.draftId = meta.draftId;
-        if (meta.paymentId != null) cm.paymentId = meta.paymentId;
-        if (meta.type != null) cm.type = meta.type;
-        if (meta.billingEventId != null) cm.billingEventId = meta.billingEventId;
-        if (meta.reference != null) cm.reference = meta.reference;
+        const webhookKeys = [
+          'draftId',
+          'paymentId',
+          'type',
+          'billingEventId',
+          'reference',
+          'etablissementNom',
+          'plan',
+          'promoteurEmail',
+        ] as const;
+        for (const k of webhookKeys) {
+          const v = (meta as Record<string, unknown>)[k];
+          if (v !== undefined && v !== null && v !== '') {
+            cm[k] = v;
+          }
+        }
         if (Object.keys(cm).length > 0) {
           transactionData.custom_metadata = cm;
         }
@@ -828,6 +841,10 @@ export class FedaPayService implements OnModuleInit {
         reference,
         // Type utilisé par handlePaymentSuccess → handleOnboardingPaymentSuccess
         type: 'onboarding',
+        // Champs explicites pour les webhooks (metadata + custom_metadata)
+        etablissementNom: draft.schoolName,
+        plan: helmPlanFromSnapshot || 'HELM',
+        promoteurEmail: draft.promoterEmail || draft.email || '',
         webhookUrl,
         // Contexte Helm pour la création de HelmSubscription/HelmInvoice après paiement
         helmPlan: helmPlanFromSnapshot || null,
@@ -1132,15 +1149,15 @@ export class FedaPayService implements OnModuleInit {
       switch (event) {
         case 'transaction.approved':
         case 'transaction.completed':
-          return await this.handlePaymentSuccess(transaction);
+          return await this.billingService.handlePaymentSuccess(transaction);
 
         case 'transaction.declined':
         case 'transaction.failed':
-          await this.handlePaymentFailure(transaction);
+          await this.billingService.handlePaymentFailed(transaction);
           return { received: true, processed: false };
 
         case 'transaction.canceled':
-          await this.handlePaymentCanceled(transaction);
+          await this.billingService.handlePaymentCanceled(transaction);
           return { received: true, processed: false };
 
         default:
@@ -1381,13 +1398,22 @@ export class FedaPayService implements OnModuleInit {
     if (!signatureHeader || typeof signatureHeader !== 'string') {
       throw new BadRequestException('Missing webhook signature');
     }
+    const isProduction = process.env.NODE_ENV === 'production';
     const skipVerify =
-      this.configService.get<string>('FEDAPAY_WEBHOOK_SKIP_VERIFY') === 'true' &&
-      process.env.NODE_ENV !== 'production';
+      this.configService.get<string>('FEDAPAY_WEBHOOK_SKIP_VERIFY') === 'true' && !isProduction;
+    /** Jamais en production : uniquement debug local / staging */
+    const skipSignatureDebug =
+      this.configService.get<string>('SKIP_WEBHOOK_SIGNATURE') === 'true' && !isProduction;
     let isValid = await this.verifyWebhookSignature(payloadString, signatureHeader);
     if (!isValid && skipVerify) {
       this.logger.warn(
         '⚠️  FedaPay webhook signature verification SKIPPED (FEDAPAY_WEBHOOK_SKIP_VERIFY=true, dev only)',
+      );
+      isValid = true;
+    }
+    if (!isValid && skipSignatureDebug) {
+      this.logger.warn(
+        '⚠️  FedaPay webhook signature SKIPPED (SKIP_WEBHOOK_SIGNATURE=true, NODE_ENV≠production). À désactiver après debug.',
       );
       isValid = true;
     }
@@ -1402,9 +1428,22 @@ export class FedaPayService implements OnModuleInit {
     }
   }
 
-  /** Appelé par le contrôleur après vérification de signature (équivalent handlePaymentSuccess). */
-  async handlePaymentSuccessWebhook(transaction: any) {
+  /** Appelé après vérification de signature (ex. depuis BillingService). */
+  async processApprovedWebhookEntity(transaction: any) {
     return this.handlePaymentSuccess(transaction);
+  }
+
+  /** @deprecated Préférer BillingService.handlePaymentSuccess */
+  async handlePaymentSuccessWebhook(transaction: any) {
+    return this.billingService.handlePaymentSuccess(transaction);
+  }
+
+  async processFailedWebhookEntity(transaction: any) {
+    await this.handlePaymentFailure(transaction);
+  }
+
+  async processCanceledWebhookEntity(transaction: any) {
+    await this.handlePaymentCanceled(transaction);
   }
 
   /** Échec / refus — équivalent handlePaymentFailure. */
@@ -1496,15 +1535,15 @@ export class FedaPayService implements OnModuleInit {
     switch (event) {
       case 'transaction.approved':
       case 'transaction.completed':
-        return await this.handlePaymentSuccess(transaction);
+        return await this.billingService.handlePaymentSuccess(transaction);
 
       case 'transaction.declined':
       case 'transaction.failed':
-        await this.handlePaymentFailure(transaction);
+        await this.billingService.handlePaymentFailed(transaction);
         return { received: true, processed: false };
 
       case 'transaction.canceled':
-        await this.handlePaymentCanceled(transaction);
+        await this.billingService.handlePaymentCanceled(transaction);
         return { received: true, processed: false };
 
       default:
@@ -1572,7 +1611,7 @@ export class FedaPayService implements OnModuleInit {
     };
 
     this.logger.log(`🧪 Simulating transaction.approved for payment ${paymentId} (ref: ${reference})`);
-    return this.handlePaymentSuccess(simulatedTransaction);
+    return this.billingService.handlePaymentSuccess(simulatedTransaction);
   }
 
   /**

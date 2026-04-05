@@ -28,7 +28,7 @@ export interface EmailRequest {
   }>;
 }
 
-export type EmailProvider = 'nodemailer' | 'sendgrid' | 'aws-ses' | 'mock';
+export type EmailProvider = 'nodemailer' | 'sendgrid' | 'aws-ses' | 'mock' | 'resend';
 
 @Injectable()
 export class EmailService {
@@ -37,8 +37,15 @@ export class EmailService {
   private transporter: Transporter | null = null;
 
   constructor(private readonly configService: ConfigService) {
-    this.provider = (this.configService.get<string>('EMAIL_PROVIDER', 'mock') as EmailProvider) || 'mock';
-    
+    const envProvider = (this.configService.get<string>('EMAIL_PROVIDER') || '').toLowerCase();
+    const resendKey = this.configService.get<string>('RESEND_API_KEY');
+    if (envProvider === 'resend' && resendKey) {
+      this.provider = 'resend';
+      this.logger.log('✅ Email provider: Resend');
+    } else {
+      this.provider = (this.configService.get<string>('EMAIL_PROVIDER', 'mock') as EmailProvider) || 'mock';
+    }
+
     if (this.provider === 'nodemailer') {
       this.initializeNodemailer();
     }
@@ -80,6 +87,8 @@ export class EmailService {
       switch (this.provider) {
         case 'nodemailer':
           return await this.sendViaNodemailer(request);
+        case 'resend':
+          return await this.sendViaResend(request);
         case 'sendgrid':
           return await this.sendViaSendGrid(request);
         case 'aws-ses':
@@ -122,6 +131,54 @@ export class EmailService {
     return {
       success: true,
       messageId: result.messageId,
+    };
+  }
+
+  /**
+   * Envoie un email via Resend (https://resend.com/docs/api-reference/emails/send-email)
+   */
+  private async sendViaResend(request: EmailRequest): Promise<{ success: boolean; messageId?: string }> {
+    const apiKey = this.configService.get<string>('RESEND_API_KEY');
+    if (!apiKey) {
+      throw new Error('RESEND_API_KEY not configured');
+    }
+
+    const fromEmail =
+      request.from ||
+      this.configService.get<string>('EMAIL_FROM_NOREPLY') ||
+      this.configService.get<string>('SMTP_FROM');
+    if (!fromEmail) {
+      throw new Error('Expéditeur manquant : renseignez request.from ou EMAIL_FROM_NOREPLY');
+    }
+
+    const toList = Array.isArray(request.to) ? request.to : [request.to];
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: fromEmail,
+        to: toList,
+        subject: request.subject,
+        html: request.html ?? request.text,
+        text: request.text,
+      }),
+    });
+
+    const body = (await res.json().catch(() => ({}))) as { id?: string; message?: string };
+
+    if (!res.ok) {
+      this.logger.error('Resend API error:', body);
+      throw new Error(body.message || `Resend error HTTP ${res.status}`);
+    }
+
+    this.logger.log(`Email sent via Resend to ${toList.join(', ')}: ${body.id}`);
+
+    return {
+      success: true,
+      messageId: body.id,
     };
   }
 

@@ -16,6 +16,8 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
 import { OnboardingService } from '../../onboarding/services/onboarding.service';
 import { PricingService } from './pricing.service';
+import { EmailService } from '../../communication/services/email.service';
+import { emailTemplates, type PaymentTransactionalEmailConfig } from '../email-templates';
 import { FedaPay, Transaction, Webhook } from 'fedapay';
 
 function isValidUrl(url: string): boolean {
@@ -44,6 +46,7 @@ export class FedaPayService implements OnModuleInit {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     private readonly pricingService: PricingService,
+    private readonly emailService: EmailService,
     @Inject(forwardRef(() => OnboardingService))
     private readonly onboardingService: OnboardingService,
   ) {
@@ -1654,10 +1657,21 @@ export class FedaPayService implements OnModuleInit {
 
     this.logger.log(`✅ Onboarding payment completed: ${paymentId} - Reference: ${paymentReference}`);
 
+    const emailCfg = this.getPaymentTransactionalEmailConfig();
+
     // Créer le tenant, la subscription et l'utilisateur promoteur (idempotent)
     try {
-      await this.onboardingService.activateTenantAfterPayment(paymentId);
+      const activation = await this.onboardingService.activateTenantAfterPayment(paymentId);
       this.logger.log(`✅ Tenant activated for onboarding payment: ${paymentId}`);
+      if (
+        emailCfg &&
+        !(activation as { alreadyActivated?: boolean }).alreadyActivated
+      ) {
+        await this.sendOnboardingPaymentSuccessEmail(paymentId, transaction, emailCfg).catch(
+          (err: any) =>
+            this.logger.error(`Échec envoi email bienvenue onboarding: ${err?.message}`, err?.stack),
+        );
+      }
     } catch (err: any) {
       const msg = err?.message || err?.response?.message || '';
       if (msg.includes('already activated') || msg.includes('status: SUCCESS')) {
@@ -1788,6 +1802,13 @@ export class FedaPayService implements OnModuleInit {
     if (errorMessage.includes('phone') || errorMessage.includes('mobile')) {
       this.logger.error(`💡 Suggestion: Vérifier que le numéro de téléphone est valide pour le sandbox FedaPay`);
     }
+
+    const emailCfg = this.getPaymentTransactionalEmailConfig();
+    if (emailCfg) {
+      await this.sendOnboardingPaymentFailedEmailIfApplicable(transaction, emailCfg).catch((err: any) =>
+        this.logger.error(`Échec envoi email paiement refusé: ${err?.message}`, err?.stack),
+      );
+    }
   }
 
   private async handlePaymentCanceled(transaction: any) {
@@ -1809,5 +1830,171 @@ export class FedaPayService implements OnModuleInit {
     });
 
     this.logger.warn(`⚠️  Payment canceled: ${paymentReference}`);
+
+    const emailCfg = this.getPaymentTransactionalEmailConfig();
+    if (emailCfg) {
+      await this.sendOnboardingPaymentCanceledEmailIfApplicable(transaction, emailCfg).catch((err: any) =>
+        this.logger.error(`Échec envoi email paiement annulé: ${err?.message}`, err?.stack),
+      );
+    }
+  }
+
+  private getPaymentTransactionalEmailConfig(): PaymentTransactionalEmailConfig | null {
+    const noreplyFrom = (this.configService.get<string>('EMAIL_FROM_NOREPLY') || '').trim();
+    const supportFrom = (this.configService.get<string>('EMAIL_FROM_SUPPORT') || '').trim();
+    const frontend = (this.configService.get<string>('FRONTEND_URL') || '').trim().replace(/\/$/, '');
+    if (!noreplyFrom || !supportFrom || !frontend) {
+      this.logger.warn(
+        'Emails transactionnels désactivés : EMAIL_FROM_NOREPLY, EMAIL_FROM_SUPPORT ou FRONTEND_URL manquant.',
+      );
+      return null;
+    }
+    return {
+      noreplyFrom,
+      supportFrom,
+      supportEmail: supportFrom,
+      portalUrl: `${frontend}/portal`,
+      signupUrl: `${frontend}/signup`,
+    };
+  }
+
+  private async findOnboardingPaymentForFedaPayTransaction(transaction: any) {
+    const ref = transaction?.reference ?? transaction?.id;
+    const rawMeta = transaction?.metadata;
+    const meta =
+      rawMeta && typeof rawMeta === 'object' && !Array.isArray(rawMeta)
+        ? (rawMeta as Record<string, unknown>)
+        : {};
+    if (meta.type === 'subscription_renewal') {
+      return null;
+    }
+    const paymentId = typeof meta.paymentId === 'string' ? meta.paymentId : undefined;
+    if (paymentId) {
+      const p = await this.prisma.onboardingPayment.findUnique({
+        where: { id: paymentId },
+        include: { draft: true },
+      });
+      if (p) {
+        return p;
+      }
+    }
+    if (ref) {
+      return this.prisma.onboardingPayment.findFirst({
+        where: { reference: String(ref) },
+        include: { draft: true },
+      });
+    }
+    return null;
+  }
+
+  private async sendOnboardingPaymentSuccessEmail(
+    paymentId: string,
+    transaction: any,
+    cfg: PaymentTransactionalEmailConfig,
+  ) {
+    const payment = await this.prisma.onboardingPayment.findUnique({
+      where: { id: paymentId },
+      include: { draft: true },
+    });
+    if (!payment?.draft) {
+      return;
+    }
+    const draft = payment.draft;
+    const to = (draft.promoterEmail || draft.email || '').trim();
+    if (!to) {
+      return;
+    }
+    const snap = (draft.priceSnapshot as Record<string, unknown>) || {};
+    const plan =
+      typeof snap.planCode === 'string'
+        ? snap.planCode
+        : typeof snap.planName === 'string'
+          ? snap.planName
+          : 'Academia Helm';
+    const links = {
+      portalUrl: cfg.portalUrl,
+      signupUrl: cfg.signupUrl,
+      supportEmail: cfg.supportEmail,
+    };
+    const tmpl = emailTemplates.paymentSuccess(links, {
+      promoteurPrenom: draft.promoterFirstName || draft.email?.split('@')[0] || 'Promoteur',
+      etablissementNom: draft.schoolName,
+      plan,
+      transactionRef: String(transaction.reference || transaction.id || payment.reference),
+      montant: Number(transaction.amount ?? payment.amount) || 0,
+      loginUrl: cfg.portalUrl,
+      email: to,
+      motDePasse: null,
+    });
+    await this.emailService.sendEmail({
+      to,
+      from: cfg.noreplyFrom,
+      subject: tmpl.subject,
+      html: tmpl.html,
+    });
+  }
+
+  private async sendOnboardingPaymentFailedEmailIfApplicable(
+    transaction: any,
+    cfg: PaymentTransactionalEmailConfig,
+  ) {
+    const pay = await this.findOnboardingPaymentForFedaPayTransaction(transaction);
+    if (!pay?.draft) {
+      return;
+    }
+    const draft = pay.draft;
+    const to = (draft.promoterEmail || draft.email || '').trim();
+    if (!to) {
+      return;
+    }
+    const links = {
+      portalUrl: cfg.portalUrl,
+      signupUrl: cfg.signupUrl,
+      supportEmail: cfg.supportEmail,
+    };
+    const tmpl = emailTemplates.paymentFailed(links, {
+      promoteurPrenom: draft.promoterFirstName || 'Bonjour',
+      etablissementNom: draft.schoolName,
+      transactionRef: String(transaction.reference || transaction.id || pay.reference),
+      montant: Number(transaction.amount ?? pay.amount) || 0,
+      retryUrl: cfg.signupUrl,
+    });
+    await this.emailService.sendEmail({
+      to,
+      from: cfg.supportFrom,
+      subject: tmpl.subject,
+      html: tmpl.html,
+    });
+  }
+
+  private async sendOnboardingPaymentCanceledEmailIfApplicable(
+    transaction: any,
+    cfg: PaymentTransactionalEmailConfig,
+  ) {
+    const pay = await this.findOnboardingPaymentForFedaPayTransaction(transaction);
+    if (!pay?.draft) {
+      return;
+    }
+    const draft = pay.draft;
+    const to = (draft.promoterEmail || draft.email || '').trim();
+    if (!to) {
+      return;
+    }
+    const links = {
+      portalUrl: cfg.portalUrl,
+      signupUrl: cfg.signupUrl,
+      supportEmail: cfg.supportEmail,
+    };
+    const tmpl = emailTemplates.paymentCanceled(links, {
+      promoteurPrenom: draft.promoterFirstName || 'Bonjour',
+      etablissementNom: draft.schoolName,
+      retryUrl: cfg.signupUrl,
+    });
+    await this.emailService.sendEmail({
+      to,
+      from: cfg.noreplyFrom,
+      subject: tmpl.subject,
+      html: tmpl.html,
+    });
   }
 }

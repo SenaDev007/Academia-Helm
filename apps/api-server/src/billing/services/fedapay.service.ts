@@ -18,6 +18,7 @@ import { OnboardingService } from '../../onboarding/services/onboarding.service'
 import { PricingService } from './pricing.service';
 import { EmailService } from '../../communication/services/email.service';
 import { emailTemplates, type PaymentTransactionalEmailConfig } from '../email-templates';
+import { BillingService } from '../billing.service';
 import { FedaPay, Transaction, Webhook } from 'fedapay';
 
 function isValidUrl(url: string): boolean {
@@ -47,6 +48,7 @@ export class FedaPayService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly pricingService: PricingService,
     private readonly emailService: EmailService,
+    private readonly billingService: BillingService,
     @Inject(forwardRef(() => OnboardingService))
     private readonly onboardingService: OnboardingService,
   ) {
@@ -517,15 +519,25 @@ export class FedaPayService implements OnModuleInit {
         };
       }
 
-      // Ajouter metadata si présent
+      // Ajouter metadata si présent (+ custom_metadata pour les webhooks FedaPay qui renvoient ce champ)
       if (data.metadata || data.imageUrl) {
-        transactionData.metadata = {
+        const meta = {
           ...(data.metadata || {}),
           ...(data.imageUrl && {
             image_url: data.imageUrl,
             logo_url: data.imageUrl,
           }),
         };
+        transactionData.metadata = meta;
+        const cm: Record<string, unknown> = {};
+        if (meta.draftId != null) cm.draftId = meta.draftId;
+        if (meta.paymentId != null) cm.paymentId = meta.paymentId;
+        if (meta.type != null) cm.type = meta.type;
+        if (meta.billingEventId != null) cm.billingEventId = meta.billingEventId;
+        if (meta.reference != null) cm.reference = meta.reference;
+        if (Object.keys(cm).length > 0) {
+          transactionData.custom_metadata = cm;
+        }
       }
 
       // Ajouter webhook_url si présent dans metadata
@@ -1554,6 +1566,7 @@ export class FedaPayService implements OnModuleInit {
       reference,
       metadata: {
         paymentId: payment.id,
+        draftId: payment.draftId,
         type: 'onboarding',
       },
     };
@@ -1568,9 +1581,19 @@ export class FedaPayService implements OnModuleInit {
    * ⚠️ CRITIQUE : Cette méthode doit être idempotente et transactionnelle
    */
   private async handlePaymentSuccess(transaction: any) {
+    this.logger.log('=== PAYMENT SUCCESS WEBHOOK ===');
+    this.logger.log(`Transaction ID: ${transaction?.id}`);
+    const rawMeta = transaction?.metadata;
+    const rawCustom = transaction?.custom_metadata;
+    this.logger.log(`Metadata (raw): ${typeof rawMeta === 'string' ? rawMeta : JSON.stringify(rawMeta)}`);
+    this.logger.log(
+      `Custom metadata (raw): ${typeof rawCustom === 'string' ? rawCustom : JSON.stringify(rawCustom)}`,
+    );
+    const normalizedMeta = this.billingService.normalizeFedaPayTransactionMetadata(transaction);
+    this.logger.log(`Metadata (normalized): ${JSON.stringify(normalizedMeta)}`);
+
     const paymentReference = transaction.reference || transaction.id;
-    const eventType = 'transaction.approved';
-    
+
     // 1. Vérifier l'idempotence via PaymentWebhookLog
     const existingLog = await this.prisma.paymentWebhookLog.findUnique({
       where: { reference: paymentReference },
@@ -1581,25 +1604,21 @@ export class FedaPayService implements OnModuleInit {
       return { received: true, processed: false, reason: 'already_processed' };
     }
 
-    // 2. Extraire les métadonnées de la transaction
-    const metadata = transaction.metadata || {};
-    const paymentType = metadata.type || metadata.paymentType || 'onboarding';
-    const paymentId = metadata.paymentId || metadata.billingEventId;
-
-    if (!paymentId) {
-      this.logger.error(`❌ Missing payment ID in transaction metadata: ${JSON.stringify(metadata)}`);
-      throw new BadRequestException('Missing payment ID in transaction metadata');
+    // 2. Résoudre onboarding (paymentId) ou renouvellement (billingEventId) — ne pas dépendre seul de metadata.paymentId
+    const resolved = await this.billingService.resolveWebhookPayment(transaction);
+    if (!resolved) {
+      this.logger.error(
+        `❌ Impossible de résoudre le paiement (metadata normalisée): ${JSON.stringify(normalizedMeta)} — ref=${paymentReference}`,
+      );
+      throw new BadRequestException(
+        'Cannot resolve payment from webhook: missing paymentId, draftId, or matching reference',
+      );
     }
 
-    // 3. Traiter selon le type de paiement
-    if (paymentType === 'onboarding') {
-      return await this.handleOnboardingPaymentSuccess(transaction, paymentId);
-    } else if (paymentType === 'subscription_renewal') {
-      return await this.handleRenewalPaymentSuccess(transaction, paymentId);
-    } else {
-      this.logger.error(`❌ Unknown payment type: ${paymentType}`);
-      throw new BadRequestException(`Unknown payment type: ${paymentType}`);
+    if (resolved.paymentType === 'onboarding') {
+      return await this.handleOnboardingPaymentSuccess(transaction, resolved.paymentId);
     }
+    return await this.handleRenewalPaymentSuccess(transaction, resolved.billingEventId);
   }
 
   /**
@@ -1888,6 +1907,24 @@ export class FedaPayService implements OnModuleInit {
     return null;
   }
 
+  /** URL portail tenant : https://{subdomain}.{domaine du FRONTEND_URL}/portal */
+  private buildTenantPortalUrl(frontendBaseUrl: string, subdomain: string | undefined | null): string {
+    const fallback = `${frontendBaseUrl.replace(/\/$/, '')}/portal`;
+    if (!subdomain || !String(subdomain).trim()) {
+      return fallback;
+    }
+    try {
+      const u = new URL(frontendBaseUrl);
+      let host = u.hostname;
+      if (host.startsWith('www.')) {
+        host = host.slice(4);
+      }
+      return `${u.protocol}//${String(subdomain).trim().toLowerCase()}.${host}/portal`;
+    } catch {
+      return fallback;
+    }
+  }
+
   private async sendOnboardingPaymentSuccessEmail(
     paymentId: string,
     transaction: any,
@@ -1905,6 +1942,10 @@ export class FedaPayService implements OnModuleInit {
     if (!to) {
       return;
     }
+    const payMeta = (payment.metadata as Record<string, unknown>) || {};
+    const firstSub =
+      typeof payMeta.firstTenantSubdomain === 'string' ? payMeta.firstTenantSubdomain : undefined;
+    const loginUrl = this.buildTenantPortalUrl(cfg.siteUrl, firstSub);
     const snap = (draft.priceSnapshot as Record<string, unknown>) || {};
     const plan =
       typeof snap.planCode === 'string'
@@ -1924,7 +1965,7 @@ export class FedaPayService implements OnModuleInit {
       plan,
       transactionRef: String(transaction.reference || transaction.id || payment.reference),
       montant: Number(transaction.amount ?? payment.amount) || 0,
-      loginUrl: cfg.portalUrl,
+      loginUrl,
       email: to,
       motDePasse: null,
     });

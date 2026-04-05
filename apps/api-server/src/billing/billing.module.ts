@@ -9,6 +9,7 @@ import { SubscriptionPlanSeedService } from './services/subscription-plan-seed.s
 import { PricingConfigSeedService } from './services/pricing-config-seed.service';
 import { FedaPayService } from './services/fedapay.service';
 import { PricingService } from './services/pricing.service';
+import { BillingService } from './billing.service';
 import { BillingGuard } from './guards/billing.guard';
 import { OnboardingModule } from '../onboarding/onboarding.module';
 import { CommunicationModule } from '../communication/communication.module';
@@ -30,6 +31,7 @@ import { OrionModule } from '../orion/orion.module';
     SubscriptionPlanSeedService,
     PricingConfigSeedService,
     FedaPayService,
+    BillingService,
     PricingService,
     BillingGuard,
   ],
@@ -38,6 +40,7 @@ import { OrionModule } from '../orion/orion.module';
     BillingReminderService,
     PricingService,
     FedaPayService,
+    BillingService,
     BillingGuard,
   ],
 })

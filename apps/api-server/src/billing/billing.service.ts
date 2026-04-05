@@ -6,7 +6,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { FedaPayService } from './services/fedapay.service';
+import type { FedaPayService } from './services/fedapay.service';
 
 export type WebhookResolvedPayment =
   | { paymentType: 'onboarding'; paymentId: string }
@@ -39,7 +39,13 @@ export class BillingService {
 
   constructor(
     private readonly prisma: PrismaService,
-    @Inject(forwardRef(() => FedaPayService))
+    @Inject(
+      forwardRef(() => {
+        // Chargement différé : évite ReferenceError (FedaPayService before initialization)
+        // causé par billing.service ↔ fedapay.service (imports circulaires au chargement du module).
+        return require('./services/fedapay.service').FedaPayService;
+      }),
+    )
     private readonly fedapayService: FedaPayService,
   ) {}
 

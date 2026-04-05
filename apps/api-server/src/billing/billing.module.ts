@@ -25,6 +25,7 @@ import { OrionModule } from '../orion/orion.module';
     forwardRef(() => OnboardingModule), // Pour utiliser OnboardingService dans FedaPayService
   ],
   controllers: [BillingController, PricingController, PricingAdminController],
+  // FedaPayService avant BillingService : ordre cohérent avec la dépendance (Billing → FedaPay en DI).
   providers: [
     SubscriptionService,
     BillingReminderService,

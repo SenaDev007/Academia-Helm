@@ -14,12 +14,8 @@ const DEV_PROXY_TIMEOUT_MS = Number(
 
 export async function GET(_request: NextRequest) {
   try {
-    if (process.env.NODE_ENV === 'production') {
-      return NextResponse.json(
-        { error: 'Dev available tenants is only available in development mode' },
-        { status: 403 },
-      );
-    }
+    // En production, le proxy est autorisé : l’API Nest refuse la liste tant que
+    // PLATFORM_OWNER_MODE n’est pas activé (même principe que /api/public/schools/list).
 
     const apiBaseUrl = getApiBaseUrlForRoutes();
     const path = apiBaseUrl.endsWith('/api')

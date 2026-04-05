@@ -157,11 +157,21 @@ export default function PortalPage() {
     if (devPanelOpen && devTenants.length === 0) {
       setDevTenantsLoading(true);
       fetch('/api/auth/dev-available-tenants')
-        .then((res) => res.json())
-        .then((data) => {
+        .then(async (res) => {
+          const data = await res.json().catch(() => null);
+          if (!res.ok) {
+            console.error(
+              '[Portal mode dev] Impossible de charger les tenants:',
+              res.status,
+              data,
+            );
+            return;
+          }
           if (Array.isArray(data)) setDevTenants(data);
         })
-        .catch(() => {})
+        .catch((err) =>
+          console.error('[Portal mode dev] Erreur réseau tenants:', err),
+        )
         .finally(() => setDevTenantsLoading(false));
     }
   }, [devPanelOpen]);

@@ -281,18 +281,24 @@ export class AuthService {
   }
 
   /**
-   * Liste des tenants pour le mode développement (sans authentification).
-   * Uniquement en NODE_ENV=development / APP_ENV=development.
+   * Liste des tenants pour le sélecteur « Mode développement » du portail (sans auth).
+   * - Dev local : toujours autorisé.
+   * - Production : uniquement si PLATFORM_OWNER_MODE=true (tests plateforme, aligné sur la liste publique écoles).
    */
   async getDevAvailableTenants(): Promise<any[]> {
     const appEnv = this.configService.get<string>('APP_ENV', 'production');
     const nodeEnv = process.env.NODE_ENV || 'production';
-    if (appEnv !== 'development' && nodeEnv !== 'development') {
-      throw new ForbiddenException('Dev available tenants is only available in development mode');
+    const platformOwnerMode =
+      this.configService.get<string>('PLATFORM_OWNER_MODE')?.trim().toLowerCase() === 'true';
+    const isDev = appEnv === 'development' || nodeEnv === 'development';
+    if (!isDev && !platformOwnerMode) {
+      throw new ForbiddenException(
+        'Liste des écoles (mode dev portail) indisponible en production sans PLATFORM_OWNER_MODE=true',
+      );
     }
+    // Après garde : dev local ou prod avec tests plateforme → tous les tenants SCHOOL (sans filtre status).
     const tenants = await this.prisma.tenant.findMany({
       where: {
-        status: 'active',
         type: 'SCHOOL',
       },
       include: {

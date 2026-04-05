@@ -636,9 +636,9 @@ export default function PortalPage() {
                     : { opacity: 0, x: -20, transition: { duration: dur * 0.85 } }
                 }
                 transition={{ duration: dur, ease: 'easeOut' }}
-                className="mx-auto max-w-2xl"
+                className="relative z-30 mx-auto max-w-2xl"
               >
-                <div className="rounded-2xl border border-slate-200/80 bg-white/95 p-8 shadow-xl ring-1 ring-slate-200/40 backdrop-blur-sm">
+                <div className="overflow-visible rounded-2xl border border-slate-200/80 bg-white/95 p-8 shadow-xl ring-1 ring-slate-200/40 backdrop-blur-sm">
                   <motion.button
                     type="button"
                   onClick={handleBack}
@@ -748,10 +748,10 @@ export default function PortalPage() {
               delay: shouldReduceMotion ? 0 : 0.25,
               duration: dur,
             }}
-            className="mt-14 flex justify-center"
+            className="relative z-0 mt-14 flex justify-center"
           >
             <div
-              className="inline-flex items-center gap-2 rounded-full border border-slate-200/90 bg-white/90 px-5 py-2.5 text-sm text-slate-600 shadow-sm backdrop-blur-sm"
+              className="relative z-0 inline-flex items-center gap-2 rounded-full border border-slate-200/90 bg-white/90 px-5 py-2.5 text-sm text-slate-600 shadow-sm backdrop-blur-sm"
               style={{ boxShadow: `0 0 0 1px ${GOLD}22` }}
             >
               <Shield className="h-4 w-4 text-emerald-600" />

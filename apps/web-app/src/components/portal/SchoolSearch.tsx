@@ -213,7 +213,7 @@ export default function SchoolSearch({
                   reduceMotion ? undefined : { opacity: 0, y: -6, scale: 0.99 }
                 }
                 transition={{ duration: reduceMotion ? 0 : 0.2, ease: 'easeOut' }}
-                className="absolute z-50 mt-2 flex max-h-96 w-full flex-col overflow-hidden rounded-lg border-2 border-gray-200 bg-white shadow-xl"
+                className="absolute z-[200] mt-2 flex max-h-96 w-full flex-col overflow-hidden rounded-lg border-2 border-gray-200 bg-white shadow-xl"
               >
               {/* Header avec compteur */}
               <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">

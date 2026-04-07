@@ -246,7 +246,10 @@ export default function PortalPage() {
           email: devEmail.trim(),
           password: devPassword,
           tenant_id: selectedDevTenant.tenantId || selectedDevTenant.id,
-          portal_type: 'PLATFORM',
+          // En mode dev (sélection tenant), on utilise le portail École pour autoriser
+          // la connexion des comptes rattachés à un tenant. Le type PLATFORM est réservé
+          // au compte PLATFORM_OWNER côté backend.
+          portal_type: 'SCHOOL',
         }),
       });
       const data = await response.json();

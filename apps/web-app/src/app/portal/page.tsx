@@ -276,6 +276,35 @@ export default function PortalPage() {
     }
   };
 
+  const handlePlatformOwnerDevLogin = async () => {
+    setIsDevLoggingIn(true);
+    try {
+      const response = await fetch('/api/auth/dev-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Connexion impossible');
+      }
+      persistClientSession({
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        serverSessionId: data.serverSessionId,
+        user: data.user,
+        tenant: data.tenant,
+        expiresAt: data.expiresAt,
+      });
+      window.location.href = '/app';
+    } catch (error: unknown) {
+      console.error('[Dev Platform Owner Login] Error:', error);
+      const message =
+        error instanceof Error ? error.message : 'Impossible de se connecter';
+      alert(`Erreur: ${message}`);
+      setIsDevLoggingIn(false);
+    }
+  };
+
   const modalMotion = getModalMotion(shouldReduceMotion);
 
   return (
@@ -427,9 +456,30 @@ export default function PortalPage() {
                     </motion.button>
                 </div>
                   <p className="mb-4 text-sm text-slate-600">
-                    Choisissez d’abord l’école (tenant), puis saisissez vos
-                    identifiants pour vous connecter à l’app avec ce contexte.
+                    Option 1 : connexion Platform Owner (utilise les variables
+                    <span className="font-semibold"> PLATFORM_OWNER_EMAIL</span> /
+                    <span className="font-semibold"> PLATFORM_OWNER_SECRET</span> côté API).
+                    <br />
+                    Option 2 : choisissez une école (tenant) puis saisissez vos identifiants
+                    pour vous connecter avec ce contexte.
                 </p>
+
+                  <div className="mb-4">
+                    <button
+                      type="button"
+                      onClick={() => void handlePlatformOwnerDevLogin()}
+                      disabled={isDevLoggingIn}
+                      className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                      title="Connexion automatique (dev) — Platform Owner"
+                    >
+                      {isDevLoggingIn ? 'Connexion…' : 'Connexion Platform Owner'}
+                    </button>
+                    <p className="mt-2 text-xs text-slate-500">
+                      Si vous obtenez 401 ici, vérifiez que l’API a bien
+                      <span className="font-medium"> PLATFORM_OWNER_EMAIL/SECRET</span> configurés.
+                    </p>
+                  </div>
+
                 <form onSubmit={handleDevLogin} className="space-y-4">
                   <div>
                       <label className="mb-1 block text-sm font-medium text-slate-700">

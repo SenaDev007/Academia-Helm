@@ -97,6 +97,8 @@ interface RoomRow {
   roomType?: string;
   capacity?: number | null;
   status?: string;
+  equipment?: unknown;
+  description?: string | null;
 }
 
 function normalizeLevelKey(name: string): string {
@@ -169,6 +171,11 @@ export function AcademicStructureWorkspace() {
   const [classes, setClasses] = useState<AcademicClassRow[]>([]);
   const [series, setSeries] = useState<SeriesRow[]>([]);
   const [rooms, setRooms] = useState<RoomRow[]>([]);
+  const [roomFilters, setRoomFilters] = useState({
+    search: '',
+    roomType: '',
+    status: '',
+  });
 
   const [loading, setLoading] = useState(false);
   const [dupOpen, setDupOpen] = useState(false);
@@ -241,6 +248,9 @@ export function AcademicStructureWorkspace() {
     roomName: '',
     roomType: 'CLASSROOM',
     capacity: '' as string | number,
+    status: 'ACTIVE',
+    description: '',
+    equipmentCsv: '',
   });
 
   const [trackDraft, setTrackDraft] = useState<Record<string, string>>({});
@@ -328,7 +338,13 @@ export function AcademicStructureWorkspace() {
     if (!yearId) return;
     setLoading(true);
     try {
-      const q = new URLSearchParams({ academicYearId: yearId }).toString();
+      const q = new URLSearchParams({
+        academicYearId: yearId,
+        ...(tenantQuery.tenant_id ? { tenant_id: tenantQuery.tenant_id } : {}),
+        ...(roomFilters.roomType ? { roomType: roomFilters.roomType } : {}),
+        ...(roomFilters.status ? { status: roomFilters.status } : {}),
+        ...(roomFilters.search.trim() ? { search: roomFilters.search.trim() } : {}),
+      }).toString();
       const data = await pedagogyFetch<RoomRow[]>(`/api/rooms?${q}`);
       setRooms(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -338,7 +354,7 @@ export function AcademicStructureWorkspace() {
     } finally {
       setLoading(false);
     }
-  }, [yearId]);
+  }, [yearId, tenantQuery.tenant_id, roomFilters.roomType, roomFilters.status, roomFilters.search]);
 
   const loadBilingualSettings = useCallback(async () => {
     const tid = tenantQuery.tenant_id || tenant?.id;
@@ -908,13 +924,22 @@ export function AcademicStructureWorkspace() {
     try {
       const cap =
         roomForm.capacity === '' ? undefined : Math.max(1, Number(roomForm.capacity) || 1);
+      const equipment =
+        roomForm.equipmentCsv.trim().length > 0
+          ? roomForm.equipmentCsv
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : [];
       const body = {
         academicYearId: yearId,
         roomCode: roomForm.roomCode.trim(),
         roomName: roomForm.roomName.trim(),
         roomType: roomForm.roomType,
         capacity: cap,
-        status: 'ACTIVE',
+        status: roomForm.status || 'ACTIVE',
+        description: roomForm.description.trim() || undefined,
+        equipment,
       };
       if (roomModal?.mode === 'create') {
         await pedagogyFetch('/api/rooms', { method: 'POST', body });
@@ -1556,6 +1581,80 @@ export function AcademicStructureWorkspace() {
 
       {!loading && tab === 'rooms' && (
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-3 border-b border-slate-200 bg-white p-4 md:flex-row md:items-end md:justify-between">
+            <div className="grid w-full grid-cols-1 gap-3 md:max-w-3xl md:grid-cols-3">
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Recherche
+                </label>
+                <input
+                  value={roomFilters.search}
+                  onChange={(e) =>
+                    setRoomFilters((f) => ({ ...f, search: e.target.value }))
+                  }
+                  placeholder="Code ou nom…"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Type
+                </label>
+                <select
+                  value={roomFilters.roomType}
+                  onChange={(e) =>
+                    setRoomFilters((f) => ({ ...f, roomType: e.target.value }))
+                  }
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                >
+                  <option value="">Tous</option>
+                  <option value="CLASSROOM">Salle de classe</option>
+                  <option value="LAB">Laboratoire</option>
+                  <option value="IT">Informatique</option>
+                  <option value="EXAM">Examen</option>
+                  <option value="OTHER">Autre</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Statut
+                </label>
+                <select
+                  value={roomFilters.status}
+                  onChange={(e) =>
+                    setRoomFilters((f) => ({ ...f, status: e.target.value }))
+                  }
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                >
+                  <option value="">Tous</option>
+                  <option value="ACTIVE">Active</option>
+                  <option value="MAINTENANCE">Maintenance</option>
+                  <option value="UNAVAILABLE">Indisponible</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                onClick={() => {
+                  setRoomFilters({ search: '', roomType: '', status: '' });
+                  void loadRooms();
+                }}
+              >
+                <Copy className="h-4 w-4" />
+                Réinitialiser
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                onClick={() => void loadRooms()}
+              >
+                <Loader2 className={cn('h-4 w-4', loading ? 'animate-spin' : 'hidden')} />
+                Actualiser
+              </button>
+            </div>
+          </div>
           <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase text-slate-500">
@@ -1564,13 +1663,14 @@ export function AcademicStructureWorkspace() {
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Capacité</th>
                 <th className="px-4 py-3">Statut</th>
+                <th className="px-4 py-3">Équipements</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {rooms.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
+                  <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
                     Aucune salle enregistrée.
                   </td>
                 </tr>
@@ -1582,6 +1682,9 @@ export function AcademicStructureWorkspace() {
                     <td className="px-4 py-3">{roomTypeDisplay(r)}</td>
                     <td className="px-4 py-3">{r.capacity ?? '—'}</td>
                     <td className="px-4 py-3">{r.status ?? '—'}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {Array.isArray(r.equipment) ? r.equipment.length : '—'}
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <button
                         type="button"
@@ -1593,6 +1696,9 @@ export function AcademicStructureWorkspace() {
                             roomName: r.roomName ?? '',
                             roomType: r.roomType ?? 'CLASSROOM',
                             capacity: r.capacity ?? '',
+                            status: r.status ?? 'ACTIVE',
+                            description: r.description ?? '',
+                            equipmentCsv: Array.isArray(r.equipment) ? r.equipment.join(', ') : '',
                           });
                           setRoomModal({ mode: 'edit', room: r });
                         }}
@@ -2199,6 +2305,18 @@ export function AcademicStructureWorkspace() {
             </select>
           </label>
           <label className="block text-sm">
+            <span className="text-slate-600">Statut</span>
+            <select
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+              value={roomForm.status}
+              onChange={(e) => setRoomForm((f) => ({ ...f, status: e.target.value }))}
+            >
+              <option value="ACTIVE">Active</option>
+              <option value="MAINTENANCE">Maintenance</option>
+              <option value="UNAVAILABLE">Indisponible</option>
+            </select>
+          </label>
+          <label className="block text-sm">
             <span className="text-slate-600">Capacité (optionnel)</span>
             <input
               type="number"
@@ -2206,6 +2324,25 @@ export function AcademicStructureWorkspace() {
               className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
               value={roomForm.capacity}
               onChange={(e) => setRoomForm((f) => ({ ...f, capacity: e.target.value }))}
+            />
+          </label>
+          <label className="block text-sm sm:col-span-2">
+            <span className="text-slate-600">Équipements (séparés par des virgules)</span>
+            <input
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+              value={roomForm.equipmentCsv}
+              onChange={(e) => setRoomForm((f) => ({ ...f, equipmentCsv: e.target.value }))}
+              placeholder="Ex. Tableau, Projecteur, Climatisation"
+            />
+          </label>
+          <label className="block text-sm sm:col-span-2">
+            <span className="text-slate-600">Description (optionnel)</span>
+            <textarea
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+              rows={3}
+              value={roomForm.description}
+              onChange={(e) => setRoomForm((f) => ({ ...f, description: e.target.value }))}
+              placeholder="Notes internes (localisation, contraintes, etc.)"
             />
           </label>
           <p className="text-xs text-slate-500 sm:col-span-2">

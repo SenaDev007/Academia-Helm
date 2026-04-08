@@ -783,7 +783,7 @@ export default function PedagogyModuleDashboard() {
             </span>
           </Link>
           <Link
-            href="/app/pedagogy/rooms"
+            href="/app/pedagogy/academic-structure?tab=rooms"
             className="flex items-center justify-between gap-3 rounded-lg border border-gray-100 bg-gray-50/80 px-4 py-3 transition hover:border-indigo-200 hover:bg-indigo-50/40"
           >
             <div className="flex items-center gap-3">
@@ -792,7 +792,7 @@ export default function PedagogyModuleDashboard() {
               </div>
               <div>
                 <p className="text-sm font-semibold text-gray-900">Salles</p>
-                <p className="text-xs text-gray-500">Ressources liées à l&apos;année</p>
+                <p className="text-xs text-gray-500">Onglet Structure → Salles</p>
               </div>
             </div>
             <span className="text-lg font-bold tabular-nums text-slate-800">

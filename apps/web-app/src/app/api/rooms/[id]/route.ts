@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 const API_URL = getApiBaseUrlForRoutes();
 
@@ -14,10 +15,10 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    const headers = await getProxyAuthHeaders(request);
     const response = await fetch(`${API_URL}/api/rooms/${params.id}`, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
+      cache: 'no-store',
     });
 
     if (!response.ok) {
@@ -44,13 +45,13 @@ export async function PUT(
 ) {
   try {
     const body = await request.json();
+    const headers = await getProxyAuthHeaders(request);
 
     const response = await fetch(`${API_URL}/api/rooms/${params.id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      method: 'PATCH',
+      headers,
       body: JSON.stringify(body),
+      cache: 'no-store',
     });
 
     if (!response.ok) {
@@ -76,11 +77,11 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    const headers = await getProxyAuthHeaders(request);
     const response = await fetch(`${API_URL}/api/rooms/${params.id}`, {
       method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
+      cache: 'no-store',
     });
 
     if (!response.ok) {

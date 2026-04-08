@@ -33,10 +33,24 @@ export class RoomsController {
   @Get()
   findAll(
     @TenantId() tenantId: string,
-    @Query('type') type?: string,
     @Query('status') status?: string,
+    @Query('roomType') roomType?: string,
+    @Query('search') search?: string,
+    @Query('academicYearId') academicYearId?: string,
+    @Query('schoolLevelId') schoolLevelId?: string,
   ) {
-    return this.roomsService.findAll(tenantId, type, status);
+    return this.roomsService.findAll(tenantId, {
+      status,
+      roomType,
+      search,
+      academicYearId,
+      schoolLevelId,
+    });
+  }
+
+  @Get('statistics')
+  statistics(@TenantId() tenantId: string) {
+    return this.roomsService.statistics(tenantId);
   }
 
   @Get(':id')

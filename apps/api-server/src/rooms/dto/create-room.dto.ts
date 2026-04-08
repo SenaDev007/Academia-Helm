@@ -2,10 +2,13 @@ import { IsString, IsOptional, IsInt, IsArray, Min } from 'class-validator';
 
 export class CreateRoomDto {
   @IsString()
-  name: string;
+  roomCode: string;
 
   @IsString()
-  type: string;
+  roomName: string;
+
+  @IsString()
+  roomType: string;
 
   @IsInt()
   @Min(1)
@@ -23,5 +26,13 @@ export class CreateRoomDto {
   @IsString()
   @IsOptional()
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  academicYearId?: string;
+
+  @IsOptional()
+  @IsString()
+  schoolLevelId?: string;
 }
 

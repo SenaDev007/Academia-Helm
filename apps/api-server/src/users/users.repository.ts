@@ -38,7 +38,15 @@ export class UsersRepository {
   }
 
   async findByEmail(email: string): Promise<User | null> {
-    return this.repository.findOne({ where: { email } });
+    const normalized = (email || '').trim().toLowerCase();
+    if (!normalized) {
+      return null;
+    }
+    // Postgres : recherche insensible à la casse (évite 401 si l'email a été saisi avec une casse différente).
+    return this.repository
+      .createQueryBuilder('user')
+      .where('LOWER(user.email) = :email', { email: normalized })
+      .getOne();
   }
 
   async findByTenant(tenantId: string): Promise<User[]> {

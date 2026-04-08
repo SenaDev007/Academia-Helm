@@ -89,7 +89,15 @@ export async function POST(request: NextRequest) {
         message: `Erreur HTTP ${backendResponse.status}: ${backendResponse.statusText}`,
       }));
       console.error('[Login API] Backend error:', errorData);
-      throw new Error(errorData.message || `Erreur ${backendResponse.status} lors de la connexion`);
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            errorData?.message ||
+            `Erreur ${backendResponse.status} lors de la connexion`,
+        },
+        { status: backendResponse.status },
+      );
     }
 
     const backendData: BackendLoginResponse = await backendResponse.json();
@@ -170,11 +178,11 @@ export async function POST(request: NextRequest) {
     }
     
     return NextResponse.json(
-      { 
-        success: false, 
-        message: errorMessage 
+      {
+        success: false,
+        message: errorMessage,
       },
-      { status: 401 }
+      { status: 500 },
     );
   }
 }

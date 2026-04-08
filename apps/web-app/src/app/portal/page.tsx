@@ -239,20 +239,65 @@ export default function PortalPage() {
     }
     setIsDevLoggingIn(true);
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: devEmail.trim(),
-          password: devPassword,
-          tenant_id: selectedDevTenant.tenantId || selectedDevTenant.id,
-          // En mode dev (sélection tenant), on utilise le portail École pour autoriser
-          // la connexion des comptes rattachés à un tenant. Le type PLATFORM est réservé
-          // au compte PLATFORM_OWNER côté backend.
-          portal_type: 'SCHOOL',
-        }),
-      });
-      const data = await response.json();
+      const tenantId = selectedDevTenant.tenantId || selectedDevTenant.id;
+
+      const attemptLogin = async (portalType: 'SCHOOL' | 'PLATFORM') => {
+        return fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: devEmail.trim(),
+            password: devPassword,
+            tenant_id: tenantId,
+            portal_type: portalType,
+          }),
+        });
+      };
+
+      // 1) Essai standard : connexion au tenant sélectionné (utilisateur rattaché au tenant)
+      let response = await attemptLogin('SCHOOL');
+      let data = await response.json();
+
+      // 2) Si c'est un PLATFORM_OWNER, le backend exige portal_type=PLATFORM.
+      // On retente en PLATFORM puis on sélectionne le tenant via /auth/select-tenant.
+      const message = typeof data?.message === 'string' ? data.message : '';
+      if (
+        response.status === 403 &&
+        message.toLowerCase().includes('platform_owner') &&
+        message.toLowerCase().includes('platform')
+      ) {
+        response = await attemptLogin('PLATFORM');
+        data = await response.json();
+        if (!response.ok || !data.success) {
+          throw new Error(data.message || 'Connexion impossible');
+        }
+        // Enrichir le token avec le tenant choisi
+        const selectResp = await fetch('/api/auth/select-tenant', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${data.accessToken}`,
+          },
+          body: JSON.stringify({ tenant_id: tenantId }),
+        });
+        const selectData = await selectResp.json();
+        if (!selectResp.ok || !selectData.success) {
+          throw new Error(selectData.message || selectData.error || 'Sélection tenant impossible');
+        }
+        persistClientSession({
+          accessToken: selectData.accessToken,
+          refreshToken: selectData.refreshToken,
+          serverSessionId: selectData.serverSessionId,
+          user: selectData.user,
+          tenant: selectData.tenant,
+          expiresAt: selectData.expiresAt,
+        });
+        saveEmailForTenant(devEmail.trim(), tenantId);
+        window.location.href = '/app';
+        return;
+      }
+
+      // 3) Sinon, continuer le flux standard
       if (!response.ok || !data.success) {
         throw new Error(data.message || 'Connexion impossible');
       }
@@ -264,40 +309,11 @@ export default function PortalPage() {
         tenant: data.tenant,
         expiresAt: data.expiresAt,
       });
-      const tenantKey = selectedDevTenant.tenantId || selectedDevTenant.id;
-      saveEmailForTenant(devEmail.trim(), tenantKey);
+      saveEmailForTenant(devEmail.trim(), tenantId);
       window.location.href = '/app';
+      return;
     } catch (error: unknown) {
       console.error('[Dev Login] Error:', error);
-      const message =
-        error instanceof Error ? error.message : 'Impossible de se connecter';
-      alert(`Erreur: ${message}`);
-      setIsDevLoggingIn(false);
-    }
-  };
-
-  const handlePlatformOwnerDevLogin = async () => {
-    setIsDevLoggingIn(true);
-    try {
-      const response = await fetch('/api/auth/dev-login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || 'Connexion impossible');
-      }
-      persistClientSession({
-        accessToken: data.accessToken,
-        refreshToken: data.refreshToken,
-        serverSessionId: data.serverSessionId,
-        user: data.user,
-        tenant: data.tenant,
-        expiresAt: data.expiresAt,
-      });
-      window.location.href = '/app';
-    } catch (error: unknown) {
-      console.error('[Dev Platform Owner Login] Error:', error);
       const message =
         error instanceof Error ? error.message : 'Impossible de se connecter';
       alert(`Erreur: ${message}`);
@@ -456,30 +472,9 @@ export default function PortalPage() {
                     </motion.button>
                 </div>
                   <p className="mb-4 text-sm text-slate-600">
-                    Option 1 : connexion Platform Owner (utilise les variables
-                    <span className="font-semibold"> PLATFORM_OWNER_EMAIL</span> /
-                    <span className="font-semibold"> PLATFORM_OWNER_SECRET</span> côté API).
-                    <br />
-                    Option 2 : choisissez une école (tenant) puis saisissez vos identifiants
-                    pour vous connecter avec ce contexte.
+                    Choisissez d’abord l’école (tenant), puis saisissez vos
+                    identifiants pour vous connecter à l’app avec ce contexte.
                 </p>
-
-                  <div className="mb-4">
-                    <button
-                      type="button"
-                      onClick={() => void handlePlatformOwnerDevLogin()}
-                      disabled={isDevLoggingIn}
-                      className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-                      title="Connexion automatique (dev) — Platform Owner"
-                    >
-                      {isDevLoggingIn ? 'Connexion…' : 'Connexion Platform Owner'}
-                    </button>
-                    <p className="mt-2 text-xs text-slate-500">
-                      Si vous obtenez 401 ici, vérifiez que l’API a bien
-                      <span className="font-medium"> PLATFORM_OWNER_EMAIL/SECRET</span> configurés.
-                    </p>
-                  </div>
-
                 <form onSubmit={handleDevLogin} className="space-y-4">
                   <div>
                       <label className="mb-1 block text-sm font-medium text-slate-700">

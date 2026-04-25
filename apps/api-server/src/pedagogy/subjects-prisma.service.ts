@@ -23,9 +23,12 @@ export class SubjectsPrismaService {
     academicYearId: string;
     schoolLevelId: string;
     academicTrackId?: string;
+    language?: string;
     name: string;
     code: string;
     coefficient?: number;
+    weeklyHours?: number;
+    description?: string;
   }) {
     // Vérifier l'unicité du code
     const existing = await this.prisma.subject.findFirst({
@@ -142,6 +145,9 @@ export class SubjectsPrismaService {
       name?: string;
       code?: string;
       coefficient?: number;
+      language?: string;
+      weeklyHours?: number;
+      description?: string;
     }
   ) {
     const subject = await this.findSubjectById(id, tenantId);

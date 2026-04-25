@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * API ROUTE - TEACHERS
+ * API ROUTE - TEACHER BY ID
  * ============================================================================
  */
 
@@ -10,41 +10,43 @@ import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 const API_URL = getApiBaseUrlForRoutes();
 
-export async function GET(request: NextRequest) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
-    const url = new URL(`${API_URL}/api/teachers`);
-    request.nextUrl.searchParams.forEach((value, key) => {
-      url.searchParams.append(key, value);
-    });
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(url.toString(), { headers, cache: 'no-store' });
+    const response = await fetch(`${API_URL}/api/teachers/${params.id}`, { headers, cache: 'no-store' });
 
     if (!response.ok) {
-      return NextResponse.json({ error: 'Failed to fetch teachers' }, { status: response.status });
+      return NextResponse.json({ error: 'Failed to fetch teacher' }, { status: response.status });
     }
     return NextResponse.json(await response.json());
   } catch (error) {
-    console.error('Error fetching teachers:', error);
+    console.error('Error fetching teacher:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(`${API_URL}/api/teachers`, {
-      method: 'POST',
+    const response = await fetch(`${API_URL}/api/teachers/${params.id}`, {
+      method: 'PUT',
       headers,
       body: JSON.stringify(body),
     });
 
     if (!response.ok) {
-      return NextResponse.json({ error: 'Failed to create teacher' }, { status: response.status });
+      return NextResponse.json({ error: 'Failed to update teacher' }, { status: response.status });
     }
     return NextResponse.json(await response.json());
   } catch (error) {
-    console.error('Error creating teacher:', error);
+    console.error('Error updating teacher:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

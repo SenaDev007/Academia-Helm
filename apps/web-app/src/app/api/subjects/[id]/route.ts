@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 const API_URL = getApiBaseUrlForRoutes();
 
@@ -14,11 +15,8 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const response = await fetch(`${API_URL}/api/subjects/${params.id}`, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+    const headers = await getProxyAuthHeaders(request);
+    const response = await fetch(`${API_URL}/api/subjects/${params.id}`, { headers });
 
     if (!response.ok) {
       return NextResponse.json(
@@ -44,12 +42,10 @@ export async function PUT(
 ) {
   try {
     const body = await request.json();
-
+    const headers = await getProxyAuthHeaders(request);
     const response = await fetch(`${API_URL}/api/subjects/${params.id}`, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(body),
     });
 
@@ -76,11 +72,10 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    const headers = await getProxyAuthHeaders(request);
     const response = await fetch(`${API_URL}/api/subjects/${params.id}`, {
       method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
     });
 
     if (!response.ok) {

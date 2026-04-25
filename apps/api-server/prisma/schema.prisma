@@ -2077,6 +2077,8 @@ model Subject {
   name                 String
   code                 String
   coefficient          Float                 @default(1.0)
+  weeklyHours          Int?                  @default(0)  // Volume horaire hebdomadaire par défaut
+  description          String?               // Objectifs pédagogiques
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
   classSubjects        ClassSubject[]        @relation("ClassSubjectSubject")

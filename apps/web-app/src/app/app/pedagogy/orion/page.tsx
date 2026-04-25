@@ -11,6 +11,8 @@ import {
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import Link from 'next/link';
+import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
+import { PEDAGOGY_SUBMODULE_TABS } from '@/components/pedagogy/pedagogy-tabs';
 import {
   BarChart3,
   AlertTriangle,
@@ -71,16 +73,7 @@ export default function OrionPedagogyPage() {
     setError(null);
     try {
       const url = `/api/pedagogy/orion-advanced/dashboard?academicYearId=${encodeURIComponent(academicYear.id)}`;
-      const res = await fetch(url, {
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        cache: 'no-store',
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message ?? err.error ?? res.statusText);
-      }
-      const data = (await res.json()) as OrionDashboard;
+      const data = await pedagogyFetch<OrionDashboard>(url);
       setDashboard(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur chargement');
@@ -100,6 +93,12 @@ export default function OrionPedagogyPage() {
         title: 'Analytique pédagogique ORION',
         description: 'KPI pédagogiques, alertes, prévisions, recommandations',
         icon: 'bookOpen',
+      }}
+      subModules={{
+        modules: PEDAGOGY_SUBMODULE_TABS.map((tab) => {
+          const Icon = tab.icon;
+          return { id: tab.id, label: tab.label, href: tab.path, icon: <Icon className="w-4 h-4" /> };
+        }),
       }}
       content={{
         layout: 'custom',

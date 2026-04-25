@@ -3,6 +3,7 @@
 import { ModuleContainer } from '@/components/modules/blueprint';
 import Link from 'next/link';
 import { FileText, BookOpen, Book, CalendarDays } from 'lucide-react';
+import { PEDAGOGY_SUBMODULE_TABS } from '@/components/pedagogy/pedagogy-tabs';
 
 export default function PedagogicalWorkspacePage() {
   const links = [
@@ -17,6 +18,12 @@ export default function PedagogicalWorkspacePage() {
         title: 'Espace pédagogique',
         description: 'Fiches, cahier journal, cahier de texte, semainier',
         icon: 'bookOpen',
+      }}
+      subModules={{
+        modules: PEDAGOGY_SUBMODULE_TABS.map((tab) => {
+          const Icon = tab.icon;
+          return { id: tab.id, label: tab.label, href: tab.path, icon: <Icon className="w-4 h-4" /> };
+        }),
       }}
       content={{
         layout: 'grid',

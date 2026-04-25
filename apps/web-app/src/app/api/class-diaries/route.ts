@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 const API_URL = getApiBaseUrlForRoutes();
 
@@ -17,11 +18,8 @@ export async function GET(request: NextRequest) {
       url.searchParams.append(key, value);
     });
 
-    const response = await fetch(url.toString(), {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+    const headers = await getProxyAuthHeaders(request);
+    const response = await fetch(url.toString(), { headers, cache: 'no-store' });
 
     if (!response.ok) {
       return NextResponse.json(
@@ -44,12 +42,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-
+    const headers = await getProxyAuthHeaders(request);
     const response = await fetch(`${API_URL}/api/class-diaries`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(body),
     });
 

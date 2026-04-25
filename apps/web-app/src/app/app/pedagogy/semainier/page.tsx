@@ -8,6 +8,7 @@
 import { ModuleContainer } from '@/components/modules/blueprint';
 import Link from 'next/link';
 import { CalendarDays, FileText, BookOpen, ArrowRight } from 'lucide-react';
+import { PEDAGOGY_SUBMODULE_TABS } from '@/components/pedagogy/pedagogy-tabs';
 
 export default function SemainierPage() {
   return (
@@ -16,6 +17,12 @@ export default function SemainierPage() {
         title: 'Cahier du semainier',
         description: 'Suivi hebdomadaire, entrées quotidiennes, soumission à la direction',
         icon: 'bookOpen',
+      }}
+      subModules={{
+        modules: PEDAGOGY_SUBMODULE_TABS.map((tab) => {
+          const Icon = tab.icon;
+          return { id: tab.id, label: tab.label, href: tab.path, icon: <Icon className="w-4 h-4" /> };
+        }),
       }}
       content={{
         layout: 'custom',

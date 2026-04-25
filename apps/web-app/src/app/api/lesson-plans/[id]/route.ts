@@ -11,15 +11,15 @@ export async function GET(
   const { id } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(`${API_URL}/api/daily-logs/${id}`, { headers, cache: 'no-store' });
+    const response = await fetch(`${API_URL}/api/lesson-plans/${id}`, { headers, cache: 'no-store' });
 
     if (!response.ok) {
-      return NextResponse.json({ error: 'Failed to fetch daily log' }, { status: response.status });
+      return NextResponse.json({ error: 'Failed to fetch lesson plan' }, { status: response.status });
     }
 
     return NextResponse.json(await response.json());
   } catch (error) {
-    console.error('Error fetching daily log:', error);
+    console.error('Error fetching lesson plan:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -32,19 +32,19 @@ export async function PUT(
   try {
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(`${API_URL}/api/daily-logs/${id}`, {
+    const response = await fetch(`${API_URL}/api/lesson-plans/${id}`, {
       method: 'PUT',
       headers,
       body: JSON.stringify(body),
     });
 
     if (!response.ok) {
-      return NextResponse.json({ error: 'Failed to update daily log' }, { status: response.status });
+      return NextResponse.json({ error: 'Failed to update lesson plan' }, { status: response.status });
     }
 
     return NextResponse.json(await response.json());
   } catch (error) {
-    console.error('Error updating daily log:', error);
+    console.error('Error updating lesson plan:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -56,15 +56,15 @@ export async function DELETE(
   const { id } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(`${API_URL}/api/daily-logs/${id}`, { method: 'DELETE', headers });
+    const response = await fetch(`${API_URL}/api/lesson-plans/${id}`, { method: 'DELETE', headers });
 
     if (!response.ok) {
-      return NextResponse.json({ error: 'Failed to delete daily log' }, { status: response.status });
+      return NextResponse.json({ error: 'Failed to delete lesson plan' }, { status: response.status });
     }
 
     return NextResponse.json(await response.json());
   } catch (error) {
-    console.error('Error deleting daily log:', error);
+    console.error('Error deleting lesson plan:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

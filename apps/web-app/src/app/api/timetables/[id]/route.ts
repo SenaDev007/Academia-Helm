@@ -6,19 +6,18 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 const API_URL = getApiBaseUrlForRoutes();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
-    const response = await fetch(`${API_URL}/api/timetables/${params.id}`, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+    const headers = await getProxyAuthHeaders(request);
+    const response = await fetch(`${API_URL}/api/timetables/${id}`, { headers, cache: 'no-store' });
 
     if (!response.ok) {
       return NextResponse.json(
@@ -40,16 +39,15 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
     const body = await request.json();
-
-    const response = await fetch(`${API_URL}/api/timetables/${params.id}`, {
+    const headers = await getProxyAuthHeaders(request);
+    const response = await fetch(`${API_URL}/api/timetables/${id}`, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(body),
     });
 

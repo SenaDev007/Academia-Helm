@@ -10,6 +10,10 @@ import {
   FileText,
   ShieldCheck,
   BarChart3,
+  Package,
+  Book,
+  CalendarDays,
+  NotebookPen,
 } from 'lucide-react';
 
 export const PEDAGOGY_SUBMODULE_TABS = [
@@ -50,10 +54,34 @@ export const PEDAGOGY_SUBMODULE_TABS = [
     icon: Calendar,
   },
   {
-    id: 'pedagogical-workspace',
-    label: 'Espace pédagogique',
-    path: '/app/pedagogy/workspace',
+    id: 'lesson-plans',
+    label: 'Fiches pédagogiques',
+    path: '/app/pedagogy/lesson-plans',
     icon: FileText,
+  },
+  {
+    id: 'daily-logs',
+    label: 'Cahier journal',
+    path: '/app/pedagogy/daily-logs',
+    icon: NotebookPen,
+  },
+  {
+    id: 'class-diaries',
+    label: 'Cahier de texte',
+    path: '/app/pedagogy/class-diaries',
+    icon: Book,
+  },
+  {
+    id: 'semainier',
+    label: 'Semainier',
+    path: '/app/pedagogy/semainier',
+    icon: CalendarDays,
+  },
+  {
+    id: 'materials',
+    label: 'Matériel pédagogique',
+    path: '/app/pedagogy/pedagogical-materials',
+    icon: Package,
   },
   {
     id: 'control',

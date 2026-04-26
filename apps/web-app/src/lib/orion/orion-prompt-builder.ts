@@ -15,8 +15,6 @@ import type {
   OrionAlert,
   KpiFinancialMonthly,
   KpiHrMonthly,
-  KpiPedagogyTerm,
-  KpiSystemHealth,
 } from '@/types';
 
 /**
@@ -82,8 +80,8 @@ export function buildOrionSummaryPrompt(
   kpiData: DirectionKpiSummary,
   previousKpiData: DirectionKpiSummary | null,
   alerts: OrionAlert[],
-  financialKpi?: KpiFinancialMonthly | null,
-  hrKpi?: KpiHrMonthly | null
+  _financialKpi?: KpiFinancialMonthly | null,
+  _hrKpi?: KpiHrMonthly | null
 ): string {
   const comparisonText = previousKpiData
     ? `\nCOMPARAISON AVEC PÉRIODE PRÉCÉDENTE :

@@ -14,7 +14,7 @@
 import { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
-export type ContentLayout = 'table' | 'cards' | 'grid' | 'chart' | 'form' | 'custom';
+export type ContentLayout = 'table' | 'cards' | 'grid' | 'chart' | 'form' | 'custom' | 'default';
 
 export interface ModuleContentAreaProps {
   /** Contenu principal */

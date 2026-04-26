@@ -36,26 +36,45 @@ interface Guardian {
   };
 }
 
+interface GuardianForm {
+  firstName: string;
+  lastName: string;
+  relationship: string;
+  phone: string;
+  email: string;
+  address: string;
+  isPrimary: boolean;
+}
+
+const EMPTY_FORM: GuardianForm = {
+  firstName: '',
+  lastName: '',
+  relationship: '',
+  phone: '',
+  email: '',
+  address: '',
+  isPrimary: false,
+};
+
 export default function GuardiansPage() {
-  const { academicYear, schoolLevel } = useModuleContext();
+  useModuleContext();
   const searchParams = useSearchParams();
   const studentId = searchParams.get('studentId');
   const [guardians, setGuardians] = useState<Guardian[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [selectedGuardian, setSelectedGuardian] = useState<Guardian | null>(null);
+  const [form, setForm] = useState<GuardianForm>(EMPTY_FORM);
 
   useEffect(() => {
-    if (studentId) {
-      loadGuardians();
-    }
+    if (studentId) loadGuardians();
   }, [studentId]);
 
   const loadGuardians = async () => {
     if (!studentId) return;
-
     setIsLoading(true);
     try {
       const response = await fetch(`/api/students/${studentId}/guardians`);
@@ -67,6 +86,92 @@ export default function GuardiansPage() {
       console.error('Failed to load guardians:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const openCreate = () => {
+    setForm(EMPTY_FORM);
+    setSelectedGuardian(null);
+    setIsCreateModalOpen(true);
+  };
+
+  const openEdit = (guardian: Guardian) => {
+    setForm({
+      firstName: guardian.guardian.firstName,
+      lastName: guardian.guardian.lastName,
+      relationship: guardian.relationship,
+      phone: guardian.guardian.phone ?? '',
+      email: guardian.guardian.email ?? '',
+      address: guardian.guardian.address ?? '',
+      isPrimary: guardian.isPrimary,
+    });
+    setSelectedGuardian(guardian);
+    setIsEditModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsCreateModalOpen(false);
+    setIsEditModalOpen(false);
+    setSelectedGuardian(null);
+    setForm(EMPTY_FORM);
+  };
+
+  const handleSave = async () => {
+    if (!studentId || !form.firstName || !form.lastName || !form.relationship) return;
+    setIsSaving(true);
+    try {
+      if (selectedGuardian) {
+        await fetch(
+          `/api/students/${studentId}/guardians/${selectedGuardian.guardian.id}`,
+          {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              firstName: form.firstName,
+              lastName: form.lastName,
+              phone: form.phone || undefined,
+              email: form.email || undefined,
+              address: form.address || undefined,
+              relationship: form.relationship,
+              isPrimary: form.isPrimary,
+            }),
+          }
+        );
+      } else {
+        await fetch(`/api/students/${studentId}/guardians`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            firstName: form.firstName,
+            lastName: form.lastName,
+            phone: form.phone || undefined,
+            email: form.email || undefined,
+            address: form.address || undefined,
+            relationship: form.relationship,
+            isPrimary: form.isPrimary,
+          }),
+        });
+      }
+      closeModal();
+      loadGuardians();
+    } catch (error) {
+      console.error('Failed to save guardian:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!studentId || !selectedGuardian) return;
+    try {
+      await fetch(`/api/students/${studentId}/guardians/${selectedGuardian.id}`, {
+        method: 'DELETE',
+      });
+      setIsDeleteModalOpen(false);
+      setSelectedGuardian(null);
+      loadGuardians();
+    } catch (error) {
+      console.error('Failed to delete guardian:', error);
     }
   };
 
@@ -90,7 +195,7 @@ export default function GuardiansPage() {
           icon: 'users',
           actions: studentId ? (
             <button
-              onClick={() => setIsCreateModalOpen(true)}
+              onClick={openCreate}
               className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
             >
               <Plus className="w-4 h-4" />
@@ -132,10 +237,7 @@ export default function GuardiansPage() {
                 </div>
                 <div className="flex items-center space-x-2">
                   <button
-                    onClick={() => {
-                      setSelectedGuardian(guardian);
-                      setIsEditModalOpen(true);
-                    }}
+                    onClick={() => openEdit(guardian)}
                     className="text-yellow-600 hover:text-yellow-900"
                     title="Modifier"
                   >
@@ -181,39 +283,22 @@ export default function GuardiansPage() {
       <FormModal
         title={selectedGuardian ? 'Modifier le responsable' : 'Ajouter un responsable'}
         isOpen={isCreateModalOpen || isEditModalOpen}
-        onClose={() => {
-          setIsCreateModalOpen(false);
-          setIsEditModalOpen(false);
-          setSelectedGuardian(null);
-        }}
+        onClose={closeModal}
         size="lg"
         actions={
           <>
             <button
-              onClick={() => {
-                setIsCreateModalOpen(false);
-                setIsEditModalOpen(false);
-                setSelectedGuardian(null);
-              }}
+              onClick={closeModal}
               className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
             >
               Annuler
             </button>
             <button
-              onClick={async () => {
-                if (selectedGuardian) {
-                  // TODO: Implémenter la mise à jour
-                } else {
-                  // TODO: Implémenter la création
-                }
-                setIsCreateModalOpen(false);
-                setIsEditModalOpen(false);
-                setSelectedGuardian(null);
-                loadGuardians();
-              }}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+              onClick={handleSave}
+              disabled={isSaving || !form.firstName || !form.lastName || !form.relationship}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
             >
-              {selectedGuardian ? 'Modifier' : 'Ajouter'}
+              {isSaving ? 'Enregistrement…' : selectedGuardian ? 'Modifier' : 'Ajouter'}
             </button>
           </>
         }
@@ -226,7 +311,8 @@ export default function GuardiansPage() {
               </label>
               <input
                 type="text"
-                defaultValue={selectedGuardian?.guardian.firstName || ''}
+                value={form.firstName}
+                onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -236,7 +322,8 @@ export default function GuardiansPage() {
               </label>
               <input
                 type="text"
-                defaultValue={selectedGuardian?.guardian.lastName || ''}
+                value={form.lastName}
+                onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -246,7 +333,8 @@ export default function GuardiansPage() {
               Relation *
             </label>
             <select
-              defaultValue={selectedGuardian?.relationship || ''}
+              value={form.relationship}
+              onChange={(e) => setForm((f) => ({ ...f, relationship: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               aria-label="Relation"
             >
@@ -265,7 +353,8 @@ export default function GuardiansPage() {
               </label>
               <input
                 type="tel"
-                defaultValue={selectedGuardian?.guardian.phone || ''}
+                value={form.phone}
+                onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -275,7 +364,8 @@ export default function GuardiansPage() {
               </label>
               <input
                 type="email"
-                defaultValue={selectedGuardian?.guardian.email || ''}
+                value={form.email}
+                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -285,7 +375,8 @@ export default function GuardiansPage() {
               Adresse
             </label>
             <textarea
-              defaultValue={selectedGuardian?.guardian.address || ''}
+              value={form.address}
+              onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
               rows={3}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -294,7 +385,8 @@ export default function GuardiansPage() {
             <label className="flex items-center space-x-2">
               <input
                 type="checkbox"
-                defaultChecked={selectedGuardian?.isPrimary || false}
+                checked={form.isPrimary}
+                onChange={(e) => setForm((f) => ({ ...f, isPrimary: e.target.checked }))}
                 className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
               />
               <span className="text-sm text-gray-700">Responsable principal</span>
@@ -308,14 +400,7 @@ export default function GuardiansPage() {
         message={`Êtes-vous sûr de vouloir supprimer "${selectedGuardian?.guardian.firstName} ${selectedGuardian?.guardian.lastName}" ?`}
         type="danger"
         isOpen={isDeleteModalOpen}
-        onConfirm={async () => {
-          if (selectedGuardian) {
-            // TODO: Implémenter la suppression
-            setIsDeleteModalOpen(false);
-            setSelectedGuardian(null);
-            loadGuardians();
-          }
-        }}
+        onConfirm={handleDelete}
         onCancel={() => {
           setIsDeleteModalOpen(false);
           setSelectedGuardian(null);
@@ -325,4 +410,3 @@ export default function GuardiansPage() {
     </>
   );
 }
-

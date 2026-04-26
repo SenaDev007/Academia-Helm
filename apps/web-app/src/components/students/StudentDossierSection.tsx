@@ -15,8 +15,6 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 import {
   FileText,
   BookOpen,
-  AlertTriangle,
-  Award,
   Calendar,
   User,
   RefreshCw,
@@ -97,9 +95,9 @@ export default function StudentDossierSection({ studentId }: { studentId: string
   const [selectedTab, setSelectedTab] = useState<
     'identity' | 'academic' | 'documents' | 'finance' | 'history' | 'card' | 'parents' | 'status'
   >('identity');
-  const [academicYearId, setAcademicYearId] = useState<string>('');
+  const [academicYearId] = useState<string>('');
   const [historyData, setHistoryData] = useState<any>(null);
-  const [auditData, setAuditData] = useState<DossierData['auditTrail'] | null>(null);
+  const [auditData] = useState<DossierData['auditTrail'] | null>(null);
   const [changeClassModal, setChangeClassModal] = useState(false);
   const [changeClassPayload, setChangeClassPayload] = useState({ academicYearId: '', newClassId: '' });
   const [classesList, setClassesList] = useState<{ id: string; name: string }[]>([]);

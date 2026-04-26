@@ -16,7 +16,6 @@ import { motion } from 'framer-motion';
 import ModuleHeader, { ModuleHeaderProps } from './ModuleHeader';
 import SubModuleNavigation, { SubModuleNavigationProps } from './SubModuleNavigation';
 import ModuleContentArea, { ModuleContentAreaProps } from './ModuleContentArea';
-import { useModuleContext } from '@/hooks/useModuleContext';
 import { getPageSlideMotion } from '@/lib/motion/presets';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 

@@ -1,51 +1,28 @@
-/**
- * ============================================================================
- * API PROXY - GET STUDENT ID CARD
- * ============================================================================
- */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
-const API_BASE_URL = getApiBaseUrlForRoutes();
+const API_URL = getApiBaseUrlForRoutes();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { studentId: string } }
+  { params }: { params: Promise<{ studentId: string }> }
 ) {
   try {
-    const { studentId } = params;
-    const searchParams = request.nextUrl.searchParams;
-    const academicYearId = searchParams.get('academicYearId');
-
+    const { studentId } = await params;
+    const academicYearId = request.nextUrl.searchParams.get('academicYearId');
     if (!academicYearId) {
-      return NextResponse.json(
-        { error: 'academicYearId is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'academicYearId is required' }, { status: 400 });
     }
-
-    const url = `${API_BASE_URL}/api/students/id-cards/${studentId}?academicYearId=${academicYearId}`;
-
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': request.headers.get('Authorization') || '',
-      },
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      return NextResponse.json(error, { status: response.status });
-    }
-
-    const data = await response.json();
-    return NextResponse.json(data);
+    const headers = await getProxyAuthHeaders(request);
+    const response = await fetch(
+      normalizeApiUrl(`${API_URL}/api/students/id-cards/${studentId}?academicYearId=${academicYearId}`),
+      { headers }
+    );
+    const data = await response.json().catch(() => ({}));
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error fetching ID card:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch ID card' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
-

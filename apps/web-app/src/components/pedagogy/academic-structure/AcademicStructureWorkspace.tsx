@@ -982,7 +982,7 @@ export function AcademicStructureWorkspace() {
       setSeriesForm({ name: '', description: '' });
       setSeriesModal({ mode: 'create' });
     } else if (tab === 'rooms') {
-      setRoomForm({ roomCode: '', roomName: '', roomType: 'CLASSROOM', capacity: '' });
+      setRoomForm({ roomCode: '', roomName: '', roomType: 'CLASSROOM', capacity: '', status: 'ACTIVE', description: '', equipmentCsv: '' });
       setRoomModal({ mode: 'create' });
     }
   };

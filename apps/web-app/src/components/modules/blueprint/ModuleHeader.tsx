@@ -58,7 +58,7 @@ export default function ModuleHeader({
             {icon && (
               <div className="flex-shrink-0 mt-1">
                 <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
-                  <AppIcon name={icon} size="lg" className="text-blue-600" />
+                  <AppIcon name={icon as any} size="dashboard" className="text-blue-600" />
                 </div>
               </div>
             )}
@@ -96,7 +96,7 @@ export default function ModuleHeader({
                     {kpi.label}
                   </span>
                   {kpi.icon && (
-                    <AppIcon name={kpi.icon} size="sm" className="text-gray-400" />
+                    <AppIcon name={kpi.icon as any} size="action" className="text-gray-400" />
                   )}
                 </div>
                 <div className="flex items-baseline space-x-2">

@@ -13,7 +13,6 @@ import { Plus, Search, CheckCircle, XCircle, Clock, Users } from 'lucide-react';
 import {
   ModuleContainer,
   FormModal,
-  ConfirmModal,
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { formatGradeLabel } from '@/lib/utils';

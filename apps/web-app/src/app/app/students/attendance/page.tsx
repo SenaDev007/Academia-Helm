@@ -7,11 +7,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Calendar, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react';
-import {
-  ModuleContainer,
-  FormModal,
-} from '@/components/modules/blueprint';
+import { CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react';
+import { ModuleContainer } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 
 interface AttendanceRecord {

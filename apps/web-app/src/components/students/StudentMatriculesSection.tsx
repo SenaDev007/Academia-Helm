@@ -11,35 +11,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { 
-  CreditCard, 
-  Search, 
-  Plus, 
-  CheckCircle, 
-  XCircle, 
+import {
+  CreditCard,
+  Search,
+  Plus,
+  CheckCircle,
   AlertCircle,
-  Download,
   RefreshCw,
   Users
 } from 'lucide-react';
-
-interface Matricule {
-  id: string;
-  globalMatricule: string;
-  countryCode: string;
-  institutionCode: string;
-  firstEnrollmentYear: number;
-  sequenceNumber: number;
-  isOfflineGenerated: boolean;
-  synchronizedAt?: string;
-  locked: boolean;
-  generatedAt: string;
-  student: {
-    id: string;
-    firstName: string;
-    lastName: string;
-  };
-}
 
 interface MatriculeStats {
   total: number;
@@ -51,11 +31,10 @@ interface MatriculeStats {
 }
 
 export default function StudentMatriculesSection() {
-  const [matricules, setMatricules] = useState<Matricule[]>([]);
   const [stats, setStats] = useState<MatriculeStats | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [searchMatricule, setSearchMatricule] = useState('');
-  const [selectedStudent, setSelectedStudent] = useState<string | null>(null);
+  const [selectedStudent] = useState<string | null>(null);
 
   // Charger les statistiques
   useEffect(() => {

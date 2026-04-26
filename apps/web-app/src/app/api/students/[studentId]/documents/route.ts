@@ -1,43 +1,43 @@
-/**
- * ============================================================================
- * API ROUTE - TRANSFERS
- * ============================================================================
- */
-
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 const API_URL = getApiBaseUrlForRoutes();
 
-export async function GET(request: NextRequest) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ studentId: string }> }
+) {
   try {
-    const url = new URL(`${API_URL}/api/transfers`);
+    const { studentId } = await params;
+    const url = new URL(`${API_URL}/api/students/${studentId}/documents`);
     request.nextUrl.searchParams.forEach((value, key) => url.searchParams.append(key, value));
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(normalizeApiUrl(url.toString()), { headers });
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
-    console.error('Error fetching transfers:', error);
+    console.error('Error fetching student documents:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ studentId: string }> }
+) {
   try {
+    const { studentId } = await params;
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(normalizeApiUrl(`${API_URL}/api/transfers`), {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    });
+    const response = await fetch(
+      normalizeApiUrl(`${API_URL}/api/students/${studentId}/documents`),
+      { method: 'POST', headers, body: JSON.stringify(body) }
+    );
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
-    console.error('Error creating transfer:', error);
+    console.error('Error uploading student document:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
-

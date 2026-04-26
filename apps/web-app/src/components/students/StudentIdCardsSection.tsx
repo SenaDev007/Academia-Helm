@@ -11,17 +11,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { 
-  CreditCard, 
-  Download, 
-  Trash2, 
-  Plus, 
-  CheckCircle, 
+import {
+  CreditCard,
+  CheckCircle,
   XCircle,
   AlertCircle,
   Users,
   RefreshCw,
-  FileText
 } from 'lucide-react';
 
 interface IdCard {
@@ -65,7 +61,6 @@ interface IdCardStats {
 }
 
 export default function StudentIdCardsSection() {
-  const [cards, setCards] = useState<IdCard[]>([]);
   const [stats, setStats] = useState<IdCardStats | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedCard, setSelectedCard] = useState<IdCard | null>(null);
@@ -89,38 +84,6 @@ export default function StudentIdCardsSection() {
       }
     } catch (error) {
       console.error('Error loading stats:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleGenerateCard = async (studentId: string) => {
-    try {
-      setIsLoading(true);
-      const academicYearId = localStorage.getItem('academicYearId') || '';
-      const schoolLevelId = localStorage.getItem('schoolLevelId') || '';
-
-      if (!academicYearId || !schoolLevelId) {
-        alert('Veuillez sélectionner une année scolaire et un niveau');
-        return;
-      }
-
-      const response = await fetch(
-        `/api/students/id-cards/${studentId}/generate?academicYearId=${academicYearId}&schoolLevelId=${schoolLevelId}`,
-        { method: 'POST' }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        alert(`Carte générée avec succès: ${data.cardNumber}`);
-        loadStats();
-      } else {
-        const error = await response.json();
-        alert(`Erreur: ${error.message || 'Échec de la génération'}`);
-      }
-    } catch (error) {
-      console.error('Error generating ID card:', error);
-      alert('Erreur lors de la génération de la carte');
     } finally {
       setIsLoading(false);
     }
@@ -167,33 +130,6 @@ export default function StudentIdCardsSection() {
     }
   };
 
-  const handleDownloadCard = async (cardId: string) => {
-    try {
-      setIsLoading(true);
-      const response = await fetch(`/api/students/id-cards/card/${cardId}/download`);
-      
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `carte-scolaire-${cardId}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      } else {
-        const error = await response.json();
-        alert(`Erreur: ${error.message || 'Échec du téléchargement'}`);
-      }
-    } catch (error) {
-      console.error('Error downloading card:', error);
-      alert('Erreur lors du téléchargement');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleRevokeCard = async () => {
     if (!selectedCard || !revokeReason.trim()) {
       alert('Veuillez saisir un motif de révocation');
@@ -224,11 +160,6 @@ export default function StudentIdCardsSection() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const openRevokeModal = (card: IdCard) => {
-    setSelectedCard(card);
-    setIsRevokeModalOpen(true);
   };
 
   return (

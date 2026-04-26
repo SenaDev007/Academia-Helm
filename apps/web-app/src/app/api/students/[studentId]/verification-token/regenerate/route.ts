@@ -1,50 +1,28 @@
-/**
- * API proxy — Régénération token QR (rôle directeur, anti-abus 5 min)
- */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
-const API_BASE_URL = getApiBaseUrlForRoutes();
+const API_URL = getApiBaseUrlForRoutes();
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { studentId: string } }
+  { params }: { params: Promise<{ studentId: string }> }
 ) {
   try {
-    const { studentId } = params;
+    const { studentId } = await params;
     const body = await request.json();
-
     if (!body.academicYearId) {
-      return NextResponse.json(
-        { error: 'academicYearId is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'academicYearId is required' }, { status: 400 });
     }
-
-    const url = `${API_BASE_URL}/api/students/${studentId}/verification-token/regenerate`;
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: request.headers.get('Authorization') || '',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ academicYearId: body.academicYearId }),
-    });
-
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      return NextResponse.json(err, { status: response.status });
-    }
-
-    const data = await response.json();
-    return NextResponse.json(data);
+    const headers = await getProxyAuthHeaders(request);
+    const response = await fetch(
+      normalizeApiUrl(`${API_URL}/api/students/${studentId}/verification-token/regenerate`),
+      { method: 'POST', headers, body: JSON.stringify({ academicYearId: body.academicYearId }) }
+    );
+    const data = await response.json().catch(() => ({}));
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error regenerating verification token:', error);
-    return NextResponse.json(
-      { error: 'Failed to regenerate verification token' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

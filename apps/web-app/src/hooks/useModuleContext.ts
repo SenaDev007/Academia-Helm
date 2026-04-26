@@ -9,6 +9,7 @@
  * ============================================================================
  */
 
+import { useMemo } from 'react';
 import { useAcademicYear } from './useAcademicYear';
 import { useSchoolLevel } from './useSchoolLevel';
 import { useFeature } from './useFeature';
@@ -49,28 +50,37 @@ export function useModuleContext(): ModuleContext {
   const { currentLevel, isLoading: levelLoading } = useSchoolLevel();
   const { isEnabled: isBilingualEnabled } = useFeature(FeatureCode.BILINGUAL_TRACK);
 
-  // TODO: Récupérer le track académique actif depuis le contexte
-  // Pour l'instant, on retourne null
-  const academicTrack = null;
+  // Stable references — prevent infinite re-render loops caused by new object identity on each render.
+  // currentYear/currentLevel are stable useState values from their contexts.
+  const academicYear = useMemo(
+    () =>
+      currentYear
+        ? {
+            id: currentYear.id,
+            label: currentYear.label ?? currentYear.name,
+            name: currentYear.name || currentYear.label || '',
+          }
+        : null,
+    [currentYear],
+  );
 
-  return {
-    academicYear: currentYear
-      ? {
-          id: currentYear.id,
-          label: currentYear.label,
-          name: currentYear.name || currentYear.label,
-        }
-      : null,
-    schoolLevel: currentLevel
-      ? {
-          id: currentLevel.id,
-          code: currentLevel.code,
-          label: currentLevel.label || currentLevel.code,
-        }
-      : null,
-    academicTrack,
-    isBilingualEnabled: isBilingualEnabled || false,
-    isLoading: yearLoading || levelLoading,
-  };
+  const schoolLevel = useMemo(
+    () =>
+      currentLevel
+        ? { id: currentLevel.id, code: currentLevel.code, label: currentLevel.label || currentLevel.code }
+        : null,
+    [currentLevel],
+  );
+
+  return useMemo(
+    () => ({
+      academicYear,
+      schoolLevel,
+      academicTrack: null,
+      isBilingualEnabled: isBilingualEnabled || false,
+      isLoading: yearLoading || levelLoading,
+    }),
+    [academicYear, schoolLevel, isBilingualEnabled, yearLoading, levelLoading],
+  );
 }
 

@@ -61,42 +61,52 @@ export default function BaseModal({
   className,
 }: BaseModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  const disableEscCloseRef = useRef(disableEscClose);
+  onCloseRef.current = onClose;
+  disableEscCloseRef.current = disableEscClose;
+
   const { academicYear, schoolLevel, isBilingualEnabled } = useModuleContext();
   const { shouldReduceMotion } = useMotionBudget();
   const fadeMotion = getFadeMotion(shouldReduceMotion);
   const modalMotion = getModalMotion(shouldReduceMotion);
 
-  // Focus trap
+  // Focus first input when modal opens; ESC closes it.
+  // Deps limited to `isOpen` so parent re-renders don't steal focus from inputs.
   useEffect(() => {
     if (!isOpen) return;
 
     const modal = modalRef.current;
-    if (!modal) return;
 
-    // Focus sur le modal
-    const focusableElements = modal.querySelectorAll<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-    );
-    const firstElement = focusableElements[0];
-    if (firstElement) {
-      firstElement.focus();
-    }
-
-    // Gestion ESC
     const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !disableEscClose) {
-        onClose();
+      if (e.key === 'Escape' && !disableEscCloseRef.current) {
+        onCloseRef.current();
       }
     };
-
     document.addEventListener('keydown', handleEsc);
     document.body.style.overflow = 'hidden';
+
+    // Focus first text input/textarea so users can type immediately; fall back to first focusable
+    let focusTimer: ReturnType<typeof setTimeout> | null = null;
+    if (modal) {
+      const firstInput = modal.querySelector<HTMLElement>(
+        'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled])'
+      );
+      const firstFocusable = modal.querySelector<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      const target = firstInput ?? firstFocusable;
+      if (target) {
+        focusTimer = setTimeout(() => target.focus(), 50);
+      }
+    }
 
     return () => {
       document.removeEventListener('keydown', handleEsc);
       document.body.style.overflow = '';
+      if (focusTimer) clearTimeout(focusTimer);
     };
-  }, [isOpen, disableEscClose, onClose]);
+  }, [isOpen]);
 
   const sizeClasses = {
     sm: 'max-w-md',
@@ -121,7 +131,7 @@ export default function BaseModal({
           />
 
           {/* Modal — bottom-sheet mobile, centré md+ */}
-          <div className="flex min-h-full items-end md:items-center justify-center p-0 md:p-4">
+          <div className="relative z-10 flex min-h-full items-end md:items-center justify-center p-0 md:p-4">
             <motion.div
               ref={modalRef}
               className={cn(

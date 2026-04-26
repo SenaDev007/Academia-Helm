@@ -1,53 +1,27 @@
-/**
- * ============================================================================
- * STUDENT FEE PROFILE API PROXY - GET BY STUDENT
- * ============================================================================
- */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
-const API_BASE_URL = getApiBaseUrlForRoutes();
+const API_URL = getApiBaseUrlForRoutes();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { studentId: string } }
+  { params }: { params: Promise<{ studentId: string }> }
 ) {
   try {
-    const searchParams = request.nextUrl.searchParams;
-    const academicYearId = searchParams.get('academicYearId');
-
+    const { studentId } = await params;
+    const academicYearId = request.nextUrl.searchParams.get('academicYearId');
     if (!academicYearId) {
-      return NextResponse.json(
-        { error: 'academicYearId is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'academicYearId is required' }, { status: 400 });
     }
-
+    const headers = await getProxyAuthHeaders(request);
     const response = await fetch(
-      `${API_BASE_URL}/finance/student-fee-profiles/student/${params.studentId}?academicYearId=${academicYearId}`,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: request.headers.get('Authorization') || '',
-        },
-      }
+      normalizeApiUrl(`${API_URL}/finance/student-fee-profiles/student/${studentId}?academicYearId=${academicYearId}`),
+      { headers }
     );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      return NextResponse.json(data, { status: response.status });
-    }
-
-    return NextResponse.json(data);
-  } catch (error: any) {
-    console.error('Student fee profile API error:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch student fee profile' },
-      { status: 500 }
-    );
+    const data = await response.json().catch(() => ({}));
+    return NextResponse.json(data, { status: response.status });
+  } catch (e) {
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
-

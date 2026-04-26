@@ -190,7 +190,7 @@ export default function PatronatLayout({
                   )}
                 >
                   <AppIcon
-                    name={item.icon}
+                    name={item.icon as any}
                     size="menu"
                     className={cn(
                       isActive(item.href) ? 'text-blue-900' : 'text-gray-500'

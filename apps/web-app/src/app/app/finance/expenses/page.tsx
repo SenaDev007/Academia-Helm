@@ -4,16 +4,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Eye, CheckCircle, XCircle, Wallet } from 'lucide-react';
+import { Eye, CheckCircle, XCircle, Wallet } from 'lucide-react';
 import {
   ModuleHeader,
   SubModuleNavigation,
   ModuleContentArea,
-  ConfirmModal,
-  ReadOnlyModal,
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { useModal } from '@/hooks/useModal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -26,7 +23,6 @@ const formatXOF = (n: number) =>
 
 export default function ExpensesPage() {
   const { academicYear } = useModuleContext();
-  const { openConfirmModal, openReadOnlyModal, closeModal } = useModal();
   const [expenses, setExpenses] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [budgets, setBudgets] = useState<any[]>([]);
@@ -37,6 +33,7 @@ export default function ExpensesPage() {
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
   const [modalCreate, setModalCreate] = useState(false);
+  const [detailExpense, setDetailExpense] = useState<any | null>(null);
   const [form, setForm] = useState({ categoryId: '', description: '', amount: '', receiptUrl: '' });
 
   const loadExpenses = async () => {
@@ -100,13 +97,11 @@ export default function ExpensesPage() {
   const handleApprove = async (id: string) => {
     const res = await fetch(`/api/finance/expenses-v2/${id}/approve`, { method: 'PATCH', credentials: 'include' });
     if (res.ok) loadExpenses();
-    closeModal();
   };
 
   const handleReject = async (id: string) => {
     const res = await fetch(`/api/finance/expenses-v2/${id}/reject`, { method: 'PATCH', credentials: 'include' });
     if (res.ok) loadExpenses();
-    closeModal();
   };
 
   const subModuleTabs = FINANCE_SUBMODULE_TABS.map((t) => ({
@@ -136,13 +131,11 @@ export default function ExpensesPage() {
         description="Dépenses avec workflow d'approbation et budget annuel par catégorie."
         icon="finance"
         kpis={[
-          { label: 'Dépenses approuvées', value: formatXOF(approvedSum), unit: '' },
-          { label: 'En attente', value: String(pendingCount), unit: '' },
-          { label: 'Année', value: academicYear?.label ?? '—', unit: '' },
+          { label: 'Dépenses approuvées', value: formatXOF(approvedSum) },
+          { label: 'En attente', value: String(pendingCount) },
+          { label: 'Année', value: academicYear?.label ?? '—' },
         ]}
-        actions={[
-          { label: 'Nouvelle dépense', onClick: () => setModalCreate(true), primary: true },
-        ]}
+        actions={<Button onClick={() => setModalCreate(true)}>Nouvelle dépense</Button>}
       />
       <SubModuleNavigation tabs={subModuleTabs} currentPath="/app/finance/expenses" />
 
@@ -156,7 +149,7 @@ export default function ExpensesPage() {
           <div className="bg-white rounded-lg p-6 max-w-md w-full">
             <h3 className="font-semibold mb-4">Nouvelle dépense</h3>
             <form onSubmit={handleCreate}>
-              <Select value={form.categoryId} onValueChange={(v) => setForm((f) => ({ ...f, categoryId: v }))} required>
+              <Select value={form.categoryId} onValueChange={(v) => setForm((f) => ({ ...f, categoryId: v }))}>
                 <SelectTrigger className="mb-2"><SelectValue placeholder="Catégorie" /></SelectTrigger>
                 <SelectContent>
                   {categories.map((c) => (
@@ -172,6 +165,24 @@ export default function ExpensesPage() {
                 <Button type="button" variant="outline" onClick={() => setModalCreate(false)}>Annuler</Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {detailExpense && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full">
+            <h3 className="font-semibold mb-4">{detailExpense.description}</h3>
+            <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+              <div><strong>Catégorie:</strong> {detailExpense.category?.name ?? detailExpense.categoryId}</div>
+              <div><strong>Date:</strong> {detailExpense.createdAt ? new Date(detailExpense.createdAt).toLocaleDateString('fr-FR') : '—'}</div>
+              <div><strong>Montant:</strong> {formatXOF(Number(detailExpense.amount))}</div>
+              <div><strong>Statut:</strong> {detailExpense.status}</div>
+              <div className="col-span-2"><strong>Description:</strong> {detailExpense.description}</div>
+            </div>
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={() => setDetailExpense(null)}>Fermer</Button>
+            </div>
           </div>
         </div>
       )}
@@ -226,22 +237,11 @@ export default function ExpensesPage() {
                     <TableCell>{expense.requester ? [expense.requester.firstName, expense.requester.lastName].filter(Boolean).join(' ') : '—'}</TableCell>
                     <TableCell>{getStatusBadge(expense.status)}</TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => openReadOnlyModal({
-                        title: expense.description,
-                        children: (
-                          <div className="grid grid-cols-2 gap-4">
-                            <div><strong>Catégorie:</strong> {expense.category?.name ?? expense.categoryId}</div>
-                            <div><strong>Date:</strong> {expense.createdAt ? new Date(expense.createdAt).toLocaleDateString('fr-FR') : '—'}</div>
-                            <div><strong>Montant:</strong> {formatXOF(Number(expense.amount))}</div>
-                            <div><strong>Statut:</strong> {expense.status}</div>
-                            <div className="col-span-2"><strong>Description:</strong> {expense.description}</div>
-                          </div>
-                        ),
-                      })}><Eye className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" onClick={() => setDetailExpense(expense)}><Eye className="h-4 w-4" /></Button>
                       {expense.status === 'PENDING' && (
                         <>
-                          <Button variant="ghost" size="icon" onClick={() => openConfirmModal({ title: 'Approuver', message: 'Approuver cette dépense ?', onConfirm: () => handleApprove(expense.id), type: 'success' })}><CheckCircle className="h-4 w-4 text-green-600" /></Button>
-                          <Button variant="ghost" size="icon" onClick={() => openConfirmModal({ title: 'Rejeter', message: 'Rejeter cette dépense ?', onConfirm: () => handleReject(expense.id), type: 'danger' })}><XCircle className="h-4 w-4 text-red-600" /></Button>
+                          <Button variant="ghost" size="icon" onClick={() => { if (window.confirm('Approuver cette dépense ?')) handleApprove(expense.id); }}><CheckCircle className="h-4 w-4 text-green-600" /></Button>
+                          <Button variant="ghost" size="icon" onClick={() => { if (window.confirm('Rejeter cette dépense ?')) handleReject(expense.id); }}><XCircle className="h-4 w-4 text-red-600" /></Button>
                         </>
                       )}
                     </TableCell>
@@ -288,4 +288,3 @@ export default function ExpensesPage() {
     </div>
   );
 }
-

@@ -11,7 +11,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 export default function FinanceSettingsPage() {
-  const [settings, setSettings] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     blockingThreshold: '',
@@ -33,7 +32,6 @@ export default function FinanceSettingsPage() {
     fetch('/api/finance/settings', { credentials: 'include' })
       .then((r) => (r.ok ? r.json() : null))
       .then((s) => {
-        setSettings(s);
         if (s) {
           setForm((f) => ({
             ...f,

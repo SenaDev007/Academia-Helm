@@ -6,7 +6,7 @@ import { Eye, Unlock } from 'lucide-react';
 import { ModuleHeader, SubModuleNavigation, ModuleContentArea } from '@/components/modules/blueprint';
 import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -222,7 +222,7 @@ export default function StudentAccountsContent() {
               </div>
             )}
             <div className="mt-4 flex flex-wrap gap-2 justify-end">
-              <Button variant="outline" asChild><Link href="/app/finance/payments">Voir historique transactions</Link></Button>
+              <Link href="/app/finance/payments" className={buttonVariants({ variant: 'outline' })}>Voir historique transactions</Link>
               {(detailAccount.transactions?.find((t: any) => t.receiptUrl)?.receiptUrl) && (
                 <Button variant="outline" onClick={() => window.open(detailAccount.transactions.find((t: any) => t.receiptUrl).receiptUrl, '_blank')}>Voir reçu</Button>
               )}

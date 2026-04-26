@@ -1,40 +1,33 @@
-/**
- * Proxy vers backend Nest: api/finance/expenses-v2 (FinanceExpense SM5)
- */
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
-const API = getApiBaseUrlForRoutes();
+const API_URL = getApiBaseUrlForRoutes();
 
-function authHeaders(req: NextRequest) {
-  return { Authorization: req.headers.get('Authorization') || '' };
-}
-
-export async function GET(req: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const q = req.nextUrl.searchParams.toString();
-    const res = await fetch(`${API}/api/finance/expenses-v2${q ? `?${q}` : ''}`, { headers: authHeaders(req), credentials: 'include' });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
+    const q = request.nextUrl.searchParams.toString();
+    const headers = await getProxyAuthHeaders(request);
+    const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/expenses-v2${q ? `?${q}` : ''}`), { headers });
+    const data = await response.json().catch(() => ({}));
+    return NextResponse.json(data, { status: response.status });
   } catch (e) {
-    console.error('Expenses-v2 GET:', e);
-    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const body = await req.json();
-    const res = await fetch(`${API}/api/finance/expenses-v2`, {
+    const body = await request.json();
+    const headers = await getProxyAuthHeaders(request);
+    const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/expenses-v2`), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders(req) },
+      headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      credentials: 'include',
     });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
+    const data = await response.json().catch(() => ({}));
+    return NextResponse.json(data, { status: response.status });
   } catch (e) {
-    console.error('Expenses-v2 POST:', e);
-    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

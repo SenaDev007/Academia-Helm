@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Send, Unlock, Play } from 'lucide-react';
+import { Send, Play } from 'lucide-react';
 import { motion } from 'framer-motion';
 import {
   ModuleHeader,
@@ -20,7 +20,6 @@ export default function RecoveryRemindersContent() {
   const [reminders, setReminders] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterLevel, setFilterLevel] = useState('');
   const [manualModal, setManualModal] = useState(false);
   const [manualAccountId, setManualAccountId] = useState('');
   const [manualLevel, setManualLevel] = useState('WARNING');

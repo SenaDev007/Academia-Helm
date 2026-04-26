@@ -1,34 +1,25 @@
-/**
- * ============================================================================
- * API PROXY - UPDATE STUDENT FEE STATUS
- * ============================================================================
- */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
-const API_BASE_URL = getApiBaseUrlForRoutes();
+const API_URL = getApiBaseUrlForRoutes();
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const body = await request.json();
-    const response = await fetch(`${API_BASE_URL}/api/finance/fees/student-fees/${params.id}/status`, {
+    const headers = await getProxyAuthHeaders(request);
+    const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/fees/student-fees/${id}/status`), {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': request.headers.get('Authorization') || '',
-      },
+      headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-
-    const data = await response.json();
-    return NextResponse.json(data);
-  } catch (error) {
-    console.error('Error updating student fee status:', error);
-    return NextResponse.json({ error: 'Failed to update student fee status' }, { status: 500 });
+    const data = await response.json().catch(() => ({}));
+    return NextResponse.json(data, { status: response.status });
+  } catch (e) {
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
-

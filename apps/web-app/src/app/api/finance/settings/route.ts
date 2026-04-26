@@ -1,26 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
-const API = getApiBaseUrlForRoutes();
+const API_URL = getApiBaseUrlForRoutes();
 
-function authHeaders(req: NextRequest) {
-  return { Authorization: req.headers.get('Authorization') || '' };
+export async function GET(request: NextRequest) {
+  try {
+    const headers = await getProxyAuthHeaders(request);
+    const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/settings`), { headers });
+    const data = await response.json().catch(() => ({}));
+    return NextResponse.json(data, { status: response.status });
+  } catch (e) {
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
 }
 
-export async function GET(req: NextRequest) {
-  const res = await fetch(`${API}/api/finance/settings`, { headers: authHeaders(req), credentials: 'include' });
-  const data = await res.json();
-  return NextResponse.json(data, { status: res.status });
-}
-
-export async function PATCH(req: NextRequest) {
-  const body = await req.json();
-  const res = await fetch(`${API}/api/finance/settings`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...authHeaders(req) },
-    body: JSON.stringify(body),
-    credentials: 'include',
-  });
-  const data = await res.json();
-  return NextResponse.json(data, { status: res.status });
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const headers = await getProxyAuthHeaders(request);
+    const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/settings`), {
+      method: 'PATCH',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json().catch(() => ({}));
+    return NextResponse.json(data, { status: response.status });
+  } catch (e) {
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
 }

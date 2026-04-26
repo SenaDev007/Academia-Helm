@@ -1,24 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
-const API = getApiBaseUrlForRoutes();
+const API_URL = getApiBaseUrlForRoutes();
 
-function authHeaders(req: NextRequest) {
-  return { Authorization: req.headers.get('Authorization') || '' };
-}
-
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const id = params.id;
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const body = await req.json();
-    const res = await fetch(`${API}/api/finance/fees/${id}/installments`, {
+    const { id } = await params;
+    const body = await request.json();
+    const headers = await getProxyAuthHeaders(request);
+    const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/fees/${id}/installments`), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders(req) },
+      headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
+    const data = await response.json().catch(() => ({}));
+    return NextResponse.json(data, { status: response.status });
   } catch (e) {
-    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

@@ -1,33 +1,17 @@
-/**
- * ============================================================================
- * API PROXY - EXPENSE STATISTICS
- * ============================================================================
- */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
-const API_BASE_URL = getApiBaseUrlForRoutes();
+const API_URL = getApiBaseUrlForRoutes();
 
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams;
-    const queryString = searchParams.toString();
-    const url = `${API_BASE_URL}/api/finance/expenses/statistics/summary${queryString ? `?${queryString}` : ''}`;
-
-    const headers: HeadersInit = {};
-    const auth = request.headers.get('authorization') || request.headers.get('Authorization');
-    const cookie = request.headers.get('cookie');
-    if (auth) headers['Authorization'] = auth;
-    if (cookie) headers['cookie'] = cookie;
-
-    const response = await fetch(url, { headers });
-
-    const data = await response.json();
-    return NextResponse.json(data);
-  } catch (error) {
-    console.error('Error fetching expense statistics:', error);
-    return NextResponse.json({ error: 'Failed to fetch expense statistics' }, { status: 500 });
+    const q = request.nextUrl.searchParams.toString();
+    const headers = await getProxyAuthHeaders(request);
+    const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/expenses/statistics/summary${q ? `?${q}` : ''}`), { headers });
+    const data = await response.json().catch(() => ({}));
+    return NextResponse.json(data, { status: response.status });
+  } catch (e) {
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
-

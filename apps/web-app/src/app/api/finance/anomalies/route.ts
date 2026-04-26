@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
-export async function GET(req: NextRequest) {
-  const q = req.nextUrl.searchParams.toString();
-  const API = getApiBaseUrlForRoutes();
-  const res = await fetch(`${API}/api/finance/anomalies${q ? `?${q}` : ''}`, {
-    headers: { Authorization: req.headers.get('Authorization') || '' },
-    credentials: 'include',
-  });
-  const data = await res.json();
-  return NextResponse.json(data, { status: res.status });
+const API_URL = getApiBaseUrlForRoutes();
+
+export async function GET(request: NextRequest) {
+  try {
+    const q = request.nextUrl.searchParams.toString();
+    const headers = await getProxyAuthHeaders(request);
+    const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/anomalies${q ? `?${q}` : ''}`), { headers });
+    const data = await response.json().catch(() => ({}));
+    return NextResponse.json(data, { status: response.status });
+  } catch (e) {
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
 }

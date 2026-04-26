@@ -5,10 +5,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, CheckCircle, Eye } from 'lucide-react';
-import { ModuleHeader, SubModuleNavigation, ModuleContentArea, ConfirmModal, ReadOnlyModal } from '@/components/modules/blueprint';
+import { CheckCircle, Eye } from 'lucide-react';
+import { ModuleHeader, SubModuleNavigation, ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { useModal } from '@/hooks/useModal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -20,10 +19,10 @@ const formatXOF = (n: number) =>
 
 export default function TreasuryPage() {
   const { academicYear } = useModuleContext();
-  const { openConfirmModal, openReadOnlyModal, closeModal } = useModal();
   const [closures, setClosures] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalClosure, setModalClosure] = useState(false);
+  const [detailClosure, setDetailClosure] = useState<any | null>(null);
   const [closureDate, setClosureDate] = useState(new Date().toISOString().split('T')[0]);
   const [physicalAmount, setPhysicalAmount] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -73,7 +72,6 @@ export default function TreasuryPage() {
   const handleValidate = async (id: string) => {
     const res = await fetch(`/api/finance/treasury/daily-closures/${id}/validate`, { method: 'PATCH', credentials: 'include' });
     if (res.ok) loadClosures();
-    closeModal();
   };
 
   const subModuleTabs = FINANCE_SUBMODULE_TABS.map((t) => ({
@@ -92,11 +90,11 @@ export default function TreasuryPage() {
         description="Clôture journalière (calcul auto), rapprochement caisse, type Manuel/Auto, anomalie."
         icon="finance"
         kpis={[
-          { label: 'Solde cumulé', value: formatXOF(totalNet), unit: '' },
-          { label: 'Clôtures', value: String(closures.length), unit: '' },
-          { label: 'Année', value: academicYear?.label ?? '—', unit: '' },
+          { label: 'Solde cumulé', value: formatXOF(totalNet) },
+          { label: 'Clôtures', value: String(closures.length) },
+          { label: 'Année', value: academicYear?.label ?? '—' },
         ]}
-        actions={[{ label: 'Clôturer la journée', onClick: () => setModalClosure(true), primary: true }]}
+        actions={<Button onClick={() => setModalClosure(true)}>Clôturer la journée</Button>}
       />
       <SubModuleNavigation tabs={subModuleTabs} currentPath="/app/finance/treasury" />
 
@@ -115,6 +113,27 @@ export default function TreasuryPage() {
                 <Button type="button" variant="outline" onClick={() => setModalClosure(false)}>Annuler</Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {detailClosure && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full">
+            <h3 className="font-semibold mb-4">Clôture {new Date(detailClosure.date).toLocaleDateString('fr-FR')}</h3>
+            <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+              <div><strong>Type:</strong> {detailClosure.closureType}</div>
+              <div><strong>Validée:</strong> {detailClosure.validatedById ? 'Oui' : 'Non'}</div>
+              <div><strong>Encaissements:</strong> {formatXOF(Number(detailClosure.totalIncome ?? 0))}</div>
+              <div><strong>Dépenses:</strong> {formatXOF(Number(detailClosure.totalExpense ?? 0))}</div>
+              <div><strong>Solde:</strong> {formatXOF(Number(detailClosure.netBalance ?? 0))}</div>
+              {detailClosure.physicalAmount != null && <div><strong>Montant physique:</strong> {formatXOF(Number(detailClosure.physicalAmount))}</div>}
+              {detailClosure.discrepancy != null && <div><strong>Écart:</strong> {formatXOF(Number(detailClosure.discrepancy))}</div>}
+              {detailClosure.anomalyNote && <div className="col-span-2"><strong>Anomalie:</strong> {detailClosure.anomalyNote}</div>}
+            </div>
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={() => setDetailClosure(null)}>Fermer</Button>
+            </div>
           </div>
         </div>
       )}
@@ -153,28 +172,9 @@ export default function TreasuryPage() {
                   <TableCell className="font-medium">{formatXOF(Number(c.netBalance ?? 0))}</TableCell>
                   <TableCell>{c.anomalyDetected ? <span className="text-red-600">Oui</span> : '—'}</TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="icon" onClick={() => openReadOnlyModal({
-                      title: `Clôture ${new Date(c.date).toLocaleDateString('fr-FR')}`,
-                      children: (
-                        <div className="grid grid-cols-2 gap-4">
-                          <div><strong>Type:</strong> {c.closureType}</div>
-                          <div><strong>Validée:</strong> {c.validatedById ? 'Oui' : 'Non'}</div>
-                          <div><strong>Encaissements:</strong> {formatXOF(Number(c.totalIncome ?? 0))}</div>
-                          <div><strong>Dépenses:</strong> {formatXOF(Number(c.totalExpense ?? 0))}</div>
-                          <div><strong>Solde:</strong> {formatXOF(Number(c.netBalance ?? 0))}</div>
-                          {c.physicalAmount != null && <div><strong>Montant physique:</strong> {formatXOF(Number(c.physicalAmount))}</div>}
-                          {c.discrepancy != null && <div><strong>Écart:</strong> {formatXOF(Number(c.discrepancy))}</div>}
-                          {c.anomalyNote && <div className="col-span-2"><strong>Anomalie:</strong> {c.anomalyNote}</div>}
-                        </div>
-                      ),
-                    })}><Eye className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" onClick={() => setDetailClosure(c)}><Eye className="h-4 w-4" /></Button>
                     {!c.validatedById && (
-                      <Button variant="ghost" size="icon" onClick={() => openConfirmModal({
-                        title: 'Valider la clôture',
-                        message: `Valider la clôture du ${new Date(c.date).toLocaleDateString('fr-FR')} ?`,
-                        onConfirm: () => handleValidate(c.id),
-                        type: 'success',
-                      })}><CheckCircle className="h-4 w-4 text-green-600" /></Button>
+                      <Button variant="ghost" size="icon" onClick={() => { if (window.confirm(`Valider la clôture du ${new Date(c.date).toLocaleDateString('fr-FR')} ?`)) handleValidate(c.id); }}><CheckCircle className="h-4 w-4 text-green-600" /></Button>
                     )}
                   </TableCell>
                 </TableRow>
@@ -186,4 +186,3 @@ export default function TreasuryPage() {
     </div>
   );
 }
-

@@ -1,17 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
+
+const API_URL = getApiBaseUrlForRoutes();
 
 export async function PATCH(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const API = getApiBaseUrlForRoutes();
-  const res = await fetch(`${API}/api/finance/expenses-v2/${id}/approve`, {
-    method: 'PATCH',
-    headers: { Authorization: req.headers.get('Authorization') || '' },
-    credentials: 'include',
-  });
-  const data = await res.json();
-  return NextResponse.json(data, { status: res.status });
+  try {
+    const { id } = await params;
+    const headers = await getProxyAuthHeaders(request);
+    const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/expenses-v2/${id}/approve`), {
+      method: 'PATCH',
+      headers,
+    });
+    const data = await response.json().catch(() => ({}));
+    return NextResponse.json(data, { status: response.status });
+  } catch (e) {
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
 }

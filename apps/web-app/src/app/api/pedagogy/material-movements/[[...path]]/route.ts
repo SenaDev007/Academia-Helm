@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { nestDoublePrefixedControllerUrl, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 import { readProxyBodyText } from '@/lib/api/pedagogy-proxy-body';
@@ -6,7 +6,7 @@ import { readProxyBodyText } from '@/lib/api/pedagogy-proxy-body';
 function buildBackendUrl(pathSegments: string[]): string {
   const path = pathSegments.length ? pathSegments.join('/') : '';
   return nestDoublePrefixedControllerUrl(
-    `pedagogy/annual-teacher-supplies${path ? `/${path}` : ''}`,
+    `pedagogy/material-movements${path ? `/${path}` : ''}`,
   );
 }
 
@@ -24,17 +24,17 @@ async function forward(request: NextRequest, pathSegments: string[], method: str
     const data = await res.json().catch(() => ({}));
     return NextResponse.json(data, { status: res.status });
   } catch (e) {
-    console.error('Annual teacher supplies API error:', e);
+    console.error('Material movements API error:', e);
     return NextResponse.json({ error: 'Service indisponible' }, { status: 502 });
   }
 }
 
-export async function GET(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
   const { path } = await params;
   return forward(request, path ?? [], 'GET');
 }
 
-export async function POST(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
   const { path } = await params;
   return forward(request, path ?? [], 'POST');
 }

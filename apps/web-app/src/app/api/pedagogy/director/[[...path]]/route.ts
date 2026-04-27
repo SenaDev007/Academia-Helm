@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { nestDoublePrefixedControllerUrl, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 import { readProxyBodyText } from '@/lib/api/pedagogy-proxy-body';
@@ -29,22 +29,22 @@ async function forward(request: NextRequest, pathSegments: string[], method: str
   }
 }
 
-export async function GET(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
   const { path } = await params;
   return forward(request, path ?? [], 'GET');
 }
 
-export async function POST(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
   const { path } = await params;
   return forward(request, path ?? [], 'POST');
 }
 
-export async function PUT(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
   const { path } = await params;
   return forward(request, path ?? [], 'PUT');
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
   const { path } = await params;
   return forward(request, path ?? [], 'DELETE');
 }

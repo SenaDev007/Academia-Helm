@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Proxy API Espace enseignant (Module 2) vers le backend NestJS
  * Forward: semainier, notifications, etc. (GET, POST, PUT)
  */
@@ -46,7 +46,7 @@ async function forward(
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
+  { params }: { params: Promise<{ path?: string[] }> }
 ) {
   const { path } = await params;
   return forward(request, path ?? [], 'GET');
@@ -54,7 +54,7 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
+  { params }: { params: Promise<{ path?: string[] }> }
 ) {
   const { path } = await params;
   return forward(request, path ?? [], 'POST');
@@ -62,7 +62,7 @@ export async function POST(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
+  { params }: { params: Promise<{ path?: string[] }> }
 ) {
   const { path } = await params;
   return forward(request, path ?? [], 'PUT');
@@ -70,7 +70,7 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
+  { params }: { params: Promise<{ path?: string[] }> }
 ) {
   const { path } = await params;
   return forward(request, path ?? [], 'DELETE');

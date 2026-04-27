@@ -1,5 +1,5 @@
-/**
- * Proxy API Affectations (SM4) vers le backend NestJS
+﻿/**
+ * Proxy API Profils enseignants (SM3) vers le backend NestJS
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -10,7 +10,7 @@ import { readProxyBodyText } from '@/lib/api/pedagogy-proxy-body';
 function buildBackendUrl(pathSegments: string[]): string {
   const path = pathSegments.length ? pathSegments.join('/') : '';
   return nestDoublePrefixedControllerUrl(
-    `pedagogy/assignments${path ? `/${path}` : ''}`,
+    `pedagogy/teacher-profiles${path ? `/${path}` : ''}`,
   );
 }
 
@@ -35,14 +35,17 @@ async function forward(
     const data = await res.json().catch(() => ({}));
     return NextResponse.json(data, { status: res.status });
   } catch (e) {
-    console.error('Assignments API error:', e);
-    return NextResponse.json({ error: 'Service unavailable' }, { status: 502 });
+    console.error('Teacher profiles API error:', e);
+    return NextResponse.json(
+      { error: 'Service indisponible' },
+      { status: 502 }
+    );
   }
 }
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
+  { params }: { params: Promise<{ path?: string[] }> }
 ) {
   const { path } = await params;
   return forward(request, path ?? [], 'GET');
@@ -50,7 +53,7 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
+  { params }: { params: Promise<{ path?: string[] }> }
 ) {
   const { path } = await params;
   return forward(request, path ?? [], 'POST');
@@ -58,7 +61,7 @@ export async function POST(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
+  { params }: { params: Promise<{ path?: string[] }> }
 ) {
   const { path } = await params;
   return forward(request, path ?? [], 'PUT');
@@ -66,7 +69,7 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
+  { params }: { params: Promise<{ path?: string[] }> }
 ) {
   const { path } = await params;
   return forward(request, path ?? [], 'DELETE');

@@ -190,19 +190,19 @@ export default function ExpensesPage() {
       {tab === 'expenses' && (
         <ModuleContentArea layout="table" filters={
           <div className="flex space-x-2">
-            <Select value={filterStatus} onValueChange={setFilterStatus}>
+            <Select value={filterStatus || 'ALL'} onValueChange={(v) => setFilterStatus(v === 'ALL' ? '' : v)}>
               <SelectTrigger className="w-[160px]"><SelectValue placeholder="Statut" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Tous</SelectItem>
+                <SelectItem value="ALL">Tous</SelectItem>
                 <SelectItem value="PENDING">En attente</SelectItem>
                 <SelectItem value="APPROVED">Approuvées</SelectItem>
                 <SelectItem value="REJECTED">Rejetées</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={filterCategory} onValueChange={setFilterCategory}>
+            <Select value={filterCategory || 'ALL'} onValueChange={(v) => setFilterCategory(v === 'ALL' ? '' : v)}>
               <SelectTrigger className="w-[180px]"><SelectValue placeholder="Catégorie" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Toutes</SelectItem>
+                <SelectItem value="ALL">Toutes</SelectItem>
                 {categories.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
               </SelectContent>
             </Select>

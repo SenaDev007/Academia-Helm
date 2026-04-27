@@ -108,23 +108,23 @@ export default function StudentAccountsContent() {
       <ModuleContentArea layout="custom">
         <div className="mb-4 flex flex-wrap gap-4 items-center">
           <span className="text-sm text-gray-600">Année : {academicYear?.label ?? '—'}</span>
-          <Select value={filterClassId} onValueChange={setFilterClassId}>
+          <Select value={filterClassId || 'ALL'} onValueChange={(v) => setFilterClassId(v === 'ALL' ? '' : v)}>
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Filtre Classe" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Toutes</SelectItem>
+              <SelectItem value="ALL">Toutes</SelectItem>
               {classes.map((c) => (
                 <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Select value={filterStatus} onValueChange={setFilterStatus}>
+          <Select value={filterStatus || 'ALL'} onValueChange={(v) => setFilterStatus(v === 'ALL' ? '' : v)}>
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Filtre Statut" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Tous</SelectItem>
+              <SelectItem value="ALL">Tous</SelectItem>
               <SelectItem value="PAID">Payé</SelectItem>
               <SelectItem value="PARTIAL">Partiel</SelectItem>
               <SelectItem value="OVERDUE">En retard</SelectItem>

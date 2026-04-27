@@ -21,21 +21,26 @@ export default function FeeStructureModal({
   classes,
   onClose,
   onSubmit,
+  feeId,
+  initialData,
 }: {
   academicYearId: string;
   levels: any[];
   classes: any[];
   onClose: () => void;
   onSubmit: (body: any) => void;
+  feeId?: string;
+  initialData?: any;
 }) {
-  const [name, setName] = useState('');
-  const [feeType, setFeeType] = useState('TUITION');
-  const [totalAmount, setTotalAmount] = useState('');
-  const [isInstallment, setIsInstallment] = useState(false);
-  const [isMandatory, setIsMandatory] = useState(true);
-  const [applyTo, setApplyTo] = useState<'level' | 'class'>('level');
-  const [levelId, setLevelId] = useState('');
-  const [classId, setClassId] = useState('');
+  const isEdit = Boolean(feeId);
+  const [name, setName] = useState(initialData?.name ?? '');
+  const [feeType, setFeeType] = useState(initialData?.feeType ?? 'TUITION');
+  const [totalAmount, setTotalAmount] = useState(initialData?.totalAmount != null ? String(initialData.totalAmount) : '');
+  const [isInstallment, setIsInstallment] = useState(initialData?.isInstallment ?? false);
+  const [isMandatory, setIsMandatory] = useState(initialData?.isMandatory ?? true);
+  const [applyTo, setApplyTo] = useState<'level' | 'class'>(initialData?.classId ? 'class' : 'level');
+  const [levelId, setLevelId] = useState(initialData?.levelId ?? '');
+  const [classId, setClassId] = useState(initialData?.classId ?? '');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,7 +66,7 @@ export default function FeeStructureModal({
         transition={{ duration: 0.22, ease: 'easeOut' }}
         className="bg-white rounded-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto border border-blue-100 shadow-2xl"
       >
-        <h3 className="text-lg font-semibold mb-4">Nouveau frais</h3>
+        <h3 className="text-lg font-semibold mb-4">{isEdit ? 'Modifier le frais' : 'Nouveau frais'}</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <Label>Type de frais</Label>
@@ -131,7 +136,7 @@ export default function FeeStructureModal({
           </div>
           <div className="flex gap-2 justify-end pt-4">
             <Button type="button" variant="outline" onClick={onClose}>Annuler</Button>
-            <Button type="submit">Créer</Button>
+            <Button type="submit">{isEdit ? 'Enregistrer' : 'Créer'}</Button>
           </div>
         </form>
       </motion.div>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Copy, UserCog } from 'lucide-react';
+import { Plus, Copy, UserCog, Pencil, Trash2 } from 'lucide-react';
 import {
   ModuleHeader,
   SubModuleNavigation,
@@ -10,11 +10,9 @@ import {
 import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Label } from '@/components/ui/label';
 import FeeStructureModal from './FeeStructureModal';
 import FeeOverrideModal from './FeeOverrideModal';
 
@@ -31,10 +29,12 @@ export default function FeeStructuresContent() {
   const [structures, setStructures] = useState<any[]>([]);
   const [levels, setLevels] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
+  const [academicYears, setAcademicYears] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterLevelId, setFilterLevelId] = useState<string>('');
   const [filterClassId, setFilterClassId] = useState<string>('');
   const [modalNewFee, setModalNewFee] = useState(false);
+  const [editingFee, setEditingFee] = useState<any | null>(null);
   const [modalOverride, setModalOverride] = useState(false);
   const [copyYearModal, setCopyYearModal] = useState(false);
   const [copyFrom, setCopyFrom] = useState('');
@@ -70,6 +70,9 @@ export default function FeeStructuresContent() {
     fetch('/api/school-levels', { credentials: 'include' })
       .then((r) => r.ok ? r.json() : [])
       .then((d) => setLevels(Array.isArray(d) ? d : []));
+    fetch('/api/academic-years', { credentials: 'include' })
+      .then((r) => r.ok ? r.json() : [])
+      .then((d) => setAcademicYears(Array.isArray(d) ? d : []));
   }, []);
 
   const handleCreate = async (body: any) => {
@@ -93,6 +96,45 @@ export default function FeeStructuresContent() {
     }
   };
 
+  const handleUpdate = async (body: any) => {
+    if (!editingFee?.id) return;
+    try {
+      const res = await fetch(`/api/finance/fee-structures/${editingFee.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        setEditingFee(null);
+        loadStructures();
+      } else {
+        const err = await res.json();
+        alert(err?.message || err?.error || 'Erreur');
+      }
+    } catch (e) {
+      alert('Erreur réseau');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Supprimer ce frais ? Cette action est irréversible.')) return;
+    try {
+      const res = await fetch(`/api/finance/fee-structures/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (res.ok || res.status === 204) {
+        loadStructures();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err?.message || err?.error || 'Erreur suppression');
+      }
+    } catch (e) {
+      alert('Erreur réseau');
+    }
+  };
+
   const handleCopyToYear = async () => {
     if (!copyFrom || !copyTo) return;
     try {
@@ -104,6 +146,8 @@ export default function FeeStructuresContent() {
       });
       if (res.ok) {
         setCopyYearModal(false);
+        setCopyFrom('');
+        setCopyTo('');
         loadStructures();
       } else {
         const err = await res.json();
@@ -152,23 +196,23 @@ export default function FeeStructuresContent() {
       <ModuleContentArea layout="custom">
         <div className="mb-4 flex flex-wrap gap-4 items-center">
           <span className="text-sm text-gray-600">Année scolaire : {academicYear?.label ?? '—'}</span>
-          <Select value={filterLevelId} onValueChange={setFilterLevelId}>
+          <Select value={filterLevelId || 'ALL'} onValueChange={(v) => setFilterLevelId(v === 'ALL' ? '' : v)}>
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Filtre Niveau" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Tous niveaux</SelectItem>
+              <SelectItem value="ALL">Tous niveaux</SelectItem>
               {levels.map((l) => (
                 <SelectItem key={l.id} value={l.id}>{l.label ?? l.code}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Select value={filterClassId} onValueChange={setFilterClassId}>
+          <Select value={filterClassId || 'ALL'} onValueChange={(v) => setFilterClassId(v === 'ALL' ? '' : v)}>
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Filtre Classe" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Toutes classes</SelectItem>
+              <SelectItem value="ALL">Toutes classes</SelectItem>
               {classes.map((c) => (
                 <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
               ))}
@@ -185,13 +229,14 @@ export default function FeeStructuresContent() {
               <TableHead>Tranches</TableHead>
               <TableHead>Oblig.</TableHead>
               <TableHead>Statut</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={6} className="text-center text-gray-500">Chargement...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center text-gray-500">Chargement...</TableCell></TableRow>
             ) : structures.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center text-gray-500">Aucun frais configuré.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center text-gray-500">Aucun frais configuré.</TableCell></TableRow>
             ) : (
               structures.map((s) => (
                 <TableRow key={s.id}>
@@ -201,6 +246,14 @@ export default function FeeStructuresContent() {
                   <TableCell>{s.isInstallment ? 'Oui' : 'Non'}</TableCell>
                   <TableCell><Badge variant={s.isMandatory ? 'default' : 'outline'}>{s.isMandatory ? 'Oui' : 'Non'}</Badge></TableCell>
                   <TableCell><Badge variant={s.isActive ? 'default' : 'secondary'}>{s.isActive ? 'Actif' : 'Inactif'}</Badge></TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="ghost" size="icon" onClick={() => setEditingFee(s)}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => handleDelete(s.id)}>
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))
             )}
@@ -217,6 +270,17 @@ export default function FeeStructuresContent() {
           onSubmit={handleCreate}
         />
       )}
+      {editingFee && (
+        <FeeStructureModal
+          academicYearId={academicYear?.id ?? ''}
+          levels={levels}
+          classes={classes}
+          feeId={editingFee.id}
+          initialData={editingFee}
+          onClose={() => setEditingFee(null)}
+          onSubmit={handleUpdate}
+        />
+      )}
       {modalOverride && (
         <FeeOverrideModal
           structures={structures}
@@ -227,13 +291,33 @@ export default function FeeStructuresContent() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full">
             <h3 className="text-lg font-semibold mb-4">Copier vers nouvelle année</h3>
-            <Label>Année source</Label>
-            <Input className="mb-2" value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)} placeholder="ID année source" />
-            <Label>Année cible</Label>
-            <Input className="mb-4" value={copyTo} onChange={(e) => setCopyTo(e.target.value)} placeholder="ID année cible" />
+            <div className="mb-3">
+              <label className="block text-sm font-medium mb-1">Année source</label>
+              <Select value={copyFrom || 'NONE'} onValueChange={(v) => setCopyFrom(v === 'NONE' ? '' : v)}>
+                <SelectTrigger><SelectValue placeholder="Sélectionner l'année source" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NONE">— Choisir —</SelectItem>
+                  {academicYears.map((y) => (
+                    <SelectItem key={y.id} value={y.id}>{y.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-1">Année cible</label>
+              <Select value={copyTo || 'NONE'} onValueChange={(v) => setCopyTo(v === 'NONE' ? '' : v)}>
+                <SelectTrigger><SelectValue placeholder="Sélectionner l'année cible" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NONE">— Choisir —</SelectItem>
+                  {academicYears.map((y) => (
+                    <SelectItem key={y.id} value={y.id}>{y.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setCopyYearModal(false)}>Annuler</Button>
-              <Button onClick={handleCopyToYear}>Copier</Button>
+              <Button variant="outline" onClick={() => { setCopyYearModal(false); setCopyFrom(''); setCopyTo(''); }}>Annuler</Button>
+              <Button onClick={handleCopyToYear} disabled={!copyFrom || !copyTo || copyFrom === copyTo}>Copier</Button>
             </div>
           </div>
         </div>

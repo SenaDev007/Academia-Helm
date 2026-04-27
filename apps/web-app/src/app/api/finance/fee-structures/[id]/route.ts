@@ -38,3 +38,22 @@ export async function PATCH(
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const headers = await getProxyAuthHeaders(request);
+    const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/fees/${id}`), {
+      method: 'DELETE',
+      headers,
+    });
+    if (response.status === 204) return new NextResponse(null, { status: 204 });
+    const data = await response.json().catch(() => ({}));
+    return NextResponse.json(data, { status: response.status });
+  } catch (e) {
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}

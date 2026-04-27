@@ -4,16 +4,22 @@ import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 const API_URL = getApiBaseUrlForRoutes();
 
-export async function GET(request: NextRequest) {
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ studentId: string }> }
+) {
   try {
-    const url = new URL(`${API_URL}/api/attendance/statistics`);
-    request.nextUrl.searchParams.forEach((value, key) => url.searchParams.append(key, value));
+    const { studentId } = await params;
+    const body = await request.json().catch(() => ({}));
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(normalizeApiUrl(url.toString()), { headers });
+    const response = await fetch(normalizeApiUrl(`${API_URL}/api/students/${studentId}/archive`), {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (e) {
-    console.error('Error fetching attendance statistics:', e);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

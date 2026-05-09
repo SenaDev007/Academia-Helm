@@ -35,9 +35,26 @@ export class AuthController {
     });
   }
 
+  @UseGuards(JwtAuthGuard)
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  async logout() {
+  async logout(@Req() req: Request) {
+    const authHeader = req.headers.authorization;
+    let token = null;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7);
+    } else {
+      const cookieHeader = req.headers.cookie;
+      if (cookieHeader) {
+        const match = cookieHeader.match(/(?:^|;\s*)academia_token=([^;]*)/);
+        if (match) {
+          token = decodeURIComponent(match[1].trim());
+        }
+      }
+    }
+    if (token) {
+      await this.authService.logout(token);
+    }
     return { message: 'Logged out successfully' };
   }
 

@@ -32,6 +32,7 @@ export async function PUT(
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
+
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (e) {

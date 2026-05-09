@@ -25,7 +25,7 @@ import PremiumHeader from '../layout/PremiumHeader';
 import InstitutionalFooter from './InstitutionalFooter';
 import { BLOG_POSTS } from '@/content/blog/posts';
 
-const SupportChatWidget = dynamic(() => import('./SupportChatWidget'), {
+const SaraWidget = dynamic(() => import('./SaraWidget'), {
   ssr: false,
   loading: () => null,
 });
@@ -681,7 +681,7 @@ export default function PremiumLandingPage() {
         <InstitutionalFooter />
         </div>
 
-      <SupportChatWidget />
+      <SaraWidget />
     </div>
   );
 }

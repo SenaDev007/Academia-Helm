@@ -5,6 +5,7 @@ export enum PortalType {
   SCHOOL = 'SCHOOL',
   TEACHER = 'TEACHER',
   PARENT = 'PARENT',
+  PATRONAT = 'PATRONAT',
 }
 
 export class LoginDto {

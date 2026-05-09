@@ -1019,3 +1019,14 @@ export interface OrionRulesVersion {
 }
 
 
+/**
+ * ATLAS - Intelligence Artificielle Institutionnelle
+ */
+export interface AtlasMessage {
+  id: string;
+  tenantId: string;
+  userId: string;
+  content: string;
+  role: 'user' | 'assistant';
+  createdAt: string;
+}

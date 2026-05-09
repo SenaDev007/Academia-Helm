@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
       `${nestDoublePrefixedControllerUrl('pedagogy')}/teacher-subjects`,
       {
         method: 'POST',
-        headers,
+        headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
         cache: 'no-store',
       },

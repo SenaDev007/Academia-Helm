@@ -14,7 +14,7 @@ export async function PUT(
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(
       normalizeApiUrl(`${API_URL}/api/students/${studentId}/guardians/${guardianId}`),
-      { method: 'PUT', headers, body: JSON.stringify(body) }
+      { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
     );
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });

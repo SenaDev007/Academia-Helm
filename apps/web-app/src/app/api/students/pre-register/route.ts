@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(normalizeApiUrl(`${API_URL}/api/students/pre-register`), {
       method: 'POST',
-      headers,
+      headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     const data = await response.json().catch(() => ({}));

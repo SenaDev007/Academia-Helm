@@ -217,6 +217,25 @@ export class AuthService {
     }
   }
 
+  async logout(token: string) {
+    if (!token) return;
+    try {
+      const payload = this.jwtService.verify(token, { ignoreExpiration: true });
+      if (payload && payload.exp) {
+        const expiresAt = new Date(payload.exp * 1000);
+        // Ensure token is not already revoked
+        const exists = await this.prisma.revokedToken.findUnique({ where: { token } });
+        if (!exists) {
+          await this.prisma.revokedToken.create({
+            data: { token, expiresAt },
+          });
+        }
+      }
+    } catch (err: any) {
+      this.logger.warn(`Failed to revoke token during logout: ${err.message}`);
+    }
+  }
+
   /**
    * Génère un token JWT initial SANS tenant_id (après login)
    * Le tenant sera sélectionné via /auth/select-tenant

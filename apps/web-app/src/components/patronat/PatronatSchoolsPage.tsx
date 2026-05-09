@@ -10,12 +10,13 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import AppIcon from '@/components/ui/AppIcon';
 import { cn } from '@/lib/utils';
+import { patronatApi } from '@/lib/api/patronat';
 
 interface School {
   id: string;
   name: string;
-  status: 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'REJECTED';
-  candidatesCount: number;
+  status?: 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'REJECTED';
+  candidatesCount?: number;
   joinedAt?: string;
 }
 
@@ -24,19 +25,10 @@ export default function PatronatSchoolsPage({ tenantId }: { tenantId: string }) 
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // TODO: Charger les écoles depuis l'API
     const loadSchools = async () => {
       try {
-        // const response = await fetch(`/api/patronat/schools?tenantId=${tenantId}`);
-        // const data = await response.json();
-        // setSchools(data);
-        
-        // Données mock
-        setSchools([
-          { id: '1', name: 'École Primaire Les Pionniers', status: 'ACTIVE', candidatesCount: 45, joinedAt: '2024-01-15' },
-          { id: '2', name: 'Collège Excellence', status: 'ACTIVE', candidatesCount: 32, joinedAt: '2024-01-20' },
-          { id: '3', name: 'Lycée Moderne', status: 'PENDING', candidatesCount: 0 },
-        ]);
+        const data = await patronatApi.getSchools();
+        setSchools(data);
       } catch (error) {
         console.error('Error loading schools:', error);
       } finally {
@@ -45,7 +37,7 @@ export default function PatronatSchoolsPage({ tenantId }: { tenantId: string }) 
     };
 
     loadSchools();
-  }, [tenantId]);
+  }, []);
 
   const getStatusBadge = (status: string) => {
     const styles = {

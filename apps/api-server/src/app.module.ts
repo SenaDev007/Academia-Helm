@@ -1,4 +1,8 @@
 import { Module } from '@nestjs/common';
+import { PatronatModule } from './patronat/patronat.module';
+import { AtlasModule } from './atlas/atlas.module';
+import { SaraModule } from './sara/sara.module';
+import { EducMasterModule } from './educmaster/educmaster.module';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
@@ -191,9 +195,6 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     // KPI Objectives module (Pilotage Direction)
     KpiObjectivesModule,
     
-    // Communication module
-    CommunicationModule,
-    
     // General module (Agrégations contrôlées cross-level)
     GeneralModule,
     
@@ -238,6 +239,18 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
 
     // Avis / témoignages (landing Trustpilot)
     ReviewsModule,
+
+    // Patronat Module
+    PatronatModule,
+
+    // IA ATLAS Module
+    AtlasModule,
+
+    // IA SARA Module
+    SaraModule,
+
+    // EducMaster Module
+    EducMasterModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

@@ -4,6 +4,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
 import { UsersService } from '../../users/users.service';
+import { PrismaService } from '../../database/prisma.service';
 
 const TOKEN_COOKIE = 'academia_token';
 
@@ -19,6 +20,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     private configService: ConfigService,
     private usersService: UsersService,
+    private prisma: PrismaService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
@@ -27,10 +29,19 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       ]),
       ignoreExpiration: false,
       secretOrKey: configService.get<string>('JWT_SECRET', 'your-secret-key-change-in-production'),
+      passReqToCallback: true,
     });
   }
 
-  async validate(payload: any) {
+  async validate(req: Request, payload: any) {
+    const token = ExtractJwt.fromAuthHeaderAsBearerToken()(req) || tokenFromCookie(req);
+    if (token) {
+      const isRevoked = await this.prisma.revokedToken.findUnique({ where: { token } });
+      if (isRevoked) {
+        throw new UnauthorizedException('Token has been revoked');
+      }
+    }
+
     const user = await this.usersService.findOneWithRoles(payload.sub);
     if (!user) {
       throw new UnauthorizedException();

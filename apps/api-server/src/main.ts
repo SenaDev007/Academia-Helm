@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger, RequestMethod, ValidationPipe } from '@nestjs/common';
 import { json, urlencoded } from 'express';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 /** Défaut Express ~100 ko — insuffisant pour identité + logos base64 (POST /settings/identity). */
@@ -16,15 +17,31 @@ async function bootstrap() {
   app.use(json({ limit: BODY_LIMIT }));
   app.use(urlencoded({ extended: true, limit: BODY_LIMIT }));
 
+  // ✅ Helmet.js — headers HTTP de sécurité (CDC §16.4.3)
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: { defaultSrc: ["'self'"] },
+    },
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+      preload: true,
+    },
+  }));
+
+  // ✅ CORS avec wildcard sous-domaines (CDC §16.4.1)
+  const isDev = process.env.NODE_ENV !== 'production';
   app.enableCors({
-    origin: [
-      'https://academiahelm.com',
-      'https://www.academiahelm.com',
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'http://127.0.0.1:3000',
-      'http://127.0.0.1:3001',
-    ],
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+      // Sans origin (appels serveur-serveur, curl, Postman)
+      if (!origin) return callback(null, true);
+      const allowed =
+        /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+        /^https:\/\/(.+\.)?academiahelm\.com$/.test(origin) ||
+        /^https:\/\/(.+\.)?academia-hub\.pro$/.test(origin);
+      if (allowed || isDev) return callback(null, true);
+      return callback(new Error(`CORS: origin ${origin} not allowed`));
+    },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID', 'x-tenant-id', 'Cookie'],
@@ -33,7 +50,9 @@ async function bootstrap() {
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
+      forbidNonWhitelisted: true, // CDC §16.3.3 — rejeter les champs inconnus
       transform: true,
+      disableErrorMessages: process.env.NODE_ENV === 'production',
     }),
   );
 

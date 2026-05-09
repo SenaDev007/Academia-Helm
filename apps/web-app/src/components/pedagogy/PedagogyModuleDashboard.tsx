@@ -524,3 +524,5 @@ export function PedagogyModuleDashboard() {
     </div>
   );
 }
+
+export default PedagogyModuleDashboard;

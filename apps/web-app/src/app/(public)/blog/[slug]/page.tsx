@@ -59,7 +59,7 @@ export default async function BlogPostPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined>;
+  searchParams: Promise<any>;
 }) {
   const { slug: rawSlug } = await params;
   const slug = decodeURIComponent(rawSlug).replace(/\/+$/, '');

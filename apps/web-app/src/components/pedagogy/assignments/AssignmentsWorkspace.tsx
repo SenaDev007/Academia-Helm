@@ -383,6 +383,3 @@ export default function AssignmentsWorkspace() {
     </div>
   );
 }
-
-  );
-}

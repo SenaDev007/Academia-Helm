@@ -32,7 +32,8 @@ import {
   Eye,
   MessageSquare,
   Stamp,
-  Fingerprint
+  Fingerprint,
+  ChevronRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 

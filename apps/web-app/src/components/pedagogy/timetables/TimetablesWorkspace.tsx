@@ -318,7 +318,7 @@ export default function TimetablesWorkspace() {
                <p className="text-xs text-gray-500 font-bold uppercase tracking-widest mt-1">
                  {viewMode === 'class' ? "Classe" : viewMode === 'teacher' ? "Enseignant" : "Salle"} : {
                     viewMode === 'class' ? classes.find(c => c.id === selectedId)?.name :
-                    viewMode === 'teacher' ? teachers.find(t => t.teacherId === selectedId)?.teacher.lastName :
+                    viewMode === 'teacher' ? teachers.find(t => t.teacherId === selectedId)?.teacher?.lastName :
                     rooms.find(r => r.id === selectedId)?.name
                  }
                </p>

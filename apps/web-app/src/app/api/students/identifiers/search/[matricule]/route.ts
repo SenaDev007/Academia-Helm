@@ -8,6 +8,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ matricule: string }> }
 ) {
+  const { matricule } = await params;
   try {
     const { matricule } = await params;
     const headers = await getProxyAuthHeaders(request);

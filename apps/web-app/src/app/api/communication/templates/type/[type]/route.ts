@@ -11,10 +11,11 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { type: string } }
+  { params }: { params: Promise<{ type: string }> }
 ) {
+  const { type } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/communication/templates/type/${params.type}`, {
+    const response = await fetch(`${API_BASE_URL}/api/communication/templates/type/${type}`, {
       headers: {
         'Authorization': request.headers.get('Authorization') || '',
       },

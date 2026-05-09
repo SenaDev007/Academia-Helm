@@ -6,11 +6,12 @@ const API_URL = getApiBaseUrlForRoutes();
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(`${API_URL}/api/teachers/${params.id}/archive`, {
+    const response = await fetch(`${API_URL}/api/teachers/${id}/archive`, {
       method: 'POST',
       headers,
     });

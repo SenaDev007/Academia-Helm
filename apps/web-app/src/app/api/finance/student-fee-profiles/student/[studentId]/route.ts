@@ -8,6 +8,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ studentId: string }> }
 ) {
+  const { studentId } = await params;
   try {
     const { studentId } = await params;
     const academicYearId = request.nextUrl.searchParams.get('academicYearId');

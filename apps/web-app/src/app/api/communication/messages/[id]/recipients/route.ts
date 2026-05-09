@@ -11,11 +11,12 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
     const body = await request.json();
-    const response = await fetch(`${API_BASE_URL}/api/communication/messages/${params.id}/recipients`, {
+    const response = await fetch(`${API_BASE_URL}/api/communication/messages/${id}/recipients`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

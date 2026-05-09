@@ -11,11 +11,12 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { messageId: string } }
+  { params }: { params: Promise<{ messageId: string }> }
 ) {
+  const { messageId } = await params;
   try {
     const body = await request.json();
-    const response = await fetch(`${API_BASE_URL}/api/communication/scheduling/${params.messageId}`, {
+    const response = await fetch(`${API_BASE_URL}/api/communication/scheduling/${messageId}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -34,10 +35,11 @@ export async function POST(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { messageId: string } }
+  { params }: { params: Promise<{ messageId: string }> }
 ) {
+  const { messageId } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/communication/scheduling/${params.messageId}`, {
+    const response = await fetch(`${API_BASE_URL}/api/communication/scheduling/${messageId}`, {
       method: 'DELETE',
       headers: {
         'Authorization': request.headers.get('Authorization') || '',

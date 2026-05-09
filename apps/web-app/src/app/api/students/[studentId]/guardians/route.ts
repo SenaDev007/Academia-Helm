@@ -14,6 +14,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ studentId: string }> }
 ) {
+  const { studentId } = await params;
   try {
     const { studentId } = await params;
     const headers = await getProxyAuthHeaders(request);
@@ -33,6 +34,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ studentId: string }> }
 ) {
+  const { studentId } = await params;
   try {
     const { studentId } = await params;
     const body = await request.json();

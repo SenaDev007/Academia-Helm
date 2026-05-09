@@ -9,6 +9,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ subdomain: string }> }
 ) {
+  const { subdomain } = await params;
   try {
     const { subdomain } = await params;
     if (!subdomain) {

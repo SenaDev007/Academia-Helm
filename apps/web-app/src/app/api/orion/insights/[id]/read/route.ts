@@ -11,10 +11,11 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/orion/insights/${params.id}/read`, {
+    const response = await fetch(`${API_BASE_URL}/api/orion/insights/${id}/read`, {
       method: 'PUT',
       headers: {
         'Authorization': request.headers.get('Authorization') || '',

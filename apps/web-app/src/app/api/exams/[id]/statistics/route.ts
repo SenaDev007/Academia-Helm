@@ -11,10 +11,11 @@ const API_URL = getApiBaseUrlForRoutes();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
-    const response = await fetch(`${API_URL}/api/exams/${params.id}/statistics`, {
+    const response = await fetch(`${API_URL}/api/exams/${id}/statistics`, {
       headers: {
         'Content-Type': 'application/json',
       },

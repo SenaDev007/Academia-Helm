@@ -11,11 +11,12 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
     const body = await request.json();
-    const response = await fetch(`${API_BASE_URL}/api/hr/cnss/declarations/${params.id}/mark-paid`, {
+    const response = await fetch(`${API_BASE_URL}/api/hr/cnss/declarations/${id}/mark-paid`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',

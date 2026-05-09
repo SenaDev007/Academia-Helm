@@ -11,12 +11,13 @@ const API_URL = getApiBaseUrlForRoutes();
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
     const body = await request.json();
 
-    const response = await fetch(`${API_URL}/api/report-cards/${params.id}/publish`, {
+    const response = await fetch(`${API_URL}/api/report-cards/${id}/publish`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -11,10 +11,11 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/meetings/${params.id}/minutes/pdf`, {
+    const response = await fetch(`${API_BASE_URL}/api/meetings/${id}/minutes/pdf`, {
       headers: {
         'Authorization': request.headers.get('Authorization') || '',
       },
@@ -30,10 +31,11 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/meetings/${params.id}/minutes/generate-pdf`, {
+    const response = await fetch(`${API_BASE_URL}/api/meetings/${id}/minutes/generate-pdf`, {
       method: 'POST',
       headers: {
         'Authorization': request.headers.get('Authorization') || '',

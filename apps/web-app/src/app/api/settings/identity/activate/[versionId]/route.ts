@@ -13,6 +13,7 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ versionId: string }> }
 ) {
+  const { versionId } = await params;
   try {
     const { versionId } = await params;
     const headers = await getProxyAuthHeaders(request);

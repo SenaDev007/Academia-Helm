@@ -11,10 +11,11 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { triggerType: string } }
+  { params }: { params: Promise<{ triggerType: string }> }
 ) {
+  const { triggerType } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/communication/automation/type/${params.triggerType}`, {
+    const response = await fetch(`${API_BASE_URL}/api/communication/automation/type/${triggerType}`, {
       headers: {
         'Authorization': request.headers.get('Authorization') || '',
       },

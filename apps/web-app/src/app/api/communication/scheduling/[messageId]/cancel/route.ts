@@ -11,10 +11,11 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { messageId: string } }
+  { params }: { params: Promise<{ messageId: string }> }
 ) {
+  const { messageId } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/communication/scheduling/${params.messageId}/cancel`, {
+    const response = await fetch(`${API_BASE_URL}/api/communication/scheduling/${messageId}/cancel`, {
       method: 'PUT',
       headers: {
         'Authorization': request.headers.get('Authorization') || '',

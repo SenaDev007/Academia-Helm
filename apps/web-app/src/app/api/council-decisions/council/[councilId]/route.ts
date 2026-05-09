@@ -11,10 +11,11 @@ const API_URL = getApiBaseUrlForRoutes();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { councilId: string } }
+  { params }: { params: Promise<{ councilId: string }> }
 ) {
+  const { councilId } = await params;
   try {
-    const response = await fetch(`${API_URL}/api/council-decisions/council/${params.councilId}`, {
+    const response = await fetch(`${API_URL}/api/council-decisions/council/${councilId}`, {
       headers: {
         'Content-Type': 'application/json',
       },

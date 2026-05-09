@@ -16,8 +16,9 @@ import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { paymentId: string } }
+  { params }: { params: Promise<{ paymentId: string }> }
 ) {
+  const { paymentId } = await params;
   try {
     const { paymentId } = params;
 

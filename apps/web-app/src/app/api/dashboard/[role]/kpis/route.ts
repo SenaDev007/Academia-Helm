@@ -11,6 +11,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ role: string }> }
 ) {
+  const { role } = await params;
   try {
     const { role } = await params;
     const authHeader = request.headers.get('authorization');

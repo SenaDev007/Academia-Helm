@@ -11,12 +11,13 @@ const API_URL = getApiBaseUrlForRoutes();
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
     const body = await request.json();
 
-    const response = await fetch(`${API_URL}/api/council-decisions/${params.id}`, {
+    const response = await fetch(`${API_URL}/api/council-decisions/${id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -44,10 +45,11 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
-    const response = await fetch(`${API_URL}/api/council-decisions/${params.id}`, {
+    const response = await fetch(`${API_URL}/api/council-decisions/${id}`, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',

@@ -8,6 +8,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ cardId: string }> }
 ) {
+  const { cardId } = await params;
   try {
     const { cardId } = await params;
     const headers = await getProxyAuthHeaders(request);

@@ -11,10 +11,11 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { countryCode: string } }
+  { params }: { params: Promise<{ countryCode: string }> }
 ) {
+  const { countryCode } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/hr/cnss/rates/${params.countryCode}`, {
+    const response = await fetch(`${API_BASE_URL}/api/hr/cnss/rates/${countryCode}`, {
       headers: {
         'Authorization': request.headers.get('Authorization') || '',
       },

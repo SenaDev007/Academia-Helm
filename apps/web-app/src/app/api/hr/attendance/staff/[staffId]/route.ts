@@ -11,12 +11,13 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { staffId: string } }
+  { params }: { params: Promise<{ staffId: string }> }
 ) {
+  const { staffId } = await params;
   try {
     const searchParams = request.nextUrl.searchParams;
     const queryString = searchParams.toString();
-    const url = `${API_BASE_URL}/api/hr/attendance/staff/${params.staffId}${queryString ? `?${queryString}` : ''}`;
+    const url = `${API_BASE_URL}/api/hr/attendance/staff/${staffId}${queryString ? `?${queryString}` : ''}`;
 
     const response = await fetch(url, {
       headers: {

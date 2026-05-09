@@ -8,6 +8,7 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
     const { id } = await params;
     const body = await request.json();

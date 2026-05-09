@@ -25,6 +25,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ roleId: string }> }
 ) {
+  const { roleId } = await params;
   try {
     const { roleId } = await params;
     const headers = await getAuthHeaders(request);
@@ -45,6 +46,7 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ roleId: string }> }
 ) {
+  const { roleId } = await params;
   try {
     const { roleId } = await params;
     const body = await request.json();
@@ -68,6 +70,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ roleId: string }> }
 ) {
+  const { roleId } = await params;
   try {
     const { roleId } = await params;
     const headers = await getAuthHeaders(request);

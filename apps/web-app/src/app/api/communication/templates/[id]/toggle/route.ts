@@ -11,11 +11,12 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
     const body = await request.json();
-    const response = await fetch(`${API_BASE_URL}/api/communication/templates/${params.id}/toggle`, {
+    const response = await fetch(`${API_BASE_URL}/api/communication/templates/${id}/toggle`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',

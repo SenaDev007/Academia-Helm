@@ -12,15 +12,16 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
     const session = await getServerSession();
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const response = await fetch(`${API_BASE_URL}/settings/electronic-signatures/${params.id}`, {
+    const response = await fetch(`${API_BASE_URL}/settings/electronic-signatures/${id}`, {
       headers: {
         'Authorization': `Bearer ${session.token}`,
         'Content-Type': 'application/json',

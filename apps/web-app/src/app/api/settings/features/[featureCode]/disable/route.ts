@@ -13,6 +13,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ featureCode: string }> }
 ) {
+  const { featureCode } = await params;
   try {
     const { featureCode } = await params;
     const headers = await getProxyAuthHeaders(request);

@@ -11,8 +11,9 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { token: string } }
+  { params }: { params: Promise<{ token: string }> }
 ) {
+  const { token } = await params;
   try {
     const { token } = params;
     const url = `${API_BASE_URL}/api/receipts/public/verify/${token}`;

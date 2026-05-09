@@ -12,15 +12,16 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
     const session = await getServerSession();
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const response = await fetch(`${API_BASE_URL}/settings/administrative-seals/${params.id}`, {
+    const response = await fetch(`${API_BASE_URL}/settings/administrative-seals/${id}`, {
       headers: {
         'Authorization': `Bearer ${session.token}`,
         'Content-Type': 'application/json',
@@ -45,8 +46,9 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
     const session = await getServerSession();
     if (!session) {
@@ -55,7 +57,7 @@ export async function PUT(
 
     const body = await request.json();
 
-    const response = await fetch(`${API_BASE_URL}/settings/administrative-seals/${params.id}`, {
+    const response = await fetch(`${API_BASE_URL}/settings/administrative-seals/${id}`, {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${session.token}`,

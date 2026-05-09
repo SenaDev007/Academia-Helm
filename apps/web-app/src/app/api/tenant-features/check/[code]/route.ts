@@ -8,6 +8,7 @@ export async function GET(
   _req: NextRequest,
   context: { params: Promise<{ code: string }> },
 ) {
+  const { code } = await params;
   const { code } = await context.params;
 
   // Activer ou non certaines features en dur si besoin

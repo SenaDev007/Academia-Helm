@@ -11,11 +11,12 @@ const API_URL = getApiBaseUrlForRoutes();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { examId: string } }
+  { params }: { params: Promise<{ examId: string }> }
 ) {
+  const { examId } = await params;
   try {
     const searchParams = request.nextUrl.searchParams;
-    const url = new URL(`${API_URL}/api/exam-scores/exam/${params.examId}`);
+    const url = new URL(`${API_URL}/api/exam-scores/exam/${examId}`);
     searchParams.forEach((value, key) => {
       url.searchParams.append(key, value);
     });

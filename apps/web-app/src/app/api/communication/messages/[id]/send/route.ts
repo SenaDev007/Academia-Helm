@@ -11,10 +11,11 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/communication/messages/${params.id}/send`, {
+    const response = await fetch(`${API_BASE_URL}/api/communication/messages/${id}/send`, {
       method: 'POST',
       headers: {
         'Authorization': request.headers.get('Authorization') || '',

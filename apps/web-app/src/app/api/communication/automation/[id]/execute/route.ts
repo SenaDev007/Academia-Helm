@@ -13,6 +13,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
     const { id } = await params;
     const response = await fetch(`${API_BASE_URL}/api/communication/automation/${id}/execute`, {

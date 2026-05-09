@@ -22,6 +22,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ userId: string }> },
 ) {
+  const { userId } = await params;
   try {
     const { userId } = await params;
     const body = await request.json();

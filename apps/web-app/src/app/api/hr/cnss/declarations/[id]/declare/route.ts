@@ -11,10 +11,11 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/hr/cnss/declarations/${params.id}/declare`, {
+    const response = await fetch(`${API_BASE_URL}/api/hr/cnss/declarations/${id}/declare`, {
       method: 'PUT',
       headers: {
         'Authorization': request.headers.get('Authorization') || '',

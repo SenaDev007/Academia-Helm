@@ -8,6 +8,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ studentId: string }> }
 ) {
+  const { studentId } = await params;
   try {
     const { studentId } = await params;
     const url = new URL(`${API_URL}/api/students/${studentId}/dossier`);

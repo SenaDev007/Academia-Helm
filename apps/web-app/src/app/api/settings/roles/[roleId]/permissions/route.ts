@@ -25,6 +25,7 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ roleId: string }> }
 ) {
+  const { roleId } = await params;
   try {
     const { roleId } = await params;
     const body = await request.json();

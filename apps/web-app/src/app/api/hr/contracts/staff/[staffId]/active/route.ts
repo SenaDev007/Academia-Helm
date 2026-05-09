@@ -11,10 +11,11 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { staffId: string } }
+  { params }: { params: Promise<{ staffId: string }> }
 ) {
+  const { staffId } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/hr/contracts/staff/${params.staffId}/active`, {
+    const response = await fetch(`${API_BASE_URL}/api/hr/contracts/staff/${staffId}/active`, {
       headers: {
         'Authorization': request.headers.get('Authorization') || '',
       },

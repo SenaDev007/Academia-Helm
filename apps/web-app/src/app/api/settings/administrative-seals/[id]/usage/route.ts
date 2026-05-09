@@ -12,8 +12,9 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
     const session = await getServerSession();
     if (!session) {
@@ -31,7 +32,7 @@ export async function GET(
     if (documentType) urlParams.append('documentType', documentType);
 
     const response = await fetch(
-      `${API_BASE_URL}/settings/administrative-seals/${params.id}/usage?${urlParams.toString()}`,
+      `${API_BASE_URL}/settings/administrative-seals/${id}/usage?${urlParams.toString()}`,
       {
         headers: {
           'Authorization': `Bearer ${session.token}`,

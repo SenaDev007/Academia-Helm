@@ -11,10 +11,11 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/communication/automation/${params.id}/execute`, {
+    const { id } = await params;
+    const response = await fetch(`${API_BASE_URL}/api/communication/automation/${id}/execute`, {
       method: 'POST',
       headers: {
         'Authorization': request.headers.get('Authorization') || '',
@@ -28,4 +29,3 @@ export async function POST(
     return NextResponse.json({ error: 'Failed to record trigger execution' }, { status: 500 });
   }
 }
-

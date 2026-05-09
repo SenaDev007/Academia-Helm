@@ -12,11 +12,12 @@ const API_URL = getApiBaseUrlForRoutes();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(`${API_URL}/api/rooms/${params.id}`, {
+    const response = await fetch(`${API_URL}/api/rooms/${id}`, {
       headers,
       cache: 'no-store',
     });
@@ -41,13 +42,14 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
 
-    const response = await fetch(`${API_URL}/api/rooms/${params.id}`, {
+    const response = await fetch(`${API_URL}/api/rooms/${id}`, {
       method: 'PATCH',
       headers,
       body: JSON.stringify(body),
@@ -74,11 +76,12 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(`${API_URL}/api/rooms/${params.id}`, {
+    const response = await fetch(`${API_URL}/api/rooms/${id}`, {
       method: 'DELETE',
       headers,
       cache: 'no-store',

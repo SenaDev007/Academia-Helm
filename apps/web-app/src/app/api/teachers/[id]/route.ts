@@ -12,11 +12,12 @@ const API_URL = getApiBaseUrlForRoutes();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(`${API_URL}/api/teachers/${params.id}`, { headers, cache: 'no-store' });
+    const response = await fetch(`${API_URL}/api/teachers/${id}`, { headers, cache: 'no-store' });
 
     if (!response.ok) {
       return NextResponse.json({ error: 'Failed to fetch teacher' }, { status: response.status });
@@ -30,12 +31,13 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(`${API_URL}/api/teachers/${params.id}`, {
+    const response = await fetch(`${API_URL}/api/teachers/${id}`, {
       method: 'PUT',
       headers,
       body: JSON.stringify(body),

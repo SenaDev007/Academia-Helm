@@ -758,6 +758,7 @@ model AcademicClass {
   capacity            Int?
   roomId              String?
   mainTeacherId       String?
+  seriesId            String?
   languageTrack       String? // FR | EN si bilingue
   isActive            Boolean              @default(true)
   createdAt           DateTime             @default(now())
@@ -766,9 +767,11 @@ model AcademicClass {
   academicYear        AcademicYear         @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   level               AcademicLevel        @relation(fields: [levelId], references: [id], onDelete: Restrict)
   cycle               AcademicCycle        @relation(fields: [cycleId], references: [id], onDelete: Restrict)
+  series              AcademicSeries?      @relation(fields: [seriesId], references: [id], onDelete: SetNull)
   room                Room?                @relation(fields: [roomId], references: [id], onDelete: SetNull)
   mainTeacher         Teacher?             @relation("AcademicClassMainTeacher", fields: [mainTeacherId], references: [id], onDelete: SetNull)
   teachingAssignments TeachingAssignment[]
+  classSubjects       ClassSubject[]       @relation("AcademicClassSubject")
 
   @@unique([tenantId, academicYearId, code])
   @@index([tenantId, academicYearId])
@@ -798,6 +801,7 @@ model AcademicSeries {
   level               AcademicLevel        @relation(fields: [levelId], references: [id], onDelete: Cascade)
   seriesSubjects      SeriesSubject[]
   teachingAssignments TeachingAssignment[]
+  academicClasses     AcademicClass[]
 
   @@unique([tenantId, academicYearId, levelId, name])
   @@index([tenantId, academicYearId])
@@ -5808,12 +5812,16 @@ model ClassSubject {
   classId        String
   subjectId      String
   academicYearId String
+  academicClassId String?
   weeklyHours    Int                      @default(0)
+  coefficient    Float                    @default(1.0)
+
   createdAt      DateTime                 @default(now())
   updatedAt      DateTime                 @updatedAt
   classDiaries   ClassDiary[]             @relation("ClassDiaryClassSubject")
   academicYear   AcademicYear             @relation("ClassSubjectAcademicYear", fields: [academicYearId], references: [id])
   class          Class                    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  academicClass  AcademicClass?           @relation("AcademicClassSubject", fields: [academicClassId], references: [id], onDelete: Cascade)
   subject        Subject                  @relation("ClassSubjectSubject", fields: [subjectId], references: [id], onDelete: Cascade)
   tenant         Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   exams          Exam[]

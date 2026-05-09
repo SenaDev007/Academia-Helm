@@ -66,55 +66,79 @@ export class PedagogyPrismaService {
   }
 
   /**
-   * Crée une affectation classe/matière
+   * Création en masse d'affectations classe/matière
    */
-  async createClassSubject(data: {
-    tenantId: string;
-    classId: string;
-    subjectId: string;
-    academicYearId: string;
-    weeklyHours: number;
-  }) {
-    // Vérifier que la classe existe
-    const classExists = await this.prisma.class.findFirst({
-      where: { id: data.classId, tenantId: data.tenantId },
-    });
-
-    if (!classExists) {
-      throw new NotFoundException(`Class with ID ${data.classId} not found`);
+  async createBulkClassSubjects(
+    tenantId: string,
+    academicYearId: string,
+    data: {
+      classIds: string[];
+      subjectIds: string[];
+      weeklyHours?: number;
+      coefficient?: number;
+      useSeriesCoefficients?: boolean;
     }
+  ) {
+    const results = [];
 
-    // Vérifier que la matière existe
-    const subject = await this.prisma.subject.findFirst({
-      where: { id: data.subjectId, tenantId: data.tenantId },
+    await this.prisma.$transaction(async (tx) => {
+      for (const classId of data.classIds) {
+        // Récupérer les détails de la classe (pour la série)
+        const academicClass = await tx.academicClass.findFirst({
+          where: { id: classId, tenantId },
+          include: { 
+            series: { 
+              include: { 
+                seriesSubjects: true 
+              } 
+            } 
+          }
+        });
+
+        for (const subjectId of data.subjectIds) {
+          let coeff = data.coefficient ?? 1.0;
+          let hours = data.weeklyHours ?? 0;
+
+          // Si la classe a une série et qu'on demande d'utiliser les coefficients de série
+          if (data.useSeriesCoefficients && academicClass?.series) {
+            const seriesSub = academicClass.series.seriesSubjects.find(ss => ss.subjectId === subjectId);
+            if (seriesSub) {
+              coeff = seriesSub.coefficient;
+              hours = seriesSub.weeklyHours;
+            }
+          }
+
+          // Upsert l'affectation
+          // Note: On utilise academicClassId pour les nouvelles affectations Module 2
+          const assignment = await tx.classSubject.upsert({
+            where: {
+              // On simule une clé composite ou on utilise findFirst + create/update car prisma unique constraint est stricte
+              id: (await tx.classSubject.findFirst({
+                where: { tenantId, academicYearId, academicClassId: classId, subjectId }
+              }))?.id || 'new-id-' + Math.random()
+            },
+            update: {
+              weeklyHours: hours,
+              coefficient: coeff,
+            },
+            create: {
+              tenantId,
+              academicYearId,
+              academicClassId: classId,
+              classId: 'legacy-placeholder', // Requis par le schéma actuel si non null
+              subjectId,
+              weeklyHours: hours,
+              coefficient: coeff,
+            }
+          });
+          results.push(assignment);
+        }
+      }
     });
 
-    if (!subject) {
-      throw new NotFoundException(`Subject with ID ${data.subjectId} not found`);
-    }
-
-    // Vérifier l'unicité
-    const existing = await this.prisma.classSubject.findFirst({
-      where: {
-        classId: data.classId,
-        subjectId: data.subjectId,
-        academicYearId: data.academicYearId,
-      },
-    });
-
-    if (existing) {
-      throw new BadRequestException('Class subject assignment already exists');
-    }
-
-    return this.prisma.classSubject.create({
-      data,
-      include: {
-        class: true,
-        subject: true,
-        academicYear: true,
-      },
-    });
+    return results;
   }
+
 
   /**
    * Crée une affectation enseignant/classe/matière

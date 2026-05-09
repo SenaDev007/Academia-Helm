@@ -54,28 +54,10 @@ export const PEDAGOGY_SUBMODULE_TABS = [
     icon: Calendar,
   },
   {
-    id: 'lesson-plans',
-    label: 'Fiches pédagogiques',
-    path: '/app/pedagogy/lesson-plans',
-    icon: FileText,
-  },
-  {
-    id: 'daily-logs',
-    label: 'Cahier journal',
-    path: '/app/pedagogy/daily-logs',
+    id: 'pedagogical-production',
+    label: 'Production pédagogique',
+    path: '/app/pedagogy/production',
     icon: NotebookPen,
-  },
-  {
-    id: 'class-diaries',
-    label: 'Cahier de texte',
-    path: '/app/pedagogy/class-diaries',
-    icon: Book,
-  },
-  {
-    id: 'semainier',
-    label: 'Semainier',
-    path: '/app/pedagogy/semainier',
-    icon: CalendarDays,
   },
   {
     id: 'materials',

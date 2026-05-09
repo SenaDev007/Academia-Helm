@@ -7,10 +7,24 @@ export function cn(...inputs: ClassValue[]) {
 
 export function formatGradeLabel(value?: string | null): string {
   if (!value) return '';
-  return String(value)
+  const s = String(value)
     .replace(/_/g, ' ')
     .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
+    .trim();
+  
+  const lower = s.toLowerCase();
+  
+  // Enforce Maternelle 1 & 2 for any nursery related input
+  if (lower.includes('maternelle 1') || lower === 'ps' || lower === 'ms' || lower.includes('petite section') || lower.includes('moyenne section')) {
+    return 'Maternelle 1';
+  }
+  if (lower.includes('maternelle 2') || lower === 'gs' || lower.includes('grande section')) {
+    return 'Maternelle 2';
+  }
+  
+  // English mapping
+  if (lower === 'nursery 1' || lower === 'k1') return 'Nursery 1';
+  if (lower === 'nursery 2' || lower === 'k2') return 'Nursery 2';
 
+  return s.replace(/\b\w/g, (c) => c.toUpperCase());
+}

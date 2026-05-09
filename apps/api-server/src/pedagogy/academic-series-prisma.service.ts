@@ -152,4 +152,25 @@ export class AcademicSeriesPrismaService {
       include: { subject: true },
     });
   }
+
+  /**
+   * Approuve un programme pédagogique (Direction)
+   */
+  async approveProgram(id: string, tenantId: string, userId: string) {
+    const program = await this.prisma.subjectProgram.findFirst({
+      where: { id, tenantId }
+    });
+
+    if (!program) {
+      throw new NotFoundException(`Program with ID ${id} not found`);
+    }
+
+    return this.prisma.subjectProgram.update({
+      where: { id },
+      data: {
+        approvedById: userId,
+        approvedAt: new Date()
+      }
+    });
+  }
 }

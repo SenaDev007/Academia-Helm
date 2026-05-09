@@ -58,8 +58,8 @@ function globalOrderIndexForCanonicalCycleName(name: string): number | null {
   const ci = compactOrder.indexOf(compact);
   if (ci >= 0) return ci;
 
-  if (compact === 'maternelle1' || key === 'mat1') return 0;
-  if (compact === 'maternelle2' || key === 'mat2') return 1;
+  if (compact === 'maternelle1' || key === 'mat1' || key === 'ps' || key === 'ms' || key.includes('petite section') || key.includes('moyenne section')) return 0;
+  if (compact === 'maternelle2' || key === 'mat2' || key === 'gs' || key.includes('grande section')) return 1;
   if (key.includes('1er') && key.includes('cycle')) return 8;
   if (
     (key.includes('2nd') || key.includes('2eme') || key.includes('2ème')) &&
@@ -70,6 +70,18 @@ function globalOrderIndexForCanonicalCycleName(name: string): number | null {
 
   return null;
 }
+
+function normalizeCycleNameForProduction(name: string): string {
+  const key = normalizeCycleNameKey(name);
+  if (key === 'ps' || key === 'ms' || key.includes('petite section') || key.includes('moyenne section') || key === 'maternelle 1' || key === 'maternelle1') {
+    return 'Maternelle 1';
+  }
+  if (key === 'gs' || key.includes('grande section') || key === 'maternelle 2' || key === 'maternelle2') {
+    return 'Maternelle 2';
+  }
+  return name.trim();
+}
+
 
 /** Cycles hors liste canonique : placer après 0–9, par niveau puis ordre paramètres. */
 function fallbackGlobalOrderIndexForCycle(
@@ -204,20 +216,22 @@ export class AcademicStructurePrismaService {
           if (!academicLevel) continue;
 
           for (const ec of el.cycles) {
+            const normalizedName = normalizeCycleNameForProduction(ec.name);
             const existing = await tx.academicCycle.findFirst({
               where: {
                 tenantId,
                 academicYearId,
                 levelId: academicLevel.id,
-                name: ec.name,
+                name: normalizedName,
               },
             });
-            const canonical = globalOrderIndexForCanonicalCycleName(ec.name);
+            const canonical = globalOrderIndexForCanonicalCycleName(normalizedName);
             const orderIndex =
               canonical !== null
                 ? canonical
                 : fallbackGlobalOrderIndexForCycle(el.name, ec.order);
             const cyclePayload = {
+              name: normalizedName,
               orderIndex,
               isActive: el.isEnabled,
             };
@@ -232,13 +246,14 @@ export class AcademicStructurePrismaService {
                   tenantId,
                   academicYearId,
                   levelId: academicLevel.id,
-                  name: ec.name,
+                  name: normalizedName,
                   orderIndex,
                   isActive: el.isEnabled,
                 },
               });
             }
           }
+
         }
 
         const activeCount = await tx.academicCycle.count({

@@ -51,16 +51,33 @@ export class PedagogyPrismaController {
     return this.pedagogyService.removeTeacherSubject(id, tenantId);
   }
 
+  @Post('class-subjects/bulk')
+  async createBulkClassSubjects(
+    @TenantId() tenantId: string,
+    @Body() body: any,
+  ) {
+    return this.pedagogyService.createBulkClassSubjects(
+      tenantId,
+      body.academicYearId,
+      body
+    );
+  }
+
   @Post('class-subjects')
   async createClassSubject(
     @TenantId() tenantId: string,
     @Body() createDto: any,
   ) {
-    return this.pedagogyService.createClassSubject({
-      ...createDto,
-      tenantId,
+    // Note: Re-implemented to use createBulkClassSubjects logic or kept for simple cases
+    return this.pedagogyService.createBulkClassSubjects(tenantId, createDto.academicYearId, {
+      classIds: [createDto.classId],
+      subjectIds: [createDto.subjectId],
+      weeklyHours: createDto.weeklyHours,
+      coefficient: createDto.coefficient,
     });
   }
+
+
 
   @Get('class-subjects/:classId')
   async getClassSubjects(

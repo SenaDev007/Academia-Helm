@@ -69,6 +69,8 @@ export class SubjectsPrismaService {
       search?: string;
     }
   ) {
+    await this.syncSubjectsFromSettings(tenantId, filters?.academicYearId);
+
     const where: any = {
       tenantId,
     };
@@ -98,6 +100,7 @@ export class SubjectsPrismaService {
         schoolLevel: true,
         academicYear: true,
         academicTrack: true,
+        programs: true,
       },
       orderBy: [
         { code: 'asc' },
@@ -205,6 +208,57 @@ export class SubjectsPrismaService {
     });
 
     return { success: true };
+  }
+
+  /**
+   * Synchronise le catalogue des matières pour une année donnée.
+   * 1. Copie les matières de l'année précédente si l'année actuelle est vide.
+   * 2. (Futur) Aligne sur le catalogue national si applicable.
+   */
+  async syncSubjectsFromSettings(tenantId: string, academicYearId?: string) {
+    if (!academicYearId) return;
+
+    // Vérifier si des matières existent déjà
+    const count = await this.prisma.subject.count({
+      where: { tenantId, academicYearId }
+    });
+
+    if (count > 0) return;
+
+    // Tenter de trouver l'année précédente
+    const currentYear = await this.prisma.academicYear.findUnique({
+      where: { id: academicYearId }
+    });
+    if (!currentYear) return;
+
+    const previousYear = await this.prisma.academicYear.findFirst({
+      where: { 
+        tenantId, 
+        startDate: { lt: currentYear.startDate } 
+      },
+      orderBy: { startDate: 'desc' }
+    });
+
+    if (!previousYear) return;
+
+    // Copier les matières de l'année précédente
+    const sourceSubjects = await this.prisma.subject.findMany({
+      where: { tenantId, academicYearId: previousYear.id }
+    });
+
+    if (sourceSubjects.length === 0) return;
+
+    await this.prisma.$transaction(
+      sourceSubjects.map(s => {
+        const { id, createdAt, updatedAt, ...data } = s;
+        return this.prisma.subject.create({
+          data: {
+            ...data,
+            academicYearId: academicYearId
+          }
+        });
+      })
+    );
   }
 }
 

@@ -55,6 +55,8 @@ import { PedagogyControlController } from './pedagogy-control.controller';
 import { OrionPedagogyAdvancedService } from './orion-pedagogy-advanced.service';
 import { OrionPedagogyAdvancedController } from './orion-pedagogy-advanced.controller';
 
+import { StorageService } from '../common/services/storage.service';
+
 @Module({
   imports: [DatabaseModule],
   controllers: [
@@ -84,6 +86,7 @@ import { OrionPedagogyAdvancedController } from './orion-pedagogy-advanced.contr
     OrionPedagogyAdvancedController,
   ],
   providers: [
+    StorageService,
     SubjectsPrismaService,
     TeachersPrismaService,
     PedagogyPrismaService,
@@ -112,6 +115,7 @@ import { OrionPedagogyAdvancedController } from './orion-pedagogy-advanced.contr
     OrionPedagogyAdvancedService,
   ],
   exports: [
+    StorageService,
     SubjectsPrismaService,
     TeachersPrismaService,
     PedagogyPrismaService,
@@ -140,5 +144,6 @@ import { OrionPedagogyAdvancedController } from './orion-pedagogy-advanced.contr
     OrionPedagogyAdvancedService,
   ],
 })
+
 export class PedagogyModule {}
 

@@ -1116,6 +1116,8 @@ export function AcademicStructureWorkspace() {
             <Copy className="h-4 w-4" style={{ color: ACCENT }} />
             Dupliquer année
           </button>
+
+
         </div>
       </div>
 

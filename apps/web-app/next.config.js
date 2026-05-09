@@ -10,10 +10,10 @@ const nextConfig = {
     ? undefined
     : path.join(__dirname, '..', '..'),
 
-  // MODE PROD SAFE - Désactivation temporaire des bloqueurs CI
-  // ESLint : plus dans next.config (Next 16) — `next lint` / eslint.config à part
+  // ⚠️ TypeScript strict — Ne pas ignorer les erreurs en production (CDC §17)
+  // En cas d'erreurs TS bloquantes : les corriger plutôt que de les silencer
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   
   // ✅ Optimisation des images
@@ -21,8 +21,8 @@ const nextConfig = {
     formats: ['image/avif', 'image/webp'],
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
-    minimumCacheTTL: 60,
-    // ✅ Optimisation de performance
+    minimumCacheTTL: 31536000, // 1 an — CDC §17.1
+    // ✅ Sécurité SVG
     dangerouslyAllowSVG: true,
     contentDispositionType: 'attachment',
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",

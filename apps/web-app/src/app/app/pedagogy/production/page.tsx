@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * MODULE 2 : ORGANISATION PÉDAGOGIQUE - MATÉRIEL PÉDAGOGIQUE
+ * MODULE 2 : ORGANISATION PÉDAGOGIQUE - PRODUCTION PÉDAGOGIQUE
  * ============================================================================
  */
 
@@ -8,24 +8,24 @@
 
 import { ModuleContainer } from '@/components/modules/blueprint';
 import { PEDAGOGY_SUBMODULE_TABS } from '@/components/pedagogy/pedagogy-tabs';
-import MaterialsWorkspace from '@/components/pedagogy/materials/MaterialsWorkspace';
+import ProductionWorkspace from '@/components/pedagogy/production/ProductionWorkspace';
 import { useModuleContext } from '@/hooks/useModuleContext';
 
-export default function MaterialsPage() {
+export default function ProductionPage() {
   const { academicYear } = useModuleContext();
 
   return (
     <ModuleContainer
       header={{
-        title: 'Matériel pédagogique',
+        title: 'Production pédagogique',
         description: academicYear
-          ? `Gestion de l'inventaire et des ressources physiques — année ${academicYear.label}`
-          : 'Suivi des stocks, des affectations et de la maintenance du matériel',
-        icon: 'package',
+          ? `Cahiers de textes et programmations — année ${academicYear.label}`
+          : 'Espace de travail enseignant : fiches, cahiers et suivi de progression',
+        icon: 'bookOpen',
         kpis: [
-          { label: 'Ressources', value: '1,240', trend: '+124', trendType: 'up' },
-          { label: 'Affectés', value: '850', trend: 'Stable', trendType: 'neutral' },
-          { label: 'Disponible', value: '390', trend: '-10', trendType: 'down' },
+          { label: 'Séances Saisies', value: '142', trend: '+12', trendType: 'up' },
+          { label: 'Couverture Moy.', value: '64%', trend: '+4%', trendType: 'up' },
+          { label: 'Retards Saisie', value: '2', trend: '-5', trendType: 'down' },
         ]
       }}
       subModules={{
@@ -38,11 +38,11 @@ export default function MaterialsPage() {
             icon: <Icon className="w-4 h-4" />,
           };
         }),
-        activeId: 'materials',
+        activeId: 'pedagogical-production',
       }}
       content={{
         layout: 'custom',
-        children: <MaterialsWorkspace />,
+        children: <ProductionWorkspace />,
       }}
     />
   );

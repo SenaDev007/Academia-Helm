@@ -1,82 +1,89 @@
 /**
  * ============================================================================
- * MODULE CONTAINER - WRAPPER PRINCIPAL DU MODULE
+ * MODULE CONTAINER - STRUCTURE DE BASE (PREMIUM UPGRADE)
  * ============================================================================
  * 
- * Container principal qui structure tous les modules
- * Intègre : Header, Navigation, Content Area
- * 
- * ============================================================================
+ * Composant racine pour tous les modules Academia Hub.
+ * Gère le layout standard : Header > Navigation > Content.
  */
 
 'use client';
 
 import { ReactNode } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import ModuleHeader, { ModuleHeaderProps } from './ModuleHeader';
-import SubModuleNavigation, { SubModuleNavigationProps } from './SubModuleNavigation';
+import SubModuleNavigation, { SubModule, SubModuleTab } from './SubModuleNavigation';
 import ModuleContentArea, { ModuleContentAreaProps } from './ModuleContentArea';
-import { getPageSlideMotion } from '@/lib/motion/presets';
-import { useMotionBudget } from '@/lib/motion/use-motion-budget';
+import { cn } from '@/lib/utils';
 
-export interface ModuleContainerProps {
-  /** Props du header */
+interface ModuleContainerProps {
+  /** Configuration du header */
   header: ModuleHeaderProps;
-  /** Props de la navigation interne (optionnel) */
-  subModules?: SubModuleNavigationProps;
-  /** Props de la zone de contenu */
-  content: ModuleContentAreaProps;
-  /** Contenu personnalisé après le header (optionnel) */
-  afterHeader?: ReactNode;
-  /** Contenu personnalisé avant le footer (optionnel) */
-  beforeFooter?: ReactNode;
-  /** Style personnalisé */
+  /** Configuration de la navigation sous-modules */
+  subModules?: {
+    modules?: SubModule[];
+    tabs?: SubModuleTab[];
+    currentPath?: string;
+    activeModuleId?: string;
+    onModuleChange?: (id: string) => void;
+  };
+  /** Configuration du contenu */
+  content: ModuleContentAreaProps & {
+    children?: ReactNode;
+  };
+  /** Classes CSS additionnelles */
   className?: string;
 }
 
-/**
- * ModuleContainer - Structure standardisée pour tous les modules
- * 
- * Structure :
- * - ModuleHeader (titre, description, KPI, actions)
- * - SubModuleNavigation (tabs, si applicable)
- * - ModuleContentArea (contenu principal)
- */
 export default function ModuleContainer({
   header,
   subModules,
   content,
-  afterHeader,
-  beforeFooter,
   className,
 }: ModuleContainerProps) {
-  // Le contexte module est automatiquement fourni par useModuleContext
-  // Il contient : academicYear, schoolLevel, academicTrack, tenant
-  const { shouldReduceMotion } = useMotionBudget();
-  const pageMotion = getPageSlideMotion(shouldReduceMotion);
-
   return (
-    <motion.div
-      className={`space-y-6 ${className || ''}`}
-      initial={pageMotion.initial}
-      animate={pageMotion.animate}
-      transition={pageMotion.transition}
-    >
-      {/* Header du module */}
-      <ModuleHeader {...header} />
+    <div className={cn('flex flex-col space-y-6 animate-in fade-in duration-700', className)}>
+      {/* 1. Header du module */}
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
+        <ModuleHeader {...header} />
+      </motion.div>
 
-      {/* Contenu après le header (optionnel) */}
-      {afterHeader && <div>{afterHeader}</div>}
+      {/* 2. Navigation des sous-modules (si présente) */}
+      {subModules && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+          className="sticky top-0 z-20"
+        >
+          <SubModuleNavigation {...subModules} />
+        </motion.div>
+      )}
 
-      {/* Navigation interne par sous-modules */}
-      {subModules && <SubModuleNavigation {...subModules} />}
-
-      {/* Zone de contenu principale */}
-      <ModuleContentArea {...content} />
-
-      {/* Contenu avant le footer (optionnel) */}
-      {beforeFooter && <div>{beforeFooter}</div>}
-    </motion.div>
+      {/* 3. Zone de contenu */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.98 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.5, delay: 0.2 }}
+      >
+        <ModuleContentArea {...content}>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={subModules?.activeModuleId || 'main-content'}
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+              transition={{ duration: 0.3 }}
+            >
+              {content.children}
+            </motion.div>
+          </AnimatePresence>
+        </ModuleContentArea>
+      </motion.div>
+    </div>
   );
 }
-

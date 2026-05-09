@@ -95,32 +95,35 @@ export class TimetablesPrismaService {
     }
 
     // Vérifier les conflits (même classe, même jour, même heure)
-    if (data.classId) {
-      const conflict = await this.prisma.timetableEntry.findFirst({
-        where: {
-          timetableId: data.timetableId,
-          classId: data.classId,
-          dayOfWeek: data.dayOfWeek,
-          OR: [
-            {
-              startTime: { lte: data.startTime },
-              endTime: { gt: data.startTime },
-            },
-            {
-              startTime: { lt: data.endTime },
-              endTime: { gte: data.endTime },
-            },
-            {
-              startTime: { gte: data.startTime },
-              endTime: { lte: data.endTime },
-            },
-          ],
-        },
-      });
+    const conflictWhere: any = {
+      timetableId: data.timetableId,
+      dayOfWeek: data.dayOfWeek,
+      OR: [
+        { startTime: { lte: data.startTime }, endTime: { gt: data.startTime } },
+        { startTime: { lt: data.endTime }, endTime: { gte: data.endTime } },
+        { startTime: { gte: data.startTime }, endTime: { lte: data.endTime } },
+      ],
+    };
 
-      if (conflict) {
-        throw new BadRequestException('Time slot conflict: class already has a class at this time');
-      }
+    if (data.classId) {
+      const classConflict = await this.prisma.timetableEntry.findFirst({
+        where: { ...conflictWhere, classId: data.classId },
+      });
+      if (classConflict) throw new BadRequestException('Conflit : La classe a déjà un cours sur ce créneau.');
+    }
+
+    if (data.teacherId) {
+      const teacherConflict = await this.prisma.timetableEntry.findFirst({
+        where: { ...conflictWhere, teacherId: data.teacherId },
+      });
+      if (teacherConflict) throw new BadRequestException('Conflit : L\'enseignant est déjà occupé sur ce créneau.');
+    }
+
+    if (data.roomId) {
+      const roomConflict = await this.prisma.timetableEntry.findFirst({
+        where: { ...conflictWhere, roomId: data.roomId },
+      });
+      if (roomConflict) throw new BadRequestException('Conflit : La salle est déjà occupée sur ce créneau.');
     }
 
     return this.prisma.timetableEntry.create({

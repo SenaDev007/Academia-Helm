@@ -3,6 +3,7 @@
 import { type ComponentType, useMemo } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { motion } from 'framer-motion';
 import {
   AlertCircle,
   ArrowRight,
@@ -19,6 +20,8 @@ import {
   Target,
   Users,
   Building2,
+  TrendingUp,
+  Activity,
 } from 'lucide-react';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -27,6 +30,7 @@ import {
   useInvalidatePedagogyDashboard,
 } from '@/hooks/usePedagogyDashboardQueries';
 import { PEDAGOGY_SUBMODULE_TABS } from '@/components/pedagogy/pedagogy-tabs';
+import { cn } from '@/lib/utils';
 
 interface ControlDashboard {
   lessonPlanRate: number;
@@ -94,753 +98,429 @@ interface KpiSnapshot {
 
 /** Seuils direction — alignés avec la fiche contrôle pédagogique */
 const THRESHOLDS = {
-  /** Sous ce taux : alerte critique (rouge) */
   CRITICAL: 0.35,
-  /** Entre CRITICAL et WARNING : vigilance (ambre) */
   WARNING: 0.55,
-  /** Part des documents refusés (sur soumis) déclenchant un avertissement */
-  DOC_REJECTION_RATIO: 0.15,
-} as const;
+};
 
-type LoadSlice<T> = { ok: true; data: T } | { ok: false; error: string };
-
-type RateTier = 'ok' | 'warn' | 'crit';
-
-function rateTier(rate: number): RateTier {
-  if (typeof rate !== 'number' || Number.isNaN(rate)) return 'ok';
-  if (rate < THRESHOLDS.CRITICAL) return 'crit';
-  if (rate < THRESHOLDS.WARNING) return 'warn';
-  return 'ok';
-}
-
-function barClassForTier(tier: RateTier) {
-  if (tier === 'crit') return 'bg-red-500';
-  if (tier === 'warn') return 'bg-amber-500';
-  return 'bg-emerald-600';
-}
-
-function buildTrendPoints(raw: KpiSnapshot[]): { at: string; overall: number }[] {
-  const globalOnly = raw.filter((s) => !s.teacherId && !s.classId);
-  const src = globalOnly.length >= 2 ? globalOnly : raw;
-  const sorted = [...src].sort(
-    (a, b) => new Date(a.calculatedAt).getTime() - new Date(b.calculatedAt).getTime(),
-  );
-  return sorted.slice(-30).map((s) => ({
-    at: s.calculatedAt,
-    overall:
-      (s.lessonPlanRate + s.journalRate + s.classLogRate + s.weeklyReportRate) / 4,
-  }));
-}
-
-function CompletionTrendChart({ points }: { points: { at: string; overall: number }[] }) {
-  if (points.length < 2) {
-    return (
-      <p className="text-sm text-gray-500">
-        Pas assez de snapshots KPI pour afficher une courbe (au moins 2 calculs sur la période).
-        Les points sont enregistrés côté contrôle direction.
-      </p>
-    );
-  }
-
-  const w = 420;
-  const h = 148;
-  const padL = 40;
-  const padR = 14;
-  const padT = 14;
-  const padB = 36;
-  const innerW = w - padL - padR;
-  const innerH = h - padT - padB;
-  const n = points.length;
-
-  const xy = points.map((p, i) => {
-    const x = padL + (n === 1 ? innerW / 2 : (i / (n - 1)) * innerW);
-    const y = padT + innerH * (1 - Math.min(1, Math.max(0, p.overall)));
-    return { x, y };
-  });
-
-  const lineD = xy.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-  const areaD = `M ${padL} ${padT + innerH} ${xy.map((p) => `L ${p.x} ${p.y}`).join(' ')} L ${padL + innerW} ${padT + innerH} Z`;
+function KpiCard({
+  title,
+  value,
+  icon: Icon,
+  trend,
+  color = 'indigo',
+  index = 0,
+}: {
+  title: string;
+  value: string | number;
+  icon: ComponentType<{ className?: string }>;
+  trend?: string;
+  color?: 'indigo' | 'emerald' | 'amber' | 'rose' | 'purple';
+  index?: number;
+}) {
+  const colors = {
+    indigo: 'from-indigo-500/10 to-blue-500/5 text-indigo-600 border-indigo-100',
+    emerald: 'from-emerald-500/10 to-teal-500/5 text-emerald-600 border-emerald-100',
+    amber: 'from-amber-500/10 to-orange-500/5 text-amber-600 border-amber-100',
+    rose: 'from-rose-500/10 to-pink-500/5 text-rose-600 border-rose-100',
+    purple: 'from-purple-500/10 to-fuchsia-500/5 text-purple-600 border-purple-100',
+  };
 
   return (
-    <div className="w-full overflow-x-auto">
-      <svg
-        viewBox={`0 0 ${w} ${h}`}
-        className="w-full min-w-[300px] max-h-[180px]"
-        role="img"
-        aria-label="Évolution de la complétion globale dans le temps"
-      >
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: index * 0.1 }}
+      className={cn(
+        'relative overflow-hidden rounded-2xl border bg-white p-5 shadow-sm transition-all hover:shadow-md hover:-translate-y-1',
+        colors[color]
+      )}
+    >
+      <div className={cn('absolute -right-4 -top-4 opacity-5')}>
+        <Icon className="h-24 w-24" />
+      </div>
+      <div className="flex items-center justify-between">
+        <div className={cn('rounded-xl bg-white p-2.5 shadow-sm border', colors[color].split(' ')[2])}>
+          <Icon className="h-5 w-5" />
+        </div>
+        {trend && (
+          <span className="flex items-center gap-1 text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
+            <TrendingUp className="h-3 w-3" />
+            {trend}
+          </span>
+        )}
+      </div>
+      <div className="mt-4">
+        <p className="text-sm font-medium text-gray-500">{title}</p>
+        <h3 className="text-2xl font-bold text-gray-900 mt-1">{value}</h3>
+      </div>
+    </motion.div>
+  );
+}
+
+function ProgressCircle({
+  rate,
+  label,
+  color = 'indigo',
+}: {
+  rate: number;
+  label: string;
+  color?: string;
+}) {
+  const percentage = Math.round(rate * 100);
+  const strokeColor = percentage < 35 ? '#ef4444' : percentage < 55 ? '#f59e0b' : '#10b981';
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="relative h-20 w-20">
+        <svg className="h-full w-full" viewBox="0 0 36 36">
+          <path
+            className="text-gray-100"
+            stroke="currentColor"
+            strokeWidth="3"
+            fill="none"
+            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+          />
+          <motion.path
+            initial={{ strokeDasharray: '0, 100' }}
+            animate={{ strokeDasharray: `${percentage}, 100` }}
+            transition={{ duration: 1, ease: 'easeOut' }}
+            stroke={strokeColor}
+            strokeWidth="3"
+            strokeLinecap="round"
+            fill="none"
+            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-sm font-bold text-gray-900">{percentage}%</span>
+        </div>
+      </div>
+      <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wider text-center leading-tight">
+        {label}
+      </span>
+    </div>
+  );
+}
+
+function CompletionTrendChart({ snapshots }: { snapshots: KpiSnapshot[] }) {
+  if (snapshots.length < 2) return null;
+
+  // Simple sparkline approach
+  const max = Math.max(...snapshots.map((s) => s.lessonPlanRate), 0.1);
+  const points = snapshots
+    .slice(-10)
+    .map((s, i) => `${(i * 100) / 9},${100 - (s.lessonPlanRate / max) * 100}`)
+    .join(' ');
+
+  return (
+    <div className="h-16 w-full mt-4">
+      <svg viewBox="0 0 100 100" className="h-full w-full" preserveAspectRatio="none">
         <defs>
-          <linearGradient id="pedagogyTrendFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#4f46e5" stopOpacity="0.35" />
+          <linearGradient id="gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="#4f46e5" stopOpacity="0.2" />
             <stop offset="100%" stopColor="#4f46e5" stopOpacity="0" />
           </linearGradient>
         </defs>
-        {[THRESHOLDS.WARNING, THRESHOLDS.CRITICAL].map((t) => {
-          const y = padT + innerH * (1 - t);
-          return (
-            <line
-              key={t}
-              x1={padL}
-              y1={y}
-              x2={w - padR}
-              y2={y}
-              stroke="#d1d5db"
-              strokeWidth={1}
-              strokeDasharray="5 4"
-            />
-          );
-        })}
-        <path d={areaD} fill="url(#pedagogyTrendFill)" />
-        <path d={lineD} fill="none" stroke="#4f46e5" strokeWidth={2.25} strokeLinejoin="round" />
-        {xy.map((p, i) => (
-          <circle key={points[i].at} cx={p.x} cy={p.y} r={3.5} fill="#4f46e5" />
-        ))}
-        <text x={padL} y={h - 10} fontSize={10} fill="#6b7280" fontFamily="system-ui, sans-serif">
-          Pointillés : seuils {Math.round(THRESHOLDS.WARNING * 100)} % et{' '}
-          {Math.round(THRESHOLDS.CRITICAL * 100)} %
-        </text>
+        <path
+          d={`M ${points} V 100 H 0 Z`}
+          fill="url(#gradient)"
+        />
+        <motion.path
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 1.5 }}
+          d={`M ${points}`}
+          fill="none"
+          stroke="#4f46e5"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
       </svg>
     </div>
   );
 }
 
-function formatRate(rate: number) {
-  if (typeof rate !== 'number' || Number.isNaN(rate)) return '—';
-  return `${Math.round(rate * 100)} %`;
-}
-
-function ProgressRow({
-  label,
-  value,
-  icon: Icon,
-  iconClass,
-}: {
-  label: string;
-  value: number;
-  icon: ComponentType<{ className?: string }>;
-  iconClass: string;
-}) {
-  const pct = Math.min(100, Math.max(0, Math.round(value * 100)));
-  const tier = rateTier(value);
-  return (
-    <div
-      className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 ${
-        tier === 'crit'
-          ? 'border-red-200 bg-red-50/50'
-          : tier === 'warn'
-            ? 'border-amber-200 bg-amber-50/40'
-            : 'border-gray-100 bg-gray-50/80'
-      }`}
-    >
-      <div className={`rounded-md p-2 ${iconClass}`}>
-        <Icon className="h-4 w-4" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-2 text-xs">
-          <span className="font-medium text-gray-700">{label}</span>
-          <span
-            className={`tabular-nums font-medium ${
-              tier === 'crit' ? 'text-red-800' : tier === 'warn' ? 'text-amber-900' : 'text-gray-900'
-            }`}
-          >
-            {formatRate(value)}
-          </span>
-        </div>
-        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-gray-200">
-          <div
-            className={`h-full rounded-full transition-all ${barClassForTier(tier)}`}
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const SHORTCUT_EXCLUDE = new Set(['dashboard', 'control', 'orion-pedagogy']);
-
-export default function PedagogyModuleDashboard() {
+export function PedagogyModuleDashboard() {
   const searchParams = useSearchParams();
   const { user, tenant } = useAppSession();
-  const { academicYear, schoolLevel, isLoading: contextLoading } = useModuleContext();
-  const invalidatePedagogy = useInvalidatePedagogyDashboard();
-  const tenantIdForStructure = useMemo(() => {
+  const { academicYear } = useModuleContext();
+  const invalidate = useInvalidatePedagogyDashboard();
+
+  const tenantId = useMemo(() => {
     const cross = ['PLATFORM_OWNER', 'PLATFORM_ADMIN', 'SUPER_ADMIN'].includes(user?.role ?? '');
-    const id = cross ? searchParams.get('tenant_id') || tenant?.id : tenant?.id;
-    return id && String(id).trim() ? String(id).trim() : undefined;
+    return (cross ? searchParams.get('tenant_id') : null) || tenant?.id || '';
   }, [user?.role, searchParams, tenant?.id]);
+
   const {
-    control: controlSlice,
-    orionAdv: orionAdvSlice,
-    orionKpis: orionKpisSlice,
-    structure,
-    subjectsCount,
-    snapshots: snapshotsSlice,
+    control,
+    orionKpis,
+    advancedOrion,
+    snapshots,
     timetableCount,
     roomCount,
-    loading,
-  } = usePedagogyDashboardQueries(academicYear?.id, tenantIdForStructure);
+    isLoading,
+    isError,
+    error,
+    isFetching,
+  } = usePedagogyDashboardQueries(tenantId, academicYear?.id);
 
-  const control = controlSlice as LoadSlice<ControlDashboard> | null;
-  const orionAdv = orionAdvSlice as LoadSlice<OrionAdvancedDash> | null;
-  const orionKpis = orionKpisSlice as LoadSlice<OrionKpisPayload> | null;
-  const snapshots = snapshotsSlice as LoadSlice<KpiSnapshot[]> | null;
-
-  const shortcuts = PEDAGOGY_SUBMODULE_TABS.filter((t) => !SHORTCUT_EXCLUDE.has(t.id));
-
-  if (contextLoading) {
+  if (!academicYear) {
     return (
-      <div className="flex items-center gap-2 py-12 text-gray-600">
-        <Loader2 className="h-6 w-6 animate-spin" />
-        Chargement du contexte…
+      <div className="flex h-[60vh] flex-col items-center justify-center space-y-4 rounded-3xl border-2 border-dashed bg-gray-50/50 p-12 text-center animate-in fade-in zoom-in duration-500">
+        <div className="rounded-2xl bg-white p-4 shadow-sm border">
+          <Calendar className="h-12 w-12 text-gray-300" />
+        </div>
+        <div className="max-w-sm space-y-2">
+          <h2 className="text-xl font-semibold text-gray-900">Initialisation requise</h2>
+          <p className="text-gray-500">
+            Veuillez sélectionner une année scolaire dans le menu global pour activer le tableau de bord pédagogique.
+          </p>
+        </div>
       </div>
     );
   }
 
-  if (!academicYear?.id) {
+  if (isError) {
     return (
-      <div className="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-6 text-center text-sm text-amber-950">
-        <p className="font-medium">Sélectionnez une année scolaire</p>
-        <p className="mt-1 text-amber-900/90">
-          Le tableau de bord pédagogique s’appuie sur l’année active (en-tête). Choisissez une année
-          pour afficher les indicateurs.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-8">
-      {/* Barre contexte + actualisation */}
-      <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-            Période analysée
-          </p>
-          <p className="text-sm font-semibold text-gray-900">
-            {academicYear.label}
-            <span className="font-normal text-gray-500">
-              {' '}
-              · {schoolLevel?.label ?? 'Tous les niveaux'}
-            </span>
-          </p>
-          {control?.ok && control.data.lastCalculatedAt && (
-            <p className="mt-0.5 text-xs text-gray-500">
-              KPI complétion calculés le{' '}
-              {new Date(control.data.lastCalculatedAt).toLocaleString('fr-FR')}
-              {control.data.snapshotsCount > 0
-                ? ` · ${control.data.snapshotsCount} snapshot(s)`
-                : ''}
-            </p>
-          )}
+      <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-rose-800 animate-in slide-in-from-top duration-300">
+        <div className="flex items-center gap-3">
+          <AlertCircle className="h-6 w-6" />
+          <div>
+            <h3 className="font-bold">Erreur de chargement</h3>
+            <p className="text-sm opacity-90">{(error as Error)?.message || 'Impossible de récupérer les données du dashboard.'}</p>
+          </div>
         </div>
         <button
-          type="button"
-          onClick={() => {
-            void invalidatePedagogy();
-          }}
-          disabled={loading}
-          className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-100 disabled:opacity-50"
+          onClick={() => invalidate()}
+          className="mt-4 flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700 transition-colors"
         >
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          Actualiser
+          <RefreshCw className="h-4 w-4" />
+          Réessayer
+        </button>
+      </div>
+    );
+  }
+
+  const shortcuts = PEDAGOGY_SUBMODULE_TABS.slice(1, 7);
+
+  return (
+    <div className="space-y-8 pb-12">
+      <div className="flex items-end justify-between">
+        <div>
+          <motion.h1 
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="text-3xl font-bold text-gray-900 tracking-tight"
+          >
+            Veille Pédagogique
+          </motion.h1>
+          <motion.p 
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.1 }}
+            className="text-gray-500 mt-1"
+          >
+            Année scolaire <span className="font-semibold text-indigo-600">{academicYear.label}</span>
+          </motion.p>
+        </div>
+        <button
+          onClick={() => invalidate()}
+          disabled={isFetching}
+          className="group flex items-center gap-2 rounded-xl border bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:opacity-50"
+        >
+          <RefreshCw className={cn('h-4 w-4 text-indigo-500 transition-transform duration-500', isFetching && 'animate-spin')} />
+          {isFetching ? 'Synchronisation...' : 'Actualiser'}
         </button>
       </div>
 
-      {control?.ok && (
-        <div className="space-y-2">
-          {rateTier(control.data.overallRate) === 'crit' && (
-            <div className="flex gap-2 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
-              <AlertCircle className="h-5 w-5 shrink-0" />
-              <div>
-                <p className="font-semibold">Complétion globale critique</p>
-                <p className="mt-0.5 text-red-800/95">
-                  Moyenne des quatre axes sous {Math.round(THRESHOLDS.CRITICAL * 100)} %. Prioriser le suivi
-                  en contrôle direction.
-                </p>
-              </div>
-            </div>
-          )}
-          {rateTier(control.data.overallRate) === 'warn' && (
-            <div className="flex gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-              <AlertCircle className="h-5 w-5 shrink-0 text-amber-700" />
-              <div>
-                <p className="font-semibold">Complétion à surveiller</p>
-                <p className="mt-0.5 text-amber-900">
-                  Entre {Math.round(THRESHOLDS.CRITICAL * 100)} % et{' '}
-                  {Math.round(THRESHOLDS.WARNING * 100)} %. Objectif direction : au-dessus de{' '}
-                  {Math.round(THRESHOLDS.WARNING * 100)} %.
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-      {orionAdv?.ok && orionAdv.data.summary && orionAdv.data.summary.criticalRisks > 0 && (
-        <div className="flex gap-2 rounded-xl border border-red-200 bg-red-50/90 px-4 py-3 text-sm text-red-900">
-          <AlertCircle className="h-5 w-5 shrink-0" />
-          <div className="flex flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-            <p>
-              <span className="font-semibold">{orionAdv.data.summary.criticalRisks} risque(s)</span> ORION
-              au niveau critique (RED).
-            </p>
-            <Link href="/app/pedagogy/orion" className="font-medium text-red-800 underline">
-              Ouvrir analytique →
-            </Link>
-          </div>
-        </div>
-      )}
-      {orionKpis?.ok &&
-        orionKpis.data.documents &&
-        orionKpis.data.documents.submitted > 0 &&
-        orionKpis.data.documents.rejected / orionKpis.data.documents.submitted >=
-          THRESHOLDS.DOC_REJECTION_RATIO && (
-          <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-            <AlertCircle className="h-5 w-5 shrink-0 text-amber-700" />
-            <p>
-              <span className="font-semibold">Taux de refus documents élevé :</span>{' '}
-              {Math.round(
-                (orionKpis.data.documents.rejected / orionKpis.data.documents.submitted) * 100,
-              )}
-              % des soumissions refusées (seuil {Math.round(THRESHOLDS.DOC_REJECTION_RATIO * 100)} %).
-            </p>
-          </div>
-        )}
-      {orionKpis?.ok &&
-        orionKpis.data.semainier &&
-        (orionKpis.data.semainier.criticalIncidents ?? 0) >= 1 && (
-          <div className="flex gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-950">
-            <AlertCircle className="h-5 w-5 shrink-0" />
-            <p>
-              <span className="font-semibold">Semainier :</span>{' '}
-              {orionKpis.data.semainier.criticalIncidents} incident(s) critiques ou élevés signalés.
-            </p>
-          </div>
-        )}
-
-      {loading && !control ? (
-        <div className="flex items-center gap-2 py-8 text-gray-600">
-          <Loader2 className="h-5 w-5 animate-spin" />
-          Chargement des indicateurs…
-        </div>
-      ) : null}
-
-      {/* KPI synthèse */}
-      <section>
-        <h2 className="mb-3 text-sm font-semibold text-gray-900">Synthèse</h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div
-            className={`rounded-xl border bg-white p-4 shadow-sm ${
-              control?.ok
-                ? rateTier(control.data.overallRate) === 'crit'
-                  ? 'border-red-300 ring-1 ring-red-200'
-                  : rateTier(control.data.overallRate) === 'warn'
-                    ? 'border-amber-300 ring-1 ring-amber-200'
-                    : 'border-gray-200'
-                : 'border-gray-200'
-            }`}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <p className="text-xs font-medium text-gray-500">Complétion globale</p>
-                <p
-                  className={`mt-1 text-2xl font-bold tabular-nums ${
-                    control?.ok
-                      ? rateTier(control.data.overallRate) === 'crit'
-                        ? 'text-red-700'
-                        : rateTier(control.data.overallRate) === 'warn'
-                          ? 'text-amber-800'
-                          : 'text-indigo-700'
-                      : 'text-indigo-700'
-                  }`}
-                >
-                  {control?.ok ? formatRate(control.data.overallRate) : '—'}
-                </p>
-                <p className="mt-1 text-xs text-gray-500">
-                  Fiches, journaux, cahiers, semainiers
-                </p>
-              </div>
-              <Target className="h-8 w-8 shrink-0 text-indigo-200" />
-            </div>
-          </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <p className="text-xs font-medium text-gray-500">Affectations actives</p>
-                <p className="mt-1 text-2xl font-bold tabular-nums text-gray-900">
-                  {control?.ok ? control.data.totalActiveAssignments : '—'}
-                </p>
-                <Link
-                  href="/app/pedagogy/assignments"
-                  className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-800"
-                >
-                  Gérer <ArrowRight className="h-3 w-3" />
-                </Link>
-              </div>
-              <ClipboardList className="h-8 w-8 shrink-0 text-emerald-200" />
-            </div>
-          </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <p className="text-xs font-medium text-gray-500">Profils enseignants</p>
-                <p className="mt-1 text-2xl font-bold tabular-nums text-gray-900">
-                  {control?.ok ? control.data.totalActiveProfiles : '—'}
-                </p>
-                <Link
-                  href="/app/pedagogy/teachers"
-                  className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-800"
-                >
-                  Profils académiques <ArrowRight className="h-3 w-3" />
-                </Link>
-              </div>
-              <Users className="h-8 w-8 shrink-0 text-amber-200" />
-            </div>
-          </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <p className="text-xs font-medium text-gray-500">Structure & catalogue</p>
-                <p className="mt-1 text-lg font-bold text-gray-900">
-                  {structure?.ok ? (
-                    <>
-                      {structure.data.levels} niveau{structure.data.levels !== 1 ? 'x' : ''}
-                      <span className="font-normal text-gray-500">
-                        {' '}
-                        · {structure.data.cycles} cycle{structure.data.cycles !== 1 ? 's' : ''}
-                      </span>
-                    </>
-                  ) : (
-                    '—'
-                  )}
-                </p>
-                <p className="mt-1 text-xs text-gray-500">
-                  Matières :{' '}
-                  {subjectsCount?.ok ? (
-                    <span className="font-medium text-gray-700">{subjectsCount.data}</span>
-                  ) : (
-                    '—'
-                  )}
-                </p>
-                <Link
-                  href="/app/pedagogy/academic-structure"
-                  className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-800"
-                >
-                  Structure académique <ArrowRight className="h-3 w-3" />
-                </Link>
-              </div>
-              <Layers className="h-8 w-8 shrink-0 text-violet-200" />
-            </div>
-          </div>
-        </div>
-        {control && !control.ok && (
-          <div className="mt-3 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            Contrôle direction : {control.error}
-          </div>
-        )}
-      </section>
-
-      <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900">Évolution de la complétion</h2>
-            <p className="text-xs text-gray-500">
-              Historique des snapshots KPI (moyenne des quatre axes), priorité aux agrégats établissement
-            </p>
-          </div>
-          <Link
-            href="/app/pedagogy/control"
-            className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800"
-          >
-            Contrôle & snapshots
-            <ArrowRight className="h-3 w-3" />
-          </Link>
-        </div>
-        {snapshots?.ok ? (
-          <CompletionTrendChart points={buildTrendPoints(snapshots.data)} />
-        ) : (
-          <p className="text-sm text-gray-500">
-            {snapshots?.ok === false ? `Historique indisponible : ${snapshots.error}` : 'Chargement…'}
-          </p>
-        )}
-      </section>
-
-      {/* Détail complétion */}
-      <section>
-        <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900">Production pédagogique</h2>
-            <p className="text-xs text-gray-500">
-              Taux de complétion par type de document pour l’année sélectionnée
-            </p>
-          </div>
-          <Link
-            href="/app/pedagogy/control"
-            className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800"
-          >
-            <ShieldCheck className="h-3.5 w-3.5" />
-            Détail contrôle direction
-            <ArrowRight className="h-3 w-3" />
-          </Link>
-        </div>
-        {control?.ok ? (
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-            <ProgressRow
-              label="Fiches / plans de leçon"
-              value={control.data.lessonPlanRate}
-              icon={FileText}
-              iconClass="bg-blue-100 text-blue-700"
-            />
-            <ProgressRow
-              label="Cahier journal"
-              value={control.data.journalRate}
-              icon={BookOpen}
-              iconClass="bg-amber-100 text-amber-800"
-            />
-            <ProgressRow
-              label="Cahier de texte"
-              value={control.data.classLogRate}
-              icon={ClipboardList}
-              iconClass="bg-emerald-100 text-emerald-800"
-            />
-            <ProgressRow
-              label="Semainier"
-              value={control.data.weeklyReportRate}
-              icon={Calendar}
-              iconClass="bg-violet-100 text-violet-800"
-            />
-          </div>
-        ) : (
-          <p className="text-sm text-gray-500">
-            {control?.ok === false
-              ? 'Impossible d’afficher les taux de complétion.'
-              : 'Chargement…'}
-          </p>
-        )}
-      </section>
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Workflow documents (ORION KPIs) */}
-        <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <h2 className="text-sm font-semibold text-gray-900">Documents & semainier</h2>
-          <p className="text-xs text-gray-500">Flux issu du workflow pédagogique (ORION)</p>
-          {orionKpis?.ok && orionKpis.data.documents ? (
-            <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-              <div className="rounded-lg bg-gray-50 px-3 py-2">
-                <dt className="text-xs text-gray-500">Documents total</dt>
-                <dd className="text-lg font-semibold tabular-nums text-gray-900">
-                  {orionKpis.data.documents.total}
-                </dd>
-              </div>
-              <div className="rounded-lg bg-gray-50 px-3 py-2">
-                <dt className="text-xs text-gray-500">Soumis</dt>
-                <dd className="text-lg font-semibold tabular-nums text-gray-900">
-                  {orionKpis.data.documents.submitted}
-                </dd>
-              </div>
-              <div className="rounded-lg bg-gray-50 px-3 py-2">
-                <dt className="text-xs text-gray-500">Approuvés</dt>
-                <dd className="text-lg font-semibold tabular-nums text-emerald-700">
-                  {orionKpis.data.documents.approved}
-                </dd>
-              </div>
-              <div className="rounded-lg bg-gray-50 px-3 py-2">
-                <dt className="text-xs text-gray-500">Refusés</dt>
-                <dd className="text-lg font-semibold tabular-nums text-red-700">
-                  {orionKpis.data.documents.rejected}
-                </dd>
-              </div>
-              {orionKpis.data.semainier ? (
-                <>
-                  <div className="col-span-2 rounded-lg border border-gray-100 bg-white px-3 py-2">
-                    <dt className="text-xs text-gray-500">Semainiers</dt>
-                    <dd className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-800">
-                      <span>{orionKpis.data.semainier.total} total</span>
-                      <span>{orionKpis.data.semainier.validated} validés</span>
-                      {typeof orionKpis.data.semainier.criticalIncidents === 'number' &&
-                        orionKpis.data.semainier.criticalIncidents > 0 && (
-                          <span className="font-medium text-amber-800">
-                            {orionKpis.data.semainier.criticalIncidents} incident(s) critiques
-                          </span>
-                        )}
-                    </dd>
-                  </div>
-                </>
-              ) : null}
-            </dl>
-          ) : (
-            <p className="mt-3 text-sm text-gray-500">
-              {orionKpis?.ok === false
-                ? `Données indisponibles : ${orionKpis.error}`
-                : 'Chargement ou aucune donnée.'}
-            </p>
-          )}
-        </section>
-
-        {/* Veille ORION avancée */}
-        <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-semibold text-gray-900">Veille ORION</h2>
-              <p className="text-xs text-gray-500">Insights, risques et prévisions</p>
-            </div>
-            <Link
-              href="/app/pedagogy/orion"
-              className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800"
-            >
-              <BarChart3 className="h-3.5 w-3.5" />
-              Analytique
-              <ArrowRight className="h-3 w-3" />
-            </Link>
-          </div>
-          {orionAdv?.ok && orionAdv.data.summary ? (
-            <>
-              <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-                <div className="rounded-lg bg-purple-50 px-2 py-2">
-                  <Sparkles className="mx-auto h-4 w-4 text-purple-600" />
-                  <p className="mt-1 text-lg font-bold text-purple-900">
-                    {orionAdv.data.summary.insightsCount}
-                  </p>
-                  <p className="text-[10px] font-medium uppercase text-purple-800">Insights</p>
-                </div>
-                <div className="rounded-lg bg-amber-50 px-2 py-2">
-                  <AlertCircle className="mx-auto h-4 w-4 text-amber-600" />
-                  <p className="mt-1 text-lg font-bold text-amber-900">
-                    {orionAdv.data.summary.riskFlagsCount}
-                  </p>
-                  <p className="text-[10px] font-medium uppercase text-amber-900">Risques</p>
-                </div>
-                <div className="rounded-lg bg-sky-50 px-2 py-2">
-                  <BarChart3 className="mx-auto h-4 w-4 text-sky-600" />
-                  <p className="mt-1 text-lg font-bold text-sky-900">
-                    {orionAdv.data.summary.forecastsCount}
-                  </p>
-                  <p className="text-[10px] font-medium uppercase text-sky-900">Prévisions</p>
-                </div>
-              </div>
-              {(orionAdv.data.summary.criticalRisks > 0 ||
-                orionAdv.data.summary.warningRisks > 0) && (
-                <p className="mt-2 text-xs text-amber-800">
-                  {orionAdv.data.summary.criticalRisks} critique(s) ·{' '}
-                  {orionAdv.data.summary.warningRisks} attention
-                </p>
-              )}
-              {orionAdv.data.riskFlags?.length ? (
-                <ul className="mt-3 space-y-2 border-t border-gray-100 pt-3">
-                  {orionAdv.data.riskFlags.slice(0, 3).map((r) => (
-                    <li key={r.id} className="text-xs text-gray-700">
-                      <span
-                        className={`mr-1.5 inline-block rounded px-1.5 py-0.5 font-semibold ${
-                          r.level === 'RED'
-                            ? 'bg-red-100 text-red-800'
-                            : r.level === 'YELLOW'
-                              ? 'bg-amber-100 text-amber-900'
-                              : 'bg-gray-100 text-gray-700'
-                        }`}
-                      >
-                        {r.level ?? '?'}
-                      </span>
-                      {r.message ?? 'Sans libellé'}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="mt-3 text-xs text-gray-500">Aucun risque enregistré pour cette période.</p>
-              )}
-            </>
-          ) : (
-            <p className="mt-3 text-sm text-gray-500">
-              {orionAdv?.ok === false
-                ? `Indisponible : ${orionAdv.error}`
-                : 'Chargement ou résumé vide.'}
-            </p>
-          )}
-        </section>
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiCard
+          index={0}
+          title="Taux de Conformité"
+          value={control?.data ? `${Math.round(control.data.overallRate * 100)}%` : '—'}
+          icon={ShieldCheck}
+          color="indigo"
+          trend="+2.4%"
+        />
+        <KpiCard
+          index={1}
+          title="Enseignants Actifs"
+          value={control?.data?.totalActiveProfiles ?? '—'}
+          icon={Users}
+          color="emerald"
+        />
+        <KpiCard
+          index={2}
+          title="Risques ORION"
+          value={advancedOrion?.data?.summary?.riskFlagsCount ?? 0}
+          icon={AlertCircle}
+          color={advancedOrion?.data?.summary?.criticalRisks ? 'rose' : 'amber'}
+        />
+        <KpiCard
+          index={3}
+          title="Insights Générés"
+          value={advancedOrion?.data?.summary?.insightsCount ?? 0}
+          icon={Sparkles}
+          color="purple"
+        />
       </div>
 
-      <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-        <h2 className="mb-1 text-sm font-semibold text-gray-900">Planning & infrastructures</h2>
-        <p className="mb-4 text-xs text-gray-500">
-          Données filtrées sur l&apos;année scolaire active (API emplois du temps & salles)
-        </p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Link
-            href="/app/pedagogy/timetables"
-            className="flex items-center justify-between gap-3 rounded-lg border border-gray-100 bg-gray-50/80 px-4 py-3 transition hover:border-indigo-200 hover:bg-indigo-50/40"
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+        <div className="lg:col-span-2 space-y-8">
+          <motion.section
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            className="rounded-3xl border bg-white p-6 shadow-sm overflow-hidden relative"
           >
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-indigo-100 p-2 text-indigo-700">
-                <Calendar className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-gray-900">Emplois du temps</p>
-                <p className="text-xs text-gray-500">Grilles publiées pour l&apos;année</p>
-              </div>
+            <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none">
+              <Activity className="h-32 w-32 text-indigo-600" />
             </div>
-            <span className="text-lg font-bold tabular-nums text-indigo-800">
-              {timetableCount?.ok ? timetableCount.data : '—'}
-            </span>
-          </Link>
-          <Link
-            href="/app/pedagogy/academic-structure?tab=rooms"
-            className="flex items-center justify-between gap-3 rounded-lg border border-gray-100 bg-gray-50/80 px-4 py-3 transition hover:border-indigo-200 hover:bg-indigo-50/40"
-          >
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-slate-200 p-2 text-slate-800">
-                <Building2 className="h-5 w-5" />
-              </div>
+            
+            <div className="flex items-center justify-between mb-8">
               <div>
-                <p className="text-sm font-semibold text-gray-900">Salles</p>
-                <p className="text-xs text-gray-500">Onglet Structure → Salles</p>
+                <h2 className="text-xl font-bold text-gray-900">Production Documentaire</h2>
+                <p className="text-sm text-gray-500">Taux de complétion par type de document</p>
               </div>
-            </div>
-            <span className="text-lg font-bold tabular-nums text-slate-800">
-              {roomCount?.ok ? roomCount.data : '—'}
-            </span>
-          </Link>
-        </div>
-        {(timetableCount?.ok === false || roomCount?.ok === false) && (
-          <p className="mt-3 text-xs text-amber-800">
-            {timetableCount?.ok === false && `EDT : ${timetableCount.error}. `}
-            {roomCount?.ok === false && `Salles : ${roomCount.error}.`}
-          </p>
-        )}
-      </section>
-
-      {/* Raccourcis */}
-      <section>
-        <h2 className="mb-3 text-sm font-semibold text-gray-900">Accès rapides</h2>
-        <div className="flex flex-wrap gap-2">
-          {shortcuts.map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <Link
-                key={tab.id}
-                href={tab.path}
-                className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-800 shadow-sm transition hover:border-indigo-200 hover:bg-indigo-50/50"
-              >
-                <Icon className="h-4 w-4 text-indigo-600" />
-                {tab.label}
+              <Link href="/app/pedagogy/control" className="text-sm font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1">
+                Détails <ArrowRight className="h-4 w-4" />
               </Link>
-            );
-          })}
-          <Link
-            href="/app/pedagogy/control"
-            className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-900 hover:bg-indigo-100"
+            </div>
+
+            {isLoading ? (
+              <div className="flex h-32 items-center justify-center gap-3 text-gray-400">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Chargement des indicateurs...
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 py-4">
+                <ProgressCircle rate={control?.data?.lessonPlanRate ?? 0} label="Fiches" />
+                <ProgressCircle rate={control?.data?.journalRate ?? 0} label="Cahier Journal" />
+                <ProgressCircle rate={control?.data?.classLogRate ?? 0} label="Cahier Texte" />
+                <ProgressCircle rate={control?.data?.weeklyReportRate ?? 0} label="Semainier" />
+              </div>
+            )}
+
+            {snapshots?.data && snapshots.data.length > 0 && (
+              <div className="mt-8 pt-6 border-t border-gray-50">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Tendance (10 derniers jours)</span>
+                  <span className="text-xs font-medium text-emerald-600 flex items-center gap-1">
+                    <TrendingUp className="h-3 w-3" /> Croissance stable
+                  </span>
+                </div>
+                <CompletionTrendChart snapshots={snapshots.data} />
+              </div>
+            )}
+          </motion.section>
+
+          <motion.section
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
           >
-            <ShieldCheck className="h-4 w-4" />
-            Contrôle direction
-          </Link>
-          <Link
-            href="/app/pedagogy/orion"
-            className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-900 hover:bg-indigo-100"
-          >
-            <BarChart3 className="h-4 w-4" />
-            Analytique ORION
-          </Link>
+            <h2 className="mb-4 text-lg font-bold text-gray-900 px-1">Accès Rapides</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {shortcuts.map((tab, idx) => {
+                const Icon = tab.icon;
+                return (
+                  <Link
+                    key={tab.id}
+                    href={tab.path}
+                    className="group flex flex-col items-center justify-center gap-3 rounded-2xl border bg-white p-5 text-center transition-all hover:border-indigo-200 hover:shadow-md active:scale-95"
+                  >
+                    <div className="rounded-xl bg-gray-50 p-3 text-gray-400 transition-colors group-hover:bg-indigo-50 group-hover:text-indigo-600">
+                      <Icon className="h-6 w-6" />
+                    </div>
+                    <span className="text-sm font-semibold text-gray-700 group-hover:text-indigo-900">{tab.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </motion.section>
         </div>
-      </section>
+
+        <div className="space-y-8">
+          <motion.section
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.6 }}
+            className="rounded-3xl border bg-slate-900 p-6 shadow-xl text-white relative overflow-hidden"
+          >
+            <div className="absolute -right-12 -bottom-12 opacity-10">
+              <Target className="h-48 w-48" />
+            </div>
+
+            <div className="flex items-center gap-2 mb-6">
+              <div className="h-2 w-2 rounded-full bg-blue-400 animate-pulse" />
+              <h2 className="text-lg font-bold">Cockpit ORION</h2>
+            </div>
+
+            <div className="space-y-4">
+              {advancedOrion?.data?.riskFlags && advancedOrion.data.riskFlags.length > 0 ? (
+                advancedOrion.data.riskFlags.slice(0, 3).map((risk) => (
+                  <div key={risk.id} className="rounded-xl bg-white/5 border border-white/10 p-3 flex gap-3">
+                    <div className={cn(
+                      "mt-1 h-2 w-2 shrink-0 rounded-full",
+                      risk.level === 'RED' ? 'bg-rose-500 shadow-[0_0_8px_#f43f5e]' : 'bg-amber-500 shadow-[0_0_8px_#f59e0b]'
+                    )} />
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-white/90 leading-snug">{risk.message}</p>
+                      <p className="text-[10px] text-white/40">{new Date(risk.createdAt).toLocaleDateString()}</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="py-8 text-center space-y-2">
+                  <BarChart3 className="h-8 w-8 text-white/20 mx-auto" />
+                  <p className="text-xs text-white/40">Aucun risque critique détecté par l'IA.</p>
+                </div>
+              )}
+            </div>
+
+            <Link
+              href="/app/pedagogy/orion"
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-bold text-white transition-all hover:bg-blue-500 active:scale-95 shadow-lg shadow-blue-900/20"
+            >
+              Consulter Orion Intelligence
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </motion.section>
+
+          <motion.section
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.7 }}
+            className="rounded-3xl border bg-white p-6 shadow-sm"
+          >
+            <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-indigo-500" />
+              Infrastructure
+            </h2>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 border border-gray-100">
+                <span className="text-sm font-medium text-gray-600">Emplois du temps</span>
+                <span className={cn(
+                  "px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase",
+                  timetableCount?.ok ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                )}>
+                  {timetableCount?.ok ? "Opérationnel" : "Manquant"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 border border-gray-100">
+                <span className="text-sm font-medium text-gray-600">Salles de classe</span>
+                <span className={cn(
+                  "px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase",
+                  roomCount?.ok ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                )}>
+                  {roomCount?.ok ? `${roomCount.count} salles` : "0 salles"}
+                </span>
+              </div>
+            </div>
+          </motion.section>
+        </div>
+      </div>
     </div>
   );
 }

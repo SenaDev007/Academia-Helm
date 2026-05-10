@@ -7,13 +7,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import PatronatHeader from '@/components/patronat/PatronatHeader';
 import AppIcon from '@/components/ui/AppIcon';
 
 export default function CheckoutSuccessPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [success, setSuccess] = useState(false);

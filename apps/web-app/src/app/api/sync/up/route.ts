@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const tenantId = session.tenantId || session.tenant?.id;
+    const tenantId = session.user.tenantId || session.tenant?.id;
     if (!tenantId) {
       return NextResponse.json(
         { error: 'Tenant ID missing' },

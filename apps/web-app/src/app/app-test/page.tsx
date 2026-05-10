@@ -35,7 +35,9 @@ export default function AppTestPage() {
   const mockTenant: Tenant = {
     id: 'test-tenant-id',
     name: 'École de Test',
+    slug: 'test-tenant',
     subdomain: 'test',
+    status: 'active',
     subscriptionStatus: 'ACTIVE_SUBSCRIBED',
     createdAt: new Date().toISOString(),
     trialEndsAt: undefined,

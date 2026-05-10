@@ -20,9 +20,12 @@ export default async function DocumentsPage() {
   const patronat: Tenant = {
     id: user.tenantId || '',
     name: 'Patronat des Écoles Privées',
+    slug: 'patronat',
     subdomain: '',
+    status: 'active',
     subscriptionStatus: 'ACTIVE_SUBSCRIBED',
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
     trialEndsAt: undefined,
     nextPaymentDueAt: undefined,
   };

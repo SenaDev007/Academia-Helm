@@ -29,7 +29,6 @@ export default function AppTestPage() {
     role: 'SUPER_DIRECTOR',
     tenantId: 'test-tenant-id',
     createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
   };
 
   const mockTenant: Tenant = {
@@ -43,7 +42,7 @@ export default function AppTestPage() {
     updatedAt: new Date().toISOString(),
     trialEndsAt: undefined,
     nextPaymentDueAt: undefined,
-  } as Tenant as Tenant;
+  } as Tenant;
 
   useEffect(() => {
     // Simuler un chargement initial
@@ -69,4 +68,3 @@ export default function AppTestPage() {
     </PilotageLayout>
   );
 }
-

@@ -12,7 +12,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import PatronatHeader from '@/components/patronat/PatronatHeader';
-import AppIcon from '@/components/ui/AppIcon';
+
 import { cn } from '@/lib/utils';
 
 type OrganismType = 'PATRONAT' | 'ASSOCIATION' | 'ORGANISME_EXAMEN' | 'STRUCTURE_DEPARTEMENTALE';

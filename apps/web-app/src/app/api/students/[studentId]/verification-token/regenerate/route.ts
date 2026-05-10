@@ -10,7 +10,6 @@ export async function POST(
 ) {
   const { studentId } = await params;
   try {
-    const { studentId } = await params;
     const body = await request.json();
     if (!body.academicYearId) {
       return NextResponse.json({ error: 'academicYearId is required' }, { status: 400 });

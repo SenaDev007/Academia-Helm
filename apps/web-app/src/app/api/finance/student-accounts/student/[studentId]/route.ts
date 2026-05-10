@@ -10,7 +10,6 @@ export async function GET(
 ) {
   const { studentId } = await params;
   try {
-    const { studentId } = await params;
     const q = request.nextUrl.searchParams.toString();
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/accounts/student/${studentId}${q ? `?${q}` : ''}`), { headers });

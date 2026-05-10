@@ -15,7 +15,6 @@ export async function POST(
 ) {
   const { id } = await params;
   try {
-    const { id } = await params;
     const response = await fetch(`${API_BASE_URL}/api/communication/automation/${id}/execute`, {
       method: 'POST',
       headers: {

@@ -13,7 +13,6 @@ export async function GET(
 ) {
   const { role } = await params;
   try {
-    const { role } = await params;
     const authHeader = request.headers.get('authorization');
     
     if (!authHeader) {

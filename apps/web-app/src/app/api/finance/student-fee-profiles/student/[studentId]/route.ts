@@ -10,7 +10,6 @@ export async function GET(
 ) {
   const { studentId } = await params;
   try {
-    const { studentId } = await params;
     const academicYearId = request.nextUrl.searchParams.get('academicYearId');
     if (!academicYearId) {
       return NextResponse.json({ error: 'academicYearId is required' }, { status: 400 });

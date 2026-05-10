@@ -10,7 +10,6 @@ export async function GET(
 ) {
   const { studentId } = await params;
   try {
-    const { studentId } = await params;
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(normalizeApiUrl(`${API_URL}/api/students/${studentId}`), { headers });
     const data = await response.json().catch(() => ({}));
@@ -26,7 +25,6 @@ export async function PUT(
 ) {
   const { studentId } = await params;
   try {
-    const { studentId } = await params;
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(normalizeApiUrl(`${API_URL}/api/students/${studentId}`), {
@@ -48,7 +46,6 @@ export async function PATCH(
 ) {
   const { studentId } = await params;
   try {
-    const { studentId } = await params;
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(normalizeApiUrl(`${API_URL}/api/students/${studentId}`), {

@@ -16,7 +16,6 @@ export async function GET(
 ) {
   const { id } = await params;
   try {
-    const { id } = await params;
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(`${API_URL}/api/teachers/${id}`, { headers, cache: 'no-store' });
 
@@ -36,7 +35,6 @@ export async function PUT(
 ) {
   const { id } = await params;
   try {
-    const { id } = await params;
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(`${API_URL}/api/teachers/${id}`, {

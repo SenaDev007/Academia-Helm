@@ -10,7 +10,6 @@ export async function GET(
 ) {
   const { cardId } = await params;
   try {
-    const { cardId } = await params;
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(
       normalizeApiUrl(`${API_URL}/api/students/id-cards/${cardId}/download`),

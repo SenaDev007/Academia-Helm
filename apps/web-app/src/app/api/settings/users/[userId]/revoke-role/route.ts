@@ -24,7 +24,6 @@ export async function POST(
 ) {
   const { userId } = await params;
   try {
-    const { userId } = await params;
     const body = await request.json();
     const headers = await getAuthHeaders(request);
     const { searchParams } = new URL(request.url);

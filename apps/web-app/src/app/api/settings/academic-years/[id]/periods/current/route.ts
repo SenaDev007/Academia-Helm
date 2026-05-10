@@ -26,7 +26,6 @@ export async function GET(
 ) {
   const { id } = await params;
   try {
-    const { id } = await params;
     const headers = await getAuthHeaders(request);
     const url = new URL(`${API_BASE_URL}/settings/academic-years/${id}/periods/current`);
     const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');

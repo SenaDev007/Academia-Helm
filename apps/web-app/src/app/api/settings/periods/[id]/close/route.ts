@@ -30,7 +30,6 @@ export async function POST(
 ) {
   const { id } = await params;
   try {
-    const { id } = await params;
     const headers = await getAuthHeaders(request);
     if (!headers['Authorization']) {
       return NextResponse.json(

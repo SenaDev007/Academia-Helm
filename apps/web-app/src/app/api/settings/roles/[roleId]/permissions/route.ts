@@ -27,7 +27,6 @@ export async function PUT(
 ) {
   const { roleId } = await params;
   try {
-    const { roleId } = await params;
     const body = await request.json();
     const headers = await getAuthHeaders(request);
     

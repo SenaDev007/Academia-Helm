@@ -10,7 +10,6 @@ export async function PUT(
 ) {
   const { cardId } = await params;
   try {
-    const { cardId } = await params;
     const body = await request.json();
     if (!body.reason || body.reason.trim().length === 0) {
       return NextResponse.json({ error: 'Revocation reason is mandatory' }, { status: 400 });

@@ -11,7 +11,6 @@ export async function GET(
 ) {
   const { subdomain } = await params;
   try {
-    const { subdomain } = await params;
     if (!subdomain) {
       return NextResponse.json(
         { error: 'subdomain is required' },

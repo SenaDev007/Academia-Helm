@@ -15,7 +15,6 @@ export async function POST(
 ) {
   const { featureCode } = await params;
   try {
-    const { featureCode } = await params;
     const headers = await getProxyAuthHeaders(request);
     const url = new URL(`${getApiBaseUrlForRoutes()}/settings/features/${featureCode}/disable`);
     const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');

@@ -10,7 +10,6 @@ export async function POST(
 ) {
   const { studentId } = await params;
   try {
-    const { studentId } = await params;
     const body = await request.json().catch(() => ({}));
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(normalizeApiUrl(`${API_URL}/api/students/${studentId}/archive`), {

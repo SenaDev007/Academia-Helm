@@ -10,7 +10,6 @@ export async function GET(
 ) {
   const { matricule } = await params;
   try {
-    const { matricule } = await params;
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(
       normalizeApiUrl(`${API_URL}/api/students/identifiers/search/${encodeURIComponent(matricule)}`),

@@ -15,7 +15,6 @@ export async function PUT(
 ) {
   const { versionId } = await params;
   try {
-    const { versionId } = await params;
     const headers = await getProxyAuthHeaders(request);
     const body = await request.json().catch(() => ({}));
     const url = new URL(`${API_BASE_URL}/settings/identity/activate/${versionId}`);

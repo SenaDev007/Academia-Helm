@@ -25,7 +25,6 @@ export async function PUT(
 ) {
   const { id } = await params;
   try {
-    const { id } = await params;
     const headers = await getAuthHeaders(request);
     if (!headers['Authorization']) {
       return NextResponse.json({ error: 'Non authentifie', code: 'UNAUTHORIZED' }, { status: 401 });

@@ -10,7 +10,6 @@ export async function GET(
 ) {
   const { id } = await params;
   try {
-    const { id } = await params;
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/fees/categories/${id}`), { headers });
     const data = await response.json().catch(() => ({}));

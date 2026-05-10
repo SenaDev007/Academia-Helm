@@ -30,7 +30,6 @@ export async function GET(
 ) {
   const { id } = await params;
   try {
-    const { id } = await params;
     const headers = await getAuthHeaders(request);
     const url = new URL(`${API_BASE_URL}/settings/academic-years/${id}/periods`);
     const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
@@ -56,7 +55,6 @@ export async function POST(
 ) {
   const { id } = await params;
   try {
-    const { id } = await params;
     const headers = await getAuthHeaders(request);
     if (!headers['Authorization']) {
       return NextResponse.json(

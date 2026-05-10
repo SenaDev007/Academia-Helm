@@ -22,7 +22,6 @@ export async function POST(
 ) {
   const { id } = await params;
   try {
-    const { id } = await params;
     const headers = await getAuthHeaders(request);
     if (!headers['Authorization']) return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
     const url = new URL(`${API_BASE_URL}/settings/education/classrooms/${id}/archive`);

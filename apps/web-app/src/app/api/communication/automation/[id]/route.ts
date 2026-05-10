@@ -15,7 +15,6 @@ export async function GET(
 ) {
   const { id } = await params;
   try {
-    const { id } = await params;
     const response = await fetch(`${API_BASE_URL}/api/communication/automation/${id}`, {
       headers: {
         'Authorization': request.headers.get('Authorization') || '',
@@ -36,7 +35,6 @@ export async function PUT(
 ) {
   const { id } = await params;
   try {
-    const { id } = await params;
     const body = await request.json();
     const response = await fetch(`${API_BASE_URL}/api/communication/automation/${id}`, {
       method: 'PUT',
@@ -61,7 +59,6 @@ export async function DELETE(
 ) {
   const { id } = await params;
   try {
-    const { id } = await params;
     const response = await fetch(`${API_BASE_URL}/api/communication/automation/${id}`, {
       method: 'DELETE',
       headers: {

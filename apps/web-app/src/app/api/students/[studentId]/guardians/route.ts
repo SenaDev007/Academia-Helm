@@ -16,7 +16,6 @@ export async function GET(
 ) {
   const { studentId } = await params;
   try {
-    const { studentId } = await params;
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(
       normalizeApiUrl(`${API_URL}/api/students/${studentId}/guardians`),
@@ -36,7 +35,6 @@ export async function POST(
 ) {
   const { studentId } = await params;
   try {
-    const { studentId } = await params;
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(

@@ -27,7 +27,6 @@ export async function GET(
 ) {
   const { roleId } = await params;
   try {
-    const { roleId } = await params;
     const headers = await getAuthHeaders(request);
     
     const response = await fetch(normalizeApiUrl(`${API_BASE_URL}/settings/roles/${roleId}`), {
@@ -48,7 +47,6 @@ export async function PUT(
 ) {
   const { roleId } = await params;
   try {
-    const { roleId } = await params;
     const body = await request.json();
     const headers = await getAuthHeaders(request);
     
@@ -72,7 +70,6 @@ export async function DELETE(
 ) {
   const { roleId } = await params;
   try {
-    const { roleId } = await params;
     const headers = await getAuthHeaders(request);
     
     const response = await fetch(normalizeApiUrl(`${API_BASE_URL}/settings/roles/${roleId}`), {

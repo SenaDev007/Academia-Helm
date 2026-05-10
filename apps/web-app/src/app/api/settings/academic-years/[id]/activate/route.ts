@@ -27,7 +27,6 @@ export async function POST(
 ) {
   const { id } = await params;
   try {
-    const { id } = await params;
     const headers = await getAuthHeaders(request);
     const response = await fetch(`${API_BASE_URL}/settings/academic-years/${id}/activate`, {
       method: 'POST',

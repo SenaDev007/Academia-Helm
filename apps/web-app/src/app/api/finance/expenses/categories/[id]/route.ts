@@ -10,7 +10,6 @@ export async function GET(
 ) {
   const { id } = await params;
   try {
-    const { id } = await params;
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/expenses/categories/${id}`), { headers });
     const data = await response.json().catch(() => ({}));
@@ -26,7 +25,6 @@ export async function PUT(
 ) {
   const { id } = await params;
   try {
-    const { id } = await params;
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/expenses/categories/${id}`), {

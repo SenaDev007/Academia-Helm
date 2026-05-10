@@ -10,7 +10,6 @@ export async function GET(
 ) {
   const { studentId } = await params;
   try {
-    const { studentId } = await params;
     const academicYearId = request.nextUrl.searchParams.get('academicYearId') || '';
     const url = normalizeApiUrl(
       `${API_URL}/api/students/${studentId}/academic-dossier${academicYearId ? `?academicYearId=${academicYearId}` : ''}`

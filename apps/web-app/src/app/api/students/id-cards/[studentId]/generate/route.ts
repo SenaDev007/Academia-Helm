@@ -10,7 +10,6 @@ export async function POST(
 ) {
   const { studentId } = await params;
   try {
-    const { studentId } = await params;
     const academicYearId = request.nextUrl.searchParams.get('academicYearId');
     const schoolLevelId = request.nextUrl.searchParams.get('schoolLevelId');
     if (!academicYearId || !schoolLevelId) {

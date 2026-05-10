@@ -10,7 +10,6 @@ export async function POST(
 ) {
   const { studentId } = await params;
   try {
-    const { studentId } = await params;
     const countryCode = request.nextUrl.searchParams.get('countryCode') || 'BJ';
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(

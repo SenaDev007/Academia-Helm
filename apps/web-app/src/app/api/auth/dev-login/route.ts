@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import { setServerSession } from '@/lib/auth/session';
 import { loadTenantFromApi } from '@/lib/utils/load-tenant';
+import type { Tenant } from '@/types';
 
 interface BackendLoginResponse {
   user: {
@@ -113,7 +114,7 @@ export async function POST(_request: NextRequest) {
           updatedAt: new Date().toISOString(),
           trialEndsAt: undefined,
           nextPaymentDueAt: undefined,
-        };
+        } as Tenant;
       }
     } else {
       // PLATFORM_OWNER : créer un tenant vide
@@ -128,7 +129,7 @@ export async function POST(_request: NextRequest) {
         updatedAt: new Date().toISOString(),
         trialEndsAt: undefined,
         nextPaymentDueAt: undefined,
-      };
+      } as Tenant;
     }
 
     // Construire l'objet user complet avec les champs requis

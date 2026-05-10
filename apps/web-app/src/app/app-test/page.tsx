@@ -40,6 +40,7 @@ export default function AppTestPage() {
     status: 'active',
     subscriptionStatus: 'ACTIVE_SUBSCRIBED',
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
     trialEndsAt: undefined,
     nextPaymentDueAt: undefined,
   };

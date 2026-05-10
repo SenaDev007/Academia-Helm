@@ -1,3 +1,4 @@
+import type { Tenant } from '@/types';
 /**
  * Auth Me API Route
  *
@@ -31,7 +32,7 @@ export async function GET() {
       updatedAt: new Date().toISOString(),
       trialEndsAt: undefined,
       nextPaymentDueAt: undefined,
-    };
+    } as Tenant;
 
     return NextResponse.json({ user, tenant });
   } catch (error) {

@@ -29,7 +29,7 @@ export default async function SettingsPage() {
     updatedAt: new Date().toISOString(),
     trialEndsAt: undefined,
     nextPaymentDueAt: undefined,
-  };
+  } as Tenant as Tenant;
 
   return (
     <PatronatLayout

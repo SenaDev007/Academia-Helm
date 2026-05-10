@@ -37,7 +37,7 @@ export default async function QhsPage() {
     updatedAt: new Date().toISOString(),
     trialEndsAt: undefined,
     nextPaymentDueAt: undefined,
-  };
+  } as Tenant as Tenant;
 
   return (
     <PilotageLayout user={user} tenant={tenant}>

@@ -53,7 +53,7 @@ export default async function AppLayout({
         updatedAt: new Date().toISOString(),
         trialEndsAt: undefined,
         nextPaymentDueAt: undefined,
-      };
+      } as Tenant as Tenant;
 
   return (
     <ModalProvider>

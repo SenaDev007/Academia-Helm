@@ -1,3 +1,4 @@
+import type { Tenant } from '@/types';
 /**
  * ============================================================================
  * PORTAL AUTH PARENT API PROXY
@@ -80,7 +81,7 @@ export async function POST(request: NextRequest) {
           subscriptionStatus: 'ACTIVE_SUBSCRIBED',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-        };
+        } as Tenant;
       }
 
       // Construire l'objet user complet avec les champs requis

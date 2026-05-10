@@ -1,3 +1,4 @@
+import type { Tenant } from '@/types';
 /**
  * ============================================================================
  * SELECT TENANT API ROUTE
@@ -78,7 +79,7 @@ export async function POST(request: NextRequest) {
           updatedAt: data.tenant.updatedAt || new Date().toISOString(),
           trialEndsAt: undefined,
           nextPaymentDueAt: undefined,
-        },
+        } as Tenant,
         token: data.accessToken,
         expiresAt,
       });

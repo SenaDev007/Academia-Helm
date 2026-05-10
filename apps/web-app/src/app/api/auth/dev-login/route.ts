@@ -114,7 +114,7 @@ export async function POST(_request: NextRequest) {
           updatedAt: new Date().toISOString(),
           trialEndsAt: undefined,
           nextPaymentDueAt: undefined,
-        } as Tenant;
+        } as Tenant as Tenant as Tenant;
       }
     } else {
       // PLATFORM_OWNER : créer un tenant vide
@@ -129,7 +129,7 @@ export async function POST(_request: NextRequest) {
         updatedAt: new Date().toISOString(),
         trialEndsAt: undefined,
         nextPaymentDueAt: undefined,
-      } as Tenant;
+      } as Tenant as Tenant as Tenant;
     }
 
     // Construire l'objet user complet avec les champs requis

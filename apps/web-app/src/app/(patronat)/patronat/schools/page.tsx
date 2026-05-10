@@ -35,7 +35,7 @@ export default async function SchoolsPage() {
     updatedAt: new Date().toISOString(),
     trialEndsAt: undefined,
     nextPaymentDueAt: undefined,
-  };
+  } as Tenant as Tenant;
 
   const currentAcademicYear = {
     id: 'current-year-id',

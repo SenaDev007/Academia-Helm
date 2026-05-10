@@ -1,3 +1,4 @@
+import type { Tenant } from '@/types';
 /**
  * Login API Route
  * 
@@ -122,7 +123,7 @@ export async function POST(request: NextRequest) {
         subscriptionStatus: 'ACTIVE_SUBSCRIBED',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      };
+      } as Tenant;
     }
 
     // S'assurer que tenant.id est toujours renseigné quand on a un tenant_id (évite "contexte établissement manquant")

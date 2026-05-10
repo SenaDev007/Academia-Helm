@@ -40,7 +40,7 @@ export default async function PatronatDashboardPage() {
     updatedAt: new Date().toISOString(),
     trialEndsAt: undefined,
     nextPaymentDueAt: undefined,
-  };
+  } as Tenant as Tenant;
 
   // TODO: Charger l'année scolaire active
   const currentAcademicYear = {

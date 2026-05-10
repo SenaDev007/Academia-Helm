@@ -43,7 +43,7 @@ export default function AppTestPage() {
     updatedAt: new Date().toISOString(),
     trialEndsAt: undefined,
     nextPaymentDueAt: undefined,
-  };
+  } as Tenant as Tenant;
 
   useEffect(() => {
     // Simuler un chargement initial

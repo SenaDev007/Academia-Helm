@@ -20,7 +20,6 @@ export async function POST(
 ) {
   const { paymentId } = await params;
   try {
-    const { paymentId } = params;
 
     if (!paymentId) {
       return NextResponse.json(

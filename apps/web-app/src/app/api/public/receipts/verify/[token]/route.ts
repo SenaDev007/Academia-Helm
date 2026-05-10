@@ -15,7 +15,6 @@ export async function GET(
 ) {
   const { token } = await params;
   try {
-    const { token } = params;
     const url = `${API_BASE_URL}/api/receipts/public/verify/${token}`;
 
     const response = await fetch(url, {

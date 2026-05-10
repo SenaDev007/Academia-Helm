@@ -17,7 +17,6 @@ export async function GET(
 ) {
   const { email } = await params;
   try {
-    const { email } = params;
     
     if (!email) {
       return NextResponse.json(

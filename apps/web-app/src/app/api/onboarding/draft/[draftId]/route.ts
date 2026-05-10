@@ -17,7 +17,6 @@ export async function POST(
 ) {
   const { draftId } = await params;
   try {
-    const { draftId } = params;
     
     if (!draftId) {
       return NextResponse.json(

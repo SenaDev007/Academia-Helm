@@ -9,7 +9,6 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import PatronatHeader from '@/components/patronat/PatronatHeader';
-import AppIcon from '@/components/ui/AppIcon';
 
 export default function PatronatLoginPage() {
   const router = useRouter();

@@ -22,7 +22,7 @@ const API_URL = getApiBaseUrlForRoutes();
 export async function POST(request: NextRequest) {
   try {
     // 1. Authentification
-    const session = await getServerSession(request);
+    const session = await getServerSession();
     if (!session || !session.user) {
       return NextResponse.json(
         { error: 'Unauthorized' },

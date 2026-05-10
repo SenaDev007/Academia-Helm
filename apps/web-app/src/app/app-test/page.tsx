@@ -28,6 +28,7 @@ export default function AppTestPage() {
     lastName: 'User',
     role: 'SUPER_DIRECTOR',
     tenantId: 'test-tenant-id',
+    permissions: [],
     createdAt: new Date().toISOString(),
   };
 

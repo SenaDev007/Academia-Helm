@@ -23,8 +23,8 @@ export default async function DocumentsPage() {
     subdomain: '',
     subscriptionStatus: 'ACTIVE_SUBSCRIBED',
     createdAt: new Date().toISOString(),
-    trialEndsAt: null,
-    nextPaymentDueAt: null,
+    trialEndsAt: undefined,
+    nextPaymentDueAt: undefined,
   };
 
   return (

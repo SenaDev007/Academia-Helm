@@ -38,8 +38,8 @@ export default function AppTestPage() {
     subdomain: 'test',
     subscriptionStatus: 'ACTIVE_SUBSCRIBED',
     createdAt: new Date().toISOString(),
-    trialEndsAt: null,
-    nextPaymentDueAt: null,
+    trialEndsAt: undefined,
+    nextPaymentDueAt: undefined,
   };
 
   useEffect(() => {

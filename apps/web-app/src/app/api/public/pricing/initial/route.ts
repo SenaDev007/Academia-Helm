@@ -11,7 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     const apiBaseUrl = getApiBaseUrlForRoutes();
     const initialUrl = `${apiBaseUrl}/public/pricing/initial`;

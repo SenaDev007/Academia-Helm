@@ -15,7 +15,7 @@ const API_URL = getApiBaseUrlForRoutes();
  * 
  * Récupère le résumé de synchronisation
  */
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     // Déléguer au backend
     const response = await fetch(`${API_URL}/sync/summary`, {

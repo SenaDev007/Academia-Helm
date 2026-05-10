@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     const API_BASE_URL = getApiBaseUrlForRoutes();
     // Construire l'URL correctement (évalué à chaque requête : env Vercel / cold start)

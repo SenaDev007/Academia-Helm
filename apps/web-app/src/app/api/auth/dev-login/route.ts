@@ -23,7 +23,7 @@ interface BackendLoginResponse {
   refreshToken: string;
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(_request: NextRequest) {
   try {
     // Vérifier que c'est en développement
     if (process.env.NODE_ENV === 'production') {

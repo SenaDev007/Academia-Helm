@@ -29,12 +29,12 @@ async function forward(request: NextRequest, pathSegments: string[], method: str
   }
 }
 
-export async function GET(request: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
+export async function GET(_request: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
   const { path } = await params;
   return forward(request, path ?? [], 'GET');
 }
 
-export async function POST(request: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
+export async function POST(_request: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
   const { path } = await params;
   return forward(request, path ?? [], 'POST');
 }

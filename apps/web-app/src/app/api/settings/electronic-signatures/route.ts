@@ -10,7 +10,7 @@ import { getServerSession } from '@/lib/auth/session';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     const session = await getServerSession();
     if (!session) {

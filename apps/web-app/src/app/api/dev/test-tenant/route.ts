@@ -10,7 +10,7 @@ import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   // Vérifier que c'est en développement
   if (process.env.NODE_ENV === 'production') {
     return NextResponse.json(

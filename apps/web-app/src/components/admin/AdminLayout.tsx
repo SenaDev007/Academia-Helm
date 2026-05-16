@@ -15,6 +15,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import AppIcon from '@/components/ui/AppIcon';
 import type { IconName } from '@/lib/icons';
+import { offlineBootstrapService } from '@/lib/offline/offline-bootstrap.service';
 
 interface AdminLayoutProps {
   children: React.ReactNode;

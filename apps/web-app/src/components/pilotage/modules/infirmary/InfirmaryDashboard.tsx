@@ -11,7 +11,7 @@ import {
   HeartPulse, 
   AlertCircle, 
   FileText, 
-  Pills, 
+  Pill, 
   Calendar,
   ArrowUpRight,
   ArrowDownRight,
@@ -85,7 +85,7 @@ export default function InfirmaryDashboard() {
           value="5" 
           trend="8 articles" 
           trendType="neutral"
-          icon={Pills} 
+          icon={Pill} 
           iconColor="bg-amber-600"
           delay={0.3}
         />

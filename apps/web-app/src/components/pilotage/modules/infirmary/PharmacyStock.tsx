@@ -8,7 +8,7 @@
 
 import { motion } from 'framer-motion';
 import { 
-  Pills, 
+  Pill, 
   Plus, 
   ArrowDownCircle, 
   ArrowUpCircle, 
@@ -79,7 +79,7 @@ export default function PharmacyStock() {
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/30">
           <h3 className="font-black text-slate-900 flex items-center">
-            <Pills className="w-5 h-5 mr-2 text-blue-600" />
+            <Pill className="w-5 h-5 mr-2 text-blue-600" />
             Inventaire Actif
           </h3>
           <div className="flex space-x-2">

@@ -12,7 +12,7 @@ import {
   AlertTriangle, 
   Utensils, 
   Leaf, 
-  Pills, 
+  Pill, 
   Heart,
   Search,
   Plus,
@@ -51,7 +51,7 @@ export default function AllergiesVigilance() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
           { label: 'Allergies Alimentaires', count: 24, icon: Utensils, color: 'text-rose-600 bg-rose-50' },
-          { label: 'Allergies Médicamenteuses', count: 5, icon: Pills, color: 'text-blue-600 bg-blue-50' },
+          { label: 'Allergies Médicamenteuses', count: 5, icon: Pill, color: 'text-blue-600 bg-blue-50' },
           { label: 'Contre-indications Sport', count: 18, icon: Heart, color: 'text-emerald-600 bg-emerald-50' },
           { label: 'Vigilance Environnement', count: 12, icon: Leaf, color: 'text-amber-600 bg-amber-50' },
         ].map((cat, i) => (
@@ -86,7 +86,7 @@ export default function AllergiesVigilance() {
             { name: 'Marc Yao', class: 'CE1', alert: 'Allergie Sévère Arachide', severity: 'CRITIQUE', contact: 'Mère: +229 97 00 00 01', icon: Utensils, iconColor: 'text-rose-600' },
             { name: 'Inès Atangana', class: 'Laboratoire SVT', alert: 'Allergie Latex & Poussière', severity: 'HAUTE', contact: 'Père: +229 96 00 00 02', icon: Leaf, iconColor: 'text-amber-600' },
             { name: 'Sophie Boli', class: '3ème A', alert: 'Insuffisance Cardiaque Mineure', severity: 'MOYENNE', contact: 'Mère: +229 95 00 00 03', icon: Heart, iconColor: 'text-rose-500' },
-            { name: 'Koffi Mensah', class: 'Terminal D', alert: 'Asthme Sévère (Ventoline)', severity: 'HAUTE', contact: 'Lycée: Internat B2', icon: Pills, iconColor: 'text-blue-600' },
+            { name: 'Koffi Mensah', class: 'Terminal D', alert: 'Asthme Sévère (Ventoline)', severity: 'HAUTE', contact: 'Lycée: Internat B2', icon: Pill, iconColor: 'text-blue-600' },
           ].map((item, i) => (
             <motion.div 
               key={i}

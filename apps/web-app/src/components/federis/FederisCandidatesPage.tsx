@@ -20,7 +20,11 @@ interface Candidate {
   status: 'VALIDATED' | 'PENDING' | 'REJECTED';
 }
 
-export default function FederisCandidatesPage() {
+interface FederisCandidatesPageProps {
+  tenantId?: string;
+}
+
+export default function FederisCandidatesPage({ tenantId }: FederisCandidatesPageProps) {
   const [candidates, setCandidates] = useState<Candidate[]>([
     { id: '1', name: 'Alice Mensah', school: 'Lycée Technique', exam: 'BAC D', matricule: 'FF-2024-001', status: 'VALIDATED' },
     { id: '2', name: 'Koffi Zinsou', school: 'Collège St Joseph', exam: 'BEPC', matricule: 'FF-2024-085', status: 'PENDING' },

@@ -11,7 +11,7 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import PatronatHeader from '../patronat/PatronatHeader';
+import FederisHeader from '../federis/FederisHeader';
 import InstitutionalFooter from './InstitutionalFooter';
 import AppIcon from '@/components/ui/AppIcon';
 import { bgColor, textColor, typo, radius, shadow } from '@/lib/design-tokens';
@@ -20,7 +20,7 @@ import { cn } from '@/lib/utils';
 export default function PatronatExamensLanding() {
   return (
     <div className="min-h-screen bg-white">
-      <PatronatHeader />
+      <FederisHeader />
 
       {/* SECTION 1 — HERO (AUTORITÉ) */}
       <section className="relative min-h-[90vh] flex items-center justify-center px-4 sm:px-6 lg:px-8 overflow-hidden bg-[#0b1d3a] pt-20">

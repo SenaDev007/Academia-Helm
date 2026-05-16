@@ -1,3 +1,5 @@
+'use client';
+
 import { useState, useEffect } from 'react';
 import { Plus, Search, FileText, Calendar, DollarSign, Clock, AlertCircle, FileCheck, User } from 'lucide-react';
 import { ModuleHeader } from '@/components/modules/blueprint';

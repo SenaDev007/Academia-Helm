@@ -1,3 +1,5 @@
+'use client';
+
 import { useState, useEffect } from 'react';
 import { Plus, Search, Filter, Mail, Phone, MapPin, Briefcase, User, GraduationCap, Building2 } from 'lucide-react';
 import { ModuleHeader } from '@/components/modules/blueprint';

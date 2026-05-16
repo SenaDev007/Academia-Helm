@@ -18,7 +18,7 @@ const SYNC_API = '/api/sync';
 const BATCH_SIZE = 100;
 const SQLITE_VERSION = '1';
 
-const ENTITY_TO_TABLE: Record<string, string> = {
+const ENTITY_TO_TABLE: Record<SyncEntityType, string> = {
   STUDENT: 'students',
   TEACHER: 'teachers',
   CLASS: 'classes',
@@ -29,6 +29,53 @@ const ENTITY_TO_TABLE: Record<string, string> = {
   ABSENCE: 'absences',
   ACADEMIC_YEAR: 'academic_years',
   SCHOOL_LEVEL: 'school_levels',
+  SUBJECT: 'subjects',
+  INVOICE: 'invoices',
+  HOMEWORK: 'homeworks',
+  INCIDENT: 'incidents',
+  LOAN: 'loans',
+  SESSION: 'sessions',
+  MESSAGE: 'messages',
+  NOTIFICATION: 'notifications',
+  ALERT: 'alerts',
+  REPORT: 'reports',
+  ORION_ALERT: 'orion_alerts',
+  EXAM_CANDIDATE: 'exam_candidates',
+  EXAM_RESULT: 'exam_results',
+  EXAM_PV: 'exam_pvs',
+  PEDAGOGICAL_FILE: 'pedagogical_files',
+};
+
+/**
+ * Priorités de synchronisation (Section 10.4 du cahier technique)
+ */
+const ENTITY_PRIORITY: Record<SyncEntityType, number> = {
+  ATTENDANCE: 100, // HIGH
+  ABSENCE: 100,
+  GRADE: 100,
+  EXAM_RESULT: 100,
+  EXAM_PV: 100,
+  EXAM_CANDIDATE: 100,
+  DISCIPLINARY_INCIDENT: 100,
+  INCIDENT: 100,
+  PAYMENT: 90, // HIGH-ish
+  MESSAGE: 50, // MEDIUM
+  NOTIFICATION: 50,
+  ALERT: 50,
+  ORION_ALERT: 50,
+  REPORT: 50,
+  HOMEWORK: 50,
+  PEDAGOGICAL_FILE: 50,
+  SESSION: 50,
+  LOAN: 40, // MEDIUM-LOW
+  STUDENT: 30, // LOW
+  TEACHER: 30,
+  CLASS: 30,
+  EXAM: 30,
+  ACADEMIC_YEAR: 20,
+  SCHOOL_LEVEL: 20,
+  SUBJECT: 20,
+  INVOICE: 20,
 };
 
 const OP_MAP: Record<SyncOperationType, 'INSERT' | 'UPDATE' | 'DELETE'> = {
@@ -136,6 +183,7 @@ function toBackendOperation(event: OutboxEvent, deviceId?: string) {
     payload,
     local_updated_at: event.createdAt,
     device_id: deviceId,
+    priority: ENTITY_PRIORITY[event.entityType] || 0,
   };
 }
 
@@ -147,26 +195,37 @@ export async function runSync(tenantId: string, deviceId?: string): Promise<{
   pushed: number;
   conflicts: number;
   errors: number;
-  pulled: { students: number; studentEnrollments: number; payments: number };
+  pulled: Record<string, number>;
 }> {
   const result = {
     success: false,
     pushed: 0,
     conflicts: 0,
     errors: 0,
-    pulled: { students: 0, studentEnrollments: 0, payments: 0 },
+    pulled: {} as Record<string, number>,
   };
 
   const { hash } = await getSchemaHash();
+  
+  // 1. PUSH (Envoyer les changements locaux)
   const pending = await outboxService.getPendingEvents(tenantId, BATCH_SIZE);
-  if (pending.length > 0) {
+  
+  // Trier par priorité avant l'envoi
+  const sortedPending = [...pending].sort((a, b) => {
+    const prioA = ENTITY_PRIORITY[a.entityType] || 0;
+    const prioB = ENTITY_PRIORITY[b.entityType] || 0;
+    return prioB - prioA; // Décroissant
+  });
+
+  if (sortedPending.length > 0) {
     const body = {
       tenantId,
       sqliteSchemaHash: hash,
       sqliteVersion: SQLITE_VERSION,
       device_id: deviceId,
-      operations: pending.map((e) => toBackendOperation(e, deviceId)),
+      operations: sortedPending.map((e) => toBackendOperation(e, deviceId)),
     };
+    
     const pushRes = await fetchWithAuth(`${SYNC_API}/push`, {
       method: 'POST',
       body: JSON.stringify(body),
@@ -182,7 +241,8 @@ export async function runSync(tenantId: string, deviceId?: string): Promise<{
     result.errors = pushData.failed_operations ?? 0;
 
     const results = pushData.results || [];
-    const pendingById = new Map(pending.map((e) => [e.id, e]));
+    const pendingById = new Map(sortedPending.map((e) => [e.id, e]));
+    
     for (const r of results) {
       const eventId = r.operation_id;
       const ev = pendingById.get(eventId);
@@ -198,15 +258,17 @@ export async function runSync(tenantId: string, deviceId?: string): Promise<{
             server_data: JSON.stringify(r.server_data ?? {}),
             detected_at: new Date().toISOString(),
           });
-        } catch (_) { /* store peut ne pas exister en v2 */ }
+        } catch (_) { /* store store non présent */ }
       } else {
         await outboxService.markAsFailed(eventId, r.error_message || 'Erreur');
       }
     }
   }
 
+  // 2. PULL (Récupérer les changements serveur)
   const lastSync = await getLastSyncTimestamp(tenantId);
   const lastSyncAt = lastSync || '1970-01-01T00:00:00.000Z';
+  
   const pullRes = await fetchWithAuth(`${SYNC_API}/pull`, {
     method: 'POST',
     body: JSON.stringify({
@@ -218,14 +280,48 @@ export async function runSync(tenantId: string, deviceId?: string): Promise<{
   const pullData = await pullRes.json().catch(() => ({}));
 
   if (pullRes.ok && pullData.entities) {
-    result.pulled.students = pullData.entities.students?.length ?? 0;
-    result.pulled.studentEnrollments = pullData.entities.studentEnrollments?.length ?? 0;
-    result.pulled.payments = pullData.entities.payments?.length ?? 0;
+    // Parcourir toutes les entités retournées et les persister en base locale
+    const entityTypes = Object.keys(pullData.entities);
+    for (const type of entityTypes) {
+      const items = pullData.entities[type] || [];
+      if (items.length > 0) {
+        // Déterminer le nom du store local
+        const storeName = type.endsWith('s') ? type : `${type}s`;
+        try {
+          await localDb.executeBulk(storeName, 'put', items);
+          result.pulled[type] = items.length;
+        } catch (e) {
+          console.error(`[Sync] Failed to persist ${type}:`, e);
+        }
+      }
+    }
+    
     const pulledAt = pullData.pulled_at || new Date().toISOString();
     await setLastSyncTimestamp(tenantId, pulledAt);
+
+    // 6. Finalisation : Mise à jour du registre local (Section 11.2)
+    await localDb.execute('device_registry_local', 'put', {
+      id: 'current_device',
+      lastSyncServerId: pullData.server_id || 'remote-master',
+      lastSyncAt: pulledAt,
+      status: 'SYNCED'
+    });
   }
 
   result.success = result.errors === 0 && result.conflicts === 0;
+
+  // 7. Déclencher l'événement UI (Section 22.3)
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('sync-end', {
+      detail: {
+        success: result.success,
+        successful: result.pushed,
+        conflicted: result.conflicts,
+        failed: result.errors,
+      }
+    }));
+  }
+
   return result;
 }
 
@@ -243,13 +339,13 @@ export function isOnline(): boolean {
 export async function getSyncState(tenantId: string): Promise<SyncState> {
   const states = await localDb.query<any>('sync_state');
   const s = states.find((x: any) => x.tenantId === tenantId);
-  const events = await localDb.query<{ status: string }>('outbox_events');
+  const events = await localDb.query<{ status: string; tenantId: string }>('outbox_events');
   const pendingCount = events.filter(
     (e: any) => e.tenantId === tenantId && e.status === 'PENDING'
   ).length;
 
   return {
-    status: 'idle',
+    status: isOnline() ? 'online' : 'offline',
     lastSyncAt: s?.lastSyncTimestamp ?? null,
     pendingCount,
     errorMessage: null,

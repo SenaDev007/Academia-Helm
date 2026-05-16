@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Bulletin Scolaire - Academia Helm</title>
+    <style>
+        body { font-family: 'Helvetica', 'Arial', sans-serif; color: #333; line-height: 1.4; padding: 0; margin: 0; }
+        .page { padding: 30px; }
+        .header { display: flex; justify-content: space-between; border-bottom: 2px solid #2563eb; padding-bottom: 15px; margin-bottom: 20px; }
+        .school-info { flex: 1; }
+        .school-name { font-size: 20px; font-weight: bold; color: #1e3a8a; }
+        .bulletin-title { flex: 1; text-align: center; }
+        .bulletin-title h1 { margin: 0; font-size: 24px; color: #1e40af; }
+        .student-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; display: flex; justify-content: space-between; margin-bottom: 20px; }
+        .student-info p { margin: 2px 0; font-size: 14px; }
+        .grades-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        .grades-table th { background: #2563eb; color: white; padding: 10px; font-size: 12px; text-transform: uppercase; text-align: left; }
+        .grades-table td { border-bottom: 1px solid #e2e8f0; padding: 10px; font-size: 13px; }
+        .grades-table tr:nth-child(even) { background: #f1f5f9; }
+        .summary { display: flex; justify-content: flex-end; margin-top: 20px; }
+        .summary-box { border: 2px solid #1e40af; padding: 15px; border-radius: 8px; min-width: 250px; }
+        .summary-row { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 14px; }
+        .summary-row.total { font-weight: bold; font-size: 18px; border-top: 1px solid #e2e8f0; padding-top: 5px; margin-top: 5px; color: #1e40af; }
+        .footer { margin-top: 50px; display: flex; justify-content: space-between; align-items: flex-end; }
+        .signature { text-align: center; width: 200px; }
+        .signature-line { border-top: 1px solid #000; margin-top: 40px; padding-top: 5px; font-size: 12px; }
+        .qr-code { width: 100px; height: 100px; border: 1px solid #eee; }
+        .security-note { font-size: 10px; color: #64748b; margin-top: 20px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="header">
+            <div class="school-info">
+                <div class="school-name">{{schoolName}}</div>
+                <p style="font-size: 10px; color: #64748b;">{{schoolAddress}}</p>
+                <p style="font-size: 10px; color: #64748b;">Année Scolaire : {{academicYear}}</p>
+            </div>
+            <div class="bulletin-title">
+                <h1>BULLETIN DE NOTES</h1>
+                <p>{{periodName}}</p>
+            </div>
+            <div style="flex: 1; text-align: right;">
+                <img src="{{schoolLogo}}" style="max-height: 60px;" alt="Logo">
+            </div>
+        </div>
+
+        <div class="student-box">
+            <div class="student-info">
+                <p><strong>Élève :</strong> {{studentName}}</p>
+                <p><strong>Date de Naissance :</strong> {{studentBirthDate}}</p>
+                <p><strong>Classe :</strong> {{className}}</p>
+                <p><strong>Effectif :</strong> {{classSize}} élèves</p>
+            </div>
+            <div class="student-info" style="text-align: right;">
+                <p><strong>ID :</strong> {{studentId}}</p>
+                <p><strong>Sexe :</strong> {{studentSex}}</p>
+                <p><strong>Redoublant :</strong> {{isRepeater}}</p>
+            </div>
+        </div>
+
+        <table class="grades-table">
+            <thead>
+                <tr>
+                    <th>Matière</th>
+                    <th>Coefficient</th>
+                    <th>Moyenne</th>
+                    <th>Moy. Pondérée</th>
+                    <th>Rang</th>
+                    <th>Appréciation</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{#each subjects}}
+                <tr>
+                    <td><strong>{{name}}</strong><br/><small>{{teacher}}</small></td>
+                    <td>{{coefficient}}</td>
+                    <td>{{average}}</td>
+                    <td>{{weightedAverage}}</td>
+                    <td>{{rank}}</td>
+                    <td>{{appreciation}}</td>
+                </tr>
+                {{/each}}
+            </tbody>
+        </table>
+
+        <div class="summary">
+            <div class="summary-box">
+                <div class="summary-row">
+                    <span>Total Coeff. :</span>
+                    <span>{{totalCoefficient}}</span>
+                </div>
+                <div class="summary-row">
+                    <span>Total Pondéré :</span>
+                    <span>{{totalWeighted}}</span>
+                </div>
+                <div class="summary-row.total">
+                    <span>MOYENNE GÉNÉRALE :</span>
+                    <span>{{generalAverage}} / 20</span>
+                </div>
+                <div class="summary-row" style="margin-top: 10px;">
+                    <span>Rang de l'élève :</span>
+                    <span><strong>{{classRank}} / {{classSize}}</strong></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <div class="signature">
+                <p>Le Parent d'Élève</p>
+                <div class="signature-line"></div>
+            </div>
+            <div style="text-align: center;">
+                <img src="{{qrCode}}" class="qr-code" alt="Verification QR">
+                <p style="font-size: 8px; margin-top: 4px;">Scannez pour vérifier l'authenticité</p>
+            </div>
+            <div class="signature">
+                <p>Le Chef d'Établissement</p>
+                <div class="signature-line">Fait à Cotonou, le {{dateNow}}</div>
+            </div>
+        </div>
+
+        <div class="security-note">
+            Ce document est une pièce officielle générée par Academia Helm. Toute falsification est passible de sanctions.
+            ID Document : {{bulletinId}}
+        </div>
+    </div>
+</body>
+</html>

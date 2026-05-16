@@ -1,176 +1,141 @@
 /**
  * ============================================================================
- * MODULE TRANSPORT
+ * TRANSPORT MODULE PAGE (MODULE 9.2)
  * ============================================================================
+ * Gère le parc automobile, les chauffeurs, les itinéraires et le suivi.
  */
 
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Plus, Bus, MapPin, Users, AlertCircle } from 'lucide-react';
-import { useAcademicYear } from '@/hooks/useAcademicYear';
-import { useSchoolLevel } from '@/hooks/useSchoolLevel';
-import ModulePageLayout from './ModulePageLayout';
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  Bus, Users, MapPin, Route, Calendar, Clock, 
+  AlertTriangle, PenTool, CreditCard, FileBarChart, 
+  Settings, Activity, Navigation, ShieldAlert, Plus, 
+  LayoutDashboard, Search, Filter, Download, Info
+} from 'lucide-react';
 
-interface Vehicle {
-  id: string;
-  plateNumber: string;
-  driverName: string;
-  route: string;
-  studentCount: number;
-  capacity: number;
-  status: 'ACTIVE' | 'MAINTENANCE' | 'INACTIVE';
-}
+// Sub-components
+import TransportDashboard from './transport/TransportDashboard';
+import TransportVehicles from './transport/TransportVehicles';
+import TransportDrivers from './transport/TransportDrivers';
+import TransportRoutes from './transport/TransportRoutes';
+import TransportStops from './transport/TransportStops';
+import TransportStudents from './transport/TransportStudents';
+import TransportSchedules from './transport/TransportSchedules';
+import TransportTrips from './transport/TransportTrips';
+import TransportAttendance from './transport/TransportAttendance';
+import TransportIncidents from './transport/TransportIncidents';
+import TransportMaintenance from './transport/TransportMaintenance';
+import TransportPayments from './transport/TransportPayments';
+import TransportReports from './transport/TransportReports';
+import TransportSettings from './transport/TransportSettings';
+
+const TABS = [
+  { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard },
+  { id: 'vehicles', label: 'Véhicules', icon: Bus },
+  { id: 'drivers', label: 'Personnel', icon: Users },
+  { id: 'routes', label: 'Itinéraires', icon: Route },
+  { id: 'stops', label: 'Arrêts & Zones', icon: MapPin },
+  { id: 'students', label: 'Élèves', icon: Users },
+  { id: 'schedules', label: 'Planning', icon: Calendar },
+  { id: 'trips', label: 'Suivi Trajets', icon: Navigation },
+  { id: 'attendance', label: 'Présences', icon: Clock },
+  { id: 'incidents', label: 'Incidents', icon: ShieldAlert },
+  { id: 'maintenance', label: 'Maintenance', icon: PenTool },
+  { id: 'payments', label: 'Paiements', icon: CreditCard },
+  { id: 'reports', label: 'Rapports', icon: FileBarChart },
+  { id: 'settings', label: 'Paramètres', icon: Settings },
+];
 
 export default function TransportModulePage() {
-  const { currentYear } = useAcademicYear();
-  const { currentLevel } = useSchoolLevel();
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('dashboard');
 
-  useEffect(() => {
-    const loadVehicles = async () => {
-      if (!currentYear || !currentLevel) return;
-
-      setIsLoading(true);
-      try {
-        const response = await fetch(
-          `/api/transport/vehicles?academicYearId=${currentYear.id}&schoolLevelId=${currentLevel.id}`
-        );
-        if (response.ok) {
-          const data = await response.json();
-          setVehicles(data);
-        }
-      } catch (error) {
-        console.error('Failed to load vehicles:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadVehicles();
-  }, [currentYear, currentLevel]);
+  const renderActiveTab = () => {
+    switch (activeTab) {
+      case 'dashboard': return <TransportDashboard />;
+      case 'vehicles': return <TransportVehicles />;
+      case 'drivers': return <TransportDrivers />;
+      case 'routes': return <TransportRoutes />;
+      case 'stops': return <TransportStops />;
+      case 'students': return <TransportStudents />;
+      case 'schedules': return <TransportSchedules />;
+      case 'trips': return <TransportTrips />;
+      case 'attendance': return <TransportAttendance />;
+      case 'incidents': return <TransportIncidents />;
+      case 'maintenance': return <TransportMaintenance />;
+      case 'payments': return <TransportPayments />;
+      case 'reports': return <TransportReports />;
+      case 'settings': return <TransportSettings />;
+      default: return <TransportDashboard />;
+    }
+  };
 
   return (
-    <ModulePageLayout
-      title="Transport"
-      subtitle={`${currentLevel?.code === 'MATERNELLE' ? 'Maternelle' :
-                 currentLevel?.code === 'PRIMAIRE' ? 'Primaire' :
-                 currentLevel?.code === 'SECONDAIRE' ? 'Secondaire' : currentLevel?.code} | ${currentYear?.name || ''}`}
-      actions={
-        <>
-          <button className="flex items-center space-x-2 px-4 py-2 bg-navy-900 text-white rounded-md hover:bg-navy-800 transition-colors">
-            <Plus className="w-4 h-4" />
-            <span>Ajouter un véhicule</span>
-          </button>
-        </>
-      }
-    >
-      <div className="space-y-6">
-        {/* Statistiques */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-gray-600">Véhicules actifs</p>
-              <Bus className="w-5 h-5 text-gray-400" />
+    <div className="min-h-screen bg-[#F8FAFC] p-8">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
+        <div>
+          <div className="flex items-center gap-3 mb-2">
+            <div className="p-2 bg-navy-900 rounded-xl">
+              <Bus className="w-6 h-6 text-white" />
             </div>
-            <p className="text-2xl font-bold text-navy-900">
-              {isLoading ? '—' : vehicles.filter(v => v.status === 'ACTIVE').length}
-            </p>
+            <h1 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">
+              Transport <span className="text-navy-600 font-medium">| Academia Helm</span>
+            </h1>
           </div>
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-gray-600">Élèves transportés</p>
-              <Users className="w-5 h-5 text-gray-400" />
-            </div>
-            <p className="text-2xl font-bold text-navy-900">
-              {isLoading ? '—' : vehicles.reduce((sum, v) => sum + v.studentCount, 0)}
-            </p>
-          </div>
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-gray-600">En maintenance</p>
-              <AlertCircle className="w-5 h-5 text-orange-600" />
-            </div>
-            <p className="text-2xl font-bold text-navy-900">
-              {isLoading ? '—' : vehicles.filter(v => v.status === 'MAINTENANCE').length}
-            </p>
-          </div>
+          <p className="text-slate-500 font-medium max-w-2xl">
+            Gestion intelligente du transport scolaire, suivi en temps réel et sécurité des élèves.
+          </p>
         </div>
 
-        {/* Liste des véhicules */}
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
-          <div className="p-6 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-navy-900">Véhicules</h3>
+        <div className="flex items-center gap-3">
+          <div className="bg-white px-6 py-3 rounded-2xl border border-slate-100 shadow-sm">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Ponctualité</p>
+            <p className="text-xl font-black text-emerald-600 tracking-tighter">94.2%</p>
           </div>
-          {isLoading ? (
-            <div className="p-6 text-center text-gray-400">Chargement...</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Véhicule
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Conducteur
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Itinéraire
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Élèves
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Statut
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {vehicles.map((vehicle) => (
-                    <tr key={vehicle.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {vehicle.plateNumber}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {vehicle.driverName}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        <div className="flex items-center space-x-1">
-                          <MapPin className="w-4 h-4" />
-                          <span>{vehicle.route}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {vehicle.studentCount}/{vehicle.capacity}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span
-                          className={`px-2 py-1 text-xs font-medium rounded-full ${
-                            vehicle.status === 'ACTIVE'
-                              ? 'bg-green-100 text-green-800'
-                              : vehicle.status === 'MAINTENANCE'
-                              ? 'bg-orange-100 text-orange-800'
-                              : 'bg-gray-100 text-gray-800'
-                          }`}
-                        >
-                          {vehicle.status === 'ACTIVE'
-                            ? 'Actif'
-                            : vehicle.status === 'MAINTENANCE'
-                            ? 'Maintenance'
-                            : 'Inactif'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <div className="bg-white px-6 py-3 rounded-2xl border border-slate-100 shadow-sm">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Activité</p>
+            <p className="text-xl font-black text-navy-900 tracking-tighter">12/15 <span className="text-slate-300 font-medium text-xs">Bus</span></p>
+          </div>
+          <button className="p-4 bg-white text-slate-400 rounded-2xl border border-slate-100 hover:text-navy-900 hover:border-navy-900 transition-all">
+            <Info className="w-5 h-5" />
+          </button>
         </div>
       </div>
-    </ModulePageLayout>
+
+      {/* Navigation Tabs */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-4 mb-8 no-scrollbar scroll-smooth">
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`
+              flex items-center gap-2 px-6 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shrink-0
+              ${activeTab === tab.id 
+                ? 'bg-navy-900 text-white shadow-lg shadow-navy-900/20 translate-y-[-2px]' 
+                : 'bg-white text-slate-400 hover:bg-slate-50 hover:text-slate-600 border border-slate-100'}
+            `}
+          >
+            <tab.icon className={`w-4 h-4 ${activeTab === tab.id ? 'text-white' : 'text-slate-400'}`} />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Main Content */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={activeTab}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          transition={{ duration: 0.2 }}
+        >
+          {renderActiveTab()}
+        </motion.div>
+      </AnimatePresence>
+    </div>
   );
 }
-

@@ -1,196 +1,141 @@
 /**
  * ============================================================================
- * MODULE COMMUNICATION
+ * MODULE COMMUNICATION & NOTIFICATIONS (Spec 15 Onglets — Production Ready)
+ * ============================================================================
+ * Centre de commandement multicanal de l'établissement.
+ *
+ * 1. Tableau de bord          9. Communication Élèves
+ * 2. Messagerie Interne      10. Communication Administrative
+ * 3. Annonces Officielles    11. Canaux & Connecteurs
+ * 4. Notifications Auto      12. Historique & Traçabilité
+ * 5. Campagnes               13. Rapports & Analytique
+ * 6. Modèles de Messages     14. Paramétrage
+ * 7. Communication Parents   15. ORION Communication
+ * 8. Communication Enseignants
  * ============================================================================
  */
 
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Send, MessageSquare, Bell, Mail } from 'lucide-react';
-import { useAcademicYear } from '@/hooks/useAcademicYear';
-import { useSchoolLevel } from '@/hooks/useSchoolLevel';
-import ModulePageLayout from './ModulePageLayout';
+import {
+  LayoutDashboard, MessageSquare, Megaphone, Bell, Zap,
+  FileText, Users, GraduationCap, BookOpen, Building2,
+  Wifi, History, BarChart3, Settings, ShieldCheck,
+  Plus, Send, Download, BrainCircuit
+} from 'lucide-react';
+import { ModuleContainer } from '@/components/modules/blueprint';
+import { useModuleContext } from '@/hooks/useModuleContext';
 
-interface Announcement {
-  id: string;
-  title: string;
-  content: string;
-  type: 'SMS' | 'EMAIL' | 'WHATSAPP' | 'NOTIFICATION';
-  status: 'DRAFT' | 'SENT' | 'SCHEDULED';
-  createdAt: string;
-}
+// Sub-module components
+import CommDashboard          from '@/components/communication/CommDashboard';
+import InternalMessaging      from '@/components/communication/InternalMessaging';
+import OfficialAnnouncements  from '@/components/communication/OfficialAnnouncements';
+import AutoNotifications      from '@/components/communication/AutoNotifications';
+import CampaignManager        from '@/components/communication/CampaignManager';
+import MessageTemplates       from '@/components/communication/MessageTemplates';
+import ParentCommunication    from '@/components/communication/ParentCommunication';
+import TeacherCommunication   from '@/components/communication/TeacherCommunication';
+import StudentCommunication   from '@/components/communication/StudentCommunication';
+import AdminCommunication     from '@/components/communication/AdminCommunication';
+import ChannelConnectors      from '@/components/communication/ChannelConnectors';
+import CommHistory            from '@/components/communication/CommHistory';
+import CommAnalytics          from '@/components/communication/CommAnalytics';
+import CommSettings           from '@/components/communication/CommSettings';
+import OrionCommunication     from '@/components/communication/OrionCommunication';
 
 export default function CommunicationModulePage() {
-  const { currentYear } = useAcademicYear();
-  const { currentLevel } = useSchoolLevel();
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { academicYear, isLoading: contextLoading } = useModuleContext();
+  const [activeSubModuleId, setActiveSubModuleId] = useState<string>('dashboard');
+  const [stats, setStats] = useState<any>(null);
 
   useEffect(() => {
-    const loadAnnouncements = async () => {
-      if (!currentYear || !currentLevel) return;
+    if (academicYear?.id) loadCommStats();
+  }, [academicYear?.id]);
 
-      setIsLoading(true);
-      try {
-        const response = await fetch(
-          `/api/communication/announcements?academicYearId=${currentYear.id}&schoolLevelId=${currentLevel.id}`
-        );
-        if (response.ok) {
-          const data = await response.json();
-          setAnnouncements(data);
-        }
-      } catch (error) {
-        console.error('Failed to load announcements:', error);
-      } finally {
-        setIsLoading(false);
+  const loadCommStats = async () => {
+    try {
+      const res = await fetch(`/api/communication/v2/dashboard/stats?academicYearId=${academicYear?.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setStats({
+          totalSent:       data.totalSent       ?? 0,
+          unread:          data.unread           ?? 0,
+          activeCampaigns: data.activeCampaigns  ?? 0,
+          deliveryRate:    data.deliveryRate     ?? 0,
+        });
       }
-    };
-
-    loadAnnouncements();
-  }, [currentYear, currentLevel]);
-
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'SMS':
-        return MessageSquare;
-      case 'EMAIL':
-        return Mail;
-      case 'WHATSAPP':
-        return MessageSquare;
-      case 'NOTIFICATION':
-        return Bell;
-      default:
-        return MessageSquare;
-    }
+    } catch (e) { console.error(e); }
   };
 
-  const getTypeLabel = (type: string) => {
-    const labels: Record<string, string> = {
-      SMS: 'SMS',
-      EMAIL: 'Email',
-      WHATSAPP: 'WhatsApp',
-      NOTIFICATION: 'Notification',
-    };
-    return labels[type] || type;
-  };
+  if (contextLoading) return <div className="p-8 text-center text-slate-400">Initialisation Communication...</div>;
 
   return (
-    <ModulePageLayout
-      title="Communication"
-      subtitle={`${currentLevel?.code === 'MATERNELLE' ? 'Maternelle' :
-                 currentLevel?.code === 'PRIMAIRE' ? 'Primaire' :
-                 currentLevel?.code === 'SECONDAIRE' ? 'Secondaire' : currentLevel?.code} | ${currentYear?.name || ''}`}
-      actions={
-        <>
-          <button className="flex items-center space-x-2 px-4 py-2 bg-navy-900 text-white rounded-md hover:bg-navy-800 transition-colors">
-            <Plus className="w-4 h-4" />
-            <span>Nouvelle annonce</span>
-          </button>
-          <button className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors">
-            <Send className="w-4 h-4" />
-            <span>Envoyer un message</span>
-          </button>
-        </>
-      }
-    >
-      <div className="space-y-6">
-        {/* Statistiques */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-gray-600">Total</p>
-              <MessageSquare className="w-5 h-5 text-gray-400" />
+    <>
+      <ModuleContainer
+        header={{
+          title: 'Communication & Notifications',
+          description: 'Centre de commandement multicanal — messagerie, annonces, campagnes SMS/WhatsApp/Email',
+          icon: 'messageSquare',
+          kpis: stats ? [
+            { label: 'Messages Envoyés',    value: stats.totalSent,        icon: 'send',         trend: 'up' },
+            { label: 'Non Lus',             value: stats.unread,           icon: 'bell',         trend: 'down' },
+            { label: 'Campagnes Actives',   value: stats.activeCampaigns,  icon: 'zap',          trend: 'neutral' },
+            { label: 'Taux de Livraison',   value: `${stats.deliveryRate}%`, icon: 'shieldCheck', trend: 'up' },
+          ] : [],
+          actions: (
+            <div className="flex items-center gap-2">
+              <button className="flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-xl font-bold shadow-lg shadow-violet-900/20 hover:bg-violet-700 transition-all">
+                <Plus className="w-4 h-4" /> Nouvelle Annonce
+              </button>
+              <button className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl font-bold hover:bg-slate-50 transition-all">
+                <Send className="w-4 h-4" /> Envoyer Message
+              </button>
             </div>
-            <p className="text-2xl font-bold text-navy-900">
-              {isLoading ? '—' : announcements.length}
-            </p>
-          </div>
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-gray-600">Envoyées</p>
-              <Send className="w-5 h-5 text-green-600" />
-            </div>
-            <p className="text-2xl font-bold text-navy-900">
-              {isLoading ? '—' : announcements.filter(a => a.status === 'SENT').length}
-            </p>
-          </div>
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-gray-600">Brouillons</p>
-              <MessageSquare className="w-5 h-5 text-yellow-600" />
-            </div>
-            <p className="text-2xl font-bold text-navy-900">
-              {isLoading ? '—' : announcements.filter(a => a.status === 'DRAFT').length}
-            </p>
-          </div>
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-gray-600">Planifiées</p>
-              <Bell className="w-5 h-5 text-blue-600" />
-            </div>
-            <p className="text-2xl font-bold text-navy-900">
-              {isLoading ? '—' : announcements.filter(a => a.status === 'SCHEDULED').length}
-            </p>
-          </div>
-        </div>
-
-        {/* Liste des annonces */}
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
-          <div className="p-6 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-navy-900">Annonces</h3>
-          </div>
-          {isLoading ? (
-            <div className="p-6 text-center text-gray-400">Chargement...</div>
-          ) : (
-            <div className="divide-y divide-gray-200">
-              {announcements.map((announcement) => {
-                const Icon = getTypeIcon(announcement.type);
-                return (
-                  <div
-                    key={announcement.id}
-                    className="p-6 hover:bg-gray-50 transition-colors"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-3 mb-2">
-                          <Icon className="w-5 h-5 text-gray-400" />
-                          <h4 className="text-base font-semibold text-navy-900">
-                            {announcement.title}
-                          </h4>
-                          <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">
-                            {getTypeLabel(announcement.type)}
-                          </span>
-                          <span
-                            className={`px-2 py-1 text-xs font-medium rounded-full ${
-                              announcement.status === 'SENT'
-                                ? 'bg-green-100 text-green-800'
-                                : announcement.status === 'SCHEDULED'
-                                ? 'bg-blue-100 text-blue-800'
-                                : 'bg-yellow-100 text-yellow-800'
-                            }`}
-                          >
-                            {announcement.status === 'SENT'
-                              ? 'Envoyée'
-                              : announcement.status === 'SCHEDULED'
-                              ? 'Planifiée'
-                              : 'Brouillon'}
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-600 mb-2">{announcement.content}</p>
-                        <p className="text-xs text-gray-500">
-                          {new Date(announcement.createdAt).toLocaleString('fr-FR')}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-    </ModulePageLayout>
+          )
+        }}
+        subModules={{
+          activeModuleId: activeSubModuleId,
+          onModuleChange: setActiveSubModuleId,
+          modules: [
+            { id: 'dashboard',    label: 'Tableau de Bord',        icon: <LayoutDashboard className="w-4 h-4" /> },
+            { id: 'messaging',    label: 'Messagerie Interne',     icon: <MessageSquare className="w-4 h-4" /> },
+            { id: 'announcements',label: 'Annonces Officielles',   icon: <Megaphone className="w-4 h-4" /> },
+            { id: 'auto',         label: 'Notifications Auto',     icon: <Bell className="w-4 h-4" /> },
+            { id: 'campaigns',    label: 'Campagnes',              icon: <Zap className="w-4 h-4" /> },
+            { id: 'templates',    label: 'Modèles Messages',       icon: <FileText className="w-4 h-4" /> },
+            { id: 'parents',      label: 'Parents',                icon: <Users className="w-4 h-4" /> },
+            { id: 'teachers',     label: 'Enseignants',            icon: <GraduationCap className="w-4 h-4" /> },
+            { id: 'students',     label: 'Élèves',                 icon: <BookOpen className="w-4 h-4" /> },
+            { id: 'admin',        label: 'Administrative',         icon: <Building2 className="w-4 h-4" /> },
+            { id: 'channels',     label: 'Canaux & Connecteurs',   icon: <Wifi className="w-4 h-4" /> },
+            { id: 'history',      label: 'Historique',             icon: <History className="w-4 h-4" /> },
+            { id: 'analytics',    label: 'Rapports & Analytique',  icon: <BarChart3 className="w-4 h-4" /> },
+            { id: 'settings',     label: 'Paramétrage',            icon: <Settings className="w-4 h-4" /> },
+            { id: 'orion',        label: 'ORION Communication',    icon: <ShieldCheck className="w-4 h-4" /> },
+          ]
+        }}
+        content={{
+          layout: 'default',
+          children:
+            activeSubModuleId === 'dashboard'     ? <CommDashboard /> :
+            activeSubModuleId === 'messaging'     ? <InternalMessaging /> :
+            activeSubModuleId === 'announcements' ? <OfficialAnnouncements /> :
+            activeSubModuleId === 'auto'          ? <AutoNotifications /> :
+            activeSubModuleId === 'campaigns'     ? <CampaignManager /> :
+            activeSubModuleId === 'templates'     ? <MessageTemplates /> :
+            activeSubModuleId === 'parents'       ? <ParentCommunication /> :
+            activeSubModuleId === 'teachers'      ? <TeacherCommunication /> :
+            activeSubModuleId === 'students'      ? <StudentCommunication /> :
+            activeSubModuleId === 'admin'         ? <AdminCommunication /> :
+            activeSubModuleId === 'channels'      ? <ChannelConnectors /> :
+            activeSubModuleId === 'history'       ? <CommHistory /> :
+            activeSubModuleId === 'analytics'     ? <CommAnalytics /> :
+            activeSubModuleId === 'settings'      ? <CommSettings /> :
+            activeSubModuleId === 'orion'         ? <OrionCommunication /> :
+            <CommDashboard />
+        }}
+      />
+    </>
   );
 }
-

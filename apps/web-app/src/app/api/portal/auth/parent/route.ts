@@ -91,6 +91,7 @@ export async function POST(request: NextRequest) {
         firstName: data.user.firstName || '',
         lastName: data.user.lastName || '',
         role: (data.user.role || 'USER') as any,
+        portal: 'PARENT' as any,
         tenantId: data.user.tenantId || tenantId,
         permissions: [], // Sera chargé via /context/bootstrap
         createdAt: new Date().toISOString(),

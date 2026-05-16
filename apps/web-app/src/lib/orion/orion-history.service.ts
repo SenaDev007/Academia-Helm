@@ -57,7 +57,7 @@ export async function logOrionSummary(
   tenantId: string,
   summary: OrionMonthlySummary
 ): Promise<void> {
-  const historyEntry: Omit<OrionAnalysisHistory, 'id' | 'userId' | 'createdAt'> = {
+  const historyEntry: Omit<OrionAnalysisHistory, 'id' | 'createdAt'> = {
     tenantId,
     userId: 'system', // Généré automatiquement
     type: 'MONTHLY_SUMMARY',
@@ -101,7 +101,7 @@ export async function logOrionAlert(
   tenantId: string,
   alert: { id: string; title: string; level: string }
 ): Promise<void> {
-  const historyEntry: Omit<OrionAnalysisHistory, 'id' | 'userId' | 'createdAt'> = {
+  const historyEntry: Omit<OrionAnalysisHistory, 'id' | 'createdAt'> = {
     tenantId,
     userId: 'system',
     type: 'ALERT',

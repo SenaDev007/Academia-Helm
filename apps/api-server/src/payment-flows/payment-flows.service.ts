@@ -6,6 +6,8 @@ import { CreatePaymentFlowDto } from './dto/create-payment-flow.dto';
 import { CreateSchoolPaymentAccountDto } from './dto/create-school-payment-account.dto';
 import { FedapayService } from './providers/fedapay.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { FinanceTransactionService } from '../finance/finance-transaction.service';
+import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
 export class PaymentFlowsService {
@@ -14,6 +16,8 @@ export class PaymentFlowsService {
     private readonly schoolPaymentAccountsRepository: SchoolPaymentAccountsRepository,
     private readonly fedapayService: FedapayService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly financeTransactionService: FinanceTransactionService,
+    private readonly prisma: PrismaService,
   ) {}
 
   /**
@@ -66,6 +70,7 @@ export class PaymentFlowsService {
       currency: createDto.currency || 'XOF',
       status: PaymentFlowStatus.INITIATED,
       initiatedBy: userId,
+      academicYearId: createDto.academicYearId,
     };
     const flow = await this.paymentFlowsRepository.create(flowData);
 
@@ -162,6 +167,36 @@ export class PaymentFlowsService {
       paidAt: newStatus === PaymentFlowStatus.PAID ? new Date() : flow.paidAt,
       webhookData,
     });
+
+    // RÈGLE MÉTIER : Si TUITION est payé → enregistrer dans le module Finance
+    if (newStatus === PaymentFlowStatus.PAID && flow.flowType === PaymentFlowType.TUITION && flow.studentId && flow.academicYearId) {
+      try {
+        // Trouver le compte élève
+        const account = await this.prisma.studentAccount.findUnique({
+          where: {
+            studentId_academicYearId: {
+              studentId: flow.studentId,
+              academicYearId: flow.academicYearId,
+            },
+          },
+        });
+
+        if (account) {
+          await this.financeTransactionService.create(flow.tenantId, {
+            academicYearId: flow.academicYearId,
+            studentAccountId: account.id,
+            amount: Number(flow.amount),
+            paymentMethod: 'FEDAPAY',
+            reference: `Online: ${flow.pspReference}`,
+            cashierId: flow.initiatedBy || 'SYSTEM', // Ou un ID dédié robot
+            receiptUrl: flow.paymentUrl || undefined,
+          });
+        }
+      } catch (e) {
+        console.error('Failed to bridge payment flow to finance transaction:', e);
+        // On ne bloque pas le webhook car le paiement est déjà encaissé côté PSP
+      }
+    }
 
     // Journaliser l'événement
     await this.auditLogsService.create(

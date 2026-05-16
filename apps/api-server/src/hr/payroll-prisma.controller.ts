@@ -1,10 +1,13 @@
 /**
  * ============================================================================
- * PAYROLL PRISMA CONTROLLER - MODULE 5
+ * PAYROLL PRISMA CONTROLLER - MODULE 5 (SCHEMA-ALIGNED)
  * ============================================================================
  */
 
-import { Controller, Get, Post, Put, Body, Param, Query, UseGuards, Res, Headers } from '@nestjs/common';
+import {
+  Controller, Get, Post, Put, Body, Param,
+  Query, UseGuards, Res
+} from '@nestjs/common';
 import { Response } from 'express';
 import { PayrollPrismaService } from './payroll-prisma.service';
 import { TaxService } from './services/tax.service';
@@ -27,115 +30,124 @@ export class PayrollPrismaController {
     private readonly hrOrionService: HROrionService,
   ) {}
 
-  @Post()
-  async createPayroll(@GetTenant() tenant: any, @Body() data: any) {
-    return this.payrollService.createPayroll({
-      ...data,
+  // ──────────────────────────────────────────────────────────────────────────
+  // PÉRIODES DE PAIE
+  // ──────────────────────────────────────────────────────────────────────────
+
+  @Post('periods')
+  async createPeriod(@GetTenant() tenant: any, @Body() body: any) {
+    return this.payrollService.createPayrollPeriod({
       tenantId: tenant.id,
+      startDate: new Date(body.startDate),
+      endDate: new Date(body.endDate),
     });
   }
 
-  @Get()
-  async findAllPayrolls(
+  @Get('periods')
+  async findAllPeriods(@GetTenant() tenant: any) {
+    return this.payrollService.findAllPeriods(tenant.id);
+  }
+
+  @Get('periods/:id')
+  async findPeriodById(@GetTenant() tenant: any, @Param('id') id: string) {
+    return this.payrollService.findPeriodById(id, tenant.id);
+  }
+
+  @Post('periods/:id/generate')
+  async generatePayrolls(
     @GetTenant() tenant: any,
+    @Param('id') periodId: string,
     @Query('academicYearId') academicYearId?: string,
-    @Query('status') status?: string,
   ) {
-    return this.payrollService.findAllPayrolls(tenant.id, {
-      academicYearId,
-      status,
-    });
+    return this.payrollService.generatePayrollsForPeriod(
+      periodId, tenant.id, academicYearId,
+    );
   }
 
-  @Get('statistics')
-  async getPayrollStatistics(
+  @Post('periods/:id/calculate')
+  async calculatePeriod(
     @GetTenant() tenant: any,
+    @Param('id') periodId: string,
     @Query('academicYearId') academicYearId: string,
   ) {
-    return this.payrollService.getPayrollStatistics(tenant.id, academicYearId);
+    return this.payrollTaxService.calculatePeriod(
+      periodId, tenant.id, academicYearId,
+    );
   }
+
+  @Put('periods/:id/status')
+  async updatePeriodStatus(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Body() body: { status: string },
+  ) {
+    return this.payrollService.updatePeriodStatus(id, tenant.id, body.status);
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // LIGNES DE PAIE
+  // ──────────────────────────────────────────────────────────────────────────
 
   @Get(':id')
   async findPayrollById(@GetTenant() tenant: any, @Param('id') id: string) {
     return this.payrollService.findPayrollById(id, tenant.id);
   }
 
-  @Post(':id/items')
-  async addPayrollItem(@GetTenant() tenant: any, @Param('id') payrollId: string, @Body() data: any) {
-    return this.payrollService.addPayrollItem({
-      ...data,
-      tenantId: tenant.id,
-      payrollId,
-    });
-  }
-
-  @Put(':id/validate')
-  async validatePayroll(@GetTenant() tenant: any, @Param('id') id: string, @Body() body: { processedBy: string }) {
-    return this.payrollService.validatePayroll(id, tenant.id, body.processedBy);
-  }
-
-  @Put(':id/mark-paid')
-  async markPayrollAsPaid(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.payrollService.markPayrollAsPaid(id, tenant.id);
-  }
-
-  @Post('items/:id/salary-slip')
-  async generateSalarySlip(@GetTenant() tenant: any, @Param('id') payrollItemId: string, @Body() body: { issuedBy: string }) {
-    return this.payrollService.generateSalarySlip(payrollItemId, tenant.id, body.issuedBy);
-  }
-
-  // ============================================================================
-  // FISCALITÉ & RETENUES
-  // ============================================================================
-
-  @Post('items/:id/calculate')
-  async calculatePayrollItem(
-    @GetTenant() tenant: any,
-    @Param('id') payrollItemId: string,
-    @Query('academicYearId') academicYearId: string,
-    @Query('countryCode') countryCode: string = 'BJ',
-  ) {
-    return this.payrollTaxService.calculatePayrollItem(
-      tenant.id,
-      academicYearId,
-      payrollItemId,
-      countryCode,
-    );
-  }
-
-  @Put('items/:id/validate')
-  async validatePayrollItem(
-    @GetTenant() tenant: any,
-    @Param('id') payrollItemId: string,
-    @CurrentUser() user: any,
-  ) {
-    return this.payrollTaxService.validatePayrollItem(
-      payrollItemId,
-      tenant.id,
-      user.id,
-    );
-  }
-
-  @Put(':id/validate-with-tax')
-  async validatePayrollWithTax(
+  @Post(':id/calculate')
+  async calculatePayrollLine(
     @GetTenant() tenant: any,
     @Param('id') payrollId: string,
     @Query('academicYearId') academicYearId: string,
-    @CurrentUser() user: any,
+    @Query('countryCode') countryCode: string = 'BJ',
   ) {
-    return this.payrollTaxService.validatePayroll(
-      payrollId,
-      tenant.id,
-      user.id,
+    return this.payrollTaxService.calculatePayroll(
+      tenant.id, academicYearId, payrollId, countryCode,
     );
   }
 
-  @Get('items/:id/tax-withholdings')
+  // ──────────────────────────────────────────────────────────────────────────
+  // TAUX CNSS PAR TENANT
+  // ──────────────────────────────────────────────────────────────────────────
+
+  @Get('rates/active')
+  async getActivePayrollRate(@GetTenant() tenant: any) {
+    return this.payrollService.findActivePayrollRate(tenant.id);
+  }
+
+  @Post('rates')
+  async upsertPayrollRate(@GetTenant() tenant: any, @Body() body: any) {
+    return this.payrollService.upsertPayrollRate({
+      tenantId: tenant.id,
+      cnssEmployeeRate: body.cnssEmployeeRate,
+      cnssEmployerRate: body.cnssEmployerRate,
+      taxRate: body.taxRate,
+      effectiveFrom: new Date(body.effectiveFrom),
+      effectiveTo: body.effectiveTo ? new Date(body.effectiveTo) : undefined,
+    });
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // STATISTIQUES
+  // ──────────────────────────────────────────────────────────────────────────
+
+  @Get('statistics')
+  async getPayrollStatistics(
+    @GetTenant() tenant: any,
+    @Query('academicYearId') academicYearId?: string,
+  ) {
+    return this.payrollService.getPayrollStatistics(tenant.id, academicYearId);
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // FISCALITÉ (TaxWithholding / TaxRate)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  @Get(':id/tax-withholdings')
   async getTaxWithholdings(
     @GetTenant() tenant: any,
-    @Param('id') payrollItemId: string,
+    @Param('id') payrollId: string,
   ) {
-    return this.taxService.getTaxWithholdings(payrollItemId, tenant.id);
+    return this.taxService.getTaxWithholdings(payrollId, tenant.id);
   }
 
   @Get('tax-stats')
@@ -146,49 +158,45 @@ export class PayrollPrismaController {
     return this.taxService.getTaxStats(tenant.id, academicYearId);
   }
 
-  // ============================================================================
-  // BULLETINS DE PAIE PDF
-  // ============================================================================
+  // ──────────────────────────────────────────────────────────────────────────
+  // BULLETINS PDF
+  // ──────────────────────────────────────────────────────────────────────────
 
-  @Post('items/:id/payslip-pdf')
+  @Post(':id/payslip-pdf')
   async generatePaySlipPdf(
     @GetTenant() tenant: any,
-    @Param('id') payrollItemId: string,
+    @Param('id') payrollId: string,
     @CurrentUser() user: any,
   ) {
-    return this.payrollPdfService.generatePaySlipPdf(
-      payrollItemId,
-      tenant.id,
-      user.id,
-    );
+    return this.payrollPdfService.generatePaySlipPdf(payrollId, tenant.id, user.id);
   }
 
-  @Get('items/:id/payslip-pdf')
+  @Get(':id/payslip-pdf')
   async getPaySlipPdf(
     @GetTenant() tenant: any,
-    @Param('id') payrollItemId: string,
+    @Param('id') payrollId: string,
     @Res() res: Response,
   ) {
-    const pdfBuffer = await this.payrollPdfService.getPaySlipPdf(
-      payrollItemId,
-      tenant.id,
-    );
+    const pdfBuffer = await this.payrollPdfService.getPaySlipPdf(payrollId, tenant.id);
 
     if (!pdfBuffer) {
-      return res.status(404).json({ error: 'PDF not found' });
+      return res.status(404).json({ error: 'PDF introuvable' });
     }
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="payslip-${payrollItemId}.pdf"`);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="bulletin-${payrollId}.pdf"`,
+    );
     return res.send(pdfBuffer);
   }
 
-  // ============================================================================
-  // ORION INTEGRATION
-  // ============================================================================
+  // ──────────────────────────────────────────────────────────────────────────
+  // ORION
+  // ──────────────────────────────────────────────────────────────────────────
 
   @Get('orion/kpis')
-  async getPayrollAndTaxKPIs(
+  async getPayrollKPIs(
     @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId?: string,
   ) {
@@ -196,12 +204,7 @@ export class PayrollPrismaController {
   }
 
   @Get('orion/alerts')
-  async getPayrollAndTaxAlerts(
-    @GetTenant() tenant: any,
-    @Query('academicYearId') academicYearId?: string,
-  ) {
-    const kpis = await this.hrOrionService.getPayrollAndTaxKPIs(tenant.id, academicYearId);
-    return kpis.alerts;
+  async getPayrollAlerts(@GetTenant() tenant: any) {
+    return this.hrOrionService.generateAlerts(tenant.id);
   }
 }
-

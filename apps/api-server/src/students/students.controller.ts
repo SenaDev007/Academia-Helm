@@ -126,8 +126,37 @@ export class StudentsController {
   remove(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @SchoolLevelId() schoolLevelId: string, // OBLIGATOIRE - Résolu automatiquement
+    @SchoolLevelId() schoolLevelId: string,
   ) {
     return this.studentsService.delete(id, tenantId, schoolLevelId);
+  }
+
+  @Get('statistics')
+  @Permissions('students.read')
+  getStatistics(
+    @TenantId() tenantId: string,
+    @SchoolLevelId() schoolLevelId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    return this.studentsService.getStatistics(tenantId, schoolLevelId, academicYearId);
+  }
+
+  @Post(':id/export-educmaster')
+  @Permissions('students.read')
+  exportEducMaster(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.studentsService.exportToEducMaster(id, tenantId);
+  }
+
+  @Get(':id/academic-dossier')
+  @Permissions('students.read')
+  getAcademicDossier(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    return this.studentsService.generateAcademicDossier(id, tenantId, academicYearId);
   }
 }

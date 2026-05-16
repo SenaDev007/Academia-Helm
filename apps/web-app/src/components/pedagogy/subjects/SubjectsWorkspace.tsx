@@ -12,7 +12,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   Plus, 
   BookOpen, 
@@ -159,14 +159,14 @@ export default function SubjectsWorkspace() {
      try {
        await pedagogyFetch('/api/pedagogy/class-subjects/bulk', {
          method: 'POST',
-         body: JSON.stringify({
-           academicYearId: academicYear?.id,
-           classIds: selectedClasses,
-           subjectIds: selectedSubjects,
-           weeklyHours: massConfig.weeklyHours,
-           coefficient: massConfig.coefficient,
-           useSeriesCoefficients: massConfig.useSeries
-         })
+         body: {
+          academicYearId: academicYear?.id,
+          classIds: selectedClasses,
+          subjectIds: selectedSubjects,
+          weeklyHours: massConfig.weeklyHours,
+          coefficient: massConfig.coefficient,
+          useSeriesCoefficients: massConfig.useSeries
+        }
        });
        setModal('none');
        setSelectedClasses([]);
@@ -185,18 +185,17 @@ export default function SubjectsWorkspace() {
 
       const { url } = await pedagogyFetch<{ url: string }>('/api/pedagogy/academic-series/programs/upload', {
         method: 'POST',
-        body: formData,
-        headers: {} 
+        body: formData
       });
 
       await pedagogyFetch('/api/pedagogy/academic-series/programs', {
         method: 'POST',
-        body: JSON.stringify({
+        body: {
           academicYearId: academicYear?.id,
           subjectId,
           documentUrl: url,
           version: '1.0'
-        })
+        }
       });
 
       loadSubjects();
@@ -212,7 +211,7 @@ export default function SubjectsWorkspace() {
     try {
       await pedagogyFetch(`/api/pedagogy/academic-series/programs/${programId}/approve`, {
         method: 'PUT',
-        body: JSON.stringify({ userId: user.id })
+        body: { userId: user.id }
       });
       loadSubjects();
     } catch (e) {

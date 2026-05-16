@@ -1,300 +1,287 @@
 /**
  * ============================================================================
- * PAYROLL PRISMA SERVICE - MODULE 5
+ * PAYROLL PRISMA SERVICE - MODULE 5 (SCHEMA-ALIGNED)
  * ============================================================================
- * 
- * Service pour la gestion de la paie
- * 
+ *
+ * Service de gestion des périodes de paie et des lignes de paie,
+ * strictement aligné sur le schéma Prisma v2.
+ *
+ * Modèles clés:
+ *  - PayrollPeriod : Groupes de paie (OPEN → CALCULATED → VALIDATED → PAID)
+ *  - Payroll       : Ligne de paie individuelle par agent/période
+ *  - Payslip       : Bulletin PDF généré depuis une ligne de paie
+ *  - PayrollRate   : Taux CNSS par tenant
+ *
  * ============================================================================
  */
 
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class PayrollPrismaService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Crée une paie
-   */
-  async createPayroll(data: {
+  // ============================================================================
+  // PAYROLL PERIODS
+  // ============================================================================
+
+  async createPayrollPeriod(data: {
     tenantId: string;
-    academicYearId: string;
-    schoolLevelId?: string;
-    month: string;
     startDate: Date;
     endDate: Date;
-    notes?: string;
   }) {
-    // Vérifier l'unicité de la paie pour ce mois
-    const existing = await this.prisma.payroll.findUnique({
+    const overlapping = await this.prisma.payrollPeriod.findFirst({
       where: {
-        tenantId_academicYearId_month: {
-          tenantId: data.tenantId,
-          academicYearId: data.academicYearId,
-          month: data.month,
-        },
+        tenantId: data.tenantId,
+        startDate: { lte: data.endDate },
+        endDate: { gte: data.startDate },
       },
     });
 
-    if (existing) {
-      throw new BadRequestException(`Payroll for month ${data.month} already exists`);
+    if (overlapping) {
+      throw new BadRequestException('Une période de paie existe déjà pour ces dates.');
     }
 
-    return this.prisma.payroll.create({
+    return this.prisma.payrollPeriod.create({
       data: {
-        ...data,
-        status: 'DRAFT',
-        totalAmount: 0,
+        tenantId: data.tenantId,
+        startDate: data.startDate,
+        endDate: data.endDate,
+        status: 'OPEN',
       },
     });
   }
 
-  /**
-   * Récupère toutes les paies
-   */
-  async findAllPayrolls(tenantId: string, filters?: {
-    academicYearId?: string;
-    status?: string;
-  }) {
-    const where: any = { tenantId };
-    
-    if (filters?.academicYearId) {
-      where.academicYearId = filters.academicYearId;
-    }
-    if (filters?.status) {
-      where.status = filters.status;
-    }
-
-    return this.prisma.payroll.findMany({
-      where,
+  async findAllPeriods(tenantId: string) {
+    const periods = await this.prisma.payrollPeriod.findMany({
+      where: { tenantId },
       include: {
-        items: {
+        _count: { select: { payrolls: true } },
+        payrolls: {
+          select: { netSalary: true }
+        }
+      },
+      orderBy: { startDate: 'desc' },
+    });
+
+    return periods.map(p => ({
+      ...p,
+      totalAmount: p.payrolls.reduce((sum, pr) => sum + Number(pr.netSalary), 0)
+    }));
+  }
+
+  async findPeriodById(id: string, tenantId: string) {
+    const period = await this.prisma.payrollPeriod.findFirst({
+      where: { id, tenantId },
+      include: {
+        payrolls: {
           include: {
             staff: {
               select: {
                 id: true,
                 firstName: true,
                 lastName: true,
-                employeeNumber: true,
+                staffCode: true,
+                position: true,
+                cnssNumber: true,
               },
             },
           },
         },
       },
-      orderBy: { month: 'desc' },
+    });
+
+    if (!period) throw new NotFoundException(`Période de paie ${id} introuvable.`);
+    return period;
+  }
+
+  async updatePeriodStatus(id: string, tenantId: string, status: string) {
+    return this.prisma.payrollPeriod.update({
+      where: { id },
+      data: { status },
     });
   }
 
+  // ============================================================================
+  // PAYROLL LINES (par agent, par période)
+  // ============================================================================
+
   /**
-   * Récupère une paie par ID
+   * Génère automatiquement les lignes de paie pour tous les agents actifs
+   * avec un contrat actif dans la période.
    */
-  async findPayrollById(id: string, tenantId: string) {
-    const payroll = await this.prisma.payroll.findFirst({
-      where: { id, tenantId },
+  async generatePayrollsForPeriod(
+    periodId: string,
+    tenantId: string,
+    academicYearId?: string,
+  ) {
+    const period = await this.findPeriodById(periodId, tenantId);
+
+    if (period.status !== 'OPEN') {
+      throw new BadRequestException('La période doit être en statut OPEN pour générer les lignes.');
+    }
+
+    const staffWithContracts = await this.prisma.staff.findMany({
+      where: {
+        tenantId,
+        status: 'ACTIVE',
+        contracts: { some: { status: 'ACTIVE' } },
+      },
       include: {
-        items: {
-          include: {
-            staff: true,
-            salarySlip: true,
-          },
+        contracts: {
+          where: { status: 'ACTIVE' },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+        allowances: {
+          where: { isActive: true },
         },
       },
     });
 
-    if (!payroll) {
-      throw new NotFoundException(`Payroll with ID ${id} not found`);
+    const results = [];
+
+    for (const staff of staffWithContracts) {
+      // Skip si une ligne existe déjà
+      const existing = await this.prisma.payroll.findFirst({
+        where: { payrollPeriodId: periodId, staffId: staff.id, tenantId },
+      });
+      if (existing) {
+        results.push(existing);
+        continue;
+      }
+
+      const contract = staff.contracts[0];
+      const baseSalary = contract?.baseSalary ?? new Prisma.Decimal(0);
+
+      // Somme des indemnités récurrentes actives
+      const totalAllowances = staff.allowances.reduce(
+        (acc, al) => acc.plus(al.amount),
+        new Prisma.Decimal(0),
+      );
+
+      // Bonus ponctuels dans la période
+      const bonuses = await this.prisma.oneTimeBonus.aggregate({
+        where: {
+          staffId: staff.id,
+          tenantId,
+          payrollPeriod: {
+            gte: period.startDate,
+            lte: period.endDate,
+          },
+        },
+        _sum: { amount: true },
+      });
+      const totalBonuses = bonuses._sum.amount ?? new Prisma.Decimal(0);
+
+      const grossSalary = baseSalary.plus(totalAllowances).plus(totalBonuses);
+
+      const payroll = await this.prisma.payroll.create({
+        data: {
+          tenantId,
+          payrollPeriodId: periodId,
+          staffId: staff.id,
+          academicYearId,
+          baseSalary,
+          allowances: totalAllowances,
+          bonuses: totalBonuses,
+          deductions: new Prisma.Decimal(0),
+          grossSalary,
+          employeeCNSS: new Prisma.Decimal(0),
+          employerCNSS: new Prisma.Decimal(0),
+          taxWithheld: new Prisma.Decimal(0),
+          netSalary: grossSalary,
+          status: 'DRAFT',
+        },
+      });
+
+      results.push(payroll);
     }
 
-    return payroll;
+    return results;
   }
 
-  /**
-   * Ajoute un élément de paie
-   */
-  async addPayrollItem(data: {
-    tenantId: string;
-    academicYearId: string;
-    schoolLevelId?: string;
-    payrollId: string;
-    staffId: string;
-    baseSalary: number;
-    overtimeAmount?: number;
-    bonuses?: number;
-    deductions?: number;
-  }) {
-    const payroll = await this.findPayrollById(data.payrollId, data.tenantId);
-
-    if (payroll.status !== 'DRAFT') {
-      throw new BadRequestException('Cannot add items to a non-draft payroll');
-    }
-
-    // Récupérer le contrat actif du personnel
-    const contract = await this.prisma.contract.findFirst({
-      where: {
-        staffId: data.staffId,
-        status: 'ACTIVE',
-      },
-    });
-
-    if (!contract) {
-      throw new BadRequestException(`No active contract found for staff ${data.staffId}`);
-    }
-
-    // Calculer le salaire net
-    const baseSalary = data.baseSalary || Number(contract.baseSalary);
-    const overtimeAmount = data.overtimeAmount || 0;
-    const bonuses = data.bonuses || 0;
-    const deductions = data.deductions || 0;
-    const netSalary = baseSalary + overtimeAmount + bonuses - deductions;
-
-    const grossSalary = baseSalary + overtimeAmount + bonuses;
-    const totalDeductions = deductions; // ou calculer depuis cnssEmployee + irppAmount + otherDeductions
-    // Retirer deductions et tenantId de data s'ils existent (gérés séparément)
-    const { deductions: _, tenantId: __, ...restData } = data as any;
-    const item = await this.prisma.payrollItem.create({
-      data: {
-        ...restData,
-        baseSalary,
-        overtimeAmount,
-        bonuses,
-        grossSalary,
-        otherDeductions: deductions,
-        totalDeductions,
-        netSalary,
-      },
-    });
-
-    // Mettre à jour le total de la paie
-    await this.updatePayrollTotal(data.payrollId);
-
-    return item;
-  }
-
-  /**
-   * Met à jour le total d'une paie
-   */
-  async updatePayrollTotal(payrollId: string) {
-    const items = await this.prisma.payrollItem.findMany({
-      where: { payrollId },
-    });
-
-    const totalAmount = items.reduce((sum, item) => {
-      return sum + Number(item.netSalary);
-    }, 0);
-
-    return this.prisma.payroll.update({
-      where: { id: payrollId },
-      data: { totalAmount },
-    });
-  }
-
-  /**
-   * Valide une paie
-   */
-  async validatePayroll(id: string, tenantId: string, processedBy: string) {
-    const payroll = await this.findPayrollById(id, tenantId);
-
-    if (payroll.status !== 'DRAFT') {
-      throw new BadRequestException('Only draft payrolls can be validated');
-    }
-
-    if (payroll.items.length === 0) {
-      throw new BadRequestException('Cannot validate payroll with no items');
-    }
-
-    return this.prisma.payroll.update({
-      where: { id },
-      data: {
-        status: 'VALIDATED',
-        processedBy,
-        processedAt: new Date(),
-      },
-    });
-  }
-
-  /**
-   * Marque une paie comme payée
-   */
-  async markPayrollAsPaid(id: string, tenantId: string) {
-    const payroll = await this.findPayrollById(id, tenantId);
-
-    if (payroll.status !== 'VALIDATED') {
-      throw new BadRequestException('Only validated payrolls can be marked as paid');
-    }
-
-    return this.prisma.payroll.update({
-      where: { id },
-      data: {
-        status: 'PAID',
-        paidAt: new Date(),
-      },
-    });
-  }
-
-  /**
-   * Génère un bulletin de salaire
-   */
-  async generateSalarySlip(payrollItemId: string, tenantId: string, issuedBy: string) {
-    const payrollItem = await this.prisma.payrollItem.findFirst({
-      where: {
-        id: payrollItemId,
-        tenantId,
-      },
+  async findPayrollById(id: string, tenantId: string) {
+    const p = await this.prisma.payroll.findFirst({
+      where: { id, tenantId },
       include: {
         staff: true,
-        payroll: true,
+        payrollPeriod: true,
+        payslips: true,
       },
     });
-
-    if (!payrollItem) {
-      throw new NotFoundException(`Payroll item with ID ${payrollItemId} not found`);
-    }
-
-    // Générer un numéro de reçu unique
-    const receiptNumber = `SLIP-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-
-    // SalarySlip - utiliser UncheckedCreateInput avec tenantId directement
-    const salarySlipData: any = {
-      tenantId,
-      payrollItemId,
-      receiptNumber,
-      issuedAt: new Date(),
-    };
-    if (issuedBy) {
-      salarySlipData.issuedBy = issuedBy;
-    }
-    return this.prisma.salarySlip.create({
-      data: salarySlipData,
-    });
+    if (!p) throw new NotFoundException(`Ligne de paie ${id} introuvable.`);
+    return p;
   }
 
-  /**
-   * Récupère les statistiques de paie
-   */
-  async getPayrollStatistics(tenantId: string, academicYearId: string) {
+  // ============================================================================
+  // STATISTICS
+  // ============================================================================
+
+  async getPayrollStatistics(tenantId: string, academicYearId?: string) {
     const payrolls = await this.prisma.payroll.findMany({
       where: {
         tenantId,
-        academicYearId,
+        ...(academicYearId ? { academicYearId } : {}),
         status: 'PAID',
-      },
-      include: {
-        items: true,
       },
     });
 
-    const totalPayrolls = payrolls.length;
-    const totalAmount = payrolls.reduce((sum, p) => sum + Number(p.totalAmount), 0);
-    const totalStaff = new Set(payrolls.flatMap(p => p.items.map(i => i.staffId))).size;
+    const totalAmount = payrolls.reduce((s, p) => s + Number(p.netSalary), 0);
+    const totalStaff = new Set(payrolls.map((p) => p.staffId)).size;
 
     return {
-      totalPayrolls,
       totalAmount,
       totalStaff,
-      averagePayroll: totalPayrolls > 0 ? totalAmount / totalPayrolls : 0,
+      totalPayrolls: payrolls.length,
     };
   }
-}
 
+  // ============================================================================
+  // PAYROLL RATES (CNSS par tenant)
+  // ============================================================================
+
+  async findActivePayrollRate(tenantId: string, effectiveDate?: Date) {
+    const date = effectiveDate ?? new Date();
+    return this.prisma.payrollRate.findFirst({
+      where: {
+        tenantId,
+        effectiveFrom: { lte: date },
+        OR: [
+          { effectiveTo: null },
+          { effectiveTo: { gte: date } },
+        ],
+      },
+      orderBy: { effectiveFrom: 'desc' },
+    });
+  }
+
+  async upsertPayrollRate(data: {
+    tenantId: string;
+    cnssEmployeeRate: number;
+    cnssEmployerRate: number;
+    taxRate?: number;
+    effectiveFrom: Date;
+    effectiveTo?: Date;
+  }) {
+    const existing = await this.prisma.payrollRate.findFirst({
+      where: { tenantId: data.tenantId, effectiveFrom: data.effectiveFrom },
+    });
+
+    if (existing) {
+      return this.prisma.payrollRate.update({
+        where: { id: existing.id },
+        data: {
+          cnssEmployeeRate: data.cnssEmployeeRate,
+          cnssEmployerRate: data.cnssEmployerRate,
+          taxRate: data.taxRate,
+          effectiveTo: data.effectiveTo,
+        },
+      });
+    }
+
+    return this.prisma.payrollRate.create({ data });
+  }
+}

@@ -2,7 +2,7 @@
  * URL de base applicative — extrait pour éviter toute dépendance circulaire avec tenant-redirect.
  */
 
-export type AppEnvironment = 'local' | 'production';
+export type AppEnvironment = 'local' | 'preview' | 'test' | 'production' | 'development';
 
 /**
  * Pendant `next build`, NODE_ENV vaut souvent `production` alors que les
@@ -16,14 +16,16 @@ export function isNextProductionBuild(): boolean {
 export function getAppEnvironment(): AppEnvironment {
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname;
-    if (hostname === 'localhost' || hostname === '127.0.0.1') return 'local';
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.localhost')) return 'local';
+    if (hostname.includes('vercel.app') || hostname.includes('preview.')) return 'preview';
+    if (hostname.includes('test.') || hostname.includes('dev.')) return 'test';
     return 'production';
   }
-  // `NEXT_PUBLIC_ENV` peut valoir `local`, `preview`, `staging`, etc.
-  // Dans notre cas, `local` doit impérativement être traité comme environnement local,
-  // sinon on construit des URLs de prod et les routes proxy peuvent boucler.
-  const env = process.env.NEXT_PUBLIC_ENV || process.env.NODE_ENV;
-  if (env === 'local' || env === 'development' || !env) return 'local';
+  // `NEXT_PUBLIC_ENV` peut valoir `local`, `preview`, `test`, `production`
+  const env = (process.env.NEXT_PUBLIC_ENV || process.env.NODE_ENV || 'local') as string;
+  if (env === 'local' || env === 'development') return 'local';
+  if (env === 'preview') return 'preview';
+  if (env === 'test') return 'test';
   return 'production';
 }
 
@@ -44,19 +46,28 @@ export function getAppBaseUrl(): string {
 
   const env = getAppEnvironment();
 
-  if (env === 'production') {
+  if (env === 'production' || env === 'preview' || env === 'test') {
     if (typeof window !== 'undefined') {
       return `${window.location.protocol}//${window.location.host}`;
     }
     const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN;
     if (baseDomain) {
       const cleanDomain = baseDomain.replace(/^https?:\/\//, '');
-      return `https://${cleanDomain}`;
+      const protocol = (env as string) === 'local' ? 'http' : 'https';
+      return `${protocol}://${cleanDomain}`;
     }
-    throw new Error(
-      'NEXT_PUBLIC_APP_URL or NEXT_PUBLIC_BASE_DOMAIN must be set in production. ' +
-        'Please configure your environment variables.',
-    );
+    
+    // Fallback pour preview si NEXT_PUBLIC_APP_URL n'est pas défini
+    if (env === 'preview' && process.env.VERCEL_URL) {
+      return `https://${process.env.VERCEL_URL}`;
+    }
+
+    if (env === 'production') {
+      throw new Error(
+        'NEXT_PUBLIC_APP_URL or NEXT_PUBLIC_BASE_DOMAIN must be set in production. ' +
+          'Please configure your environment variables.',
+      );
+    }
   }
 
   if (env === 'local') {

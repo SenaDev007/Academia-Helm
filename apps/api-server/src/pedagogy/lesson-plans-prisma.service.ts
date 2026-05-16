@@ -16,38 +16,57 @@ export class LessonPlansPrismaService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Crée une fiche pédagogique
+   * Crée une fiche pédagogique (Initial version)
    */
   async createLessonPlan(data: {
     tenantId: string;
     academicYearId: string;
     schoolLevelId: string;
     academicTrackId?: string;
-    classId?: string;
-    subjectId?: string;
-    date: Date;
+    classId: string;
+    subjectId: string;
+    teacherId: string;
     title: string;
+    objectives?: string;
     content: string;
-    homework?: string;
-    attachments?: string[];
-    teacherId?: string;
+    methodology?: string;
+    materials?: string;
+    evaluation?: string;
   }) {
-    return this.prisma.lessonPlan.create({
+    const lessonPlan = await this.prisma.lessonPlan.create({
       data: {
         ...data,
-        attachments: data.attachments || [],
+        status: 'DRAFT',
+        version: 1,
       },
       include: {
         class: true,
         subject: true,
         academicYear: true,
         schoolLevel: true,
+        teacher: true,
       },
     });
+
+    // Create initial version
+    await this.prisma.lessonPlanVersion.create({
+      data: {
+        lessonPlanId: lessonPlan.id,
+        versionNumber: 1,
+        content: lessonPlan.content,
+        objectives: lessonPlan.objectives,
+        methodology: lessonPlan.methodology,
+        materials: lessonPlan.materials,
+        evaluation: lessonPlan.evaluation,
+        changeReason: 'Initial creation',
+      },
+    });
+
+    return lessonPlan;
   }
 
   /**
-   * Récupère toutes les fiches pédagogiques
+   * Récupère toutes les fiches pédagogiques avec filtres avancés
    */
   async findAllLessonPlans(
     tenantId: string,
@@ -57,57 +76,34 @@ export class LessonPlansPrismaService {
       classId?: string;
       subjectId?: string;
       teacherId?: string;
-      startDate?: Date;
-      endDate?: Date;
+      status?: string;
     }
   ) {
     const where: any = {
       tenantId,
     };
 
-    if (filters?.academicYearId) {
-      where.academicYearId = filters.academicYearId;
-    }
-
-    if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
-      where.schoolLevelId = filters.schoolLevelId;
-    }
-
-    if (filters?.classId) {
-      where.classId = filters.classId;
-    }
-
-    if (filters?.subjectId) {
-      where.subjectId = filters.subjectId;
-    }
-
-    if (filters?.teacherId) {
-      where.teacherId = filters.teacherId;
-    }
-
-    if (filters?.startDate || filters?.endDate) {
-      where.date = {};
-      if (filters.startDate) {
-        where.date.gte = filters.startDate;
-      }
-      if (filters.endDate) {
-        where.date.lte = filters.endDate;
-      }
-    }
+    if (filters?.academicYearId) where.academicYearId = filters.academicYearId;
+    if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') where.schoolLevelId = filters.schoolLevelId;
+    if (filters?.classId) where.classId = filters.classId;
+    if (filters?.subjectId) where.subjectId = filters.subjectId;
+    if (filters?.teacherId) where.teacherId = filters.teacherId;
+    if (filters?.status) where.status = filters.status;
 
     return this.prisma.lessonPlan.findMany({
       where,
       include: {
         class: true,
         subject: true,
+        teacher: true,
         academicYear: true,
       },
-      orderBy: { date: 'desc' },
+      orderBy: { updatedAt: 'desc' },
     });
   }
 
   /**
-   * Récupère une fiche pédagogique par ID
+   * Récupère une fiche pédagogique complète avec versions et validations
    */
   async findLessonPlanById(id: string, tenantId: string) {
     const lessonPlan = await this.prisma.lessonPlan.findFirst({
@@ -115,12 +111,17 @@ export class LessonPlansPrismaService {
       include: {
         class: true,
         subject: true,
+        teacher: true,
         academicYear: true,
         schoolLevel: true,
-        assignments: {
+        versions: {
+          orderBy: { versionNumber: 'desc' },
+        },
+        validations: {
           include: {
-            class: true,
+            validator: true,
           },
+          orderBy: { createdAt: 'desc' },
         },
       },
     });
@@ -133,43 +134,100 @@ export class LessonPlansPrismaService {
   }
 
   /**
-   * Met à jour une fiche pédagogique
+   * Met à jour une fiche pédagogique et crée une nouvelle version
    */
   async updateLessonPlan(
     id: string,
     tenantId: string,
     data: {
       title?: string;
+      objectives?: string;
       content?: string;
-      homework?: string;
-      attachments?: string[];
-      date?: Date;
+      methodology?: string;
+      materials?: string;
+      evaluation?: string;
+      changeReason?: string;
     }
   ) {
+    const current = await this.findLessonPlanById(id, tenantId);
+
+    const newVersionNumber = current.version + 1;
+
+    const updated = await this.prisma.lessonPlan.update({
+      where: { id },
+      data: {
+        ...data,
+        version: newVersionNumber,
+        status: 'DRAFT', // Reverts to draft on update if it was approved?
+      },
+    });
+
+    // Create new version entry
+    await this.prisma.lessonPlanVersion.create({
+      data: {
+        lessonPlanId: id,
+        versionNumber: newVersionNumber,
+        content: updated.content,
+        objectives: updated.objectives,
+        methodology: updated.methodology,
+        materials: updated.materials,
+        evaluation: updated.evaluation,
+        changeReason: data.changeReason || `Update to version ${newVersionNumber}`,
+      },
+    });
+
+    return updated;
+  }
+
+  /**
+   * Soumet une fiche pour validation
+   */
+  async submitLessonPlan(id: string, tenantId: string) {
     await this.findLessonPlanById(id, tenantId);
 
     return this.prisma.lessonPlan.update({
       where: { id },
-      data,
-      include: {
-        class: true,
-        subject: true,
+      data: {
+        status: 'SUBMITTED',
+        submittedAt: new Date(),
       },
     });
   }
 
   /**
-   * Publie une fiche pédagogique
+   * Valide ou rejette une fiche pédagogique
    */
-  async publishLessonPlan(id: string, tenantId: string) {
-    const lessonPlan = await this.findLessonPlanById(id, tenantId);
+  async validateLessonPlan(
+    id: string,
+    tenantId: string,
+    data: {
+      status: 'APPROVED' | 'REJECTED';
+      comment?: string;
+      validatorId: string;
+    }
+  ) {
+    await this.findLessonPlanById(id, tenantId);
 
-    return this.prisma.lessonPlan.update({
-      where: { id },
-      data: {
-        publishedAt: new Date(),
-      },
-    });
+    const [updatedPlan, validation] = await this.prisma.$transaction([
+      this.prisma.lessonPlan.update({
+        where: { id },
+        data: {
+          status: data.status,
+          approvedAt: data.status === 'APPROVED' ? new Date() : null,
+          approvedById: data.status === 'APPROVED' ? data.validatorId : null,
+        },
+      }),
+      this.prisma.lessonPlanValidation.create({
+        data: {
+          lessonPlanId: id,
+          status: data.status,
+          comment: data.comment,
+          validatedBy: data.validatorId,
+        },
+      }),
+    ]);
+
+    return { updatedPlan, validation };
   }
 
   /**

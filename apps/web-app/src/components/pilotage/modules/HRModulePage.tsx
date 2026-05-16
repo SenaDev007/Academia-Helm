@@ -1,170 +1,157 @@
 /**
  * ============================================================================
- * MODULE PERSONNEL & RH
+ * MODULE PERSONNEL & RH (Spec Premium)
+ * ============================================================================
+ * 
+ * Hub stratégique pour la gestion du capital humain :
+ * Dossiers, Contrats, Paie, Présences, Performance, ORION RH, Sara AI.
  * ============================================================================
  */
 
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Users, FileText, TrendingUp } from 'lucide-react';
-import { useAcademicYear } from '@/hooks/useAcademicYear';
-import { useSchoolLevel } from '@/hooks/useSchoolLevel';
-import ModulePageLayout from './ModulePageLayout';
+import {
+  Users,
+  FileText,
+  CreditCard,
+  Clock,
+  Target,
+  ShieldCheck,
+  BrainCircuit,
+  Plus,
+  Search,
+  Filter,
+  Download,
+  LayoutDashboard,
+  Calendar,
+  Briefcase,
+  TrendingUp,
+  AlertCircle
+} from 'lucide-react';
+import { ModuleContainer } from '@/components/modules/blueprint';
+import { useModuleContext } from '@/hooks/useModuleContext';
 
-interface Staff {
-  id: string;
-  firstName: string;
-  lastName: string;
-  role: string;
-  department: string;
-  status: 'ACTIVE' | 'INACTIVE' | 'ON_LEAVE';
-}
+// Import sub-module components
+import HRDashboard from '@/components/hr/HRDashboard';
+import StaffDirectory from '@/components/hr/StaffDirectory';
+import OrionHRVigilance from '@/components/hr/OrionHRVigilance';
+import HRSaraAssistant from '@/components/hr/HRSaraAssistant';
+
+const ContractsManagement = () => (
+  <div className="p-12 bg-white rounded-3xl border border-slate-200 border-dashed text-center">
+     <Briefcase className="w-12 h-12 mx-auto mb-4 text-slate-300" />
+     <h3 className="font-bold text-slate-900">Gestion des Contrats & Carrière</h3>
+     <p className="text-sm text-slate-400 mt-2">Suivi des CDI, CDD, vacations et évolutions salariales.</p>
+  </div>
+);
+
+const PayrollManagement = () => (
+  <div className="p-12 bg-white rounded-3xl border border-slate-200 border-dashed text-center">
+     <CreditCard className="w-12 h-12 mx-auto mb-4 text-slate-300" />
+     <h3 className="font-bold text-slate-900">Paie & Émoluments</h3>
+     <p className="text-sm text-slate-400 mt-2">Calcul des salaires, primes, retenues et édition des bulletins de paie.</p>
+  </div>
+);
+
+const AttendanceTracking = () => (
+  <div className="p-12 bg-white rounded-3xl border border-slate-200 border-dashed text-center">
+     <Clock className="w-12 h-12 mx-auto mb-4 text-slate-300" />
+     <h3 className="font-bold text-slate-900">Pointage & Absences</h3>
+     <p className="text-sm text-slate-400 mt-2">Suivi des présences, retards et justificatifs d'absence.</p>
+  </div>
+);
+
+const PerformanceEvaluation = () => (
+  <div className="p-12 bg-white rounded-3xl border border-slate-200 border-dashed text-center">
+     <Target className="w-12 h-12 mx-auto mb-4 text-slate-300" />
+     <h3 className="font-bold text-slate-900">Évaluation & Performance</h3>
+     <p className="text-sm text-slate-400 mt-2">Suivi des objectifs pédagogiques et bilans de performance annuels.</p>
+  </div>
+);
+
+const HRSettings = () => <div className="p-12 text-center text-slate-400">Paramètres RH - Grilles salariales & Catégories</div>;
 
 export default function HRModulePage() {
-  const { currentYear } = useAcademicYear();
-  const { currentLevel } = useSchoolLevel();
-  const [staff, setStaff] = useState<Staff[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { academicYear, schoolLevel, isLoading: contextLoading } = useModuleContext();
+  const [activeSubModuleId, setActiveSubModuleId] = useState<string>('dashboard');
+  const [stats, setStats] = useState<any>(null);
 
   useEffect(() => {
-    const loadStaff = async () => {
-      if (!currentYear || !currentLevel) return;
+    if (academicYear?.id) {
+      loadHRStats();
+    }
+  }, [academicYear?.id]);
 
-      setIsLoading(true);
-      try {
-        const response = await fetch(
-          `/api/staff?academicYearId=${currentYear.id}&schoolLevelId=${currentLevel.id}`
-        );
-        if (response.ok) {
-          const data = await response.json();
-          setStaff(data);
-        }
-      } catch (error) {
-        console.error('Failed to load staff:', error);
-      } finally {
-        setIsLoading(false);
+  const loadHRStats = async () => {
+    try {
+      const res = await fetch(`/api/hr/overview/dashboard?academicYearId=${academicYear?.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setStats({
+          totalCount: data.snapshot?.totalStaff || 0,
+          attendanceRate: data.snapshot?.attendanceRate || 0,
+          payrollTotal: data.snapshot?.totalPayroll || 0,
+          expiringContracts: data.snapshot?.expiringContractsCount || 0,
+        });
       }
-    };
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
-    loadStaff();
-  }, [currentYear, currentLevel]);
+  if (contextLoading) return <div className="p-8 text-center text-slate-400">Initialisation RH...</div>;
 
   return (
-    <ModulePageLayout
-      title="Personnel & RH"
-      subtitle={`${currentLevel?.code === 'MATERNELLE' ? 'Maternelle' :
-                 currentLevel?.code === 'PRIMAIRE' ? 'Primaire' :
-                 currentLevel?.code === 'SECONDAIRE' ? 'Secondaire' : currentLevel?.code} | ${currentYear?.name || ''}`}
-      actions={
-        <>
-          <button className="flex items-center space-x-2 px-4 py-2 bg-navy-900 text-white rounded-md hover:bg-navy-800 transition-colors">
-            <Plus className="w-4 h-4" />
-            <span>Ajouter un membre</span>
-          </button>
-          <button className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors">
-            <FileText className="w-4 h-4" />
-            <span>Rapports</span>
-          </button>
-        </>
+    <ModuleContainer
+      header={{
+        title: 'Personnel & RH',
+        description: 'Gestion stratégique du capital humain, paie, performance et vigilance RH',
+        icon: 'users',
+        kpis: stats ? [
+          { label: 'Effectif Total', value: stats.totalCount, icon: 'users', trend: 'neutral' },
+          { label: 'Présence (Jour)', value: `${stats.attendanceRate}%`, icon: 'clock', trend: 'up' },
+          { label: 'Masse Salariale', value: `${(stats.payrollTotal / 1000000).toFixed(1)}M`, icon: 'creditCard', trend: 'neutral' },
+          { label: 'Alertes Contrats', value: stats.expiringContracts, icon: 'alertCircle', trend: 'up' },
+        ] : [],
+        actions: (
+          <div className="flex items-center gap-2">
+            <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-900/20 hover:bg-blue-700 transition-all">
+              <Plus className="w-4 h-4" /> Nouveau Membre
+            </button>
+            <button className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl font-bold hover:bg-slate-50 transition-all">
+              <Download className="w-4 h-4" /> Rapport Global
+            </button>
+          </div>
+        )
+      }}
+      subModules={{
+        activeModuleId: activeSubModuleId,
+        onModuleChange: setActiveSubModuleId,
+        modules: [
+          { id: 'dashboard', label: 'Vue d\'ensemble', icon: <LayoutDashboard className="w-4 h-4" /> },
+          { id: 'directory', label: 'Annuaire & Dossiers', icon: <Users className="w-4 h-4" /> },
+          { id: 'contracts', label: 'Contrats & Carrière', icon: <Briefcase className="w-4 h-4" /> },
+          { id: 'payroll', label: 'Paie & Émoluments', icon: <CreditCard className="w-4 h-4" /> },
+          { id: 'attendance', label: 'Pointage & Absences', icon: <Clock className="w-4 h-4" /> },
+          { id: 'performance', label: 'Évaluation & KPIs', icon: <Target className="w-4 h-4" /> },
+          { id: 'orion', label: 'ORION RH', icon: <ShieldCheck className="w-4 h-4" /> },
+          { id: 'sara', label: 'SARA AI', icon: <BrainCircuit className="w-4 h-4" /> },
+          { id: 'settings', label: 'Paramètres', icon: <Filter className="w-4 h-4" /> },
+        ]
+      }}
+      content={
+        activeSubModuleId === 'dashboard' ? { layout: 'default', children: <HRDashboard /> } :
+        activeSubModuleId === 'directory' ? { layout: 'default', children: <StaffDirectory /> } :
+        activeSubModuleId === 'contracts' ? { layout: 'default', children: <ContractsManagement /> } :
+        activeSubModuleId === 'payroll' ? { layout: 'default', children: <PayrollManagement /> } :
+        activeSubModuleId === 'attendance' ? { layout: 'default', children: <AttendanceTracking /> } :
+        activeSubModuleId === 'performance' ? { layout: 'default', children: <PerformanceEvaluation /> } :
+        activeSubModuleId === 'orion' ? { layout: 'default', children: <OrionHRVigilance /> } :
+        activeSubModuleId === 'sara' ? { layout: 'default', children: <HRSaraAssistant /> } :
+        activeSubModuleId === 'settings' ? { layout: 'default', children: <HRSettings /> } :
+        { layout: 'default', children: <HRDashboard /> }
       }
-    >
-      <div className="space-y-6">
-        {/* Statistiques rapides */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-gray-600">Effectif total</p>
-              <Users className="w-5 h-5 text-gray-400" />
-            </div>
-            <p className="text-2xl font-bold text-navy-900">
-              {isLoading ? '—' : staff.length}
-            </p>
-          </div>
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-gray-600">Actifs</p>
-              <TrendingUp className="w-5 h-5 text-green-600" />
-            </div>
-            <p className="text-2xl font-bold text-navy-900">
-              {isLoading ? '—' : staff.filter(s => s.status === 'ACTIVE').length}
-            </p>
-          </div>
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-gray-600">En congé</p>
-              <FileText className="w-5 h-5 text-yellow-600" />
-            </div>
-            <p className="text-2xl font-bold text-navy-900">
-              {isLoading ? '—' : staff.filter(s => s.status === 'ON_LEAVE').length}
-            </p>
-          </div>
-        </div>
-
-        {/* Liste du personnel */}
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
-          <div className="p-6 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-navy-900">Personnel</h3>
-          </div>
-          {isLoading ? (
-            <div className="p-6 text-center text-gray-400">Chargement...</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Nom
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Rôle
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Département
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Statut
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {staff.map((member) => (
-                    <tr key={member.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {member.firstName} {member.lastName}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {member.role}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {member.department}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span
-                          className={`px-2 py-1 text-xs font-medium rounded-full ${
-                            member.status === 'ACTIVE'
-                              ? 'bg-green-100 text-green-800'
-                              : member.status === 'ON_LEAVE'
-                              ? 'bg-yellow-100 text-yellow-800'
-                              : 'bg-gray-100 text-gray-800'
-                          }`}
-                        >
-                          {member.status === 'ACTIVE'
-                            ? 'Actif'
-                            : member.status === 'ON_LEAVE'
-                            ? 'En congé'
-                            : 'Inactif'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-    </ModulePageLayout>
+    />
   );
 }
-

@@ -142,10 +142,45 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+  -- ============================================================================
+  
 -- ----------------------------------------------------------------------------
--- NOTES IMPORTANTES
+-- 5. FONCTION : Empêcher suppression ressource publiée
 -- ----------------------------------------------------------------------------
--- 
--- Ces fonctions sont utilisées par les triggers dans triggers.sql
--- 
+CREATE OR REPLACE FUNCTION prevent_published_resource_deletion()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF OLD."isPublished" = true THEN
+    RAISE EXCEPTION 'Impossible de supprimer une ressource publiée. Veuillez d''abord la dépublier.';
+  END IF;
+  RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ----------------------------------------------------------------------------
+-- 6. FONCTION : Gérer le versionnage et blocage modification ressource publiée
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION handle_resource_modification()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Si la ressource est publiée et qu'on essaie de modifier des champs critiques
+  IF OLD."isPublished" = true AND NEW."isPublished" = true THEN
+    -- On autorise uniquement la modification de la description ou de l'état de publication
+    -- Si le titre ou le fichier change, on bloque (l'application doit gérer ça via une nouvelle version)
+    IF NEW."fileUrl" != OLD."fileUrl" OR NEW."title" != OLD."title" THEN
+       RAISE EXCEPTION 'Modification interdite sur une ressource publiée. Créez une nouvelle version ou dépubliez-la.';
+    END IF;
+  END IF;
+
+  -- Auto-incrément de la version si le fichier change (cas hors publication ou géré par service)
+  -- Note: Le service gère déjà l'incrément, mais le trigger assure l'intégrité
+  IF NEW."fileUrl" IS DISTINCT FROM OLD."fileUrl" THEN
+    NEW."version" := OLD."version" + 1;
+    NEW."updatedAt" := NOW();
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 -- ============================================================================

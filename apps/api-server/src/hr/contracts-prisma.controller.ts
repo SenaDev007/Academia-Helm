@@ -27,12 +27,12 @@ export class ContractsPrismaController {
   async findAllContracts(
     @GetTenant() tenant: any,
     @Query('staffId') staffId?: string,
-    @Query('contractType') contractType?: string,
+    @Query('type') type?: string,
     @Query('status') status?: string,
   ) {
     return this.contractsService.findAllContracts(tenant.id, {
       staffId,
-      contractType,
+      type,
       status,
     });
   }
@@ -47,9 +47,22 @@ export class ContractsPrismaController {
     return this.contractsService.updateContract(id, tenant.id, data);
   }
 
+  @Post(':id/amendments')
+  async createAmendment(
+    @GetTenant() tenant: any,
+    @Param('id') contractId: string,
+    @Body() data: any,
+  ) {
+    return this.contractsService.createAmendment({
+      ...data,
+      tenantId: tenant.id,
+      contractId,
+    });
+  }
+
   @Put(':id/terminate')
-  async terminateContract(@GetTenant() tenant: any, @Param('id') id: string, @Body() body: { reason: string }) {
-    return this.contractsService.terminateContract(id, tenant.id, body.reason);
+  async terminateContract(@GetTenant() tenant: any, @Param('id') id: string) {
+    return this.contractsService.terminateContract(id, tenant.id);
   }
 
   @Get('staff/:staffId/active')

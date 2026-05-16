@@ -105,10 +105,48 @@ export default function ControlWorkspace() {
     }
   }, [academicYear?.id]);
 
+  const [activeTab, setActiveTab] = useState<'global' | 'documents' | 'teachers' | 'classes' | 'reports'>('global');
+
   useEffect(() => { loadControlData(); }, [loadControlData]);
 
   return (
-    <div className="space-y-8 pb-10">
+    <div className="space-y-6 pb-10">
+      {/* Navigation Tabs */}
+      <div className="flex border-b border-gray-100 bg-white rounded-t-3xl px-4">
+        <button 
+          onClick={() => setActiveTab('global')}
+          className={cn("px-6 py-4 text-sm font-black tracking-wide border-b-2 transition-all", activeTab === 'global' ? "border-indigo-600 text-indigo-600" : "border-transparent text-gray-400 hover:text-gray-600")}
+        >
+          Vue Globale & Validations
+        </button>
+        <button 
+          onClick={() => setActiveTab('documents')}
+          className={cn("px-6 py-4 text-sm font-black tracking-wide border-b-2 transition-all", activeTab === 'documents' ? "border-indigo-600 text-indigo-600" : "border-transparent text-gray-400 hover:text-gray-600")}
+        >
+          Tous les Documents
+        </button>
+        <button 
+          onClick={() => setActiveTab('teachers')}
+          className={cn("px-6 py-4 text-sm font-black tracking-wide border-b-2 transition-all", activeTab === 'teachers' ? "border-indigo-600 text-indigo-600" : "border-transparent text-gray-400 hover:text-gray-600")}
+        >
+          Suivi par Enseignant
+        </button>
+        <button 
+          onClick={() => setActiveTab('classes')}
+          className={cn("px-6 py-4 text-sm font-black tracking-wide border-b-2 transition-all", activeTab === 'classes' ? "border-indigo-600 text-indigo-600" : "border-transparent text-gray-400 hover:text-gray-600")}
+        >
+          Suivi par Classe
+        </button>
+        <button 
+          onClick={() => setActiveTab('reports')}
+          className={cn("px-6 py-4 text-sm font-black tracking-wide border-b-2 transition-all", activeTab === 'reports' ? "border-indigo-600 text-indigo-600" : "border-transparent text-gray-400 hover:text-gray-600")}
+        >
+          Rapports Institutionnels
+        </button>
+      </div>
+
+      {activeTab === 'global' && (
+        <div className="space-y-8">
       {/* Top Section : Global Health */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -185,10 +223,13 @@ export default function ControlWorkspace() {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                   <button className="p-3 bg-white border border-gray-200 text-gray-400 hover:text-indigo-600 rounded-2xl transition-all">
+                   <button className="p-3 bg-white border border-gray-200 text-gray-400 hover:text-indigo-600 rounded-2xl transition-all" title="Lire et amender">
                       <Eye className="w-5 h-5" />
                    </button>
-                   <button className="p-3 bg-indigo-600 text-white rounded-2xl hover:scale-105 transition-all shadow-md shadow-indigo-100">
+                   <button className="p-3 bg-white border border-gray-200 text-gray-400 hover:text-rose-600 rounded-2xl transition-all" title="Rejeter / Demander correction">
+                      <AlertTriangle className="w-5 h-5" />
+                   </button>
+                   <button className="p-3 bg-indigo-600 text-white rounded-2xl hover:scale-105 transition-all shadow-md shadow-indigo-100" title="Valider le document">
                       <Stamp className="w-5 h-5" />
                    </button>
                 </div>
@@ -279,6 +320,166 @@ export default function ControlWorkspace() {
             ))}
          </div>
       </div>
+        </div>
+      )}
+
+      {activeTab === 'documents' && (
+        <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm">
+           <div className="flex items-center justify-between mb-8">
+              <h3 className="text-2xl font-black text-gray-900">Bibliothèque des Documents Soumis</h3>
+              <div className="flex gap-2">
+                 <select className="px-4 py-2 border border-gray-200 rounded-xl text-xs font-bold text-gray-600">
+                    <option>Tous les types</option>
+                    <option>Fiches Pédagogiques</option>
+                    <option>Cahiers Journaux</option>
+                    <option>Cahiers de Textes</option>
+                    <option>Cahiers de Semaine</option>
+                 </select>
+                 <select className="px-4 py-2 border border-gray-200 rounded-xl text-xs font-bold text-gray-600">
+                    <option>Tous les statuts</option>
+                    <option>En attente (Documents reçus)</option>
+                    <option>Validés (Archives)</option>
+                    <option>Rejetés</option>
+                    <option>Observations envoyées</option>
+                 </select>
+              </div>
+           </div>
+           
+           <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                 <thead>
+                    <tr className="border-b border-gray-100 text-gray-400 font-bold uppercase tracking-widest text-[10px]">
+                       <th className="pb-4">Document</th>
+                       <th className="pb-4">Auteur</th>
+                       <th className="pb-4">Classe / Matière</th>
+                       <th className="pb-4">Date de soumission</th>
+                       <th className="pb-4">Statut</th>
+                       <th className="pb-4 text-right">Actions</th>
+                    </tr>
+                 </thead>
+                 <tbody className="divide-y divide-gray-50">
+                    <tr className="hover:bg-gray-50 transition-colors">
+                       <td className="py-4">
+                          <div className="flex items-center gap-3">
+                             <FileText className="w-5 h-5 text-indigo-500" />
+                             <span className="font-bold text-gray-900">Fiche: Les fractions</span>
+                          </div>
+                       </td>
+                       <td className="py-4 text-gray-600">M. KOFFI A.</td>
+                       <td className="py-4 text-gray-600">CM2 Alpha • Maths</td>
+                       <td className="py-4 text-gray-600">12 Mai 2025</td>
+                       <td className="py-4"><span className="text-emerald-600 bg-emerald-50 px-2 py-1 rounded font-bold text-xs uppercase">Validé</span></td>
+                       <td className="py-4 text-right">
+                          <button className="text-indigo-600 hover:text-indigo-800 font-bold text-xs">Ouvrir</button>
+                       </td>
+                    </tr>
+                    <tr className="hover:bg-gray-50 transition-colors">
+                       <td className="py-4">
+                          <div className="flex items-center gap-3">
+                             <FileText className="w-5 h-5 text-amber-500" />
+                             <span className="font-bold text-gray-900">Cahier Journal Semaine 12</span>
+                          </div>
+                       </td>
+                       <td className="py-4 text-gray-600">Mme. TRAORÉ</td>
+                       <td className="py-4 text-gray-600">Terminale C</td>
+                       <td className="py-4 text-gray-600">14 Mai 2025</td>
+                       <td className="py-4"><span className="text-amber-600 bg-amber-50 px-2 py-1 rounded font-bold text-xs uppercase">Observation Envoyée</span></td>
+                       <td className="py-4 text-right">
+                          <button className="text-indigo-600 hover:text-indigo-800 font-bold text-xs">Ouvrir</button>
+                       </td>
+                    </tr>
+                 </tbody>
+              </table>
+           </div>
+        </div>
+      )}
+
+      {activeTab === 'teachers' && (
+        <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm">
+           <h3 className="text-2xl font-black text-gray-900 mb-6">Suivi Pédagogique par Enseignant</h3>
+           <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                 <thead>
+                    <tr className="border-b border-gray-100 text-gray-400 font-bold uppercase tracking-widest text-[10px]">
+                       <th className="pb-4">Enseignant</th>
+                       <th className="pb-4">Fiches Pédago.</th>
+                       <th className="pb-4">Cahier Journal</th>
+                       <th className="pb-4">Cahier de Texte</th>
+                       <th className="pb-4">Retards / Alertes</th>
+                       <th className="pb-4">Statut Global</th>
+                    </tr>
+                 </thead>
+                 <tbody className="divide-y divide-gray-50">
+                    <tr className="hover:bg-gray-50 transition-colors">
+                       <td className="py-4 font-bold text-gray-900">Mme. Traoré A.</td>
+                       <td className="py-4"><span className="text-emerald-600 bg-emerald-50 px-2 py-1 rounded font-bold">4/5 Validées</span></td>
+                       <td className="py-4 text-emerald-600 font-medium">À jour</td>
+                       <td className="py-4 text-amber-600 font-medium">Incomplet (Lundi)</td>
+                       <td className="py-4"><span className="text-gray-400">-</span></td>
+                       <td className="py-4"><span className="text-emerald-600 font-black">Satisfaisant</span></td>
+                    </tr>
+                    <tr className="hover:bg-gray-50 transition-colors">
+                       <td className="py-4 font-bold text-gray-900">M. Koné J.</td>
+                       <td className="py-4"><span className="text-rose-600 bg-rose-50 px-2 py-1 rounded font-bold">1/5 Validée</span></td>
+                       <td className="py-4 text-rose-600 font-medium">En retard</td>
+                       <td className="py-4 text-emerald-600 font-medium">À jour</td>
+                       <td className="py-4"><span className="text-rose-600 font-bold flex items-center gap-1"><AlertTriangle className="w-3 h-3"/> 2 Retards</span></td>
+                       <td className="py-4"><span className="text-rose-600 font-black">Alerte</span></td>
+                    </tr>
+                 </tbody>
+              </table>
+           </div>
+        </div>
+      )}
+
+      {activeTab === 'classes' && (
+        <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm">
+           <h3 className="text-2xl font-black text-gray-900 mb-6">Couverture Pédagogique par Classe</h3>
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="p-6 border border-gray-100 rounded-2xl shadow-sm">
+                 <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-lg font-black">Terminale C</h4>
+                    <span className="text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full text-xs font-bold">Couverture: 100%</span>
+                 </div>
+                 <p className="text-sm text-gray-600 mb-2">Matières couvertes : 8/8</p>
+                 <p className="text-sm text-gray-600 mb-2">Heures prévues : 32h</p>
+                 <p className="text-sm text-gray-600">Heures assurées (Cahier texte) : <strong className="text-emerald-600">32h</strong></p>
+              </div>
+              <div className="p-6 border border-rose-100 rounded-2xl shadow-sm bg-rose-50/20">
+                 <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-lg font-black text-rose-900">6ème A</h4>
+                    <span className="text-amber-600 bg-amber-50 px-3 py-1 rounded-full text-xs font-bold">Couverture: 85%</span>
+                 </div>
+                 <p className="text-sm text-gray-600 mb-2">Matières couvertes : 9/10</p>
+                 <p className="text-sm text-gray-600 mb-2">Heures prévues : 28h</p>
+                 <p className="text-sm text-gray-600">Heures assurées (Cahier texte) : <strong className="text-rose-600">24h</strong> 🔴 (SVT manquant)</p>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {activeTab === 'reports' && (
+        <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm">
+           <h3 className="text-2xl font-black text-gray-900 mb-2">Rapports & Exports Institutionnels</h3>
+           <p className="text-sm text-gray-500 mb-8">Générez des rapports PDF avec signature numérique et cachet de l'établissement.</p>
+           
+           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {[
+                { title: 'Rapport Hebdo Pédagogique', desc: 'Synthèse des cahiers de texte et journaux de la semaine.' },
+                { title: 'Rapport Mensuel Production', desc: 'Analyse des fiches pédagogiques validées et taux de couverture.' },
+                { title: 'Bilan Institutionnel Complet', desc: 'Export global pour l\'inspection académique.' },
+              ].map((r, i) => (
+                <div key={i} className="p-6 border border-gray-100 rounded-2xl hover:border-indigo-300 transition-all cursor-pointer group">
+                   <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                      <FileText className="w-6 h-6" />
+                   </div>
+                   <h4 className="font-bold text-gray-900 mb-2">{r.title}</h4>
+                   <p className="text-xs text-gray-500">{r.desc}</p>
+                </div>
+              ))}
+           </div>
+        </div>
+      )}
     </div>
   );
 }

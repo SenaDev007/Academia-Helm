@@ -12,14 +12,14 @@ Ce document décrit la configuration complète du système multi-tenant d'Academ
 
 ```
 ┌─────────────────────────────────────────┐
-│  Portail Central (academia-hub.com)    │
+│  Portail Central (academiahelm.com)    │
 │  - Sélection de l'école                │
 │  - Redirection vers sous-domaine       │
 └─────────────────────────────────────────┘
                     │
                     ▼
 ┌─────────────────────────────────────────┐
-│  Sous-domaine (school.academia-hub.com) │
+│  Sous-domaine (school.academiahelm.com) │
 │  - Application principale               │
 │  - Isolation par tenant                │
 └─────────────────────────────────────────┘
@@ -30,7 +30,7 @@ Ce document décrit la configuration complète du système multi-tenant d'Academ
 1. **Utilisateur accède au portail** : `/portal`
 2. **Sélection du portail** : École, Enseignant, Parent
 3. **Recherche de l'établissement** : Autocomplete avec logo
-4. **Redirection automatique** : Vers `{school-slug}.academia-hub.com/login`
+4. **Redirection automatique** : Vers `{school-slug}.academiahelm.com/login`
 5. **Authentification** : Contextuelle selon le portail
 
 ---
@@ -42,14 +42,14 @@ Ce document décrit la configuration complète du système multi-tenant d'Academ
 ```bash
 # URL de base de l'application
 NEXT_PUBLIC_APP_URL=http://localhost:3001  # Local
-NEXT_PUBLIC_APP_URL=https://academia-hub.com  # Production
+NEXT_PUBLIC_APP_URL=https://academiahelm.com  # Production
 
 # Domaine de base (pour sous-domaines)
 NEXT_PUBLIC_BASE_DOMAIN=localhost:3001  # Local
-NEXT_PUBLIC_BASE_DOMAIN=academia-hub.com  # Production
+NEXT_PUBLIC_BASE_DOMAIN=academiahelm.com  # Production
 
 # Environnement
-NEXT_PUBLIC_ENV=local  # local | preview | production
+NEXT_PUBLIC_ENV=local  # local | preview | test | production
 ```
 
 ### Helper Centralisé
@@ -65,15 +65,15 @@ import {
 } from '@/lib/utils/urls';
 
 // URL de base de l'app
-const appUrl = getAppBaseUrl(); // http://localhost:3001 ou https://academia-hub.com
+const appUrl = getAppBaseUrl(); // http://localhost:3001 ou https://academiahelm.com
 
 // URL de l'API
-const apiUrl = getApiBaseUrl(); // http://localhost:3000/api ou https://api.academia-hub.com/api
+const apiUrl = getApiBaseUrl(); // http://localhost:3000/api ou https://api.academiahelm.com/api
 
 // Redirection vers un tenant
 const redirectUrl = getTenantRedirectUrl('college-x', '/login', { portal: 'school' });
 // Local: http://localhost:3001/login?tenant=college-x&portal=school
-// Prod: https://college-x.academia-hub.com/login?portal=school
+// Prod: https://college-x.academiahelm.com/login?portal=school
 ```
 
 ---
@@ -82,20 +82,24 @@ const redirectUrl = getTenantRedirectUrl('college-x', '/login', { portal: 'schoo
 
 ### En Local (Development)
 
-En local, les sous-domaines ne sont pas disponibles. Le système utilise des **paramètres de requête** :
+En local, les sous-domaines sont disponibles via `*.localhost` ou via des **paramètres de requête** :
 
 ```
+http://school.localhost:3001/app
+OU
 http://localhost:3001/app?tenant=college-x
 ```
 
-Le middleware détecte le paramètre `tenant` et résout le tenant.
+Le middleware détecte le sous-domaine ou le paramètre `tenant` et résout le tenant.
 
-### En Production
+### En Production / Test
 
-En production, les sous-domaines sont utilisés :
+En production et test, les sous-domaines sont utilisés :
 
 ```
-https://college-x.academia-hub.com/app
+https://college-x.academiahelm.com/app
+OU
+https://college-x.test.academiahelm.com/app
 ```
 
 Le middleware extrait le sous-domaine depuis le header `Host` et résout le tenant.
@@ -219,9 +223,9 @@ if (pathname.startsWith('/app')) {
 Dans le dashboard Vercel, configurez :
 
 ```bash
-NEXT_PUBLIC_APP_URL=https://academia-hub.com
-NEXT_PUBLIC_BASE_DOMAIN=academia-hub.com
-NEXT_PUBLIC_API_URL=https://api.academia-hub.com/api
+NEXT_PUBLIC_APP_URL=https://academiahelm.com
+NEXT_PUBLIC_BASE_DOMAIN=academiahelm.com
+NEXT_PUBLIC_API_URL=https://api.academiahelm.com/api
 NEXT_PUBLIC_ENV=production
 ```
 
@@ -230,7 +234,7 @@ NEXT_PUBLIC_ENV=production
 Pour chaque école, créez un enregistrement DNS CNAME :
 
 ```
-college-x.academia-hub.com → CNAME → academia-hub.com
+college-x.academiahelm.com → CNAME → academiahelm.com
 ```
 
 Vercel gérera automatiquement le routage vers votre application Next.js.
@@ -254,8 +258,8 @@ http://127.0.0.1:3001/**
 https://*.vercel.app/**
 
 # Production (tous les sous-domaines)
-https://*.academia-hub.com/**
-https://academia-hub.com/**
+https://*.academiahelm.com/**
+https://academiahelm.com/**
 ```
 
 ### Site URL
@@ -265,7 +269,7 @@ https://academia-hub.com/**
 http://localhost:3001
 
 # Production
-https://academia-hub.com
+https://academiahelm.com
 ```
 
 ---

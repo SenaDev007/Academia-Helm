@@ -32,7 +32,7 @@ import { persistClientSession } from '@/lib/auth/client-access-token';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getModalMotion, getMotionDuration } from '@/lib/motion/presets';
 
-type PortalType = 'SCHOOL' | 'TEACHER' | 'PARENT' | null;
+type PortalType = 'PLATFORM' | 'SCHOOL' | 'TEACHER' | 'PARENT' | 'PUBLIC' | null;
 
 interface School {
   id: string;
@@ -68,7 +68,7 @@ export default function PortalPage() {
   const [devEmail, setDevEmail] = useState('');
   const [devPassword, setDevPassword] = useState('');
   const [isDevLoggingIn, setIsDevLoggingIn] = useState(false);
-  const { redirectToTenant } = useTenantRedirect();
+  const { redirectToTenant, getTenantRedirectUrl } = useTenantRedirect();
   const { shouldReduceMotion } = useMotionBudget();
 
   const dur = useMemo(
@@ -120,9 +120,19 @@ export default function PortalPage() {
     () =>
       [
         {
+          type: 'PLATFORM' as const,
+          title: 'Portail Plateforme',
+          subtitle: 'Administration SaaS • Supervision globale • Business',
+          Icon: Shield,
+          iconBg: 'from-slate-700/20 to-slate-800/10',
+          iconColor: 'text-slate-800',
+          accentBar: 'bg-slate-800',
+          cta: 'text-slate-800 group-hover:text-slate-900',
+        },
+        {
           type: 'SCHOOL' as const,
           title: 'Portail École',
-          subtitle: 'Direction • Administration • Promoteur',
+          subtitle: 'Direction • Administration • Finances • Scolarité',
           Icon: Building2,
           iconBg: 'from-blue-500/20 to-blue-600/10',
           iconColor: 'text-blue-600',
@@ -132,7 +142,7 @@ export default function PortalPage() {
         {
           type: 'TEACHER' as const,
           title: 'Portail Enseignant',
-          subtitle: 'Enseignants & Encadreurs',
+          subtitle: 'Pédagogie • Suivi • Notes • Cahier de texte',
           Icon: GraduationCap,
           iconBg: 'from-emerald-500/20 to-emerald-600/10',
           iconColor: 'text-emerald-600',
@@ -141,13 +151,23 @@ export default function PortalPage() {
         },
         {
           type: 'PARENT' as const,
-          title: 'Portail Parents & Élèves',
-          subtitle: 'Suivi scolaire & paiements',
+          title: 'Portail Parent / Élève',
+          subtitle: 'Suivi scolaire • Paiements • Communication',
           Icon: Users,
           iconBg: 'from-violet-500/20 to-violet-600/10',
           iconColor: 'text-violet-600',
           accentBar: 'bg-violet-500',
           cta: 'text-violet-600 group-hover:text-violet-700',
+        },
+        {
+          type: 'PUBLIC' as const,
+          title: 'Portail Public',
+          subtitle: 'Pré-inscription • Admissions • Informations',
+          Icon: ArrowRight, // Replace with more appropriate if needed
+          iconBg: 'from-amber-500/20 to-amber-600/10',
+          iconColor: 'text-amber-600',
+          accentBar: 'bg-amber-500',
+          cta: 'text-amber-600 group-hover:text-amber-700',
         },
       ] as const,
     [],
@@ -192,12 +212,36 @@ export default function PortalPage() {
     setSelectedSchool(null);
   };
 
-  const handleSchoolSelect = (school: School) => {
+  const handleSchoolSelect = (school: School | null) => {
     setSelectedSchool(school);
   };
 
   const handleContinue = async () => {
-    if (!selectedSchool || !selectedPortal) return;
+    if (selectedPortal === 'PLATFORM') {
+      // Pour le portail plateforme, on redirige directement vers le login global ou avec le tenant sélectionné si applicable
+      await redirectToTenant({
+        tenantSlug: selectedSchool?.slug || 'platform', // Par défaut platform si pas d'école choisie
+        tenantId: selectedSchool?.id || 'platform',
+        path: '/login',
+        portalType: 'PLATFORM',
+        queryParams: { portal: 'platform' },
+      });
+      return;
+    }
+
+    if (!selectedPortal || !selectedSchool) return;
+
+    if (selectedPortal === 'PUBLIC') {
+      // Pour le portail public, on redirige vers la page d'inscription de l'école (format professionnel)
+      const signupUrl = getTenantRedirectUrl({
+        tenantSlug: selectedSchool.slug,
+        tenantId: selectedSchool.id,
+        path: '/signup',
+        portalType: 'PUBLIC',
+      });
+      window.location.href = signupUrl;
+      return;
+    }
 
     await redirectToTenant({
       tenantSlug: selectedSchool.slug,
@@ -583,7 +627,7 @@ export default function PortalPage() {
                     : { opacity: 0, y: -10, transition: { duration: dur * 0.85 } }
                 }
                 transition={{ duration: dur, ease: 'easeOut' }}
-                className="mx-auto mb-12 grid w-full max-w-lg grid-cols-1 gap-4 sm:max-w-none sm:gap-5 md:max-w-4xl md:grid-cols-2 md:gap-6 xl:max-w-6xl xl:grid-cols-3"
+                className="mx-auto mb-12 grid w-full max-w-lg grid-cols-1 gap-4 sm:max-w-none sm:gap-5 md:max-w-5xl md:grid-cols-2 lg:grid-cols-3 md:gap-6 xl:max-w-6xl"
               >
                 {portalCards.map((card, index) => {
                   const Icon = card.Icon;
@@ -619,9 +663,9 @@ export default function PortalPage() {
                       }}
                       role="button"
                       tabIndex={0}
-                      className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-md outline-none ring-slate-200/60 transition-shadow focus-visible:ring-2 focus-visible:ring-[#C9A84C] focus-visible:ring-offset-2 hover:border-slate-300 hover:shadow-xl md:min-h-[280px] xl:min-h-[300px] ${
-                        index === 2
-                          ? 'md:col-span-2 md:mx-auto md:max-w-md xl:col-span-1 xl:mx-0 xl:max-w-none'
+                      className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-md outline-none ring-slate-200/60 transition-shadow focus-visible:ring-2 focus-visible:ring-[#C9A84C] focus-visible:ring-offset-2 hover:border-slate-300 hover:shadow-xl md:min-h-[260px] ${
+                        index === 4 && portalCards.length % 3 !== 0
+                          ? 'md:col-span-2 lg:col-span-1 md:mx-auto md:max-w-md lg:mx-0 lg:max-w-none'
                           : ''
                       }`}
                     >
@@ -701,6 +745,28 @@ export default function PortalPage() {
 
                 <div className="mb-6">
                     <div className="mb-2 flex items-center gap-3">
+                    {selectedPortal === 'PLATFORM' && (
+                      <>
+                          <Shield className="h-7 w-7 text-slate-700" />
+                          <h2
+                            className="text-2xl font-bold"
+                            style={{ color: NAVY }}
+                          >
+                            Portail Plateforme
+                          </h2>
+                      </>
+                    )}
+                    {selectedPortal === 'PUBLIC' && (
+                      <>
+                          <ArrowRight className="h-7 w-7 text-amber-600" />
+                          <h2
+                            className="text-2xl font-bold"
+                            style={{ color: NAVY }}
+                          >
+                            Portail Public
+                          </h2>
+                      </>
+                    )}
                     {selectedPortal === 'SCHOOL' && (
                       <>
                           <Building2 className="h-7 w-7 text-blue-600" />

@@ -30,16 +30,17 @@ export function OrionLoadingIndicator({
   const [showAlerts, setShowAlerts] = useState(false);
 
   useEffect(() => {
-    if (isActive && alertsCount > 0) {
-      // Afficher les alertes après un court délai
-      const timer = setTimeout(() => {
-        setShowAlerts(true);
-      }, 500);
-
-      return () => clearTimeout(timer);
-    } else {
+    if (!isActive || alertsCount <= 0) {
       setShowAlerts(false);
+      return;
     }
+
+    // Afficher les alertes après un court délai
+    const timer = setTimeout(() => {
+      setShowAlerts(true);
+    }, 500);
+
+    return () => clearTimeout(timer);
   }, [isActive, alertsCount]);
 
   if (!isActive) {

@@ -138,18 +138,20 @@ export function useOfflineSync(): UseOfflineSyncReturn {
         window.removeEventListener('sync-end', handleSyncEnd);
       };
     }
+    return () => {}; // Return empty cleanup for SSR
   }, [isOnline, updatePendingCount]);
 
   // Sync automatique à la reconnexion
   useEffect(() => {
+    let timeout: any;
     if (isOnline && pendingOperationsCount > 0 && !isSyncing) {
-      // Sync automatique 1 seconde après reconnexion
-      const timeout = setTimeout(() => {
+      timeout = setTimeout(() => {
         syncNow();
       }, 1000);
-
-      return () => clearTimeout(timeout);
     }
+    return () => {
+      if (timeout) clearTimeout(timeout);
+    };
   }, [isOnline, pendingOperationsCount, isSyncing, syncNow]);
 
   return {

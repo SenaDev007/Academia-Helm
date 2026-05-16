@@ -28,6 +28,12 @@ export enum UserRole {
   // 🟨 NIVEAU ENSEIGNEMENT
   ENSEIGNANT = 'ENSEIGNANT', // Instituteur/Professeur
 
+  // 🟣 NIVEAU FEDERIS (PATRONAT)
+  FEDERIS_ADMIN = 'FEDERIS_ADMIN',
+  FEDERIS_CHEF_CENTRE = 'FEDERIS_CHEF_CENTRE',
+  FEDERIS_CORRECTEUR = 'FEDERIS_CORRECTEUR',
+  FEDERIS_SURVEILLANT = 'FEDERIS_SURVEILLANT',
+
   // 🟩 NIVEAU FAMILLE
   PARENT = 'PARENT', // Parent/Tuteur
   ELEVE = 'ELEVE', // Élève
@@ -41,6 +47,7 @@ export enum Portal {
   ECOLE = 'ECOLE', // Portail École
   ENSEIGNANT = 'ENSEIGNANT', // Portail Enseignant
   PARENT_ELEVE = 'PARENT_ELEVE', // Portail Parents & Élèves
+  FEDERIS = 'FEDERIS', // Portail Academia Federis
 }
 
 /**
@@ -58,6 +65,10 @@ export const ROLE_PORTAL_MAP: Record<UserRole, Portal> = {
   [UserRole.ENSEIGNANT]: Portal.ENSEIGNANT,
   [UserRole.PARENT]: Portal.PARENT_ELEVE,
   [UserRole.ELEVE]: Portal.PARENT_ELEVE,
+  [UserRole.FEDERIS_ADMIN]: Portal.FEDERIS,
+  [UserRole.FEDERIS_CHEF_CENTRE]: Portal.FEDERIS,
+  [UserRole.FEDERIS_CORRECTEUR]: Portal.FEDERIS,
+  [UserRole.FEDERIS_SURVEILLANT]: Portal.FEDERIS,
 };
 
 /**
@@ -76,6 +87,10 @@ export const ROLE_HIERARCHY: Record<UserRole, number> = {
   [UserRole.ENSEIGNANT]: 30,
   [UserRole.PARENT]: 20,
   [UserRole.ELEVE]: 10,
+  [UserRole.FEDERIS_ADMIN]: 90,
+  [UserRole.FEDERIS_CHEF_CENTRE]: 50,
+  [UserRole.FEDERIS_CORRECTEUR]: 40,
+  [UserRole.FEDERIS_SURVEILLANT]: 30,
 };
 
 /**

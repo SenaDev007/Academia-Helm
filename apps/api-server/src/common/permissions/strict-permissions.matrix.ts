@@ -223,6 +223,27 @@ export const STRICT_PERMISSIONS_MATRIX: Record<
     [PermissionAction.DELETE]: [UserRole.PROMOTEUR],
     [PermissionAction.MANAGE]: [UserRole.PROMOTEUR],
   },
+
+  // ============================================================================
+  // 11. ACADEMIA FEDERIS (PATRONAT & EXAMENS)
+  // ============================================================================
+  [Module.FEDERIS]: {
+    [PermissionAction.READ]: [
+      UserRole.FEDERIS_ADMIN,
+      UserRole.FEDERIS_CHEF_CENTRE,
+      UserRole.FEDERIS_CORRECTEUR,
+      UserRole.FEDERIS_SURVEILLANT,
+      UserRole.PROMOTEUR,
+      UserRole.DIRECTEUR,
+    ],
+    [PermissionAction.WRITE]: [
+      UserRole.FEDERIS_ADMIN,
+      UserRole.FEDERIS_CHEF_CENTRE,
+      UserRole.FEDERIS_CORRECTEUR,
+    ],
+    [PermissionAction.DELETE]: [UserRole.FEDERIS_ADMIN],
+    [PermissionAction.MANAGE]: [UserRole.FEDERIS_ADMIN],
+  },
 };
 
 /**

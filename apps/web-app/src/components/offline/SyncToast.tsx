@@ -36,12 +36,12 @@ export function SyncToast() {
       setShowToast(true);
     };
 
-    if (typeof window !== 'undefined') {
-      window.addEventListener('sync-end', handleSyncEnd as EventListener);
-      return () => {
-        window.removeEventListener('sync-end', handleSyncEnd as EventListener);
-      };
-    }
+    if (typeof window === 'undefined') return;
+
+    window.addEventListener('sync-end', handleSyncEnd as EventListener);
+    return () => {
+      window.removeEventListener('sync-end', handleSyncEnd as EventListener);
+    };
   }, []);
 
   // Toast d'erreur si erreur présente
@@ -96,6 +96,7 @@ export function SyncToast() {
         setShowToast(false);
         setSyncResult(null);
       }}
+      onRemove={() => {}}
     />
   );
 }

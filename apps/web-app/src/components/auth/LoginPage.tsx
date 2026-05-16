@@ -25,6 +25,7 @@ import {
   Users,
   ArrowLeft,
   Home,
+  Shield,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BRAND } from '@/lib/brand';
@@ -33,7 +34,7 @@ import { persistClientSession } from '@/lib/auth/client-access-token';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getMotionDuration } from '@/lib/motion/presets';
 
-type PortalType = 'school' | 'teacher' | 'parent' | null;
+type PortalType = 'platform' | 'school' | 'teacher' | 'parent' | 'public' | null;
 
 interface SchoolCredentials {
   email: string;
@@ -55,7 +56,7 @@ const GOLD = '#f5b335';
 
 function normalizePortal(raw: string | null | undefined): PortalType {
   const x = raw?.toLowerCase();
-  if (x === 'school' || x === 'teacher' || x === 'parent') return x;
+  if (x === 'platform' || x === 'school' || x === 'teacher' || x === 'parent' || x === 'public') return x as PortalType;
   return null;
 }
 
@@ -64,8 +65,25 @@ export default function LoginPage() {
   const { shouldReduceMotion } = useMotionBudget();
 
   const portalParam = searchParams?.get('portal');
-  const tenantSlug = searchParams?.get('tenant');
-  const tenantIdFromUrl = searchParams?.get('tenant_id');
+  let tenantSlug = searchParams?.get('tenant');
+  let tenantIdFromUrl = searchParams?.get('tenant_id');
+
+  // Détection professionnelle du tenant via le sous-domaine
+  if (typeof window !== 'undefined' && !tenantSlug) {
+    const host = window.location.host;
+    const parts = host.split('.');
+    
+    // Liste des sous-domaines à ignorer
+    const ignoredSubdomains = ['www', 'dev', 'test', 'staging', 'preview', 'admin', 'api', 'portal', 'localhost'];
+    
+    if (parts.length >= 3 && !ignoredSubdomains.includes(parts[0])) {
+      tenantSlug = parts[0];
+    } else if (parts.length === 2 && parts[1] === 'localhost' && !ignoredSubdomains.includes(parts[0])) {
+      // Support school.localhost en développement
+      tenantSlug = parts[0];
+    }
+  }
+
   const tenantIdForApi = tenantIdFromUrl || tenantSlug;
   const redirectPath = searchParams?.get('redirect') || '/app';
 
@@ -164,6 +182,8 @@ export default function LoginPage() {
     try {
       if (isStandardLogin) {
         await handleStandardLogin();
+      } else if (portalType === 'platform') {
+        await handlePlatformLogin();
       } else if (portalType === 'school') {
         await handleSchoolLogin();
       } else if (portalType === 'teacher') {
@@ -178,6 +198,40 @@ export default function LoginPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handlePlatformLogin = async () => {
+    // Le login plateforme est similaire au login standard mais force le contexte plateforme
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: schoolCredentials.email,
+        password: schoolCredentials.password,
+        portal_type: 'PLATFORM',
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Erreur lors de la connexion plateforme');
+    }
+
+    persistClientSession({
+      accessToken: data.accessToken,
+      refreshToken: data.refreshToken,
+      serverSessionId: data.serverSessionId,
+      user: data.user,
+      tenant: data.tenant,
+      expiresAt: data.expiresAt,
+    });
+
+    saveEmailForTenant(schoolCredentials.email, 'platform');
+
+    window.location.href = '/app/platform';
   };
 
   const handleStandardLogin = async () => {
@@ -225,8 +279,12 @@ export default function LoginPage() {
       return;
     }
 
-    let redirectUrl = redirectPath;
-    if (tenantSlug || tenantIdFromUrl) {
+    let redirectUrl = portalType === 'platform' ? '/app/platform' : redirectPath;
+    
+    // Si on n'est pas déjà sur un sous-domaine professionnel, on ajoute les paramètres
+    const isSubdomain = typeof window !== 'undefined' && window.location.host.split('.').length >= (window.location.host.includes('localhost') ? 2 : 3);
+    
+    if (!isSubdomain && (tenantSlug || tenantIdFromUrl)) {
       const params = new URLSearchParams();
       if (tenantSlug) {
         params.set('tenant', tenantSlug);
@@ -234,7 +292,7 @@ export default function LoginPage() {
       if (tenantIdFromUrl) {
         params.set('tenant_id', tenantIdFromUrl);
       }
-      redirectUrl = `${redirectPath}?${params.toString()}`;
+      redirectUrl = `${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}${params.toString()}`;
     }
     window.location.href = redirectUrl;
   };
@@ -273,8 +331,10 @@ export default function LoginPage() {
     const tenantKey = data.tenant?.id || tenantIdForApi || 'platform';
     saveEmailForTenant(schoolCredentials.email, tenantKey);
 
+    const isSubdomain = typeof window !== 'undefined' && window.location.host.split('.').length >= (window.location.host.includes('localhost') ? 2 : 3);
+    
     const redirectUrl =
-      tenantSlug || tenantIdFromUrl
+      !isSubdomain && (tenantSlug || tenantIdFromUrl)
         ? `${redirectPath}?tenant=${encodeURIComponent(tenantSlug || '')}${tenantIdFromUrl ? `&tenant_id=${encodeURIComponent(tenantIdFromUrl)}` : ''}`
         : redirectPath;
     window.location.href = redirectUrl;
@@ -311,8 +371,10 @@ export default function LoginPage() {
       expiresAt: data.expiresAt,
     });
 
+    const isSubdomain = typeof window !== 'undefined' && window.location.host.split('.').length >= (window.location.host.includes('localhost') ? 2 : 3);
+    
     const redirectUrl =
-      tenantSlug || tenantIdFromUrl
+      !isSubdomain && (tenantSlug || tenantIdFromUrl)
         ? `${redirectPath}?tenant=${encodeURIComponent(tenantSlug || '')}${tenantIdFromUrl ? `&tenant_id=${encodeURIComponent(tenantIdFromUrl)}` : ''}`
         : redirectPath;
     window.location.href = redirectUrl;
@@ -377,8 +439,10 @@ export default function LoginPage() {
       expiresAt: data.expiresAt,
     });
 
+    const isSubdomain = typeof window !== 'undefined' && window.location.host.split('.').length >= (window.location.host.includes('localhost') ? 2 : 3);
+    
     const redirectUrl =
-      tenantSlug || tenantIdFromUrl
+      !isSubdomain && (tenantSlug || tenantIdFromUrl)
         ? `${redirectPath}?tenant=${encodeURIComponent(tenantSlug || '')}${tenantIdFromUrl ? `&tenant_id=${encodeURIComponent(tenantIdFromUrl)}` : ''}`
         : redirectPath;
     window.location.href = redirectUrl;
@@ -386,10 +450,23 @@ export default function LoginPage() {
 
   const theme = useMemo(() => {
     switch (portalType) {
+      case 'platform':
+        return {
+          title: 'Portail Plateforme',
+          subtitle: 'Administration SaaS & Supervision Globale',
+          Icon: Shield,
+          accent: 'slate' as const,
+          iconBg: 'from-slate-700/20 to-slate-800/10',
+          iconClass: 'text-slate-800',
+          ring: 'ring-slate-500/25',
+          focus: 'focus:ring-slate-800 focus:border-slate-800',
+          btnFrom: '#1e293b',
+          btnTo: '#0f172a',
+        };
       case 'school':
         return {
           title: 'Portail École',
-          subtitle: 'Direction • Administration • Promoteur',
+          subtitle: 'Direction • Administration • Finances • Scolarité',
           Icon: Building2,
           accent: 'blue' as const,
           iconBg: 'from-blue-500/20 to-blue-600/10',
@@ -402,7 +479,7 @@ export default function LoginPage() {
       case 'teacher':
         return {
           title: 'Portail Enseignant',
-          subtitle: 'Enseignants & Encadreurs',
+          subtitle: 'Pédagogie • Suivi • Notes • Cahier de texte',
           Icon: GraduationCap,
           accent: 'emerald' as const,
           iconBg: 'from-emerald-500/20 to-emerald-600/10',
@@ -414,8 +491,8 @@ export default function LoginPage() {
         };
       case 'parent':
         return {
-          title: 'Portail Parents & Élèves',
-          subtitle: 'Suivi scolaire & paiements',
+          title: 'Portail Parent / Élève',
+          subtitle: 'Suivi scolaire • Paiements • Communication',
           Icon: Users,
           accent: 'violet' as const,
           iconBg: 'from-violet-500/20 to-violet-600/10',
@@ -424,6 +501,19 @@ export default function LoginPage() {
           focus: 'focus:ring-violet-600 focus:border-violet-600',
           btnFrom: '#7c3aed',
           btnTo: '#6d28d9',
+        };
+      case 'public':
+        return {
+          title: 'Portail Public',
+          subtitle: 'Pré-inscription • Admissions • Informations',
+          Icon: Home,
+          accent: 'amber' as const,
+          iconBg: 'from-amber-500/20 to-amber-600/10',
+          iconClass: 'text-amber-600',
+          ring: 'ring-amber-500/25',
+          focus: 'focus:ring-amber-600 focus:border-amber-600',
+          btnFrom: '#f59e0b',
+          btnTo: '#d97706',
         };
       default:
         return {
@@ -631,7 +721,7 @@ export default function LoginPage() {
                 transition={{ duration: dur, ease: 'easeOut' }}
                 className="space-y-6"
               >
-                {(isStandardLogin || portalType === 'school') && (
+                {(isStandardLogin || portalType === 'school' || portalType === 'platform') && (
                   <>
                     <div>
                       <label

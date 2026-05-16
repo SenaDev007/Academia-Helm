@@ -348,6 +348,7 @@ export default function CompleteLandingPage() {
       console.warn('IntersectionObserver error:', error);
       setIsOfflineSectionVisible(true);
     }
+    return;
   }, []);
 
   // Charger les statistiques des témoignages validés

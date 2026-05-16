@@ -21,17 +21,16 @@ export class ContractsPrismaService {
   async createContract(data: {
     tenantId: string;
     academicYearId?: string;
-    schoolLevelId?: string;
     staffId: string;
-    templateId?: string;
-    contractType: string;
+    type: string;
     startDate: Date;
     endDate?: Date;
-    baseSalary: number;
-    paymentMode?: string;
-    terms?: any;
-    signedAt?: Date;
-    signedBy?: string;
+    baseSalary?: number;
+    hourlyRate?: number;
+    hoursPerWeek?: number;
+    isRenewable?: boolean;
+    conditions?: string;
+    status?: string;
   }) {
     // Vérifier qu'il n'y a pas déjà un contrat actif pour ce personnel
     const activeContract = await this.prisma.contract.findFirst({
@@ -52,8 +51,7 @@ export class ContractsPrismaService {
     return this.prisma.contract.create({
       data: {
         ...data,
-        paymentMode: data.paymentMode || 'BANK',
-        status: 'ACTIVE',
+        status: data.status || 'ACTIVE',
       },
     });
   }
@@ -63,7 +61,7 @@ export class ContractsPrismaService {
    */
   async findAllContracts(tenantId: string, filters?: {
     staffId?: string;
-    contractType?: string;
+    type?: string;
     status?: string;
   }) {
     const where: any = { tenantId };
@@ -71,8 +69,8 @@ export class ContractsPrismaService {
     if (filters?.staffId) {
       where.staffId = filters.staffId;
     }
-    if (filters?.contractType) {
-      where.contractType = filters.contractType;
+    if (filters?.type) {
+      where.type = filters.type;
     }
     if (filters?.status) {
       where.status = filters.status;
@@ -86,10 +84,9 @@ export class ContractsPrismaService {
             id: true,
             firstName: true,
             lastName: true,
-            employeeNumber: true,
+            staffCode: true,
           },
         },
-        template: true,
       },
       orderBy: { startDate: 'desc' },
     });
@@ -103,7 +100,12 @@ export class ContractsPrismaService {
       where: { id, tenantId },
       include: {
         staff: true,
-        template: true,
+        amendments: {
+          orderBy: { effectiveDate: 'desc' },
+        },
+        documents: {
+          orderBy: { createdAt: 'desc' },
+        },
       },
     });
 
@@ -127,17 +129,32 @@ export class ContractsPrismaService {
   }
 
   /**
+   * Crée un avenant (Amendment) au contrat
+   */
+  async createAmendment(data: {
+    tenantId: string;
+    contractId: string;
+    amendmentType: string;
+    description: string;
+    previousValue?: string;
+    newValue?: string;
+    effectiveDate: Date;
+  }) {
+    return this.prisma.contractAmendment.create({
+      data,
+    });
+  }
+
+  /**
    * Termine un contrat
    */
-  async terminateContract(id: string, tenantId: string, reason: string) {
+  async terminateContract(id: string, tenantId: string) {
     const contract = await this.findContractById(id, tenantId);
 
     return this.prisma.contract.update({
       where: { id },
       data: {
         status: 'TERMINATED',
-        terminatedAt: new Date(),
-        terminationReason: reason,
       },
     });
   }
@@ -153,7 +170,7 @@ export class ContractsPrismaService {
         status: 'ACTIVE',
       },
       include: {
-        template: true,
+        amendments: true,
       },
     });
   }

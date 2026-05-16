@@ -35,6 +35,7 @@ import * as dotenv from 'dotenv';
 import { resolve } from 'path';
 import * as bcrypt from 'bcryptjs';
 import { execSync } from 'child_process';
+import { seedCommunication } from '../src/communication/seed-communication';
 
 function isSeedAutoDbPushEnabled(): boolean {
   const v = process.env.SEED_AUTO_DB_PUSH?.trim().toLowerCase();
@@ -802,6 +803,15 @@ async function main() {
   }
 
   console.log('   ✅ Rôles système RBAC prêts (créés/mis à jour + permissions par défaut)');
+  
+  // ============================================================================
+  // 9. MODULE COMMUNICATION (TEMPLATES & ANNOUNCEMENTS)
+  // ============================================================================
+  console.log('\n📣 Seed du module Communication...');
+  await seedCommunication(prisma, tenant.id);
+  await seedCommunication(prisma, tenantCspeb.id);
+  await seedCommunication(prisma, tenantYehi.id);
+  console.log('   ✅ Module Communication seedé pour tous les tenants principaux.');
 
   console.log('\n🎯 La base de données est prête à l\'usage!');
 }

@@ -83,12 +83,10 @@ export async function POST(request: NextRequest) {
 
     // Construire la réponse ORION
     const orionResponse: OrionResponse = {
-      id: `response_${Date.now()}`,
-      queryId: `query_${Date.now()}`,
       answer: {
         facts: response.facts,
         interpretation: response.interpretation,
-        vigilance: response.vigilance || undefined,
+        vigilance: response.vigilance || null,
       },
       dataSources: [
         {
@@ -106,7 +104,6 @@ export async function POST(request: NextRequest) {
       ],
       confidence: response.confidence,
       dataSufficient: response.dataSufficient,
-      createdAt: new Date().toISOString(),
     };
 
     // Journaliser l'analyse

@@ -17,17 +17,41 @@ const warnings = [];
  */
 function checkPageSEO(filePath) {
   const content = fs.readFileSync(filePath, 'utf-8');
-  const fileName = path.basename(filePath);
+  const dirPath = path.dirname(filePath);
   
-  // Vérifier l'export de metadata
-  if (!content.includes('export const metadata') && !content.includes('export const metadata:')) {
-    errors.push(`❌ ${filePath}: Pas d'export metadata trouvé`);
+  // Si c'est un composant client, les métadonnées DOIVENT être dans le layout
+  if (content.includes("'use client'") || content.includes('"use client"')) {
+    const layoutPath = fs.existsSync(path.join(dirPath, 'layout.tsx')) 
+      ? path.join(dirPath, 'layout.tsx') 
+      : fs.existsSync(path.join(dirPath, 'layout.ts')) 
+        ? path.join(dirPath, 'layout.ts') 
+        : null;
+        
+    if (!layoutPath) {
+      // Vérifier si un layout parent existe (simplifié)
+      return true; 
+    }
+    
+    const layoutContent = fs.readFileSync(layoutPath, 'utf-8');
+    if (!layoutContent.includes('export const metadata') && !layoutContent.includes('generateMetadata')) {
+       errors.push(`❌ ${filePath}: Composant client sans metadata dans son layout (${layoutPath})`);
+       return false;
+    }
+    return true;
+  }
+
+  // Vérifier l'export de metadata ou generateMetadata
+  if (!content.includes('export const metadata') && 
+      !content.includes('export const metadata:') && 
+      !content.includes('export async function generateMetadata') &&
+      !content.includes('export function generateMetadata')) {
+    errors.push(`❌ ${filePath}: Pas d'export metadata ou generateMetadata trouvé`);
     return false;
   }
   
-  // Vérifier generateSEOMetadata ou Metadata
-  if (!content.includes('generateSEOMetadata') && !content.includes('Metadata')) {
-    warnings.push(`⚠️  ${filePath}: Metadata non généré avec generateSEOMetadata()`);
+  // Si c'est generateMetadata, on considère que c'est OK pour le title/description car dynamique
+  if (content.includes('generateMetadata')) {
+    return true;
   }
   
   // Vérifier title

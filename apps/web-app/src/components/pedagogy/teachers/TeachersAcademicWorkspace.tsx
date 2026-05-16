@@ -29,7 +29,8 @@ import {
   X,
   UserCheck,
   UserX,
-  FileText
+  FileText,
+  BookOpen
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -115,12 +116,12 @@ export default function TeachersAcademicWorkspace() {
     try {
       const newProfile = await pedagogyFetch<TeacherAcademicProfile>('/api/pedagogy/teacher-profiles', {
         method: 'POST',
-        body: JSON.stringify({
+        body: {
           academicYearId: academicYear.id,
           teacherId: selectedTeacherId,
           maxWeeklyHours: 18, // Default
           isSemainier: false
-        })
+        }
       });
       setProfiles(prev => [...prev, newProfile]);
       setActiveProfile(newProfile);
@@ -134,7 +135,7 @@ export default function TeachersAcademicWorkspace() {
     try {
       const updated = await pedagogyFetch<TeacherAcademicProfile>(`/api/pedagogy/teacher-profiles/${activeProfile.id}`, {
         method: 'PUT',
-        body: JSON.stringify(data)
+        body: data
       });
       setProfiles(prev => prev.map(p => p.id === updated.id ? updated : p));
       setActiveProfile(updated);
@@ -148,7 +149,7 @@ export default function TeachersAcademicWorkspace() {
     try {
       const newTeacher = await pedagogyFetch<Teacher>('/api/teachers', {
         method: 'POST',
-        body: JSON.stringify(data)
+        body: data
       });
       setTeachers(prev => [...prev, newTeacher]);
       setModal('none');
@@ -163,7 +164,7 @@ export default function TeachersAcademicWorkspace() {
     try {
       const updated = await pedagogyFetch<Teacher>(`/api/teachers/${selectedTeacherId}`, {
         method: 'PUT',
-        body: JSON.stringify(data)
+        body: data
       });
       setTeachers(prev => prev.map(t => t.id === updated.id ? updated : t));
       setModal('none');
@@ -189,11 +190,11 @@ export default function TeachersAcademicWorkspace() {
     try {
       await pedagogyFetch(`/api/pedagogy/teacher-profiles/${activeProfile.id}/qualifications`, {
         method: 'POST',
-        body: JSON.stringify({
+        body: {
           academicYearId: academicYear.id,
           subjectId,
           certified: true
-        })
+        }
       });
       // Refresh
       const updated = await pedagogyFetch<TeacherAcademicProfile>(`/api/pedagogy/teacher-profiles/${activeProfile.id}`);
@@ -226,12 +227,12 @@ export default function TeachersAcademicWorkspace() {
     try {
       await pedagogyFetch(`/api/pedagogy/teacher-profiles/${activeProfile.id}/availabilities`, {
         method: 'POST',
-        body: JSON.stringify({
+        body: {
           academicYearId: academicYear.id,
           dayOfWeek: Number(data.dayOfWeek),
           startTime: data.startTime,
           endTime: data.endTime
-        })
+        }
       });
       const updated = await pedagogyFetch<TeacherAcademicProfile>(`/api/pedagogy/teacher-profiles/${activeProfile.id}`);
       setProfiles(prev => prev.map(p => p.id === updated.id ? updated : p));

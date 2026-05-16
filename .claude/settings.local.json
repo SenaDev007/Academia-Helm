@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ' *)",
+      "Bash(git *)",
+      "Bash(xargs grep *)",
+      "Bash(grep -v \"//.*TODO\\\\|className\\\\|placeholder\\\\|type=\\\\|value=\\\\|import\")",
+      "Bash(awk *)",
+      "Bash(grep -c \"TODO\\\\|placeholder\\\\|coming.soon\\\\|mock\\\\|MOCK\" \"D:/Projet YEHI OR Tech/Academia Hub Web/apps/web-app/src/app/\\(patronat\\)/patronat/dashboard/page.tsx\" echo \"---\")",
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(mkdir -p \"D:/Projet YEHI OR Tech/Academia Hub Web/apps/web-app/src/app/api/timetables/[id]/entries\")",
+      "Bash(mkdir -p \"D:/Projet YEHI OR Tech/Academia Hub Web/apps/web-app/src/app/api/timetables/entries/[entryId]\")",
+      "PowerShell(Get-ChildItem \"D:\\\\Projet YEHI OR Tech\\\\Academia Hub Web\\\\apps\\\\web-app\\\\src\\\\app\\\\api\\\\lesson-plans\" -Recurse -Force | ForEach-Object { $_.FullName })",
+      "Bash(npx --no-install tsc --noEmit)",
+      "Bash(grep -E \"service.ts$\")",
+      "Bash(sed 's/-prisma.service.ts//g')",
+      "Bash(sed 's/-prisma//g')",
+      "Bash(sed 's/.service.ts//g')",
+      "Bash(grep -E \"\\\\.service\\\\.ts$\")",
+      "Bash(cat)",
+      "Read(//tmp/**)",
+      "Bash(npx --yes tsc -v)",
+      "Bash(python3 -c \"print\\('python ok'\\)\")",
+      "Bash(python -c \"print\\('python ok'\\)\")",
+      "Bash(node *)",
+      "PowerShell(node \"C:\\\\Users\\\\USER\\\\rewrite-finance-routes.mjs\")",
+      "Bash(npx --yes tsc --noEmit)",
+      "Bash(xargs ls *)",
+      "Bash(grep -v \"import\\\\|//\")",
+      "Bash([ -f \"$base/route.ts\" ])",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash('/api/[^`?]* | sort -u | head -8 *)",
+      "Bash([ -f \"D:/Projet YEHI OR Tech/Academia Hub Web/apps/web-app/src/app/api/$route\" ])"
+    ]
+  }
+}

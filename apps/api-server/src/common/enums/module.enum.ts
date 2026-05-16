@@ -37,4 +37,7 @@ export enum Module {
   
   // Module 8
   QHSE = 'QHSE',
+
+  // Module 9 - Academia Federis (Patronat)
+  FEDERIS = 'FEDERIS',
 }

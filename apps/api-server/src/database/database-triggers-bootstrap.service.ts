@@ -91,4 +91,66 @@ $$ LANGUAGE plpgsql`,
       `CREATE TRIGGER trg_prevent_update_if_year_closed_fee_arrears BEFORE INSERT OR UPDATE ON "fee_arrears" FOR EACH ROW EXECUTE FUNCTION prevent_update_if_year_closed()`,
     ];
   }
+
+  /**
+   * Applique les triggers Module 7 (Finance).
+   */
+  async runFinanceTriggers(): Promise<void> {
+    const statements = this.getFinanceTriggerStatements();
+    for (let i = 0; i < statements.length; i++) {
+      try {
+        await this.prisma.$executeRawUnsafe(statements[i]);
+      } catch (e) {
+        this.logger.warn(`Finance trigger statement ${i + 1}/${statements.length} failed:`, (e as Error)?.message);
+      }
+    }
+    this.logger.debug('Finance triggers applied');
+  }
+
+  private getFinanceTriggerStatements(): string[] {
+    return [
+      // 1. Interdiction de suppression physique des transactions
+      `CREATE OR REPLACE FUNCTION prevent_finance_transaction_delete()
+RETURNS TRIGGER AS $$
+BEGIN
+  RAISE EXCEPTION 'Suppression de transaction interdite. Academia Hub impose l''immutabilité financière. Utilisez une écriture inverse (REVERSAL).';
+END;
+$$ LANGUAGE plpgsql`,
+      `DROP TRIGGER IF EXISTS trg_no_delete_finance_transaction ON "finance_transactions"`,
+      `CREATE TRIGGER trg_no_delete_finance_transaction BEFORE DELETE ON "finance_transactions" FOR EACH ROW EXECUTE FUNCTION prevent_finance_transaction_delete()`,
+
+      // 2. Mise à jour atomique du solde StudentAccount après chaque transaction
+      `CREATE OR REPLACE FUNCTION update_account_balance_after_tx()
+RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE "student_accounts"
+  SET 
+    "totalPaid" = "totalPaid" + NEW.amount,
+    "balance" = "balance" - NEW.amount,
+    "updatedAt" = NOW()
+  WHERE "id" = NEW."studentAccountId";
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql`,
+      `DROP TRIGGER IF EXISTS trg_update_balance_after_tx ON "finance_transactions"`,
+      `CREATE TRIGGER trg_update_balance_after_tx AFTER INSERT ON "finance_transactions" FOR EACH ROW EXECUTE FUNCTION update_account_balance_after_tx()`,
+
+      // 3. Audit log automatique sur changement de statut sensible (Blocage)
+      `CREATE OR REPLACE FUNCTION audit_account_blocking()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF OLD."isBlocked" IS DISTINCT FROM NEW."isBlocked" THEN
+    INSERT INTO "financial_audit_logs" ("id", "tenantId", "academicYearId", "entityType", "entityId", "action", "details", "performedAt")
+    VALUES (gen_random_uuid(), NEW."tenantId", NEW."academicYearId", 'StudentAccount', NEW."id", 
+            CASE WHEN NEW."isBlocked" THEN 'BLOCK' ELSE 'UNBLOCK' END,
+            jsonb_build_object('old_status', OLD."status", 'new_status', NEW."status", 'balance', NEW."balance"),
+            NOW());
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql`,
+      `DROP TRIGGER IF EXISTS trg_audit_account_blocking ON "student_accounts"`,
+      `CREATE TRIGGER trg_audit_account_blocking AFTER UPDATE ON "student_accounts" FOR EACH ROW EXECUTE FUNCTION audit_account_blocking()`,
+    ];
+  }
 }

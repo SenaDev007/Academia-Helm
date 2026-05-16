@@ -41,7 +41,7 @@ function StarButton({
   onLeave,
 }: {
   index: number;
-  active: boolean;
+  active: number;
   hover: number;
   onSelect: (n: number) => void;
   onEnter: (n: number) => void;

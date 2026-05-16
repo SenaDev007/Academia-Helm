@@ -38,7 +38,7 @@ export default function TimetablesPage() {
             icon: <Icon className="w-4 h-4" />,
           };
         }),
-        activeId: 'timetables',
+        activeModuleId: 'timetables',
       }}
       content={{
         layout: 'custom',

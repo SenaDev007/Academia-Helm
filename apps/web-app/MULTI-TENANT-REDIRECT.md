@@ -41,9 +41,9 @@ NEXT_PUBLIC_APP_URL=http://localhost:3001
 NEXT_PUBLIC_API_URL=http://localhost:3000/api
 
 # .env.production
-NEXT_PUBLIC_BASE_DOMAIN=academia-hub.com
-NEXT_PUBLIC_APP_URL=https://academia-hub.com
-NEXT_PUBLIC_API_URL=https://api.academia-hub.com/api
+NEXT_PUBLIC_BASE_DOMAIN=academiahelm.com
+NEXT_PUBLIC_APP_URL=https://academiahelm.com
+NEXT_PUBLIC_API_URL=https://api.academiahelm.com/api
 ```
 
 ## 📖 Utilisation
@@ -139,7 +139,14 @@ https://college-x-abc123.vercel.app/login?portal=school
 
 **URL générée** :
 ```
-https://college-x.academia-hub.com/login?portal=school
+https://college-x.academiahelm.com/login?portal=school
+```
+
+### Test / Dev
+
+**URL générée** :
+```
+https://college-x.test.academiahelm.com/login?portal=school
 ```
 
 ## 📊 Logging

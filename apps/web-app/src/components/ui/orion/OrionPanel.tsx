@@ -32,6 +32,7 @@ export interface OrionPanelProps {
   className?: string;
   collapsible?: boolean;
   defaultCollapsed?: boolean;
+  children?: ReactNode;
 }
 
 export function OrionPanel({
@@ -41,6 +42,7 @@ export function OrionPanel({
   className,
   collapsible = false,
   defaultCollapsed = false,
+  children,
 }: OrionPanelProps) {
   return (
     <div className={cn('rounded-lg border border-blue-200 bg-blue-50/50 p-6', className)}>
@@ -57,6 +59,8 @@ export function OrionPanel({
       </div>
 
       {summary && <div className="mb-4">{summary}</div>}
+      
+      {children && <div className="mb-4">{children}</div>}
 
       {alerts.length > 0 && (
         <div className="space-y-3">

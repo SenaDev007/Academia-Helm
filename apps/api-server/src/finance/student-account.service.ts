@@ -44,14 +44,34 @@ export class StudentAccountService {
       where: { tenantId, academicYearId, isActive: true },
       include: { structureInstallments: true, overrides: { where: { studentId } } },
     });
-    const applicableStructures = allStructures.filter(
-      (fs) =>
-        (fs.classId && fs.classId === classId) ||
-        (fs.levelId === levelId && !fs.classId) ||
-        (!fs.levelId && !fs.classId),
-    );
-    // Règle 3 : isMandatory = true → injecté automatiquement ; isMandatory = false → visible mais activable facultativement
-    const feeStructures = applicableStructures.filter((fs) => fs.isMandatory);
+    // RÈGLE MÉTIER : Priorité d'application (Classe > Niveau > Global)
+    // Pour chaque type de frais (feeType), on ne garde que la structure la plus spécifique.
+    const structuresByType = new Map<string, any>();
+
+    allStructures.forEach((fs) => {
+      const isClassMatch = fs.classId && fs.classId === classId;
+      const isLevelMatch = fs.levelId === levelId && !fs.classId;
+      const isGlobalMatch = !fs.levelId && !fs.classId;
+
+      if (isClassMatch || isLevelMatch || isGlobalMatch) {
+        const existing = structuresByType.get(fs.feeType);
+        if (!existing) {
+          structuresByType.set(fs.feeType, fs);
+        } else {
+          // Remplacement si plus spécifique
+          const existingIsClass = existing.classId;
+          const existingIsLevel = existing.levelId && !existing.classId;
+          
+          if (isClassMatch) {
+            structuresByType.set(fs.feeType, fs); // La classe gagne toujours
+          } else if (isLevelMatch && !existingIsClass) {
+            structuresByType.set(fs.feeType, fs); // Le niveau gagne contre le global
+          }
+        }
+      }
+    });
+
+    const feeStructures = Array.from(structuresByType.values()).filter((fs) => fs.isMandatory);
 
     const totalDue = feeStructures.reduce((sum, fs) => {
       const override = fs.overrides[0];
@@ -103,7 +123,16 @@ export class StudentAccountService {
 
     const balance = Number(account.balance);
     let status = account.status;
-    if (account.isBlocked) status = STATUS_BLOCKED;
+    let isBlocked = account.isBlocked;
+
+    // RÈGLE MÉTIER : Vérification du seuil de blocage automatique
+    const settings = await this.prisma.financialSettings.findUnique({ where: { tenantId } });
+    if (settings && balance > Number(settings.blockingThreshold) && !isBlocked) {
+      isBlocked = true;
+      // Note: Le trigger 'trg_audit_account_blocking' créera automatiquement le log d'audit
+    }
+
+    if (isBlocked) status = STATUS_BLOCKED;
     else if (balance <= 0) status = STATUS_PAID;
     else {
       const now = new Date();
@@ -122,7 +151,7 @@ export class StudentAccountService {
 
     await this.prisma.studentAccount.update({
       where: { id: accountId },
-      data: { status, updatedAt: new Date() },
+      data: { status, isBlocked, updatedAt: new Date() },
     });
     return status;
   }

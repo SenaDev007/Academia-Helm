@@ -68,7 +68,9 @@ export default function OrionPedagogyPage() {
   const { academicYear } = useModuleContext();
   const [dashboard, setDashboard] = useState<OrionDashboard | null>(null);
   const [loading, setLoading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
 
   const loadDashboard = useCallback(async () => {
     if (!academicYear?.id) {
@@ -92,6 +94,20 @@ export default function OrionPedagogyPage() {
   useEffect(() => {
     loadDashboard();
   }, [loadDashboard]);
+
+  const handleRunAnalysis = async () => {
+    if (!academicYear?.id) return;
+    setAnalyzing(true);
+    try {
+      await pedagogyFetch(`/api/pedagogy/orion-advanced/analyze?academicYearId=${academicYear.id}`, { method: 'POST' });
+      await loadDashboard();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur analyse');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
 
   return (
     <ModuleContainer
@@ -128,7 +144,18 @@ export default function OrionPedagogyPage() {
                   Analyse temps-réel de la production pédagogique, des incidents et des tendances pour sécuriser la réussite de l'établissement.
                 </p>
               </div>
+              <div className="ml-auto">
+                <button
+                  onClick={handleRunAnalysis}
+                  disabled={analyzing || loading}
+                  className="px-4 py-2 rounded-xl bg-white text-indigo-900 font-bold text-sm hover:bg-blue-50 transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4 text-blue-600" />}
+                  Lancer l'analyse
+                </button>
+              </div>
             </motion.div>
+
 
             {error && (
               <div className="flex items-center gap-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">

@@ -27,16 +27,16 @@ export class StaffPrismaController {
   @Get()
   async findAllStaff(
     @GetTenant() tenant: any,
-    @SchoolLevelId() schoolLevelId: string,
     @Query('academicYearId') academicYearId?: string,
-    @Query('roleType') roleType?: string,
+    @Query('category') category?: string,
     @Query('status') status?: string,
+    @Query('levelAssigned') levelAssigned?: string,
   ) {
     return this.staffService.findAllStaff(tenant.id, {
       academicYearId,
-      schoolLevelId,
-      roleType,
+      category,
       status,
+      levelAssigned,
     });
   }
 
@@ -68,11 +68,6 @@ export class StaffPrismaController {
   @Get(':id/documents')
   async findStaffDocuments(@GetTenant() tenant: any, @Param('id') staffId: string) {
     return this.staffService.findStaffDocuments(staffId, tenant.id);
-  }
-
-  @Put('documents/:id/validate')
-  async validateDocument(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.staffService.validateDocument(id, tenant.id);
   }
 }
 

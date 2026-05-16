@@ -168,6 +168,226 @@ export class LabService {
     });
   }
 
+  // ============================================================================
+  // ÉQUIPEMENTS (EXTENSION)
+  // ============================================================================
+
+  async deleteEquipment(id: string, tenantId: string) {
+    const equipment = await this.prisma.labEquipment.findFirst({
+      where: { id, lab: { tenantId } },
+    });
+    if (!equipment) throw new NotFoundException(`Equipment with ID ${id} not found`);
+
+    return this.prisma.labEquipment.delete({ where: { id } });
+  }
+
+  // ============================================================================
+  // CONSOMMABLES (CONSUMABLES)
+  // ============================================================================
+
+  async findAllConsumables(tenantId: string, labId?: string) {
+    const where: any = { lab: { tenantId } };
+    if (labId) where.labId = labId;
+
+    return this.prisma.labConsumable.findMany({
+      where,
+      include: { lab: { select: { name: true } } },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async createConsumable(labId: string, tenantId: string, data: any) {
+    const lab = await this.prisma.lab.findFirst({ where: { id: labId, tenantId } });
+    if (!lab) throw new NotFoundException(`Lab with ID ${labId} not found`);
+
+    return this.prisma.labConsumable.create({
+      data: {
+        labId,
+        tenantId,
+        name: data.name,
+        category: data.category,
+        quantity: data.quantity || 0,
+        unit: data.unit || 'unit',
+        alertThreshold: data.alertThreshold || 10,
+        expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
+        location: data.location,
+      },
+    });
+  }
+
+  async recordStockMovement(consumableId: string, tenantId: string, data: any, performedBy: string) {
+    const consumable = await this.prisma.labConsumable.findFirst({
+      where: { id: consumableId, tenantId },
+    });
+    if (!consumable) throw new NotFoundException(`Consumable with ID ${consumableId} not found`);
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Enregistrer le mouvement
+      const movement = await tx.labStockMovement.create({
+        data: {
+          tenantId,
+          consumableId,
+          movementType: data.movementType, // IN | OUT | ADJUSTMENT
+          quantity: data.quantity,
+          reason: data.reason,
+          performedBy,
+          movementDate: new Date(),
+        },
+      });
+
+      // 2. Mettre à jour le stock
+      const newQuantity = data.movementType === 'IN' 
+        ? consumable.quantity + data.quantity 
+        : consumable.quantity - data.quantity;
+
+      await tx.labConsumable.update({
+        where: { id: consumableId },
+        data: { 
+          quantity: newQuantity,
+          status: newQuantity <= consumable.alertThreshold ? 'LOW_STOCK' : 'IN_STOCK'
+        },
+      });
+
+      return movement;
+    });
+  }
+
+  // ============================================================================
+  // SÉANCES PRATIQUES (SESSIONS)
+  // ============================================================================
+
+  async findAllSessions(tenantId: string, academicYearId: string) {
+    return this.prisma.labSession.findMany({
+      where: { tenantId, academicYearId },
+      include: { 
+        lab: { select: { name: true } },
+        teacher: { select: { firstName: true, lastName: true } }
+      },
+      orderBy: { sessionDate: 'desc' },
+    });
+  }
+
+  async createSession(tenantId: string, academicYearId: string, data: any, teacherId: string) {
+    return this.prisma.labSession.create({
+      data: {
+        tenantId,
+        academicYearId,
+        labId: data.labId,
+        teacherId,
+        classId: data.classId,
+        subjectId: data.subjectId,
+        theme: data.theme,
+        objectives: data.objectives,
+        competencies: data.competencies,
+        materialUsed: data.materialUsed || [],
+        consumablesUsed: data.consumablesUsed || [],
+        studentsPresent: data.studentsPresent,
+        studentsAbsent: data.studentsAbsent,
+        sessionDate: new Date(data.sessionDate),
+        startTime: data.startTime,
+        endTime: data.endTime,
+        report: data.report,
+        status: 'COMPLETED'
+      }
+    });
+  }
+
+  // ============================================================================
+  // MAINTENANCE
+  // ============================================================================
+
+  async findAllMaintenance(tenantId: string, equipmentId?: string) {
+    const where: any = { equipment: { lab: { tenantId } } };
+    if (equipmentId) where.equipmentId = equipmentId;
+
+    return this.prisma.labMaintenance.findMany({
+      where,
+      include: { equipment: { select: { name: true, lab: { select: { name: true } } } } },
+      orderBy: { maintenanceDate: 'desc' },
+    });
+  }
+
+  async scheduleMaintenance(equipmentId: string, tenantId: string, data: any) {
+    const equipment = await this.prisma.labEquipment.findFirst({
+      where: { id: equipmentId, lab: { tenantId } },
+    });
+    if (!equipment) throw new NotFoundException(`Equipment with ID ${equipmentId} not found`);
+
+    return this.prisma.labMaintenance.create({
+      data: {
+        tenantId,
+        equipmentId,
+        maintenanceDate: new Date(data.maintenanceDate),
+        maintenanceType: data.maintenanceType,
+        description: data.description,
+        cost: data.cost,
+        performedBy: data.performedBy,
+        status: 'PLANNED',
+      },
+    });
+  }
+
+  // ============================================================================
+  // DEMANDES D'ACHAT (PURCHASE REQUESTS)
+  // ============================================================================
+
+  async findAllPurchaseRequests(tenantId: string) {
+    return this.prisma.labPurchaseRequest.findMany({
+      where: { tenantId },
+      include: { requester: { select: { firstName: true, lastName: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async createPurchaseRequest(tenantId: string, data: any, requesterId: string) {
+    return this.prisma.labPurchaseRequest.create({
+      data: {
+        tenantId,
+        requesterId,
+        itemName: data.itemName,
+        itemType: data.itemType, // EQUIPMENT | CONSUMABLE
+        quantity: data.quantity,
+        estimatedCost: data.estimatedCost,
+        reason: data.reason,
+        status: 'PENDING',
+      },
+    });
+  }
+
+  async updatePurchaseRequestStatus(id: string, tenantId: string, status: string) {
+    return this.prisma.labPurchaseRequest.updateMany({
+      where: { id, tenantId },
+      data: { status },
+    });
+  }
+
+  // ============================================================================
+  // SÉCURITÉ & PARAMÈTRES
+  // ============================================================================
+
+  async findAllSafetyRules(tenantId: string, labId?: string) {
+    const where: any = { tenantId };
+    if (labId) where.labId = labId;
+
+    return this.prisma.labSafetyRule.findMany({
+      where,
+      include: { lab: { select: { name: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  async createSafetyRule(labId: string, tenantId: string, data: any) {
+    return this.prisma.labSafetyRule.create({
+      data: {
+        labId,
+        tenantId,
+        title: data.title,
+        description: data.description,
+        severity: data.severity || 'MANDATORY',
+      },
+    });
+  }
+
   async getLabStats(tenantId: string, academicYearId: string) {
     const labs = await this.prisma.lab.findMany({
       where: { tenantId, academicYearId, isActive: true },
@@ -197,7 +417,37 @@ export class LabService {
       utilizationRate: labs.length > 0
         ? (labs.reduce((sum, lab) => sum + lab.reservations.length, 0) / labs.length) * 100
         : 0,
+      lastUpdate: new Date()
     };
+  }
+
+  // ============================================================================
+  // RAPPORTS (REPORTS)
+  // ============================================================================
+
+  async findAllReports(tenantId: string, labId?: string) {
+    const where: any = { tenantId };
+    if (labId) where.labId = labId;
+
+    return this.prisma.labReport.findMany({
+      where,
+      include: { lab: { select: { name: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async createReport(tenantId: string, data: any, userId: string) {
+    return this.prisma.labReport.create({
+      data: {
+        tenantId,
+        labId: data.labId,
+        reportType: data.reportType,
+        periodStart: data.periodStart ? new Date(data.periodStart) : null,
+        periodEnd: data.periodEnd ? new Date(data.periodEnd) : null,
+        content: data.content || {},
+        generatedBy: userId,
+      },
+    });
   }
 }
 

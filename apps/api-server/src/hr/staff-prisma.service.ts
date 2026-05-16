@@ -21,43 +21,40 @@ export class StaffPrismaService {
   async createStaff(data: {
     tenantId: string;
     academicYearId?: string;
-    schoolLevelId?: string;
-    employeeNumber: string;
+    staffCode: string;
     firstName: string;
     lastName: string;
     gender?: string;
     dateOfBirth?: Date;
-    birthDate?: Date;
+    nationalId?: string;
+    cnssNumber?: string;
+    maritalStatus?: string;
+    numberOfChildren?: number;
     phone?: string;
     email?: string;
     address?: string;
     position?: string;
-    department?: string;
-    roleType?: string;
+    category?: string;
+    levelAssigned?: string;
     hireDate?: Date;
-    contractType?: string;
     status?: string;
-    salary?: number;
-    bankDetails?: any;
-    emergencyContact?: any;
-    qualifications?: string;
-    notes?: string;
+    cnssStatus?: string;
   }) {
-    // Vérifier l'unicité du numéro d'employé
+    // Vérifier l'unicité du code staff
     const existing = await this.prisma.staff.findUnique({
-      where: { employeeNumber: data.employeeNumber },
+      where: { staffCode: data.staffCode },
     });
 
     if (existing) {
-      throw new BadRequestException(`Staff with employee number ${data.employeeNumber} already exists`);
+      throw new BadRequestException(`Staff with code ${data.staffCode} already exists`);
     }
 
     return this.prisma.staff.create({
       data: {
         ...data,
-        birthDate: data.birthDate || data.dateOfBirth,
-        roleType: data.roleType || 'TEACHER',
+        category: data.category || 'PEDAGOGICAL',
         status: data.status || 'ACTIVE',
+        cnssStatus: data.cnssStatus || 'NOT_DECLARED',
       },
     });
   }
@@ -67,24 +64,23 @@ export class StaffPrismaService {
    */
   async findAllStaff(tenantId: string, filters?: {
     academicYearId?: string;
-    schoolLevelId?: string;
-    roleType?: string;
+    category?: string;
     status?: string;
+    levelAssigned?: string;
   }) {
     const where: any = { tenantId };
     
     if (filters?.academicYearId) {
       where.academicYearId = filters.academicYearId;
     }
-    // Niveau scolaire : filtrer sauf en mode 'ALL'
-    if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
-      where.schoolLevelId = filters.schoolLevelId;
-    }
-    if (filters?.roleType) {
-      where.roleType = filters.roleType;
+    if (filters?.category) {
+      where.category = filters.category;
     }
     if (filters?.status) {
       where.status = filters.status;
+    }
+    if (filters?.levelAssigned) {
+      where.levelAssigned = filters.levelAssigned;
     }
 
     return this.prisma.staff.findMany({
@@ -96,7 +92,7 @@ export class StaffPrismaService {
           take: 1,
         },
         documents: {
-          orderBy: { createdAt: 'desc' },
+          orderBy: { uploadedAt: 'desc' },
         },
       },
       orderBy: { lastName: 'asc' },
@@ -114,7 +110,7 @@ export class StaffPrismaService {
           orderBy: { startDate: 'desc' },
         },
         documents: {
-          orderBy: { createdAt: 'desc' },
+          orderBy: { uploadedAt: 'desc' },
         },
         attendance: {
           take: 30,
@@ -125,16 +121,15 @@ export class StaffPrismaService {
           orderBy: { createdAt: 'desc' },
         },
         trainings: {
-          orderBy: { dateCompleted: 'desc' },
+          orderBy: { createdAt: 'desc' },
         },
-        payrollItems: {
+        payrolls: {
           take: 12,
           orderBy: { createdAt: 'desc' },
           include: {
-            payroll: true,
+            payrollPeriod: true,
           },
         },
-        employeeCNSS: true,
       },
     });
 
@@ -165,7 +160,7 @@ export class StaffPrismaService {
 
     return this.prisma.staff.update({
       where: { id },
-      data: { status: 'ARCHIVED' },
+      data: { status: 'INACTIVE' }, // Conformément aux enums probables
     });
   }
 
@@ -178,16 +173,10 @@ export class StaffPrismaService {
    */
   async addStaffDocument(data: {
     tenantId: string;
-    academicYearId?: string;
-    schoolLevelId?: string;
     staffId: string;
-    documentType: string;
-    fileName: string;
-    filePath: string;
-    fileSize?: number;
-    mimeType?: string;
-    validated?: boolean;
-    uploadedBy?: string;
+    type: string;
+    fileUrl: string;
+    version?: number;
   }) {
     return this.prisma.staffDocument.create({
       data,
@@ -203,25 +192,7 @@ export class StaffPrismaService {
         staffId,
         tenantId,
       },
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  /**
-   * Valide un document
-   */
-  async validateDocument(id: string, tenantId: string) {
-    const document = await this.prisma.staffDocument.findFirst({
-      where: { id, tenantId },
-    });
-
-    if (!document) {
-      throw new NotFoundException(`Document with ID ${id} not found`);
-    }
-
-    return this.prisma.staffDocument.update({
-      where: { id },
-      data: { validated: true },
+      orderBy: { uploadedAt: 'desc' },
     });
   }
 }

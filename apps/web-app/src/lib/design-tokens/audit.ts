@@ -229,7 +229,7 @@ export function auditComponent(code: string, componentName: string): {
   const issues = allChecks.map(check => ({
     id: check.id,
     question: check.question,
-    severity: check.severity,
+    severity: check.severity as 'error' | 'warning' | 'info',
     passed: check.check(code),
   }));
   

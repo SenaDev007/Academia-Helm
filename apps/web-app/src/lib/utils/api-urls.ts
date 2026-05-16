@@ -19,7 +19,7 @@ import { getApiBaseUrl } from './urls';
  * Cette fonction est optimisée pour être utilisée dans les routes API
  * où process.env est disponible mais window ne l'est pas.
  * 
- * @returns URL de base de l'API (ex: https://api.academia-hub.com/api)
+ * @returns URL de base de l'API (ex: https://api.academiahelm.com/api)
  */
 export function getApiBaseUrlForRoutes(): string {
   // Utiliser le helper centralisé

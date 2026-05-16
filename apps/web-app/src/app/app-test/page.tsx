@@ -29,6 +29,7 @@ export default function AppTestPage() {
     role: 'SUPER_DIRECTOR',
     tenantId: 'test-tenant-id',
     permissions: [],
+    portal: 'PUBLIC',
     createdAt: new Date().toISOString(),
   };
 

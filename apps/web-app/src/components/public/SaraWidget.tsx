@@ -86,7 +86,7 @@ export default function SaraWidget() {
                 className="w-full bg-gray-100 border-none rounded-full py-2 pl-4 pr-10 text-xs focus:ring-1 focus:ring-blue-600 outline-none"
               />
               <button type="submit" className="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 bg-blue-600 text-white rounded-full flex items-center justify-center hover:bg-blue-700 transition-colors">
-                <AppIcon name="arrowRight" size="small" />
+                <AppIcon name="arrowRight" size="submenu" />
               </button>
             </div>
           </form>
@@ -96,7 +96,7 @@ export default function SaraWidget() {
           onClick={() => setIsOpen(true)}
           className="w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-blue-700 hover:scale-105 transition-all duration-300 relative group"
         >
-          <AppIcon name="messageSquare" size="large" />
+          <AppIcon name="messageSquare" size="dashboard" />
           <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>
           <div className="absolute right-full mr-3 bg-white text-gray-800 text-xs font-bold py-2 px-3 rounded-lg shadow-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none border border-gray-100">
             Besoin d'aide ? Discutez avec SARA

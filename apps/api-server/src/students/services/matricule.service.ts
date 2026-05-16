@@ -28,8 +28,8 @@ export class MatriculeService {
   }
 
   /**
-   * Génère le prochain matricule dans une transaction (à appeler depuis une tx existante).
-   * Incrémente la séquence, retourne le matricule au format CODE + YY + SEQ (ex. CSJ24000124).
+   * GÃ©nÃ¨re le prochain matricule dans une transaction (Ã  appeler depuis une tx existante).
+   * IncrÃ©mente la sÃ©quence, retourne le matricule au format <CODE_TENANT>-<ANNEE>-<AUTO_INCREMENT> ex. AH-2025-000124
    */
   async generateInTransaction(
     tx: Omit<Prisma.TransactionClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use'>,
@@ -42,9 +42,8 @@ export class MatriculeService {
       create: { tenantId, current: 1 },
       update: { current: { increment: 1 } },
     });
-    const padded = String(seq.current).padStart(SEQUENCE_PAD, '0');
-    const yy = String(enrollmentYear).slice(-2);
-    return `${schoolCode}${yy}${padded}`;
+    const padded = String(seq.current).padStart(6, '0'); // User example has 6 digits in one place, 4 in another. I'll use 6 as per typical ERP.
+    return `${schoolCode}-${enrollmentYear}-${padded}`;
   }
 
   /**

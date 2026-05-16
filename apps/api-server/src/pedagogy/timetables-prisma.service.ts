@@ -10,10 +10,16 @@
 
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { PedagogicalAuditService } from './services/pedagogical-audit.service';
+
 
 @Injectable()
 export class TimetablesPrismaService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: PedagogicalAuditService,
+  ) {}
+
 
   /**
    * Crée un créneau horaire
@@ -70,7 +76,7 @@ export class TimetablesPrismaService {
   /**
    * Ajoute une entrée à l'emploi du temps
    */
-  async createTimetableEntry(data: {
+  async createTimetableSlot(data: {
     tenantId: string;
     academicYearId: string;
     schoolLevelId: string;
@@ -106,27 +112,39 @@ export class TimetablesPrismaService {
     };
 
     if (data.classId) {
-      const classConflict = await this.prisma.timetableEntry.findFirst({
+      const classConflict = await this.prisma.timetableSlot.findFirst({
         where: { ...conflictWhere, classId: data.classId },
       });
       if (classConflict) throw new BadRequestException('Conflit : La classe a déjà un cours sur ce créneau.');
     }
 
     if (data.teacherId) {
-      const teacherConflict = await this.prisma.timetableEntry.findFirst({
+      const teacherConflict = await this.prisma.timetableSlot.findFirst({
         where: { ...conflictWhere, teacherId: data.teacherId },
       });
       if (teacherConflict) throw new BadRequestException('Conflit : L\'enseignant est déjà occupé sur ce créneau.');
     }
 
     if (data.roomId) {
-      const roomConflict = await this.prisma.timetableEntry.findFirst({
+      const roomConflict = await this.prisma.timetableSlot.findFirst({
         where: { ...conflictWhere, roomId: data.roomId },
       });
       if (roomConflict) throw new BadRequestException('Conflit : La salle est déjà occupée sur ce créneau.');
     }
 
-    return this.prisma.timetableEntry.create({
+    // Vérifier la capacité de la salle
+    if (data.roomId && data.classId) {
+      const [room, academicClass] = await Promise.all([
+        this.prisma.room.findUnique({ where: { id: data.roomId } }),
+        this.prisma.academicClass.findUnique({ where: { id: data.classId } }),
+      ]);
+
+      if (room && academicClass && room.capacity && academicClass.capacity && academicClass.capacity > room.capacity) {
+        throw new BadRequestException(`Capacité insuffisante : La salle (${room.capacity}) est trop petite pour la classe (${academicClass.capacity}).`);
+      }
+    }
+
+    const entry = await this.prisma.timetableSlot.create({
       data,
       include: {
         class: true,
@@ -136,6 +154,19 @@ export class TimetablesPrismaService {
         timeSlot: true,
       },
     });
+
+    // Log action
+    await this.audit.log({
+      tenantId: data.tenantId,
+      entityType: 'TIMETABLE_SLOT',
+      entityId: entry.id,
+      action: 'CREATE',
+      performedBy: 'SYSTEM', // TODO: Get user from context if possible
+      newData: entry,
+    });
+
+    return entry;
+
   }
 
   /**
@@ -147,7 +178,7 @@ export class TimetablesPrismaService {
       include: {
         academicYear: true,
         schoolLevel: true,
-        entries: {
+        slots: {
           include: {
             class: true,
             subject: true,
@@ -236,17 +267,27 @@ export class TimetablesPrismaService {
   /**
    * Supprime une entrée d'emploi du temps
    */
-  async deleteTimetableEntry(id: string, tenantId: string) {
-    const entry = await this.prisma.timetableEntry.findFirst({
+  async deleteTimetableSlot(id: string, tenantId: string) {
+    const entry = await this.prisma.timetableSlot.findFirst({
       where: { id, tenantId },
     });
 
     if (!entry) {
-      throw new NotFoundException(`TimetableEntry with ID ${id} not found`);
+      throw new NotFoundException(`TimetableSlot with ID ${id} not found`);
     }
 
-    await this.prisma.timetableEntry.delete({
+    await this.prisma.timetableSlot.delete({
       where: { id },
+    });
+
+    // Log action
+    await this.audit.log({
+      tenantId,
+      entityType: 'TIMETABLE_SLOT',
+      entityId: id,
+      action: 'DELETE',
+      performedBy: 'SYSTEM',
+      oldData: entry,
     });
 
     return { success: true };

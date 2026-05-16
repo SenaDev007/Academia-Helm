@@ -273,5 +273,69 @@ export class ExamsPrismaService {
       averageScore: averageScore._avg.score || 0,
     };
   }
+
+  /**
+   * Tableau de bord global des examens (KPIs agrégés)
+   * Endpoint: GET /api/exams/dashboard?academicYearId=...
+   */
+  async getDashboard(tenantId: string, academicYearId: string) {
+    const where = { tenantId, academicYearId };
+
+    const [totalExams, totalScores, validatedScores, reportCards] =
+      await Promise.all([
+        // Total examens planifiés
+        this.prisma.exam.count({ where }),
+
+        // Total notes saisies
+        this.prisma.examScore.count({ where }),
+
+        // Notes validées
+        this.prisma.examScore.count({ where: { ...where, isValidated: true } }),
+
+        // Bulletins générés
+        this.prisma.reportCard.findMany({
+          where,
+          select: { id: true, status: true },
+        }),
+      ]);
+
+    // Calcul de la moyenne globale sur les notes validées
+    const avgResult = await this.prisma.examScore.aggregate({
+      where: { ...where, isValidated: true },
+      _avg: { score: true },
+    });
+
+    const globalAverage = avgResult._avg.score
+      ? Number(avgResult._avg.score.toFixed(2))
+      : 0;
+
+    const missingGrades = totalScores === 0 ? 0 : totalScores - validatedScores;
+    const successRate =
+      validatedScores > 0
+        ? Math.round(
+            ((await this.prisma.examScore.count({
+              where: { ...where, isValidated: true, score: { gte: 10 } },
+            })) /
+              validatedScores) *
+              100,
+          )
+        : 0;
+
+    const generatedBulletins = reportCards.filter(
+      (r) => r.status === 'GENERATED' || r.status === 'PUBLISHED',
+    ).length;
+
+    return {
+      plannedCount: totalExams,
+      totalScores,
+      validatedScores,
+      missingGrades,
+      globalAverage,
+      successRate,
+      generatedBulletins,
+      lockedClasses: 0,   // À connecter à la table grade_locks si implémentée
+      orionAlerts: 0,     // À connecter au service OrionAlerts
+    };
+  }
 }
 

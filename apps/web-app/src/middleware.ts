@@ -57,15 +57,42 @@ function extractSubdomainFromRequest(request: NextRequest): string | null {
 
   if (!host) return null;
 
+  // En développement local, on peut forcer le subdomain via un header
   if (process.env.NODE_ENV === 'development') {
     const devSubdomain = request.headers.get('x-tenant-subdomain');
     if (devSubdomain) return devSubdomain;
   }
 
   const parts = host.split('.');
+  
+  // Liste des sous-domaines à ignorer (qui ne sont pas des tenants)
+  const ignoredSubdomains = ['www', 'dev', 'test', 'staging', 'preview', 'admin', 'api', 'portal'];
 
-  if (parts.length >= 3 && parts[0] !== 'www' && parts[0] !== 'localhost') {
-    return parts[0];
+  // Cas spécial pour localhost (développement avec sous-domaines type school.localhost)
+  if (host.includes('localhost') || host.includes('127.0.0.1')) {
+    // Si parts.length >= 2 (ex: school.localhost:3001)
+    if (parts.length >= 2 && !ignoredSubdomains.includes(parts[0]) && parts[0] !== 'localhost') {
+      return parts[0];
+    }
+    return null;
+  }
+
+  // Cas standard (Production/Preview) : school.academiahelm.com
+  // Si parts.length >= 3, on prend la première partie
+  if (parts.length >= 3) {
+    const subdomain = parts[0];
+    if (!ignoredSubdomains.includes(subdomain)) {
+      return subdomain;
+    }
+    
+    // Support multi-niveaux : school.dev.academiahelm.com
+    if (parts.length >= 4) {
+      // Si la deuxième partie est un domaine ignoré (ex: dev, test), 
+      // alors la première est quand même le tenant
+      if (ignoredSubdomains.includes(parts[1])) {
+        return parts[0];
+      }
+    }
   }
 
   return null;
@@ -127,8 +154,8 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const subdomain = extractSubdomainFromRequest(request);
 
-  // Routes Patronat : utiliser le middleware dédié
-  if (pathname.startsWith('/patronat')) {
+  // Routes Patronat (Academia Federis) : utiliser le middleware dédié
+  if (pathname.startsWith('/patronat') || pathname.startsWith('/federis')) {
     const { patronatMiddleware } = await import('./middleware-patronat');
     return patronatMiddleware(request);
   }
@@ -225,7 +252,7 @@ export async function middleware(request: NextRequest) {
           body: JSON.stringify({
             path: pathname,
             reason: 'NO_TENANT',
-            ipAddress: request.ip || request.headers.get('x-forwarded-for'),
+            ipAddress: (request as any).ip || request.headers.get('x-forwarded-for'),
             userAgent: request.headers.get('user-agent'),
             timestamp: new Date().toISOString(),
           }),
@@ -279,7 +306,7 @@ export async function middleware(request: NextRequest) {
               path: pathname,
               tenantIdentifier,
               reason: 'TENANT_NOT_FOUND',
-              ipAddress: request.ip || request.headers.get('x-forwarded-for'),
+              ipAddress: (request as any).ip || request.headers.get('x-forwarded-for'),
               userAgent: request.headers.get('user-agent'),
               timestamp: new Date().toISOString(),
             }),
@@ -318,7 +345,7 @@ export async function middleware(request: NextRequest) {
             tenantId: tenant.id,
             tenantSlug: tenant.slug,
             reason: 'SUCCESS',
-            ipAddress: request.ip || request.headers.get('x-forwarded-for'),
+            ipAddress: (request as any).ip || request.headers.get('x-forwarded-for'),
             userAgent: request.headers.get('user-agent'),
             userId: user?.id,
             timestamp: new Date().toISOString(),

@@ -8,10 +8,13 @@ import { SchoolPaymentAccount } from './entities/school-payment-account.entity';
 import { FedapayService } from './providers/fedapay.service';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 
+import { FinanceModule } from '../finance/finance.module';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([PaymentFlow, SchoolPaymentAccount]),
     AuditLogsModule,
+    FinanceModule,
   ],
   controllers: [PaymentFlowsController],
   providers: [

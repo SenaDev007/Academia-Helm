@@ -187,17 +187,49 @@ export class EmailService {
    */
   private async sendViaSendGrid(request: EmailRequest): Promise<{ success: boolean; messageId?: string }> {
     const sendGridApiKey = this.configService.get<string>('SENDGRID_API_KEY');
+    const fromEmail = request.from || this.configService.get<string>('SENDGRID_FROM_EMAIL') || 'noreply@academia-hub.com';
+    const fromName = this.configService.get<string>('SENDGRID_FROM_NAME') || 'Academia Helm';
 
     if (!sendGridApiKey) {
       throw new Error('SENDGRID_API_KEY not configured');
     }
 
-    // TODO: Installer @sendgrid/mail et implémenter
-    // const sgMail = require('@sendgrid/mail');
-    // sgMail.setApiKey(sendGridApiKey);
-    
-    this.logger.warn('SendGrid integration not yet implemented. Using mock.');
-    return await this.sendMock(request);
+    const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${sendGridApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        personalizations: [
+          {
+            to: Array.isArray(request.to) ? request.to.map((email) => ({ email })) : [{ email: request.to }],
+            subject: request.subject,
+          },
+        ],
+        from: { email: fromEmail, name: fromName },
+        content: [
+          {
+            type: request.html ? 'text/html' : 'text/plain',
+            value: request.html || request.text || '',
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      this.logger.error('SendGrid API error:', errorData);
+      throw new Error(`SendGrid error HTTP ${response.status}: ${JSON.stringify(errorData)}`);
+    }
+
+    const messageId = response.headers.get('x-message-id') || `sg-${Date.now()}`;
+    this.logger.log(`Email sent via SendGrid to ${request.to}: ${messageId}`);
+
+    return {
+      success: true,
+      messageId: messageId,
+    };
   }
 
   /**

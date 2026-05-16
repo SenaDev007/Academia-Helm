@@ -14,7 +14,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Image from 'next/image';
-import { Bell, RefreshCw, User, LogOut, Wifi, WifiOff, AlertCircle, ChevronDown, Settings, HelpCircle, School } from 'lucide-react';
+import { Bell, RefreshCw, User as UserIcon, LogOut, Wifi, WifiOff, AlertCircle, ChevronDown, Settings, HelpCircle, School } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import AcademicYearSelector from './AcademicYearSelector';
 import SchoolLevelSelector from './SchoolLevelSelector';
@@ -251,7 +251,7 @@ export default function PilotageTopBar({ user, tenant, onMenuClick }: PilotageTo
                 </div>
                 <div className="relative">
                   <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-blue-700 rounded-full flex items-center justify-center shadow-md group-hover:shadow-lg transition-shadow">
-                    <User className="w-5 h-5 text-white" />
+                    <UserIcon className="w-5 h-5 text-white" />
                   </div>
                   <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white"></div>
                 </div>

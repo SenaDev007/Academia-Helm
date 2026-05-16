@@ -58,7 +58,7 @@ const featureCardMotion = {
     rotateY: -3,
     boxShadow: '0 18px 42px rgba(11,47,115,0.16)',
   },
-  transition: { type: 'spring', stiffness: 240, damping: 18 },
+  transition: { type: 'spring', stiffness: 240, damping: 18 } as const,
 };
 
 const moduleCardMotion = {
@@ -67,7 +67,7 @@ const moduleCardMotion = {
     scale: 1.018,
     boxShadow: '0 20px 44px rgba(11,47,115,0.14)',
   },
-  transition: { type: 'spring', stiffness: 230, damping: 20 },
+  transition: { type: 'spring', stiffness: 230, damping: 20 } as const,
 };
 
 const pricingCardMotion = {
@@ -76,7 +76,7 @@ const pricingCardMotion = {
     scale: 1.012,
     boxShadow: '0 16px 34px rgba(0,0,0,0.22)',
   },
-  transition: { type: 'spring', stiffness: 220, damping: 18 },
+  transition: { type: 'spring', stiffness: 220, damping: 18 } as const,
 };
 
 function AnimatedHeadline({
@@ -471,7 +471,7 @@ export default function PremiumLandingPage() {
                 key={post.slug}
                 variants={fadeUp}
                 whileHover={{ y: -6, scale: 1.01 }}
-                transition={{ type: 'spring', stiffness: 240, damping: 18 }}
+                transition={{ type: 'spring', stiffness: 240, damping: 18 } as const}
               >
                 <Link
                   href={`/blog/${post.slug}`}

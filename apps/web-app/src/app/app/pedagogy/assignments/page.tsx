@@ -38,7 +38,7 @@ export default function AssignmentsPage() {
             icon: <Icon className="w-4 h-4" />,
           };
         }),
-        activeId: 'assignments',
+        activeModuleId: 'assignments',
       }}
       content={{
         layout: 'custom',

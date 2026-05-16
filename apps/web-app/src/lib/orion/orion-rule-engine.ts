@@ -25,6 +25,7 @@ import type {
   KpiHrMonthly,
   KpiPedagogyTerm,
   KpiSystemHealth,
+  DirectionKpiSummary,
 } from '@/types';
 
 /**

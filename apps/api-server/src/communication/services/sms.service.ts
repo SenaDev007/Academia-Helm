@@ -18,7 +18,7 @@ export interface SmsRequest {
   message: string;
 }
 
-export type SmsProvider = 'twilio' | 'gateway' | 'mock';
+export type SmsProvider = 'twilio' | 'gateway' | 'infobip' | 'mock';
 
 @Injectable()
 export class SmsService {
@@ -41,6 +41,8 @@ export class SmsService {
           return await this.sendViaTwilio(request);
         case 'gateway':
           return await this.sendViaGateway(request);
+        case 'infobip':
+          return await this.sendViaInfobip(request);
         case 'mock':
         default:
           return await this.sendMock(request);
@@ -134,6 +136,52 @@ export class SmsService {
     return {
       success: true,
       messageId: `gateway-${Date.now()}`,
+    };
+  }
+
+  /**
+   * Envoie via Infobip
+   */
+  private async sendViaInfobip(request: SmsRequest): Promise<{ success: boolean; messageId?: string }> {
+    const apiUrl = this.configService.get<string>('INFOBIP_API_URL');
+    const apiKey = this.configService.get<string>('INFOBIP_API_KEY');
+    const senderId = this.configService.get<string>('INFOBIP_SENDER_ID') || 'Academia';
+
+    if (!apiUrl || !apiKey) {
+      throw new Error('Configuration Infobip incomplète. Vérifiez INFOBIP_API_URL et INFOBIP_API_KEY');
+    }
+
+    const response = await fetch(`${apiUrl}/sms/2/text/advanced`, {
+      method: 'POST',
+      headers: {
+        Authorization: `App ${apiKey}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        messages: [
+          {
+            from: senderId,
+            destinations: [{ to: request.to }],
+            text: request.message,
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      this.logger.error('Infobip API error:', errorData);
+      throw new Error(`Infobip error HTTP ${response.status}: ${JSON.stringify(errorData)}`);
+    }
+
+    const result = await response.json();
+    const messageId = result.messages?.[0]?.messageId || `infobip-${Date.now()}`;
+    this.logger.log(`✅ SMS sent via Infobip to ${request.to}: ${messageId}`);
+
+    return {
+      success: true,
+      messageId: messageId,
     };
   }
 

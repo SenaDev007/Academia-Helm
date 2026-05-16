@@ -38,7 +38,7 @@ export default function TeachersPage() {
             icon: <Icon className="w-4 h-4" />,
           };
         }),
-        activeId: 'teachers-academic',
+        activeModuleId: 'teachers-academic',
       }}
       content={{
         layout: 'custom',

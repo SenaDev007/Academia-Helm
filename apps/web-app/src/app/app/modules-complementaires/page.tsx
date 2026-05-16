@@ -19,6 +19,7 @@ import {
   Video,
   TrendingUp,
   AlertTriangle,
+  Settings,
 } from 'lucide-react';
 import { ModuleHeader } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';

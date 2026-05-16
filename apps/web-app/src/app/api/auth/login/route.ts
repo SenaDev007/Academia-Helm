@@ -36,18 +36,15 @@ export async function POST(request: NextRequest) {
   try {
     const body: LoginCredentials = await request.json();
     
-    // Appeler le backend NestJS directement
     const apiBaseUrl = getApiBaseUrlForRoutes();
-    // S'assurer qu'on n'a pas de double /api dans l'URL
     const loginUrl = apiBaseUrl.endsWith('/api') 
       ? `${apiBaseUrl}/auth/login`
       : `${apiBaseUrl}/api/auth/login`;
     
     console.log('[Login API] Calling backend at:', loginUrl);
     
-    // Créer un AbortController pour gérer le timeout
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 secondes
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
     
     let backendResponse;
     try {
@@ -70,12 +67,8 @@ export async function POST(request: NextRequest) {
       clearTimeout(timeoutId);
       console.error('[Login API] Fetch error:', fetchError);
       
-      // Gérer les erreurs de connexion
       if (fetchError.code === 'EACCES' || fetchError.name === 'AggregateError') {
-        throw new Error(
-          'Impossible de se connecter au serveur backend. ' +
-          'Vérifiez que l\'API est démarrée sur le port 3000.'
-        );
+        throw new Error('Impossible de se connecter au serveur backend. Vérifiez que l\'API est démarrée sur le port 3000.');
       }
       
       if (fetchError.name === 'AbortError') {
@@ -93,9 +86,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          message:
-            errorData?.message ||
-            `Erreur ${backendResponse.status} lors de la connexion`,
+          message: errorData?.message || `Erreur ${backendResponse.status} lors de la connexion`,
         },
         { status: backendResponse.status },
       );
@@ -103,16 +94,12 @@ export async function POST(request: NextRequest) {
 
     const backendData: BackendLoginResponse = await backendResponse.json();
     
-    // Tenant : priorité backend > body (connexion avec école sélectionnée en mode dev)
     const tenantId = backendData.user.tenantId || body.tenant_id || '';
-    
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24h
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     const token = backendData.accessToken;
     
-    // Charger le tenant complet depuis l'API backend avec le token reçu
     let tenant = await loadTenantFromApi(tenantId, token);
     
-    // Fallback si le chargement échoue ou si pas de tenant (PLATFORM_OWNER)
     if (!tenant) {
       tenant = {
         id: tenantId,
@@ -126,20 +113,24 @@ export async function POST(request: NextRequest) {
       } as Tenant;
     }
 
-    // S'assurer que tenant.id est toujours renseigné quand on a un tenant_id (évite "contexte établissement manquant")
     const resolvedTenantId = tenant.id || tenantId;
     if (!tenant.id && resolvedTenantId) {
       tenant = { ...tenant, id: resolvedTenantId };
     }
 
-    const user = {
+    const user: any = {
       id: backendData.user.id,
       email: backendData.user.email,
       firstName: backendData.user.firstName || '',
       lastName: backendData.user.lastName || '',
       role: (backendData.user.role || 'USER') as any,
+      portal: (body.portal_type || 'SCHOOL') as any,
+      function: (backendData.user as any).function || '',
+      accreditations: (backendData.user as any).accreditations || [],
+      levelScopes: (backendData.user as any).levelScopes || [],
+      classScopes: (backendData.user as any).classScopes || [],
       tenantId: backendData.user.tenantId || resolvedTenantId,
-      permissions: [], // Sera chargé via /context/bootstrap
+      permissions: [],
       createdAt: new Date().toISOString(),
     };
 
@@ -150,24 +141,20 @@ export async function POST(request: NextRequest) {
       expiresAt,
     };
     
-    // Stocker la session dans les cookies
     await setServerSession(session);
     
     return NextResponse.json({
       success: true,
       user,
       tenant,
-      /** Pour pedagogyFetch / sync (Bearer) — aligné sur select-tenant */
       accessToken: backendData.accessToken,
       refreshToken: backendData.refreshToken,
-      /** Ligne PostgreSQL `sessions` (refresh JWT) */
       serverSessionId: backendData.serverSessionId,
       expiresAt,
     });
   } catch (error: any) {
     console.error('[Login API] Error:', error);
     
-    // Message d'erreur plus détaillé
     let errorMessage = 'Erreur lors de la connexion';
     
     if (error.name === 'AbortError' || error.name === 'TimeoutError') {
@@ -187,4 +174,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

@@ -21,12 +21,12 @@ export default function OfflineIndicator() {
       setTimeout(() => setShowConflict(false), 5000);
     };
 
-    if (typeof window !== 'undefined') {
-      window.addEventListener('sync-conflict', handleConflict as EventListener);
-      return () => {
-        window.removeEventListener('sync-conflict', handleConflict as EventListener);
-      };
-    }
+    if (typeof window === 'undefined') return;
+
+    window.addEventListener('sync-conflict', handleConflict as EventListener);
+    return () => {
+      window.removeEventListener('sync-conflict', handleConflict as EventListener);
+    };
   }, []);
 
   if (isOnline && !isSyncing && pendingCount === 0 && !showConflict) {

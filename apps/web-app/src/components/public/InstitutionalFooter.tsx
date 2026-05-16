@@ -70,7 +70,7 @@ export default function InstitutionalFooter() {
       y: 0,
       scale: 1,
       filter: 'blur(0px)',
-      transition: { duration: 0.36, ease: 'easeOut' },
+      transition: { duration: 0.36, ease: 'easeOut' as const },
     },
   };
 
@@ -134,7 +134,7 @@ export default function InstitutionalFooter() {
                   <span className="text-[10px] sm:text-xs md:text-sm text-amber-300 block -mt-1.5">Helm</span>
                 </div>
               </div>
-              <p className={`${typo('body-small')} text-white/90 mb-4 sm:mb-5 leading-relaxed max-w-md text-[12px] sm:text-sm`}>
+              <p className={`${typo('small')} text-white/90 mb-4 sm:mb-5 leading-relaxed max-w-md text-[12px] sm:text-sm`}>
                 La plateforme de pilotage éducatif nouvelle génération. Prenez le gouvernail de votre institution.
               </p>
 
@@ -241,10 +241,10 @@ export default function InstitutionalFooter() {
               <h3 className={`text-lg sm:text-xl text-white mb-4 sm:mb-5 font-semibold`}>Contact</h3>
               <div className="space-y-1.5 sm:space-y-2 mb-5 sm:mb-6">
                 <p className={cn(typo('base'), 'text-white font-medium')}>Support</p>
-                <a href="mailto:support@academiahub.com" className={cn(typo('body-small'), 'text-white/70 hover:text-gold-500 transition-colors')}>
+                <a href="mailto:support@academiahub.com" className={cn(typo('small'), 'text-white/70 hover:text-gold-500 transition-colors')}>
                   support@academiahub.com
                 </a>
-                <p className={cn(typo('body-small'), 'text-white/70')}>Zone d&apos;operation: Afrique de l&apos;Ouest</p>
+                <p className={cn(typo('small'), 'text-white/70')}>Zone d&apos;operation: Afrique de l&apos;Ouest</p>
               </div>
 
               <div className="pt-6 border-t border-blue-800">

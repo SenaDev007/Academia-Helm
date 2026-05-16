@@ -111,7 +111,7 @@ export default function MaterialsWorkspace() {
     try {
       await pedagogyFetch('/api/pedagogy/pedagogical-materials', {
         method: 'POST',
-        body: JSON.stringify(data)
+        body: data
       });
       loadMaterials();
       setModal('none');

@@ -355,12 +355,12 @@ export default function OnboardingWizard() {
 
   // Gérer le compteur pour renvoyer l'OTP
   useEffect(() => {
-    if (resendCooldown > 0) {
-      const timer = setTimeout(() => {
-        setResendCooldown(resendCooldown - 1);
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
+    if (resendCooldown <= 0) return;
+
+    const timer = setTimeout(() => {
+      setResendCooldown(resendCooldown - 1);
+    }, 1000);
+    return () => clearTimeout(timer);
   }, [resendCooldown]);
 
   // Vérifier les règles du mot de passe
@@ -1363,6 +1363,7 @@ export default function OnboardingWizard() {
       email: '',
       bilingual: false,
       schoolsCount: 1,
+      estimatedStudentCount: 0,
       preferredSubdomain: '',
       firstName: '',
       lastName: '',
@@ -2875,7 +2876,7 @@ export default function OnboardingWizard() {
 
                 {showCheckout && checkoutData ? (
                   <FedaPayCheckout
-                    publicKey={checkoutData.public_key ?? checkoutData.publicKey}
+                    publicKey={checkoutData.public_key}
                     transaction={checkoutData.transaction}
                     customer={checkoutData.customer ?? { email: '', lastname: '' }}
                     onComplete={handlePaymentComplete}

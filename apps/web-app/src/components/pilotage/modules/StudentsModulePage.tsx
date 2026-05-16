@@ -29,6 +29,15 @@ import {
   CreditCard,
   Share2,
   LayoutDashboard,
+  Fingerprint,
+  IdCard,
+  Globe,
+  Activity,
+  HeartPulse,
+  Archive,
+  MessageSquare,
+  GraduationCap,
+  BadgeCheck,
 } from 'lucide-react';
 import {
   ModuleContainer,
@@ -39,8 +48,23 @@ import {
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { formatGradeLabel } from '@/lib/utils';
 import EnrollmentsContent from '@/components/students/EnrollmentsContent';
+import AdmissionsContent from '@/components/students/AdmissionsContent';
 import StudentIdCardsSection from '@/components/students/StudentIdCardsSection';
 import StudentsModuleDashboard from '@/components/students/StudentsModuleDashboard';
+import StudentIdentityContent from '@/components/students/StudentIdentityContent';
+import StudentHistoryContent from '@/components/students/StudentHistoryContent';
+import StudentRegimeFinanceContent from '@/components/students/StudentRegimeFinanceContent';
+import StudentInteropContent from '@/components/students/StudentInteropContent';
+import StudentFamiliesContent from '@/components/students/StudentFamiliesContent';
+import StudentAssignmentsContent from '@/components/students/StudentAssignmentsContent';
+import StudentMovementsContent from '@/components/students/StudentMovementsContent';
+import StudentComplianceContent from '@/components/students/StudentComplianceContent';
+import StudentAnalyticsContent from '@/components/students/StudentAnalyticsContent';
+import StudentSettingsContent from '@/components/students/StudentSettingsContent';
+import StudentAuditContent from '@/components/students/StudentAuditContent';
+import StudentTransferContent from '@/components/students/StudentTransferContent';
+import StudentSaraAssistant from '@/components/students/StudentSaraAssistant';
+import { ArrowRightLeft } from 'lucide-react';
 
 // ============================================================================
 // TYPES
@@ -116,7 +140,7 @@ export default function StudentsModulePage() {
   });
   const [classesList, setClassesList] = useState<{ id: string; name: string }[]>([]);
   /** Onglet actif (Dashboard par défaut à l'ouverture du module) */
-  const [activeSubModuleId, setActiveSubModuleId] = useState<string>('dashboard');
+  const [activeSubModuleId, setActiveSubModuleId] = useState<string>('a-dashboard');
   const studentFormRef = useRef<HTMLFormElement>(null);
   const statsUnauthorizedRef = useRef(false);
   const isStatsLoadingRef = useRef(false);
@@ -430,13 +454,22 @@ export default function StudentsModulePage() {
           activeModuleId: activeSubModuleId,
           onModuleChange: setActiveSubModuleId,
           modules: [
-            { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-4 h-4" /> },
-            { id: 'a-admission', label: 'Admission & cycle de vie', icon: <UserPlus className="w-4 h-4" /> },
-            { id: 'e-documents-carte', label: 'Documents & carte scolaire', icon: <CreditCard className="w-4 h-4" /> },
-            { id: 'b-identite', label: 'Identité & relations', icon: <User className="w-4 h-4" /> },
-            { id: 'c-historique', label: 'Historique & multi-année', icon: <History className="w-4 h-4" /> },
-            { id: 'd-regimes-finance', label: 'Régimes & situation fin.', icon: <DollarSign className="w-4 h-4" /> },
-            { id: 'f-interop', label: 'Interopérabilité nationale', icon: <Share2 className="w-4 h-4" /> },
+            { id: 'dashboard', label: 'Tableau de Bord', icon: <LayoutDashboard className="w-4 h-4" /> },
+            { id: 'admissions', label: 'Admissions', icon: <UserPlus className="w-4 h-4" /> },
+            { id: 'enrollments', label: 'Inscriptions', icon: <GraduationCap className="w-4 h-4" /> },
+            { id: 'dossiers', label: 'Dossiers Élèves', icon: <FileText className="w-4 h-4" /> },
+            { id: 'families', label: 'Familles', icon: <User className="w-4 h-4" /> },
+            { id: 'assignments', label: 'Affectations', icon: <Share2 className="w-4 h-4" /> },
+            { id: 'movements', label: 'Mouvements', icon: <History className="w-4 h-4" /> },
+            { id: 'history', label: 'Historique Scolaire', icon: <Archive className="w-4 h-4" /> },
+            { id: 'finance', label: 'Régimes & Finance', icon: <DollarSign className="w-4 h-4" /> },
+            { id: 'cards', label: 'Cartes Scolaires', icon: <IdCard className="w-4 h-4" /> },
+            { id: 'compliance', label: 'Conformité', icon: <BadgeCheck className="w-4 h-4" /> },
+            { id: 'educmaster', label: 'EDUCMASTER', icon: <Globe className="w-4 h-4" /> },
+            { id: 'analytics', label: 'ORION & Stats', icon: <Activity className="w-4 h-4" /> },
+            { id: 'settings', label: 'Paramétrage', icon: <Edit className="w-4 h-4" /> },
+            { id: 'audit', label: 'Audit & Conformité', icon: <Fingerprint className="w-4 h-4" /> },
+            { id: 'transfers', label: 'Transferts & Mobilité', icon: <ArrowRightLeft className="w-4 h-4" /> },
           ],
         }}
         content={
@@ -451,221 +484,272 @@ export default function StudentsModulePage() {
                   />
                 ),
               }
-            : activeSubModuleId === 'a-admission'
+            : activeSubModuleId === 'admissions'
+            ? {
+                layout: 'default',
+                children: <AdmissionsContent />,
+              }
+            : activeSubModuleId === 'enrollments'
             ? {
                 layout: 'default',
                 children: <EnrollmentsContent />,
               }
-            : activeSubModuleId === 'e-documents-carte'
-              ? {
-                  layout: 'default',
-                  children: (
-                    <div className="space-y-4">
-                      <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
-                        <a
-                          href="/app/students/documents"
-                          className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 text-gray-700 text-sm font-medium"
-                        >
-                          <FileText className="w-4 h-4" />
-                          Documents administratifs
-                        </a>
-                      </div>
-                      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-                        <StudentIdCardsSection />
+            : activeSubModuleId === 'dossiers'
+            ? {
+                layout: 'default',
+                children: <StudentIdentityContent />,
+              }
+            : activeSubModuleId === 'families'
+            ? {
+                layout: 'default',
+                children: <StudentFamiliesContent />,
+              }
+            : activeSubModuleId === 'assignments'
+            ? {
+                layout: 'default',
+                children: <StudentAssignmentsContent />,
+              }
+            : activeSubModuleId === 'movements'
+            ? {
+                layout: 'default',
+                children: <StudentMovementsContent />,
+              }
+            : activeSubModuleId === 'history'
+            ? {
+                layout: 'default',
+                children: <StudentHistoryContent />,
+              }
+            : activeSubModuleId === 'finance'
+            ? {
+                layout: 'default',
+                children: <StudentRegimeFinanceContent />,
+              }
+            : activeSubModuleId === 'compliance'
+            ? {
+                layout: 'default',
+                children: <StudentComplianceContent />,
+              }
+            : activeSubModuleId === 'educmaster'
+            ? {
+                layout: 'default',
+                children: <StudentInteropContent />,
+              }
+            : activeSubModuleId === 'analytics'
+            ? {
+                layout: 'default',
+                children: <StudentAnalyticsContent />,
+              }
+            : activeSubModuleId === 'settings'
+            ? {
+                layout: 'default',
+                children: <StudentSettingsContent />,
+              }
+            : activeSubModuleId === 'audit'
+            ? {
+                layout: 'default',
+                children: <StudentAuditContent />,
+              }
+            : activeSubModuleId === 'transfers'
+            ? {
+                layout: 'default',
+                children: <StudentTransferContent />,
+              }
+            : activeSubModuleId === 'cards'
+            ? {
+                layout: 'default',
+                children: <StudentIdCardsSection />,
+              }
+
+            : {
+                layout: 'table',
+                filters: (
+                  <div className="flex items-center space-x-4">
+                    <div className="flex-1">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input
+                          type="text"
+                          placeholder="Rechercher un élève..."
+                          value={filters.search}
+                          onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
                       </div>
                     </div>
-                  ),
-                }
-              : {
-                  layout: 'table',
-                  filters: (
-            <div className="flex items-center space-x-4">
-              <div className="flex-1">
-                <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Rechercher un élève..."
-                  value={filters.search}
-                  onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              </div>
-              <select
-                value={filters.classId}
-                onChange={(e) => setFilters({ ...filters, classId: e.target.value })}
-                className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                aria-label="Filtrer par classe"
-              >
-                <option value="">Toutes les classes</option>
-                {classesList.map((c) => (
-                  <option key={c.id} value={c.id}>{formatGradeLabel(c.name)}</option>
-                ))}
-              </select>
-              <select
-                value={filters.status}
-                onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-                className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                aria-label="Filtrer par statut"
-              >
-                <option value="">Tous les statuts</option>
-                <option value="ACTIVE">Actif</option>
-                <option value="INACTIVE">Inactif</option>
-                <option value="GRADUATED">Diplômé</option>
-                <option value="TRANSFERRED">Transféré</option>
-                <option value="ARCHIVED">Archivé</option>
-              </select>
-              <select
-                value={filters.regimeType}
-                onChange={(e) => setFilters({ ...filters, regimeType: e.target.value })}
-                className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                aria-label="Filtrer par régime"
-              >
-                <option value="">Tous les régimes</option>
-                <option value="NORMAL">Normal</option>
-                <option value="TEACHER_CHILD">Enfant enseignant</option>
-                <option value="SCHOLARSHIP">Bourse</option>
-                <option value="SPECIAL">Spécial</option>
-              </select>
-              <select
-                value={filters.hasArrears}
-                onChange={(e) => setFilters({ ...filters, hasArrears: e.target.value })}
-                className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                aria-label="Filtrer par arriérés"
-              >
-                <option value="">Tous</option>
-                <option value="true">Avec arriérés</option>
-                <option value="false">Sans arriérés</option>
-              </select>
-            </div>
-          ),
-          toolbar: (
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-gray-600">
-                {students.length} élève{students.length > 1 ? 's' : ''} trouvé{students.length > 1 ? 's' : ''}
-          </div>
-              </div>
-          ),
-          isLoading,
-          emptyMessage: students.length === 0 ? 'Aucun élève trouvé' : undefined,
-          children: (
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Matricule
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Nom & Prénom
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Classe
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Statut
-                      </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                {students.map((student) => (
-                  <tr key={student.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
-                      {student.matricule ?? student.studentCode ?? 'N/A'}
-                    </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
-                          <User className="w-5 h-5 text-gray-600" />
-                        </div>
-                        <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900">
-                            {student.lastName} {student.firstName}
-                          </div>
-                          {student.dateOfBirth && (
-                            <div className="text-sm text-gray-500">
-                              {new Date(student.dateOfBirth).toLocaleDateString('fr-FR')}
-                            </div>
-                            )}
-                          </div>
-                          </div>
-                        </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {getCurrentClass(student)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span
-                            className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(
-                              student.status
-                            )}`}
-                          >
-                            {getStatusLabel(student.status)}
-                          </span>
-                        </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="flex items-center justify-end gap-1">
-                        <a
-                          href={`/app/students/${student.id}/dossier`}
-                          className="text-indigo-600 hover:text-indigo-900 p-1"
-                          title="Dossier"
-                        >
-                          <FileText className="w-4 h-4" />
-                        </a>
-                        <button
-                          onClick={async () => {
-                            try {
-                              const res = await fetch(`/api/students/${student.id}/export-educmaster`, { method: 'POST' });
-                              const json = await res.json();
-                              const blob = new Blob([JSON.stringify(json.data || json, null, 2)], { type: 'application/json' });
-                              const a = document.createElement('a');
-                              a.href = URL.createObjectURL(blob);
-                              a.download = `educmaster-${student.matricule ?? student.studentCode ?? student.id}.json`;
-                              a.click();
-                              URL.revokeObjectURL(a.href);
-                            } catch (e) {
-                              window.alert('Export impossible');
-                            }
-                          }}
-                          className="text-green-600 hover:text-green-900 p-1"
-                          title="Exporter EDUCMASTER"
-                        >
-                          <Download className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleView(student)}
-                          className="text-blue-600 hover:text-blue-900 p-1"
-                          title="Voir"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleEdit(student)}
-                          className="text-yellow-600 hover:text-yellow-900 p-1"
-                          title="Modifier"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        {student.status !== 'ARCHIVED' && (
-                          <button
-                            onClick={() => handleDelete(student)}
-                            className="text-red-600 hover:text-red-900 p-1"
-                            title="Archiver"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                        </td>
+                    <select
+                      value={filters.classId}
+                      onChange={(e) => setFilters({ ...filters, classId: e.target.value })}
+                      className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Toutes les classes</option>
+                      {classesList.map((c) => (
+                        <option key={c.id} value={c.id}>{formatGradeLabel(c.name)}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={filters.status}
+                      onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+                      className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Tous les statuts</option>
+                      <option value="ACTIVE">Actif</option>
+                      <option value="INACTIVE">Inactif</option>
+                      <option value="GRADUATED">Diplômé</option>
+                      <option value="TRANSFERRED">Transféré</option>
+                      <option value="ARCHIVED">Archivé</option>
+                    </select>
+                    <select
+                      value={filters.regimeType}
+                      onChange={(e) => setFilters({ ...filters, regimeType: e.target.value })}
+                      className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Tous les régimes</option>
+                      <option value="NORMAL">Normal</option>
+                      <option value="TEACHER_CHILD">Enfant enseignant</option>
+                      <option value="SCHOLARSHIP">Bourse</option>
+                      <option value="SPECIAL">Spécial</option>
+                    </select>
+                    <select
+                      value={filters.hasArrears}
+                      onChange={(e) => setFilters({ ...filters, hasArrears: e.target.value })}
+                      className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Tous les soldes</option>
+                      <option value="true">Avec arriérés</option>
+                      <option value="false">Sans arriérés</option>
+                    </select>
+                  </div>
+                ),
+                toolbar: (
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-gray-600">
+                      {students.length} élève{students.length > 1 ? 's' : ''} trouvé{students.length > 1 ? 's' : ''}
+                    </div>
+                  </div>
+                ),
+                isLoading,
+                emptyMessage: students.length === 0 ? 'Aucun élève trouvé' : undefined,
+                children: (
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Matricule
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Nom & Prénom
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Classe
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Statut
+                        </th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Actions
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-          ),
-        }}
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {students.map((student) => (
+                        <tr key={student.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
+                            {student.matricule ?? student.studentCode ?? 'N/A'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center">
+                              <div className="flex-shrink-0 h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
+                                <User className="w-5 h-5 text-gray-600" />
+                              </div>
+                              <div className="ml-4">
+                                <div className="text-sm font-medium text-gray-900">
+                                  {student.lastName} {student.firstName}
+                                </div>
+                                {student.dateOfBirth && (
+                                  <div className="text-sm text-gray-500">
+                                    {new Date(student.dateOfBirth).toLocaleDateString('fr-FR')}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {getCurrentClass(student)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span
+                              className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(
+                                student.status
+                              )}`}
+                            >
+                              {getStatusLabel(student.status)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <div className="flex items-center justify-end gap-1">
+                              <a
+                                href={`/app/students/${student.id}/dossier`}
+                                className="text-indigo-600 hover:text-indigo-900 p-1"
+                                title="Dossier"
+                              >
+                                <FileText className="w-4 h-4" />
+                              </a>
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    const res = await fetch(`/api/students/${student.id}/export-educmaster`, { method: 'POST' });
+                                    const json = await res.json();
+                                    const blob = new Blob([JSON.stringify(json.data || json, null, 2)], { type: 'application/json' });
+                                    const a = document.createElement('a');
+                                    a.href = URL.createObjectURL(blob);
+                                    a.download = `educmaster-${student.matricule ?? student.studentCode ?? student.id}.json`;
+                                    a.click();
+                                    URL.revokeObjectURL(a.href);
+                                  } catch (e) {
+                                    window.alert('Export impossible');
+                                  }
+                                }}
+                                className="text-green-600 hover:text-green-900 p-1"
+                                title="Exporter EDUCMASTER"
+                              >
+                                <Download className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleView(student)}
+                                className="text-blue-600 hover:text-blue-900 p-1"
+                                title="Voir"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleEdit(student)}
+                                className="text-yellow-600 hover:text-yellow-900 p-1"
+                                title="Modifier"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              {student.status !== 'ARCHIVED' && (
+                                <button
+                                  onClick={() => handleDelete(student)}
+                                  className="text-red-600 hover:text-red-900 p-1"
+                                  title="Archiver"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ),
+              }
+        }
       />
+
+      {/* Assistant Stratégique SARA */}
+      <StudentSaraAssistant />
 
       {/* Modals */}
       <FormModal

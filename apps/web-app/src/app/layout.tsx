@@ -16,6 +16,7 @@ import { BRAND } from '@/lib/brand';
 import { buildSiteVerification, getPublicSiteUrl, DEFAULT_OG_IMAGE_PATH } from '@/lib/seo';
 import { buildHreflangLanguages } from '@/lib/seo/locales';
 import { cn } from "@/lib/utils";
+import { ToastContainer } from '@/components/ui/toast';
 
 // ✅ POLICES LOCALES - Téléchargées depuis Google Fonts et stockées localement
 // 
@@ -175,6 +176,7 @@ export default function RootLayout({
       <body className={`${inter.className} antialiased overflow-x-hidden`}>
         {children}
         <InstallPromptWrapper />
+        <ToastContainer />
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-TG29Y7XL8S"
           strategy="afterInteractive"

@@ -36,6 +36,10 @@ interface ConsolidatedData {
   enrollment: {
     total: number;
     byLevel: LevelAggregation[];
+    metadata: {
+      calculationDate: string;
+      calculationMethod: string;
+    };
   };
   revenue: {
     total: number;

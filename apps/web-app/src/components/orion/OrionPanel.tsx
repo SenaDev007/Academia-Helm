@@ -233,7 +233,7 @@ export default function OrionPanel({ userRole }: OrionPanelProps) {
                       name="warning" 
                       size="alert" 
                       className="text-yellow-600 mt-0.5 flex-shrink-0"
-                      aria-hidden="true"
+                      aria-hidden={true}
                     />
                     <p className="text-sm text-yellow-800 font-medium">
                       Données insuffisantes pour répondre de manière complète.

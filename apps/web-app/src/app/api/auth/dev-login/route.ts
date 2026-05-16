@@ -139,6 +139,7 @@ export async function POST(_request: NextRequest) {
       firstName: backendData.user.firstName || '',
       lastName: backendData.user.lastName || '',
       role: (backendData.user.role || 'USER') as any,
+      portal: 'PUBLIC' as any,
       tenantId: backendData.user.tenantId || '',
       permissions: [], // Sera chargé via /context/bootstrap
       createdAt: new Date().toISOString(),

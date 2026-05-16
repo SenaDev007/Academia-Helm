@@ -17,7 +17,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 export interface TableAction {
   label: string;
@@ -56,10 +57,8 @@ export function TableActions({ actions, variant = 'dropdown' }: TableActionsProp
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm">
-          <MoreVertical className="w-4 h-4" />
-        </Button>
+      <DropdownMenuTrigger className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }))}>
+        <MoreVertical className="w-4 h-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         {actions.map((action, index) => {

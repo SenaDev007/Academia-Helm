@@ -344,6 +344,46 @@ export class PedagogyOrionService {
       });
     }
 
+    // 8. Ressources de la bibliothèque jamais consultées (Insight Institutionnel)
+    const unusedResourcesCount = await this.prisma.globalPedagogicalResource.count({
+      where: {
+        isPublished: true,
+        usages: { none: {} }
+      }
+    });
+
+    if (unusedResourcesCount > 0) {
+      alerts.push({
+        severity: 'LOW',
+        category: 'UNUSED_LIBRARY_RESOURCES',
+        title: 'Ressources de bibliothèque inutilisées',
+        description: `${unusedResourcesCount} ressource(s) de la bibliothèque n''ont jamais été consultées par aucun établissement`,
+        recommendation: 'Revoir la pertinence de ces ressources ou encourager leur utilisation lors des conseils pédagogiques.',
+        count: unusedResourcesCount,
+      });
+    }
+
+    // 9. Enseignants n'utilisant pas la bibliothèque (Par Tenant)
+    const teachersWithoutLibraryUsage = await this.prisma.staff.findMany({
+      where: {
+        tenantId,
+        category: 'PEDAGOGICAL',
+        status: 'ACTIVE',
+        globalResourceUsages: { none: {} }
+      }
+    });
+
+    if (teachersWithoutLibraryUsage.length > 0) {
+      alerts.push({
+        severity: 'MEDIUM',
+        category: 'TEACHERS_WITHOUT_LIBRARY_USAGE',
+        title: 'Enseignants sous-exploitants la bibliothèque',
+        description: `${teachersWithoutLibraryUsage.length} enseignant(s) actif(s) n'ont consulté aucune ressource globale ce trimestre`,
+        recommendation: 'Encourager les enseignants à s''appuyer sur les ressources institutionnelles pour enrichir leurs cours.',
+        count: teachersWithoutLibraryUsage.length,
+      });
+    }
+
     return alerts.sort((a, b) => {
       const severityOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
       return severityOrder[a.severity] - severityOrder[b.severity];

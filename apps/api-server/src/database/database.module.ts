@@ -1,4 +1,4 @@
-import { Module, Global } from '@nestjs/common';
+import { Module, Global, OnApplicationBootstrap } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PrismaService } from './prisma.service';
@@ -66,5 +66,13 @@ import { DatabaseTriggersBootstrapService } from './database-triggers-bootstrap.
   providers: [PrismaService, DatabaseTriggersBootstrapService],
   exports: [PrismaService],
 })
-export class DatabaseModule {}
+export class DatabaseModule implements OnApplicationBootstrap {
+  constructor(private readonly bootstrap: DatabaseTriggersBootstrapService) {}
+
+  async onApplicationBootstrap() {
+    // Exécuter les triggers critiques au démarrage
+    await this.bootstrap.runModule1Triggers();
+    await this.bootstrap.runFinanceTriggers();
+  }
+}
 

@@ -64,6 +64,7 @@ export async function POST(request: NextRequest) {
           firstName: data.user.firstName ?? '',
           lastName: data.user.lastName ?? '',
           role: data.user.role || 'USER',
+          portal: 'SCHOOL',
           tenantId: data.tenant.id,
           permissions: data.user.permissions || [],
           createdAt: data.user.createdAt || new Date().toISOString(),

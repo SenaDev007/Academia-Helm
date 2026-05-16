@@ -21,6 +21,33 @@ export class FinanceReportsController {
     return this.service.getKpi(tenantId, academicYearId);
   }
 
+  @Get('monthly-encaissements')
+  async getMonthlyEncaissements(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!academicYearId) return [];
+    return this.service.getMonthlyEncaissements(tenantId, academicYearId);
+  }
+
+  @Get('class-encaissements')
+  async getClassEncaissements(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!academicYearId) return [];
+    return this.service.getClassEncaissements(tenantId, academicYearId);
+  }
+
+  @Get('expense-by-category')
+  async getExpenseByCategory(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!academicYearId) return [];
+    return this.service.getExpenseByCategory(tenantId, academicYearId);
+  }
+
   @Post('export-log')
   async logExport(
     @TenantId() tenantId: string,

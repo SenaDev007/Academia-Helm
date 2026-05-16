@@ -52,6 +52,24 @@ CREATE TRIGGER trigger_ensure_student_fee_profile_before_fee
   EXECUTE FUNCTION ensure_student_fee_profile_before_fee();
 
 -- ----------------------------------------------------------------------------
+-- 4. MODULE 2 : BIBLIOTHÈQUE PÉDAGOGIQUE GLOBALE
+-- ----------------------------------------------------------------------------
+
+-- Suppression interdite si publiée
+DROP TRIGGER IF EXISTS trigger_prevent_library_resource_deletion ON global_pedagogical_resources;
+CREATE TRIGGER trigger_prevent_library_resource_deletion
+  BEFORE DELETE ON global_pedagogical_resources
+  FOR EACH ROW
+  EXECUTE FUNCTION prevent_published_resource_deletion();
+
+-- Blocage modification et auto-incrément version
+DROP TRIGGER IF EXISTS trigger_handle_library_resource_modification ON global_pedagogical_resources;
+CREATE TRIGGER trigger_handle_library_resource_modification
+  BEFORE UPDATE ON global_pedagogical_resources
+  FOR EACH ROW
+  EXECUTE FUNCTION handle_resource_modification();
+
+-- ----------------------------------------------------------------------------
 -- NOTES IMPORTANTES
 -- ----------------------------------------------------------------------------
 -- 

@@ -10,10 +10,16 @@
 
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { PedagogicalAuditService } from './pedagogical-audit.service';
+
 
 @Injectable()
 export class PedagogicalWorkflowService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: PedagogicalAuditService,
+  ) {}
+
 
   /**
    * Soumet un document pédagogique à la direction
@@ -57,13 +63,25 @@ export class PedagogicalWorkflowService {
     });
 
     // Mettre à jour le statut
-    return this.prisma.pedagogicalDocument.update({
+    const updated = await this.prisma.pedagogicalDocument.update({
       where: { id: documentId },
       data: {
         status: 'SUBMITTED',
         submittedAt: new Date(),
       },
     });
+
+    // Log action
+    await this.audit.log({
+      tenantId,
+      entityType: 'PEDAGOGICAL_DOCUMENT',
+      entityId: documentId,
+      action: 'SUBMIT',
+      performedBy: teacherId,
+      newData: { status: 'SUBMITTED' },
+    });
+
+    return updated;
   }
 
   /**
@@ -124,6 +142,16 @@ export class PedagogicalWorkflowService {
           },
         },
       },
+    });
+
+    // Log action
+    await this.audit.log({
+      tenantId,
+      entityType: 'PEDAGOGICAL_DOCUMENT',
+      entityId: documentId,
+      action: 'APPROVE',
+      performedBy: directorId,
+      newData: { status: 'APPROVED', comments },
     });
 
     return updated;
@@ -196,8 +224,19 @@ export class PedagogicalWorkflowService {
       },
     });
 
+    // Log action
+    await this.audit.log({
+      tenantId,
+      entityType: 'PEDAGOGICAL_DOCUMENT',
+      entityId: documentId,
+      action: 'REJECT',
+      performedBy: directorId,
+      newData: { status: 'REJECTED', rejectionReason, comments },
+    });
+
     return updated;
   }
+
 
   /**
    * Prend en compte un cahier de textes (Direction)

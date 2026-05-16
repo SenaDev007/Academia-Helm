@@ -32,6 +32,21 @@ export class ExamsPrismaController {
     });
   }
 
+  @Get('dashboard')
+  async getDashboard(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!academicYearId) {
+      return {
+        plannedCount: 0, totalScores: 0, validatedScores: 0,
+        missingGrades: 0, globalAverage: 0, successRate: 0,
+        generatedBulletins: 0, lockedClasses: 0, orionAlerts: 0,
+      };
+    }
+    return this.examsService.getDashboard(tenantId, academicYearId);
+  }
+
   @Get()
   async findAll(
     @TenantId() tenantId: string,

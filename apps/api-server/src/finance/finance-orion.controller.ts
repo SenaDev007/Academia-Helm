@@ -61,9 +61,6 @@ export class FinanceOrionController {
     );
   }
 
-  /**
-   * Génère les alertes pour les réductions tarifaires
-   */
   @Get('reductions/alerts')
   async getReductionAlerts(
     @CurrentUser() user: User,
@@ -74,5 +71,27 @@ export class FinanceOrionController {
       academicYearId,
     );
   }
+
+  /**
+   * Endpoint agrégé pour toutes les alertes ORION du Module Finance
+   */
+  @Get('alerts')
+  async getCombinedAlerts(
+    @CurrentUser() user: User,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    const tenantId = user.tenantId || '';
+    
+    // On agrège en parallèle pour la performance
+    const [notifAlerts, arrearAlerts, reductionAlerts, anomalies] = await Promise.all([
+      this.orionService.generateReceiptNotificationAlerts(tenantId, academicYearId),
+      this.orionService.generateArrearAlerts(tenantId, academicYearId),
+      this.orionService.generateReductionAlerts(tenantId, academicYearId),
+      this.orionService.detectAnomalies(tenantId, academicYearId),
+    ]);
+
+    return [...notifAlerts, ...arrearAlerts, ...reductionAlerts, ...anomalies];
+  }
 }
+
 

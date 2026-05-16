@@ -94,3 +94,17 @@ export const api: any = {
   },
 };
 
+/**
+ * Wrapper fetch-like pour axios
+ */
+export async function apiFetch<T>(url: string, options: any = {}): Promise<T> {
+  const method = options.method || 'GET';
+  const response = await apiClient({
+    url,
+    method,
+    data: options.body ? (typeof options.body === 'string' ? JSON.parse(options.body) : options.body) : undefined,
+    ...options,
+  });
+  return response.data;
+}
+

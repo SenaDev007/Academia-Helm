@@ -1,315 +1,238 @@
 /**
  * ============================================================================
- * HR ORION SERVICE - MODULE 5
+ * HR ORION SERVICE - MODULE 5 (SCHEMA-ALIGNED)
  * ============================================================================
- * 
- * Service ORION pour alertes fiscales et paie
- * 
+ *
+ * Moteur d'analyse ORION pour alertes RH/Paie/CNSS en temps réel.
+ * Aligné sur le schéma Prisma v2.
+ *
  * ============================================================================
  */
 
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { TaxService } from './tax.service';
-import { PayrollTaxService } from './payroll-tax.service';
 
 @Injectable()
 export class HROrionService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly taxService: TaxService,
-    private readonly payrollTaxService: PayrollTaxService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Récupère les KPIs fiscaux et de paie pour ORION
+   * KPIs globaux paie + CNSS pour le dashboard ORION
    */
   async getPayrollAndTaxKPIs(tenantId: string, academicYearId?: string) {
     const where: any = { tenantId };
-    if (academicYearId) {
-      where.academicYearId = academicYearId;
+    if (academicYearId) where.academicYearId = academicYearId;
+
+    const payrolls = await this.prisma.payroll.findMany({ where });
+
+    const totalLines = payrolls.length;
+    const validatedLines = payrolls.filter((p) => p.status === 'VALIDATED').length;
+    const paidLines = payrolls.filter((p) => p.status === 'PAID').length;
+    const draftLines = payrolls.filter((p) => p.status === 'DRAFT').length;
+
+    let totalGross = 0;
+    let totalNet = 0;
+    let totalCNSSEmployee = 0;
+    let totalCNSSEmployer = 0;
+    let totalTax = 0;
+
+    for (const p of payrolls) {
+      totalGross += Number(p.grossSalary);
+      totalNet += Number(p.netSalary);
+      totalCNSSEmployee += Number(p.employeeCNSS);
+      totalCNSSEmployer += Number(p.employerCNSS);
+      totalTax += Number(p.taxWithheld);
     }
 
-    // Statistiques de paie
-    const payrolls = await this.prisma.payroll.findMany({
-      where,
-      include: {
-        items: {
-          include: {
-            taxWithholdings: true,
-          },
-        },
-      },
-    });
+    const deductionRate =
+      totalGross > 0 ? ((totalGross - totalNet) / totalGross) * 100 : 0;
 
-    const totalPayrolls = payrolls.length;
-    const validatedPayrolls = payrolls.filter((p) => p.status === 'VALIDATED').length;
-    const paidPayrolls = payrolls.filter((p) => p.status === 'PAID').length;
-    
-    const totalGrossSalary = payrolls.reduce(
-      (sum, p) =>
-        sum +
-        p.items.reduce((s, i) => s + Number(i.grossSalary || 0), 0),
-      0,
-    );
-    
-    const totalNetSalary = payrolls.reduce(
-      (sum, p) =>
-        sum +
-        p.items.reduce((s, i) => s + Number(i.netSalary || 0), 0),
-      0,
-    );
-
-    // Statistiques fiscales
-    const taxStats = await this.taxService.getTaxStats(tenantId, academicYearId);
-
-    // Calcul des ratios
-    const averageTaxRate = taxStats.averageTaxRate;
-    const totalDeductions = totalGrossSalary - totalNetSalary;
-    const deductionRate = totalGrossSalary > 0 
-      ? (totalDeductions / totalGrossSalary) * 100 
-      : 0;
-
-    // KPIs par sous-module
     return {
       payroll: {
-        totalPayrolls,
-        validatedPayrolls,
-        paidPayrolls,
-        totalGrossSalary,
-        totalNetSalary,
-        totalDeductions,
+        totalLines,
+        validatedLines,
+        paidLines,
+        draftLines,
+        totalGross,
+        totalNet,
+        totalCNSSEmployee,
+        totalCNSSEmployer,
+        totalTax,
         deductionRate: Math.round(deductionRate * 100) / 100,
-        validationRate: totalPayrolls > 0 
-          ? (validatedPayrolls / totalPayrolls) * 100 
-          : 0,
-        paymentRate: validatedPayrolls > 0 
-          ? (paidPayrolls / validatedPayrolls) * 100 
-          : 0,
       },
-      tax: {
-        totalWithholdings: taxStats.totalWithholdings,
-        totalTaxableAmount: taxStats.totalTaxableAmount,
-        totalWithheldAmount: taxStats.totalWithheldAmount,
-        averageTaxRate: Math.round(averageTaxRate * 100) / 100,
-        byTaxType: taxStats.byTaxType,
-      },
-      alerts: await this.generateAlerts(tenantId, academicYearId),
+      alerts: await this.generateAlerts(tenantId),
     };
   }
 
   /**
-   * Génère les alertes ORION pour la paie et la fiscalité
+   * Génère les alertes ORION pour la paie, les contrats et la conformité sociale
    */
-  async generateAlerts(tenantId: string, academicYearId?: string) {
-    const alerts: Array<{
-      severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
-      category: string;
-      title: string;
-      description: string;
-      recommendation?: string;
-      count?: number;
-    }> = [];
+  async generateAlerts(tenantId: string) {
+    const alerts: any[] = [];
 
-    const where: any = { tenantId };
-    if (academicYearId) {
-      where.academicYearId = academicYearId;
-    }
+    // Récupérer le code pays du tenant
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      include: { country: true }
+    });
+    const countryCode = tenant?.country?.code || 'BJ';
+    
+    const socialLabels: Record<string, string> = {
+      'BJ': 'CNSS',
+      'TG': 'CNSS',
+      'SN': 'IPRES',
+      'CI': 'CNPS',
+      'ML': 'INPS',
+      'BF': 'CNSS',
+    };
+    const socialLabel = socialLabels[countryCode] || 'Sécurité Sociale';
 
-    // 1. Paies validées sans calcul fiscal
-    const payrolls = await this.prisma.payroll.findMany({
+    // ── 1. Agents actifs CDI sans numéro social ──────────────────────────────
+    const agentsSansCNSS = await this.prisma.staff.findMany({
       where: {
-        ...where,
-        status: 'VALIDATED',
+        tenantId,
+        status: 'ACTIVE',
+        cnssNumber: null,
+        contracts: { some: { status: 'ACTIVE', type: 'CDI' } },
       },
-      include: {
-        items: {
-          include: {
-            taxWithholdings: true,
-          },
-        },
-      },
+      select: { id: true, firstName: true, lastName: true },
     });
 
-    const payrollsWithoutTax = payrolls.filter((p) => {
-      const hasItemsWithoutTax = p.items.some(
-        (item) =>
-          Number(item.taxableAmount) > 0 &&
-          !item.taxWithholdings.some((w) => w.taxType === 'IRPP'),
-      );
-      return hasItemsWithoutTax;
-    });
-
-    if (payrollsWithoutTax.length > 0) {
-      alerts.push({
-        severity: 'CRITICAL',
-        category: 'PAYROLL_TAX',
-        title: 'Paies validées sans calcul fiscal',
-        description: `${payrollsWithoutTax.length} paie(s) validée(s) sans calcul IRPP alors que le montant imposable > 0`,
-        recommendation:
-          'Recalculer les paies avec les retenues fiscales avant validation',
-        count: payrollsWithoutTax.length,
-      });
-    }
-
-    // 2. Paies validées sans déclaration CNSS
-    const payrollsWithoutCNSS = payrolls.filter((p) => {
-      const hasItemsWithoutCNSS = p.items.some(
-        (item) => Number(item.grossSalary) > 0 && Number(item.cnssEmployee) === 0,
-      );
-      return hasItemsWithoutCNSS;
-    });
-
-    if (payrollsWithoutCNSS.length > 0) {
-      alerts.push({
-        severity: 'CRITICAL',
-        category: 'PAYROLL_CNSS',
-        title: 'Paies validées sans déclaration CNSS',
-        description: `${payrollsWithoutCNSS.length} paie(s) validée(s) sans calcul CNSS alors que le brut > 0`,
-        recommendation:
-          'Recalculer les paies avec les charges CNSS avant validation',
-        count: payrollsWithoutCNSS.length,
-      });
-    }
-
-    // 3. Retenue fiscale manquante
-    const itemsWithTaxableAmount = await this.prisma.payrollItem.findMany({
-      where: {
-        ...where,
-        taxableAmount: { gt: 0 },
-      },
-      include: {
-        taxWithholdings: true,
-      },
-    });
-
-    const itemsWithoutIRPP = itemsWithTaxableAmount.filter(
-      (item) => !item.taxWithholdings.some((w) => w.taxType === 'IRPP'),
-    );
-
-    if (itemsWithoutIRPP.length > 0) {
+    if (agentsSansCNSS.length > 0) {
       alerts.push({
         severity: 'HIGH',
-        category: 'TAX_MISSING',
-        title: 'Retenue fiscale manquante',
-        description: `${itemsWithoutIRPP.length} item(s) de paie avec montant imposable > 0 sans retenue IRPP`,
-        recommendation:
-          'Calculer et enregistrer les retenues fiscales pour tous les items de paie',
-        count: itemsWithoutIRPP.length,
+        category: 'COMPLIANCE',
+        title: `Numéros ${socialLabel} manquants`,
+        description: `${agentsSansCNSS.length} agent(s) CDI sans numéro ${socialLabel} enregistré.`,
+        recommendation: 'Mettre à jour les fiches personnel pour conformité légale.',
+        count: agentsSansCNSS.length,
       });
     }
 
-    // 4. Masse salariale anormale
-    const last3Months = payrolls.slice(0, 3);
-    if (last3Months.length >= 2) {
-      const averages = last3Months.map((p) =>
-        p.items.reduce((sum, i) => sum + Number(i.netSalary || 0), 0),
-      );
-      const currentAverage = averages[0];
-      const previousAverage = averages.slice(1).reduce((sum, avg) => sum + avg, 0) / (averages.length - 1);
+    // ── 2. Contrats expirant dans 30 jours ────────────────────────────────
+    const thirtyDays = new Date();
+    thirtyDays.setDate(thirtyDays.getDate() + 30);
 
-      if (previousAverage > 0) {
-        const variation = ((currentAverage - previousAverage) / previousAverage) * 100;
-        if (Math.abs(variation) > 30) {
-          alerts.push({
-            severity: 'MEDIUM',
-            category: 'PAYROLL_ANOMALY',
-            title: 'Masse salariale anormale',
-            description: `Variation de ${variation > 0 ? '+' : ''}${Math.round(variation * 100) / 100}% de la masse salariale par rapport aux mois précédents`,
-            recommendation:
-              'Vérifier les changements dans la structure salariale ou les effectifs',
-            count: 1,
-          });
-        }
-      }
-    }
-
-    // 5. Retards administratifs répétés
-    const unpaidPayrolls = await this.prisma.payroll.findMany({
+    const expiringContracts = await this.prisma.contract.findMany({
       where: {
-        ...where,
-        status: 'VALIDATED',
-        paidAt: null,
+        tenantId,
+        status: 'ACTIVE',
+        endDate: { gt: new Date(), lte: thirtyDays },
+      },
+      include: {
+        staff: { select: { firstName: true, lastName: true } },
       },
     });
 
-    if (unpaidPayrolls.length > 2) {
+    if (expiringContracts.length > 0) {
       alerts.push({
         severity: 'MEDIUM',
-        category: 'PAYROLL_DELAY',
-        title: 'Retards administratifs répétés',
-        description: `${unpaidPayrolls.length} paie(s) validée(s) mais non payées`,
-        recommendation:
-          'Planifier le paiement des paies validées pour respecter les délais légaux',
-        count: unpaidPayrolls.length,
+        category: 'CONTRACT_EXPIRATION',
+        title: 'Contrats expirant bientôt',
+        description: `${expiringContracts.length} contrat(s) se terminent dans moins de 30 jours.`,
+        recommendation: 'Préparer les avenants ou renouvellements.',
+        count: expiringContracts.length,
+        details: expiringContracts.map((c) => ({
+          name: `${c.staff.firstName} ${c.staff.lastName}`,
+          endDate: c.endDate,
+          type: c.type,
+        })),
       });
     }
 
-    // 6. Incohérence brut/net
-    const itemsWithInconsistency = await this.prisma.payrollItem.findMany({
+    // ── 3. Lignes de paie DRAFT depuis > 5 jours ─────────────────────────
+    const fiveDaysAgo = new Date();
+    fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
+
+    const staleDraftPayrolls = await this.prisma.payroll.count({
       where: {
-        ...where,
+        tenantId,
+        status: 'DRAFT',
+        createdAt: { lte: fiveDaysAgo },
       },
     });
 
-    const inconsistentItems = itemsWithInconsistency.filter((item) => {
-      const gross = Number(item.grossSalary || 0);
-      const deductions = Number(item.totalDeductions || 0);
-      const net = Number(item.netSalary || 0);
-      const calculatedNet = gross - deductions;
-      const diff = Math.abs(net - calculatedNet);
-      return diff > 0.01; // Tolérance de 0.01 FCFA
-    });
-
-    if (inconsistentItems.length > 0) {
+    if (staleDraftPayrolls > 0) {
       alerts.push({
-        severity: 'HIGH',
-        category: 'PAYROLL_CALCULATION',
-        title: 'Incohérence brut/net',
-        description: `${inconsistentItems.length} item(s) de paie avec incohérence entre brut, retenues et net`,
-        recommendation:
-          'Recalculer les items de paie pour corriger les incohérences',
-        count: inconsistentItems.length,
+        severity: 'MEDIUM',
+        category: 'PAYROLL_PENDING',
+        title: 'Paie en attente de calcul',
+        description: `${staleDraftPayrolls} ligne(s) de paie non calculées depuis plus de 5 jours.`,
+        recommendation: 'Lancer le calcul fiscal (CNSS + IRPP) pour finaliser la paie.',
+        count: staleDraftPayrolls,
       });
     }
 
-    // 7. Évolution anormale des charges fiscales
-    const last6Months = payrolls.slice(0, 6);
-    if (last6Months.length >= 3) {
-      const taxAmounts = last6Months.map((p) =>
-        p.items.reduce(
-          (sum, i) =>
-            sum +
-            i.taxWithholdings.reduce((s, w) => s + Number(w.withheldAmount || 0), 0),
-          0,
-        ),
-      );
+    // ── 4. Aucun taux social configuré pour ce tenant ───────────────────────
+    const payrollRate = await this.prisma.payrollRate.findFirst({
+      where: {
+        tenantId,
+        effectiveFrom: { lte: new Date() },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gte: new Date() } }],
+      },
+    });
 
-      if (taxAmounts.length >= 2) {
-        const currentTax = taxAmounts[0];
-        const previousTax = taxAmounts.slice(1).reduce((sum, tax) => sum + tax, 0) / (taxAmounts.length - 1);
-
-        if (previousTax > 0) {
-          const taxVariation = ((currentTax - previousTax) / previousTax) * 100;
-          if (Math.abs(taxVariation) > 25) {
-            alerts.push({
-              severity: 'LOW',
-              category: 'TAX_VARIATION',
-              title: 'Évolution anormale des charges fiscales',
-              description: `Variation de ${taxVariation > 0 ? '+' : ''}${Math.round(taxVariation * 100) / 100}% des charges fiscales`,
-              recommendation:
-                'Vérifier les changements dans les barèmes fiscaux ou la structure salariale',
-              count: 1,
-            });
-          }
-        }
-      }
+    if (!payrollRate) {
+      alerts.push({
+        severity: 'CRITICAL',
+        category: 'CONFIGURATION',
+        title: `Taux ${socialLabel} non configuré`,
+        description: `Aucun taux ${socialLabel} actif trouvé pour cet établissement.`,
+        recommendation: `Configurer les taux ${socialLabel} dans les paramètres RH.`,
+      });
     }
 
-    return alerts.sort((a, b) => {
-      const severityOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-      return severityOrder[a.severity] - severityOrder[b.severity];
+    // ── 5. Déclaration sociale du mois dernier non finalisée ────────────────
+    const lastMonthEnd = new Date();
+    lastMonthEnd.setDate(0); // dernier jour du mois précédent
+    const lastMonthStart = new Date(lastMonthEnd.getFullYear(), lastMonthEnd.getMonth(), 1);
+
+    const lastMonthDeclaration = await this.prisma.cNSSDeclaration.findFirst({
+      where: {
+        tenantId,
+        periodStart: { gte: lastMonthStart },
+        periodEnd: { lte: lastMonthEnd },
+      },
     });
+
+    if (!lastMonthDeclaration || lastMonthDeclaration.status === 'DRAFT') {
+      alerts.push({
+        severity: 'HIGH',
+        category: 'CNSS_COMPLIANCE',
+        title: `Déclaration ${socialLabel} mensuelle manquante`,
+        description: `La déclaration ${socialLabel} de ${lastMonthStart.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })} n'est pas finalisée.`,
+        recommendation: `Générer et soumettre la déclaration nominative ${socialLabel}.`,
+      });
+    }
+
+    return alerts;
+  }
+
+  /**
+   * KPIs RH généraux (pour le dashboard principal)
+   */
+  async getHrKPIs(tenantId: string, academicYearId?: string) {
+    const where: any = { tenantId };
+    if (academicYearId) where.academicYearId = academicYearId;
+
+    const [
+      totalStaff,
+      activeStaff,
+      pendingLeaves,
+      activeContracts,
+    ] = await Promise.all([
+      this.prisma.staff.count({ where: { tenantId } }),
+      this.prisma.staff.count({ where: { tenantId, status: 'ACTIVE' } }),
+      this.prisma.leaveRequest.count({ where: { tenantId, status: 'PENDING' } }),
+      this.prisma.contract.count({ where: { tenantId, status: 'ACTIVE' } }),
+    ]);
+
+    return {
+      totalStaff,
+      activeStaff,
+      pendingLeaves,
+      activeContracts,
+      alerts: await this.generateAlerts(tenantId),
+    };
   }
 }
-

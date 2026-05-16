@@ -69,7 +69,7 @@ export default function AtlasChatContainer() {
         {messages.length === 0 && !isLoading && (
           <div className="flex flex-col items-center justify-center h-full text-center p-8">
             <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
-              <AppIcon name="cpu" size="large" className="text-blue-600" />
+              <AppIcon name="cpu" size="dashboard" className="text-blue-600" />
             </div>
             <h3 className="text-lg font-semibold text-gray-900">Bonjour, je suis ATLAS</h3>
             <p className="text-gray-600 max-w-md mt-2">

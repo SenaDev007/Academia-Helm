@@ -24,6 +24,8 @@ import {
   History,
   ArrowRightLeft,
   Users,
+  Lock,
+  Shield,
 } from 'lucide-react';
 import { formatGradeLabel } from '@/lib/utils';
 
@@ -412,33 +414,57 @@ export default function StudentDossierSection({ studentId }: { studentId: string
               </div>
               <div>
                 {dossier.academicRecords.length === 0 ? (
-                  <p className="text-gray-600">Aucun enregistrement académique</p>
+                  <p className="text-gray-600 text-sm italic">Aucun enregistrement acadÃ©mique disponible.</p>
                 ) : (
                   <div className="space-y-4">
                     {dossier.academicRecords.map((record) => (
-                      <div key={record.id} className="bg-gray-50 rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="font-semibold text-gray-900">{record.academicYear.name}</h4>
-                          <span className="text-sm text-gray-600">{formatGradeLabel(record.class?.name) || 'Non affecté'}</span>
+                      <div key={record.id} className={`rounded-xl border p-5 transition-all ${
+                        record.isLocked ? 'bg-gray-50 border-gray-200' : 'bg-white border-blue-200 shadow-sm'
+                      }`}>
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold text-gray-900">{record.academicYear?.label || record.academicYear?.name}</h4>
+                            {record.isLocked && (
+                              <span className="flex items-center gap-1 px-2 py-0.5 bg-gray-200 text-gray-600 text-[10px] font-bold rounded uppercase">
+                                <Lock className="w-3 h-3" /> ArchivÃ© & ScellÃ©
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-lg">
+                            {formatGradeLabel(record.class?.name) || 'Non affectÃ©'}
+                          </span>
                         </div>
-                        <div className="grid grid-cols-3 gap-4 text-sm">
-                          {record.averageScore && (
-                            <div>
-                              <span className="text-gray-600">Moyenne: </span>
-                              <span className="font-medium">{record.averageScore}</span>
-                            </div>
-                          )}
-                          {record.rank && (
-                            <div>
-                              <span className="text-gray-600">Rang: </span>
-                              <span className="font-medium">{record.rank}</span>
-                            </div>
-                          )}
-                          <div>
-                            <span className="text-gray-600">Statut: </span>
-                            <span className="font-medium">{record.enrollmentStatus}</span>
+                        
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <div className="space-y-1">
+                            <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Moyenne Annuelle</p>
+                            <p className="text-lg font-black text-gray-900">{record.averageScore ? `${record.averageScore}/20` : '—'}</p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Rang</p>
+                            <p className="text-lg font-black text-gray-900">{record.rank ? `${record.rank}${record.rank === 1 ? 'er' : 'Ã¨me'}` : '—'}</p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">DÃ©cision Finale</p>
+                            <span className={`inline-block px-2 py-1 rounded text-xs font-black uppercase ${
+                              record.decision === 'PROMOTED' ? 'bg-green-100 text-green-700' :
+                              record.decision === 'REPEATED' ? 'bg-amber-100 text-amber-700' :
+                              'bg-gray-100 text-gray-600'
+                            }`}>
+                              {record.decision || 'EN ATTENTE'}
+                            </span>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">AssiduitÃ©</p>
+                            <p className="text-sm font-bold text-gray-700">{record.totalAbsences || 0} absence(s)</p>
                           </div>
                         </div>
+
+                        {record.councilComment && (
+                          <div className="mt-4 p-3 bg-white border border-gray-100 rounded-lg text-sm text-gray-600 italic">
+                            &ldquo;{record.councilComment}&rdquo;
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -580,33 +606,47 @@ export default function StudentDossierSection({ studentId }: { studentId: string
                     )}
                   </div>
                   <div className="space-y-4">
-                    <h4 className="font-medium text-gray-700 mb-2">Journal d&apos;audit (Module 1)</h4>
-                    {auditData && auditData.length > 0 ? (
-                      <div className="border border-gray-200 rounded-lg divide-y divide-gray-200 max-h-80 overflow-y-auto">
-                        {auditData.map((entry) => (
-                          <div key={entry.id} className="p-3 text-sm">
-                            <div className="flex items-center justify-between">
-                              <span className="font-medium text-gray-900">{entry.action}</span>
-                              <span className="text-xs text-gray-500">
-                                {new Date(entry.createdAt).toLocaleString('fr-FR')}
-                              </span>
-                            </div>
-                            {entry.userId && (
-                              <p className="text-xs text-gray-500 mt-1">
-                                Utilisateur: <span className="font-mono">{entry.userId}</span>
-                              </p>
-                            )}
-                            {entry.afterData && (
-                              <p className="text-xs text-gray-500 mt-1 truncate">
-                                Détails: <span className="font-mono">{JSON.stringify(entry.afterData)}</span>
-                              </p>
-                            )}
-                          </div>
-                        ))}
+                    <h4 className="font-bold text-gray-800 flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-blue-600" />
+                      Registre de TraÃ§abilitÃ© (Blockchain-ready Ledger)
+                    </h4>
+                    <div className="bg-slate-900 rounded-xl overflow-hidden shadow-xl">
+                      <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Journal des mutations institutionnelles</span>
+                        <div className="flex items-center gap-1">
+                          <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                          <span className="text-[10px] text-green-500 font-bold uppercase">SÃ©curisÃ©</span>
+                        </div>
                       </div>
-                    ) : (
-                      <p className="text-sm text-gray-500">Aucune entrée d&apos;audit disponible.</p>
-                    )}
+                      <div className="max-h-96 overflow-y-auto divide-y divide-slate-800">
+                        {auditData && auditData.length > 0 ? (
+                          auditData.map((entry) => (
+                            <div key={entry.id} className="p-4 hover:bg-slate-800/50 transition-colors">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-xs font-black text-blue-400 uppercase">{entry.action}</span>
+                                <span className="text-[10px] text-slate-500 font-mono">
+                                  {new Date(entry.createdAt).toLocaleString('fr-FR')}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-300 mb-2">Identifiant de transaction : <span className="font-mono text-[10px] text-slate-500">{entry.id}</span></p>
+                              {entry.userId && (
+                                <div className="flex items-center gap-2 mb-2">
+                                  <div className="w-4 h-4 rounded-full bg-slate-700 flex items-center justify-center text-[8px] text-slate-400">ID</div>
+                                  <span className="text-[10px] text-slate-400">OpÃ©rateur : {entry.userId}</span>
+                                </div>
+                              )}
+                              <div className="bg-black/30 rounded p-2 text-[10px] font-mono text-slate-500 overflow-x-auto">
+                                Snapshot : {JSON.stringify(entry.afterData || entry.beforeData)}
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="p-8 text-center text-slate-600 italic text-sm">
+                            Aucun mouvement rÃ©pertoriÃ© dans le ledger pour cet Ã©lÃ¨ve.
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}

@@ -37,6 +37,16 @@ import {
   Brain,
   Calendar,
   Settings,
+  Globe,
+  Briefcase,
+  CreditCard,
+  Zap,
+  ShieldAlert,
+  HelpCircle,
+  History,
+  Lock,
+  PieChart,
+  BarChart3,
 } from 'lucide-react';
 import type { User } from '@/types';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
@@ -53,14 +63,34 @@ interface PilotageSidebarProps {
 /** Mapping path → featureCode (optionnel). Sans featureCode = toujours affiché. */
 const MAIN_MODULES = [
   { path: '/app', label: 'Tableau de pilotage', icon: LayoutDashboard },
-  { path: '/app/orion', label: 'ORION — Pilotage Direction', icon: Brain, featureCode: 'ORION' },
+  { path: '/app/orion', label: 'ORION — Pilotage Direction', icon: Zap, featureCode: 'ORION', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'CENSEUR', 'director', 'admin'] },
   { path: '/app/meetings', label: 'Réunions', icon: Calendar },
-  { path: '/app/students', label: 'Élèves & Scolarité', icon: Users, featureCode: 'STUDENTS' },
-  { path: '/app/finance', label: 'Finances & Économat', icon: Calculator, featureCode: 'FINANCE' },
-  { path: '/app/exams-grades', label: 'Examens, Notes & Bulletins', icon: BookOpen, featureCode: 'EXAMS' },
+  { path: '/app/students', label: 'Élèves & Scolarité', icon: Users, featureCode: 'STUDENTS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'SCOLARITE', 'admin'] },
+  { path: '/app/finance', label: 'Finances & Économat', icon: Calculator, featureCode: 'FINANCE', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_BILLING', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'CAISSIER', 'COMPTABLE', 'ECONOME', 'DIRECTEUR_GENERAL', 'accountant', 'admin'] },
+  { path: '/app/exams-grades', label: 'Examens, Notes & Bulletins', icon: BookOpen, featureCode: 'EXAMS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'CENSEUR', 'TEACHER', 'TEACHER_RESP', 'admin'] },
+  { path: '/app/aggregation', label: 'Agrégation & Décision', icon: BarChart3, featureCode: 'AGGREGATION', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'director', 'admin'] },
   { path: '/app/pedagogy', label: 'Organisation Pédagogique', icon: Building, featureCode: 'PEDAGOGY' },
-  { path: '/app/hr', label: 'Personnel, RH & Paie', icon: UserCheck, featureCode: 'HR_PAYROLL' },
+  { path: '/app/hr', label: 'Personnel, RH & Paie', icon: UserCheck, featureCode: 'HR_PAYROLL', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'SCOLARITE', 'admin'] },
   { path: '/app/communication', label: 'Communication', icon: MessageSquare, featureCode: 'COMMUNICATION' },
+];
+
+const PLATFORM_MODULES = [
+  { path: '/app/platform', label: 'Tableau de bord global', icon: LayoutDashboard },
+  { path: '/app/platform/tenants', label: 'Écoles / Tenants', icon: Building },
+  { path: '/app/platform/initial-subscriptions', label: 'Souscriptions initiales', icon: Briefcase },
+  { path: '/app/platform/subscriptions', label: 'Abonnements & Plans', icon: CreditCard },
+  { path: '/app/platform/modules', label: 'Modules & Fonctions', icon: Zap },
+  { path: '/app/platform/aggregation', label: 'Agrégation Globale', icon: BarChart3 },
+  { path: '/app/platform/orion-pilotage', label: 'ORION-Pilotage Direction', icon: Zap },
+  { path: '/app/platform/users', label: 'Utilisateurs plateforme', icon: Users },
+  { path: '/app/platform/rbac', label: 'Rôles & Permissions', icon: Lock },
+  { path: '/app/platform/billing', label: 'Facturation SaaS', icon: PieChart },
+  { path: '/app/platform/payments', label: 'Paiements & Transactions', icon: CreditCard },
+  { path: '/app/platform/support', label: 'Support & Tickets', icon: HelpCircle },
+  { path: '/app/platform/monitoring', label: 'Incidents & Monitoring', icon: ShieldAlert },
+  { path: '/app/platform/orion', label: 'ORION Global', icon: Brain },
+  { path: '/app/platform/audit', label: 'Audit & Logs', icon: History },
+  { path: '/app/platform/settings', label: 'Paramètres plateforme', icon: Settings },
 ];
 
 const SUPPLEMENTARY_MODULES = [
@@ -84,23 +114,41 @@ export default function PilotageSidebar({
   const { currentLevel } = useSchoolLevel();
   const { enabledSet, loading } = useEnabledFeatureCodes();
   const isSuperDirector =
-    user?.role === 'SUPER_DIRECTOR' || user?.role === 'PLATFORM_OWNER';
+    user?.role === 'SUPER_DIRECTOR' || 
+    user?.role === 'PLATFORM_OWNER' || 
+    user?.role === 'PLATFORM_SUPER_ADMIN' || 
+    user?.role === 'SCHOOL_OWNER' || 
+    user?.role === 'SCHOOL_ADMIN' ||
+    user?.role === 'DIRECTEUR_GENERAL' ||
+    user?.role === 'DIRECTEUR_ETABLISSEMENT' ||
+    user?.role === 'director';
   const [mainModulesOpen, setMainModulesOpen] = useState(true);
   const [supplementaryModulesOpen, setSupplementaryModulesOpen] = useState(true);
 
   // Filtrer par modules activés : sans featureCode = toujours visible ; avec featureCode = visible si activé (ou pendant le chargement)
-  const showModule = (featureCode?: string) =>
-    !featureCode || loading || enabledSet.has(featureCode);
+  // Filtrer par modules activés et rôles autorisés
+  const showModule = (featureCode?: string, roles?: string[]) => {
+    const isFeatureEnabled = !featureCode || loading || enabledSet.has(featureCode);
+    const isRoleAuthorized = !roles || !user?.role || roles.includes(user.role);
+    return isFeatureEnabled && isRoleAuthorized;
+  };
 
   const mainModules = useMemo(
-    () => MAIN_MODULES.filter((m) => showModule(m.featureCode)),
-    [enabledSet, loading],
+    () => MAIN_MODULES.filter((m) => showModule(m.featureCode, m.roles as string[])),
+    [enabledSet, loading, user?.role],
   );
 
   const supplementaryModules = useMemo(
-    () => SUPPLEMENTARY_MODULES.filter((m) => showModule(m.featureCode)),
-    [enabledSet, loading],
+    () => SUPPLEMENTARY_MODULES.filter((m) => showModule(m.featureCode, (m as any).roles as string[])),
+    [enabledSet, loading, user?.role],
   );
+
+  const platformModules = useMemo(
+    () => PLATFORM_MODULES,
+    [],
+  );
+
+  const isPlatformPortal = user?.portal === 'PLATFORM';
 
   // Module Général (Direction uniquement)
   const generalModule = isSuperDirector
@@ -223,6 +271,75 @@ export default function PilotageSidebar({
               })
             )}
           </div>
+
+          {/* Modules Plateforme (Administration Globale) */}
+          {isPlatformPortal && (
+            <div className="mb-6">
+              {effectiveOpen ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setMainModulesOpen(!mainModulesOpen)}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-blue-800/60 transition-colors text-left"
+                  >
+                    <span className="text-xs font-semibold text-blue-300/70 uppercase tracking-wider">
+                      Administration Globale
+                    </span>
+                    <ChevronDown
+                      className={`w-4 h-4 text-blue-300/70 transition-transform duration-200 ${
+                        mainModulesOpen ? 'rotate-0' : '-rotate-90'
+                      }`}
+                    />
+                  </button>
+                  {mainModulesOpen && (
+                    <div className="mt-1 space-y-1">
+                      {platformModules.map((item) => {
+                        const Icon = item.icon;
+                        const active = isActive(item.path);
+                        
+                        return (
+                          <Link
+                            key={item.path}
+                            href={item.path}
+                            onClick={onCloseMobileDrawer}
+                            className={`group flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
+                              active
+                                ? 'bg-gradient-to-r from-blue-700 to-blue-600 text-white shadow-md shadow-blue-900/30'
+                                : 'text-blue-100 hover:bg-blue-800/60 hover:text-white hover:translate-x-1'
+                            }`}
+                            title={!effectiveOpen ? item.label : undefined}
+                          >
+                            <Icon className={`w-5 h-5 flex-shrink-0 transition-transform duration-200 ${
+                              active ? 'scale-110' : 'group-hover:scale-105'
+                            }`} />
+                            {effectiveOpen && (
+                              <span className={`text-sm font-medium transition-all duration-200 whitespace-nowrap overflow-hidden text-ellipsis flex-1 ${
+                                active ? 'font-semibold' : ''
+                              }`} title={item.label}>{item.label}</span>
+                            )}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              ) : (
+                platformModules.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.path}
+                      href={item.path}
+                      className="flex items-center justify-center p-2.5 rounded-lg transition-all duration-200 text-blue-100 hover:bg-blue-800/60 hover:text-white"
+                      title={item.label}
+                    >
+                      <Icon className="w-5 h-5 flex-shrink-0" />
+                    </Link>
+                  );
+                })
+              )}
+            </div>
+          )}
 
           {/* Module Général (Direction) */}
           {generalModule && (

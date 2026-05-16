@@ -18,9 +18,9 @@
     "docker:prod:down": "docker compose -f docker-compose.prod.yml down",
     "migrate:sqlite-to-postgresql": "ts-node database/migrations/sqlite-to-postgresql-migration.ts"
   },
-  "dependencies": {},
   "devDependencies": {
     "concurrently": "^8.2.2",
-    "cross-env": "^10.1.0"
+    "cross-env": "^10.1.0",
+    "puppeteer": "^24.43.1"
   }
 }

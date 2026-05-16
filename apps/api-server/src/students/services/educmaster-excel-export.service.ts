@@ -294,7 +294,7 @@ export class EducmasterExcelExportService {
       for (const col of columns) {
         switch (col.key) {
           case 'nom':
-            row[col.label] = student.lastName ?? '';
+            row[col.label] = (student.lastName ?? '').toUpperCase();
             break;
           case 'prenom':
             row[col.label] = student.firstName ?? '';

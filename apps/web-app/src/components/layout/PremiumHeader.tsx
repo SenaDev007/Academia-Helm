@@ -41,7 +41,7 @@ export default function PremiumHeader() {
     { path: '/modules', label: 'Modules' },
     { path: '/blog', label: 'Blog' },
     { path: '/#tarification', label: 'Tarification' },
-    { path: '/patronat-examens', label: 'Patronat & Examens', isInstitutional: true },
+    { path: '/federis', label: 'Academia Federis', isInstitutional: true },
     { path: '/securite', label: 'Sécurité & Méthode' },
     { path: '/contact', label: 'Contact' },
   ];

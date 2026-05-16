@@ -51,9 +51,40 @@ export type UserRole =
   | 'director' 
   | 'teacher' 
   | 'secretary' 
+  | 'accountant'
+  // Portail Plateforme
   | 'PLATFORM_OWNER'
+  | 'PLATFORM_SUPER_ADMIN'
+  | 'PLATFORM_ADMIN'
+  | 'PLATFORM_BILLING'
+  | 'PLATFORM_SUPPORT'
+  | 'PLATFORM_DEVOPS'
+  | 'PLATFORM_AUDITOR'
+  // Portail École
+  | 'SCHOOL_OWNER'
+  | 'SCHOOL_ADMIN'
+  | 'RESP_SECONDAIRE'
+  | 'RESP_PRIMAIRE'
+  | 'RESP_MATERNELLE'
+  | 'SCOLARITE'
+  | 'CAISSIER'
+  | 'COMPTABLE'
+  | 'ECONOME'
+  | 'DIRECTEUR_GENERAL'
+  | 'DIRECTEUR_ETABLISSEMENT'
+  | 'CENSEUR'
+  | 'SURVEILLANT_GENERAL'
+  // Portail Enseignant
+  | 'TEACHER'
+  | 'TEACHER_RESP'
+  // Portail Parent / Élève
+  | 'PARENT'
+  | 'STUDENT'
+  // Rôles Spéciaux
   | 'SUPER_DIRECTOR'
-  | 'SUPER_ADMIN'; // Rôle unique pour le fondateur (YEHI OR Tech)
+  | 'SUPER_ADMIN';
+
+export type PortalType = 'PLATFORM' | 'SCHOOL' | 'TEACHER' | 'PARENT' | 'PUBLIC';
 
 /**
  * Groupe Scolaire (regroupe plusieurs établissements/tenants)
@@ -73,17 +104,16 @@ export interface User {
   firstName: string;
   lastName: string;
   role: UserRole;
-  tenantId: string; // Tenant actif (pour les SUPER_DIRECTOR, c'est le tenant sélectionné)
+  portal: PortalType;
+  function?: string; // Fonction métier spécifique (ex: "Censeur", "Comptable")
+  accreditations?: ('MATERNELLE' | 'PRIMAIRE' | 'SECONDAIRE')[];
+  levelScopes?: string[]; // IDs des niveaux autorisés
+  classScopes?: string[]; // IDs des classes autorisées
+  tenantId: string;
   permissions: string[];
-  /**
-   * Pour les SUPER_DIRECTOR : liste des tenants accessibles
-   * Vide pour les autres rôles
-   */
   accessibleTenants?: Tenant[];
-  /**
-   * ID du groupe scolaire si l'utilisateur est promoteur
-   */
   schoolGroupId?: string;
+  staffId?: string;
   createdAt: string;
 }
 
@@ -193,6 +223,37 @@ export interface DirectionKpiResponse {
 }
 
 /**
+ * KPI Spécifiques pour ORION
+ */
+export interface KpiFinancialMonthly {
+  period: string;
+  variationPercent: number;
+  revenueExpected?: number;
+  revenueCollected?: number;
+  collectionRate?: number;
+}
+
+export interface KpiHrMonthly {
+  period: string;
+  absenceRate: number;
+  teachersAbsent?: number;
+  teachersTotal?: number;
+}
+
+export interface KpiPedagogyTerm {
+  term: string;
+  averageScore: number;
+  passRate: number;
+  attendanceRate: number;
+}
+
+export interface KpiSystemHealth {
+  period: string;
+  dataCompleteness: number;
+  syncStatus: 'UP_TO_DATE' | 'DELAYED' | 'FAILED';
+}
+
+/**
  * Bilans consolidés multi-écoles (lecture seule, agrégation explicite)
  * Uniquement pour les SUPER_DIRECTOR
  */
@@ -253,7 +314,22 @@ export type SyncEntityType =
   | 'ABSENCE'
   | 'DISCIPLINARY_INCIDENT'
   | 'ACADEMIC_YEAR'
-  | 'SCHOOL_LEVEL';
+  | 'SCHOOL_LEVEL'
+  | 'SUBJECT'
+  | 'INVOICE'
+  | 'HOMEWORK'
+  | 'INCIDENT'
+  | 'LOAN'
+  | 'SESSION'
+  | 'MESSAGE'
+  | 'NOTIFICATION'
+  | 'ALERT'
+  | 'REPORT'
+  | 'ORION_ALERT'
+  | 'EXAM_CANDIDATE'
+  | 'EXAM_RESULT'
+  | 'EXAM_PV'
+  | 'PEDAGOGICAL_FILE';
 
 /**
  * État d'un événement dans l'Outbox
@@ -796,64 +872,79 @@ export interface OrionMonthlySummary {
  */
 export interface OrionQuery {
   id: string;
-  query: string; // Question en langage naturel
-  userId: string;
   tenantId: string;
+  userId: string;
+  query: string;
+  /**
+   * Contexte métier fourni à ORION
+   */
+  context: {
+    period: string;
+    focus?: string; // ex: "finance", "scolarité"
+  };
+  /**
+   * Réponse structurée
+   */
+  response: {
+    text: string;
+    facts: string[];
+    dataPoints?: Array<{ label: string; value: any; unit?: string }>;
+    suggestedQueries?: string[];
+  };
   createdAt: string;
 }
 
 /**
- * Réponse ORION (strictement factuelle)
+ * ORION - Règles et Moteur
+ */
+export type RuleOperator = '<' | '<=' | '>' | '>=' | '==' | '!=';
+
+export interface OrionRule {
+  id: string;
+  enabled: boolean;
+  category: 'FINANCE' | 'RH' | 'PEDAGOGY' | 'SYSTEM';
+  severity: 'CRITICAL' | 'WARNING' | 'ALERT' | 'INFO';
+  condition: {
+    metric: string;
+    operator: RuleOperator;
+    value: number;
+  };
+  message: string;
+  description?: string;
+}
+
+export interface OrionRulesVersion {
+  version: string;
+  rules: OrionRule[];
+}
+
+/**
+ * ORION - Réponse et Historique
  */
 export interface OrionResponse {
-  id: string;
-  queryId: string;
-  /**
-   * Réponse structurée en 3 parties :
-   * 1. Faits (données réelles)
-   * 2. Interprétation (analyse factuelle)
-   * 3. Vigilance (points d'attention si applicable)
-   */
   answer: {
-    facts: string[]; // Faits observés uniquement
-    interpretation: string; // Interprétation factuelle
-    vigilance?: string; // Point de vigilance si applicable
+    facts: string[];
+    interpretation: string;
+    vigilance: string | null;
   };
-  /**
-   * Données sources (références aux KPI)
-   */
+  confidence: number;
+  dataSufficient: boolean;
   dataSources: Array<{
     kpi: string;
     value: number;
     period: string;
-    source: 'DirectionKpiSummary' | 'ModuleKpi' | 'ConsolidatedKpi';
+    source: 'DirectionKpiSummary' | 'Custom';
   }>;
-  /**
-   * Score de confiance (0-100)
-   * Basé sur la disponibilité et la qualité des données
-   */
-  confidence: number;
-  /**
-   * Indicateur si les données sont suffisantes
-   */
-  dataSufficient: boolean;
-  createdAt: string;
 }
 
-/**
- * Requête pour ORION
- */
 export interface OrionQueryRequest {
   query: string;
   context?: {
-    period?: string; // Période spécifique (ex: "2025-01")
-    module?: 'FINANCE' | 'ACADEMIC' | 'OPERATIONAL' | 'GENERAL';
+    period?: string;
+    focus?: 'finance' | 'scolarité' | 'rh' | 'global';
   };
 }
 
-/**
- * Historique des analyses ORION
- */
 export interface OrionAnalysisHistory {
   id: string;
   tenantId: string;
@@ -865,168 +956,143 @@ export interface OrionAnalysisHistory {
     interpretation: string;
     vigilance?: string;
   };
-  dataSources: OrionResponse['dataSources'];
+  dataSources: Array<{
+    kpi: string;
+    value: number;
+    period: string;
+    source: 'DirectionKpiSummary' | 'Custom';
+  }>;
   createdAt: string;
 }
 
-/**
- * Configuration ORION
- */
 export interface OrionConfig {
-  /**
-   * Activer les résumés mensuels automatiques
-   */
-  autoMonthlySummary: boolean;
-  /**
-   * Activer les alertes ORION
-   */
-  alertsEnabled: boolean;
-  /**
-   * Seuils d'alerte (valeurs numériques explicites)
-   */
-  alertThresholds: {
-    revenueDropPercent: number; // Ex: 10 (pour 10%)
-    lowRecoveryRate: number; // Ex: 85 (pour 85%)
-    highAbsenceRate: number; // Ex: 20 (pour 20%)
-    lowTeacherPresence: number; // Ex: 90 (pour 90%)
-  };
+  enabled: boolean;
+  llmProvider: 'openai' | 'anthropic' | 'local';
+  llmModel: string;
+  temperature: number;
+  maxTokens: number;
+  systemPrompt: string;
+  lastUpdated: string;
 }
 
 /**
- * Tables KPI IA - ORION
+ * ATLAS - Intelligence de Soutien Pédagogique
  * 
- * ORION lit UNIQUEMENT ces tables (ou vues matérialisées)
- * Aucune table métier brute
+ * Spécialisé dans :
+ * - Analyse des plans de cours
+ * - Recommandations pédagogiques
+ * - Support aux enseignants
  */
 
-/**
- * KPI Financier Mensuel
- */
-export interface KpiFinancialMonthly {
-  id: string;
-  tenantId: string;
-  period: string; // Date (YYYY-MM-DD)
-  revenueCollected: number; // Recettes encaissées
-  revenueExpected: number; // Recettes attendues
-  collectionRate: number; // Taux de recouvrement (0-100)
-  variationPercent: number; // Variation en pourcentage
-  createdAt: string;
-}
-
-/**
- * KPI RH Mensuel
- */
-export interface KpiHrMonthly {
-  id: string;
-  tenantId: string;
-  period: string; // Date (YYYY-MM-DD)
-  teachersTotal: number;
-  teachersAbsent: number;
-  absenceRate: number; // Taux d'absence (0-100)
-  createdAt: string;
-}
-
-/**
- * KPI Pédagogique par Trimestre
- */
-export interface KpiPedagogyTerm {
-  id: string;
-  tenantId: string;
-  schoolLevelId?: string;
-  term: string; // Ex: "T1", "T2", "T3"
-  successRate: number; // Taux de réussite (0-100)
-  averageScore: number; // Note moyenne
-  failureRate: number; // Taux d'échec (0-100)
-  createdAt: string;
-}
-
-/**
- * KPI Santé Système
- */
-export interface KpiSystemHealth {
-  id: string;
-  tenantId: string;
-  period: string; // Date (YYYY-MM-DD)
-  missingKpiCount: number; // Nombre de KPI manquants
-  alertsOpen: number; // Nombre d'alertes ouvertes
-  createdAt: string;
-}
-
-/**
- * Historique des Analyses ORION (table dédiée)
- */
-export interface OrionAnalysisHistoryRecord {
-  id: string;
-  tenantId: string;
-  period?: string; // Date (YYYY-MM-DD)
-  summary: string; // Résumé textuel
-  alerts: any; // JSONB - Alertes générées
-  createdAt: string;
-}
-
-/**
- * Règles ORION Versionnées
- * 
- * Système de règles externalisées en JSON
- * Traçables, auditables, évolutives, indépendantes du code
- */
-
-/**
- * Opérateur de condition
- */
-export type RuleOperator = '<' | '<=' | '>' | '>=' | '==' | '!=';
-
-/**
- * Niveau de sévérité d'une règle
- */
-export type RuleSeverity = 'INFO' | 'ALERT' | 'WARNING' | 'CRITICAL';
-
-/**
- * Catégorie de règle
- */
-export type RuleCategory = 'FINANCE' | 'RH' | 'PEDAGOGY' | 'SYSTEM';
-
-/**
- * Condition d'une règle
- */
-export interface RuleCondition {
-  metric: string; // Nom de la métrique (ex: "variation_percent")
-  operator: RuleOperator;
-  value: number; // Valeur seuil
-}
-
-/**
- * Règle ORION
- */
-export interface OrionRule {
-  id: string; // ID unique de la règle (ex: "FIN_REV_DROP")
-  category: RuleCategory;
-  severity: RuleSeverity;
-  condition: RuleCondition;
-  message: string; // Message d'alerte
-  description?: string; // Description de la règle
-  enabled: boolean; // Règle activée/désactivée
-}
-
-/**
- * Version des règles ORION
- */
-export interface OrionRulesVersion {
-  version: string; // Version (ex: "1.0")
-  rules: OrionRule[];
-  createdAt?: string; // Date de création
-  updatedAt?: string; // Date de mise à jour
-}
-
-
-/**
- * ATLAS - Intelligence Artificielle Institutionnelle
- */
 export interface AtlasMessage {
   id: string;
   tenantId: string;
   userId: string;
-  content: string;
   role: 'user' | 'assistant';
+  content: string;
+  /**
+   * Références pédagogiques (livres, chapitres, etc.)
+   */
+  references?: Array<{
+    type: 'MATERIAL' | 'CURRICULUM' | 'EXTERNAL';
+    title: string;
+    url?: string;
+  }>;
   createdAt: string;
+}
+
+/**
+ * Structure Académique & Cycles
+ */
+
+export interface SchoolCycle {
+  id: string;
+  name: string;
+  code: string;
+  levelId: string;
+  order: number;
+}
+
+export interface SchoolLevel {
+  id: string;
+  name: string;
+  code: string;
+  cycles: SchoolCycle[];
+}
+
+export interface AcademicYear {
+  id: string;
+  label: string;
+  startDate: string;
+  endDate: string;
+  status: 'ACTIVE' | 'ARCHIVED' | 'UPCOMING';
+}
+
+/**
+ * Matières & Programmes
+ */
+
+export interface Subject {
+  id: string;
+  name: string;
+  code: string;
+  description?: string;
+  coefficient?: number;
+  category?: 'GENERAL' | 'TECHNICAL' | 'LITERARY' | 'SCIENTIFIC';
+}
+
+export interface PedagogicalMaterial {
+  id: string;
+  name: string;
+  code: string;
+  category: 'BOOK' | 'KIT' | 'EQUIPMENT' | 'TECH' | 'OTHER';
+  description?: string;
+  isActive: boolean;
+  subjectId?: string;
+  subject?: Subject;
+}
+
+/**
+ * Module Pédagogique - Événements & Planning
+ */
+
+export interface LessonPlan {
+  id: string;
+  teacherId: string;
+  subjectId: string;
+  classId: string;
+  academicYearId: string;
+  title: string;
+  objectives: string[];
+  status: 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED';
+  submittedAt?: string;
+  approvedAt?: string;
+}
+
+export interface ClassJournalEntry {
+  id: string;
+  classId: string;
+  subjectId: string;
+  teacherId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  topic: string;
+  content: string;
+  observations?: string;
+}
+
+/**
+ * Notifications & Alertes Système
+ */
+
+export interface AppNotification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  type: 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR' | 'SYNC';
+  read: boolean;
+  createdAt: string;
+  link?: string;
 }

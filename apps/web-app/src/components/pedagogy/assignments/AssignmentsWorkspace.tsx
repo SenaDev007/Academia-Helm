@@ -123,11 +123,11 @@ export default function AssignmentsWorkspace() {
     try {
       await pedagogyFetch('/api/pedagogy/teacher-class-assignments', {
         method: 'POST',
-        body: JSON.stringify({
+        body: {
           academicYearId: academicYear.id,
           teacherId,
           classSubjectId: activeSubject.id
-        })
+        }
       });
       loadClassSubjects();
       setModal('none');

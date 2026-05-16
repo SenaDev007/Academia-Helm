@@ -14,6 +14,7 @@ import { useAcademicYear } from './useAcademicYear';
 import { useSchoolLevel } from './useSchoolLevel';
 import { useFeature } from './useFeature';
 import { FeatureCode } from '@/lib/features/tenant-features.service';
+import { useAppSession } from '@/contexts/AppSessionContext';
 
 export interface ModuleContext {
   /** Année scolaire active */
@@ -38,6 +39,10 @@ export interface ModuleContext {
   isBilingualEnabled: boolean;
   /** Chargement */
   isLoading: boolean;
+  /** Tenant ID */
+  tenantId: string | null;
+  /** Infos du tenant */
+  tenant: any | null;
 }
 
 /**
@@ -49,6 +54,7 @@ export function useModuleContext(): ModuleContext {
   const { currentYear, isLoading: yearLoading } = useAcademicYear();
   const { currentLevel, isLoading: levelLoading } = useSchoolLevel();
   const { isEnabled: isBilingualEnabled } = useFeature(FeatureCode.BILINGUAL_TRACK);
+  const { tenant } = useAppSession();
 
   // Stable references — prevent infinite re-render loops caused by new object identity on each render.
   // currentYear/currentLevel are stable useState values from their contexts.
@@ -79,8 +85,10 @@ export function useModuleContext(): ModuleContext {
       academicTrack: null,
       isBilingualEnabled: isBilingualEnabled || false,
       isLoading: yearLoading || levelLoading,
+      tenantId: tenant?.id || null,
+      tenant,
     }),
-    [academicYear, schoolLevel, isBilingualEnabled, yearLoading, levelLoading],
+    [academicYear, schoolLevel, isBilingualEnabled, yearLoading, levelLoading, tenant],
   );
 }
 

@@ -84,6 +84,33 @@ class OfflineRestrictionsService {
       }
     }
 
+    // 6. Publication officielle des résultats interdite
+    if (tableName === 'exam_results' && payload.status === 'PUBLISHED') {
+      return {
+        allowed: false,
+        reason: 'OFFICIAL_PUBLICATION_FORBIDDEN',
+        message: 'La publication officielle des résultats nécessite une connexion serveur pour notification massive et archivage légal.',
+      };
+    }
+
+    // 7. Verrouillage final de délibération interdit
+    if (tableName === 'exam_deliberations' && payload.status === 'LOCKED') {
+      return {
+        allowed: false,
+        reason: 'DELIBERATION_LOCK_FORBIDDEN',
+        message: 'Le verrouillage définitif d\'une délibération nécessite une validation serveur immuable.',
+      };
+    }
+
+    // 8. Envoi réel de notifications massives interdit
+    if (tableName === 'messages' && payload.type === 'MASSIVE_BROADCAST' && operationType === 'INSERT') {
+      return {
+        allowed: false,
+        reason: 'MASSIVE_BROADCAST_FORBIDDEN',
+        message: 'L\'envoi de notifications massives nécessite une connexion serveur pour le routage SMS/Email.',
+      };
+    }
+
     // Opération autorisée
     return { allowed: true };
   }
@@ -99,20 +126,29 @@ class OfflineRestrictionsService {
       'delete-permanent',
       'generate-official-document',
       'super-admin-action',
+      'publish-official-results',
+      'lock-deliberation',
+      'send-massive-broadcast',
     ];
 
     if (forbiddenActions.includes(action)) {
       const messages: Record<string, string> = {
         'fedapay-payment':
-          'Les paiements Fedapay nécessitent une connexion internet active. Veuillez vous connecter pour procéder au paiement.',
+          'Les paiements Fedapay nécessitent une connexion internet active.',
         'validate-payment':
-          'La validation des paiements nécessite une connexion serveur. Veuillez vous connecter pour valider ce paiement.',
+          'La validation des paiements nécessite une connexion serveur.',
         'delete-permanent':
-          'La suppression définitive nécessite une connexion serveur pour traçabilité. Utilisez la désactivation en mode offline.',
+          'La suppression définitive nécessite une connexion serveur.',
         'generate-official-document':
-          'La génération du document officiel final nécessite une signature serveur. La prévisualisation est disponible en mode offline.',
+          'La génération du document officiel final nécessite une signature serveur.',
         'super-admin-action':
-          'Cette action d\'administration système nécessite une connexion serveur sécurisée.',
+          'Cette action d\'administration nécessite une connexion serveur sécurisée.',
+        'publish-official-results':
+          'La publication officielle nécessite une connexion serveur.',
+        'lock-deliberation':
+          'Le verrouillage définitif nécessite une connexion serveur.',
+        'send-massive-broadcast':
+          'L\'envoi massif nécessite une connexion serveur.',
       };
 
       return {

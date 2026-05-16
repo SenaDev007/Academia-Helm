@@ -69,9 +69,13 @@ export class AttendancePrismaController {
     });
   }
 
-  @Put('overtime/:id/validate')
-  async validateOvertime(@GetTenant() tenant: any, @Param('id') id: string, @Body() body: { validatedBy: string }) {
-    return this.attendanceService.validateOvertime(id, tenant.id, body.validatedBy);
+  @Put('overtime/:id/process')
+  async processOvertime(
+    @GetTenant() tenant: any, 
+    @Param('id') id: string, 
+    @Body() body: { status: 'APPROVED' | 'REJECTED', approvedBy?: string }
+  ) {
+    return this.attendanceService.processOvertime(id, tenant.id, body.status, body.approvedBy);
   }
 
   @Get('overtime/staff/:staffId')
@@ -81,13 +85,13 @@ export class AttendancePrismaController {
     @Query('academicYearId') academicYearId?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
-    @Query('validated') validated?: string,
+    @Query('status') status?: string,
   ) {
     return this.attendanceService.findStaffOvertime(staffId, tenant.id, {
       academicYearId,
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
-      validated: validated === 'true' ? true : validated === 'false' ? false : undefined,
+      status,
     });
   }
 }

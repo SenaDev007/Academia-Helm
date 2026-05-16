@@ -6,17 +6,22 @@ import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 
 export async function pedagogyFetch<T>(
   path: string,
-  options?: { method?: string; body?: object },
+  options?: { method?: string; body?: any; headers?: Record<string, string> },
 ): Promise<T> {
   const res = await fetch(path, {
     method: options?.method ?? 'GET',
     headers: {
-      'Content-Type': 'application/json',
+      ...(options?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
       ...getClientAuthorizationHeader(),
+      ...options?.headers,
     },
     credentials: 'include',
     cache: 'no-store',
-    ...(options?.body && { body: JSON.stringify(options.body) }),
+    ...(options?.body && { 
+      body: options.body instanceof FormData || typeof options.body === 'string' 
+        ? options.body 
+        : JSON.stringify(options.body) 
+    }),
   });
   const text = await res.text();
   if (!res.ok) {

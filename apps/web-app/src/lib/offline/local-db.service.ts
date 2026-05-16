@@ -68,60 +68,50 @@ class LocalDbService {
    * Crée les object stores (IndexedDB)
    */
   private createObjectStores(db: IDBDatabase): void {
-    // Object store pour chaque entité
-    const entities: SyncEntityType[] = [
-      'student', 'grade', 'payment', 'teacher', 'class',
-      'subject', 'exam', 'attendance', 'invoice'
+    // Object store pour chaque entité métier
+    const entities: string[] = [
+      'students', 'teachers', 'classes', 'subjects', 'exams', 'grades', 
+      'payments', 'attendance', 'absences', 'invoices', 'academic_years', 
+      'school_levels', 'homeworks', 'incidents', 'loans', 'sessions', 
+      'messages', 'notifications', 'alerts', 'reports', 'orion_alerts',
+      'exam_candidates', 'exam_results', 'exam_pvs', 'pedagogical_files',
+      'disciplinary_incidents'
     ];
 
-    entities.forEach(entity => {
-      if (!db.objectStoreNames.contains(`${entity}s`)) {
-        const store = db.createObjectStore(`${entity}s`, { keyPath: 'id' });
+    entities.forEach(storeName => {
+      if (!db.objectStoreNames.contains(storeName)) {
+        const store = db.createObjectStore(storeName, { keyPath: 'id' });
         store.createIndex('tenant_id', 'tenantId', { unique: false });
+        store.createIndex('sync_status', 'syncStatus', { unique: false });
         store.createIndex('_is_dirty', '_isDirty', { unique: false });
-        store.createIndex('_last_sync', '_lastSync', { unique: false });
+        store.createIndex('local_id', 'local_id', { unique: false });
       }
     });
 
-    // Object store pour l'outbox
-    if (!db.objectStoreNames.contains('outbox_events')) {
-      const outboxStore = db.createObjectStore('outbox_events', { keyPath: 'id' });
-      outboxStore.createIndex('status', 'status', { unique: false });
-      outboxStore.createIndex('tenant_id', 'tenantId', { unique: false });
-      outboxStore.createIndex('created_at', 'createdAt', { unique: false });
-    }
+    // Tables techniques offline (Section 9 du Cahier Technique)
+    const technicalStores = [
+      'user_profile_cache', 
+      'roles_cache', 
+      'permissions_cache', 
+      'local_tenant_context', 
+      'local_academic_year', 
+      'local_academic_term',
+      'local_audit_log',
+      'search_indexes',
+      'schema_version',
+      'sync_operations',
+      'sync_conflicts',
+      'device_registry_local',
+      'outbox_events',
+      'sync_state'
+    ];
 
-    // Object store pour sync_state
-    if (!db.objectStoreNames.contains('sync_state')) {
-      db.createObjectStore('sync_state', { keyPath: 'tenantId' });
-    }
+    technicalStores.forEach(storeName => {
+      if (!db.objectStoreNames.contains(storeName)) {
+        db.createObjectStore(storeName, { keyPath: storeName === 'sync_state' ? 'tenantId' : 'id' });
+      }
+    });
 
-    // Object store dédié aux médias/ressources lourdes (ex: photos élèves capturées offline)
-    if (!db.objectStoreNames.contains('student_photos')) {
-      const photosStore = db.createObjectStore('student_photos', { keyPath: 'id' });
-      photosStore.createIndex('sync_status', 'syncStatus', { unique: false });
-      photosStore.createIndex('created_at', 'createdAt', { unique: false });
-    }
-
-    // Tables techniques offline (spec ERP institutionnel)
-    if (!db.objectStoreNames.contains('schema_version')) {
-      const sv = db.createObjectStore('schema_version', { keyPath: 'id' });
-      sv.createIndex('version', 'version', { unique: false });
-    }
-    if (!db.objectStoreNames.contains('sync_operations')) {
-      const so = db.createObjectStore('sync_operations', { keyPath: 'id' });
-      so.createIndex('table_name', 'table_name', { unique: false });
-      so.createIndex('status', 'status', { unique: false });
-      so.createIndex('created_at', 'created_at', { unique: false });
-    }
-    if (!db.objectStoreNames.contains('sync_conflicts')) {
-      const sc = db.createObjectStore('sync_conflicts', { keyPath: 'id' });
-      sc.createIndex('table_name', 'table_name', { unique: false });
-      sc.createIndex('detected_at', 'detected_at', { unique: false });
-    }
-    if (!db.objectStoreNames.contains('device_registry_local')) {
-      db.createObjectStore('device_registry_local', { keyPath: 'device_id' });
-    }
   }
 
   /**
@@ -217,12 +207,59 @@ class LocalDbService {
   }
 
   /**
-   * S'assure que la DB est initialisée
+   * Exécute plusieurs commandes en une seule transaction (bulk)
    */
+  async executeBulk(storeName: string, operation: 'add' | 'put' | 'delete', dataArray: any[]): Promise<void> {
+    if (dataArray.length === 0) return;
+    await this.ensureInitialized();
+
+    if (typeof window !== 'undefined') {
+      // IndexedDB
+      return new Promise((resolve, reject) => {
+        const transaction = this.db.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
+        
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+
+        dataArray.forEach(data => {
+          switch (operation) {
+            case 'add':
+              store.add(data);
+              break;
+            case 'put':
+              store.put(data);
+              break;
+            case 'delete':
+              store.delete(data.id || data);
+              break;
+          }
+        });
+      });
+    } else {
+      throw new Error('SQLite executeBulk not implemented yet');
+    }
+  }
+
   private async ensureInitialized(): Promise<void> {
     if (!this.isInitialized) {
       await this.initialize();
     }
+  }
+  /**
+   * Vide un store complet (Section 20.2)
+   */
+  async clearStore(storeName: string): Promise<void> {
+    await this.ensureInitialized();
+    if (!this.db.objectStoreNames.contains(storeName)) return;
+    
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([storeName], 'readwrite');
+      const store = transaction.objectStore(storeName);
+      const request = store.clear();
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
   }
 }
 

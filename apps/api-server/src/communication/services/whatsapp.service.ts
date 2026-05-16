@@ -22,7 +22,7 @@ export interface WhatsAppRequest {
   contentVariables?: Record<string, string>; // Variables pour le Content SID Twilio
 }
 
-export type WhatsAppProvider = 'whatsapp-business' | 'twilio-whatsapp' | 'gateway' | 'mock';
+export type WhatsAppProvider = 'whatsapp-business' | 'twilio-whatsapp' | 'infobip-whatsapp' | 'gateway' | 'mock';
 
 @Injectable()
 export class WhatsAppService {
@@ -43,6 +43,8 @@ export class WhatsAppService {
           return await this.sendViaWhatsAppBusiness(request);
         case 'twilio-whatsapp':
           return await this.sendViaTwilioWhatsApp(request);
+        case 'infobip-whatsapp':
+          return await this.sendViaInfobipWhatsApp(request);
         case 'gateway':
           return await this.sendViaGateway(request);
         case 'mock':
@@ -276,6 +278,65 @@ export class WhatsAppService {
     return {
       success: true,
       messageId: result.messageId || result.id,
+    };
+  }
+
+  /**
+   * Envoie un message via Infobip WhatsApp
+   */
+  private async sendViaInfobipWhatsApp(request: WhatsAppRequest): Promise<{ success: boolean; messageId?: string }> {
+    const apiUrl = this.configService.get<string>('INFOBIP_API_URL');
+    const apiKey = this.configService.get<string>('INFOBIP_API_KEY');
+    const senderNumber = this.configService.get<string>('INFOBIP_WHATSAPP_NUMBER');
+
+    if (!apiUrl || !apiKey || !senderNumber) {
+      throw new Error('Configuration Infobip WhatsApp incomplète. Vérifiez INFOBIP_API_URL, INFOBIP_API_KEY et INFOBIP_WHATSAPP_NUMBER');
+    }
+
+    const payload: any = {
+      from: senderNumber,
+      to: request.to,
+    };
+
+    if (request.template) {
+      payload.content = {
+        templateName: request.template,
+        templateData: {
+          body: {
+            placeholders: request.variables ? Object.values(request.variables) : [],
+          },
+        },
+        language: 'fr',
+      };
+    } else {
+      payload.content = {
+        text: request.message,
+      };
+    }
+
+    const response = await fetch(`${apiUrl}/whatsapp/1/message/text`, {
+      method: 'POST',
+      headers: {
+        Authorization: `App ${apiKey}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      this.logger.error('Infobip WhatsApp API error:', errorData);
+      throw new Error(`Infobip WhatsApp error HTTP ${response.status}: ${JSON.stringify(errorData)}`);
+    }
+
+    const result = await response.json();
+    const messageId = result.messageId || `infobip-wa-${Date.now()}`;
+    this.logger.log(`✅ WhatsApp sent via Infobip to ${request.to}: ${messageId}`);
+
+    return {
+      success: true,
+      messageId: messageId,
     };
   }
 

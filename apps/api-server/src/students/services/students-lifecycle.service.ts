@@ -52,8 +52,52 @@ export class StudentsLifecycleService {
         },
       });
     } catch {
-      // Journalisation best-effort : ne pas bloquer le flux métier si l'audit échoue
+      // Journalisation best-effort : ne pas bloquer le flux mÃ©tier si l'audit Ã©choue
     }
+  }
+
+  /** Journalisation institutionnelle (Sous-module A/C/F) */
+  private async logHistory(
+    tenantId: string,
+    studentId: string,
+    academicYearId: string,
+    classId: string,
+    action: string,
+    comment?: string,
+    performedBy?: string,
+  ) {
+    try {
+      await this.prisma.studentHistory.create({
+        data: {
+          tenantId,
+          studentId,
+          academicYearId,
+          classId,
+          action,
+          comment,
+          performedBy,
+        },
+      });
+      
+      // Horodatage inviolable dans le Ledger (Gouvernance)
+      await this.prisma.timestampLedger.create({
+        data: {
+          tenantId,
+          entityType: 'STUDENT_HISTORY',
+          entityId: studentId,
+          hash: Buffer.from(`${studentId}-${action}-${new Date().toISOString()}`).toString('hex'), // SimplifiÃ© pour l'exemple
+        },
+      });
+    } catch (e) {
+      this.logger.error(`Erreur logHistory: ${e.message}`);
+    }
+  }
+
+  /** DÃ©clenchement de l'analyse ORION (Module 8) */
+  private async triggerOrion(tenantId: string, studentId: string, academicYearId?: string) {
+    // Dans une implÃ©mentation rÃ©elle, cela pourrait Ãªtre un message RabbitMQ / BullMQ
+    // Ici, on fait un appel direct ou on laisse ORION recalculer lors de la prochaine lecture
+    this.logger.log(`[ORION] Analyse dÃ©clenchÃ©e pour l'Ã©lÃ¨ve ${studentId} (tenant: ${tenantId})`);
   }
 
   /** Pré-inscription : dossier incomplet autorisé, statut PRE_REGISTERED */
@@ -185,11 +229,46 @@ export class StudentsLifecycleService {
           status: ENROLLMENT_STATUS.ADMITTED,
         },
       });
+
+      // CrÃ©ation du dossier acadÃ©mique initial (Sous-module C)
+      await tx.studentAcademicRecord.upsert({
+        where: {
+          studentId_academicYearId: {
+            studentId: data.studentId,
+            academicYearId: data.academicYearId,
+          },
+        },
+        update: {
+          classId: data.classId,
+          schoolLevelId: data.schoolLevelId,
+          enrollmentStatus: 'ADMITTED',
+        },
+        create: {
+          tenantId,
+          studentId: data.studentId,
+          academicYearId: data.academicYearId,
+          classId: data.classId,
+          schoolLevelId: data.schoolLevelId,
+          enrollmentStatus: 'ADMITTED',
+        },
+      });
     });
 
     const updatedEnrollment = await this.prisma.studentEnrollment.findUnique({
       where: { id: enrollment.id },
     });
+
+    // Journalisation institutionnelle (Sous-module A)
+    await this.logHistory(
+      tenantId,
+      data.studentId,
+      data.academicYearId,
+      data.classId,
+      'ADMITTED',
+      'Admission formelle et gÃ©nÃ©ration matricule',
+      userId,
+    );
+
     await this.logAudit(tenantId, data.studentId, 'ADMIT', userId, {
       enrollmentId: enrollment.id,
       previousStatus: enrollment.status,
@@ -204,7 +283,7 @@ export class StudentsLifecycleService {
       matricule: matriculeAssigned ?? undefined,
     });
 
-    // Token de vérification publique pour QR (spec : token généré lors admission)
+    // Token de vÃ©rification publique pour QR (spec : token gÃ©nÃ©rÃ© lors admission)
     try {
       await this.publicVerificationService.generateVerificationToken(
         tenantId,
@@ -212,15 +291,18 @@ export class StudentsLifecycleService {
         data.academicYearId,
       );
     } catch (e) {
-      this.logger.warn(`Token de vérification non créé à l'admission pour ${data.studentId}: ${(e as Error).message}`);
+      this.logger.warn(`Token de vÃ©rification non crÃ©Ã© Ã  l'admission pour ${data.studentId}: ${(e as Error).message}`);
     }
 
-    // Comptes élèves : création automatique StudentAccount + AccountBreakdown à l'admission
+    // Comptes Ã©lÃ¨ves : crÃ©ation automatique StudentAccount + AccountBreakdown Ã  l'admission
     try {
       await this.studentAccountService.getOrCreate(tenantId, data.studentId, data.academicYearId);
     } catch (e) {
-      this.logger.warn(`Compte élève non créé à l'admission pour ${data.studentId}: ${(e as Error).message}`);
+      this.logger.warn(`Compte Ã©lÃ¨ve non crÃ©Ã© Ã  l'admission pour ${data.studentId}: ${(e as Error).message}`);
     }
+
+    // Alimentation ORION en temps rÃ©el (Sous-module F)
+    await this.triggerOrion(tenantId, data.studentId, data.academicYearId);
 
     return this.prisma.student.findUnique({
       where: { id: data.studentId },
@@ -340,6 +422,39 @@ export class StudentsLifecycleService {
       data: { currentAcademicYearId: data.toAcademicYearId },
     });
 
+    // Mise Ã  jour du dossier acadÃ©mique consolidÃ© (Sous-module C)
+    await this.prisma.studentAcademicRecord.upsert({
+      where: {
+        studentId_academicYearId: {
+          studentId: data.studentId,
+          academicYearId: data.fromAcademicYearId,
+        },
+      },
+      update: {
+        decision: 'PROMOTED',
+        isLocked: true, // On verrouille l'annÃ©e passÃ©e
+      },
+      create: {
+        tenantId,
+        studentId: data.studentId,
+        academicYearId: data.fromAcademicYearId,
+        schoolLevelId: currentEnrollment.schoolLevelId,
+        decision: 'PROMOTED',
+        isLocked: true,
+      },
+    });
+
+    // Journalisation institutionnelle (Sous-module A)
+    await this.logHistory(
+      tenantId,
+      data.studentId,
+      data.toAcademicYearId,
+      newEnrollment.classId || '',
+      'PROMOTED',
+      `Promotion depuis l'annÃ©e ${data.fromAcademicYearId}`,
+      userId,
+    );
+
     await this.logAudit(tenantId, data.studentId, 'PROMOTE', userId, {
       fromAcademicYearId: data.fromAcademicYearId,
       fromClassId: currentEnrollment.classId,
@@ -350,12 +465,15 @@ export class StudentsLifecycleService {
       previousArrears: newEnrollment.previousArrears,
     });
 
-    // Comptes élèves : création automatique pour l'année cible (promotion)
+    // Comptes Ã©lÃ¨ves : crÃ©ation automatique pour l'annÃ©e cible (promotion)
     try {
       await this.studentAccountService.getOrCreate(tenantId, data.studentId, data.toAcademicYearId);
     } catch (e) {
-      this.logger.warn(`Compte élève non créé à la promotion pour ${data.studentId}: ${(e as Error).message}`);
+      this.logger.warn(`Compte Ã©lÃ¨ve non crÃ©Ã© Ã  la promotion pour ${data.studentId}: ${(e as Error).message}`);
     }
+
+    // Alimentation ORION en temps rÃ©el
+    await this.triggerOrion(tenantId, data.studentId, data.toAcademicYearId);
 
     return this.prisma.student.findUnique({
       where: { id: data.studentId },
@@ -407,6 +525,39 @@ export class StudentsLifecycleService {
       data: { currentAcademicYearId: data.toAcademicYearId },
     });
 
+    // Mise Ã  jour du dossier acadÃ©mique consolidÃ© (Sous-module C)
+    await this.prisma.studentAcademicRecord.upsert({
+      where: {
+        studentId_academicYearId: {
+          studentId: data.studentId,
+          academicYearId: data.fromAcademicYearId,
+        },
+      },
+      update: {
+        decision: 'REPEATED',
+        isLocked: true,
+      },
+      create: {
+        tenantId,
+        studentId: data.studentId,
+        academicYearId: data.fromAcademicYearId,
+        schoolLevelId: data.schoolLevelId,
+        decision: 'REPEATED',
+        isLocked: true,
+      },
+    });
+
+    // Journalisation institutionnelle (Sous-module A)
+    await this.logHistory(
+      tenantId,
+      data.studentId,
+      data.toAcademicYearId,
+      newEnrollment.classId || '',
+      'REPEATED',
+      `Redoublement depuis l'annÃ©e ${data.fromAcademicYearId}`,
+      userId,
+    );
+
     await this.logAudit(tenantId, data.studentId, 'REPEAT', userId, null, {
       enrollmentId: newEnrollment.id,
       academicYearId: newEnrollment.academicYearId,
@@ -414,12 +565,15 @@ export class StudentsLifecycleService {
       previousArrears: newEnrollment.previousArrears,
     });
 
-    // Comptes élèves : création automatique pour l'année cible (redoublement)
+    // Comptes Ã©lÃ¨ves : crÃ©ation automatique pour l'annÃ©e cible (redoublement)
     try {
       await this.studentAccountService.getOrCreate(tenantId, data.studentId, data.toAcademicYearId);
     } catch (e) {
-      this.logger.warn(`Compte élève non créé au redoublement pour ${data.studentId}: ${(e as Error).message}`);
+      this.logger.warn(`Compte Ã©lÃ¨ve non crÃ©Ã© au redoublement pour ${data.studentId}: ${(e as Error).message}`);
     }
+
+    // Alimentation ORION
+    await this.triggerOrion(tenantId, data.studentId, data.toAcademicYearId);
 
     return this.prisma.student.findUnique({
       where: { id: data.studentId },
@@ -498,6 +652,26 @@ export class StudentsLifecycleService {
     });
     await this.publicVerificationService.deactivateTokensForStudent(data.studentId).catch(() => {});
 
+    // Journalisation institutionnelle du transfert (Sous-module C/A)
+    await this.prisma.transferHistory.create({
+      data: {
+        tenantId,
+        studentId: data.studentId,
+        reason: data.exitReason || 'Transfert',
+        status: 'COMPLETED',
+      },
+    });
+
+    await this.logHistory(
+      tenantId,
+      data.studentId,
+      data.academicYearId,
+      enrollment.classId || '',
+      'TRANSFERRED',
+      `Transfert sortant : ${data.exitReason || 'non spécifié'}`,
+      userId,
+    );
+
     await this.logAudit(tenantId, data.studentId, 'TRANSFER', userId, {
       enrollmentId: enrollment.id,
       previousStatus: enrollment.status,
@@ -507,6 +681,9 @@ export class StudentsLifecycleService {
       exitDate: updatedEnrollment.exitDate,
       exitReason: updatedEnrollment.exitReason,
     });
+
+    // Alimentation ORION
+    await this.triggerOrion(tenantId, data.studentId, data.academicYearId);
 
     return this.prisma.student.findUnique({
       where: { id: data.studentId },

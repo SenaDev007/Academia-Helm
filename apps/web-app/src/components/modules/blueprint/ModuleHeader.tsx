@@ -19,8 +19,19 @@ export interface ModuleKPI {
   label: string;
   value: string | number;
   icon?: string;
-  trend?: 'up' | 'down' | 'neutral';
+  unit?: string;
+  trend?: string;
+  trendType?: 'up' | 'down' | 'neutral' | 'warning';
   trendValue?: string;
+}
+
+export interface ModuleAction {
+  label: string;
+  onClick: () => void;
+  icon?: string;
+  primary?: boolean;
+  disabled?: boolean;
+  loading?: boolean;
 }
 
 export interface ModuleHeaderProps {
@@ -35,7 +46,7 @@ export interface ModuleHeaderProps {
   /** KPI clés à afficher (max 4) */
   kpis?: ModuleKPI[];
   /** Actions principales (boutons) */
-  actions?: ReactNode;
+  actions?: ReactNode | ModuleAction[];
   /** Contenu personnalisé optionnel */
   customContent?: ReactNode;
 }
@@ -54,7 +65,7 @@ export default function ModuleHeader({
       {/* Header principal avec dégradé subtil */}
       <div className="px-6 py-6 sm:px-8 sm:py-7 bg-gradient-to-br from-white via-white to-indigo-50/30 border-b border-gray-100 relative">
         <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none">
-          {icon && <AppIcon name={icon as any} size="massive" className="text-indigo-900" />}
+          {icon && <AppIcon name={icon as any} size={48} className="text-indigo-900" />}
         </div>
         
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 relative">
@@ -81,7 +92,31 @@ export default function ModuleHeader({
           {/* Actions principales */}
           {actions && (
             <div className="flex items-center gap-3 flex-wrap">
-              {actions}
+              {Array.isArray(actions) ? (
+                actions.map((action, idx) => (
+                  <button
+                    key={idx}
+                    onClick={action.onClick}
+                    disabled={action.disabled || action.loading}
+                    className={cn(
+                      "flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold transition-all active:scale-95 text-sm shadow-sm",
+                      action.primary 
+                        ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-100 ring-2 ring-indigo-600/10" 
+                        : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 hover:border-gray-300",
+                      (action.disabled || action.loading) && "opacity-50 cursor-not-allowed pointer-events-none"
+                    )}
+                  >
+                    {action.loading ? (
+                      <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    ) : action.icon ? (
+                      <AppIcon name={action.icon as any} size="action" />
+                    ) : null}
+                    {action.label}
+                  </button>
+                ))
+              ) : (
+                actions
+              )}
             </div>
           )}
         </div>
@@ -108,18 +143,29 @@ export default function ModuleHeader({
                 </div>
                 <div className="flex items-baseline space-x-2">
                   <span className="text-2xl font-black text-gray-900 tracking-tight">{kpi.value}</span>
-                  {kpi.trend && kpi.trendValue && (
-                    <span
-                      className={cn(
-                        "flex items-center gap-0.5 text-xs font-bold px-1.5 py-0.5 rounded-full",
-                        kpi.trend === 'up' ? 'bg-emerald-50 text-emerald-600' : 
-                        kpi.trend === 'down' ? 'bg-rose-50 text-rose-600' : 'bg-gray-100 text-gray-600'
-                      )}
-                    >
-                      {kpi.trend === 'up' ? '↑' : kpi.trend === 'down' ? '↓' : '•'}
-                      {kpi.trendValue}
-                    </span>
+                  {kpi.unit && (
+                    <span className="text-sm font-bold text-gray-400 mb-0.5">{kpi.unit}</span>
                   )}
+                  {(() => {
+                    const type = kpi.trendType || (['up', 'down', 'neutral', 'warning'].includes(kpi.trend as any) ? kpi.trend : undefined);
+                    const trendLabel = kpi.trendValue || (type === kpi.trend ? undefined : kpi.trend);
+                    
+                    if (!type && !trendLabel) return null;
+                    
+                    return (
+                      <span
+                        className={cn(
+                          "flex items-center gap-0.5 text-xs font-bold px-1.5 py-0.5 rounded-full",
+                          type === 'up' ? 'bg-emerald-50 text-emerald-600' : 
+                          type === 'down' ? 'bg-rose-50 text-rose-600' : 
+                          type === 'warning' ? 'bg-amber-50 text-amber-600' : 'bg-gray-100 text-gray-600'
+                        )}
+                      >
+                        {type === 'up' ? '↑' : type === 'down' ? '↓' : type === 'warning' ? '⚠' : '•'}
+                        {trendLabel}
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
             ))}

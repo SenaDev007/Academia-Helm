@@ -34,11 +34,15 @@ import { PublicVerificationService } from './services/public-verification.servic
 import { StudentDossierService } from './services/student-dossier.service';
 import { PublicVerificationController } from './controllers/public-verification.controller';
 import { StudentDossierController } from './controllers/student-dossier.controller';
+import { AdmissionController } from './controllers/admission.controller';
 // Module 1 - Cycle de vie (pre-register, admit, re-enroll, transfer, change-class, history, export EDUCMASTER)
 import { StudentsLifecycleService } from './services/students-lifecycle.service';
+import { AdmissionService } from './services/admission.service';
 import { StudentsLifecycleController } from './controllers/students-lifecycle.controller';
 import { EducmasterExcelExportService } from './services/educmaster-excel-export.service';
 import { MatriculeService } from './services/matricule.service';
+import { StudentTransferController } from './student-transfer.controller';
+import { StudentTransferService } from './student-transfer.service';
 import { FinanceModule } from '../finance/finance.module';
 
 @Module({
@@ -69,6 +73,8 @@ import { FinanceModule } from '../finance/finance.module';
     // Module 1 - Vérification Publique & Dossier Scolaire
     PublicVerificationController,
     StudentDossierController,
+    AdmissionController,
+    StudentTransferController,
   ],
   providers: [
     StudentsService,
@@ -86,9 +92,11 @@ import { FinanceModule } from '../finance/finance.module';
     // Module 1 - Vérification Publique & Dossier Scolaire
     PublicVerificationService,
     StudentDossierService,
+    AdmissionService,
     StudentsLifecycleService,
     EducmasterExcelExportService,
     MatriculeService,
+    StudentTransferService,
   ],
   exports: [
     StudentsService,
@@ -105,10 +113,11 @@ import { FinanceModule } from '../finance/finance.module';
     // Module 1 - Vérification Publique & Dossier Scolaire
     PublicVerificationService,
     StudentDossierService,
+    AdmissionService,
     StudentsLifecycleService,
     EducmasterExcelExportService,
     MatriculeService,
+    StudentTransferService,
   ],
 })
 export class StudentsModule {}
-

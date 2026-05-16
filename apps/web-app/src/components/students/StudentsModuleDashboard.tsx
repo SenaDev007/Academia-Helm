@@ -39,12 +39,12 @@ export interface StudentsModuleDashboardProps {
 }
 
 const SUB_MODULES = [
-  { id: 'a-admission', label: 'Admission & cycle de vie', description: 'Pré-inscription, admission, réinscription, affectation classe, transfert', icon: UserPlus, color: 'blue' },
-  { id: 'b-identite', label: 'Identité & relations', description: 'Tableau des élèves, dossier, parents, contacts', icon: User, color: 'indigo' },
-  { id: 'c-historique', label: 'Historique & multi-année', description: 'Traçabilité, dossier académique consolidé', icon: History, color: 'slate' },
-  { id: 'd-regimes-finance', label: 'Régimes & situation fin.', description: 'Régimes spéciaux, arriérés, liaison Finance', icon: DollarSign, color: 'emerald' },
-  { id: 'e-documents-carte', label: 'Documents & carte scolaire', description: 'Carte scolaire, QR, certificats, export PDF', icon: CreditCard, color: 'violet' },
-  { id: 'f-interop', label: 'Interopérabilité nationale', description: 'Export EDUCMASTER, format officiel, logs', icon: Share2, color: 'amber' },
+  { id: 'admissions', label: 'Admissions & cycle de vie', description: 'Pré-inscription, admission, réinscription, affectation classe, transfert', icon: UserPlus, color: 'blue' },
+  { id: 'dossiers', label: 'Identité & Dossiers', description: 'Tableau des élèves, dossier, parents, contacts', icon: User, color: 'indigo' },
+  { id: 'movements', label: 'Historique & Mouvements', description: 'Traçabilité, dossier académique consolidé', icon: History, color: 'slate' },
+  { id: 'compliance', label: 'Documents & Conformité', description: 'Carte scolaire, QR, certificats, conformité', icon: CreditCard, color: 'violet' },
+  { id: 'educmaster', label: 'Interopérabilité nationale', description: 'Export EDUCMASTER, format officiel, logs', icon: Share2, color: 'amber' },
+  { id: 'analytics', label: 'Analyse ORION & Stats', description: 'Statistiques avancées, détection d\'anomalies', icon: BookOpen, color: 'emerald' },
 ];
 
 const COLOR_MAP: Record<string, string> = {

@@ -110,6 +110,14 @@ import {
   Facebook,
   Linkedin,
   Youtube,
+
+  // New Icons
+  FileText as FileTextIcon,
+  Calendar,
+  Cpu,
+  MessageSquare,
+  Archive,
+  RefreshCw as CloudSyncIcon,
   
   // Type from lucide-react
   LucideIcon,
@@ -213,6 +221,15 @@ export const IconMapping = {
   linkedin: Linkedin,
   twitter: X, // X (anciennement Twitter) - utilise l'icône X de Lucide
   youtube: Youtube,
+
+  // New additions
+  document: FileTextIcon,
+  calendar: Calendar,
+  cpu: Cpu,
+  messageSquare: MessageSquare,
+  clock: Clock,
+  archive: Archive,
+  cloudSync: RefreshCw,
 } as const;
 
 /**

@@ -30,6 +30,7 @@ import {
   useInvalidatePedagogyDashboard,
 } from '@/hooks/usePedagogyDashboardQueries';
 import { PEDAGOGY_SUBMODULE_TABS } from '@/components/pedagogy/pedagogy-tabs';
+import ParentTasksView from '@/components/pedagogy/tasks/ParentTasksView';
 import { cn } from '@/lib/utils';
 
 interface ControlDashboard {
@@ -247,6 +248,10 @@ export function PedagogyModuleDashboard() {
   const { academicYear } = useModuleContext();
   const invalidate = useInvalidatePedagogyDashboard();
 
+  const isTeacher = ['TEACHER', 'TEACHER_RESP'].includes(user?.role ?? '');
+  const isDirector = ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'director', 'admin'].includes(user?.role ?? '');
+  const isParent = ['PARENT', 'STUDENT'].includes(user?.role ?? '');
+
   const tenantId = useMemo(() => {
     const cross = ['PLATFORM_OWNER', 'PLATFORM_ADMIN', 'SUPER_ADMIN'].includes(user?.role ?? '');
     return (cross ? searchParams.get('tenant_id') : null) || tenant?.id || '';
@@ -302,7 +307,15 @@ export function PedagogyModuleDashboard() {
     );
   }
 
-  const shortcuts = PEDAGOGY_SUBMODULE_TABS.slice(1, 7);
+  const userRole = user?.role || '';
+  
+  if (isParent) {
+    return <ParentTasksView />;
+  }
+
+  const shortcuts = PEDAGOGY_SUBMODULE_TABS
+    .filter((tab) => tab.id !== 'dashboard' && (!tab.roles || (tab.roles as unknown as string[]).includes(userRole)))
+    .slice(0, 6);
 
   return (
     <div className="space-y-8 pb-12">
@@ -313,7 +326,7 @@ export function PedagogyModuleDashboard() {
             animate={{ opacity: 1, x: 0 }}
             className="text-3xl font-bold text-gray-900 tracking-tight"
           >
-            Veille Pédagogique
+            {isTeacher ? 'Mon Espace Pédagogique' : 'Veille Pédagogique'}
           </motion.h1>
           <motion.p 
             initial={{ opacity: 0, x: -20 }}
@@ -337,30 +350,34 @@ export function PedagogyModuleDashboard() {
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           index={0}
-          title="Taux de Conformité"
-          value={control?.data ? `${Math.round(control.data.overallRate * 100)}%` : '—'}
+          title={isTeacher ? "Ma Conformité" : "Taux de Conformité"}
+          value={control?.ok && control.data ? `${Math.round(control.data.overallRate * 100)}%` : '—'}
           icon={ShieldCheck}
           color="indigo"
           trend="+2.4%"
         />
         <KpiCard
           index={1}
-          title="Enseignants Actifs"
-          value={control?.data?.totalActiveProfiles ?? '—'}
-          icon={Users}
+          title={isTeacher ? "Documents Validés" : "Enseignants Actifs"}
+          value={isTeacher 
+            ? (orionKpis?.ok && orionKpis.data?.documents?.approved ? orionKpis.data.documents.approved : '—')
+            : (control?.ok && control.data?.totalActiveProfiles ? control.data.totalActiveProfiles : '—')}
+          icon={isTeacher ? BookOpen : Users}
           color="emerald"
         />
         <KpiCard
           index={2}
-          title="Risques ORION"
-          value={advancedOrion?.data?.summary?.riskFlagsCount ?? 0}
+          title={isTeacher ? "Corrections à Faire" : "Risques ORION"}
+          value={isTeacher
+            ? (orionKpis?.ok && orionKpis.data?.documents?.rejected ? orionKpis.data.documents.rejected : 0)
+            : (advancedOrion?.ok && advancedOrion.data?.summary?.riskFlagsCount ? advancedOrion.data.summary.riskFlagsCount : 0)}
           icon={AlertCircle}
-          color={advancedOrion?.data?.summary?.criticalRisks ? 'rose' : 'amber'}
+          color={isTeacher ? 'rose' : (advancedOrion?.ok && advancedOrion.data?.summary?.criticalRisks ? 'rose' : 'amber')}
         />
         <KpiCard
           index={3}
-          title="Insights Générés"
-          value={advancedOrion?.data?.summary?.insightsCount ?? 0}
+          title={isTeacher ? "Sara AI Insights" : "Insights Générés"}
+          value={advancedOrion?.ok && advancedOrion.data?.summary?.insightsCount ? advancedOrion.data.summary.insightsCount : 0}
           icon={Sparkles}
           color="purple"
         />
@@ -380,10 +397,10 @@ export function PedagogyModuleDashboard() {
             
             <div className="flex items-center justify-between mb-8">
               <div>
-                <h2 className="text-xl font-bold text-gray-900">Production Documentaire</h2>
-                <p className="text-sm text-gray-500">Taux de complétion par type de document</p>
+                <h2 className="text-xl font-bold text-gray-900">{isTeacher ? 'Ma Production Pédagogique' : 'Production Documentaire'}</h2>
+                <p className="text-sm text-gray-500">{isTeacher ? 'Suivi de mes soumissions' : 'Taux de complétion par type de document'}</p>
               </div>
-              <Link href="/app/pedagogy/control" className="text-sm font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1">
+              <Link href={isTeacher ? "/app/pedagogy/production" : "/app/pedagogy/control"} className="text-sm font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1">
                 Détails <ArrowRight className="h-4 w-4" />
               </Link>
             </div>
@@ -394,15 +411,17 @@ export function PedagogyModuleDashboard() {
                 Chargement des indicateurs...
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 py-4">
-                <ProgressCircle rate={control?.data?.lessonPlanRate ?? 0} label="Fiches" />
-                <ProgressCircle rate={control?.data?.journalRate ?? 0} label="Cahier Journal" />
-                <ProgressCircle rate={control?.data?.classLogRate ?? 0} label="Cahier Texte" />
-                <ProgressCircle rate={control?.data?.weeklyReportRate ?? 0} label="Semainier" />
-              </div>
+              control?.ok && control.data && (
+                <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <ProgressCircle rate={control.data.lessonPlanRate} label="Cahiers de texte" />
+                  <ProgressCircle rate={control.data.journalRate} label="Journaux classe" />
+                  <ProgressCircle rate={control.data.classLogRate} label="Cahiers d'appel" />
+                  <ProgressCircle rate={control.data.weeklyReportRate} label="Rapports hebdo" />
+                </div>
+              )
             )}
 
-            {snapshots?.data && snapshots.data.length > 0 && (
+            {snapshots?.ok && snapshots.data && snapshots.data.length > 0 && (
               <div className="mt-8 pt-6 border-t border-gray-50">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Tendance (10 derniers jours)</span>
@@ -410,7 +429,7 @@ export function PedagogyModuleDashboard() {
                     <TrendingUp className="h-3 w-3" /> Croissance stable
                   </span>
                 </div>
-                <CompletionTrendChart snapshots={snapshots.data} />
+                <CompletionTrendChart snapshots={snapshots.data as any} />
               </div>
             )}
           </motion.section>
@@ -454,28 +473,46 @@ export function PedagogyModuleDashboard() {
 
             <div className="flex items-center gap-2 mb-6">
               <div className="h-2 w-2 rounded-full bg-blue-400 animate-pulse" />
-              <h2 className="text-lg font-bold">Cockpit ORION</h2>
+              <h2 className="text-lg font-bold">{isTeacher ? 'Sara AI Pédagogie' : 'Cockpit ORION'}</h2>
             </div>
 
             <div className="space-y-4">
-              {advancedOrion?.data?.riskFlags && advancedOrion.data.riskFlags.length > 0 ? (
-                advancedOrion.data.riskFlags.slice(0, 3).map((risk) => (
-                  <div key={risk.id} className="rounded-xl bg-white/5 border border-white/10 p-3 flex gap-3">
-                    <div className={cn(
-                      "mt-1 h-2 w-2 shrink-0 rounded-full",
-                      risk.level === 'RED' ? 'bg-rose-500 shadow-[0_0_8px_#f43f5e]' : 'bg-amber-500 shadow-[0_0_8px_#f59e0b]'
-                    )} />
-                    <div className="space-y-1">
-                      <p className="text-xs font-medium text-white/90 leading-snug">{risk.message}</p>
-                      <p className="text-[10px] text-white/40">{new Date(risk.createdAt).toLocaleDateString()}</p>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="py-8 text-center space-y-2">
-                  <BarChart3 className="h-8 w-8 text-white/20 mx-auto" />
-                  <p className="text-xs text-white/40">Aucun risque critique détecté par l'IA.</p>
+              {isTeacher ? (
+                <div className="space-y-4">
+                   <div className="rounded-xl bg-white/5 border border-white/10 p-3">
+                     <p className="text-xs text-white/80 leading-relaxed italic">
+                       &quot;Bonjour {user?.firstName}, je peux vous aider à structurer votre prochaine fiche pédagogique ou à renseigner votre cahier journal.&quot;
+                     </p>
+                   </div>
+                   <div className="grid grid-cols-1 gap-2">
+                     <button className="text-left px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-colors text-xs text-blue-300">
+                       Structurer une leçon...
+                     </button>
+                     <button className="text-left px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-colors text-xs text-blue-300">
+                       Proposer des activités...
+                     </button>
+                   </div>
                 </div>
+              ) : (
+                advancedOrion?.ok && advancedOrion.data?.riskFlags && advancedOrion.data.riskFlags.length > 0 ? (
+                  advancedOrion.data.riskFlags.slice(0, 3).map((risk: any) => (
+                    <div key={risk.id} className="rounded-xl bg-white/5 border border-white/10 p-3 flex gap-3">
+                      <div className={cn(
+                        "mt-1 h-2 w-2 shrink-0 rounded-full",
+                        risk.level === 'RED' ? 'bg-rose-500 shadow-[0_0_8px_#f43f5e]' : 'bg-amber-500 shadow-[0_0_8px_#f59e0b]'
+                      )} />
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium text-white/90 leading-snug">{risk.message}</p>
+                        <p className="text-[10px] text-white/40">{new Date(risk.createdAt).toLocaleDateString()}</p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="py-8 text-center space-y-2">
+                    <BarChart3 className="h-8 w-8 text-white/20 mx-auto" />
+                    <p className="text-xs text-white/40">Aucun risque critique détecté par l'IA.</p>
+                  </div>
+                )
               )}
             </div>
 
@@ -514,7 +551,7 @@ export function PedagogyModuleDashboard() {
                   "px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase",
                   roomCount?.ok ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
                 )}>
-                  {roomCount?.ok ? `${roomCount.count} salles` : "0 salles"}
+                  {roomCount?.ok ? `${roomCount.data} salles` : "0 salles"}
                 </span>
               </div>
             </div>

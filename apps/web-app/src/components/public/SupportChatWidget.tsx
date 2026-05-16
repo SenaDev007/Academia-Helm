@@ -410,7 +410,7 @@ export default function SupportChatWidget() {
       };
 
       const category = intentToCategoryMap[intent.id];
-      if (category && faq[category]?.questions?.length > 0) {
+      if (category && faq[category] && faq[category].questions && faq[category].questions.length > 0) {
         // Cas spécial : pricing → retourner un résumé structuré des plans Helm
         if (intent.id === 'pricing_general') {
           answer =
@@ -428,7 +428,7 @@ export default function SupportChatWidget() {
             "  - Souscription initiale : 200 000 FCFA\n" +
             "  - Tarif sur devis selon le nombre de campus\n\n" +
             "Tous les plans incluent les 9 modules complets (élèves, finances, IA ORION, QHSE, communication, etc.).";
-        } else {
+        } else if (faq[category] && faq[category].questions[0]) {
           answer = faq[category].questions[0].a;
         }
       }
@@ -459,7 +459,7 @@ export default function SupportChatWidget() {
       switch (intent.id) {
         case 'greeting':
           // Pas de closing sur les salutations (déjà géré en amont, mais ajouté pour robustesse)
-          closing = undefined;
+          closing = '';
           break;
         case 'free_trial':
           closing = closingResponses.trial_close;

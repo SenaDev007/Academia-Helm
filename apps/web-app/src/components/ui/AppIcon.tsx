@@ -99,7 +99,7 @@ export default function AppIcon({
       )}
       style={color ? { color } : undefined}
       aria-label={ariaLabel}
-      aria-hidden={ariaHidden || !ariaLabel}
+      aria-hidden={ariaHidden || !ariaLabel ? "true" : undefined}
     />
   );
 }

@@ -114,6 +114,12 @@ export class PaymentFlow {
   student: Student | null;
 
   /**
+   * ID de l'année scolaire (nullable, uniquement pour TUITION)
+   */
+  @Column({ type: 'uuid', nullable: true })
+  academicYearId: string | null;
+
+  /**
    * Montant du paiement
    */
   @Column({ type: 'decimal', precision: 12, scale: 2 })

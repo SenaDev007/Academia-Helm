@@ -4,9 +4,10 @@ import { CanteenService } from './services/canteen.service';
 import { TransportService } from './services/transport.service';
 import { LibraryService } from './services/library.service';
 import { LabService } from './services/lab.service';
-import { MedicalService } from './services/medical.service';
+import { InfirmaryService } from './services/infirmary.service';
 import { ShopService } from './services/shop.service';
 import { EducastService } from './services/educast.service';
+import { QHSEService } from './services/qhse.service';
 import { ModulesComplementairesOrionService } from './services/modules-complementaires-orion.service';
 import { ModulesComplementairesController } from './modules-complementaires.controller';
 
@@ -21,9 +22,10 @@ import { ModulesComplementairesController } from './modules-complementaires.cont
     TransportService,
     LibraryService,
     LabService,
-    MedicalService,
+    InfirmaryService,
     ShopService,
     EducastService,
+    QHSEService,
     ModulesComplementairesOrionService,
   ],
   exports: [
@@ -31,11 +33,11 @@ import { ModulesComplementairesController } from './modules-complementaires.cont
     TransportService,
     LibraryService,
     LabService,
-    MedicalService,
+    InfirmaryService,
     ShopService,
     EducastService,
+    QHSEService,
     ModulesComplementairesOrionService,
   ],
 })
 export class ModulesComplementairesModule {}
-

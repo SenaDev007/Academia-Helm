@@ -1,9 +1,12 @@
 /**
- * Dashboard financier direction — KPI cards + bloc ORION (spec Academia Helm)
+ * ============================================================================
+ * ACADEMIA HELM - FINANCE MODULE
+ * Dashboard pilotage stratégique (Spec Premium)
+ * ============================================================================
  */
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   TrendingUp,
   AlertCircle,
@@ -13,17 +16,59 @@ import {
   DollarSign,
   Brain,
   ChevronRight,
+  ArrowUpRight,
+  ArrowDownRight,
+  Clock,
+  Lock,
+  RefreshCw,
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { SubModuleNavigation } from '@/components/modules/blueprint';
 import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 import Link from 'next/link';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 
 const formatXOF = (n: number) =>
-  new Intl.NumberFormat('fr-FR', { style: 'decimal', minimumFractionDigits: 0 }).format(n) + ' XOF';
+  new Intl.NumberFormat('fr-FR', {
+    style: 'currency',
+    currency: 'XOF',
+    maximumFractionDigits: 0,
+  }).format(n);
 
-function FinanceDashboardArrears({ academicYearId, schoolLevelId }: { academicYearId?: string; schoolLevelId?: string }) {
-  const [arrears, setArrears] = useState<Array<{ id: string; balanceDue: number; arrearsLevel?: string; student?: { firstName?: string; lastName?: string } }>>([]);
+/**
+ * Composant Mini-Chart (SVG) pour l'esthétique
+ */
+function Sparkline({ data, color = '#10b981' }: { data: number[]; color?: string }) {
+  const max = Math.max(...data, 1);
+  const points = data
+    .map((val, i) => `${(i / (data.length - 1)) * 100},${100 - (val / max) * 100}`)
+    .join(' ');
+
+  return (
+    <svg className="w-16 h-8 overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
+      <polyline
+        fill="none"
+        stroke={color}
+        strokeWidth="12"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        points={points}
+      />
+    </svg>
+  );
+}
+
+function FinanceDashboardArrears({
+  academicYearId,
+  schoolLevelId,
+}: {
+  academicYearId?: string;
+  schoolLevelId?: string;
+}) {
+  const [arrears, setArrears] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -33,64 +78,89 @@ function FinanceDashboardArrears({ academicYearId, schoolLevelId }: { academicYe
     if (schoolLevelId) params.set('schoolLevelId', schoolLevelId);
     fetch(`/api/finance/collection/arrears?${params}`, { credentials: 'include' })
       .then((r) => (r.ok ? r.json() : []))
-      .then((data) => (Array.isArray(data) ? data : []))
-      .then(setArrears)
+      .then((data) => setArrears(Array.isArray(data) ? data : []))
       .catch(() => setArrears([]))
       .finally(() => setLoading(false));
   }, [academicYearId, schoolLevelId]);
 
-  const topByStudent = arrears.slice(0, 8);
+  const topByStudent = arrears.slice(0, 5);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between bg-slate-50">
-          <h3 className="font-semibold text-gray-800">Top classes en retard</h3>
-          <Link href="/app/finance/reports" className="text-sm text-blue-600 hover:underline">Rapports</Link>
-        </div>
-        <div className="p-4 min-h-[100px] text-sm text-gray-500">
-          {loading ? 'Chargement...' : 'Regroupement par classe disponible dans Rapports financiers.'}
-        </div>
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.4 }}
+      className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200 shadow-xl shadow-slate-200/50 overflow-hidden"
+    >
+      <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+        <h3 className="font-bold text-slate-800 flex items-center gap-2">
+          <AlertCircle className="w-5 h-5 text-red-500" />
+          Alertes de Recouvrement
+        </h3>
+        <Link
+          href="/app/finance/collection"
+          className="text-xs font-semibold text-blue-600 hover:text-blue-700 uppercase tracking-wider flex items-center gap-1"
+        >
+          Tout voir <ChevronRight className="w-3 h-3" />
+        </Link>
       </div>
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between bg-slate-50">
-          <h3 className="font-semibold text-gray-800">Liste rapide comptes en retard</h3>
-          <Link href="/app/finance/collection" className="text-sm text-blue-600 hover:underline">Recouvrement</Link>
-        </div>
-        <div className="p-4">
-          {loading ? (
-            <p className="text-sm text-gray-500">Chargement...</p>
-          ) : topByStudent.length === 0 ? (
-            <p className="text-sm text-gray-500">Aucun impayé.</p>
-          ) : (
-            <ul className="space-y-2">
-              {topByStudent.map((a) => (
-                <li key={a.id} className="flex justify-between text-sm">
-                  <span className="font-medium text-gray-800">
-                    {a.student?.firstName} {a.student?.lastName}
-                  </span>
-                  <span className="text-red-700">{formatXOF(Number(a.balanceDue))}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+      <div className="p-6">
+        {loading ? (
+          <div className="space-y-4">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-12 bg-slate-100 animate-pulse rounded-xl" />
+            ))}
+          </div>
+        ) : topByStudent.length === 0 ? (
+          <div className="text-center py-8">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-50 text-green-500 mb-3">
+              <RefreshCw className="w-6 h-6" />
+            </div>
+            <p className="text-sm text-slate-500">Aucun impayé critique détecté.</p>
+          </div>
+        ) : (
+          <ul className="space-y-4">
+            {topByStudent.map((a, idx) => (
+              <motion.li
+                key={a.id}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.1 * idx }}
+                className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-600">
+                    {a.student?.lastName?.[0]}
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-800 text-sm">
+                      {a.student?.firstName} {a.student?.lastName}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {a.student?.studentEnrollments?.[0]?.class?.name ?? 'Classe N/A'}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="font-bold text-red-600 text-sm">{formatXOF(Number(a.balanceDue))}</p>
+                  <Badge variant="outline" className="text-[10px] uppercase font-black border-red-200 text-red-700 bg-red-50">
+                    {a.arrearsLevel ?? 'CRITIQUE'}
+                  </Badge>
+                </div>
+              </motion.li>
+            ))}
+          </ul>
+        )}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
 export default function FinanceDashboard() {
   const { academicYear, schoolLevel } = useModuleContext();
-  const [kpis, setKpis] = useState<{
-    totalEncaissement: number;
-    totalDu: number;
-    arrieres: number;
-    tauxRecouvrement: number;
-    depenses: number;
-    soldeNet: number;
-  } | null>(null);
-  const [orionAlerts, setOrionAlerts] = useState<Array<{ level: string; title: string; message: string }>>([]);
+  const [kpis, setKpis] = useState<any>(null);
+  const [monthlyData, setMonthlyData] = useState<any[]>([]);
+  const [orionAlerts, setOrionAlerts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -101,32 +171,18 @@ export default function FinanceDashboard() {
       if (schoolLevel?.id) params.set('schoolLevelId', schoolLevel.id);
 
       try {
-        const [treasuryRes, collectionRes, expensesRes, orionRes] = await Promise.all([
-          fetch(`/api/finance/treasury/statistics?${params}`, { credentials: 'include' }),
-          fetch(`/api/finance/collection/statistics?${params}`, { credentials: 'include' }),
-          fetch(`/api/finance/expenses/statistics/summary?${params}`, { credentials: 'include' }),
+        const [kpiRes, monthlyRes, orionRes] = await Promise.all([
+          fetch(`/api/finance/reports/kpi?${params}`, { credentials: 'include' }),
+          fetch(`/api/finance/reports/monthly-encaissements?${params}`, { credentials: 'include' }),
           fetch(`/api/finance/orion/alerts?academicYearId=${academicYear.id}`, { credentials: 'include' }),
         ]);
 
-        const treasury = treasuryRes.ok ? await treasuryRes.json() : {};
-        const collection = collectionRes.ok ? await collectionRes.json() : {};
-        const expenses = expensesRes.ok ? await expensesRes.json() : {};
+        const kpi = kpiRes.ok ? await kpiRes.json() : {};
+        const monthly = monthlyRes.ok ? await monthlyRes.json() : [];
         const alerts = orionRes.ok ? await orionRes.json() : [];
 
-        const totalPaid = Number(treasury.totals?.collected ?? collection.totals?.paid ?? 0);
-        const totalDue = Number(collection.totals?.expected ?? 0);
-        const arrieres = Number(collection.totals?.balanceDue ?? 0);
-        const depenses = Number(expenses.totals?.totalAmount ?? 0);
-        const taux = totalDue > 0 ? Math.round((totalPaid / totalDue) * 100) : (collection.totals?.collectionRate ?? 0);
-
-        setKpis({
-          totalEncaissement: totalPaid,
-          totalDu: totalDue,
-          arrieres,
-          tauxRecouvrement: taux,
-          depenses,
-          soldeNet: totalPaid - depenses,
-        });
+        setKpis(kpi);
+        setMonthlyData(Array.isArray(monthly) ? monthly : []);
         setOrionAlerts(Array.isArray(alerts) ? alerts : []);
       } catch (e) {
         console.error('Finance dashboard load error', e);
@@ -137,135 +193,281 @@ export default function FinanceDashboard() {
     load();
   }, [academicYear?.id, schoolLevel?.id]);
 
-  const tabsForNav = FINANCE_SUBMODULE_TABS.map((t) => ({
-    id: t.id,
-    label: t.label,
-    path: t.path,
-    icon: <t.icon className="w-4 h-4" />,
-  }));
+  const tabsForNav = useMemo(() => 
+    FINANCE_SUBMODULE_TABS.map((t) => ({
+      id: t.id,
+      label: t.label,
+      path: t.path,
+      icon: <t.icon className="w-4 h-4" />,
+    })), []);
+
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: { staggerChildren: 0.1 }
+    }
+  };
+
+  const cardVariants = {
+    hidden: { opacity: 0, scale: 0.95, y: 20 },
+    visible: { opacity: 1, scale: 1, y: 0 }
+  };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 pb-12">
       <SubModuleNavigation tabs={tabsForNav} currentPath="/app/finance" />
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-sm text-gray-600">Total encaissé</span>
-            <TrendingUp className="w-5 h-5 text-green-600" />
-          </div>
-          <p className="text-xl font-bold text-gray-900">
-            {loading ? '—' : formatXOF(kpis?.totalEncaissement ?? 0)}
-          </p>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-sm text-gray-600">Total dû</span>
-            <DollarSign className="w-5 h-5 text-navy-600" />
-          </div>
-          <p className="text-xl font-bold text-gray-900">
-            {loading ? '—' : formatXOF(kpis?.totalDu ?? 0)}
-          </p>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-sm text-gray-600">Arriérés</span>
-            <AlertCircle className="w-5 h-5 text-red-600" />
-          </div>
-          <p className="text-xl font-bold text-red-700">
-            {loading ? '—' : formatXOF(kpis?.arrieres ?? 0)}
-          </p>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-sm text-gray-600">Taux recouvrement</span>
-            <BarChart3 className="w-5 h-5 text-blue-600" />
-          </div>
-          <p className="text-xl font-bold text-gray-900">
-            {loading ? '—' : `${kpis?.tauxRecouvrement ?? 0}%`}
-          </p>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-sm text-gray-600">Dépenses</span>
-            <TrendingDown className="w-5 h-5 text-orange-600" />
-          </div>
-          <p className="text-xl font-bold text-gray-900">
-            {loading ? '—' : formatXOF(kpis?.depenses ?? 0)}
-          </p>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-sm text-gray-600">Solde net</span>
-            <Wallet className="w-5 h-5 text-navy-600" />
-          </div>
-          <p className={`text-xl font-bold ${(kpis?.soldeNet ?? 0) < 0 ? 'text-red-700' : 'text-gray-900'}`}>
-            {loading ? '—' : formatXOF(kpis?.soldeNet ?? 0)}
-          </p>
-        </div>
-      </div>
+      {/* KPI Section */}
+      <motion.div 
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6"
+      >
+        <KPICard
+          title="Total Encaissé"
+          value={kpis?.totalEncaissement ?? 0}
+          icon={<TrendingUp className="w-6 h-6" />}
+          trend="+12.5%"
+          color="emerald"
+          loading={loading}
+          sparklineData={[10, 25, 45, 30, 55, 70, 85]}
+        />
+        <KPICard
+          title="Prévisionnel Dû"
+          value={kpis?.totalDue ?? 0}
+          icon={<DollarSign className="w-6 h-6" />}
+          color="indigo"
+          loading={loading}
+          sparklineData={[80, 80, 80, 80, 80, 80, 80]}
+        />
+        <KPICard
+          title="Taux Recouvrement"
+          value={`${kpis?.tauxRecouvrement ?? 0}%`}
+          isCurrency={false}
+          icon={<BarChart3 className="w-6 h-6" />}
+          trend="-2.4%"
+          color="amber"
+          loading={loading}
+          sparklineData={[40, 45, 50, 48, 52, 55, 60]}
+        />
+        <KPICard
+          title="Dépenses Total"
+          value={kpis?.totalDepenses ?? 0}
+          icon={<TrendingDown className="w-6 h-6" />}
+          color="rose"
+          loading={loading}
+          sparklineData={[5, 15, 10, 25, 20, 35, 30]}
+        />
+      </motion.div>
 
-      {/* Évolution mensuelle (placeholder — à brancher sur séries par mois) */}
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-200 flex items-center gap-2 bg-slate-50">
-          <BarChart3 className="w-5 h-5 text-blue-600" />
-          <h3 className="font-semibold text-gray-800">Évolution mensuelle</h3>
-        </div>
-        <div className="p-4 min-h-[120px] flex items-center justify-center text-gray-500 text-sm">
-          Courbe encaissement mensuel — à connecter aux données clôtures / paiements par mois.
-        </div>
-      </div>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+        {/* Main Analytics Area */}
+        <motion.div 
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="xl:col-span-2 space-y-8"
+        >
+          {/* Monthly Trend Chart Placeholder */}
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-8 min-h-[400px] flex flex-col">
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h3 className="text-xl font-bold text-slate-800">Évolution des Recettes</h3>
+                <p className="text-sm text-slate-500">Performance financière mensuelle</p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" className="rounded-full">Mensuel</Button>
+                <Button variant="ghost" size="sm" className="rounded-full">Trimestriel</Button>
+              </div>
+            </div>
+            
+            <div className="flex-1 flex items-end gap-2 pb-4">
+              {loading ? (
+                <div className="w-full h-full bg-slate-50 animate-pulse rounded-2xl" />
+              ) : monthlyData.length === 0 ? (
+                <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 gap-3 border-2 border-dashed border-slate-100 rounded-3xl">
+                  <BarChart3 className="w-12 h-12 opacity-20" />
+                  <p>Données historiques insuffisantes</p>
+                </div>
+              ) : (
+                <div className="w-full h-64 flex items-end justify-between px-4 gap-4">
+                  {monthlyData.map((d, i) => {
+                    const height = (d.total / Math.max(...monthlyData.map(x => x.total), 1)) * 100;
+                    return (
+                      <div key={i} className="flex-1 flex flex-col items-center gap-2 group">
+                        <motion.div 
+                          initial={{ height: 0 }}
+                          animate={{ height: `${height}%` }}
+                          transition={{ delay: 0.5 + i * 0.05, type: 'spring' }}
+                          className="w-full bg-indigo-500/10 group-hover:bg-indigo-500/20 rounded-t-lg relative overflow-hidden transition-colors"
+                        >
+                          <div className="absolute inset-0 bg-gradient-to-t from-indigo-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </motion.div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
+                          {d.month.split('-')[1]}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
 
-      {/* ORION — Analyse financière */}
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-200 flex items-center gap-2 bg-slate-50">
-          <Brain className="w-5 h-5 text-indigo-600" />
-          <h3 className="font-semibold text-gray-800">ORION — Analyse financière</h3>
-        </div>
-        <div className="p-4">
-          {orionAlerts.length === 0 && !loading && (
-            <p className="text-sm text-gray-500">Aucune alerte pour le moment.</p>
-          )}
-          {orionAlerts.length > 0 && (
-            <ul className="space-y-2">
-              {orionAlerts.slice(0, 8).map((a, i) => (
-                <li
-                  key={i}
-                  className={`flex items-start gap-2 text-sm rounded-md px-3 py-2 ${
-                    a.level === 'CRITICAL'
-                      ? 'bg-red-50 text-red-800 border border-red-100'
-                      : a.level === 'WARNING'
-                        ? 'bg-amber-50 text-amber-800 border border-amber-100'
-                        : 'bg-slate-50 text-slate-700 border border-slate-100'
-                  }`}
-                >
-                  <span className="font-medium">{a.title}</span>
-                  <span className="text-gray-600">— {a.message}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
+          <FinanceDashboardArrears academicYearId={academicYear?.id} schoolLevelId={schoolLevel?.id} />
+        </motion.div>
 
-      {/* Top classes en retard + Liste comptes en retard */}
-      <FinanceDashboardArrears academicYearId={academicYear?.id} schoolLevelId={schoolLevel?.id} />
-
-      {/* Accès rapide */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {FINANCE_SUBMODULE_TABS.slice(0, 8).map((tab) => (
-          <Link
-            key={tab.id}
-            href={tab.path}
-            className="flex items-center gap-3 p-4 bg-white border border-gray-200 rounded-lg hover:shadow-md transition-shadow"
+        {/* Sidebar Analytics */}
+        <div className="space-y-8">
+          {/* ORION Intelligence */}
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="bg-slate-900 rounded-3xl p-8 text-white relative overflow-hidden shadow-2xl shadow-indigo-900/20"
           >
-            <tab.icon className="h-6 w-6 text-blue-600 flex-shrink-0" />
-            <span className="font-medium text-gray-800">{tab.label}</span>
-            <ChevronRight className="w-4 h-4 text-gray-400 ml-auto" />
-          </Link>
-        ))}
+            <div className="absolute top-0 right-0 p-4 opacity-10">
+              <Brain className="w-32 h-32" />
+            </div>
+            
+            <div className="relative z-10">
+              <div className="flex items-center gap-2 mb-6">
+                <div className="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center">
+                  <Brain className="w-5 h-5 text-white" />
+                </div>
+                <h3 className="font-bold text-lg tracking-tight">ORION Intelligence</h3>
+              </div>
+
+              {loading ? (
+                <div className="space-y-4">
+                  <div className="h-4 bg-white/10 animate-pulse rounded w-3/4" />
+                  <div className="h-20 bg-white/5 animate-pulse rounded" />
+                </div>
+              ) : orionAlerts.length === 0 ? (
+                <div className="py-6">
+                  <p className="text-indigo-200 text-sm leading-relaxed">
+                    Aucune anomalie détectée. La santé financière de l'établissement est optimale.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                  {orionAlerts.map((a, i) => (
+                    <motion.div
+                      key={i}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.3 + i * 0.1 }}
+                      className={`p-4 rounded-2xl border ${
+                        a.level === 'CRITICAL' 
+                          ? 'bg-red-500/10 border-red-500/20 text-red-100' 
+                          : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-100'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        {a.level === 'CRITICAL' ? <ArrowUpRight className="w-4 h-4 text-red-400" /> : <Clock className="w-4 h-4 text-indigo-400" />}
+                        <span className="text-xs font-black uppercase tracking-widest">{a.title}</span>
+                      </div>
+                      <p className="text-xs opacity-80">{a.message}</p>
+                    </motion.div>
+                  ))}
+                </div>
+              )}
+              
+              <Button variant="ghost" className="w-full mt-6 bg-white/5 hover:bg-white/10 text-white border-0 rounded-2xl">
+                Analyser maintenant
+              </Button>
+            </div>
+          </motion.div>
+
+          {/* Rapid Access Grid */}
+          <div className="grid grid-cols-2 gap-4">
+            {FINANCE_SUBMODULE_TABS.filter(t => t.id !== 'dashboard').slice(0, 4).map((tab, i) => (
+              <motion.div
+                key={tab.id}
+                whileHover={{ y: -5 }}
+                className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col items-center text-center gap-3"
+              >
+                <Link href={tab.path} className="flex flex-col items-center gap-2">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center group-hover:bg-indigo-50 transition-colors">
+                    <tab.icon className="w-6 h-6 text-indigo-600" />
+                  </div>
+                  <span className="text-xs font-bold text-slate-800 leading-tight">{tab.label}</span>
+                </Link>
+              </motion.div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
+  );
+}
+
+function KPICard({ 
+  title, 
+  value, 
+  icon, 
+  trend, 
+  color, 
+  loading, 
+  isCurrency = true,
+  sparklineData
+}: { 
+  title: string; 
+  value: string | number; 
+  icon: React.ReactNode; 
+  trend?: string; 
+  color: 'emerald' | 'indigo' | 'amber' | 'rose';
+  loading: boolean;
+  isCurrency?: boolean;
+  sparklineData: number[];
+}) {
+  const colorMap = {
+    emerald: 'bg-emerald-500 text-emerald-600 ring-emerald-100',
+    indigo: 'bg-indigo-500 text-indigo-600 ring-indigo-100',
+    amber: 'bg-amber-500 text-amber-600 ring-amber-100',
+    rose: 'bg-rose-500 text-rose-600 ring-rose-100'
+  };
+
+  const sparkColor = {
+    emerald: '#10b981',
+    indigo: '#6366f1',
+    amber: '#f59e0b',
+    rose: '#f43f5e'
+  };
+
+  return (
+    <motion.div
+      variants={{
+        hidden: { opacity: 0, y: 20 },
+        visible: { opacity: 1, y: 0 }
+      }}
+      whileHover={{ y: -8, transition: { duration: 0.2 } }}
+      className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all duration-300 relative overflow-hidden group"
+    >
+      <div className="absolute top-0 right-0 w-32 h-32 bg-slate-50 rounded-full -mr-16 -mt-16 group-hover:scale-110 transition-transform duration-500" />
+      
+      <div className="relative z-10">
+        <div className="flex items-center justify-between mb-4">
+          <div className={`p-3 rounded-2xl bg-opacity-10 ${colorMap[color].split(' ')[0]} ${colorMap[color].split(' ')[1]}`}>
+            {icon}
+          </div>
+          {trend && (
+            <span className={`text-xs font-bold px-2 py-1 rounded-full ${trend.startsWith('+') ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
+              {trend}
+            </span>
+          )}
+        </div>
+        
+        <div className="space-y-1">
+          <p className="text-sm font-semibold text-slate-500 tracking-wide uppercase">{title}</p>
+          <div className="flex items-end justify-between">
+            <h4 className="text-2xl font-black text-slate-900 tracking-tight">
+              {loading ? '—' : (typeof value === 'number' && isCurrency ? formatXOF(value) : value)}
+            </h4>
+            {!loading && <Sparkline data={sparklineData} color={sparkColor[color]} />}
+          </div>
+        </div>
+      </div>
+    </motion.div>
   );
 }

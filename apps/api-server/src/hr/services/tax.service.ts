@@ -162,7 +162,7 @@ export class TaxService {
   async recordTaxWithholding(
     tenantId: string,
     academicYearId: string,
-    payrollItemId: string,
+    payrollItemId: string | null,
     staffId: string,
     taxRateId: string | null,
     taxType: string,
@@ -180,7 +180,7 @@ export class TaxService {
       const taxRate = await this.prisma.taxRate.findUnique({
         where: { id: taxRateId },
       });
-      
+
       if (taxRate) {
         bracketMin = Number(taxRate.bracketMin);
         bracketMax = taxRate.bracketMax ? Number(taxRate.bracketMax) : undefined;
@@ -193,7 +193,8 @@ export class TaxService {
       data: {
         tenantId,
         academicYearId,
-        payrollItemId,
+        // payrollItemId is optional in schema
+        ...(payrollItemId ? { payrollItemId } : {}),
         staffId,
         taxRateId,
         taxType,
@@ -221,7 +222,7 @@ export class TaxService {
             id: true,
             firstName: true,
             lastName: true,
-            employeeNumber: true,
+            staffCode: true,
           },
         },
       },

@@ -162,24 +162,23 @@ export class AttendancePrismaService {
   async recordOvertime(data: {
     tenantId: string;
     academicYearId: string;
-    schoolLevelId?: string;
     staffId: string;
     date: Date;
     hours: number;
-    notes?: string;
+    reason?: string;
   }) {
     return this.prisma.overtimeRecord.create({
       data: {
         ...data,
-        validated: false,
+        status: 'PENDING',
       },
     });
   }
 
   /**
-   * Valide des heures supplémentaires
+   * Approuve ou rejette des heures supplémentaires
    */
-  async validateOvertime(id: string, tenantId: string, validatedBy: string) {
+  async processOvertime(id: string, tenantId: string, status: 'APPROVED' | 'REJECTED', approvedBy?: string) {
     const overtime = await this.prisma.overtimeRecord.findFirst({
       where: { id, tenantId },
     });
@@ -191,9 +190,9 @@ export class AttendancePrismaService {
     return this.prisma.overtimeRecord.update({
       where: { id },
       data: {
-        validated: true,
-        validatedBy,
-        validatedAt: new Date(),
+        status,
+        approvedBy,
+        approvedAt: status === 'APPROVED' ? new Date() : null,
       },
     });
   }
@@ -205,7 +204,7 @@ export class AttendancePrismaService {
     academicYearId?: string;
     startDate?: Date;
     endDate?: Date;
-    validated?: boolean;
+    status?: string;
   }) {
     const where: any = {
       staffId,
@@ -224,34 +223,25 @@ export class AttendancePrismaService {
         where.date.lte = filters.endDate;
       }
     }
-    if (filters?.validated !== undefined) {
-      where.validated = filters.validated;
+    if (filters?.status) {
+      where.status = filters.status;
     }
 
     return this.prisma.overtimeRecord.findMany({
       where,
-      include: {
-        validator: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-          },
-        },
-      },
       orderBy: { date: 'desc' },
     });
   }
 
   /**
-   * Calcule le total d'heures supplémentaires validées
+   * Calcule le total d'heures supplémentaires approuvées
    */
   async calculateTotalOvertime(staffId: string, tenantId: string, startDate: Date, endDate: Date) {
     const overtimeRecords = await this.prisma.overtimeRecord.findMany({
       where: {
         staffId,
         tenantId,
-        validated: true,
+        status: 'APPROVED',
         date: {
           gte: startDate,
           lte: endDate,

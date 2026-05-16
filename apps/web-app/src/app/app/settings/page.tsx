@@ -91,9 +91,9 @@ export default function SettingsPage() {
   const urlTenantId = searchParams.get('tenant_id');
   /** Rôles pouvant cibler un autre tenant (query) ou retomber sur le tenant du JWT */
   const isCrossTenantRole =
-    user?.role === 'PLATFORM_OWNER' ||
-    user?.role === 'PLATFORM_ADMIN' ||
-    user?.role === 'SUPER_ADMIN';
+    (user?.role as string) === 'PLATFORM_OWNER' ||
+    (user?.role as string) === 'PLATFORM_ADMIN' ||
+    (user?.role as string) === 'SUPER_ADMIN';
   const effectiveTenantId =
     isCrossTenantRole || !tenant?.id ? urlTenantId || tenant?.id : tenant?.id;
   const isPlatformOwner = user?.role === 'PLATFORM_OWNER';
@@ -1649,7 +1649,7 @@ export default function SettingsPage() {
                             quality: 0.82,
                             mimeType: 'image/jpeg',
                           });
-                          setIdentityForm((prev) => ({ ...prev, logoUrl: dataUrl }));
+                          setIdentityForm((prev: any) => ({ ...prev, logoUrl: dataUrl }));
                         } catch {
                           showToast('error', 'Impossible de traiter cette image. Essayez un autre fichier (JPG, PNG).');
                         }
@@ -2365,8 +2365,8 @@ export default function SettingsPage() {
         const isSecondCycleSecondary = (g: any) => g?.level?.name === 'SECONDAIRE' && g?.cycle?.name === '2nd cycle';
         const selectedGradeForClassroom = newClassroomGradeId ? allGrades.find((g: any) => g.id === newClassroomGradeId) : null;
         const selectedGradeForBulk = bulkGradeId ? allGrades.find((g: any) => g.id === bulkGradeId) : null;
-        const showSeriesReminderAdd = selectedGradeForClassroom && isSecondCycleSecondary(selectedGradeForClassroom);
-        const showSeriesReminderBulk = selectedGradeForBulk && isSecondCycleSecondary(selectedGradeForBulk);
+        const showSeriesReminderAdd = !!selectedGradeForClassroom && isSecondCycleSecondary(selectedGradeForClassroom);
+        const showSeriesReminderBulk = !!selectedGradeForBulk && isSecondCycleSecondary(selectedGradeForBulk);
         return (
           <div className="space-y-6">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
@@ -2403,9 +2403,9 @@ export default function SettingsPage() {
                           className="p-1"
                         >
                           {level.isEnabled ? (
-                            <ToggleRight className="w-6 h-6 text-green-600" title="Désactiver le niveau" />
+                            <ToggleRight className="w-6 h-6 text-green-600" aria-label="Désactiver le niveau" />
                           ) : (
-                            <ToggleLeft className="w-6 h-6 text-gray-400" title="Activer le niveau" />
+                            <ToggleLeft className="w-6 h-6 text-gray-400" aria-label="Activer le niveau" />
                           )}
                         </button>
                       </div>
@@ -2488,7 +2488,7 @@ export default function SettingsPage() {
                         <button
                         type="button"
                         onClick={handleCreateEducationClassroom}
-                        disabled={structureBusy || !newClassroomGradeId || !newClassroomName.trim() || (showSeriesReminderAdd && !selectedGradeForClassroom?.series?.code && !selectedSecondCycleSeriesCode)}
+                        disabled={!!(structureBusy || !newClassroomGradeId || !newClassroomName.trim() || (showSeriesReminderAdd && !selectedGradeForClassroom?.series?.code && !selectedSecondCycleSeriesCode))}
                         className="inline-flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                       >
                         {structureBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
@@ -2594,7 +2594,7 @@ export default function SettingsPage() {
                           <button
                             type="button"
                             onClick={handleBulkCreateClassrooms}
-                            disabled={structureBusy || !bulkGradeId || (showSeriesReminderBulk && !selectedGradeForBulk?.series?.code)}
+                            disabled={!!(structureBusy || !bulkGradeId || (showSeriesReminderBulk && !selectedGradeForBulk?.series?.code))}
                             className="inline-flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                           >
                             {structureBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Layers className="w-4 h-4" />}
@@ -2869,7 +2869,7 @@ export default function SettingsPage() {
               </div>
 
               {/* Impact tarifaire */}
-              {bilingualForm.isEnabled && bilingualBillingImpact && (bilingualBillingImpact.monthly > 0 || bilingualBillingImpact.annual > 0) && (
+              {bilingualForm.isEnabled && bilingualBillingImpact && ((bilingualBillingImpact.monthly ?? 0) > 0 || (bilingualBillingImpact.annual ?? 0) > 0) && (
                 <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                   <h4 className="text-sm font-semibold text-blue-900 mb-2">Impact sur la facturation</h4>
                   <p className="text-sm text-blue-800">

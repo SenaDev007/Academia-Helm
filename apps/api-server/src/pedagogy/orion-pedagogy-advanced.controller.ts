@@ -7,11 +7,18 @@ import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { OrionPedagogyAdvancedService } from './orion-pedagogy-advanced.service';
+import { PedagogyOrionEngineService } from './services/pedagogy-orion-engine.service';
+import { Post } from '@nestjs/common';
+
 
 @Controller('api/pedagogy/orion-advanced')
 @UseGuards(JwtAuthGuard)
 export class OrionPedagogyAdvancedController {
-  constructor(private readonly service: OrionPedagogyAdvancedService) {}
+  constructor(
+    private readonly service: OrionPedagogyAdvancedService,
+    private readonly engine: PedagogyOrionEngineService,
+  ) {}
+
 
   @Get('dashboard')
   async getDashboard(
@@ -60,4 +67,13 @@ export class OrionPedagogyAdvancedController {
       entityType,
     });
   }
+  
+  @Post('analyze')
+  async runAnalysis(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string
+  ) {
+    return this.engine.performFullAnalysis(tenantId, academicYearId);
+  }
 }
+

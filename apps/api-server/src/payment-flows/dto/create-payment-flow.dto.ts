@@ -9,6 +9,10 @@ export class CreatePaymentFlowDto {
   @IsOptional()
   studentId?: string;
 
+  @IsUUID()
+  @IsOptional()
+  academicYearId?: string;
+
   @IsNumber()
   @Min(0)
   amount: number;

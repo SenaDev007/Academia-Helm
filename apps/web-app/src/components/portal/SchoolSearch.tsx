@@ -27,9 +27,9 @@ interface School {
 }
 
 interface SchoolSearchProps {
-  onSchoolSelect: (school: School) => void;
+  onSchoolSelect: (school: School | null) => void;
   selectedSchool: School | null;
-  portalType: 'SCHOOL' | 'TEACHER' | 'PARENT' | null;
+  portalType: 'PLATFORM' | 'SCHOOL' | 'TEACHER' | 'PARENT' | 'PUBLIC' | null;
 }
 
 export default function SchoolSearch({

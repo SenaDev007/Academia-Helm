@@ -14,6 +14,7 @@ import DirectorDashboard from '@/components/pilotage/dashboards/DirectorDashboar
 import TeacherDashboard from '@/components/pilotage/dashboards/TeacherDashboard';
 import AccountantDashboard from '@/components/pilotage/dashboards/AccountantDashboard';
 import AdminDashboard from '@/components/pilotage/dashboards/AdminDashboard';
+import ParentDashboard from '@/components/pilotage/dashboards/ParentDashboard';
 import type { User } from '@/types';
 
 export default async function AppPage() {
@@ -30,15 +31,21 @@ export default async function AppPage() {
   const renderDashboard = () => {
     switch (user.role) {
       case 'PLATFORM_OWNER':
+      case 'PLATFORM_ADMIN':
       case 'SUPER_DIRECTOR':
-      case 'DIRECTOR':
+      case 'director':
         return <DirectorDashboard tenantId={tenantId} />;
+      case 'teacher':
       case 'TEACHER':
+      case 'TEACHER_RESP':
         return <TeacherDashboard />;
-      case 'ACCOUNTANT':
+      case 'accountant':
         return <AccountantDashboard />;
-      case 'ADMIN':
+      case 'admin':
         return <AdminDashboard />;
+      case 'PARENT':
+      case 'STUDENT':
+        return <ParentDashboard />;
       default:
         return <AdminDashboard />;
     }

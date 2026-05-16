@@ -82,7 +82,7 @@ export async function updateEntityOffline<T extends { id: string }>(
   const updated = {
     ...entity,
     ...updates,
-    _version: (entity._version || 1) + 1,
+    _version: ((entity as any)._version || 1) + 1,
     _isDirty: true,
     updatedAt: new Date().toISOString(),
   };
@@ -132,7 +132,7 @@ export async function deleteEntityOffline(
     ...entity,
     _deleted: true,
     _isDirty: true,
-    _version: (entity._version || 1) + 1,
+    _version: ((entity as any)._version || 1) + 1,
     updatedAt: new Date().toISOString(),
   };
 

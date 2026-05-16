@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 export interface SubModule {
   id: string;
   label: string;
-  icon?: ReactNode;
+  icon?: any;
   badge?: ReactNode;
   href?: string;
   disabled?: boolean;
@@ -27,7 +27,7 @@ export interface SubModuleTab {
   id: string;
   label: string;
   path: string;
-  icon?: ReactNode;
+  icon?: any;
 }
 
 export interface SubModuleNavigationProps {
@@ -107,7 +107,15 @@ export default function SubModuleNavigation({
                 />
               )}
               <span className="relative z-10 flex items-center gap-2">
-                {module.icon && <span className={cn("flex-shrink-0", isActive ? "text-indigo-600" : "text-gray-400")}>{module.icon}</span>}
+                {module.icon && (
+                  <span className={cn("flex-shrink-0", isActive ? "text-indigo-600" : "text-gray-400")}>
+                    {typeof module.icon === 'function' || (typeof module.icon === 'object' && module.icon !== null) ? (
+                      <module.icon className="w-4 h-4" />
+                    ) : (
+                      module.icon
+                    )}
+                  </span>
+                )}
                 <span>{module.label}</span>
                 {module.badge && (
                   <span className={cn(

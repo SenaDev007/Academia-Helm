@@ -16,6 +16,30 @@ import {
 
 type LoadSlice<T> = { ok: true; data: T } | { ok: false; error: string };
 
+export interface ControlDashboardData {
+  overallRate: number;
+  totalActiveProfiles: number;
+  lessonPlanRate: number;
+  journalRate: number;
+  classLogRate: number;
+  weeklyReportRate: number;
+}
+
+export interface OrionDashboardData {
+  summary: {
+    riskFlagsCount: number;
+    insightsCount: number;
+    criticalRisks: boolean;
+  };
+  insights: any[];
+  riskFlags: any[];
+}
+
+export interface KpiSnapshot {
+  date: string;
+  rate: number;
+}
+
 function sliceFromQuery<T>(
   q: UseQueryResult<T>,
   errorLabel: string,
@@ -31,13 +55,28 @@ function sliceFromQuery<T>(
 
 const STALE_MS = 60 * 1000;
 
+export interface PedagogyDashboardQueries {
+  control: LoadSlice<ControlDashboardData> | null;
+  snapshots: LoadSlice<KpiSnapshot[]> | null;
+  advancedOrion: LoadSlice<OrionDashboardData> | null;
+  orionKpis: LoadSlice<any> | null;
+  structure: LoadSlice<any> | null;
+  subjectsCount: LoadSlice<number> | null;
+  timetableCount: LoadSlice<number> | null;
+  roomCount: LoadSlice<number> | null;
+  isLoading: boolean;
+  isError: boolean;
+  isFetching: boolean;
+  error: any;
+}
+
 /**
  * Agrégats parallèles du tableau de bord pédagogique (cache TanStack Query, invalidation globale possible).
  */
 export function usePedagogyDashboardQueries(
+  tenantIdForStructure: string | undefined,
   academicYearId: string | undefined,
-  tenantIdForStructure?: string,
-) {
+): PedagogyDashboardQueries {
   const enabled = !!academicYearId;
   const y = academicYearId ?? '';
 
@@ -106,57 +145,63 @@ export function usePedagogyDashboardQueries(
 
   const [qControl, qSnap, qOrionAdv, qOrionKpis, qStruct, qSubjects, qTt, qRooms] = results;
 
-  const loading = enabled && results.some((r) => r.isLoading);
+  const isLoading = enabled && results.some((r) => r.isLoading);
+  const isError = results.some((r) => r.isError);
+  const isFetching = results.some((r) => r.isFetching);
+  const error = results.find((r) => r.isError)?.error;
 
-  const control = sliceFromQuery(qControl, 'Erreur contrôle');
+  const control = sliceFromQuery<ControlDashboardData>(qControl as any, 'Erreur contrôle');
 
-  const rawSnap = sliceFromQuery(qSnap, 'Erreur historique');
+  const rawSnap = sliceFromQuery<KpiSnapshot[]>(qSnap as any, 'Erreur historique');
   const snapshots =
     rawSnap && rawSnap.ok
-      ? { ok: true as const, data: Array.isArray(rawSnap.data) ? rawSnap.data : [] }
-      : rawSnap;
+      ? { ok: true as const, data: Array.isArray(rawSnap.data) ? (rawSnap.data as KpiSnapshot[]) : [] }
+      : (rawSnap as LoadSlice<KpiSnapshot[]> | null);
 
-  const orionAdv = sliceFromQuery(qOrionAdv, 'Erreur ORION');
-  const orionKpis = sliceFromQuery(qOrionKpis, 'Erreur KPI');
-  const structure = sliceFromQuery(qStruct, 'Erreur structure');
+  const advancedOrion = sliceFromQuery<OrionDashboardData>(qOrionAdv as any, 'Erreur ORION');
+  const orionKpis = sliceFromQuery<any>(qOrionKpis as any, 'Erreur KPI');
+  const structure = sliceFromQuery<any>(qStruct as any, 'Erreur structure');
 
-  const rawSubj = sliceFromQuery(qSubjects, 'Erreur matières');
-  const subjectsCount =
+  const rawSubj = sliceFromQuery<any[]>(qSubjects as any, 'Erreur matières');
+  const subjectsCount: LoadSlice<number> | null =
     rawSubj && rawSubj.ok
       ? {
           ok: true as const,
           data: Array.isArray(rawSubj.data) ? rawSubj.data.length : 0,
         }
-      : rawSubj;
+      : (rawSubj as LoadSlice<number> | null);
 
-  const rawTt = sliceFromQuery(qTt, 'Erreur EDT');
-  const timetableCount =
+  const rawTt = sliceFromQuery<any[]>(qTt as any, 'Erreur EDT');
+  const timetableCount: LoadSlice<number> | null =
     rawTt && rawTt.ok
       ? {
           ok: true as const,
           data: Array.isArray(rawTt.data) ? rawTt.data.length : 0,
         }
-      : rawTt;
+      : (rawTt as LoadSlice<number> | null);
 
-  const rawRooms = sliceFromQuery(qRooms, 'Erreur salles');
-  const roomCount =
+  const rawRooms = sliceFromQuery<any[]>(qRooms as any, 'Erreur salles');
+  const roomCount: LoadSlice<number> | null =
     rawRooms && rawRooms.ok
       ? {
           ok: true as const,
           data: Array.isArray(rawRooms.data) ? rawRooms.data.length : 0,
         }
-      : rawRooms;
+      : (rawRooms as LoadSlice<number> | null);
 
   return {
     control,
     snapshots,
-    orionAdv,
+    advancedOrion,
     orionKpis,
     structure,
     subjectsCount,
     timetableCount,
     roomCount,
-    loading,
+    isLoading,
+    isError,
+    isFetching,
+    error,
   };
 }
 

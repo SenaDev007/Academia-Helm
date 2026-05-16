@@ -54,6 +54,14 @@ import { PedagogyKpiService } from './pedagogy-kpi.service';
 import { PedagogyControlController } from './pedagogy-control.controller';
 import { OrionPedagogyAdvancedService } from './orion-pedagogy-advanced.service';
 import { OrionPedagogyAdvancedController } from './orion-pedagogy-advanced.controller';
+import { PedagogyOrionEngineService } from './services/pedagogy-orion-engine.service';
+import { PedagogicalAuditService } from './services/pedagogical-audit.service';
+import { PedagogicalSignatureService } from './services/pedagogical-signature.service';
+import { GlobalLibraryPrismaService } from './global-library-prisma.service';
+import { GlobalLibraryPrismaController } from './global-library-prisma.controller';
+
+
+
 
 import { StorageService } from '../common/services/storage.service';
 
@@ -84,6 +92,7 @@ import { StorageService } from '../common/services/storage.service';
     PedagogyOrionController,
     PedagogyControlController,
     OrionPedagogyAdvancedController,
+    GlobalLibraryPrismaController,
   ],
   providers: [
     StorageService,
@@ -113,6 +122,11 @@ import { StorageService } from '../common/services/storage.service';
     PedagogyOrionService,
     PedagogyKpiService,
     OrionPedagogyAdvancedService,
+    PedagogyOrionEngineService,
+    PedagogicalAuditService,
+    PedagogicalSignatureService,
+
+
   ],
   exports: [
     StorageService,
@@ -142,8 +156,12 @@ import { StorageService } from '../common/services/storage.service';
     PedagogyOrionService,
     PedagogyKpiService,
     OrionPedagogyAdvancedService,
+    PedagogyOrionEngineService,
+    PedagogicalAuditService,
+    PedagogicalSignatureService,
+    GlobalLibraryPrismaService,
+
   ],
 })
 
 export class PedagogyModule {}
-

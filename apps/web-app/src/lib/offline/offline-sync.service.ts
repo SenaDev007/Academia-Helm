@@ -12,8 +12,8 @@ import { runSync } from './sync-engine.service';
 
 class OfflineSyncService {
   private isSyncing: boolean = false;
-  private syncInterval: ReturnType<typeof setInterval> | null = null;
-  private syncInterval30s: ReturnType<typeof setInterval> | null = null;
+  private syncInterval: any = null;
+  private syncInterval30s: any = null;
   private syncInProgress: Promise<void> | null = null;
 
   constructor() {

@@ -14,7 +14,7 @@
 import { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
-export type ContentLayout = 'table' | 'cards' | 'grid' | 'chart' | 'form' | 'custom' | 'default';
+export type ContentLayout = 'table' | 'cards' | 'grid' | 'chart' | 'form' | 'custom' | 'default' | 'full';
 
 export interface ModuleContentAreaProps {
   /** Contenu principal */
@@ -75,6 +75,7 @@ export default function ModuleContentArea({
           layout === 'chart' && 'p-5 sm:p-6 lg:p-8',
           layout === 'form' && 'p-5 sm:p-6 lg:p-8',
           layout === 'custom' && 'p-5 sm:p-6 lg:p-8',
+          layout === 'full' && 'p-0 border-none shadow-none bg-transparent',
         )}
       >
         {/* État de chargement */}

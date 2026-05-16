@@ -26,7 +26,7 @@ export interface TenantRedirectConfig {
   tenantId?: string;
   path?: string;
   queryParams?: Record<string, string>;
-  portalType?: 'SCHOOL' | 'TEACHER' | 'PARENT';
+  portalType?: 'PLATFORM' | 'SCHOOL' | 'TEACHER' | 'PARENT' | 'PUBLIC';
   skipLogging?: boolean;
 }
 
@@ -78,18 +78,53 @@ export function getTenantRedirectUrl(config: TenantRedirectConfig): string {
   } = config;
 
   const env = getAppEnvironment();
-  const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN;
+  let baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN;
 
   // Validation
   if (!tenantSlug || tenantSlug.trim() === '') {
     throw new Error('tenantSlug is required for tenant redirection');
   }
 
-  // En local : utiliser les query params (pas de DNS requis)
-  if (env === 'local') {
-    const baseUrl = getAppBaseUrl();
-    const url = new URL(path, baseUrl);
+  // Détection intelligente du domaine de base si non défini
+  if (!baseDomain && typeof window !== 'undefined') {
+    const host = window.location.host;
+    if (host.includes('academiahelm.com')) {
+      baseDomain = 'academiahelm.com';
+    }
+  }
 
+  // En local : utiliser les query params par défaut, 
+  // SAUF si l'utilisateur a configuré un domaine de base autre que localhost
+  if (env === 'local') {
+    const isLocalhostOnly = !baseDomain || baseDomain.includes('localhost') || baseDomain.includes('127.0.0.1');
+    
+    if (isLocalhostOnly) {
+      const baseUrl = getAppBaseUrl();
+      const url = new URL(path, baseUrl);
+
+      url.searchParams.set('tenant', tenantSlug);
+      if (config.tenantId) {
+        url.searchParams.set('tenant_id', config.tenantId);
+      }
+      if (portalType) {
+        url.searchParams.set('portal', portalType.toLowerCase());
+      }
+      Object.entries(queryParams).forEach(([key, value]) => {
+        url.searchParams.set(key, value);
+      });
+
+      return url.toString();
+    }
+    // Sinon on laisse couler vers la logique de sous-domaine (ex: school.localhost)
+  }
+
+  // En preview/production/test : utiliser le sous-domaine professionnel
+  if (!baseDomain) {
+    console.warn('NEXT_PUBLIC_BASE_DOMAIN not set, falling back to query params');
+    const baseUrl = typeof window !== 'undefined' 
+      ? `${window.location.protocol}//${window.location.host}`
+      : 'https://academiahelm.com'; // Fallback vers le domaine par défaut
+    const url = new URL(path, baseUrl);
     url.searchParams.set('tenant', tenantSlug);
     if (config.tenantId) {
       url.searchParams.set('tenant_id', config.tenantId);
@@ -100,39 +135,31 @@ export function getTenantRedirectUrl(config: TenantRedirectConfig): string {
     Object.entries(queryParams).forEach(([key, value]) => {
       url.searchParams.set(key, value);
     });
-
     return url.toString();
   }
 
-  // En preview/production : utiliser le sous-domaine
-  if (!baseDomain) {
-    console.warn('NEXT_PUBLIC_BASE_DOMAIN not set, falling back to query params');
-    // Fallback vers query params si baseDomain n'est pas défini
-    const baseUrl = typeof window !== 'undefined' 
-      ? `${window.location.protocol}//${window.location.host}`
-      : 'https://academia-hub.com';
-    const url = new URL(path, baseUrl);
-    url.searchParams.set('tenant', tenantSlug);
-    if (portalType) {
-      url.searchParams.set('portal', portalType.toLowerCase());
-    }
-    Object.entries(queryParams).forEach(([key, value]) => {
-      url.searchParams.set(key, value);
-    });
-    return url.toString();
+  const protocol = (env === 'local' && baseDomain.includes('localhost')) ? 'http' : 'https';
+  
+  // Format professionnel : https://tenant.academiahelm.com/path
+  // On évite d'ajouter tenant_id ou tenant dans la query string si on est en sous-domaine
+  // car le middleware s'occupe de la résolution.
+  let domain = `${tenantSlug}.${baseDomain}`;
+  
+  // Si le baseDomain contient déjà www., on l'enlève pour le sous-domaine
+  if (domain.startsWith('www.')) {
+    domain = domain.substring(4);
   }
 
-  const protocol = env === 'local' ? 'http' : 'https';
-  const domain = `${tenantSlug}.${baseDomain}`;
   const url = new URL(path, `${protocol}://${domain}`);
 
-  if (config.tenantId) {
-    url.searchParams.set('tenant_id', config.tenantId);
-  }
+  // On ajoute uniquement le type de portail et les queryParams additionnels
   if (portalType) {
     url.searchParams.set('portal', portalType.toLowerCase());
   }
+  
   Object.entries(queryParams).forEach(([key, value]) => {
+    // Éviter de rajouter tenant_id s'il est déjà dans le sous-domaine (slug)
+    // Sauf si explicitement demandé dans queryParams
     url.searchParams.set(key, value);
   });
 

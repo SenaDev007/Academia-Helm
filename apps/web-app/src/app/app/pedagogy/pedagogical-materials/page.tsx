@@ -38,7 +38,7 @@ export default function MaterialsPage() {
             icon: <Icon className="w-4 h-4" />,
           };
         }),
-        activeId: 'materials',
+        activeModuleId: 'pedagogical-materials',
       }}
       content={{
         layout: 'custom',

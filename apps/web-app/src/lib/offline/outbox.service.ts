@@ -14,20 +14,30 @@ import type { OutboxEvent, OutboxEventStatus, SyncOperationType, SyncEntityType 
 interface OutboxEventLocal {
   id: string;
   tenantId: string;
+  schoolId?: string;
+  patronatId?: string;
+  academicYearId?: string;
+  academicTermId?: string;
+  userId?: string;
+  module?: string;
   entityType: SyncEntityType;
   entityId: string;
   operation: SyncOperationType;
   payload: string | Record<string, any>; // JSON string ou object
   metadata?: string | Record<string, any>;
   status: OutboxEventStatus;
-  retryCount?: number;
+  priority: number;
+  retryCount: number;
+  maxRetries: number;
   errorMessage?: string;
   createdAt: string;
+  updatedAt: string;
   syncedAt?: string;
-  localVersion?: number;
+  localVersion: number;
   lastAttemptAt?: string;
-  attemptCount?: number;
+  attemptCount: number;
   serverEventId?: string;
+  conflictStrategy: string;
 }
 
 class OutboxService {
@@ -47,16 +57,26 @@ class OutboxService {
     const event: OutboxEventLocal = {
       id: eventId,
       tenantId,
+      schoolId: payload.schoolId,
+      patronatId: payload.patronatId,
+      academicYearId: payload.academicYearId,
+      academicTermId: payload.academicTermId,
+      userId: payload.userId,
+      module: payload.module,
       entityType,
       entityId,
       operation: eventType,
       payload: typeof payload === 'string' ? payload : JSON.stringify(payload),
       metadata: metadata ? (typeof metadata === 'string' ? metadata : JSON.stringify(metadata)) : undefined,
       status: 'PENDING',
+      priority: 0, // Sera calculé par le SyncEngine
       retryCount: 0,
+      maxRetries: 10,
       attemptCount: 0,
       localVersion: Date.now(),
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      conflictStrategy: 'LAST_WRITE_WINS',
     };
 
     await localDb.execute('outbox_events', 'add', event);

@@ -23,500 +23,317 @@ export default function PatronatExamensLanding() {
       <PatronatHeader />
 
       {/* SECTION 1 — HERO (AUTORITÉ) */}
-      <section className="relative min-h-[80vh] flex items-center justify-center px-4 sm:px-6 lg:px-8 overflow-hidden bg-gradient-to-br from-blue-900 via-blue-800 to-blue-900 pt-20">
+      <section className="relative min-h-[90vh] flex items-center justify-center px-4 sm:px-6 lg:px-8 overflow-hidden bg-[#0b1d3a] pt-20">
         {/* Background decorative elements */}
-        <div className="absolute inset-0 opacity-10">
-          <div className="absolute top-20 left-10 w-96 h-96 bg-white rounded-full blur-3xl"></div>
-          <div className="absolute bottom-20 right-10 w-80 h-80 bg-gold-500 rounded-full blur-3xl"></div>
+        <div className="absolute inset-0 opacity-20">
+          <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-600 rounded-full blur-[120px] animate-pulse"></div>
+          <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-amber-500 rounded-full blur-[100px] opacity-30"></div>
         </div>
         
         {/* Content */}
-        <div className="relative z-10 max-w-6xl mx-auto text-center -mt-8">
-          <div className="inline-flex items-center justify-center mb-8">
-            <Image
-              src="/images/logo-Academia Hub.png"
-              alt="Academia Helm - Logo institutionnel"
-              width={120}
-              height={120}
-              className="w-30 h-30 object-contain"
-              priority
-              sizes="(max-width: 768px) 80px, 120px"
-            />
+        <div className="relative z-10 max-w-6xl mx-auto text-center">
+          <div className="inline-flex items-center justify-center mb-6 space-x-2 bg-white/5 backdrop-blur-sm px-4 py-2 rounded-full border border-white/10">
+            <span className="text-amber-400 font-bold text-xs uppercase tracking-widest">Academia Federis</span>
+            <span className="text-white/40 text-xs">by Academia Helm</span>
           </div>
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-8 max-w-5xl mx-auto leading-tight drop-shadow-2xl">
-            La plateforme institutionnelle
+          <h1 className="text-5xl md:text-7xl lg:text-8xl font-black text-white mb-8 leading-[1.1] tracking-tight">
+            Fédérer les écoles.
             <br />
-            pour l'organisation des examens
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-500">Organiser les examens.</span>
             <br />
-            des écoles privées
+            Piloter la réussite.
           </h1>
-          <p className={`${typo('large')} text-lg md:text-xl text-white/95 mb-12 max-w-3xl mx-auto leading-relaxed drop-shadow-md`}>
-            Centralisez les inscriptions, sécurisez les données
-            et pilotez les examens nationaux avec rigueur.
+          <p className="text-xl md:text-2xl text-blue-100/80 mb-12 max-w-3xl mx-auto leading-relaxed">
+            La plateforme SaaS dédiée aux patronats scolaires privés pour gérer les écoles membres, organiser les examens inter-écoles et piloter les performances institutionnelles.
           </p>
-          <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
+          <div className="flex flex-col sm:flex-row justify-center items-center gap-6">
             <Link
               href="/patronat/register"
               prefetch={true}
-              className="bg-gold-500 text-white px-10 py-4 rounded-md font-semibold hover:bg-gold-600 transition-all duration-300 inline-flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:scale-105"
+              className="bg-amber-500 text-blue-950 px-10 py-5 rounded-xl font-bold hover:bg-amber-400 transition-all duration-300 inline-flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(245,158,11,0.3)] hover:shadow-[0_0_30px_rgba(245,158,11,0.5)] hover:-translate-y-1"
             >
-              <AppIcon name="userPlus" size="action" className="text-white" />
-              Créer un compte Patronat
+              Créer un espace patronat
+              <AppIcon name="arrowRight" size="action" />
             </Link>
             <Link
-              href="/contact?subject=demo-institutionnelle"
+              href="/contact?subject=demo-federis"
               prefetch={true}
-              className="bg-white/10 backdrop-blur-md text-white px-10 py-4 rounded-md border-2 border-white/30 font-semibold hover:bg-white/20 transition-all duration-300 inline-flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:scale-105"
+              className="bg-white/5 backdrop-blur-md text-white px-10 py-5 rounded-xl border border-white/20 font-bold hover:bg-white/10 transition-all duration-300 inline-flex items-center justify-center gap-2 hover:-translate-y-1"
             >
-              <AppIcon name="calendar" size="action" className="text-white" />
-              Demander une démo institutionnelle
+              Demander une démonstration
             </Link>
-            {/* Bouton provisoire - Accès Dashboard Patronat */}
-            <Link
-              href="/patronat/dashboard"
-              prefetch={true}
-              className="bg-green-600 text-white px-8 py-4 rounded-md font-semibold hover:bg-green-700 transition-all duration-300 inline-flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:scale-105 border-2 border-green-400"
-              title="Bouton provisoire - Accès direct au dashboard Patronat"
-            >
-              <AppIcon name="dashboard" size="action" className="text-white" />
-              Dashboard Patronat (Test)
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* SECTION 2 — PROBLÈMES ACTUELS */}
-      <section className="py-32 bg-gray-50 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-20 -mt-4">
-            <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-red-50 to-red-100 rounded-2xl mb-8 shadow-lg">
-              <AppIcon name="warning" size="dashboard" className="text-crimson-600" />
-            </div>
-            <h2 className={`text-4xl md:text-5xl lg:text-6xl font-bold ${textColor('primary')} mb-8 leading-tight`}>
-              Les défis actuels de l'organisation des examens
-            </h2>
-            <p className={`${typo('large')} ${textColor('secondary')} max-w-3xl mx-auto mb-16 text-lg`}>
-              L'organisation manuelle des examens nationaux génère des risques
-              et des complications pour les patronats et les établissements.
-            </p>
           </div>
           
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 mb-16">
-            {[
-              { text: 'Erreurs d\'inscription manuelles', icon: 'spreadsheet' as const },
-              { text: 'Données incohérentes entre écoles', icon: 'wifiOff' as const },
-              { text: 'Gestion papier non traçable', icon: 'document' as const },
-              { text: 'Conflits patronat / établissements', icon: 'warning' as const },
-              { text: 'Difficultés de supervision', icon: 'dashboard' as const },
-            ].map((problem, index) => (
-              <div
-                key={index}
-                className={cn(
-                  bgColor('card'),
-                  'p-8 rounded-3xl border-2 border-gray-200',
-                  'shadow-lg hover:shadow-2xl',
-                  'hover:border-crimson-300 hover:-translate-y-2',
-                  'transition-all duration-300 ease-out',
-                  'group cursor-pointer',
-                  'bg-white hover:bg-gradient-to-br hover:from-white hover:to-red-50/30'
-                )}
-              >
-                <div className="flex items-start space-x-5">
-                  <div className="w-16 h-16 bg-gradient-to-br from-red-50 to-red-100 rounded-2xl flex items-center justify-center flex-shrink-0 group-hover:scale-110 group-hover:rotate-3 transition-all duration-300 shadow-md group-hover:shadow-lg group-hover:from-red-100 group-hover:to-red-200">
-                    <AppIcon name={problem.icon} size="menu" className="text-crimson-600 group-hover:text-crimson-700 transition-colors duration-300" />
-                  </div>
-                  <p className={`${typo('base')} ${textColor('primary')} font-semibold leading-relaxed pt-2 group-hover:text-crimson-700 transition-colors duration-300`}>
-                    {problem.text}
-                  </p>
-                </div>
-              </div>
-            ))}
+          <div className="mt-16 flex items-center justify-center space-x-8 opacity-50 grayscale hover:grayscale-0 transition-all duration-500">
+            <span className="text-white text-sm font-medium uppercase tracking-widest">Confiance & Rigueur Institutionnelle</span>
           </div>
         </div>
       </section>
 
-      {/* SECTION 3 — LA SOLUTION ACADEMIA HUB */}
-      <section id="fonctionnalites" className={`py-32 ${bgColor('sidebar')} ${textColor('inverse')} px-4 sm:px-6 lg:px-8 relative overflow-hidden`}>
-        {/* Decorative background elements */}
-        <div className="absolute inset-0 opacity-5">
-          <div className="absolute top-20 left-10 w-72 h-72 bg-gold-500 rounded-full blur-3xl"></div>
-          <div className="absolute bottom-20 right-10 w-96 h-96 bg-blue-600 rounded-full blur-3xl"></div>
-        </div>
-        
-        <div className="max-w-6xl mx-auto text-center relative z-10">
-          <div className="inline-flex items-center justify-center mb-10">
-            <Image
-              src="/images/logo-Academia Hub.png"
-              alt="Academia Helm - Logo de la plateforme institutionnelle"
-              width={120}
-              height={120}
-              className="w-30 h-30 object-contain"
-              priority
-              sizes="(max-width: 768px) 80px, 120px"
-            />
-          </div>
-          <h2 className={`text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-8 leading-tight`}>
-            La solution <span className="text-gold-500 relative inline-block">
-              <span className="relative z-10">Academia Helm</span>
-              <span className="absolute bottom-1 left-0 right-0 h-4 bg-gold-500/20 -rotate-1"></span>
-            </span>
-          </h2>
-          <p className={`${typo('large')} text-white leading-relaxed text-lg max-w-3xl mx-auto mb-16`}>
-            Une plateforme dédiée aux patronats et organismes organisateurs d'examens,
-            conçue pour centraliser, sécuriser et piloter l'ensemble du processus.
-          </p>
-
-          {/* Blocs de fonctionnalités */}
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {[
-              { 
-                title: 'Inscription en ligne des candidats',
-                description: 'Formulaire sécurisé et centralisé pour toutes les écoles du département.',
-                icon: 'userPlus' as const,
-              },
-              { 
-                title: 'Gestion centralisée des écoles',
-                description: 'Rattachement des établissements, suivi des inscriptions par école.',
-                icon: 'building' as const,
-              },
-              { 
-                title: 'Numéros de table et matricules automatiques',
-                description: 'Génération automatique et sécurisée des identifiants candidats.',
-                icon: 'document' as const,
-              },
-              { 
-                title: 'Listes de surveillance',
-                description: 'Génération automatique des listes par salle, par centre d\'examen.',
-                icon: 'exams' as const,
-              },
-              { 
-                title: 'Relevés de notes sécurisés',
-                description: 'Saisie centralisée, validation par niveau, export sécurisé.',
-                icon: 'shieldCheck' as const,
-              },
-              { 
-                title: 'Banque d\'épreuves partagée',
-                description: 'Stockage sécurisé des sujets, accès contrôlé par rôle.',
-                icon: 'document' as const,
-                id: 'banque-epreuves',
-              },
-            ].map((feature, index) => {
-              const colors = { 
-                from: 'from-blue-600', 
-                to: 'to-blue-700', 
-                icon: 'text-blue-600', 
-                border: 'hover:border-blue-600' 
-              };
+      {/* SECTION 2 — PROBLÈME */}
+      <section className="py-32 bg-white px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="grid lg:grid-cols-2 gap-20 items-center">
+            <div>
+              <h2 className="text-4xl md:text-5xl font-bold text-blue-950 mb-8 leading-tight">
+                Dépassez les limites de la gestion manuelle
+              </h2>
+              <p className="text-xl text-gray-600 mb-12 leading-relaxed">
+                Les patronats et réseaux scolaires font face à une complexité croissante qui freine leur pilotage et fragilise la sécurité des examens.
+              </p>
               
-              return (
-                <div
-                  key={index}
-                  className={cn(
-                    bgColor('card'),
-                    'p-8 rounded-3xl border-2 border-gray-200',
-                    'shadow-lg hover:shadow-2xl',
-                    colors.border,
-                    'hover:-translate-y-2',
-                    'transition-all duration-300 ease-out',
-                    'group',
-                    'bg-white/10 backdrop-blur-md hover:bg-white/15 border-white/20'
-                  )}
-                >
-                  <div className={cn(
-                    'w-16 h-16 bg-gradient-to-br rounded-2xl flex items-center justify-center mb-6',
-                    'shadow-lg group-hover:shadow-xl',
-                    'group-hover:scale-110 group-hover:rotate-3',
-                    'transition-all duration-300',
-                    'from-gold-500/30 to-gold-600/30'
-                  )}>
-                    <AppIcon name={feature.icon} size="menu" className="text-white group-hover:scale-110 transition-transform duration-300" />
-                  </div>
-                  <h3 className={cn(
-                    typo('base'),
-                    'text-white font-bold mb-3 leading-tight transition-colors duration-300',
-                  )}>
-                    {feature.title}
-                  </h3>
-                  <p className={`${typo('small')} text-white/80 text-sm leading-relaxed`}>
-                    {feature.description}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* SECTION 4 — COMMENT ÇA FONCTIONNE */}
-      <section id="processus" className="py-32 bg-gradient-to-b from-white via-cloud to-white px-4 sm:px-6 lg:px-8">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-20">
-            <h2 className={`text-4xl md:text-5xl lg:text-6xl font-bold text-blue-900 mb-8 leading-tight`}>
-              Comment ça fonctionne
-            </h2>
-            <p className={`${typo('large')} ${textColor('secondary')} max-w-3xl mx-auto mb-16 text-lg`}>
-              Un processus simple, structuré et sécurisé en 5 étapes.
-            </p>
-          </div>
-
-          <div className="space-y-8">
-            {[
-              {
-                step: '1',
-                title: 'Le patronat crée son compte',
-                description: 'Inscription institutionnelle avec validation des documents officiels.',
-              },
-              {
-                step: '2',
-                title: 'Il rattache les écoles du département',
-                description: 'Ajout des établissements membres, configuration des accès par école.',
-              },
-              {
-                step: '3',
-                title: 'Les écoles inscrivent leurs candidats',
-                description: 'Chaque établissement saisit ses candidats via son interface dédiée.',
-              },
-              {
-                step: '4',
-                title: 'Le patronat organise l\'examen',
-                description: 'Génération des listes, attribution des salles, gestion des épreuves.',
-              },
-              {
-                step: '5',
-                title: 'Les résultats sont centralisés et sécurisés',
-                description: 'Saisie des notes, validation, génération des relevés officiels.',
-              },
-            ].map((item, index) => (
-              <div
-                key={index}
-                className={cn(
-                  bgColor('card'),
-                  'p-8 rounded-3xl border-2 border-blue-200',
-                  'shadow-lg hover:shadow-2xl',
-                  'hover:border-blue-400 hover:-translate-y-1',
-                  'transition-all duration-300 ease-out',
-                  'group relative overflow-hidden',
-                  'bg-white'
-                )}
-              >
-                <div className="flex items-start space-x-6">
-                  <div className="flex-shrink-0">
-                    <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
-                      <span className="text-2xl font-bold text-white">{item.step}</span>
+              <ul className="space-y-6">
+                {[
+                  'Gestion complexe des écoles membres et des effectifs',
+                  'Absence de données consolidées en temps réel',
+                  'Organisation lourde et risquée des examens inter-écoles',
+                  'Publication lente et peu traçable des résultats',
+                  'Absence de statistiques fiables sur les performances'
+                ].map((item, i) => (
+                  <li key={i} className="flex items-start space-x-4">
+                    <div className="mt-1 bg-red-100 p-1 rounded-full">
+                      <AppIcon name="close" size="small" className="text-red-600" />
+                    </div>
+                    <span className="text-lg text-gray-700 font-medium">{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            
+            <div className="relative">
+              <div className="absolute -inset-4 bg-gradient-to-br from-amber-100 to-blue-50 rounded-[40px] -rotate-2"></div>
+              <div className="relative bg-white p-10 rounded-[32px] shadow-2xl border border-gray-100">
+                <div className="space-y-8">
+                  <div className="flex items-center space-x-4 pb-6 border-b border-gray-100">
+                    <div className="w-12 h-12 bg-red-500 rounded-xl flex items-center justify-center text-white font-bold text-xl">!</div>
+                    <div>
+                      <h4 className="font-bold text-blue-950">Alerte Gouvernance</h4>
+                      <p className="text-sm text-gray-500">Risque de non-conformité identifié</p>
                     </div>
                   </div>
-                  <div className="flex-grow">
-                    <h3 className={`${typo('h3')} text-blue-900 mb-3 font-bold group-hover:text-blue-700 transition-colors duration-300`}>
-                      {item.title}
-                    </h3>
-                    <p className={`${typo('base')} ${textColor('secondary')} leading-relaxed`}>
-                      {item.description}
-                    </p>
+                  <div className="space-y-4">
+                    <div className="h-4 bg-gray-100 rounded-full w-full"></div>
+                    <div className="h-4 bg-gray-100 rounded-full w-[80%]"></div>
+                    <div className="h-4 bg-gray-100 rounded-full w-[90%]"></div>
+                  </div>
+                  <div className="pt-4">
+                    <div className="text-red-600 font-bold text-sm bg-red-50 px-4 py-2 rounded-lg inline-block">
+                      Délai de publication : +15 jours de retard
+                    </div>
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* SECTION 3 — SOLUTION ACADEMIA FEDERIS */}
+      <section id="fonctionnalites" className="py-32 bg-[#0b1d3a] px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+        <div className="max-w-7xl mx-auto relative z-10">
+          <div className="text-center mb-24">
+            <h2 className="text-4xl md:text-6xl font-bold text-white mb-8">
+              La solution de <span className="text-amber-400">gouvernance</span> totale
+            </h2>
+            <p className="text-xl text-blue-100/60 max-w-3xl mx-auto">
+              Academia Federis centralise chaque aspect de la vie de votre patronat et de vos examens dans un écosystème unique et sécurisé.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[
+              { title: 'Écoles membres', desc: 'Gestion des adhésions, effectifs et synchronisation Helm.', icon: 'building' },
+              { title: 'Organisation Examens', desc: 'Calendriers, centres, salles et affectations automatiques.', icon: 'exams' },
+              { title: 'Gestion Candidats', desc: 'Matricules, numéros de table et listes d\'émargement.', icon: 'user' },
+              { title: 'Épreuves & Sujets', desc: 'Banque d\'épreuves sécurisée et corrigés barémés.', icon: 'document' },
+              { title: 'Surveillance & PV', desc: 'Gestion des surveillants, chefs de centres et incidents.', icon: 'shieldCheck' },
+              { title: 'Correction & Notes', desc: 'Anonymisation, double-correction et saisie verrouillée.', icon: 'edit' },
+              { title: 'Délibération', desc: 'Calcul de moyennes, mentions et seuils de réussite.', icon: 'analytics' },
+              { title: 'Publication Résultats', desc: 'Notification parents, bulletins et rapports consolidés.', icon: 'announcement' }
+            ].map((f, i) => (
+              <div key={i} className="bg-white/5 border border-white/10 p-8 rounded-[24px] hover:bg-white/10 transition-all duration-300 group">
+                <div className="w-12 h-12 bg-amber-500/20 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                  <AppIcon name={f.icon as any} size="menu" className="text-amber-400" />
+                </div>
+                <h3 className="text-xl font-bold text-white mb-3">{f.title}</h3>
+                <p className="text-blue-100/50 text-sm leading-relaxed">{f.desc}</p>
+              </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* SECTION 5 — SÉCURITÉ & CONFORMITÉ */}
-      <section id="securite" className={`py-32 ${bgColor('sidebar')} ${textColor('inverse')} px-4 sm:px-6 lg:px-8 relative overflow-hidden`}>
-        {/* Decorative background elements */}
-        <div className="absolute inset-0 opacity-5">
-          <div className="absolute top-10 left-20 w-96 h-96 bg-green-500 rounded-full blur-3xl"></div>
-          <div className="absolute bottom-10 right-20 w-80 h-80 bg-blue-600 rounded-full blur-3xl"></div>
-        </div>
-        
-        <div className="max-w-6xl mx-auto relative z-10">
-          <div className="text-center mb-20">
-            <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-green-50 to-green-100 rounded-2xl mb-8 shadow-lg">
-              <AppIcon name="shieldCheck" size="dashboard" className="text-green-600" />
+      {/* SECTION 5 — CONNEXION ACADEMIA HELM */}
+      <section className="py-32 bg-gray-50 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="bg-gradient-to-br from-blue-900 to-[#0b1d3a] rounded-[48px] p-12 md:p-20 relative overflow-hidden shadow-3xl">
+            <div className="absolute top-0 right-0 w-1/3 h-full bg-amber-500/10 skew-x-12 transform translate-x-20"></div>
+            
+            <div className="relative z-10 grid lg:grid-cols-2 gap-16 items-center">
+              <div>
+                <div className="inline-block bg-amber-500/20 text-amber-400 px-4 py-1 rounded-full text-xs font-bold tracking-widest uppercase mb-6">
+                  Interopérabilité Native
+                </div>
+                <h2 className="text-4xl md:text-5xl font-bold text-white mb-8 leading-tight">
+                  Connecté à l'écosystème Academia Helm
+                </h2>
+                <p className="text-xl text-blue-100/70 mb-10 leading-relaxed">
+                  Les écoles membres utilisant déjà Academia Helm sont synchronisées instantanément. Accédez aux effectifs et aux candidats sans ressaisie manuelle.
+                </p>
+                
+                <div className="grid sm:grid-cols-2 gap-6">
+                  {[
+                    'Mapping automatique des classes',
+                    'Synchronisation des candidats',
+                    'Suivi des effectifs autorisés',
+                    'Notification parents in-app'
+                  ].map((item, i) => (
+                    <div key={i} className="flex items-center space-x-3">
+                      <div className="w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center">
+                        <AppIcon name="check" size="small" className="text-blue-900" />
+                      </div>
+                      <span className="text-white font-medium">{item}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              <div className="flex justify-center">
+                <div className="relative w-full max-w-sm">
+                  <div className="absolute inset-0 bg-amber-500 rounded-full blur-[80px] opacity-20"></div>
+                  <div className="relative bg-white/5 backdrop-blur-xl border border-white/10 p-8 rounded-[40px] shadow-2xl">
+                    <div className="flex justify-between items-center mb-8">
+                      <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center">
+                         <AppIcon name="sync" size="menu" className="text-white animate-spin-slow" />
+                      </div>
+                      <div className="h-2 w-24 bg-white/10 rounded-full"></div>
+                    </div>
+                    <div className="space-y-6">
+                      <div className="flex items-center space-x-4">
+                        <div className="w-10 h-10 bg-white/10 rounded-lg"></div>
+                        <div className="flex-1 space-y-2">
+                          <div className="h-2 bg-white/20 rounded-full w-full"></div>
+                          <div className="h-2 bg-white/10 rounded-full w-2/3"></div>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-4">
+                        <div className="w-10 h-10 bg-white/10 rounded-lg"></div>
+                        <div className="flex-1 space-y-2">
+                          <div className="h-2 bg-white/20 rounded-full w-full"></div>
+                          <div className="h-2 bg-white/10 rounded-full w-1/2"></div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-8 pt-6 border-t border-white/10 text-center">
+                      <span className="text-amber-400 text-xs font-bold uppercase tracking-widest">Lien Academia Helm : ACTIF</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <h2 className={`text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-8 leading-tight`}>
-              Sécurité & Conformité
-            </h2>
-            <p className={`${typo('large')} text-white/90 max-w-3xl mx-auto mb-16 text-lg`}>
-              Une architecture sécurisée et traçable, conçue pour les exigences institutionnelles.
-            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* SECTION 7 — PLANS D'ABONNEMENT */}
+      <section id="tarification" className="py-32 bg-white px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-24">
+            <h2 className="text-4xl md:text-6xl font-bold text-blue-950 mb-8">Plans d'abonnement</h2>
+            <p className="text-xl text-gray-500">Choisissez la structure adaptée à la taille de votre réseau scolaire.</p>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-10">
+          <div className="grid lg:grid-cols-3 gap-8">
             {[
               {
-                title: 'Cloisonnement strict des données',
-                description: 'Chaque patronat et chaque école accède uniquement à ses données. Isolation totale entre organisations.',
-                icon: 'shieldCheck' as const,
+                name: 'Starter',
+                desc: 'Idéal pour les petits patronats communaux.',
+                price: 'À partir de 100 000 FCFA',
+                features: ['Écoles membres limitées', 'Examens simples', 'Import candidats Excel', 'Publication résultats standard'],
+                color: 'blue'
               },
               {
-                title: 'Audit logs complets',
-                description: 'Traçabilité de toutes les opérations : qui a fait quoi, quand, depuis où. Historique immuable.',
-                icon: 'document' as const,
+                name: 'Professional',
+                desc: 'Pour les patronats départementaux structurés.',
+                price: 'À partir de 250 000 FCFA',
+                features: ['Écoles illimitées', 'Centres d\'examen complexes', 'Gestion des surveillants & PV', 'Banque d\'épreuves sécurisée', 'Support prioritaire'],
+                color: 'amber',
+                popular: true
               },
               {
-                title: 'Accès par rôle',
-                description: 'Permissions granulaires : patronat, direction d\'école, secrétariat. Contrôle d\'accès strict.',
-                icon: 'user' as const,
-              },
-              {
-                title: 'Traçabilité des opérations',
-                description: 'Journalisation de toutes les modifications : inscriptions, notes, validations. Historique complet.',
-                icon: 'clock' as const,
-              },
-              {
-                title: 'Historique officiel',
-                description: 'Conservation sécurisée des données d\'examens. Export légal pour archivage institutionnel.',
-                icon: 'archive' as const,
-              },
-            ].map((item, index) => (
-              <div
-                key={index}
-                className={cn(
-                  'p-10 rounded-3xl border-2 border-white/20',
-                  'bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-md',
-                  'shadow-2xl relative overflow-hidden',
-                  'hover:shadow-3xl transition-all duration-300',
-                  'hover:border-white/30'
+                name: 'Enterprise',
+                desc: 'Solution sur mesure pour les grandes fédérations.',
+                price: 'Sur devis',
+                features: ['Gestion multi-départements', 'Anonymisation & Correction en ligne', 'Délibération assistée par IA', 'Dashboard statistiques avancé', 'Accompagnement dédié'],
+                color: 'blue-dark'
+              }
+            ].map((plan, i) => (
+              <div key={i} className={cn(
+                "relative p-10 rounded-[32px] border-2 transition-all duration-300",
+                plan.popular ? "border-amber-500 shadow-2xl scale-105 z-10" : "border-gray-100 hover:border-blue-200"
+              )}>
+                {plan.popular && (
+                  <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-amber-500 text-blue-950 px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest">
+                    Plus Populaire
+                  </div>
                 )}
-              >
-                <div className="w-16 h-16 bg-gradient-to-br from-green-500/30 to-green-600/30 rounded-2xl flex items-center justify-center mb-6 shadow-lg">
-                  <AppIcon name={item.icon} size="dashboard" className="text-white" />
-                </div>
-                <h3 className={`${typo('h3')} text-white mb-4 font-bold`}>
-                  {item.title}
-                </h3>
-                <p className={`${typo('base')} text-white/80 leading-relaxed`}>
-                  {item.description}
-                </p>
+                <h3 className="text-2xl font-bold text-blue-950 mb-2">{plan.name}</h3>
+                <p className="text-gray-500 text-sm mb-6">{plan.desc}</p>
+                <div className="text-3xl font-black text-blue-900 mb-8">{plan.price}</div>
+                
+                <ul className="space-y-4 mb-10">
+                  {plan.features.map((f, fi) => (
+                    <li key={fi} className="flex items-center space-x-3">
+                      <div className="w-5 h-5 bg-blue-50 rounded-full flex items-center justify-center flex-shrink-0">
+                        <AppIcon name="check" size="small" className="text-blue-600" />
+                      </div>
+                      <span className="text-gray-600 text-sm font-medium">{f}</span>
+                    </li>
+                  ))}
+                </ul>
+                
+                <Link
+                  href="/patronat/register"
+                  className={cn(
+                    "w-full py-4 rounded-xl font-bold text-center block transition-all",
+                    plan.popular ? "bg-amber-500 text-blue-950 hover:bg-amber-400 shadow-lg" : "bg-blue-50 text-blue-600 hover:bg-blue-100"
+                  )}
+                >
+                  Choisir ce plan
+                </Link>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* SECTION 6 — MODÈLE ÉCONOMIQUE */}
-      <section id="tarification" className="py-32 bg-gradient-to-b from-white via-cloud to-white px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className={`text-4xl md:text-5xl lg:text-6xl font-bold text-blue-900 mb-8 leading-tight`}>
-              Modèle économique
-            </h2>
-            <p className={`${typo('large')} ${textColor('secondary')} max-w-3xl mx-auto mb-16 text-lg`}>
-              Une tarification claire et indépendante, pensée pour les organisations institutionnelles.
-            </p>
-          </div>
-
-          <div className={cn(
-            bgColor('card'),
-            'p-10 rounded-3xl border-2 border-blue-200',
-            'shadow-xl',
-            'bg-white'
-          )}>
-            <div className="space-y-6">
-              <div className="flex items-start space-x-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg">
-                  <AppIcon name="finance" size="menu" className="text-white" />
-                </div>
-                <div>
-                  <h3 className={`${typo('h3')} text-blue-900 mb-2 font-bold`}>
-                    Souscription patronat
-                  </h3>
-                  <p className={`${typo('base')} ${textColor('secondary')} leading-relaxed`}>
-                    Abonnement mensuel dédié aux patronats et organismes organisateurs d'examens.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-start space-x-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-gold-500 to-gold-600 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg">
-                  <AppIcon name="calendar" size="menu" className="text-white" />
-                </div>
-                <div>
-                  <h3 className={`${typo('h3')} text-blue-900 mb-2 font-bold`}>
-                    Abonnement mensuel
-                  </h3>
-                  <p className={`${typo('base')} ${textColor('secondary')} leading-relaxed`}>
-                    Tarification simple et transparente, adaptée aux besoins institutionnels.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-start space-x-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-green-600 to-green-700 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg">
-                  <AppIcon name="building" size="menu" className="text-white" />
-                </div>
-                <div>
-                  <h3 className={`${typo('h3')} text-blue-900 mb-2 font-bold`}>
-                    Tarification indépendante des écoles
-                  </h3>
-                  <p className={`${typo('base')} ${textColor('secondary')} leading-relaxed`}>
-                    Le patronat souscrit son abonnement. Les écoles membres utilisent la plateforme sans coût supplémentaire.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-start space-x-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg">
-                  <AppIcon name="sparkles" size="menu" className="text-white" />
-                </div>
-                <div>
-                  <h3 className={`${typo('h3')} text-blue-900 mb-2 font-bold`}>
-                    Valeur institutionnelle justifiée
-                  </h3>
-                  <p className={`${typo('base')} ${textColor('secondary')} leading-relaxed`}>
-                    Investissement rentable : réduction des erreurs, gain de temps, crédibilité renforcée.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-10 pt-8 border-t border-gray-200 text-center">
-              <Link
-                href="/contact?subject=tarification-patronat"
-                prefetch={true}
-                className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-10 py-4 rounded-2xl font-semibold hover:from-blue-700 hover:to-blue-800 transition-all duration-300 inline-flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:scale-105"
-              >
-                <AppIcon name="calendar" size="action" className="text-white" />
-                Demander un devis personnalisé
-              </Link>
-            </div>
-          </div>
+      {/* SECTION 8 — CTA FINAL */}
+      <section className="py-32 bg-[#0b1d3a] px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute top-[-20%] left-[20%] w-full h-full bg-blue-600 rounded-full blur-[150px]"></div>
         </div>
-      </section>
-
-      {/* SECTION 7 — CTA FINAL (CLOSER) */}
-      <section className={`py-16 md:py-20 ${bgColor('sidebar')} ${textColor('inverse')} px-4 sm:px-6 lg:px-8 relative`}>
-        <div className="max-w-4xl mx-auto text-center">
-          <div className="inline-flex items-center justify-center w-40 h-40 mb-4 relative">
-            <div className="absolute inset-0 bg-blue-500 rounded-full blur-xl opacity-75 animate-pulse"></div>
-            <div className="relative z-10 w-32 h-32 flex items-center justify-center">
-              <Image
-                src="/images/logo-Academia Hub.png"
-                alt="Academia Helm - Logo institutionnel"
-                width={128}
-                height={128}
-                className="w-full h-full object-contain drop-shadow-2xl"
-                loading="lazy"
-                sizes="(max-width: 768px) 100px, 128px"
-                style={{ filter: 'brightness(1.2) drop-shadow(0 0 20px rgba(37, 99, 235, 0.8))' }}
-              />
-            </div>
-          </div>
-          <h2 className={`text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight`}>
-            Passez à une organisation moderne,
-            <br />
-            <span className="text-gold-500">rigoureuse</span> et <span className="text-gold-500">crédible</span>
-            <br />
-            des examens.
+        
+        <div className="max-w-4xl mx-auto text-center relative z-10">
+          <h2 className="text-4xl md:text-6xl font-bold text-white mb-8 leading-tight">
+            Prêt à moderniser votre <span className="text-amber-400">gouvernance scolaire ?</span>
           </h2>
-          <Link
-            href="/patronat/register"
-            prefetch={true}
-            className="bg-gold-500 text-white px-12 py-5 rounded-subtle font-semibold hover:bg-gold-600 transition-colors inline-flex items-center justify-center text-lg shadow-xl hover:shadow-2xl"
-          >
-            Créer un compte Patronat
-            <AppIcon name="userPlus" size="action" className="ml-2 text-white" />
-          </Link>
+          <p className="text-xl text-blue-100/60 mb-12">
+            Créez votre espace Academia Federis dès aujourd'hui et rejoignez la révolution de l'éducation privée.
+          </p>
+          <div className="flex flex-col sm:flex-row justify-center items-center gap-6">
+            <Link
+              href="/patronat/register"
+              className="bg-amber-500 text-blue-950 px-12 py-5 rounded-xl font-bold text-lg hover:bg-amber-400 transition-all shadow-xl"
+            >
+              Créer mon espace Federis
+            </Link>
+            <Link
+              href="/contact"
+              className="bg-white/5 border border-white/20 text-white px-12 py-5 rounded-xl font-bold text-lg hover:bg-white/10 transition-all"
+            >
+              Contacter l'équipe
+            </Link>
+          </div>
         </div>
       </section>
 

@@ -27,7 +27,7 @@ function getPatronatUserFromCookie(request: NextRequest): { id: string; role?: s
 
 // Routes marketing (publiques)
 const marketingRoutes = [
-  '/patronat-examens',
+  '/federis',
   '/patronat/register',
   '/patronat/login',
   '/patronat/checkout',

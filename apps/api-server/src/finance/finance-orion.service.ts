@@ -356,6 +356,73 @@ export class FinanceOrionService {
   }
 
   /**
+   * Génère des alertes pour les arriérés inter-années
+   */
+  async generateArrearAlerts(tenantId: string, academicYearId: string) {
+    const alerts: any[] = [];
+
+    // Récupérer les arriérés
+    const arrears = await this.prisma.studentArrear.findMany({
+      where: {
+        tenantId,
+        toAcademicYearId: academicYearId,
+        status: { in: ['OPEN', 'PARTIAL'] },
+      },
+      include: {
+        student: true,
+        fromAcademicYear: true,
+      },
+    });
+
+    // Alerte : Arriérés récurrents (2 années consécutives)
+    const studentsWithRecurrentArrears = new Map<string, number>();
+    arrears.forEach((arrear) => {
+      const count = studentsWithRecurrentArrears.get(arrear.studentId) || 0;
+      studentsWithRecurrentArrears.set(arrear.studentId, count + 1);
+    });
+
+    const recurrentStudents = Array.from(studentsWithRecurrentArrears.entries())
+      .filter(([_, count]) => count >= 2)
+      .map(([studentId, count]) => ({ studentId, count }));
+
+    if (recurrentStudents.length > 0) {
+      alerts.push({
+        level: 'CRITICAL',
+        type: 'RECURRENT_ARREARS',
+        title: 'Arriérés récurrents',
+        message: `${recurrentStudents.length} élèves ont des arriérés sur 2 années consécutives ou plus`,
+        details: {
+          studentCount: recurrentStudents.length,
+          students: recurrentStudents.slice(0, 10),
+        },
+        recommendation: 'Plan de recouvrement urgent requis pour ces élèves',
+      });
+    }
+
+    // Alerte : Montant total des arriérés élevé
+    const totalArrears = arrears.reduce(
+      (sum, a) => sum.plus(a.balanceDue),
+      new Prisma.Decimal(0),
+    );
+
+    if (totalArrears.greaterThan(1000000)) { // 1 million FCFA
+      alerts.push({
+        level: 'WARNING',
+        type: 'HIGH_ARREAR_AMOUNT',
+        title: 'Montant total des arriérés élevé',
+        message: `Le montant total des arriérés s'élève à ${totalArrears.toNumber().toLocaleString('fr-FR')} FCFA`,
+        details: {
+          totalAmount: totalArrears.toNumber(),
+          arrearCount: arrears.length,
+        },
+        recommendation: 'Réviser la stratégie de recouvrement et contacter les parents concernés',
+      });
+    }
+
+    return alerts;
+  }
+
+  /**
    * Génère des alertes pour les réductions tarifaires
    */
   async generateReductionAlerts(tenantId: string, academicYearId: string) {
@@ -459,5 +526,114 @@ export class FinanceOrionService {
 
     return alerts;
   }
-}
+
+  /**
+   * Synthèse globale des anomalies financières pour ORION (Spec Academia Helm)
+   */
+  async detectAnomalies(tenantId: string, academicYearId: string) {
+    const alerts: any[] = [];
+
+    // 1. Détecter les écarts de caisse (Physical Mismatch)
+    const closuresWithDiscrepancy = await this.prisma.financeDailyClosure.findMany({
+      where: {
+        tenantId,
+        academicYearId,
+        anomalyDetected: true,
+        discrepancy: { not: 0 },
+      },
+      orderBy: { date: 'desc' },
+      take: 5,
+    });
+
+    for (const c of closuresWithDiscrepancy) {
+      alerts.push({
+        level: 'CRITICAL',
+        type: 'CASH_DISCREPANCY',
+        title: 'Écart de caisse détecté',
+        message: `Le ${new Date(c.date).toLocaleDateString()} : écart de ${c.discrepancy?.toString()} XOF entre le calcul AH et le comptage physique.`,
+        details: { date: c.date, discrepancy: c.discrepancy },
+        recommendation: 'Auditer les transactions de cette journée et vérifier les justificatifs.',
+      });
+    }
+
+    // 2. Détecter les dépassements de budget (> 85% par défaut)
+    const settings = await this.prisma.financialSettings.findUnique({ where: { tenantId } });
+    const threshold = Number(settings?.budgetAlertThreshold ?? 85);
+
+    const budgets = await this.prisma.financeBudget.findMany({
+      where: { tenantId, academicYearId },
+      include: { category: true },
+    });
+
+    for (const b of budgets) {
+      const expenses = await this.prisma.financeExpense.aggregate({
+        where: { tenantId, academicYearId, categoryId: b.categoryId, status: 'APPROVED' },
+        _sum: { amount: true },
+      });
+      const spent = Number(expenses._sum.amount ?? 0);
+      const allocated = Number(b.allocatedAmount);
+      const percent = allocated > 0 ? (spent / allocated) * 100 : 0;
+
+      if (percent >= threshold) {
+        alerts.push({
+          level: percent >= 100 ? 'CRITICAL' : 'WARNING',
+          type: 'BUDGET_OVERRUN',
+          title: `Alerte budget : ${b.category.name}`,
+          message: `${percent.toFixed(1)}% du budget consommé (${spent.toLocaleString()} / ${allocated.toLocaleString()} XOF).`,
+          details: { category: b.category.name, spent, allocated, percent },
+          recommendation: 'Restreindre les dépenses pour cette catégorie ou réallouer des fonds.',
+        });
+      }
+    }
+
+    // 3. Détecter les annulations suspectes (Manual Overrides)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const suspiciousReversals = await this.prisma.financeTransaction.groupBy({
+      by: ['cashierId'],
+      where: {
+        tenantId,
+        type: 'REVERSAL',
+        createdAt: { gte: today },
+      },
+      _count: { id: true },
+      _sum: { amount: true },
+    });
+
+    for (const r of suspiciousReversals) {
+      if (r._count.id >= 3) {
+        alerts.push({
+          level: 'WARNING',
+          type: 'SUSPICIOUS_CANCELLATIONS',
+          title: 'Vagues d\'annulations suspectes',
+          message: `Le caissier ${r.cashierId} a effectué ${r._count.id} annulations aujourd'hui.`,
+          details: { cashierId: r.cashierId, count: r._count.id, totalAmount: r._sum.amount },
+          recommendation: 'Vérifier les motifs d\'annulation et les logs d\'audit.',
+        });
+      }
+    }
+
+    // 4. Détecter les clôtures tardives ou absentes
+    const lastClosure = await this.prisma.financeDailyClosure.findFirst({
+      where: { tenantId, academicYearId },
+      orderBy: { date: 'desc' },
+    });
+
+    if (lastClosure) {
+      const lastDate = new Date(lastClosure.date);
+      const daysDiff = (today.getTime() - lastDate.getTime()) / (1000 * 3600 * 24);
+      if (daysDiff > 2) {
+        alerts.push({
+          level: 'CRITICAL',
+          type: 'MISSING_CLOSURE',
+          title: 'Retard de clôture critique',
+          message: `La dernière clôture date d'il y a ${Math.floor(daysDiff)} jours.`,
+          details: { lastClosureDate: lastClosure.date },
+          recommendation: 'Forcer la clôture des journées en attente pour figer la comptabilité.',
+        });
+      }
+    }
+
+    return alerts;
+  }
 

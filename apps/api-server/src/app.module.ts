@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
-import { PatronatModule } from './patronat/patronat.module';
+import { InstitutionalExamsModule } from './modules/exams/exams.module';
+import { FederisModule } from './federis/federis.module';
 import { AtlasModule } from './atlas/atlas.module';
 import { SaraModule } from './sara/sara.module';
 import { EducMasterModule } from './educmaster/educmaster.module';
@@ -55,6 +56,7 @@ import { PortalModule } from './portal/portal.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { BillingModule } from './billing/billing.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
+import { NotificationModule } from './notifications/notification.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { GeneralModule } from './modules/general/general.module';
 import { ModulesModule } from './modules/modules.module';
@@ -132,6 +134,9 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     
     // Personnel, RH & Paie module (Module 5)
     HRModule,
+    
+    // Module 3 - Examens, Notes & Bulletins (Hardened)
+    InstitutionalExamsModule,
     
     // Communication & Engagement module (Module 6)
     CommunicationModule,
@@ -241,13 +246,16 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     ReviewsModule,
 
     // Patronat Module
-    PatronatModule,
+    FederisModule,
 
     // IA ATLAS Module
     AtlasModule,
 
     // IA SARA Module
     SaraModule,
+
+    // Notification Module
+    NotificationModule,
 
     // EducMaster Module
     EducMasterModule,

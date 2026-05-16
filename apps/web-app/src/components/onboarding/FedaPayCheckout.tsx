@@ -193,6 +193,7 @@ export default function FedaPayCheckout({
       if (onError) {
         onError(err);
       }
+      return;
     }
   }, [scriptLoaded, publicKey, transaction, customer, onComplete, onError]);
 

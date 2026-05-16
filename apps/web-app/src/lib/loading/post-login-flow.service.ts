@@ -148,7 +148,7 @@ export async function executePostLoginFlow(
     }
 
     // Vérifier l'état du compte
-    if (tenant.subscriptionStatus === 'PENDING' || tenant.subscriptionStatus === 'TERMINATED') {
+    if (tenant && (tenant.subscriptionStatus === 'PENDING' || tenant.subscriptionStatus === 'TERMINATED')) {
       throw {
         step: 'INIT_SECURE_CONTEXT' as LoadingStep,
         message: 'Compte suspendu ou en attente',
@@ -260,10 +260,10 @@ export async function executePostLoginFlow(
       try {
         const rawAlerts = await getOrionAlerts('CRITIQUE', false);
         const alerts = Array.isArray(rawAlerts) ? rawAlerts : [];
-        orionAlerts = alerts.slice(0, 5).map((alert) => ({
+        orionAlerts = alerts.slice(0, 5).map((alert: any) => ({
           id: alert.id,
           level: alert.level,
-          message: alert.message,
+          message: alert.title || alert.message || '',
         }));
       } catch (error) {
         console.error('Failed to load ORION alerts:', error);

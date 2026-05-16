@@ -77,25 +77,30 @@ export function getApiBaseUrl(): string {
       const cleanDomain = apiDomain.replace(/^https?:\/\//, '');
       return `https://${cleanDomain}/api`;
     }
-    return `${getAppBaseUrl()}/api`;
+    return 'https://api.academiahelm.com/api';
   }
 
   const env = getAppEnvironment();
   
-  if (env === 'production') {
+  if (env === 'production' || env === 'preview' || env === 'test') {
     const apiDomain = process.env.NEXT_PUBLIC_API_DOMAIN;
     if (apiDomain) {
       const cleanDomain = apiDomain.replace(/^https?:\/\//, '');
       return `https://${cleanDomain}/api`;
     }
     
-    // Sinon, utiliser le même domaine que l'app
-    const appUrl = getAppBaseUrl();
-    return `${appUrl}/api`;
+    // Sinon, essayer de construire à partir du domaine de l'app
+    if (typeof window !== 'undefined') {
+      const host = window.location.host;
+      if (host.includes('academiahelm.com')) {
+        return 'https://api.academiahelm.com/api';
+      }
+    }
+
+    return 'https://api.academiahelm.com/api';
   }
   
   // PRIORITÉ 3 : Local uniquement (fallback pour développement)
-  // ⚠️ Ce fallback ne devrait jamais être utilisé si NEXT_PUBLIC_API_URL est configuré
   if (env === 'local') {
     // En local, essayer de détecter depuis window si disponible
     if (typeof window !== 'undefined') {
@@ -104,12 +109,7 @@ export function getApiBaseUrl(): string {
       return `${window.location.protocol}//${currentHost}/api`;
     }
     
-    // Dernier recours : utiliser le port par défaut API
-    // ⚠️ Ceci est un fallback de développement uniquement
-    // ⚠️ IMPORTANT : Utiliser 127.0.0.1 au lieu de localhost pour éviter les problèmes DNS/IPv6/EACCES
-    // En particulier dans les routes API Next.js (côté serveur), localhost peut causer des erreurs EACCES
     const port = process.env.API_PORT || '3000';
-    // Forcer l'utilisation de 127.0.0.1 pour les connexions serveur-à-serveur
     return `http://127.0.0.1:${port}/api`;
   }
   
@@ -125,12 +125,21 @@ export function getApiBaseUrl(): string {
  * ⚠️ IMPORTANT : Ne jamais utiliser localhost en dur
  * Utilise uniquement les variables d'environnement
  * 
- * @returns Domaine de base (ex: academia-hub.com)
+ * @returns Domaine de base (ex: academiahelm.com)
  * @throws Error si NEXT_PUBLIC_BASE_DOMAIN n'est pas défini en production
  */
 export function getBaseDomain(): string {
   // PRIORITÉ 1 : Variable d'environnement explicite
-  const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN;
+  let baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN;
+  
+  // Détection intelligente si non défini
+  if (!baseDomain && typeof window !== 'undefined') {
+    const host = window.location.host;
+    if (host.includes('academiahelm.com')) {
+      baseDomain = 'academiahelm.com';
+    }
+  }
+
   if (baseDomain) {
     // Retirer le protocole si présent
     return baseDomain.replace(/^https?:\/\//, '');
@@ -142,12 +151,11 @@ export function getBaseDomain(): string {
 
   const env = getAppEnvironment();
   
-  if (env === 'production') {
+  if (env === 'production' || env === 'preview' || env === 'test') {
     if (typeof window !== 'undefined') return window.location.host;
-    throw new Error(
-      'NEXT_PUBLIC_BASE_DOMAIN must be set in production. ' +
-      'Please configure your environment variables.'
-    );
+    
+    // Fallback vers le nouveau domaine
+    return 'academiahelm.com';
   }
 
   if (env === 'local') {

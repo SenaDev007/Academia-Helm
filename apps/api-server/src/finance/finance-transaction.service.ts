@@ -122,19 +122,9 @@ export class FinanceTransactionService {
       });
     }
 
-    const newTotalPaid = Number(account.totalPaid) + data.amount;
-    const newBalance = Number(account.balance) - data.amount;
-    const status = newBalance <= 0 ? 'PAID' : 'PARTIAL';
+    // Note: totalPaid, balance and status are now updated via the DB Trigger 'update_balance_after_transaction'
+    // on the finance_transactions table to ensure atomicity.
 
-    await this.prisma.studentAccount.update({
-      where: { id: data.studentAccountId },
-      data: {
-        totalPaid: newTotalPaid,
-        balance: newBalance,
-        status,
-        updatedAt: new Date(),
-      },
-    });
 
     return this.prisma.financeTransaction.findUnique({
       where: { id: tx.id },
@@ -207,15 +197,8 @@ export class FinanceTransactionService {
       });
     }
 
-    await this.prisma.studentAccount.update({
-      where: { id: original.studentAccountId },
-      data: {
-        totalPaid: { increment: reversalAmount },
-        balance: { increment: -reversalAmount },
-        status: Number(original.studentAccount.balance) + (-reversalAmount) <= 0 ? 'PAID' : 'PARTIAL',
-        updatedAt: new Date(),
-      },
-    });
+    // Note: totalPaid, balance and status are now updated via the DB Trigger.
+
 
     return this.prisma.financeTransaction.findUnique({
       where: { id: reversal.id },

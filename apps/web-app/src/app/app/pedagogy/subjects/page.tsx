@@ -35,10 +35,10 @@ export default function SubjectsPage() {
             icon: <Icon className="w-4 h-4" />,
           };
         }),
-        activeId: 'subjects',
+        activeModuleId: 'subjects',
       }}
       content={{
-        layout: 'full',
+        layout: 'custom',
         children: <SubjectsWorkspace />,
       }}
     />

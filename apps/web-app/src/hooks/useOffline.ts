@@ -54,6 +54,7 @@ export function useSyncStatus() {
         window.removeEventListener('sync-end', handleSyncEnd);
       };
     }
+    return;
   }, []);
 
   return {

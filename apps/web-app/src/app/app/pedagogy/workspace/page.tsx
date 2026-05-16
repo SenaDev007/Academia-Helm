@@ -11,6 +11,7 @@ export default function PedagogicalWorkspacePage() {
     { href: '/app/pedagogy/daily-logs', label: 'Cahier journal', icon: BookOpen },
     { href: '/app/pedagogy/class-diaries', label: 'Cahier de texte', icon: Book },
     { href: '/app/pedagogy/semainier', label: 'Cahier du semainier', icon: CalendarDays },
+    { href: '/app/pedagogy/global-library', label: 'Bibliothèque virtuelle', icon: Book },
   ];
   return (
     <ModuleContainer

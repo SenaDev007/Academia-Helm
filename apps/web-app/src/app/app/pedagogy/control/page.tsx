@@ -38,7 +38,7 @@ export default function ControlPage() {
             icon: <Icon className="w-4 h-4" />,
           };
         }),
-        activeId: 'control',
+        activeModuleId: 'control',
       }}
       content={{
         layout: 'custom',

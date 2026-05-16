@@ -1,176 +1,144 @@
 /**
  * ============================================================================
- * MODULE BOUTIQUE
+ * MODULE BOUTIQUE & ÉCONOMAT - ACADEMIA HELM
  * ============================================================================
  */
 
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Plus, ShoppingBag, Package, DollarSign, TrendingUp } from 'lucide-react';
+import { useState } from 'react';
+import { 
+  Plus, Search, Activity, List, Package, Archive, QrCode, 
+  Wallet, Box, Truck, Tag, Bookmark, Navigation, RotateCcw, 
+  BarChart3, Settings
+} from 'lucide-react';
 import { useAcademicYear } from '@/hooks/useAcademicYear';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import ModulePageLayout from './ModulePageLayout';
+import ShopDashboard from './shop/ShopDashboard';
+import ShopCatalog from './shop/ShopCatalog';
+import ShopProducts from './shop/ShopProducts';
+import ShopOrders from './shop/ShopOrders';
+import ShopPOS from './shop/ShopPOS';
+import ShopPayments from './shop/ShopPayments';
+import ShopStocks from './shop/ShopStocks';
+import ShopSuppliers from './shop/ShopSuppliers';
+import ShopDiscounts from './shop/ShopDiscounts';
+import ShopKits from './shop/ShopKits';
+import ShopPickups from './shop/ShopPickups';
+import ShopReturns from './shop/ShopReturns';
+import ShopReports from './shop/ShopReports';
+import ShopSettings from './shop/ShopSettings';
 
-interface Product {
-  id: string;
-  name: string;
-  category: string;
-  stock: number;
-  price: number;
-  sold: number;
-}
+type TabId = 
+  | 'dashboard' 
+  | 'catalog' 
+  | 'products'
+  | 'orders' 
+  | 'pos'
+  | 'payments'
+  | 'inventory' 
+  | 'suppliers' 
+  | 'discounts'
+  | 'kits'
+  | 'pickups'
+  | 'returns'
+  | 'analysis' 
+  | 'settings';
 
 export default function ShopModulePage() {
   const { currentYear } = useAcademicYear();
   const { currentLevel } = useSchoolLevel();
-  const [products, setProducts] = useState<Product[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<TabId>('dashboard');
+  const [searchTerm, setSearchTerm] = useState('');
 
-  useEffect(() => {
-    const loadProducts = async () => {
-      if (!currentYear || !currentLevel) return;
+  const tabs = [
+    { id: 'dashboard', label: 'Vue d\'ensemble', icon: Activity },
+    { id: 'catalog', label: 'Catalogue', icon: List },
+    { id: 'products', label: 'Articles & Variantes', icon: Package },
+    { id: 'orders', label: 'Commandes', icon: Archive },
+    { id: 'pos', label: 'Ventes (POS)', icon: QrCode },
+    { id: 'payments', label: 'Paiements & Wallet', icon: Wallet },
+    { id: 'inventory', label: 'Stocks & Inventaires', icon: Box },
+    { id: 'suppliers', label: 'Fournisseurs & Achats', icon: Truck },
+    { id: 'discounts', label: 'Remises & Promos', icon: Tag },
+    { id: 'kits', label: 'Kits Scolaires', icon: Bookmark },
+    { id: 'pickups', label: 'Retraits & Livraisons', icon: Navigation },
+    { id: 'returns', label: 'Retours & Échanges', icon: RotateCcw },
+    { id: 'analysis', label: 'Rapports & Stats', icon: BarChart3 },
+    { id: 'settings', label: 'Configuration', icon: Settings },
+  ];
 
-      setIsLoading(true);
-      try {
-        const response = await fetch(
-          `/api/shop/products?academicYearId=${currentYear.id}&schoolLevelId=${currentLevel.id}`
-        );
-        if (response.ok) {
-          const data = await response.json();
-          setProducts(data);
-        }
-      } catch (error) {
-        console.error('Failed to load products:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadProducts();
-  }, [currentYear, currentLevel]);
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'XOF',
-      minimumFractionDigits: 0,
-    }).format(amount);
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'dashboard': return <ShopDashboard />;
+      case 'catalog': return <ShopCatalog />;
+      case 'products': return <ShopProducts />;
+      case 'orders': return <ShopOrders />;
+      case 'pos': return <ShopPOS />;
+      case 'payments': return <ShopPayments />;
+      case 'inventory': return <ShopStocks />;
+      case 'suppliers': return <ShopSuppliers />;
+      case 'discounts': return <ShopDiscounts />;
+      case 'kits': return <ShopKits />;
+      case 'pickups': return <ShopPickups />;
+      case 'returns': return <ShopReturns />;
+      case 'analysis': return <ShopReports />;
+      case 'settings': return <ShopSettings />;
+      default: return <ShopDashboard />;
+    }
   };
 
   return (
     <ModulePageLayout
-      title="Boutique"
-      subtitle={`${currentLevel?.code === 'MATERNELLE' ? 'Maternelle' :
-                 currentLevel?.code === 'PRIMAIRE' ? 'Primaire' :
-                 currentLevel?.code === 'SECONDAIRE' ? 'Secondaire' : currentLevel?.code} | ${currentYear?.name || ''}`}
+      title="Boutique & Économat"
+      subtitle={`${currentLevel?.name || ''} | ${currentYear?.name || ''}`}
       actions={
-        <>
-          <button className="flex items-center space-x-2 px-4 py-2 bg-navy-900 text-white rounded-md hover:bg-navy-800 transition-colors">
+        <div className="flex items-center space-x-3">
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input 
+              type="text" 
+              placeholder="Scanner ou rechercher..." 
+              className="pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-navy-500 w-64 outline-none transition-all bg-white"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <button className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-xl hover:bg-navy-800 transition-all font-bold text-xs uppercase tracking-widest active:scale-95 shadow-lg shadow-navy-900/20">
             <Plus className="w-4 h-4" />
-            <span>Ajouter un produit</span>
+            <span>Nouveau</span>
           </button>
-        </>
+        </div>
       }
     >
-      <div className="space-y-6">
-        {/* Statistiques */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-gray-600">Total produits</p>
-              <ShoppingBag className="w-5 h-5 text-gray-400" />
-            </div>
-            <p className="text-2xl font-bold text-navy-900">
-              {isLoading ? '—' : products.length}
-            </p>
-          </div>
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-gray-600">En stock</p>
-              <Package className="w-5 h-5 text-green-600" />
-            </div>
-            <p className="text-2xl font-bold text-navy-900">
-              {isLoading ? '—' : products.filter(p => p.stock > 0).length}
-            </p>
-          </div>
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-gray-600">Ventes</p>
-              <TrendingUp className="w-5 h-5 text-blue-600" />
-            </div>
-            <p className="text-2xl font-bold text-navy-900">
-              {isLoading ? '—' : products.reduce((sum, p) => sum + p.sold, 0)}
-            </p>
-          </div>
+      <div className="space-y-8">
+        {/* Navigation Tabs - Style Ultra Premium */}
+        <div className="flex items-center space-x-1 bg-gray-100/80 p-1.5 rounded-[1.25rem] border border-gray-200/50 overflow-x-auto no-scrollbar shadow-inner backdrop-blur-sm sticky top-0 z-30">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as TabId)}
+                className={`flex items-center space-x-2 px-5 py-3 rounded-[1rem] text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+                  activeTab === tab.id 
+                    ? 'bg-white text-navy-900 shadow-md border border-gray-100' 
+                    : 'text-gray-400 hover:text-navy-600 hover:bg-white/50'
+                }`}
+              >
+                <Icon className={`w-4 h-4 ${activeTab === tab.id ? 'text-navy-600' : 'text-gray-400'}`} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
         </div>
 
-        {/* Liste des produits */}
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
-          <div className="p-6 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-navy-900">Produits</h3>
-          </div>
-          {isLoading ? (
-            <div className="p-6 text-center text-gray-400">Chargement...</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Produit
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Catégorie
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Stock
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Prix
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Ventes
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {products.map((product) => (
-                    <tr key={product.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {product.name}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {product.category}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        <span
-                          className={`px-2 py-1 text-xs font-medium rounded-full ${
-                            product.stock > 10
-                              ? 'bg-green-100 text-green-800'
-                              : product.stock > 0
-                              ? 'bg-yellow-100 text-yellow-800'
-                              : 'bg-red-100 text-red-800'
-                          }`}
-                        >
-                          {product.stock}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {formatCurrency(product.price)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {product.sold}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+        {/* Content Area */}
+        <div className="pb-12">
+          {renderTabContent()}
         </div>
       </div>
     </ModulePageLayout>
   );
 }
-

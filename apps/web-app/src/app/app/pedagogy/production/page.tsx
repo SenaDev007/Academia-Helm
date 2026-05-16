@@ -38,7 +38,7 @@ export default function ProductionPage() {
             icon: <Icon className="w-4 h-4" />,
           };
         }),
-        activeId: 'pedagogical-production',
+        activeModuleId: 'production',
       }}
       content={{
         layout: 'custom',

@@ -6,6 +6,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 
+import { NotificationService } from '../notifications/notification.service';
 const DRAFT = 'DRAFT';
 const SUBMITTED = 'SUBMITTED';
 const APPROVED = 'APPROVED';
@@ -13,7 +14,10 @@ const REJECTED = 'REJECTED';
 
 @Injectable()
 export class PedagogicalWorkspacePrismaService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationService: NotificationService
+  ) {}
 
   // ---------- TeachingJournal ----------
   async findJournals(
@@ -145,7 +149,7 @@ export class PedagogicalWorkspacePrismaService {
     homework?: string | null;
     durationHours: number;
   }) {
-    return this.prisma.classLog.create({
+    const log = await this.prisma.classLog.create({
       data: {
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
@@ -158,6 +162,24 @@ export class PedagogicalWorkspacePrismaService {
         durationHours: data.durationHours,
       },
     });
+
+    // 2. Déclencher une notification si un devoir est ajouté
+    if (data.homework) {
+      // Récupérer le nom de la matière pour la notification
+      const subject = await this.prisma.subject.findUnique({
+        where: { id: data.subjectId },
+        select: { label: true }
+      });
+
+      await this.notificationService.notifyParentsNewHomework(
+        data.classId,
+        data.tenantId,
+        subject?.label || 'Matière inconnue',
+        data.homework
+      );
+    }
+
+    return log;
   }
 
   async updateClassLog(

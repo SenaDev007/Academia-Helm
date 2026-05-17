@@ -13,7 +13,8 @@ import {
   AlertTriangle, 
   TrendingUp, 
   Zap,
-  Bot
+  Bot,
+  Users
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 

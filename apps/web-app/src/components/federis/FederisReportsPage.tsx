@@ -40,7 +40,7 @@ export default function FederisReportsPage() {
            </div>
            
            <button className="px-8 py-4 bg-blue-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl hover:bg-blue-500 transition-all flex items-center gap-3">
-              <AppIcon name="plus" size="submenu" />
+              <AppIcon name="add" size="submenu" />
               Nouveau Rapport
            </button>
         </div>

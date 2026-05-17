@@ -49,7 +49,7 @@ export default function FederisQuestionBankPage() {
            
            <div className="flex flex-col items-end gap-3">
               <button className="px-8 py-4 bg-blue-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl hover:bg-blue-500 transition-all flex items-center gap-3">
-                 <AppIcon name="plus" size="submenu" />
+                 <AppIcon name="add" size="submenu" />
                  Proposer un Sujet
               </button>
               <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest italic">Dernière modification il y a 45 min</p>

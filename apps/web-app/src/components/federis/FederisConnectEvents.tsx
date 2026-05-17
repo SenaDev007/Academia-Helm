@@ -33,7 +33,7 @@ export default function FederisConnectEvents() {
       <div className="flex items-center justify-between mb-8">
         <h3 className="text-xl font-black text-gray-900 uppercase tracking-tighter italic">Agenda Institutionnel</h3>
         <button className="px-6 py-2 bg-blue-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:bg-blue-800 transition-all flex items-center gap-2">
-           <AppIcon name="plus" size="submenu" />
+           <AppIcon name="add" size="submenu" />
            Planifier
         </button>
       </div>
@@ -50,7 +50,7 @@ export default function FederisConnectEvents() {
                event.type === 'MEETING' ? "bg-amber-50 text-amber-600" : 
                event.type === 'EXAM' ? "bg-red-50 text-red-600" : "bg-blue-50 text-blue-900"
              )}>
-                <AppIcon name={event.type === 'MEETING' ? 'group' : 'exams'} size="dashboard" />
+                <AppIcon name={event.type === 'MEETING' ? 'students' : 'exams'} size="dashboard" />
              </div>
 
              <h4 className="text-lg font-black text-gray-900 mb-2 leading-tight">{event.title}</h4>

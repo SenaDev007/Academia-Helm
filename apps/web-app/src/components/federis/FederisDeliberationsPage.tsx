@@ -149,7 +149,7 @@ export default function FederisDeliberationsPage() {
                       <h4 className="text-lg font-black text-gray-900 group-hover:text-indigo-900 transition-colors">{session.name}</h4>
                       <div className="flex items-center space-x-4 mt-1">
                         <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
-                          <AppIcon name="group" size="menu" className="w-3 h-3" />
+                          <AppIcon name="students" size="menu" className="w-3 h-3" />
                           {session.candidates.toLocaleString()} Candidats
                         </div>
                         <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">

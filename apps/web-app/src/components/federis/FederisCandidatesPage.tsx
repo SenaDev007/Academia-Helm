@@ -50,7 +50,7 @@ export default function FederisCandidatesPage({ tenantId }: FederisCandidatesPag
                 <p className="text-[10px] font-bold text-blue-300 uppercase tracking-widest">Inscriptions</p>
              </div>
              <button className="p-5 bg-white text-blue-900 rounded-2xl shadow-xl hover:bg-blue-50 transition-all">
-                <AppIcon name="print" size="dashboard" />
+                <AppIcon name="download" size="dashboard" />
              </button>
           </div>
         </div>

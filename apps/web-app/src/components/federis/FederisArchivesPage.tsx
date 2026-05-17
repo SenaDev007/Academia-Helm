@@ -97,7 +97,7 @@ export default function FederisArchivesPage() {
                   <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Registre des Admis</h3>
                   <div className="flex items-center space-x-2">
                      <button className="p-2 bg-gray-50 rounded-lg text-gray-400 hover:text-blue-900 transition-colors">
-                        <AppIcon name="print" size="submenu" />
+                        <AppIcon name="download" size="submenu" />
                      </button>
                      <button className="p-2 bg-gray-50 rounded-lg text-gray-400 hover:text-blue-900 transition-colors">
                         <AppIcon name="finance" size="submenu" />

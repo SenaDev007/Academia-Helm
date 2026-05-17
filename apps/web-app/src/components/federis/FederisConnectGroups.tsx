@@ -72,7 +72,7 @@ export default function FederisConnectGroups() {
           <p className="text-xs font-bold text-gray-400 mt-1 uppercase tracking-widest">Rejoignez des espaces de collaboration spécialisés</p>
         </div>
         <button className="px-6 py-2.5 bg-blue-900 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-xl hover:bg-blue-800 transition-all flex items-center gap-2">
-          <AppIcon name="group" size="menu" />
+          <AppIcon name="students" size="menu" />
           Créer un Groupe
         </button>
       </div>
@@ -90,7 +90,7 @@ export default function FederisConnectGroups() {
                 "w-14 h-14 rounded-2xl flex items-center justify-center mb-6 shadow-lg",
                 group.type === 'OFFICIAL' ? "bg-blue-900 text-white" : group.type === 'COMMUNITY' ? "bg-purple-900 text-white" : "bg-orange-900 text-white"
               )}>
-                <AppIcon name={group.type === 'COMMUNITY' ? 'scolarite' : 'group'} size="dashboard" />
+                <AppIcon name={group.type === 'COMMUNITY' ? 'scolarite' : 'students'} size="dashboard" />
               </div>
 
               <div className="mb-6">

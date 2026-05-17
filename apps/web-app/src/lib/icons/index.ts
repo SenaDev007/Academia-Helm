@@ -247,7 +247,7 @@ export type IconName = keyof typeof IconMapping;
  * - Bouton action : 16px
  * - Alertes : 18px
  */
-export type IconSize = 'menu' | 'submenu' | 'dashboard' | 'action' | 'alert';
+export type IconSize = 'menu' | 'submenu' | 'dashboard' | 'action' | 'alert' | 'large';
 
 /**
  * Mapping des tailles officielles en pixels
@@ -258,6 +258,7 @@ export const IconSizes: Record<IconSize, number> = {
   dashboard: 24,   // Dashboard / KPI
   action: 16,      // Bouton action
   alert: 18,       // Alertes
+  large: 48,       // Grande taille (décoration, etc.)
 };
 
 /**

@@ -142,7 +142,7 @@ export default function FederisSchoolsPage({ tenantId }: { tenantId: string }) {
                   </td>
                   <td className="px-6 py-4 text-right">
                     <button className="p-2 text-gray-400 hover:text-blue-900 hover:bg-blue-50 rounded-lg transition-all">
-                      <AppIcon name="eye" size="submenu" />
+                      <AppIcon name="view" size="submenu" />
                     </button>
                     <button className="p-2 text-gray-400 hover:text-red-900 hover:bg-red-50 rounded-lg transition-all ml-1">
                       <AppIcon name="delete" size="submenu" />

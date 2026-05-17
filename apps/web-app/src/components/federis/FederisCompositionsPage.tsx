@@ -92,7 +92,7 @@ export default function FederisCompositionsPage() {
                           </div>
                        </div>
                        <button className="p-4 bg-gray-50 rounded-2xl text-gray-400 hover:text-blue-900 hover:bg-blue-50 transition-all">
-                          <AppIcon name="eye" size="submenu" />
+                          <AppIcon name="view" size="submenu" />
                        </button>
                     </div>
                  </div>

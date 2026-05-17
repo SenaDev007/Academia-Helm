@@ -36,7 +36,7 @@ export default function FederisArchivesPage() {
         <div className="relative z-10">
           <div className="flex items-center space-x-4 mb-6">
              <div className="w-12 h-12 bg-white/10 backdrop-blur-xl rounded-2xl flex items-center justify-center border border-white/10">
-                <AppIcon name="folder" size="dashboard" className="text-blue-300" />
+                <AppIcon name="document" size="dashboard" className="text-blue-300" />
              </div>
              <div>
                 <span className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-300">National Registry</span>

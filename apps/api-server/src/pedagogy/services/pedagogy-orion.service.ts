@@ -379,7 +379,7 @@ export class PedagogyOrionService {
         category: 'TEACHERS_WITHOUT_LIBRARY_USAGE',
         title: 'Enseignants sous-exploitants la bibliothèque',
         description: `${teachersWithoutLibraryUsage.length} enseignant(s) actif(s) n'ont consulté aucune ressource globale ce trimestre`,
-        recommendation: 'Encourager les enseignants à s''appuyer sur les ressources institutionnelles pour enrichir leurs cours.',
+        recommendation: "Encourager les enseignants à s'appuyer sur les ressources institutionnelles pour enrichir leurs cours.",
         count: teachersWithoutLibraryUsage.length,
       });
     }

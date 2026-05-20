@@ -211,6 +211,7 @@ export class BulletinsService {
         isPublished: true,
       },
     });
+  }
   /**
    * Récupère toutes les données nécessaires pour générer le bulletin PDF
    */

@@ -9,7 +9,7 @@
 
 'use client';
 
-import { ReactNode } from 'react';
+import { ReactNode, isValidElement, cloneElement } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -109,7 +109,11 @@ export default function SubModuleNavigation({
               <span className="relative z-10 flex items-center gap-2">
                 {module.icon && (
                   <span className={cn("flex-shrink-0", isActive ? "text-indigo-600" : "text-gray-400")}>
-                    {typeof module.icon === 'function' || (typeof module.icon === 'object' && module.icon !== null) ? (
+                    {isValidElement(module.icon) ? (
+                      cloneElement(module.icon as React.ReactElement, { 
+                        className: cn("w-4 h-4", (module.icon as any).props.className) 
+                      } as any)
+                    ) : typeof module.icon === 'function' || (typeof module.icon === 'object' && module.icon !== null) ? (
                       <module.icon className="w-4 h-4" />
                     ) : (
                       module.icon

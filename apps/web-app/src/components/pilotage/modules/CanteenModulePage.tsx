@@ -56,7 +56,7 @@ export default function CanteenModulePage() {
   return (
     <ModulePageLayout
       title="Cantine & Restauration"
-      subtitle={`${currentLevel?.name || 'Niveau scolaire'} | ${currentYear?.name || ''}`}
+      subtitle={`${currentLevel?.label || 'Niveau scolaire'} | ${currentYear?.name || ''}`}
       actions={
         <div className="flex items-center space-x-3">
           <div className="relative group">

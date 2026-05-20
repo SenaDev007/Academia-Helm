@@ -7,7 +7,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Play, Headphones, Users, Star, Eye, Clock, TrendingUp, AlertCircle, CheckCircle2, ChevronRight } from 'lucide-react';
+import { Play, Headphones, Users, Star, Eye, Clock, TrendingUp, AlertCircle, CheckCircle2, ChevronRight, Zap } from 'lucide-react';
 
 export default function EduCastDashboard() {
   const stats = [

@@ -74,7 +74,7 @@ export default function InfirmaryModulePage() {
   return (
     <ModulePageLayout
       title="Infirmerie"
-      subtitle={`${currentLevel?.name || ''} | ${currentYear?.name || ''}`}
+      subtitle={`${currentLevel?.label || ''} | ${currentYear?.name || ''}`}
       actions={
         <div className="flex items-center space-x-2">
           <button className="flex items-center space-x-2 px-4 py-2 bg-[#C9A84C] text-white rounded-xl hover:bg-[#B8973B] transition-all font-bold text-sm shadow-sm">

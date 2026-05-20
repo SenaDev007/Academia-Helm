@@ -44,6 +44,7 @@ const ENTITY_TO_TABLE: Record<SyncEntityType, string> = {
   EXAM_RESULT: 'exam_results',
   EXAM_PV: 'exam_pvs',
   PEDAGOGICAL_FILE: 'pedagogical_files',
+  DISCIPLINARY_INCIDENT: 'disciplinary_incidents',
 };
 
 /**

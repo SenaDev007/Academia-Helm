@@ -34,7 +34,8 @@ import {
   Plus,
   Download,
   Search,
-  ChevronRight
+  ChevronRight,
+  TrendingDown
 } from 'lucide-react';
 import { ModuleContainer } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';

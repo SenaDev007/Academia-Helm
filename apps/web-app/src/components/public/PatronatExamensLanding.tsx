@@ -92,7 +92,7 @@ export default function PatronatExamensLanding() {
                 ].map((item, i) => (
                   <li key={i} className="flex items-start space-x-4">
                     <div className="mt-1 bg-red-100 p-1 rounded-full">
-                      <AppIcon name="close" size="small" className="text-red-600" />
+                      <AppIcon name="close" size="action" className="text-red-600" />
                     </div>
                     <span className="text-lg text-gray-700 font-medium">{item}</span>
                   </li>
@@ -190,7 +190,7 @@ export default function PatronatExamensLanding() {
                   ].map((item, i) => (
                     <div key={i} className="flex items-center space-x-3">
                       <div className="w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center">
-                        <AppIcon name="check" size="small" className="text-blue-900" />
+                        <AppIcon name="check" size="action" className="text-blue-900" />
                       </div>
                       <span className="text-white font-medium">{item}</span>
                     </div>
@@ -204,7 +204,7 @@ export default function PatronatExamensLanding() {
                   <div className="relative bg-white/5 backdrop-blur-xl border border-white/10 p-8 rounded-[40px] shadow-2xl">
                     <div className="flex justify-between items-center mb-8">
                       <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center">
-                         <AppIcon name="sync" size="menu" className="text-white animate-spin-slow" />
+                         <AppIcon name="refresh" size="menu" className="text-white animate-spin-slow" />
                       </div>
                       <div className="h-2 w-24 bg-white/10 rounded-full"></div>
                     </div>
@@ -285,7 +285,7 @@ export default function PatronatExamensLanding() {
                   {plan.features.map((f, fi) => (
                     <li key={fi} className="flex items-center space-x-3">
                       <div className="w-5 h-5 bg-blue-50 rounded-full flex items-center justify-center flex-shrink-0">
-                        <AppIcon name="check" size="small" className="text-blue-600" />
+                        <AppIcon name="check" size="action" className="text-blue-600" />
                       </div>
                       <span className="text-gray-600 text-sm font-medium">{f}</span>
                     </li>

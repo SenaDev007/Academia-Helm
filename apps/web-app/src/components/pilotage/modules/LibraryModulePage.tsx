@@ -86,7 +86,7 @@ export default function LibraryModulePage() {
   return (
     <ModulePageLayout
       title="Bibliothèque"
-      subtitle={`${currentLevel?.name || 'Toutes Sections'} | ${currentYear?.name || ''}`}
+      subtitle={`${currentLevel?.label || 'Toutes Sections'} | ${currentYear?.name || ''}`}
       actions={
         <div className="flex items-center space-x-2">
           <button className="flex items-center space-x-2 px-4 py-2 bg-navy-900 text-white rounded-xl hover:bg-navy-800 transition-all font-bold text-sm shadow-sm">

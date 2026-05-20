@@ -92,7 +92,7 @@ export default function ShopModulePage() {
   return (
     <ModulePageLayout
       title="Boutique & Économat"
-      subtitle={`${currentLevel?.name || ''} | ${currentYear?.name || ''}`}
+      subtitle={`${currentLevel?.label || ''} | ${currentYear?.name || ''}`}
       actions={
         <div className="flex items-center space-x-3">
           <div className="relative">

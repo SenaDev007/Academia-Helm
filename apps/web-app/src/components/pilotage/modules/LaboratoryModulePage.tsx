@@ -78,7 +78,7 @@ export default function LaboratoryModulePage() {
   return (
     <ModulePageLayout
       title="Laboratoire"
-      subtitle={`${currentLevel?.name || 'Tous Niveaux'} | ${currentYear?.name || ''}`}
+      subtitle={`${currentLevel?.label || 'Tous Niveaux'} | ${currentYear?.name || ''}`}
       actions={
         <div className="flex items-center space-x-2">
           <button className="flex items-center space-x-2 px-4 py-2 bg-[#C9A84C] text-white rounded-xl hover:bg-[#B8973B] transition-all font-bold text-sm shadow-sm">

@@ -17,7 +17,8 @@ import {
   Filter,
   Calendar,
   Share2,
-  Table as TableIcon
+  Table as TableIcon,
+  ShieldAlert
 } from 'lucide-react';
 
 export default function ReportsStats() {

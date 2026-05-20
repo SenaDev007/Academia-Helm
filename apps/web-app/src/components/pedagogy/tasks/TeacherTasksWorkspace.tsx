@@ -22,6 +22,7 @@ import {
   Clock,
   MoreVertical,
   ArrowRight,
+  AlertTriangle,
 } from 'lucide-react';
 
 const TABS = [

@@ -28,3 +28,11 @@ export function formatGradeLabel(value?: string | null): string {
 
   return s.replace(/\b\w/g, (c) => c.toUpperCase());
 }
+
+export function formatCurrency(value?: number | string | null): string {
+  if (value == null || value === '') return '0 FCFA';
+  const num = typeof value === 'number' ? value : parseFloat(value);
+  if (isNaN(num)) return '0 FCFA';
+  return `${num.toLocaleString('fr-FR')} FCFA`;
+}
+

@@ -33,6 +33,7 @@ import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-ema
 import { persistClientSession } from '@/lib/auth/client-access-token';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getMotionDuration } from '@/lib/motion/presets';
+import { getTenantRedirectUrl } from '@/lib/utils/tenant-redirect';
 
 type PortalType = 'platform' | 'school' | 'teacher' | 'parent' | 'public' | null;
 
@@ -279,21 +280,16 @@ export default function LoginPage() {
       return;
     }
 
-    let redirectUrl = portalType === 'platform' ? '/app/platform' : redirectPath;
-    
-    // Si on n'est pas déjà sur un sous-domaine professionnel, on ajoute les paramètres
-    const isSubdomain = typeof window !== 'undefined' && window.location.host.split('.').length >= (window.location.host.includes('localhost') ? 2 : 3);
-    
-    if (!isSubdomain && (tenantSlug || tenantIdFromUrl)) {
-      const params = new URLSearchParams();
-      if (tenantSlug) {
-        params.set('tenant', tenantSlug);
-      }
-      if (tenantIdFromUrl) {
-        params.set('tenant_id', tenantIdFromUrl);
-      }
-      redirectUrl = `${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}${params.toString()}`;
+    if (portalType === 'platform') {
+      window.location.href = '/app/platform';
+      return;
     }
+
+    const redirectUrl = getTenantRedirectUrl({
+      tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,
+      tenantId: tenantIdFromUrl || data.tenant?.id,
+      path: redirectPath,
+    });
     window.location.href = redirectUrl;
   };
 
@@ -331,12 +327,11 @@ export default function LoginPage() {
     const tenantKey = data.tenant?.id || tenantIdForApi || 'platform';
     saveEmailForTenant(schoolCredentials.email, tenantKey);
 
-    const isSubdomain = typeof window !== 'undefined' && window.location.host.split('.').length >= (window.location.host.includes('localhost') ? 2 : 3);
-    
-    const redirectUrl =
-      !isSubdomain && (tenantSlug || tenantIdFromUrl)
-        ? `${redirectPath}?tenant=${encodeURIComponent(tenantSlug || '')}${tenantIdFromUrl ? `&tenant_id=${encodeURIComponent(tenantIdFromUrl)}` : ''}`
-        : redirectPath;
+    const redirectUrl = getTenantRedirectUrl({
+      tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,
+      tenantId: tenantIdForApi,
+      path: redirectPath,
+    });
     window.location.href = redirectUrl;
   };
 
@@ -371,12 +366,11 @@ export default function LoginPage() {
       expiresAt: data.expiresAt,
     });
 
-    const isSubdomain = typeof window !== 'undefined' && window.location.host.split('.').length >= (window.location.host.includes('localhost') ? 2 : 3);
-    
-    const redirectUrl =
-      !isSubdomain && (tenantSlug || tenantIdFromUrl)
-        ? `${redirectPath}?tenant=${encodeURIComponent(tenantSlug || '')}${tenantIdFromUrl ? `&tenant_id=${encodeURIComponent(tenantIdFromUrl)}` : ''}`
-        : redirectPath;
+    const redirectUrl = getTenantRedirectUrl({
+      tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,
+      tenantId: tenantIdForApi,
+      path: redirectPath,
+    });
     window.location.href = redirectUrl;
   };
 
@@ -439,12 +433,11 @@ export default function LoginPage() {
       expiresAt: data.expiresAt,
     });
 
-    const isSubdomain = typeof window !== 'undefined' && window.location.host.split('.').length >= (window.location.host.includes('localhost') ? 2 : 3);
-    
-    const redirectUrl =
-      !isSubdomain && (tenantSlug || tenantIdFromUrl)
-        ? `${redirectPath}?tenant=${encodeURIComponent(tenantSlug || '')}${tenantIdFromUrl ? `&tenant_id=${encodeURIComponent(tenantIdFromUrl)}` : ''}`
-        : redirectPath;
+    const redirectUrl = getTenantRedirectUrl({
+      tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,
+      tenantId: tenantIdForApi,
+      path: redirectPath,
+    });
     window.location.href = redirectUrl;
   };
 

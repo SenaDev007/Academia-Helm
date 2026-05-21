@@ -337,7 +337,11 @@ export default function PortalPage() {
           expiresAt: selectData.expiresAt,
         });
         saveEmailForTenant(devEmail.trim(), tenantId);
-        window.location.href = '/app';
+        await redirectToTenant({
+          tenantSlug: selectedDevTenant.slug || tenantId,
+          tenantId: tenantId,
+          path: '/app',
+        });
         return;
       }
 
@@ -354,7 +358,11 @@ export default function PortalPage() {
         expiresAt: data.expiresAt,
       });
       saveEmailForTenant(devEmail.trim(), tenantId);
-      window.location.href = '/app';
+      await redirectToTenant({
+        tenantSlug: selectedDevTenant.slug || tenantId,
+        tenantId: tenantId,
+        path: '/app',
+      });
       return;
     } catch (error: unknown) {
       console.error('[Dev Login] Error:', error);

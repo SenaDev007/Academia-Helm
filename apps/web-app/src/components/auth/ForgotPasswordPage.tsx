@@ -6,23 +6,39 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { GraduationCap, Mail, ArrowLeft, Loader, CheckCircle } from 'lucide-react';
+import { GraduationCap, Mail, ArrowLeft, Loader, CheckCircle, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setError(null);
 
-    // TODO: Intégrer avec l'API backend
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    setIsLoading(false);
-    setIsSubmitted(true);
+    try {
+      const response = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Erreur lors de la demande de réinitialisation');
+      }
+
+      setIsSubmitted(true);
+    } catch (err: any) {
+      setError(err.message || 'Une erreur inattendue est survenue.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -51,6 +67,13 @@ export default function ForgotPasswordPage() {
             <p className="text-sm text-slate-600 mb-6 text-center">
               Entrez votre adresse email et nous vous enverrons un lien pour réinitialiser votre mot de passe.
             </p>
+
+            {error && (
+              <div className="mb-6 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 shadow-sm">
+                <AlertCircle className="h-5 w-5 shrink-0 text-red-600" />
+                <p className="text-sm text-red-800">{error}</p>
+              </div>
+            )}
 
             <form onSubmit={handleSubmit} className="space-y-6">
               <div>

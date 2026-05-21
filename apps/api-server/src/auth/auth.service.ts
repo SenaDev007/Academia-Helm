@@ -6,6 +6,8 @@ import { PrismaService } from '../database/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { LoginDto, PortalType } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 export type SessionPersistMeta = {
   ipAddress?: string;
@@ -523,6 +525,73 @@ export class AuthService {
       ...tokens,
       ...(sessionRecord ? { serverSessionId: sessionRecord.id } : {}),
     };
+  /**
+   * Génère un jeton de réinitialisation de mot de passe et l'envoie (simulation)
+   */
+  async forgotPassword(forgotPasswordDto: ForgotPasswordDto): Promise<{ message: string }> {
+    const user = await this.usersService.findByEmail(forgotPasswordDto.email);
+    
+    // On retourne toujours le même message de succès pour ne pas fuiter l'existence d'emails
+    const successMessage = { message: "Si un compte existe avec cet email, un lien de réinitialisation vous a été envoyé." };
+    
+    if (!user) {
+      this.logger.warn(`Tentative de réinitialisation pour un email inexistant: ${forgotPasswordDto.email}`);
+      return successMessage;
+    }
+
+    // Générer un token temporaire pour la réinitialisation
+    const resetToken = this.jwtService.sign(
+      { sub: user.id, email: user.email, purpose: 'password-reset' },
+      { expiresIn: '30m' } // Le token expire dans 30 minutes
+    );
+
+    // TODO: Intégrer un vrai service d'email (ex: SendGrid, Nodemailer)
+    // Pour l'instant, on simule l'envoi en loggant l'URL
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
+    const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
+    
+    this.logger.log(`\n==============================================\n📧 EMAIL SIMULÉ POUR: ${user.email}\nObjet: Réinitialisation de votre mot de passe\n\nCliquez sur ce lien pour réinitialiser: \n${resetUrl}\n==============================================\n`);
+
+    return successMessage;
+  }
+
+  /**
+   * Réinitialise le mot de passe à l'aide d'un jeton valide
+   */
+  async resetPassword(resetPasswordDto: ResetPasswordDto): Promise<{ message: string }> {
+    try {
+      // Vérifier le token
+      const payload = this.jwtService.verify(resetPasswordDto.token);
+      
+      // Vérifier que le token a été généré spécifiquement pour la réinitialisation
+      if (payload.purpose !== 'password-reset') {
+        throw new ForbiddenException('Jeton invalide pour cette opération.');
+      }
+
+      const user = await this.usersService.findOne(payload.sub);
+      if (!user) {
+        throw new NotFoundException('Utilisateur introuvable.');
+      }
+
+      // Hacher le nouveau mot de passe
+      const hashedPassword = await bcrypt.hash(resetPasswordDto.newPassword, 10);
+
+      // Mettre à jour l'utilisateur via Prisma
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash: hashedPassword },
+      });
+
+      this.logger.log(`Mot de passe réinitialisé avec succès pour l'utilisateur: ${user.email}`);
+
+      // Optionnel: On pourrait révoquer tous les anciens refresh tokens ici
+      // en les insérant dans la table revokedToken ou en incrémentant une version de token sur le user.
+
+      return { message: "Votre mot de passe a été réinitialisé avec succès." };
+    } catch (error: any) {
+      this.logger.error(`Échec de la réinitialisation du mot de passe: ${error.message}`);
+      throw new ForbiddenException('Le lien de réinitialisation est invalide ou a expiré.');
+    }
   }
 }
 

@@ -4,6 +4,7 @@ import * as bcrypt from 'bcryptjs';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../database/prisma.service';
 import { ConfigService } from '@nestjs/config';
+import { EmailService } from '../communication/services/email.service';
 import { LoginDto, PortalType } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
@@ -23,6 +24,7 @@ export class AuthService {
     private jwtService: JwtService,
     private prisma: PrismaService,
     private configService: ConfigService,
+    private emailService: EmailService,
   ) {}
 
   async register(registerDto: RegisterDto, meta?: SessionPersistMeta) {
@@ -545,12 +547,41 @@ export class AuthService {
       { expiresIn: '30m' } // Le token expire dans 30 minutes
     );
 
-    // TODO: Intégrer un vrai service d'email (ex: SendGrid, Nodemailer)
-    // Pour l'instant, on simule l'envoi en loggant l'URL
     const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
     const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
     
-    this.logger.log(`\n==============================================\n📧 EMAIL SIMULÉ POUR: ${user.email}\nObjet: Réinitialisation de votre mot de passe\n\nCliquez sur ce lien pour réinitialiser: \n${resetUrl}\n==============================================\n`);
+    // Envoi de l'e-mail via EmailService (Nodemailer/SendGrid)
+    try {
+      await this.emailService.sendEmail({
+        to: user.email,
+        subject: 'Academia Helm - Réinitialisation de votre mot de passe',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+            <div style="background-color: #0f172a; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 24px;">Academia Helm</h1>
+            </div>
+            <div style="padding: 30px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 8px 8px;">
+              <h2 style="color: #0f172a; margin-top: 0;">Réinitialisation de mot de passe</h2>
+              <p>Bonjour ${user.firstName || ''},</p>
+              <p>Nous avons reçu une demande de réinitialisation de mot de passe pour votre compte Academia Helm.</p>
+              <p>Pour définir un nouveau mot de passe, veuillez cliquer sur le bouton ci-dessous :</p>
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${resetUrl}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Réinitialiser mon mot de passe</a>
+              </div>
+              <p style="font-size: 14px; color: #64748b;">Si le bouton ne fonctionne pas, copiez-collez ce lien dans votre navigateur :<br/>
+              <a href="${resetUrl}" style="color: #2563eb; word-break: break-all;">${resetUrl}</a></p>
+              <p style="font-size: 14px; color: #64748b; margin-top: 30px;">Ce lien expirera dans 30 minutes.<br/>
+              Si vous n'avez pas demandé cette réinitialisation, vous pouvez ignorer cet e-mail.</p>
+            </div>
+          </div>
+        `,
+        text: `Bonjour ${user.firstName || ''},\n\nNous avons reçu une demande de réinitialisation de mot de passe pour votre compte Academia Helm.\n\nPour définir un nouveau mot de passe, copiez-collez le lien suivant dans votre navigateur :\n${resetUrl}\n\nCe lien expirera dans 30 minutes.\n\nL'équipe Academia Helm`,
+      });
+      this.logger.log(`Email de réinitialisation envoyé avec succès à ${user.email}`);
+    } catch (error) {
+      this.logger.error(`Erreur lors de l'envoi de l'e-mail de réinitialisation à ${user.email}`, error);
+      // On continue pour ne pas fuiter l'erreur au client
+    }
 
     return successMessage;
   }

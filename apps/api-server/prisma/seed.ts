@@ -105,7 +105,7 @@ async function main() {
     create: {
       name: 'Tenant par Défaut - Academia Helm',
       slug: 'default-tenant',
-      subdomain: 'default',
+      subdomain: 'app',
       countryId: country.id,
       type: 'SCHOOL',
       subscriptionStatus: 'TRIAL',

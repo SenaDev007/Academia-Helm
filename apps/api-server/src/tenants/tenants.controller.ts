@@ -31,6 +31,12 @@ export class TenantsController {
     return this.tenantsService.findBySlug(slug);
   }
 
+  @Public()
+  @Get('by-subdomain/:subdomain')
+  findBySubdomain(@Param('subdomain') subdomain: string) {
+    return this.tenantsService.findBySubdomain(subdomain);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateTenantDto: Partial<any>) {

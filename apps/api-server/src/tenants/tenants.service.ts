@@ -36,6 +36,14 @@ export class TenantsService {
     return tenant;
   }
 
+  async findBySubdomain(subdomain: string): Promise<Tenant> {
+    const tenant = await this.tenantsRepository.findBySubdomainOrSlug(subdomain);
+    if (!tenant) {
+      throw new NotFoundException(`Tenant with subdomain/slug ${subdomain} not found`);
+    }
+    return tenant;
+  }
+
   async findAll(): Promise<Tenant[]> {
     return this.tenantsRepository.findAll();
   }

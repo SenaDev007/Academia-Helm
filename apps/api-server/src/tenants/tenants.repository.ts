@@ -23,6 +23,15 @@ export class TenantsRepository {
     return this.repository.findOne({ where: { slug } });
   }
 
+  async findBySubdomainOrSlug(subdomain: string): Promise<Tenant | null> {
+    return this.repository.findOne({
+      where: [
+        { subdomain: subdomain },
+        { slug: subdomain }
+      ]
+    });
+  }
+
   async findAll(): Promise<Tenant[]> {
     return this.repository.find();
   }

@@ -125,8 +125,7 @@ import { StorageService } from '../common/services/storage.service';
     PedagogyOrionEngineService,
     PedagogicalAuditService,
     PedagogicalSignatureService,
-
-
+    GlobalLibraryPrismaService,
   ],
   exports: [
     StorageService,

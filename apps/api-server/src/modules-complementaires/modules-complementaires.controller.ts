@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   Request,
+  Patch,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
@@ -19,7 +20,7 @@ import { LibraryService } from './services/library.service';
 import { LabService } from './services/lab.service';
 import { InfirmaryService } from './services/infirmary.service';
 import { ShopService } from './services/shop.service';
-import { EducastService } from './services/educast.service';
+import { EduCastService } from './services/educast.service';
 import { QHSEService } from './services/qhse.service';
 import { ModulesComplementairesOrionService } from './services/modules-complementaires-orion.service';
 
@@ -36,7 +37,7 @@ export class ModulesComplementairesController {
     private readonly labService: LabService,
     private readonly infirmaryService: InfirmaryService,
     private readonly shopService: ShopService,
-    private readonly educastService: EducastService,
+    private readonly educastService: EduCastService,
     private readonly qhseService: QHSEService,
     private readonly orionService: ModulesComplementairesOrionService,
   ) {}

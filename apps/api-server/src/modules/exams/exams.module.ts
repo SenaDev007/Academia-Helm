@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
+import { UsersModule } from '../../users/users.module';
+import { AuditLogsModule } from '../../audit-logs/audit-logs.module';
 import { ExamsDashboardController } from './exams-dashboard.controller';
 import { ExamsDashboardService } from './services/exams-dashboard.service';
 import { EvaluationsController } from './evaluations.controller';
@@ -19,7 +21,7 @@ import { AcademicAuditService } from './services/academic-audit.service';
 import { BulletinPdfService } from './services/bulletin-pdf.service';
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, UsersModule, AuditLogsModule],
   controllers: [
     ExamsDashboardController,
     EvaluationsController,

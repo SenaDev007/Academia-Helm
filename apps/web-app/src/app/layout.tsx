@@ -17,6 +17,7 @@ import { buildSiteVerification, getPublicSiteUrl, DEFAULT_OG_IMAGE_PATH } from '
 import { buildHreflangLanguages } from '@/lib/seo/locales';
 import { cn } from "@/lib/utils";
 import { ToastContainer } from '@/components/ui/toast';
+import { CrispChat } from '@/components/CrispChat';
 
 // ✅ POLICES LOCALES - Téléchargées depuis Google Fonts et stockées localement
 // 
@@ -189,6 +190,7 @@ export default function RootLayout({
             gtag('config', 'G-TG29Y7XL8S');
           `}
         </Script>
+        <CrispChat />
       </body>
     </html>
   );

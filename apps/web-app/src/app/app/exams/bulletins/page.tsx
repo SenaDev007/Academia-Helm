@@ -24,12 +24,14 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { useAcademicSettings } from '@/hooks/useAcademicSettings';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
 import { toast } from '@/components/ui/toast';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 
 export default function BulletinsPage() {
   const { academicYear, schoolLevel } = useModuleContext();
+  const { getAppreciation, getScoreColor, isPassingGrade, maxScore } = useAcademicSettings();
   const [bulletins, setBulletins] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>('');
@@ -189,7 +191,7 @@ export default function BulletinsPage() {
                         <div className="text-[10px] text-gray-400">{b.student.matricule}</div>
                       </TableCell>
                       <TableCell className="text-center">
-                        <Badge className={`font-black text-sm px-3 ${Number(b.generalAverage) >= 10 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        <Badge className={`font-black text-sm px-3 border-none ${isPassingGrade(Number(b.generalAverage)) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                           {Number(b.generalAverage).toFixed(2)}
                         </Badge>
                       </TableCell>
@@ -197,7 +199,7 @@ export default function BulletinsPage() {
                         {Number(b.totalCoefficient).toFixed(1)}
                       </TableCell>
                       <TableCell>
-                        <MentionBadge average={Number(b.generalAverage)} />
+                        <MentionBadge average={Number(b.generalAverage)} getAppreciation={getAppreciation} getScoreColor={getScoreColor} />
                       </TableCell>
                       <TableCell>
                         {b.isPublished ? (
@@ -249,10 +251,13 @@ export default function BulletinsPage() {
   );
 }
 
-function MentionBadge({ average }: { average: number }) {
-  if (average >= 16) return <Badge className="bg-purple-100 text-purple-700 border-none">Très Bien</Badge>;
-  if (average >= 14) return <Badge className="bg-blue-100 text-blue-700 border-none">Bien</Badge>;
-  if (average >= 12) return <Badge className="bg-cyan-100 text-cyan-700 border-none">Assez Bien</Badge>;
-  if (average >= 10) return <Badge className="bg-green-100 text-green-700 border-none">Passable</Badge>;
-  return <Badge className="bg-red-100 text-red-700 border-none">Insuffisant</Badge>;
+function MentionBadge({ average, getAppreciation, getScoreColor }: {
+  average: number;
+  getAppreciation: (avg: number) => string;
+  getScoreColor: (avg: number) => string;
+}) {
+  const label = getAppreciation(average);
+  const colorClass = getScoreColor(average);
+  if (!label) return <Badge className="bg-gray-100 text-gray-500 border-none">—</Badge>;
+  return <Badge className={`border-none ${colorClass}`}>{label}</Badge>;
 }

@@ -27,6 +27,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { useAcademicSettings } from '@/hooks/useAcademicSettings';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
 import { toast } from '@/components/ui/toast';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
@@ -35,6 +36,7 @@ import { cn } from '@/lib/utils';
 
 export default function AveragesPage() {
   const { academicYear, schoolLevel } = useModuleContext();
+  const { getScoreColor, isPassingGrade, maxScore } = useAcademicSettings();
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [results, setResults] = useState<any[]>([]);
@@ -181,9 +183,7 @@ export default function AveragesPage() {
                           <TableCell className="text-center">
                             <Badge className={cn(
                               "font-black text-sm px-3 border-none",
-                              Number(item.generalAverage) >= 12 ? "bg-emerald-100 text-emerald-700" :
-                              Number(item.generalAverage) >= 10 ? "bg-blue-100 text-blue-700" :
-                              "bg-rose-100 text-rose-700"
+                              getScoreColor(Number(item.generalAverage))
                             )}>
                               {Number(item.generalAverage).toFixed(2)}
                             </Badge>

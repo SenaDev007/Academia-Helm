@@ -14,7 +14,8 @@ import {
   FileText, 
   BarChart3, 
   History,
-  Calendar
+  Calendar,
+  SlidersHorizontal
 } from 'lucide-react';
 
 export const EXAMS_SUB_MODULES = [
@@ -77,5 +78,11 @@ export const EXAMS_SUB_MODULES = [
     label: 'Audit', 
     href: '/app/exams/audit', 
     icon: History 
+  },
+  { 
+    id: 'settings', 
+    label: 'Paramètres', 
+    href: '/app/exams/settings', 
+    icon: SlidersHorizontal 
   },
 ];

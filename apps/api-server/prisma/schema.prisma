@@ -417,6 +417,7 @@ model Tenant {
   federisConnectEvents           FederisConnectEvent[]
   federisPolls                   FederisPoll[]
   noticeRecipientSchools         FederisNoticeRecipient[]          @relation("NoticeRecipientSchools")
+  schoolAcademicSettings         SchoolAcademicSettings[]
   sourceTransfers                StudentTransferRequest[]          @relation("SourceSchoolTransfers")
   targetTransfers                StudentTransferRequest[]          @relation("TargetSchoolTransfers")
 
@@ -720,6 +721,7 @@ model AcademicYear {
   shopReturns                  ShopReturn[]
   shopSchoolKits               ShopSchoolKit[]
   shopDeliveries               ShopDelivery[]
+  schoolAcademicSettings       SchoolAcademicSettings[]
 
   @@unique([tenantId, name])
   @@unique([tenantId, label])
@@ -13156,4 +13158,89 @@ model StudentTransferStatusHistory {
 
 
 
+// ============================================================================
+// MODULE PARAMÉTRAGE ACADÉMIQUE — EXAMENS / NOTES
+// Source de vérité du module Examens/Notes pour chaque établissement.
+// Multi-tenant, versionné, verrouillable, auditable.
+// ============================================================================
 
+enum AcademicSettingsStatus {
+  DRAFT
+  ACTIVE
+  LOCKED
+  ARCHIVED
+}
+
+/// Configuration académique d'évaluation pour un établissement, une année scolaire et un profil.
+/// Contient toutes les règles : types d'évaluations, formules de calcul, bulletins, passage, classements.
+model SchoolAcademicSettings {
+  id            String                  @id @default(uuid())
+  tenantId      String
+  schoolYearId  String
+
+  /// Profil pays/système (ex: BENIN_NATIONAL, CAMEROUN_FRANCOPHONE, CUSTOM)
+  countryCode   String
+  systemCode    String?
+  cycleCode     String?
+  levelCode     String?
+  classId       String?
+
+  name          String
+  description   String?
+
+  status        AcademicSettingsStatus  @default(DRAFT)
+  version       Int                     @default(1)
+  isActive      Boolean                 @default(false)
+  isLocked      Boolean                 @default(false)
+
+  /// Configuration académique complète (JSON flexible):
+  /// { country, system, cycle, periodType, gradingMode, scoreScale,
+  ///   assessmentTypes, calculationRules, rankingRules, promotionRules,
+  ///   gradingScale, reportCard }
+  config        Json
+
+  createdById   String?
+  activatedById String?
+  lockedById    String?
+
+  activatedAt   DateTime?
+  lockedAt      DateTime?
+  archivedAt    DateTime?
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+
+  tenant        Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear  AcademicYear            @relation(fields: [schoolYearId], references: [id], onDelete: Cascade)
+
+  auditLogs     AcademicSettingsAuditLog[]
+
+  @@index([tenantId])
+  @@index([schoolYearId])
+  @@index([tenantId, schoolYearId])
+  @@index([countryCode])
+  @@index([status])
+  @@index([isActive])
+  @@map("school_academic_settings")
+}
+
+/// Journal d'audit de toutes les actions sensibles sur les configurations académiques.
+model AcademicSettingsAuditLog {
+  id         String                 @id @default(uuid())
+  tenantId   String
+  settingsId String
+  userId     String
+  action     String                 // CREATE | UPDATE | ACTIVATE | LOCK | ARCHIVE | DUPLICATE | SIMULATE
+  field      String?
+  oldValue   Json?
+  newValue   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime               @default(now())
+
+  settings   SchoolAcademicSettings @relation(fields: [settingsId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, settingsId])
+  @@index([settingsId])
+  @@index([userId])
+  @@map("academic_settings_audit_logs")
+}

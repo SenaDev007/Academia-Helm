@@ -16,6 +16,10 @@ import { ReportCardsPrismaController } from './report-cards-prisma.controller';
 import { HonorRollsPrismaController } from './honor-rolls-prisma.controller';
 import { CouncilDecisionsPrismaController } from './council-decisions-prisma.controller';
 import { DatabaseModule } from '../database/database.module';
+import { AcademicSettingsController } from './academic-settings.controller';
+import { AcademicSettingsService } from './academic-settings.service';
+import { AcademicRulesEngine } from './academic-rules-engine.service';
+import { ScoreEntrySchemaService } from './score-entry-schema.service';
 
 @Module({
   imports: [DatabaseModule],
@@ -25,6 +29,7 @@ import { DatabaseModule } from '../database/database.module';
     ReportCardsPrismaController,
     HonorRollsPrismaController,
     CouncilDecisionsPrismaController,
+    AcademicSettingsController,
   ],
   providers: [
     ExamsPrismaService,
@@ -32,6 +37,9 @@ import { DatabaseModule } from '../database/database.module';
     ReportCardsPrismaService,
     HonorRollsPrismaService,
     CouncilDecisionsPrismaService,
+    AcademicSettingsService,
+    AcademicRulesEngine,
+    ScoreEntrySchemaService,
   ],
   exports: [
     ExamsPrismaService,
@@ -39,6 +47,9 @@ import { DatabaseModule } from '../database/database.module';
     ReportCardsPrismaService,
     HonorRollsPrismaService,
     CouncilDecisionsPrismaService,
+    AcademicSettingsService,
+    AcademicRulesEngine,
+    ScoreEntrySchemaService,
   ],
 })
 export class ExamsGradesModule {}

@@ -527,6 +527,8 @@ export class AuthService {
       ...tokens,
       ...(sessionRecord ? { serverSessionId: sessionRecord.id } : {}),
     };
+  }
+
   /**
    * Génère un jeton de réinitialisation de mot de passe et l'envoie (simulation)
    */

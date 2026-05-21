@@ -80,6 +80,11 @@ export function getTenantRedirectUrl(config: TenantRedirectConfig): string {
   const env = getAppEnvironment();
   let baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN;
 
+  // Nettoyage : enlever http://, https:// et les slashs de fin si le dev l'a mal configuré
+  if (baseDomain) {
+    baseDomain = baseDomain.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  }
+
   // Validation
   if (!tenantSlug || tenantSlug.trim() === '') {
     throw new Error('tenantSlug is required for tenant redirection');

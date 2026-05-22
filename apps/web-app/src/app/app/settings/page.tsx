@@ -1781,7 +1781,7 @@ export default function SettingsPage() {
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
                 <p className="text-sm text-amber-800">
                   Contexte établissement manquant. Reconnectez-vous ou{' '}
-                  <a href="/auth/select-tenant" className="font-medium text-amber-900 underline hover:no-underline">
+                  <a href="/auth/login" className="font-medium text-amber-900 underline hover:no-underline">
                     sélectionnez un établissement
                   </a>
                   .

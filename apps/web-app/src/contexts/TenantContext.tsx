@@ -167,7 +167,7 @@ export function TenantContextProvider({ children }: { children: ReactNode }) {
           return;
         }
         if (response.status === 403) {
-          router.push('/auth/select-tenant');
+          router.push('/auth/login');
           return;
         }
         throw new Error(`Failed to load context: ${response.statusText}`);

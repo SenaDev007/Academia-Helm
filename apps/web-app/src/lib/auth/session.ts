@@ -52,20 +52,27 @@ export async function getServerToken(): Promise<string | null> {
 export async function setServerSession(session: AuthSession): Promise<void> {
   const cookieStore = await cookies();
   
+  const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN;
+  const domain = baseDomain && !baseDomain.includes('localhost') 
+    ? `.${baseDomain.replace(/^https?:\/\//, '').replace(/\/$/, '')}` 
+    : undefined;
+
   cookieStore.set(SESSION_COOKIE, JSON.stringify(session), {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     maxAge: 60 * 60 * 24 * 7, // 7 jours
     path: '/',
+    domain,
   });
 
   cookieStore.set(TOKEN_COOKIE, session.token, {
-    httpOnly: true,
+    httpOnly: false, // DOIT être false pour que getClientToken() puisse le lire via document.cookie pour Axios
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     maxAge: 60 * 60 * 24 * 7, // 7 jours
     path: '/',
+    domain,
   });
 
   const tenantId = session.tenant?.id || session.user?.tenantId;
@@ -76,9 +83,10 @@ export async function setServerSession(session: AuthSession): Promise<void> {
       sameSite: 'lax',
       maxAge: 60 * 60 * 24 * 7,
       path: '/',
+      domain,
     });
   } else {
-    cookieStore.delete(TENANT_ID_COOKIE);
+    cookieStore.delete({ name: TENANT_ID_COOKIE, domain });
   }
 }
 
@@ -87,9 +95,14 @@ export async function setServerSession(session: AuthSession): Promise<void> {
  */
 export async function clearServerSession(): Promise<void> {
   const cookieStore = await cookies();
-  cookieStore.delete(SESSION_COOKIE);
-  cookieStore.delete(TOKEN_COOKIE);
-  cookieStore.delete(TENANT_ID_COOKIE);
+  const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN;
+  const domain = baseDomain && !baseDomain.includes('localhost') 
+    ? `.${baseDomain.replace(/^https?:\/\//, '').replace(/\/$/, '')}` 
+    : undefined;
+
+  cookieStore.delete({ name: SESSION_COOKIE, domain });
+  cookieStore.delete({ name: TOKEN_COOKIE, domain });
+  cookieStore.delete({ name: TENANT_ID_COOKIE, domain });
 }
 
 /**

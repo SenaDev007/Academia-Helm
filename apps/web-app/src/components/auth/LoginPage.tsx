@@ -272,11 +272,7 @@ export default function LoginPage() {
       (data.user as { isPlatformOwner?: boolean })?.isPlatformOwner;
     const hasNoTenant = !data.tenant?.id;
     if (isPlatformOwner && hasNoTenant) {
-      const params = new URLSearchParams();
-      if (redirectPath !== '/app') params.set('redirect', redirectPath);
-      window.location.href = params.toString()
-        ? `/auth/select-tenant?${params.toString()}`
-        : '/auth/select-tenant';
+      window.location.href = '/app/platform';
       return;
     }
 

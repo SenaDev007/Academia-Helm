@@ -45,14 +45,18 @@ export function DashboardGuard({ children, requiredRole }: DashboardGuardProps) 
     // Vérifier que le contexte est chargé
     if (!context) {
       console.warn('No context available');
-      router.push('/auth/select-tenant');
+      router.push('/auth/login');
       return;
     }
 
     // Vérifier le tenant
     if (!context.tenant || context.tenant.status !== 'active') {
       console.warn('Invalid tenant');
-      router.push('/auth/select-tenant');
+      if (context.role === 'PLATFORM_OWNER' || context.isPlatformOwner) {
+        router.push('/app/platform');
+      } else {
+        router.push('/auth/login');
+      }
       return;
     }
 

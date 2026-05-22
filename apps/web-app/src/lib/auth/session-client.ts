@@ -28,6 +28,11 @@ export function setClientToken(token: string): void {
   const expires = new Date();
   expires.setTime(expires.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 jours
   
-  document.cookie = `${TOKEN_COOKIE}=${token}; expires=${expires.toUTCString()}; path=/; SameSite=Lax${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`;
+  const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN;
+  const domainStr = baseDomain && !baseDomain.includes('localhost') 
+    ? `; domain=.${baseDomain.replace(/^https?:\/\//, '').replace(/\/$/, '')}` 
+    : '';
+
+  document.cookie = `${TOKEN_COOKIE}=${token}; expires=${expires.toUTCString()}; path=/; SameSite=Lax${process.env.NODE_ENV === 'production' ? '; Secure' : ''}${domainStr}`;
 }
 

@@ -12,6 +12,8 @@ const TOKEN_COOKIE = 'academia_token';
 /** Cookie non-httpOnly : lu côté client (axios, sync offline). Doit rester aligné avec la session. */
 const TENANT_ID_COOKIE = 'x-tenant-id';
 
+import { cookies, headers } from 'next/headers';
+
 /**
  * Récupère la session depuis les cookies (Server Component)
  */
@@ -51,8 +53,21 @@ export async function getServerToken(): Promise<string | null> {
  */
 export async function setServerSession(session: AuthSession): Promise<void> {
   const cookieStore = await cookies();
+  const headersList = await headers();
   
-  const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN;
+  let baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN;
+  if (!baseDomain) {
+    const host = headersList.get('host') || headersList.get('x-forwarded-host');
+    if (host && host.includes('academiahelm.com')) {
+      baseDomain = 'academiahelm.com';
+    } else if (host && !host.includes('localhost') && !host.includes('127.0.0.1')) {
+      const parts = host.split('.');
+      if (parts.length >= 2) {
+        baseDomain = parts.slice(-2).join('.');
+      }
+    }
+  }
+
   const domain = baseDomain && !baseDomain.includes('localhost') 
     ? `.${baseDomain.replace(/^https?:\/\//, '').replace(/\/$/, '')}` 
     : undefined;

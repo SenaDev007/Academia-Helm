@@ -28,7 +28,19 @@ export function setClientToken(token: string): void {
   const expires = new Date();
   expires.setTime(expires.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 jours
   
-  const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN;
+  let baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN;
+  if (!baseDomain && typeof window !== 'undefined') {
+    const host = window.location.host;
+    if (host.includes('academiahelm.com')) {
+      baseDomain = 'academiahelm.com';
+    } else if (!host.includes('localhost') && !host.includes('127.0.0.1')) {
+      const parts = host.split('.');
+      if (parts.length >= 2) {
+        baseDomain = parts.slice(-2).join('.');
+      }
+    }
+  }
+
   const domainStr = baseDomain && !baseDomain.includes('localhost') 
     ? `; domain=.${baseDomain.replace(/^https?:\/\//, '').replace(/\/$/, '')}` 
     : '';

@@ -52,7 +52,7 @@ export function DashboardGuard({ children, requiredRole }: DashboardGuardProps) 
     // Vérifier le tenant
     if (!context.tenant || context.tenant.status !== 'active') {
       console.warn('Invalid tenant');
-      if (context.role === 'PLATFORM_OWNER' || context.isPlatformOwner) {
+      if (context.role === 'PLATFORM_OWNER' || context.user?.isPlatformOwner) {
         router.push('/app/platform');
       } else {
         router.push('/auth/login');

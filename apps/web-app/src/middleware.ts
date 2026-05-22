@@ -66,7 +66,7 @@ function extractSubdomainFromRequest(request: NextRequest): string | null {
   const parts = host.split('.');
   
   // Liste des sous-domaines à ignorer (qui ne sont pas des tenants)
-  const ignoredSubdomains = ['www', 'dev', 'test', 'staging', 'preview', 'admin', 'api', 'portal'];
+  const ignoredSubdomains = ['www', 'dev', 'test', 'staging', 'preview', 'admin', 'api', 'portal', 'app'];
 
   // Cas spécial pour localhost (développement avec sous-domaines type school.localhost)
   if (host.includes('localhost') || host.includes('127.0.0.1')) {

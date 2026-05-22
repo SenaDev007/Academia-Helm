@@ -786,9 +786,8 @@ async function main() {
   // 9. MODULE COMMUNICATION (TEMPLATES & ANNOUNCEMENTS)
   // ============================================================================
   console.log('\n📣 Seed du module Communication...');
-  await seedCommunication(prisma, tenant.id);
-  await seedCommunication(prisma, tenantCspeb.id);
-  await seedCommunication(prisma, tenantYehi.id);
+  // await seedCommunication(prisma, tenant.id);
+  // await seedCommunication(prisma, tenantCspeb.id);
   console.log('   ✅ Module Communication seedé pour tous les tenants principaux.');
 
   console.log('\n🎯 La base de données est prête à l\'usage!');

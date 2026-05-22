@@ -209,7 +209,10 @@ export async function middleware(request: NextRequest) {
 
     if (subdomain && !pathname.startsWith('/app') && !pathname.startsWith('/admin')) {
       const mainDomain = getAppBaseUrl();
-      return NextResponse.redirect(new URL(pathname, mainDomain));
+      const targetUrl = new URL(pathname, mainDomain);
+      if (request.nextUrl.origin !== targetUrl.origin) {
+        return NextResponse.redirect(targetUrl);
+      }
     }
   }
 

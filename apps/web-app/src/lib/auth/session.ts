@@ -4,7 +4,7 @@
  * Gestion sécurisée des sessions utilisateur (Server Components uniquement)
  */
 
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import type { AuthSession, User, Tenant } from '@/types';
 
 const SESSION_COOKIE = 'academia_session';
@@ -12,7 +12,6 @@ const TOKEN_COOKIE = 'academia_token';
 /** Cookie non-httpOnly : lu côté client (axios, sync offline). Doit rester aligné avec la session. */
 const TENANT_ID_COOKIE = 'x-tenant-id';
 
-import { cookies, headers } from 'next/headers';
 
 /**
  * Récupère la session depuis les cookies (Server Component)

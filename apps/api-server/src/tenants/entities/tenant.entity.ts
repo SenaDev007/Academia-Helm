@@ -30,6 +30,9 @@ export class Tenant {
   @Column({ unique: true })
   slug: string;
 
+  @Column({ unique: true, nullable: true })
+  subdomain: string;
+
   @Column({ nullable: true })
   schemaName: string;
 

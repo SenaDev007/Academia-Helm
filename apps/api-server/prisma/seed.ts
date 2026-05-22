@@ -101,7 +101,9 @@ async function main() {
   
   const tenant = await prisma.tenant.upsert({
     where: { slug: 'default-tenant' },
-    update: {},
+    update: {
+      subdomain: 'app',
+    },
     create: {
       name: 'Tenant par Défaut - Academia Helm',
       slug: 'default-tenant',

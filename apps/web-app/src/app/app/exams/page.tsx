@@ -95,7 +95,7 @@ export default function ExamsDashboardPage() {
                 title="Évaluations Totales" 
                 value={kpi?.totalEvaluations || 0} 
                 icon={FileText} 
-                color="indigo"
+                color="blue"
                 description="Prévues pour la période"
                 trend="+12% vs période préc."
               />
@@ -158,16 +158,16 @@ export default function ExamsDashboardPage() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Completion by Class */}
               <Card className="lg:col-span-2 border-none shadow-sm bg-white/60 backdrop-blur-md overflow-hidden relative">
-                <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500" />
+                <div className="absolute top-0 left-0 w-1 h-full bg-blue-500" />
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                   <div>
                     <CardTitle className="text-lg font-bold flex items-center">
-                      <BarChart3 className="w-5 h-5 mr-2 text-indigo-600" />
+                      <BarChart3 className="w-5 h-5 mr-2 text-blue-600" />
                       Complétion par Classe
                     </CardTitle>
                     <CardDescription>Progression de la saisie des notes par classe</CardDescription>
                   </div>
-                  <Button variant="ghost" size="sm" className="text-indigo-600 font-bold hover:bg-indigo-50">
+                  <Button variant="ghost" size="sm" className="text-blue-600 font-bold hover:bg-blue-50">
                     Détails <ArrowRight className="w-4 h-4 ml-1" />
                   </Button>
                 </CardHeader>
@@ -188,7 +188,7 @@ export default function ExamsDashboardPage() {
                           </span>
                           <span className={cn(
                             "px-2 py-0.5 rounded-full text-xs",
-                            item.completion === 100 ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'
+                            item.completion === 100 ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'
                           )}>
                             {Math.round(item.completion)}%
                           </span>
@@ -197,7 +197,7 @@ export default function ExamsDashboardPage() {
                           <motion.div 
                             className={cn(
                               "absolute h-full left-0 top-0 rounded-full",
-                              item.completion === 100 ? "bg-emerald-500" : "bg-indigo-500"
+                              item.completion === 100 ? "bg-emerald-500" : "bg-blue-500"
                             )}
                             initial={{ width: 0 }}
                             animate={{ width: `${item.completion}%` }}
@@ -269,7 +269,7 @@ export default function ExamsDashboardPage() {
                   </CardContent>
                 </Card>
 
-                <Card className="border-none shadow-sm bg-indigo-600 text-white overflow-hidden relative group">
+                <Card className="border-none shadow-sm bg-blue-600 text-white overflow-hidden relative group">
                   <div className="absolute -right-4 -bottom-4 w-32 h-32 bg-white/10 rounded-full blur-3xl group-hover:scale-150 transition-transform duration-700" />
                   <CardHeader className="pb-2">
                     <CardTitle className="text-lg font-bold flex items-center">
@@ -278,11 +278,11 @@ export default function ExamsDashboardPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="pt-2">
-                    <p className="text-sm text-indigo-100 mb-4 leading-relaxed">
-                      Le conseil de classe pour les <span className="font-bold text-white underline decoration-indigo-300">6ème A</span> est estimé dans 12 jours. 
+                    <p className="text-sm text-blue-100 mb-4 leading-relaxed">
+                      Le conseil de classe pour les <span className="font-bold text-white underline decoration-blue-300">6ème A</span> est estimé dans 12 jours. 
                       Préparez les synthèses de notes.
                     </p>
-                    <Button size="sm" className="w-full bg-white text-indigo-600 font-bold hover:bg-indigo-50 border-none shadow-lg">
+                    <Button size="sm" className="w-full bg-white text-blue-600 font-bold hover:bg-blue-50 border-none shadow-lg">
                       Ouvrir le Planning
                     </Button>
                   </CardContent>
@@ -298,14 +298,14 @@ export default function ExamsDashboardPage() {
 
 function KpiCard({ title, value, icon: Icon, color, description, badge, progress, trend, trendColor }: any) {
   const colors: any = {
-    indigo: 'bg-indigo-50 text-indigo-600 border-indigo-100',
+    blue: 'bg-blue-50 text-blue-600 border-blue-100',
     amber: 'bg-amber-50 text-amber-600 border-amber-100',
     rose: 'bg-rose-50 text-rose-600 border-rose-100',
     emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
   };
 
   const bgColors: any = {
-    indigo: 'bg-indigo-600',
+    blue: 'bg-blue-600',
     amber: 'bg-amber-600',
     rose: 'bg-rose-600',
     emerald: 'bg-emerald-600',

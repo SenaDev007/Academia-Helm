@@ -1,17 +1,19 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Search, Filter, Mail, Phone, MapPin, Briefcase, User, GraduationCap, Building2 } from 'lucide-react';
-import { ModuleHeader } from '@/components/modules/blueprint';
+import { Plus, Search, Filter, Mail, Phone, MapPin, Briefcase, User, GraduationCap, Building2, UserCheck, FileText, Clock, DollarSign, Shield, Users } from 'lucide-react';
+import { ModuleHeader, SubModuleNavigation } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { apiFetch } from '@/lib/api/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 import { AddStaffModal } from '../_components/modals/AddStaffModal';
+import { usePathname } from 'next/navigation';
 
 export default function StaffPage() {
   const { tenant, academicYear } = useModuleContext();
+  const pathname = usePathname();
   const [staff, setStaff] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -19,6 +21,19 @@ export default function StaffPage() {
   const [filterStatus, setFilterStatus] = useState('ACTIVE');
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
+  const subModuleTabs = [
+    { id: 'overview', label: "Vue d'ensemble", path: '/app/hr', icon: UserCheck, exact: true },
+    { id: 'staff', label: 'Personnel', path: '/app/hr/staff', icon: Users },
+    { id: 'contracts', label: 'Contrats', path: '/app/hr/contracts', icon: FileText },
+    { id: 'leaves', label: 'Congés & Absences', path: '/app/hr/leaves', icon: Clock },
+    { id: 'planning', label: 'Planning', path: '/app/hr/planning', icon: Clock },
+    { id: 'allowances', label: 'Indemnités', path: '/app/hr/allowances', icon: DollarSign },
+    { id: 'payroll', label: 'Paie', path: '/app/hr/payroll', icon: DollarSign },
+    { id: 'cnss', label: 'CNSS', path: '/app/hr/cnss', icon: Shield },
+    { id: 'reporting', label: 'Rapports', path: '/app/hr/reporting', icon: FileText },
+    { id: 'settings', label: 'Paramètres', path: '/app/hr/settings', icon: Shield },
+  ];
 
   useEffect(() => {
     fetchStaff();
@@ -67,7 +82,9 @@ export default function StaffPage() {
       />
 
       <div className="px-6">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+        <SubModuleNavigation tabs={subModuleTabs} currentPath={pathname} />
+        
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 mt-6">
           <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
             <div className="relative flex-grow md:flex-grow-0 md:w-80">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />

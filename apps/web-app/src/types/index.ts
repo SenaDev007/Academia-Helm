@@ -324,6 +324,7 @@ export type SyncEntityType =
   | 'INCIDENT'
   | 'LOAN'
   | 'SESSION'
+  | 'SCHOOL_ACADEMIC_SETTING'
   | 'MESSAGE'
   | 'NOTIFICATION'
   | 'ALERT'

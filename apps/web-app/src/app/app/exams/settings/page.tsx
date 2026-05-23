@@ -160,10 +160,10 @@ function SectionCard({ title, description, icon: Icon, accent, children }: {
 }) {
   return (
     <Card className="border-none shadow-sm bg-white/70 backdrop-blur-md overflow-hidden relative">
-      <div className={cn('absolute top-0 left-0 w-1 h-full', accent || 'bg-indigo-500')} />
+      <div className={cn('absolute top-0 left-0 w-1 h-full', accent || 'bg-blue-500')} />
       <CardHeader className="pl-6">
         <CardTitle className="text-base font-bold flex items-center gap-2">
-          {Icon && <Icon className="w-4 h-4 text-indigo-600" />}
+          {Icon && <Icon className="w-4 h-4 text-blue-600" />}
           {title}
         </CardTitle>
         {description && <CardDescription>{description}</CardDescription>}
@@ -459,9 +459,9 @@ export default function AcademicSettingsPage() {
             {/* Top Action Bar */}
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div className="flex items-center gap-2">
-                <Settings className="w-5 h-5 text-indigo-600" />
+                <Settings className="w-5 h-5 text-blue-600" />
                 <span className="text-sm font-semibold text-gray-700">Configuration académique</span>
-                <Badge variant="outline" className="border-indigo-200 text-indigo-700 font-bold text-xs">
+                <Badge variant="outline" className="border-blue-200 text-blue-700 font-bold text-xs">
                   {academicYear?.name ?? 'Année courante'}
                 </Badge>
               </div>
@@ -470,11 +470,11 @@ export default function AcademicSettingsPage() {
                   <RefreshCw className={cn('w-4 h-4 mr-1', loading && 'animate-spin')} />
                   Actualiser
                 </Button>
-                <Button variant="outline" size="sm" onClick={handleSave} disabled={saving} className="border-indigo-200 text-indigo-700 hover:bg-indigo-50">
+                <Button variant="outline" size="sm" onClick={handleSave} disabled={saving} className="border-blue-200 text-blue-700 hover:bg-blue-50">
                   {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}
                   Sauvegarder
                 </Button>
-                <Button size="sm" onClick={handleActivate} disabled={saving || !settings.some((s) => s.status === 'DRAFT')} className="bg-indigo-600 hover:bg-indigo-700">
+                <Button size="sm" onClick={handleActivate} disabled={saving || !settings.some((s) => s.status === 'DRAFT')} className="bg-blue-600 hover:bg-blue-700">
                   <Zap className="w-4 h-4 mr-1" />
                   Valider et Activer
                 </Button>
@@ -522,7 +522,7 @@ export default function AcademicSettingsPage() {
                     <TabsTrigger
                       key={value}
                       value={value}
-                      className="px-4 py-2 rounded-lg text-xs font-semibold data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-sm flex items-center gap-1.5"
+                      className="px-4 py-2 rounded-lg text-xs font-semibold data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-sm flex items-center gap-1.5"
                     >
                       <Icon className="w-3.5 h-3.5" />
                       {label}
@@ -534,20 +534,20 @@ export default function AcademicSettingsPage() {
                 <TabsContent value="profile">
                   <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
                     {/* Mode toggle */}
-                    <div className="flex items-center justify-between p-4 rounded-xl bg-indigo-50/60 border border-indigo-100">
+                    <div className="flex items-center justify-between p-4 rounded-xl bg-blue-50/60 border border-blue-100">
                       <div>
-                        <p className="text-sm font-bold text-indigo-900">Mode d'édition</p>
-                        <p className="text-xs text-indigo-600">Le mode expert déverrouille les paramètres avancés</p>
+                        <p className="text-sm font-bold text-blue-900">Mode d'édition</p>
+                        <p className="text-xs text-blue-600">Le mode expert déverrouille les paramètres avancés</p>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className={cn('text-xs font-bold', !expertMode ? 'text-indigo-700' : 'text-gray-400')}>Simple</span>
+                        <span className={cn('text-xs font-bold', !expertMode ? 'text-blue-700' : 'text-gray-400')}>Simple</span>
                         <Switch checked={expertMode} onCheckedChange={setExpertMode} />
-                        <span className={cn('text-xs font-bold', expertMode ? 'text-indigo-700' : 'text-gray-400')}>Expert</span>
+                        <span className={cn('text-xs font-bold', expertMode ? 'text-blue-700' : 'text-gray-400')}>Expert</span>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                      <SectionCard title="Système éducatif" icon={Globe} accent="bg-indigo-500">
+                      <SectionCard title="Système éducatif" icon={Globe} accent="bg-blue-500">
                         <div className="space-y-4">
                           <div className="space-y-2">
                             <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Pays</Label>
@@ -669,7 +669,7 @@ export default function AcademicSettingsPage() {
                                 </div>
                                 <div className="text-sm font-bold text-gray-700">/{type.maxScore}</div>
                                 <div>
-                                  <span className="inline-flex items-center gap-1 text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">
+                                  <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">
                                     ×{type.weight}
                                   </span>
                                 </div>
@@ -714,8 +714,8 @@ export default function AcademicSettingsPage() {
                       </div>
 
                       {/* Add new type form */}
-                      <div className="mt-5 p-4 rounded-xl border border-dashed border-indigo-200 bg-indigo-50/30 space-y-3">
-                        <p className="text-xs font-bold text-indigo-700 flex items-center gap-1.5">
+                      <div className="mt-5 p-4 rounded-xl border border-dashed border-blue-200 bg-blue-50/30 space-y-3">
+                        <p className="text-xs font-bold text-blue-700 flex items-center gap-1.5">
                           <Plus className="w-3.5 h-3.5" /> Ajouter un type d'évaluation
                         </p>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -742,7 +742,7 @@ export default function AcademicSettingsPage() {
                         </div>
                         <Button size="sm" onClick={addAssessmentType}
                           disabled={!newTypeForm.code || !newTypeForm.label}
-                          className="bg-indigo-600 hover:bg-indigo-700 h-8">
+                          className="bg-blue-600 hover:bg-blue-700 h-8">
                           <Plus className="w-3.5 h-3.5 mr-1" /> Ajouter
                         </Button>
                       </div>
@@ -761,7 +761,7 @@ export default function AcademicSettingsPage() {
                 
                 <div className="pt-4 border-t border-gray-100">
                   <h4 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
-                    <Award className="w-4 h-4 text-indigo-600" /> Règles de passage (Promotion)
+                    <Award className="w-4 h-4 text-blue-600" /> Règles de passage (Promotion)
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -793,14 +793,14 @@ export default function AcademicSettingsPage() {
                           </div>
                         ))}
                       </div>
-                      <div className="mt-4 p-4 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-between">
+                      <div className="mt-4 p-4 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-between">
                         <div>
-                          <p className="text-xs font-bold text-indigo-700 uppercase tracking-wider">Résultat calculé</p>
-                          <p className="text-xs text-indigo-500 mt-0.5">{subjectFormula}</p>
+                          <p className="text-xs font-bold text-blue-700 uppercase tracking-wider">Résultat calculé</p>
+                          <p className="text-xs text-blue-500 mt-0.5">{subjectFormula}</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-3xl font-black text-indigo-700">14.83</p>
-                          <p className="text-[10px] font-bold text-indigo-500">/{scoreMax}</p>
+                          <p className="text-3xl font-black text-blue-700">14.83</p>
+                          <p className="text-[10px] font-bold text-blue-500">/{scoreMax}</p>
                         </div>
                       </div>
                     </SectionCard>
@@ -817,7 +817,7 @@ export default function AcademicSettingsPage() {
                           const colorMap: Record<string, string> = {
                             emerald: 'bg-emerald-100 border-emerald-200 text-emerald-800',
                             blue: 'bg-blue-100 border-blue-200 text-blue-800',
-                            indigo: 'bg-indigo-100 border-indigo-200 text-indigo-800',
+                            indigo: 'bg-blue-100 border-blue-200 text-blue-800',
                             amber: 'bg-amber-100 border-amber-200 text-amber-800',
                             rose: 'bg-rose-100 border-rose-200 text-rose-800',
                           };
@@ -918,18 +918,18 @@ export default function AcademicSettingsPage() {
                 {/* ─── TAB 7: Simulation ────────────────────────────────────── */}
                 <TabsContent value="simulation">
                   <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
-                    <Card className="border-none shadow-sm bg-gradient-to-br from-indigo-600 to-violet-600 text-white overflow-hidden relative">
+                    <Card className="border-none shadow-sm bg-gradient-to-br from-blue-600 to-violet-600 text-white overflow-hidden relative">
                       <div className="absolute -right-8 -top-8 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
                       <CardContent className="p-6 flex items-center justify-between">
                         <div>
-                          <p className="text-xs font-black uppercase tracking-widest text-indigo-200 mb-1">Moteur de simulation</p>
+                          <p className="text-xs font-black uppercase tracking-widest text-blue-200 mb-1">Moteur de simulation</p>
                           <h3 className="text-xl font-black">Tester votre configuration</h3>
-                          <p className="text-sm text-indigo-200 mt-1">Vérifiez les résultats sur 3 profils d'élèves simulés avant d'activer.</p>
+                          <p className="text-sm text-blue-200 mt-1">Vérifiez les résultats sur 3 profils d'élèves simulés avant d'activer.</p>
                         </div>
                         <Button
                           onClick={handleSimulate}
                           disabled={simulationRunning}
-                          className="bg-white text-indigo-700 hover:bg-indigo-50 font-black shadow-lg border-none px-6"
+                          className="bg-white text-blue-700 hover:bg-blue-50 font-black shadow-lg border-none px-6"
                         >
                           {simulationRunning ? (
                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -953,7 +953,7 @@ export default function AcademicSettingsPage() {
                             const colorMap: Record<string, string> = {
                               emerald: 'border-t-emerald-500 bg-emerald-50',
                               blue: 'border-t-blue-500 bg-blue-50',
-                              indigo: 'border-t-indigo-500 bg-indigo-50',
+                              indigo: 'border-t-blue-500 bg-blue-50',
                               amber: 'border-t-amber-500 bg-amber-50',
                               rose: 'border-t-rose-500 bg-rose-50',
                             };
@@ -1078,7 +1078,7 @@ export default function AcademicSettingsPage() {
                                       <Archive className="w-3.5 h-3.5 mr-1" /> Archiver
                                     </Button>
                                   )}
-                                  <Button variant="ghost" size="sm" className="h-8 text-xs text-indigo-700 hover:bg-indigo-50"
+                                  <Button variant="ghost" size="sm" className="h-8 text-xs text-blue-700 hover:bg-blue-50"
                                     onClick={() => handleStatusAction(setting.id, 'duplicate')}>
                                     <Copy className="w-3.5 h-3.5 mr-1" /> Dupliquer
                                   </Button>

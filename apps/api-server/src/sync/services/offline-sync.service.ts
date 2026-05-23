@@ -250,7 +250,7 @@ export class OfflineSyncService {
       }
     }
 
-    const [students, studentEnrollments, payments] = await Promise.all([
+    const [students, studentEnrollments, payments, schoolAcademicSettings] = await Promise.all([
       this.prisma.student.findMany({
         where: { tenantId: request.tenant_id, updatedAt: { gt: since } },
       }),
@@ -258,6 +258,9 @@ export class OfflineSyncService {
         where: { tenantId: request.tenant_id, updatedAt: { gt: since } },
       }),
       this.prisma.payment.findMany({
+        where: { tenantId: request.tenant_id, updatedAt: { gt: since } },
+      }),
+      this.prisma.schoolAcademicSettings.findMany({
         where: { tenantId: request.tenant_id, updatedAt: { gt: since } },
       }),
     ]);
@@ -271,6 +274,7 @@ export class OfflineSyncService {
         students: students as any[],
         studentEnrollments: studentEnrollments as any[],
         payments: payments as any[],
+        school_academic_settings: schoolAcademicSettings as any[],
       },
     };
   }
@@ -570,6 +574,7 @@ export class OfflineSyncService {
       fee_structures: 'feeStructure',
       expenses: 'expense',
       finance_settings: 'financeSetting',
+      school_academic_settings: 'schoolAcademicSettings',
       // Pedagogy Models
       exams: 'exam',
       class_diaries: 'classDiary',

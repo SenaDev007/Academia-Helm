@@ -17,19 +17,39 @@ import {
   Search,
   Filter,
   CheckCircle2,
-  Info
+  Info,
+  UserCheck,
+  FileText,
+  Clock,
+  Shield,
+  Users
 } from 'lucide-react';
-import { ModuleHeader } from '@/components/modules/blueprint';
+import { ModuleHeader, SubModuleNavigation } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { apiFetch } from '@/lib/api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { usePathname } from 'next/navigation';
 
 export default function AllowancesPage() {
   const { tenant, academicYear } = useModuleContext();
+  const pathname = usePathname();
   const [allowanceTypes, setAllowanceTypes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const subModuleTabs = [
+    { id: 'overview', label: "Vue d'ensemble", path: '/app/hr', icon: UserCheck, exact: true },
+    { id: 'staff', label: 'Personnel', path: '/app/hr/staff', icon: Users },
+    { id: 'contracts', label: 'Contrats', path: '/app/hr/contracts', icon: FileText },
+    { id: 'leaves', label: 'Congés & Absences', path: '/app/hr/leaves', icon: Clock },
+    { id: 'planning', label: 'Planning', path: '/app/hr/planning', icon: Clock },
+    { id: 'allowances', label: 'Indemnités', path: '/app/hr/allowances', icon: DollarSign },
+    { id: 'payroll', label: 'Paie', path: '/app/hr/payroll', icon: DollarSign },
+    { id: 'cnss', label: 'CNSS', path: '/app/hr/cnss', icon: Shield },
+    { id: 'reporting', label: 'Rapports', path: '/app/hr/reporting', icon: FileText },
+    { id: 'settings', label: 'Paramètres', path: '/app/hr/settings', icon: Shield },
+  ];
 
   useEffect(() => {
     async function fetchAllowanceTypes() {
@@ -62,7 +82,9 @@ export default function AllowancesPage() {
       />
 
       <div className="px-6">
-        <Tabs defaultValue="types" className="w-full">
+        <SubModuleNavigation tabs={subModuleTabs} currentPath={pathname} />
+        
+        <Tabs defaultValue="types" className="w-full mt-6">
           <TabsList className="bg-white p-1 rounded-xl shadow-sm border border-gray-100 mb-8">
             <TabsTrigger value="types" className="px-6 py-2.5 rounded-lg font-bold data-[state=active]:bg-blue-600 data-[state=active]:text-white transition-all">
               Configuration des Types

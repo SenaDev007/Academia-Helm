@@ -113,7 +113,7 @@ export default function FinanceReportsContent() {
           title="Prévisionnel Annuel" 
           value={kpi?.totalDue ?? 0} 
           icon={<Calendar className="w-5 h-5" />} 
-          color="indigo" 
+          color="blue" 
         />
         <KPICard 
           title="Recettes Réelles" 
@@ -142,7 +142,7 @@ export default function FinanceReportsContent() {
         <Card className="rounded-[2rem] border-slate-200 shadow-xl shadow-slate-200/40 overflow-hidden">
           <CardHeader className="bg-slate-50/50 border-b border-slate-100 px-8 py-6">
             <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
-              <Layers className="w-5 h-5 text-indigo-500" />
+              <Layers className="w-5 h-5 text-blue-500" />
               Répartition par Classe
             </CardTitle>
             <CardDescription>Analyse des encaissements par section pédagogique</CardDescription>
@@ -170,7 +170,7 @@ export default function FinanceReportsContent() {
                           initial={{ width: 0 }}
                           animate={{ width: `${percent}%` }}
                           transition={{ delay: 0.2 + i * 0.1, duration: 1, ease: "easeOut" }}
-                          className="h-full bg-gradient-to-r from-indigo-500 to-blue-400 rounded-full"
+                          className="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded-full"
                         />
                       </div>
                     </div>
@@ -249,7 +249,7 @@ export default function FinanceReportsContent() {
 
 function KPICard({ title, value, icon, color, trend, isCurrency = true }: any) {
   const colorMap: any = {
-    indigo: "bg-indigo-50 border-indigo-100 text-indigo-600",
+    blue: "bg-blue-50 border-blue-100 text-blue-600",
     emerald: "bg-emerald-50 border-emerald-100 text-emerald-600",
     rose: "bg-rose-50 border-rose-100 text-rose-600",
     amber: "bg-amber-50 border-amber-100 text-amber-600"
@@ -282,7 +282,7 @@ function ReportLink({ title, description, icon }: any) {
   return (
     <motion.div
       whileHover={{ scale: 1.02 }}
-      className="p-6 bg-white rounded-3xl border border-slate-200 shadow-sm flex items-start gap-4 cursor-pointer hover:border-indigo-200 transition-colors"
+      className="p-6 bg-white rounded-3xl border border-slate-200 shadow-sm flex items-start gap-4 cursor-pointer hover:border-blue-200 transition-colors"
     >
       <div className="p-3 rounded-2xl bg-slate-50 text-slate-600">
         {icon}

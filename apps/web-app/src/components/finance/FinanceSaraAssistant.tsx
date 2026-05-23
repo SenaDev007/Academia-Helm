@@ -100,7 +100,7 @@ export default function FinanceSaraAssistant() {
             <div className="px-8 py-4 bg-slate-50 border-b border-slate-100 flex gap-2 overflow-x-auto no-scrollbar">
               {[
                 { icon: TrendingUp, label: 'Prévisions', color: 'text-blue-600' },
-                { icon: PieChart, label: 'Répartition', color: 'text-indigo-600' },
+                { icon: PieChart, label: 'Répartition', color: 'text-blue-600' },
                 { icon: ShieldCheck, label: 'Audit Risque', color: 'text-emerald-600' },
               ].map((item, i) => (
                 <button key={i} className="flex items-center gap-2 px-4 py-2 bg-white rounded-full border border-slate-200 hover:border-blue-200 transition-all whitespace-nowrap shadow-sm">

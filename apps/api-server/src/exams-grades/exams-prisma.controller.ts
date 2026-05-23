@@ -18,6 +18,7 @@ import {
 import { ExamsPrismaService } from './exams-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('api/exams')
 @UseGuards(JwtAuthGuard)
@@ -93,6 +94,104 @@ export class ExamsPrismaController {
   @Delete(':id')
   async delete(@Param('id') id: string, @TenantId() tenantId: string) {
     return this.examsService.deleteExam(id, tenantId);
+  }
+
+  @Get('evaluations')
+  async findEvaluations(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId?: string,
+    @Query('schoolLevelId') schoolLevelId?: string,
+    @Query('academicTrackId') academicTrackId?: string,
+    @Query('quarterId') quarterId?: string,
+    @Query('classId') classId?: string,
+    @Query('subjectId') subjectId?: string,
+    @Query('examType') examType?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.examsService.findAllExams(tenantId, {
+      academicYearId,
+      schoolLevelId,
+      academicTrackId: academicTrackId || undefined,
+      quarterId,
+      classId,
+      subjectId,
+      examType,
+      search,
+    });
+  }
+
+  @Get('evaluations/:id/grading-sheet')
+  async getGradingSheet(@Param('id') id: string, @TenantId() tenantId: string) {
+    return this.examsService.getGradingSheet(id, tenantId);
+  }
+
+  @Post('evaluations/:id/grading-sheet')
+  async saveGradingSheet(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() body: any,
+  ) {
+    return this.examsService.saveGradingSheet(id, tenantId, user?.id, body);
+  }
+
+  @Get('averages')
+  async getAverages(
+    @TenantId() tenantId: string,
+    @Query('classId') classId: string,
+    @Query('periodId') periodId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    return this.examsService.getAverages(tenantId, classId, periodId, academicYearId);
+  }
+
+  @Post('calculate-averages')
+  async calculateAverages(
+    @TenantId() tenantId: string,
+    @Body() body: { classId: string; periodId: string; academicYearId: string },
+  ) {
+    return this.examsService.calculateAverages(
+      tenantId,
+      body.classId,
+      body.periodId,
+      body.academicYearId,
+    );
+  }
+
+  @Get('bulletins')
+  async getBulletins(
+    @TenantId() tenantId: string,
+    @Query('classId') classId: string,
+    @Query('periodId') periodId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    return this.examsService.getBulletinsForClass(tenantId, classId, periodId, academicYearId);
+  }
+
+  @Post('generate-report-cards')
+  async generateReportCards(
+    @TenantId() tenantId: string,
+    @Body() body: { classId: string; periodId: string; academicYearId: string },
+  ) {
+    return this.examsService.generateReportCardsForClass(
+      tenantId,
+      body.classId,
+      body.periodId,
+      body.academicYearId,
+    );
+  }
+
+  @Post('bulletins/publish')
+  async publishBulletins(
+    @TenantId() tenantId: string,
+    @Body() body: { classId: string; periodId: string; academicYearId: string },
+  ) {
+    return this.examsService.publishBulletinsForClass(
+      tenantId,
+      body.classId,
+      body.periodId,
+      body.academicYearId,
+    );
   }
 }
 

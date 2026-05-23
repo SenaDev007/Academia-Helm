@@ -13,9 +13,18 @@ import { useRouter } from 'next/navigation';
 import { ModuleContainer } from '@/components/modules/blueprint';
 import FinanceDashboard from '@/components/finance/FinanceDashboard';
 import { Button } from '@/components/ui/button';
+import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 
 export default function FinancePage() {
   const router = useRouter();
+  
+  const subModulesList = FINANCE_SUBMODULE_TABS.map((t) => ({
+    id: t.id,
+    label: t.label,
+    href: t.path,
+    icon: t.icon,
+  }));
+
   return (
     <ModuleContainer
       header={{
@@ -33,6 +42,10 @@ export default function FinancePage() {
             </Button>
           </>
         ),
+      }}
+      subModules={{
+        modules: subModulesList,
+        activeModuleId: 'dashboard',
       }}
       content={{
         layout: 'custom',

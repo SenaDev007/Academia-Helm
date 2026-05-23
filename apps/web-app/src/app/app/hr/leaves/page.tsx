@@ -18,19 +18,38 @@ import {
   Search,
   Filter,
   User,
-  Coffee
+  Coffee,
+  UserCheck,
+  DollarSign,
+  Shield,
+  Users
 } from 'lucide-react';
-import { ModuleHeader } from '@/components/modules/blueprint';
+import { ModuleHeader, SubModuleNavigation } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { apiFetch } from '@/lib/api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { usePathname } from 'next/navigation';
 
 export default function LeavesPage() {
   const { tenant, academicYear } = useModuleContext();
+  const pathname = usePathname();
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('PENDING');
+
+  const subModuleTabs = [
+    { id: 'overview', label: "Vue d'ensemble", path: '/app/hr', icon: UserCheck, exact: true },
+    { id: 'staff', label: 'Personnel', path: '/app/hr/staff', icon: Users },
+    { id: 'contracts', label: 'Contrats', path: '/app/hr/contracts', icon: FileText },
+    { id: 'leaves', label: 'Congés & Absences', path: '/app/hr/leaves', icon: Clock },
+    { id: 'planning', label: 'Planning', path: '/app/hr/planning', icon: Clock },
+    { id: 'allowances', label: 'Indemnités', path: '/app/hr/allowances', icon: DollarSign },
+    { id: 'payroll', label: 'Paie', path: '/app/hr/payroll', icon: DollarSign },
+    { id: 'cnss', label: 'CNSS', path: '/app/hr/cnss', icon: Shield },
+    { id: 'reporting', label: 'Rapports', path: '/app/hr/reporting', icon: FileText },
+    { id: 'settings', label: 'Paramètres', path: '/app/hr/settings', icon: Shield },
+  ];
 
   useEffect(() => {
     async function fetchLeaves() {
@@ -68,6 +87,8 @@ export default function LeavesPage() {
       />
 
       <div className="px-6">
+        <SubModuleNavigation tabs={subModuleTabs} currentPath={pathname} />
+
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
           <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
             <div className="flex bg-white p-1 rounded-xl shadow-sm border border-gray-100">

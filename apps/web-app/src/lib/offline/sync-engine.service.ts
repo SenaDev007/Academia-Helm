@@ -62,6 +62,7 @@ const ENTITY_TO_TABLE: Record<SyncEntityType, string> = {
   FEE_STRUCTURE: 'fee_structures',
   EXPENSE: 'expenses',
   FINANCE_SETTING: 'finance_settings',
+  SCHOOL_ACADEMIC_SETTING: 'school_academic_settings',
 };
 
 /**
@@ -111,6 +112,7 @@ const ENTITY_PRIORITY: Record<SyncEntityType, number> = {
   MATERIAL_STOCK: 10,
   MATERIAL_MOVEMENT: 10,
   TEACHER_MATERIAL_ASSIGNMENT: 10,
+  SCHOOL_ACADEMIC_SETTING: 80, // HIGH — source of truth for exams module
 };
 
 const OP_MAP: Record<SyncOperationType, 'INSERT' | 'UPDATE' | 'DELETE'> = {

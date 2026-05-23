@@ -235,7 +235,7 @@ export default function FinanceDashboard() {
           title="Prévisionnel Dû"
           value={kpis?.totalDue ?? 0}
           icon={<DollarSign className="w-6 h-6" />}
-          color="indigo"
+          color="blue"
           loading={loading}
           sparklineData={[80, 80, 80, 80, 80, 80, 80]}
         />
@@ -297,9 +297,9 @@ export default function FinanceDashboard() {
                           initial={{ height: 0 }}
                           animate={{ height: `${height}%` }}
                           transition={{ delay: 0.5 + i * 0.05, type: 'spring' }}
-                          className="w-full bg-indigo-500/10 group-hover:bg-indigo-500/20 rounded-t-lg relative overflow-hidden transition-colors"
+                          className="w-full bg-blue-500/10 group-hover:bg-blue-500/20 rounded-t-lg relative overflow-hidden transition-colors"
                         >
-                          <div className="absolute inset-0 bg-gradient-to-t from-indigo-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                          <div className="absolute inset-0 bg-gradient-to-t from-blue-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                         </motion.div>
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
                           {d.month.split('-')[1]}
@@ -321,7 +321,7 @@ export default function FinanceDashboard() {
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="bg-slate-900 rounded-3xl p-8 text-white relative overflow-hidden shadow-2xl shadow-indigo-900/20"
+            className="bg-slate-900 rounded-3xl p-8 text-white relative overflow-hidden shadow-2xl shadow-blue-900/20"
           >
             <div className="absolute top-0 right-0 p-4 opacity-10">
               <Brain className="w-32 h-32" />
@@ -329,7 +329,7 @@ export default function FinanceDashboard() {
             
             <div className="relative z-10">
               <div className="flex items-center gap-2 mb-6">
-                <div className="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center">
                   <Brain className="w-5 h-5 text-white" />
                 </div>
                 <h3 className="font-bold text-lg tracking-tight">ORION Intelligence</h3>
@@ -342,7 +342,7 @@ export default function FinanceDashboard() {
                 </div>
               ) : orionAlerts.length === 0 ? (
                 <div className="py-6">
-                  <p className="text-indigo-200 text-sm leading-relaxed">
+                  <p className="text-blue-200 text-sm leading-relaxed">
                     Aucune anomalie détectée. La santé financière de l'établissement est optimale.
                   </p>
                 </div>
@@ -357,11 +357,11 @@ export default function FinanceDashboard() {
                       className={`p-4 rounded-2xl border ${
                         a.level === 'CRITICAL' 
                           ? 'bg-red-500/10 border-red-500/20 text-red-100' 
-                          : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-100'
+                          : 'bg-blue-500/10 border-blue-500/20 text-blue-100'
                       }`}
                     >
                       <div className="flex items-center gap-2 mb-1">
-                        {a.level === 'CRITICAL' ? <ArrowUpRight className="w-4 h-4 text-red-400" /> : <Clock className="w-4 h-4 text-indigo-400" />}
+                        {a.level === 'CRITICAL' ? <ArrowUpRight className="w-4 h-4 text-red-400" /> : <Clock className="w-4 h-4 text-blue-400" />}
                         <span className="text-xs font-black uppercase tracking-widest">{a.title}</span>
                       </div>
                       <p className="text-xs opacity-80">{a.message}</p>
@@ -385,8 +385,8 @@ export default function FinanceDashboard() {
                 className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col items-center text-center gap-3"
               >
                 <Link href={tab.path} className="flex flex-col items-center gap-2">
-                  <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center group-hover:bg-indigo-50 transition-colors">
-                    <tab.icon className="w-6 h-6 text-indigo-600" />
+                  <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center group-hover:bg-blue-50 transition-colors">
+                    <tab.icon className="w-6 h-6 text-blue-600" />
                   </div>
                   <span className="text-xs font-bold text-slate-800 leading-tight">{tab.label}</span>
                 </Link>
@@ -413,21 +413,21 @@ function KPICard({
   value: string | number; 
   icon: React.ReactNode; 
   trend?: string; 
-  color: 'emerald' | 'indigo' | 'amber' | 'rose';
+  color: 'emerald' | 'blue' | 'amber' | 'rose';
   loading: boolean;
   isCurrency?: boolean;
   sparklineData: number[];
 }) {
   const colorMap = {
     emerald: 'bg-emerald-500 text-emerald-600 ring-emerald-100',
-    indigo: 'bg-indigo-500 text-indigo-600 ring-indigo-100',
+    blue: 'bg-blue-500 text-blue-600 ring-blue-100',
     amber: 'bg-amber-500 text-amber-600 ring-amber-100',
     rose: 'bg-rose-500 text-rose-600 ring-rose-100'
   };
 
   const sparkColor = {
     emerald: '#10b981',
-    indigo: '#6366f1',
+    blue: '#3b82f6',
     amber: '#f59e0b',
     rose: '#f43f5e'
   };

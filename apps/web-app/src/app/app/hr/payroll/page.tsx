@@ -1,19 +1,34 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, DollarSign, Calendar, FileText, CheckCircle2, Clock, ChevronRight, Calculator, CreditCard, ShieldCheck } from 'lucide-react';
-import { ModuleHeader } from '@/components/modules/blueprint';
+import { Plus, DollarSign, Calendar, FileText, CheckCircle2, Clock, ChevronRight, Calculator, CreditCard, ShieldCheck, UserCheck, Shield, Users } from 'lucide-react';
+import { ModuleHeader, SubModuleNavigation } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { apiFetch } from '@/lib/api/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 export default function PayrollPage() {
   const { tenant, academicYear } = useModuleContext();
+  const pathname = usePathname();
   const [payrolls, setPayrolls] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
+
+  const subModuleTabs = [
+    { id: 'overview', label: "Vue d'ensemble", path: '/app/hr', icon: UserCheck, exact: true },
+    { id: 'staff', label: 'Personnel', path: '/app/hr/staff', icon: Users },
+    { id: 'contracts', label: 'Contrats', path: '/app/hr/contracts', icon: FileText },
+    { id: 'leaves', label: 'Congés & Absences', path: '/app/hr/leaves', icon: Clock },
+    { id: 'planning', label: 'Planning', path: '/app/hr/planning', icon: Clock },
+    { id: 'allowances', label: 'Indemnités', path: '/app/hr/allowances', icon: DollarSign },
+    { id: 'payroll', label: 'Paie', path: '/app/hr/payroll', icon: DollarSign },
+    { id: 'cnss', label: 'CNSS', path: '/app/hr/cnss', icon: Shield },
+    { id: 'reporting', label: 'Rapports', path: '/app/hr/reporting', icon: FileText },
+    { id: 'settings', label: 'Paramètres', path: '/app/hr/settings', icon: Shield },
+  ];
 
   useEffect(() => {
     async function fetchData() {
@@ -50,7 +65,9 @@ export default function PayrollPage() {
       />
 
       <div className="px-6">
-        <div className="flex justify-between items-center mb-8">
+        <SubModuleNavigation tabs={subModuleTabs} currentPath={pathname} />
+        
+        <div className="flex justify-between items-center mb-8 mt-6">
           <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
             <DollarSign size={24} className="text-blue-600" />
             Historique des Paies

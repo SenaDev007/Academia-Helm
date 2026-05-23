@@ -22,7 +22,7 @@ export default function EduCastPodcasts() {
       <div className="flex justify-between items-center">
         <div className="space-y-1">
           <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter flex items-center">
-            <Headphones className="w-6 h-6 mr-3 text-indigo-600" />
+            <Headphones className="w-6 h-6 mr-3 text-blue-600" />
             Podcasts & Audios
           </h3>
           <p className="text-slate-500 text-sm font-medium">Contenus audio pour apprendre partout, tout le temps.</p>
@@ -39,11 +39,11 @@ export default function EduCastPodcasts() {
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: i * 0.05 }}
-            className="bg-white rounded-3xl border border-slate-200 p-6 flex flex-col md:flex-row items-center justify-between gap-6 hover:shadow-xl hover:border-indigo-200 transition-all group"
+            className="bg-white rounded-3xl border border-slate-200 p-6 flex flex-col md:flex-row items-center justify-between gap-6 hover:shadow-xl hover:border-blue-200 transition-all group"
           >
             <div className="flex items-center gap-6 flex-1">
               <div className="relative">
-                <div className="w-16 h-16 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+                <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-all">
                   <Music className="w-8 h-8" />
                 </div>
                 <button className="absolute -bottom-2 -right-2 p-2 bg-[#C9A84C] rounded-full text-navy-900 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
@@ -55,7 +55,7 @@ export default function EduCastPodcasts() {
                   <span className="px-2 py-0.5 bg-slate-50 text-slate-400 text-[8px] font-black uppercase tracking-widest rounded-md">{podcast.category}</span>
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{podcast.date}</span>
                 </div>
-                <h4 className="text-lg font-black text-slate-900 leading-tight group-hover:text-indigo-600 transition-colors">{podcast.title}</h4>
+                <h4 className="text-lg font-black text-slate-900 leading-tight group-hover:text-blue-600 transition-colors">{podcast.title}</h4>
                 <p className="text-xs font-bold text-slate-500 mt-1 uppercase tracking-tighter">Par {podcast.author}</p>
               </div>
             </div>

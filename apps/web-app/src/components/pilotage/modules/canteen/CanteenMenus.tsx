@@ -29,7 +29,7 @@ export default function CanteenMenus() {
         </div>
 
         <div className="flex items-center space-x-3">
-          <button className="flex items-center space-x-2 px-4 py-2.5 bg-indigo-50 text-indigo-600 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-indigo-100 transition-all border border-indigo-100">
+          <button className="flex items-center space-x-2 px-4 py-2.5 bg-blue-50 text-blue-600 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-blue-100 transition-all border border-blue-100">
             <Sparkles className="w-4 h-4" />
             <span>Générer via Sara AI</span>
           </button>

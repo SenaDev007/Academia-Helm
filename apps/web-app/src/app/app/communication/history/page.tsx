@@ -30,7 +30,7 @@ export default function CommunicationHistoryPage() {
       case 'SMS': return <Smartphone size={18} className="text-emerald-500" />;
       case 'EMAIL': return <Mail size={18} className="text-blue-500" />;
       case 'WHATSAPP': return <MessageSquare size={18} className="text-green-500" />;
-      default: return <Globe size={18} className="text-indigo-500" />;
+      default: return <Globe size={18} className="text-blue-500" />;
     }
   };
 
@@ -38,7 +38,7 @@ export default function CommunicationHistoryPage() {
     switch(status) {
       case 'DELIVERED': return <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg text-[10px] font-bold flex items-center gap-1"><CheckCircle2 size={10} /> Livré</span>;
       case 'OPENED': return <span className="text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg text-[10px] font-bold flex items-center gap-1"><Eye size={10} /> Ouvert</span>;
-      case 'READ': return <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg text-[10px] font-bold flex items-center gap-1"><CheckCircle2 size={10} /> Lu</span>;
+      case 'READ': return <span className="text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg text-[10px] font-bold flex items-center gap-1"><CheckCircle2 size={10} /> Lu</span>;
       case 'FAILED': return <span className="text-rose-600 bg-rose-50 px-2 py-0.5 rounded-lg text-[10px] font-bold flex items-center gap-1"><XCircle size={10} /> Échec</span>;
       default: return <span className="text-slate-500 bg-slate-50 px-2 py-0.5 rounded-lg text-[10px] font-bold">Inconnu</span>;
     }

@@ -45,7 +45,7 @@ export default function TeacherCommunicationPage() {
             { label: 'Total Enseignants', value: '42', icon: <GraduationCap />, color: 'text-blue-500' },
             { label: 'Réactifs (24h)', value: '38', icon: <Clock />, color: 'text-emerald-500' },
             { label: 'Rappels envoyés', value: '12', icon: <MessageSquare />, color: 'text-amber-500' },
-            { label: 'Notes de service', value: '5', icon: <FileText />, color: 'text-indigo-500' },
+            { label: 'Notes de service', value: '5', icon: <FileText />, color: 'text-blue-500' },
           ].map((stat, i) => (
             <div key={i} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
               <div className={`p-3 rounded-2xl bg-slate-50 ${stat.color}`}>{stat.icon}</div>

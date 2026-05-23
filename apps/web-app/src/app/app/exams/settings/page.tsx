@@ -126,7 +126,7 @@ const DEFAULT_ASSESSMENT_TYPES: AssessmentType[] = [
 const DEFAULT_MENTIONS: MentionRule[] = [
   { id: '1', minScore: 16, maxScore: 20, label: 'Très Bien', color: 'emerald', appreciation: 'Félicitations du jury' },
   { id: '2', minScore: 14, maxScore: 15.99, label: 'Bien', color: 'blue', appreciation: 'Encouragements' },
-  { id: '3', minScore: 12, maxScore: 13.99, label: 'Assez Bien', color: 'indigo', appreciation: 'Tableau d\'honneur' },
+  { id: '3', minScore: 12, maxScore: 13.99, label: 'Assez Bien', color: 'blue', appreciation: 'Tableau d\'honneur' },
   { id: '4', minScore: 10, maxScore: 11.99, label: 'Passable', color: 'amber', appreciation: '' },
   { id: '5', minScore: 0, maxScore: 9.99, label: 'Insuffisant', color: 'rose', appreciation: 'Avertissement' },
 ];

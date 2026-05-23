@@ -13,7 +13,7 @@ export default function EduCastChannels() {
   const channels = [
     { id: 1, name: 'Academia Official', owner: 'Direction', contents: 124, subs: 1250, status: 'ACTIVE', color: 'bg-navy-900' },
     { id: 2, name: 'SVT - Secondaire', owner: 'M. Diallo', contents: 45, subs: 450, status: 'ACTIVE', color: 'bg-emerald-600' },
-    { id: 3, name: 'English Corner', owner: 'Mme. Koffi', contents: 32, subs: 320, status: 'ACTIVE', color: 'bg-indigo-600' },
+    { id: 3, name: 'English Corner', owner: 'Mme. Koffi', contents: 32, subs: 320, status: 'ACTIVE', color: 'bg-blue-600' },
     { id: 4, name: 'Maths Experts', owner: 'M. Lawson', contents: 67, subs: 600, status: 'ACTIVE', color: 'bg-rose-600' },
     { id: 5, name: 'Parents Info', owner: 'Communication', contents: 12, subs: 800, status: 'PRIVATE', color: 'bg-amber-600' },
   ];

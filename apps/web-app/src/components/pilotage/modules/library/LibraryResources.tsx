@@ -22,7 +22,7 @@ export default function LibraryResources() {
     switch (status) {
       case 'AVAILABLE': return 'bg-emerald-50 text-emerald-600';
       case 'LOANED': return 'bg-blue-50 text-blue-600';
-      case 'RESERVED': return 'bg-indigo-50 text-indigo-600';
+      case 'RESERVED': return 'bg-blue-50 text-blue-600';
       case 'REPAIR': return 'bg-amber-50 text-amber-600';
       case 'LOST': return 'bg-rose-50 text-rose-600';
       default: return 'bg-slate-50 text-slate-500';

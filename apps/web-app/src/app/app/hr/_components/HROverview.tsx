@@ -81,7 +81,7 @@ export function HROverview({ data, loading }: HROverviewProps) {
       value: `${Number(snapshot.cnssCharges).toLocaleString()} XOF`, 
       subValue: 'Cotisations CNSS estimées',
       icon: ShieldCheck,
-      color: 'indigo'
+      color: 'blue'
     },
     { 
       label: 'Congés Actifs', 

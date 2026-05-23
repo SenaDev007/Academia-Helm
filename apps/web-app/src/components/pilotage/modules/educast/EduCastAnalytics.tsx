@@ -41,10 +41,10 @@ export default function EduCastAnalytics() {
         <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
           <div className="flex items-center justify-between mb-6">
             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Engagement Global</h4>
-            <MousePointer2 className="w-5 h-5 text-indigo-500" />
+            <MousePointer2 className="w-5 h-5 text-blue-500" />
           </div>
           <div className="text-4xl font-black text-slate-900 mb-2">8.5/10</div>
-          <p className="text-[10px] font-bold text-indigo-600 bg-indigo-50 w-fit px-2 py-0.5 rounded-lg">Score Sara AI</p>
+          <p className="text-[10px] font-bold text-blue-600 bg-blue-50 w-fit px-2 py-0.5 rounded-lg">Score Sara AI</p>
         </div>
       </div>
 
@@ -95,7 +95,7 @@ export default function EduCastAnalytics() {
             {[
               { class: 'Terminal D', score: 98, color: 'bg-emerald-500' },
               { class: '3ème B', score: 85, color: 'bg-blue-500' },
-              { class: '6ème A', score: 72, color: 'bg-indigo-500' },
+              { class: '6ème A', score: 72, color: 'bg-blue-500' },
               { class: '2nde C', score: 64, color: 'bg-amber-500' },
             ].map((c, i) => (
               <div key={i} className="space-y-2">

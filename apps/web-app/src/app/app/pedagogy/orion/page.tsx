@@ -130,7 +130,7 @@ export default function OrionPedagogyPage() {
             <motion.div 
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="flex items-center gap-4 p-6 rounded-3xl bg-gradient-to-r from-slate-900 to-indigo-950 text-white shadow-xl overflow-hidden relative"
+              className="flex items-center gap-4 p-6 rounded-3xl bg-gradient-to-r from-slate-900 to-blue-950 text-white shadow-xl overflow-hidden relative"
             >
               <div className="absolute right-0 top-0 p-8 opacity-10">
                 <Zap className="h-32 w-32" />
@@ -148,7 +148,7 @@ export default function OrionPedagogyPage() {
                 <button
                   onClick={handleRunAnalysis}
                   disabled={analyzing || loading}
-                  className="px-4 py-2 rounded-xl bg-white text-indigo-900 font-bold text-sm hover:bg-blue-50 transition-colors disabled:opacity-50 flex items-center gap-2"
+                  className="px-4 py-2 rounded-xl bg-white text-blue-900 font-bold text-sm hover:bg-blue-50 transition-colors disabled:opacity-50 flex items-center gap-2"
                 >
                   {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4 text-blue-600" />}
                   Lancer l'analyse
@@ -173,7 +173,7 @@ export default function OrionPedagogyPage() {
               </div>
             ) : loading ? (
               <div className="flex flex-col items-center justify-center py-20 gap-4 text-gray-600">
-                <Loader2 className="h-10 w-10 animate-spin text-indigo-600" />
+                <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
                 <p className="font-medium animate-pulse">Calcul des insights en cours...</p>
               </div>
             ) : dashboard ? (
@@ -307,7 +307,7 @@ export default function OrionPedagogyPage() {
                               {dashboard.forecasts.map((f) => (
                                 <tr key={f.id} className="hover:bg-gray-50 transition-colors">
                                   <td className="px-4 py-3 font-medium text-gray-800">{f.entityType}</td>
-                                  <td className="px-4 py-3 text-right font-bold text-indigo-600">
+                                  <td className="px-4 py-3 text-right font-bold text-blue-600">
                                     {f.predictedValue != null ? f.predictedValue : '—'}
                                   </td>
                                   <td className="px-4 py-3 text-right">
@@ -333,10 +333,10 @@ export default function OrionPedagogyPage() {
                   </div>
 
                   <div className="flex items-center gap-2 p-4 rounded-2xl bg-gray-50 border border-gray-100 text-xs text-gray-500">
-                    <Info className="h-4 w-4 text-indigo-400" />
+                    <Info className="h-4 w-4 text-blue-400" />
                     <p>
                       Les données ORION sont générées par des modèles probabilistes. Elles constituent une aide à la décision et ne remplacent pas le jugement pédagogique. 
-                      Dashboard global : <Link href="/app/orion" className="text-indigo-600 hover:underline font-bold">/app/orion</Link>
+                      Dashboard global : <Link href="/app/orion" className="text-blue-600 hover:underline font-bold">/app/orion</Link>
                     </p>
                   </div>
                 </motion.div>

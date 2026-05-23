@@ -40,7 +40,7 @@ export default function CanteenDashboard() {
           change="Excellent" 
           trend="up" 
           icon={CheckCircle2} 
-          color="indigo" 
+          color="blue" 
         />
       </div>
 
@@ -171,14 +171,14 @@ function StatCard({ title, value, change, trend, icon: Icon, color }: any) {
     blue: 'from-blue-500 to-blue-600 shadow-blue-500/20',
     green: 'from-emerald-500 to-emerald-600 shadow-emerald-500/20',
     amber: 'from-amber-500 to-amber-600 shadow-amber-500/20',
-    indigo: 'from-indigo-500 to-indigo-600 shadow-indigo-500/20',
+    indigo: 'from-blue-500 to-blue-600 shadow-blue-500/20',
   };
 
   const bgColors: any = {
     blue: 'bg-blue-50 text-blue-600',
     green: 'bg-emerald-50 text-emerald-600',
     amber: 'bg-amber-50 text-amber-600',
-    indigo: 'bg-indigo-50 text-indigo-600',
+    indigo: 'bg-blue-50 text-blue-600',
   };
 
   return (

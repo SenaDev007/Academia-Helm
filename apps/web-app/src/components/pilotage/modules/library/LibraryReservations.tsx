@@ -21,7 +21,7 @@ export default function LibraryReservations() {
       <div className="flex justify-between items-center">
         <div className="space-y-1">
           <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter flex items-center">
-            <Timer className="w-6 h-6 mr-3 text-indigo-600" />
+            <Timer className="w-6 h-6 mr-3 text-blue-600" />
             File d'Attente des Réservations
           </h3>
           <p className="text-slate-500 text-sm font-medium">Gérez les priorités et les délais de retrait.</p>
@@ -97,7 +97,7 @@ export default function LibraryReservations() {
                     Prêt pour retrait
                   </button>
                 ) : res.status === 'WAITING' ? (
-                  <div className="flex-1 py-2.5 bg-indigo-50 text-indigo-600 text-center rounded-xl text-[10px] font-black uppercase tracking-widest">
+                  <div className="flex-1 py-2.5 bg-blue-50 text-blue-600 text-center rounded-xl text-[10px] font-black uppercase tracking-widest">
                     En attente de retour
                   </div>
                 ) : (

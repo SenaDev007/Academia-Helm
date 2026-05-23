@@ -22,7 +22,7 @@ export default function LaboratoryDashboard() {
   const stats = [
     { label: 'Laboratoires Actifs', value: '4', icon: Beaker, color: 'text-blue-600', bg: 'bg-blue-50' },
     { label: 'Réservations du Jour', value: '6', icon: Calendar, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-    { label: 'Équipements Disponibles', value: '142', icon: Microscope, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+    { label: 'Équipements Disponibles', value: '142', icon: Microscope, color: 'text-blue-600', bg: 'bg-blue-50' },
     { label: 'En Maintenance', value: '3', icon: Wrench, color: 'text-amber-600', bg: 'bg-amber-50' },
     { label: 'Stock Faible', value: '8', icon: Package, color: 'text-rose-600', bg: 'bg-rose-50' },
     { label: 'Incidents Récents', value: '1', icon: AlertTriangle, color: 'text-orange-600', bg: 'bg-orange-50' },
@@ -91,7 +91,7 @@ export default function LaboratoryDashboard() {
               { label: 'Lab Physique', value: 85, color: 'bg-blue-500' },
               { label: 'Lab Chimie', value: 70, color: 'bg-emerald-500' },
               { label: 'Lab SVT', value: 45, color: 'bg-amber-500' },
-              { label: 'Lab Informatique', value: 95, color: 'bg-indigo-500' },
+              { label: 'Lab Informatique', value: 95, color: 'bg-blue-500' },
             ].map((item, i) => (
               <div key={i} className="space-y-2">
                 <div className="flex justify-between text-xs font-bold uppercase tracking-tighter">

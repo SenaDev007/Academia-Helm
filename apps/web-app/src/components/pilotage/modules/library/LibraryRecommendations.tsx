@@ -19,7 +19,7 @@ export default function LibraryRecommendations() {
   return (
     <div className="space-y-8">
       {/* AI Recommendation Spotlight */}
-      <div className="bg-gradient-to-r from-navy-900 to-indigo-900 rounded-3xl p-8 text-white relative overflow-hidden">
+      <div className="bg-gradient-to-r from-navy-900 to-blue-900 rounded-3xl p-8 text-white relative overflow-hidden">
         <div className="absolute top-0 right-0 p-8 opacity-10">
           <Sparkles className="w-48 h-48" />
         </div>

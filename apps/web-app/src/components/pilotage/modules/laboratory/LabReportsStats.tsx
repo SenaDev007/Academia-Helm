@@ -47,7 +47,7 @@ export default function LabReportsStats() {
               { label: 'Physique', val: 75, color: 'bg-blue-500' },
               { label: 'Chimie', val: 62, color: 'bg-emerald-500' },
               { label: 'SVT', val: 48, color: 'bg-amber-500' },
-              { label: 'Technologie', val: 35, color: 'bg-indigo-500' },
+              { label: 'Technologie', val: 35, color: 'bg-blue-500' },
               { label: 'Informatique', val: 92, color: 'bg-slate-900' },
             ].map((item, i) => (
               <div key={i} className="space-y-2">

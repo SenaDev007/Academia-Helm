@@ -26,7 +26,7 @@ export default function ShopPayments() {
     <div className="space-y-8 animate-in fade-in duration-700">
       {/* Wallet Summary */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        <div className="md:col-span-2 bg-gradient-to-br from-navy-900 to-indigo-900 rounded-[2.5rem] p-10 text-white shadow-2xl relative overflow-hidden group">
+        <div className="md:col-span-2 bg-gradient-to-br from-navy-900 to-blue-900 rounded-[2.5rem] p-10 text-white shadow-2xl relative overflow-hidden group">
           <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl group-hover:scale-125 transition-transform duration-1000"></div>
           <div className="relative z-10">
             <div className="flex items-center justify-between mb-12">

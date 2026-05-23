@@ -54,7 +54,7 @@ export default function EduCastResources() {
                 <td className="px-8 py-5">
                   <div className="flex items-center gap-4">
                     <div className="p-2.5 bg-slate-100 rounded-xl group-hover:bg-blue-50 transition-colors">
-                      {res.type === 'LINK' ? <LinkIcon className="w-5 h-5 text-indigo-600" /> : <FileText className="w-5 h-5 text-rose-600" />}
+                      {res.type === 'LINK' ? <LinkIcon className="w-5 h-5 text-blue-600" /> : <FileText className="w-5 h-5 text-rose-600" />}
                     </div>
                     <div>
                       <p className="font-black text-slate-900 leading-tight">{res.title}</p>

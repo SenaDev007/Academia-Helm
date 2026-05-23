@@ -22,7 +22,7 @@ export default function LibraryDigitalResources() {
       case 'PDF': return <FileText className="w-6 h-6 text-rose-500" />;
       case 'VIDEO': return <Video className="w-6 h-6 text-blue-500" />;
       case 'AUDIO': return <Headphones className="w-6 h-6 text-emerald-500" />;
-      case 'LINK': return <LinkIcon className="w-6 h-6 text-indigo-500" />;
+      case 'LINK': return <LinkIcon className="w-6 h-6 text-blue-500" />;
       default: return <Globe className="w-6 h-6 text-slate-400" />;
     }
   };

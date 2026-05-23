@@ -689,7 +689,7 @@ export default function StudentsModulePage() {
                             <div className="flex items-center justify-end gap-1">
                               <a
                                 href={`/app/students/${student.id}/dossier`}
-                                className="text-indigo-600 hover:text-indigo-900 p-1"
+                                className="text-blue-600 hover:text-blue-900 p-1"
                                 title="Dossier"
                               >
                                 <FileText className="w-4 h-4" />

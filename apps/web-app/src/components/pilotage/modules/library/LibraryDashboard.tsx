@@ -22,7 +22,7 @@ export default function LibraryDashboard() {
   const stats = [
     { label: 'Total Livres', value: '1,248', icon: Book, color: 'text-blue-600', bg: 'bg-blue-50' },
     { label: 'Lecteurs Actifs', value: '342', icon: Users, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-    { label: 'Emprunts en cours', value: '86', icon: ArrowUpCircle, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+    { label: 'Emprunts en cours', value: '86', icon: ArrowUpCircle, color: 'text-blue-600', bg: 'bg-blue-50' },
     { label: 'Retards', value: '12', icon: Clock, color: 'text-rose-600', bg: 'bg-rose-50' },
     { label: 'Livres perdus', value: '3', icon: AlertTriangle, color: 'text-amber-600', bg: 'bg-amber-50' },
     { label: 'Valeur Stock', value: '4.2M', icon: TrendingUp, color: 'text-slate-900', bg: 'bg-slate-100' },

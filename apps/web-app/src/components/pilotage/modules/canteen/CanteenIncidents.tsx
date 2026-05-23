@@ -37,7 +37,7 @@ export default function CanteenIncidents() {
           value="08" 
           desc="Délai moyen : 4h" 
           icon={CheckCircle2} 
-          color="indigo" 
+          color="blue" 
         />
       </div>
 
@@ -101,7 +101,7 @@ function StatusCard({ title, value, desc, icon: Icon, color }: any) {
     red: 'text-red-600 bg-red-50',
     emerald: 'text-emerald-600 bg-emerald-50',
     blue: 'text-blue-600 bg-blue-50',
-    indigo: 'text-indigo-600 bg-indigo-50',
+    indigo: 'text-blue-600 bg-blue-50',
   };
   return (
     <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all duration-300">
@@ -125,7 +125,7 @@ function StockCard({ title, value, desc, icon: Icon, color }: any) {
     red: 'text-red-600 bg-red-50',
     emerald: 'text-emerald-600 bg-emerald-50',
     blue: 'text-blue-600 bg-blue-50',
-    indigo: 'text-indigo-600 bg-indigo-50',
+    indigo: 'text-blue-600 bg-blue-50',
   };
   return (
     <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all duration-300">

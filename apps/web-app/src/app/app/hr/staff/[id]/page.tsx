@@ -87,7 +87,7 @@ export default function StaffDetailPage() {
         <div className="lg:w-1/3 space-y-6">
           <Card className="border-none shadow-sm rounded-3xl overflow-hidden bg-white">
             <CardContent className="p-0">
-              <div className="h-24 bg-gradient-to-r from-blue-600 to-indigo-600" />
+              <div className="h-24 bg-gradient-to-r from-blue-600 to-blue-600" />
               <div className="px-6 pb-6 -mt-12">
                 <div className="w-24 h-24 rounded-3xl bg-white p-1 shadow-lg mb-4">
                   <div className="w-full h-full rounded-[20px] bg-blue-50 flex items-center justify-center text-blue-600 text-3xl font-bold">

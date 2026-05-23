@@ -15,7 +15,8 @@ export async function fetchSettingsBackend(
 ): Promise<Response> {
   const base = getApiBaseUrlForRoutes().replace(/\/$/, '');
   const path = pathSuffix.replace(/^\//, '');
-  const url = normalizeApiUrl(`${base}/${path}`);
+  const search = request.nextUrl.search;
+  const url = normalizeApiUrl(`${base}/${path}${search}`);
   const headers = await getProxyAuthHeaders(request);
   return fetch(url, {
     ...init,

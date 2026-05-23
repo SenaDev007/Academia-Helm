@@ -159,13 +159,17 @@ export async function getProxyAuthHeaders(request: NextRequest): Promise<ProxyAu
     request.cookies.get(TENANT_ID_COOKIE)?.value?.trim() ||
     cookieStore.get(TENANT_ID_COOKIE)?.value?.trim() ||
     undefined;
+  const fromQuery =
+    request.nextUrl?.searchParams?.get('tenant_id') ||
+    request.nextUrl?.searchParams?.get('tenantId');
+  const fromHeader = request.headers.get('x-tenant-id');
   const tenantId =
+    fromQuery ||
+    fromHeader ||
+    tidFromTenantCookie ||
     (tidFromSessionObj && String(tidFromSessionObj).trim()) ||
     tidFromUser ||
     parsedSession.tenantId ||
-    tidFromTenantCookie ||
-    request.headers.get('x-tenant-id') ||
-    request.nextUrl?.searchParams?.get('tenant_id') ||
     undefined;
   if (tenantId && typeof tenantId === 'string' && tenantId.trim()) {
     headers['x-tenant-id'] = tenantId.trim();

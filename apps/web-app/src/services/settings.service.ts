@@ -94,8 +94,9 @@ async function fetchWithAuthNoCache(url: string, options: RequestInit = {}) {
 // IDENTITÉ & PARAMÈTRES GÉNÉRAUX
 // ============================================================================
 
-export async function getGeneralSettings() {
-  return fetchWithAuth(`${BASE_URL}/general`);
+export async function getGeneralSettings(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/general${qs}`);
 }
 
 export async function updateGeneralSettings(data: {
@@ -126,8 +127,9 @@ export async function updateGeneralSettings(data: {
   slogan?: string;
   primaryColor?: string;
   secondaryColor?: string;
-}) {
-  return fetchWithAuth(`${BASE_URL}/general`, {
+}, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/general${qs}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
@@ -495,8 +497,9 @@ export async function disableAllModules(reason?: string, tenantId?: string | nul
 // SÉCURITÉ
 // ============================================================================
 
-export async function getSecuritySettings() {
-  return fetchWithAuth(`${BASE_URL}/security`);
+export async function getSecuritySettings(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/security${qs}`);
 }
 
 export async function updateSecuritySettings(data: {
@@ -515,8 +518,9 @@ export async function updateSecuritySettings(data: {
   dataRetentionYears?: number;
   gdprCompliant?: boolean;
   allowInspectionAccess?: boolean;
-}) {
-  return fetchWithAuth(`${BASE_URL}/security`, {
+}, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/security${qs}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
@@ -526,8 +530,9 @@ export async function updateSecuritySettings(data: {
 // ORION
 // ============================================================================
 
-export async function getOrionSettings() {
-  return fetchWithAuth(`${BASE_URL}/orion`);
+export async function getOrionSettings(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/orion${qs}`);
 }
 
 export async function updateOrionSettings(data: {
@@ -539,8 +544,9 @@ export async function updateOrionSettings(data: {
   insightsFrequency?: string;
   visibleKPICategories?: string[];
   allowOrionExports?: boolean;
-}) {
-  return fetchWithAuth(`${BASE_URL}/orion`, {
+}, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/orion${qs}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
@@ -550,8 +556,9 @@ export async function updateOrionSettings(data: {
 // ATLAS
 // ============================================================================
 
-export async function getAtlasSettings() {
-  return fetchWithAuth(`${BASE_URL}/atlas`);
+export async function getAtlasSettings(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/atlas${qs}`);
 }
 
 export async function updateAtlasSettings(data: {
@@ -562,8 +569,9 @@ export async function updateAtlasSettings(data: {
   conversationHistoryDays?: number;
   maxConversationsPerDay?: number | null;
   language?: string;
-}) {
-  return fetchWithAuth(`${BASE_URL}/atlas`, {
+}, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/atlas${qs}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
@@ -573,8 +581,9 @@ export async function updateAtlasSettings(data: {
 // OFFLINE SYNC
 // ============================================================================
 
-export async function getOfflineSyncSettings() {
-  return fetchWithAuth(`${BASE_URL}/offline-sync`);
+export async function getOfflineSyncSettings(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/offline-sync${qs}`);
 }
 
 export async function updateOfflineSyncSettings(data: {
@@ -585,8 +594,9 @@ export async function updateOfflineSyncSettings(data: {
   maxOfflineDays?: number;
   allowOfflineModification?: boolean;
   syncOnBackground?: boolean;
-}) {
-  return fetchWithAuth(`${BASE_URL}/offline-sync`, {
+}, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/offline-sync${qs}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
@@ -596,8 +606,9 @@ export async function updateOfflineSyncSettings(data: {
 // COMMUNICATION
 // ============================================================================
 
-export async function getCommunicationSettings() {
-  return fetchWithAuth(`${BASE_URL}/communication`);
+export async function getCommunicationSettings(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/communication${qs}`);
 }
 
 export async function updateCommunicationSettings(data: {
@@ -619,8 +630,9 @@ export async function updateCommunicationSettings(data: {
   defaultSenderPhone?: string;
   dailySmsLimit?: number;
   dailyEmailLimit?: number;
-}) {
-  return fetchWithAuth(`${BASE_URL}/communication`, {
+}, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/communication${qs}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
@@ -799,13 +811,14 @@ export async function getSettingsHistory(options?: {
   startDate?: string;
   endDate?: string;
   limit?: number;
-}) {
+}, tenantId?: string | null) {
   const params = new URLSearchParams();
   if (options?.category) params.append('category', options.category);
   if (options?.key) params.append('key', options.key);
   if (options?.startDate) params.append('startDate', options.startDate);
   if (options?.endDate) params.append('endDate', options.endDate);
   if (options?.limit) params.append('limit', options.limit.toString());
+  if (tenantId) params.append('tenant_id', tenantId);
 
   return fetchWithAuth(`${BASE_URL}/history?${params.toString()}`);
 }
@@ -926,12 +939,14 @@ export async function testWhatsapp() {
 // FACTURATION & ABONNEMENT SaaS
 // ============================================================================
 
-export async function getBillingSettings() {
-  return fetchWithAuth(`${BASE_URL}/billing`);
+export async function getBillingSettings(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/billing${qs}`);
 }
 
-export async function getBillingSummary() {
-  return fetchWithAuth(`${BASE_URL}/billing/summary`);
+export async function getBillingSummary(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/billing/summary${qs}`);
 }
 
 export async function getAvailablePlans() {
@@ -942,27 +957,31 @@ export async function updateBillingSettings(data: {
   billingCycle?: string;
   autoRenew?: boolean;
   bilingualEnabled?: boolean;
-}) {
-  return fetchWithAuth(`${BASE_URL}/billing`, {
+}, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/billing${qs}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
 }
 
-export async function changePlan(planCode: string) {
-  return fetchWithAuth(`${BASE_URL}/billing/change-plan`, {
+export async function changePlan(planCode: string, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/billing/change-plan${qs}`, {
     method: 'POST',
     body: JSON.stringify({ planCode }),
   });
 }
 
-export async function getBillingInvoices(options?: { status?: string; limit?: number }) {
+export async function getBillingInvoices(options?: { status?: string; limit?: number }, tenantId?: string | null) {
   const params = new URLSearchParams();
   if (options?.status) params.append('status', options.status);
   if (options?.limit) params.append('limit', options.limit.toString());
+  if (tenantId) params.append('tenant_id', tenantId);
   return fetchWithAuth(`${BASE_URL}/billing/invoices?${params.toString()}`);
 }
 
-export async function getFeaturesBillingImpact() {
-  return fetchWithAuth(`${BASE_URL}/billing/features-impact`);
+export async function getFeaturesBillingImpact(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/billing/features-impact${qs}`);
 }

@@ -829,9 +829,10 @@ export default function SettingsPage() {
   const handleSaveSecurity = async () => {
     try {
       setSaving(true);
-      await settingsService.updateSecuritySettings(securityForm);
+      const tid = effectiveTenantId ?? undefined;
+      await settingsService.updateSecuritySettings(securityForm, tid);
       showToast('success', 'Paramètres de sécurité enregistrés');
-      const updated = await settingsService.getSecuritySettings();
+      const updated = await settingsService.getSecuritySettings(tid);
       setSecuritySettings(updated);
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
@@ -843,9 +844,10 @@ export default function SettingsPage() {
   const handleSaveOrion = async () => {
     try {
       setSaving(true);
-      await settingsService.updateOrionSettings(orionForm);
+      const tid = effectiveTenantId ?? undefined;
+      await settingsService.updateOrionSettings(orionForm, tid);
       showToast('success', 'Paramètres ORION enregistrés');
-      const updated = await settingsService.getOrionSettings();
+      const updated = await settingsService.getOrionSettings(tid);
       setOrionSettings(updated);
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
@@ -857,9 +859,10 @@ export default function SettingsPage() {
   const handleSaveAtlas = async () => {
     try {
       setSaving(true);
-      await settingsService.updateAtlasSettings(atlasForm);
+      const tid = effectiveTenantId ?? undefined;
+      await settingsService.updateAtlasSettings(atlasForm, tid);
       showToast('success', 'Paramètres ATLAS enregistrés');
-      const updated = await settingsService.getAtlasSettings();
+      const updated = await settingsService.getAtlasSettings(tid);
       setAtlasSettings(updated);
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
@@ -871,9 +874,10 @@ export default function SettingsPage() {
   const handleSaveOffline = async () => {
     try {
       setSaving(true);
-      await settingsService.updateOfflineSyncSettings(offlineForm);
+      const tid = effectiveTenantId ?? undefined;
+      await settingsService.updateOfflineSyncSettings(offlineForm, tid);
       showToast('success', 'Paramètres offline enregistrés');
-      const updated = await settingsService.getOfflineSyncSettings();
+      const updated = await settingsService.getOfflineSyncSettings(tid);
       setOfflineSyncSettings(updated);
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
@@ -1163,9 +1167,10 @@ export default function SettingsPage() {
   const handleSaveCommunication = async () => {
     try {
       setSaving(true);
-      await settingsService.updateCommunicationSettings(communicationForm);
+      const tid = effectiveTenantId ?? undefined;
+      await settingsService.updateCommunicationSettings(communicationForm, tid);
       showToast('success', 'Paramètres de communication enregistrés');
-      const updated = await settingsService.getCommunicationSettings();
+      const updated = await settingsService.getCommunicationSettings(tid);
       setCommunicationSettings(updated);
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
@@ -1384,12 +1389,13 @@ export default function SettingsPage() {
   const handleSaveBilling = async () => {
     try {
       setSaving(true);
+      const tid = effectiveTenantId ?? undefined;
       await settingsService.updateBillingSettings({
         billingCycle: billingForm.billingCycle,
         autoRenew: billingForm.autoRenew,
-      });
+      }, tid);
       showToast('success', 'Paramètres de facturation enregistrés');
-      const updated = await settingsService.getBillingSettings();
+      const updated = await settingsService.getBillingSettings(tid);
       setBillingSettings(updated);
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
@@ -1402,9 +1408,10 @@ export default function SettingsPage() {
     if (!confirm('Êtes-vous sûr de vouloir changer de plan ?')) return;
     try {
       setSaving(true);
-      await settingsService.changePlan(planCode);
+      const tid = effectiveTenantId ?? undefined;
+      await settingsService.changePlan(planCode, tid);
       showToast('success', 'Plan changé avec succès');
-      const updated = await settingsService.getBillingSettings();
+      const updated = await settingsService.getBillingSettings(tid);
       setBillingSettings(updated);
       setBillingForm(updated || {});
     } catch (error: any) {

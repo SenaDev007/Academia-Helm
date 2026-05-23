@@ -13,6 +13,7 @@ import {
   FormModal,
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { classesService } from '@/services/classes.service';
 
 interface Class {
   id: string;
@@ -51,11 +52,8 @@ export default function ClassesPage() {
     try {
       const params = new URLSearchParams({ academicYearId: academicYear.id });
       if (schoolLevel?.id && schoolLevel.id !== 'ALL') params.set('schoolLevelId', schoolLevel.id);
-      const response = await fetch(`/api/classes?${params}`);
-      if (response.ok) {
-        const data = await response.json();
-        setClasses(Array.isArray(data) ? data : (data.data ?? []));
-      }
+      const data = await classesService.getAll(Object.fromEntries(params.entries()));
+      setClasses(Array.isArray(data) ? data : (data.data ?? []));
     } catch (error) {
       console.error('Failed to load classes:', error);
     } finally {
@@ -67,16 +65,12 @@ export default function ClassesPage() {
     if (!form.name || !form.level || !schoolLevel?.id || !academicYear?.id) return;
     setIsSaving(true);
     try {
-      await fetch('/api/classes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: form.name,
-          level: form.level,
-          schoolLevelId: schoolLevel.id,
-          academicYearId: academicYear.id,
-          capacity: form.capacity ? parseInt(form.capacity, 10) : undefined,
-        }),
+      await classesService.create({
+        name: form.name,
+        level: form.level,
+        schoolLevelId: schoolLevel.id,
+        academicYearId: academicYear.id,
+        capacity: form.capacity ? parseInt(form.capacity, 10) : undefined,
       });
       setIsCreateModalOpen(false);
       setForm(EMPTY_FORM);

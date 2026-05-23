@@ -5,6 +5,7 @@ import { BadgeCheck, FileWarning, AlertTriangle, IdCard, Files, CheckCircle2, Lo
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { motion } from 'framer-motion';
 import { LoadingState } from '@/components/ui/feedback/LoadingState';
+import { studentsService } from '@/services/students.service';
 
 export default function StudentComplianceContent() {
   const { academicYear, schoolLevel } = useModuleContext();
@@ -17,12 +18,11 @@ export default function StudentComplianceContent() {
   }, [academicYear]);
 
   const loadStats = async () => {
+    if (!academicYear) return;
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/students/id-cards/stats?academicYearId=${academicYear?.id}`);
-      if (res.ok) {
-        setStats(await res.json());
-      }
+      const data = await studentsService.getIdCardStats(academicYear.id);
+      setStats(data);
     } catch (e) {
       console.error('Failed to load ID card stats:', e);
     } finally {
@@ -34,22 +34,15 @@ export default function StudentComplianceContent() {
     if (!academicYear) return;
     setIsGenerating(true);
     try {
-      const res = await fetch('/api/students/id-cards/generate-bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          academicYearId: academicYear.id,
-          schoolLevelId: schoolLevel?.id,
-        }),
+      const result = await studentsService.generateBulkIdCards({
+        academicYearId: academicYear.id,
+        schoolLevelId: schoolLevel?.id || '',
       });
-      if (res.ok) {
-        const result = await res.json();
-        // Update local stats after successful generation
-        setStats((prev: any) => ({ 
-          ...prev, 
-          generatedCards: (prev?.generatedCards || 0) + (result?.succeeded || 0) 
-        }));
-      }
+      // Update local stats after successful generation
+      setStats((prev: any) => ({ 
+        ...prev, 
+        generatedCards: (prev?.generatedCards || 0) + (result?.succeeded || 0) 
+      }));
     } catch (e) {
       console.error('Bulk generation failed', e);
     } finally {

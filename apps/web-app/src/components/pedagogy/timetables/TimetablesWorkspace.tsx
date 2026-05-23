@@ -40,6 +40,7 @@ import {
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/components/ui/use-toast';
 
 // --- Types ---
 
@@ -85,6 +86,7 @@ const HOURS = Array.from({ length: 11 }, (_, i) => i + 8); // 8:00 to 18:00
 
 export default function TimetablesWorkspace() {
   const { academicYear, schoolLevel } = useModuleContext();
+  const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   
   // State
@@ -186,7 +188,11 @@ export default function TimetablesWorkspace() {
       loadEntries();
       setModal('none');
     } catch (e: any) {
-      alert(e.message || "Erreur lors de l'ajout. Vérifiez les conflits.");
+      toast({
+        title: "Erreur",
+        description: e.message || "Erreur lors de l'ajout. Vérifiez les conflits.",
+        variant: "destructive"
+      });
     }
   };
 

@@ -791,6 +791,22 @@ export class StudentsLifecycleService {
     });
   }
 
+  /** Liste de toutes les inscriptions (enrollments) */
+  async getEnrollments(tenantId: string, params: { academicYearId?: string, schoolLevelId?: string }) {
+    return this.prisma.studentEnrollment.findMany({
+      where: {
+        tenantId,
+        ...(params.academicYearId && { academicYearId: params.academicYearId }),
+        ...(params.schoolLevelId && { schoolLevelId: params.schoolLevelId }),
+      },
+      include: {
+        student: true,
+        class: true,
+      },
+      orderBy: { enrollmentDate: 'desc' },
+    });
+  }
+
   /** Historique unifié : admissions, réinscriptions, transferts */
   async getStudentHistory(tenantId: string, studentId: string) {
     const student = await this.prisma.student.findFirst({

@@ -23,8 +23,10 @@ import { motion } from 'framer-motion';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/components/ui/use-toast';
+import { financeService } from '@/services/finance.service';
 
 const formatXOF = (n: number) =>
   new Intl.NumberFormat('fr-FR', { 
@@ -35,6 +37,7 @@ const formatXOF = (n: number) =>
 
 export default function FinanceReportsContent() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const [kpi, setKpi] = useState<any>(null);
   const [classData, setClassData] = useState<any[]>([]);
   const [expenseData, setExpenseData] = useState<any[]>([]);
@@ -46,9 +49,9 @@ export default function FinanceReportsContent() {
     const params = new URLSearchParams({ academicYearId: academicYear.id });
     
     Promise.all([
-      fetch(`/api/finance/reports/kpi?${params}`, { credentials: 'include' }).then(r => r.json()),
-      fetch(`/api/finance/reports/class-encaissements?${params}`, { credentials: 'include' }).then(r => r.json()),
-      fetch(`/api/finance/reports/expense-by-category?${params}`, { credentials: 'include' }).then(r => r.json())
+      financeService.getKpiReports(Object.fromEntries(params.entries())),
+      financeService.getClassEncaissements(Object.fromEntries(params.entries())),
+      financeService.getExpenseByCategory(Object.fromEntries(params.entries()))
     ]).then(([k, c, e]) => {
       setKpi(k);
       setClassData(Array.isArray(c) ? c : []);
@@ -68,17 +71,13 @@ export default function FinanceReportsContent() {
   const handleExport = async (type: string) => {
     if (!academicYear?.id) return;
     try {
-      await fetch('/api/finance/reports/export', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          academicYearId: academicYear.id,
-          reportType: type,
-        }),
+      await financeService.exportReports({
+        academicYearId: academicYear.id,
+        reportType: type,
       });
-      alert(`Export ${type} lancé avec succès. Le fichier sera disponible dans vos téléchargements.`);
-    } catch (err) {
-      console.error(err);
+      toast({ title: 'Export lancé', description: `L'export ${type} est en cours. Le fichier sera disponible dans vos téléchargements.` });
+    } catch (err: any) {
+      toast({ title: 'Erreur export', description: err?.message || 'Impossible de lancer l\'export', variant: 'destructive' });
     }
   };
 

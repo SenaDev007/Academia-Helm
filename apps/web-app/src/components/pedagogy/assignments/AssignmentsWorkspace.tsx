@@ -37,6 +37,8 @@ import {
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
+import { pedagogyService } from '@/services/pedagogy.service';
+import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 
 // --- Types ---
@@ -68,6 +70,7 @@ interface TeacherProfile {
 
 export default function AssignmentsWorkspace() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   
   // Data
@@ -90,12 +93,12 @@ export default function AssignmentsWorkspace() {
     setLoading(true);
     try {
       const [classesData, teachersData] = await Promise.all([
-        pedagogyFetch<AcademicClass[]>(`/api/pedagogy/academic-classes?academicYearId=${academicYear.id}`),
-        pedagogyFetch<TeacherProfile[]>(`/api/pedagogy/teacher-profiles?academicYearId=${academicYear.id}`)
+        pedagogyService.getAcademicClasses(academicYear.id),
+        pedagogyService.getTeacherProfiles(academicYear.id)
       ]);
-      setClasses(classesData);
-      setTeachers(teachersData);
-      if (classesData.length > 0) setSelectedClassId(classesData[0].id);
+      setClasses(classesData || []);
+      setTeachers(teachersData || []);
+      if (classesData && classesData.length > 0) setSelectedClassId(classesData[0].id);
     } catch (e) {
       console.error(e);
     } finally {
@@ -106,8 +109,8 @@ export default function AssignmentsWorkspace() {
   const loadClassSubjects = useCallback(async () => {
     if (!selectedClassId || !academicYear?.id) return;
     try {
-      const data = await pedagogyFetch<ClassSubject[]>(`/api/pedagogy/class-subjects/${selectedClassId}?academicYearId=${academicYear.id}`);
-      setClassSubjects(data);
+      const data = await pedagogyService.getClassSubjects(selectedClassId, academicYear.id);
+      setClassSubjects(data || []);
     } catch (e) {
       console.error(e);
     }
@@ -121,29 +124,40 @@ export default function AssignmentsWorkspace() {
   const handleAssignTeacher = async (teacherId: string) => {
     if (!activeSubject || !academicYear?.id) return;
     try {
-      await pedagogyFetch('/api/pedagogy/teacher-class-assignments', {
-        method: 'POST',
-        body: {
-          academicYearId: academicYear.id,
-          teacherId,
-          classSubjectId: activeSubject.id
-        }
+      await pedagogyService.createTeacherAssignment({
+        academicYearId: academicYear.id,
+        teacherId,
+        classSubjectId: activeSubject.id
       });
       loadClassSubjects();
       setModal('none');
-    } catch (e) {
-      console.error(e);
+      toast({
+        title: "Succès",
+        description: "Enseignant affecté avec succès.",
+      });
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e.message || "Impossible d'affecter l'enseignant.",
+        variant: "destructive"
+      });
     }
   };
 
   const handleRemoveAssignment = async (assignmentId: string) => {
     try {
-      await pedagogyFetch(`/api/pedagogy/teacher-class-assignments/${assignmentId}`, {
-        method: 'DELETE'
-      });
+      await pedagogyService.deleteTeacherAssignment(assignmentId);
       loadClassSubjects();
-    } catch (e) {
-      console.error(e);
+      toast({
+        title: "Succès",
+        description: "Affectation retirée avec succès.",
+      });
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e.message || "Impossible de retirer l'affectation.",
+        variant: "destructive"
+      });
     }
   };
 

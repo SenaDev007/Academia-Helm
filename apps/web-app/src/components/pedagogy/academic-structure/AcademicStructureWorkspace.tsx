@@ -34,6 +34,7 @@ import {
   SETTINGS_SCHOOL_LEVELS_UPDATED_EVENT,
   SETTINGS_BILINGUAL_UPDATED_EVENT,
 } from '@/lib/settings/events';
+import { useToast } from '@/components/ui/use-toast';
 
 const PRIMARY = '#1A2BA6';
 const ACCENT = '#F5A623';
@@ -163,8 +164,20 @@ export function AcademicStructureWorkspace() {
   } | null>(null);
   const bilingualEnabled = bilingualSettings?.isEnabled ?? false;
 
+  const { toast } = useToast();
   const [tab, setTab] = useState<TabId>('levels');
-  const [notice, setNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [notice, setNoticeState] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  const setNotice = useCallback((val: { type: 'ok' | 'err'; text: string } | null) => {
+    setNoticeState(val);
+    if (val) {
+      toast({
+        title: val.type === 'ok' ? 'Succès' : 'Erreur',
+        description: val.text,
+        variant: val.type === 'ok' ? 'success' : 'destructive',
+      });
+    }
+  }, [toast]);
 
   const [levels, setLevels] = useState<AcademicLevelRow[]>([]);
   const [cycles, setCycles] = useState<AcademicCycleRow[]>([]);

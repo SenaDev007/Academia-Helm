@@ -17,7 +17,7 @@ import { TransfersPrismaService } from './transfers-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 
-@Controller('api/transfers')
+@Controller('transfers')
 @UseGuards(JwtAuthGuard)
 export class TransfersPrismaController {
   constructor(private readonly transfersService: TransfersPrismaService) {}

@@ -9,6 +9,7 @@ import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { financeService } from '@/services/finance.service';
 
 export default function FinanceSettingsPage() {
   const [saving, setSaving] = useState(false);
@@ -29,8 +30,7 @@ export default function FinanceSettingsPage() {
   });
 
   useEffect(() => {
-    fetch('/api/finance/settings', { credentials: 'include' })
-      .then((r) => (r.ok ? r.json() : null))
+    financeService.getSettings()
       .then((s) => {
         if (s) {
           setForm((f) => ({
@@ -55,11 +55,8 @@ export default function FinanceSettingsPage() {
 
   const handleSave = async () => {
     setSaving(true);
-    await fetch('/api/finance/settings', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
+    try {
+      await financeService.updateSettings({
         blockingThreshold: form.blockingThreshold ? Number(form.blockingThreshold) : undefined,
         reminderWarningDays: form.reminderWarningDays ? Number(form.reminderWarningDays) : undefined,
         reminderUrgentDays: form.reminderUrgentDays ? Number(form.reminderUrgentDays) : undefined,
@@ -73,8 +70,10 @@ export default function FinanceSettingsPage() {
         fedapayEnabled: form.fedapayEnabled,
         ...(form.fedapayPublicKey ? { fedapayPublicKey: form.fedapayPublicKey } : {}),
         ...(form.fedapaySecretKey ? { fedapaySecretKey: form.fedapaySecretKey } : {}),
-      }),
-    });
+      });
+    } catch (e) {
+      console.error(e);
+    }
     setSaving(false);
   };
 

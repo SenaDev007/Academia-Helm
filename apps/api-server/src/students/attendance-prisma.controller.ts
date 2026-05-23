@@ -17,7 +17,7 @@ import { AttendancePrismaService } from './attendance-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 
-@Controller('api/attendance')
+@Controller('attendance')
 @UseGuards(JwtAuthGuard)
 export class AttendancePrismaController {
   constructor(private readonly attendanceService: AttendancePrismaService) {}

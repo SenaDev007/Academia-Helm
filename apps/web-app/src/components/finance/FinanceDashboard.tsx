@@ -27,9 +27,11 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 import { SubModuleNavigation } from '@/components/modules/blueprint';
 import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 import Link from 'next/link';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { financeService } from '@/services/finance.service';
+import { orionService } from '@/services/orion.service';
 
 const formatXOF = (n: number) =>
   new Intl.NumberFormat('fr-FR', {
@@ -76,8 +78,7 @@ function FinanceDashboardArrears({
     setLoading(true);
     const params = new URLSearchParams({ academicYearId });
     if (schoolLevelId) params.set('schoolLevelId', schoolLevelId);
-    fetch(`/api/finance/collection/arrears?${params}`, { credentials: 'include' })
-      .then((r) => (r.ok ? r.json() : []))
+    financeService.getArrears(Object.fromEntries(params.entries()))
       .then((data) => setArrears(Array.isArray(data) ? data : []))
       .catch(() => setArrears([]))
       .finally(() => setLoading(false));
@@ -171,15 +172,11 @@ export default function FinanceDashboard() {
       if (schoolLevel?.id) params.set('schoolLevelId', schoolLevel.id);
 
       try {
-        const [kpiRes, monthlyRes, orionRes] = await Promise.all([
-          fetch(`/api/finance/reports/kpi?${params}`, { credentials: 'include' }),
-          fetch(`/api/finance/reports/monthly-encaissements?${params}`, { credentials: 'include' }),
-          fetch(`/api/finance/orion/alerts?academicYearId=${academicYear.id}`, { credentials: 'include' }),
+        const [kpi, monthly, alerts] = await Promise.all([
+          financeService.getKpiReports(Object.fromEntries(params.entries())).catch(() => ({})),
+          financeService.getMonthlyEncaissements(Object.fromEntries(params.entries())).catch(() => []),
+          orionService.getAlerts({ academicYearId: academicYear.id }).catch(() => []),
         ]);
-
-        const kpi = kpiRes.ok ? await kpiRes.json() : {};
-        const monthly = monthlyRes.ok ? await monthlyRes.json() : [];
-        const alerts = orionRes.ok ? await orionRes.json() : [];
 
         setKpis(kpi);
         setMonthlyData(Array.isArray(monthly) ? monthly : []);

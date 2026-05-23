@@ -40,6 +40,8 @@ import {
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAuth } from '@/hooks/useAuth';
 import { pedagogyFetch, academicStructureUrl } from '@/lib/pedagogy/academic-structure-client';
+import { pedagogyService } from '@/services/pedagogy.service';
+import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -79,6 +81,7 @@ type SubTab = 'catalogue' | 'series' | 'classes' | 'programs';
 export default function SubjectsWorkspace() {
   const { academicYear, schoolLevel, tenantId } = useModuleContext();
   const { user } = useAuth();
+  const { toast } = useToast();
   const [tab, setTab] = useState<SubTab>('catalogue');
   const [loading, setLoading] = useState(false);
 
@@ -86,7 +89,26 @@ export default function SubjectsWorkspace() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [series, setSeries] = useState<AcademicSeries[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
+  const [levels, setLevels] = useState<any[]>([]);
   const [search, setSearch] = useState('');
+
+  // Form states
+  const [subjectForm, setSubjectForm] = useState({
+    id: '',
+    code: '',
+    name: '',
+    coefficient: 1,
+    weeklyHours: 4,
+    schoolLevelId: '',
+    description: '',
+  });
+
+  const [seriesForm, setSeriesForm] = useState({
+    id: '',
+    name: '',
+    description: '',
+    levelId: '',
+  });
 
   // Mass Assignment State
   const [selectedClasses, setSelectedClasses] = useState<string[]>([]);
@@ -98,7 +120,7 @@ export default function SubjectsWorkspace() {
   });
 
   // Modals
-  const [modal, setModal] = useState<'none' | 'create-subject' | 'create-series' | 'edit-subject' | 'mass-assignment'>('none');
+  const [modal, setModal] = useState<'none' | 'create-subject' | 'create-series' | 'edit-subject' | 'edit-series' | 'mass-assignment'>('none');
 
   const [selected, setSelected] = useState<any>(null);
 
@@ -117,8 +139,8 @@ export default function SubjectsWorkspace() {
     if (!academicYear?.id) return;
     setLoading(true);
     try {
-      const data = await pedagogyFetch<Subject[]>(`/api/subjects?academicYearId=${academicYear.id}`);
-      setSubjects(data);
+      const data = await pedagogyService.getSubjects(academicYear.id);
+      setSubjects(data || []);
     } catch (e) {
       console.error(e);
     } finally {
@@ -129,8 +151,8 @@ export default function SubjectsWorkspace() {
   const loadSeries = useCallback(async () => {
     if (!academicYear?.id) return;
     try {
-      const data = await pedagogyFetch<AcademicSeries[]>(`/api/pedagogy/academic-series?academicYearId=${academicYear.id}`);
-      setSeries(data);
+      const data = await pedagogyService.getSeries(academicYear.id);
+      setSeries(data || []);
     } catch (e) {
       console.error(e);
     }
@@ -139,8 +161,18 @@ export default function SubjectsWorkspace() {
   const loadClasses = useCallback(async () => {
     if (!academicYear?.id) return;
     try {
-      const data = await pedagogyFetch<any[]>(`/api/pedagogy/academic-classes?academicYearId=${academicYear.id}`);
-      setClasses(data);
+      const data = await pedagogyService.getAcademicClasses(academicYear.id);
+      setClasses(data || []);
+    } catch (e) {
+      console.error(e);
+    }
+  }, [academicYear?.id]);
+
+  const loadLevels = useCallback(async () => {
+    if (!academicYear?.id) return;
+    try {
+      const data = await pedagogyFetch<any[]>(`/api/pedagogy/academic-structure/levels?academicYearId=${academicYear.id}`);
+      setLevels(data || []);
     } catch (e) {
       console.error(e);
     }
@@ -150,7 +182,8 @@ export default function SubjectsWorkspace() {
     loadSubjects();
     loadSeries();
     loadClasses();
-  }, [loadSubjects, loadSeries, loadClasses]);
+    loadLevels();
+  }, [loadSubjects, loadSeries, loadClasses, loadLevels]);
 
   const [uploading, setUploading] = useState(false);
 
@@ -168,12 +201,129 @@ export default function SubjectsWorkspace() {
           useSeriesCoefficients: massConfig.useSeries
         }
        });
+       toast({
+         title: "Succès",
+         description: "Affectation en masse effectuée avec succès.",
+       });
        setModal('none');
        setSelectedClasses([]);
        setSelectedSubjects([]);
-     } catch (e) {
-       console.error(e);
+       loadSubjects();
+     } catch (e: any) {
+       toast({
+         title: "Erreur",
+         description: e.message || "Impossible de réaliser l'affectation.",
+         variant: "destructive"
+       });
      }
+  };
+
+  const handleSaveSubject = async () => {
+    if (!subjectForm.code.trim() || !subjectForm.name.trim() || !subjectForm.schoolLevelId) {
+      toast({
+        title: "Champs manquants",
+        description: "Veuillez remplir le code, le nom et sélectionner un niveau.",
+        variant: "destructive"
+      });
+      return;
+    }
+    try {
+      if (modal === 'create-subject') {
+        await pedagogyService.createSubject({
+          academicYearId: academicYear?.id,
+          schoolLevelId: subjectForm.schoolLevelId,
+          code: subjectForm.code.trim(),
+          name: subjectForm.name.trim(),
+          coefficient: Number(subjectForm.coefficient) || 1.0,
+          weeklyHours: Number(subjectForm.weeklyHours) || 0,
+          description: subjectForm.description,
+        });
+        toast({
+          title: "Succès",
+          description: "La matière a été créée.",
+        });
+      } else {
+        await pedagogyService.updateSubject(subjectForm.id, {
+          code: subjectForm.code.trim(),
+          name: subjectForm.name.trim(),
+          coefficient: Number(subjectForm.coefficient) || 1.0,
+          weeklyHours: Number(subjectForm.weeklyHours) || 0,
+          description: subjectForm.description,
+        });
+        toast({
+          title: "Succès",
+          description: "La matière a été mise à jour.",
+        });
+      }
+      setModal('none');
+      loadSubjects();
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e.message || "Une erreur est survenue.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleDeleteSubject = async (id: string) => {
+    if (!confirm("Voulez-vous vraiment supprimer cette matière ?")) return;
+    try {
+      await pedagogyService.deleteSubject(id);
+      toast({
+        title: "Succès",
+        description: "Matière supprimée avec succès.",
+      });
+      loadSubjects();
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e.message || "Impossible de supprimer la matière.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleSaveSeries = async () => {
+    if (!seriesForm.name.trim() || !seriesForm.levelId) {
+      toast({
+        title: "Champs manquants",
+        description: "Veuillez saisir un nom et sélectionner un niveau.",
+        variant: "destructive"
+      });
+      return;
+    }
+    try {
+      if (modal === 'create-series') {
+        await pedagogyService.createSeries({
+          academicYearId: academicYear?.id,
+          levelId: seriesForm.levelId,
+          name: seriesForm.name.trim(),
+          description: seriesForm.description.trim(),
+        });
+        toast({
+          title: "Succès",
+          description: "La série a été créée.",
+        });
+      } else {
+        await pedagogyService.updateSeries(seriesForm.id, {
+          name: seriesForm.name.trim(),
+          description: seriesForm.description.trim(),
+        });
+        toast({
+          title: "Succès",
+          description: "La série a été mise à jour.",
+        });
+      }
+      setModal('none');
+      loadSeries();
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e.message || "Une erreur est survenue.",
+        variant: "destructive"
+      });
+    }
   };
 
   const handleUploadProgram = async (subjectId: string, file: File) => {
@@ -373,10 +523,27 @@ export default function SubjectsWorkspace() {
                           </td>
                           <td className="px-4 py-5 text-right">
                             <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button className="p-2 rounded-xl hover:bg-white hover:shadow-sm text-gray-400 hover:text-indigo-600 transition-all">
+                              <button 
+                                onClick={() => {
+                                  setSubjectForm({
+                                    id: subject.id,
+                                    code: subject.code,
+                                    name: subject.name,
+                                    coefficient: subject.coefficient,
+                                    weeklyHours: subject.weeklyHours || 0,
+                                    schoolLevelId: subject.schoolLevel?.id || '',
+                                    description: subject.description || '',
+                                  });
+                                  setModal('edit-subject');
+                                }}
+                                className="p-2 rounded-xl hover:bg-white hover:shadow-sm text-gray-400 hover:text-indigo-600 transition-all"
+                              >
                                 <Edit className="w-4 h-4" />
                               </button>
-                              <button className="p-2 rounded-xl hover:bg-white hover:shadow-sm text-gray-400 hover:text-rose-600 transition-all">
+                              <button 
+                                onClick={() => handleDeleteSubject(subject.id)}
+                                className="p-2 rounded-xl hover:bg-white hover:shadow-sm text-gray-400 hover:text-rose-600 transition-all"
+                              >
                                 <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
@@ -406,7 +573,19 @@ export default function SubjectsWorkspace() {
 
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                  {series.map(s => (
-                   <div key={s.id} className="p-5 rounded-3xl border border-gray-100 hover:border-indigo-200 transition-all hover:shadow-lg hover:shadow-indigo-50 group cursor-pointer relative overflow-hidden">
+                   <div 
+                     key={s.id} 
+                     onClick={() => {
+                       setSeriesForm({
+                         id: s.id,
+                         name: s.name,
+                         description: s.description || '',
+                         levelId: s.level?.id || '',
+                       });
+                       setModal('edit-series');
+                     }}
+                     className="p-5 rounded-3xl border border-gray-100 hover:border-indigo-200 transition-all hover:shadow-lg hover:shadow-indigo-50 group cursor-pointer relative overflow-hidden"
+                   >
                      <div className="absolute top-0 right-0 p-4 opacity-[0.03] scale-150 rotate-12">
                        <Layers className="w-20 h-20 text-indigo-900" />
                      </div>
@@ -425,7 +604,15 @@ export default function SubjectsWorkspace() {
                    </div>
                  ))}
                  <button 
-                  onClick={() => setModal('create-series')}
+                  onClick={() => {
+                    setSeriesForm({
+                      id: '',
+                      name: '',
+                      description: '',
+                      levelId: levels.find(l => /secondaire/i.test(l.name))?.id || levels[0]?.id || '',
+                    });
+                    setModal('create-series');
+                  }}
                   className="p-5 rounded-3xl border-2 border-dashed border-gray-200 hover:border-indigo-400 hover:bg-indigo-50/30 transition-all flex flex-col items-center justify-center gap-3 text-gray-400 hover:text-indigo-600"
                  >
                    <div className="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center">
@@ -589,32 +776,107 @@ export default function SubjectsWorkspace() {
         title={modal === 'edit-subject' ? 'Modifier la matière' : 'Nouvelle Matière'}
         isOpen={modal === 'create-subject' || modal === 'edit-subject'}
         onClose={() => setModal('none')}
-        onConfirm={async () => {
-          // Logic for save
-          setModal('none');
-          loadSubjects();
-        }}
+        onConfirm={handleSaveSubject}
       >
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
               <label className="text-xs font-black uppercase text-gray-400">Code Matière</label>
-              <input type="text" className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 font-bold" placeholder="EX: MATH-01" />
+              <input 
+                type="text" 
+                className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 font-bold" 
+                placeholder="EX: MATH-01" 
+                value={subjectForm.code}
+                onChange={(e) => setSubjectForm({ ...subjectForm, code: e.target.value })}
+              />
             </div>
             <div className="space-y-1">
               <label className="text-xs font-black uppercase text-gray-400">Nom</label>
-              <input type="text" className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 font-bold" placeholder="Mathématiques" />
+              <input 
+                type="text" 
+                className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 font-bold" 
+                placeholder="Mathématiques" 
+                value={subjectForm.name}
+                onChange={(e) => setSubjectForm({ ...subjectForm, name: e.target.value })}
+              />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
              <div className="space-y-1">
                <label className="text-xs font-black uppercase text-gray-400">Coefficient</label>
-               <input type="number" className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 font-bold" placeholder="2" />
+               <input 
+                 type="number" 
+                 className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 font-bold" 
+                 placeholder="2" 
+                 value={subjectForm.coefficient}
+                 onChange={(e) => setSubjectForm({ ...subjectForm, coefficient: Number(e.target.value) })}
+               />
              </div>
              <div className="space-y-1">
                <label className="text-xs font-black uppercase text-gray-400">Volume Hebdo (h)</label>
-               <input type="number" className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 font-bold" placeholder="4" />
+               <input 
+                 type="number" 
+                 className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 font-bold" 
+                 placeholder="4" 
+                 value={subjectForm.weeklyHours}
+                 onChange={(e) => setSubjectForm({ ...subjectForm, weeklyHours: Number(e.target.value) })}
+               />
              </div>
+          </div>
+          <div className="space-y-1">
+             <label className="text-xs font-black uppercase text-gray-400">Niveau Scolaire</label>
+             <select
+               className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm"
+               value={subjectForm.schoolLevelId}
+               onChange={(e) => setSubjectForm({ ...subjectForm, schoolLevelId: e.target.value })}
+             >
+               <option value="">Sélectionner un niveau</option>
+               {levels.map(l => (
+                 <option key={l.id} value={l.id}>{l.name}</option>
+               ))}
+             </select>
+          </div>
+        </div>
+      </FormModal>
+
+      <FormModal
+        title={modal === 'edit-series' ? 'Modifier la série' : 'Nouvelle Série'}
+        isOpen={modal === 'create-series' || modal === 'edit-series'}
+        onClose={() => setModal('none')}
+        onConfirm={handleSaveSeries}
+      >
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <label className="text-xs font-black uppercase text-gray-400">Nom de la série</label>
+            <input 
+              type="text" 
+              className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 font-bold" 
+              placeholder="EX: Série D" 
+              value={seriesForm.name}
+              onChange={(e) => setSeriesForm({ ...seriesForm, name: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-black uppercase text-gray-400">Niveau</label>
+            <select
+              value={seriesForm.levelId}
+              onChange={(e) => setSeriesForm({ ...seriesForm, levelId: e.target.value })}
+              className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm"
+            >
+              <option value="">Sélectionner un niveau</option>
+              {levels.map(l => (
+                <option key={l.id} value={l.id}>{l.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-black uppercase text-gray-400">Description</label>
+            <textarea 
+              className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm" 
+              placeholder="Description ou commentaires..." 
+              value={seriesForm.description}
+              onChange={(e) => setSeriesForm({ ...seriesForm, description: e.target.value })}
+            />
           </div>
         </div>
       </FormModal>

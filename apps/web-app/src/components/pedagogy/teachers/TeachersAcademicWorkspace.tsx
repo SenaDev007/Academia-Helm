@@ -40,6 +40,8 @@ import {
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
+import { pedagogyService } from '@/services/pedagogy.service';
+import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 
 // --- Types ---
@@ -68,6 +70,7 @@ interface TeacherAcademicProfile {
 
 export default function TeachersAcademicWorkspace() {
   const { academicYear, tenantId } = useModuleContext();
+  const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [profiles, setProfiles] = useState<TeacherAcademicProfile[]>([]);
@@ -85,11 +88,11 @@ export default function TeachersAcademicWorkspace() {
     setLoading(true);
     try {
       const [teachersData, profilesData] = await Promise.all([
-        pedagogyFetch<Teacher[]>('/api/teachers'),
-        pedagogyFetch<TeacherAcademicProfile[]>(`/api/pedagogy/teacher-profiles?academicYearId=${academicYear.id}`)
+        pedagogyService.getTeachers(),
+        pedagogyService.getTeacherProfiles(academicYear.id)
       ]);
-      setTeachers(teachersData);
-      setProfiles(profilesData);
+      setTeachers(teachersData || []);
+      setProfiles(profilesData || []);
     } catch (e) {
       console.error(e);
     } finally {
@@ -114,62 +117,82 @@ export default function TeachersAcademicWorkspace() {
   const handleCreateProfile = async () => {
     if (!selectedTeacherId || !academicYear?.id) return;
     try {
-      const newProfile = await pedagogyFetch<TeacherAcademicProfile>('/api/pedagogy/teacher-profiles', {
-        method: 'POST',
-        body: {
-          academicYearId: academicYear.id,
-          teacherId: selectedTeacherId,
-          maxWeeklyHours: 18, // Default
-          isSemainier: false
-        }
+      const newProfile = await pedagogyService.createTeacherProfile({
+        academicYearId: academicYear.id,
+        teacherId: selectedTeacherId,
+        maxWeeklyHours: 18, // Default
+        isSemainier: false
       });
       setProfiles(prev => [...prev, newProfile]);
       setActiveProfile(newProfile);
-    } catch (e) {
-      console.error(e);
+      toast({
+        title: "Succès",
+        description: "Profil académique initialisé avec succès.",
+      });
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e.message || "Erreur lors de la création du profil.",
+        variant: "destructive"
+      });
     }
   };
 
   const handleUpdateProfile = async (data: any) => {
     if (!activeProfile) return;
     try {
-      const updated = await pedagogyFetch<TeacherAcademicProfile>(`/api/pedagogy/teacher-profiles/${activeProfile.id}`, {
-        method: 'PUT',
-        body: data
-      });
+      const updated = await pedagogyService.updateTeacherProfile(activeProfile.id, data);
       setProfiles(prev => prev.map(p => p.id === updated.id ? updated : p));
       setActiveProfile(updated);
       setModal('none');
-    } catch (e) {
-      console.error(e);
+      toast({
+        title: "Succès",
+        description: "Profil mis à jour.",
+      });
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e.message || "Impossible de mettre à jour le profil.",
+        variant: "destructive"
+      });
     }
   };
 
   const handleCreateTeacher = async (data: any) => {
     try {
-      const newTeacher = await pedagogyFetch<Teacher>('/api/teachers', {
-        method: 'POST',
-        body: data
-      });
+      const newTeacher = await pedagogyService.createTeacher(data);
       setTeachers(prev => [...prev, newTeacher]);
       setModal('none');
       selectTeacher(newTeacher.id);
-    } catch (e) {
-      console.error(e);
+      toast({
+        title: "Succès",
+        description: "Enseignant créé.",
+      });
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e.message || "Erreur lors de la création.",
+        variant: "destructive"
+      });
     }
   };
 
   const handleUpdateTeacher = async (data: any) => {
     if (!selectedTeacherId) return;
     try {
-      const updated = await pedagogyFetch<Teacher>(`/api/teachers/${selectedTeacherId}`, {
-        method: 'PUT',
-        body: data
-      });
+      const updated = await pedagogyService.updateTeacher(selectedTeacherId, data);
       setTeachers(prev => prev.map(t => t.id === updated.id ? updated : t));
       setModal('none');
-    } catch (e) {
-      console.error(e);
+      toast({
+        title: "Succès",
+        description: "Informations de l'enseignant mises à jour.",
+      });
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e.message || "Erreur lors de la modification.",
+        variant: "destructive"
+      });
     }
   };
 
@@ -177,8 +200,8 @@ export default function TeachersAcademicWorkspace() {
   const [subjects, setSubjects] = useState<any[]>([]);
   const loadSubjects = useCallback(async () => {
      if (!academicYear?.id) return;
-     const data = await pedagogyFetch<any[]>(`/api/subjects?academicYearId=${academicYear.id}`);
-     setSubjects(data);
+     const data = await pedagogyService.getSubjects(academicYear.id);
+     setSubjects(data || []);
   }, [academicYear?.id]);
 
   useEffect(() => {
@@ -201,8 +224,16 @@ export default function TeachersAcademicWorkspace() {
       setProfiles(prev => prev.map(p => p.id === updated.id ? updated : p));
       setActiveProfile(updated);
       setModal('none');
-    } catch (e) {
-      console.error(e);
+      toast({
+        title: "Succès",
+        description: "Matière ajoutée aux habilitations.",
+      });
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e.message || "Erreur lors de l'ajout.",
+        variant: "destructive"
+      });
     }
   };
 
@@ -215,8 +246,16 @@ export default function TeachersAcademicWorkspace() {
       const updated = await pedagogyFetch<TeacherAcademicProfile>(`/api/pedagogy/teacher-profiles/${activeProfile.id}`);
       setProfiles(prev => prev.map(p => p.id === updated.id ? updated : p));
       setActiveProfile(updated);
-    } catch (e) {
-      console.error(e);
+      toast({
+        title: "Succès",
+        description: "Habilitation retirée.",
+      });
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e.message || "Erreur lors du retrait.",
+        variant: "destructive"
+      });
     }
   };
 
@@ -238,8 +277,16 @@ export default function TeachersAcademicWorkspace() {
       setProfiles(prev => prev.map(p => p.id === updated.id ? updated : p));
       setActiveProfile(updated);
       setModal('none');
-    } catch (e) {
-      console.error(e);
+      toast({
+        title: "Succès",
+        description: "Disponibilité ajoutée.",
+      });
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e.message || "Erreur lors de l'ajout.",
+        variant: "destructive"
+      });
     }
   };
 
@@ -252,8 +299,16 @@ export default function TeachersAcademicWorkspace() {
       const updated = await pedagogyFetch<TeacherAcademicProfile>(`/api/pedagogy/teacher-profiles/${activeProfile.id}`);
       setProfiles(prev => prev.map(p => p.id === updated.id ? updated : p));
       setActiveProfile(updated);
-    } catch (e) {
-      console.error(e);
+      toast({
+        title: "Succès",
+        description: "Disponibilité supprimée.",
+      });
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e.message || "Erreur lors de la suppression.",
+        variant: "destructive"
+      });
     }
   };
 

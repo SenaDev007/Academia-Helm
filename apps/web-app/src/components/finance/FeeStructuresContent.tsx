@@ -11,8 +11,12 @@ import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/components/ui/use-toast';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { financeService } from '@/services/finance.service';
+import { classesService } from '@/services/classes.service';
+import { getAcademicYears } from '@/services/settings.service';
 import FeeStructureModal from './FeeStructureModal';
 import FeeOverrideModal from './FeeOverrideModal';
 
@@ -26,6 +30,7 @@ const FEE_TYPES = [
 
 export default function FeeStructuresContent() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const [structures, setStructures] = useState<any[]>([]);
   const [levels, setLevels] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
@@ -47,11 +52,8 @@ export default function FeeStructuresContent() {
       const params = new URLSearchParams({ academicYearId: academicYear.id });
       if (filterLevelId) params.set('levelId', filterLevelId);
       if (filterClassId) params.set('classId', filterClassId);
-      const res = await fetch(`/api/finance/fee-structures?${params}`, { credentials: 'include' });
-      if (res.ok) {
-        const data = await res.json();
-        setStructures(Array.isArray(data) ? data : []);
-      }
+      const data = await financeService.getFeeStructures(Object.fromEntries(params.entries()));
+      setStructures(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error(e);
     } finally {
@@ -64,97 +66,64 @@ export default function FeeStructuresContent() {
   }, [academicYear?.id, filterLevelId, filterClassId]);
 
   useEffect(() => {
-    fetch('/api/classes', { credentials: 'include' })
-      .then((r) => r.ok ? r.json() : [])
-      .then((d) => setClasses(Array.isArray(d) ? d : []));
-    fetch('/api/school-levels', { credentials: 'include' })
-      .then((r) => r.ok ? r.json() : [])
-      .then((d) => setLevels(Array.isArray(d) ? d : []));
-    fetch('/api/academic-years', { credentials: 'include' })
-      .then((r) => r.ok ? r.json() : [])
-      .then((d) => setAcademicYears(Array.isArray(d) ? d : []));
+    classesService.getAll({})
+      .then((d) => setClasses(Array.isArray(d) ? d : (d.data ?? [])))
+      .catch(() => setClasses([]));
+    fetch('/api/school-levels')
+      .then((res) => res.json())
+      .then((d) => setLevels(Array.isArray(d) ? d.filter((l: any) => l.id !== 'ALL') : []))
+      .catch(() => setLevels([]));
+    getAcademicYears()
+      .then((d) => setAcademicYears(Array.isArray(d) ? d : (d.data ?? [])))
+      .catch(() => setAcademicYears([]));
   }, []);
 
   const handleCreate = async (body: any) => {
     if (!academicYear?.id) return;
     try {
-      const res = await fetch('/api/finance/fee-structures', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ ...body, academicYearId: academicYear.id }),
-      });
-      if (res.ok) {
-        setModalNewFee(false);
-        loadStructures();
-      } else {
-        const err = await res.json();
-        alert(err?.message || err?.error || 'Erreur');
-      }
-    } catch (e) {
-      alert('Erreur réseau');
+      await financeService.createFeeStructure({ ...body, academicYearId: academicYear.id });
+      setModalNewFee(false);
+      toast({ title: 'Succès', description: 'Frais configuré avec succès.' });
+      loadStructures();
+    } catch (error: any) {
+      toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
     }
   };
 
   const handleUpdate = async (body: any) => {
     if (!editingFee?.id) return;
     try {
-      const res = await fetch(`/api/finance/fee-structures/${editingFee.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(body),
-      });
-      if (res.ok) {
-        setEditingFee(null);
-        loadStructures();
-      } else {
-        const err = await res.json();
-        alert(err?.message || err?.error || 'Erreur');
-      }
-    } catch (e) {
-      alert('Erreur réseau');
+      await financeService.updateFeeStructure(editingFee.id, body);
+      setEditingFee(null);
+      toast({ title: 'Succès', description: 'Frais mis à jour avec succès.' });
+      loadStructures();
+    } catch (error: any) {
+      toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
     }
   };
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('Supprimer ce frais ? Cette action est irréversible.')) return;
     try {
-      const res = await fetch(`/api/finance/fee-structures/${id}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
-      if (res.ok || res.status === 204) {
-        loadStructures();
-      } else {
-        const err = await res.json().catch(() => ({}));
-        alert(err?.message || err?.error || 'Erreur suppression');
-      }
-    } catch (e) {
-      alert('Erreur réseau');
+      await financeService.deleteFeeStructure(id);
+      toast({ title: 'Succès', description: 'Frais supprimé avec succès.' });
+      loadStructures();
+    } catch (error: any) {
+      toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
     }
   };
 
   const handleCopyToYear = async () => {
     if (!copyFrom || !copyTo) return;
     try {
-      const res = await fetch('/api/finance/fee-structures/copy-to-year', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ fromAcademicYearId: copyFrom, toAcademicYearId: copyTo }),
-      });
-      if (res.ok) {
-        setCopyYearModal(false);
-        setCopyFrom('');
-        setCopyTo('');
-        loadStructures();
-      } else {
-        const err = await res.json();
-        alert(err?.message || err?.error || 'Erreur');
-      }
-    } catch (e) {
-      alert('Erreur réseau');
+      await financeService.copyFeeStructuresToYear({ fromAcademicYearId: copyFrom, toAcademicYearId: copyTo });
+      setCopyYearModal(false);
+      setCopyFrom('');
+      setCopyTo('');
+      toast({ title: 'Succès', description: 'Frais copiés avec succès.' });
+      loadStructures();
+    } catch (error: any) {
+      toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
     }
   };
 

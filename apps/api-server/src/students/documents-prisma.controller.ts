@@ -18,7 +18,7 @@ import { DocumentsPrismaService } from './documents-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 
-@Controller('api/students/:studentId/documents')
+@Controller('students/:studentId/documents')
 @UseGuards(JwtAuthGuard)
 export class DocumentsPrismaController {
   constructor(private readonly documentsService: DocumentsPrismaService) {}
@@ -56,7 +56,7 @@ export class DocumentsPrismaController {
   }
 }
 
-@Controller('api/documents/generated')
+@Controller('documents/generated')
 @UseGuards(JwtAuthGuard)
 export class GeneratedDocumentsController {
   constructor(private readonly documentsService: DocumentsPrismaService) {}

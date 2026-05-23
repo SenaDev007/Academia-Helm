@@ -14,6 +14,9 @@ import {
   CriticalModal,
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { transfersService } from '@/services/transfers.service';
+import { studentsService } from '@/services/students.service';
+import { classesService } from '@/services/classes.service';
 
 interface TransferRequest {
   id: string;
@@ -89,11 +92,8 @@ export default function TransfersPage() {
         academicYearId: academicYear.id,
         schoolLevelId: schoolLevel.id,
       });
-      const response = await fetch(`/api/transfers?${params}`);
-      if (response.ok) {
-        const data = await response.json();
-        setTransfers(Array.isArray(data) ? data : []);
-      }
+      const data = await transfersService.getAll(Object.fromEntries(params.entries()));
+      setTransfers(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Failed to load transfers:', error);
     } finally {
@@ -109,11 +109,8 @@ export default function TransfersPage() {
         schoolLevelId: schoolLevel.id,
         limit: '200',
       });
-      const response = await fetch(`/api/students?${params}`);
-      if (response.ok) {
-        const data = await response.json();
-        setStudents(Array.isArray(data) ? data : (data.data ?? []));
-      }
+      const data = await studentsService.getAll(Object.fromEntries(params.entries()));
+      setStudents(Array.isArray(data) ? data : (data.data ?? []));
     } catch (error) {
       console.error('Failed to load students:', error);
     }
@@ -124,11 +121,8 @@ export default function TransfersPage() {
     try {
       const params = new URLSearchParams({ academicYearId: academicYear.id });
       if (schoolLevel?.id && schoolLevel.id !== 'ALL') params.set('schoolLevelId', schoolLevel.id);
-      const response = await fetch(`/api/classes?${params}`);
-      if (response.ok) {
-        const data = await response.json();
-        setClasses(Array.isArray(data) ? data : (data.data ?? []));
-      }
+      const data = await classesService.getAll(Object.fromEntries(params.entries()));
+      setClasses(Array.isArray(data) ? data : (data.data ?? []));
     } catch (error) {
       console.error('Failed to load classes:', error);
     }
@@ -138,16 +132,12 @@ export default function TransfersPage() {
     if (!form.studentId || !form.fromClassId || !form.toClassId) return;
     setIsSaving(true);
     try {
-      await fetch('/api/transfers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          studentId: form.studentId,
-          fromClassId: form.fromClassId,
-          toClassId: form.toClassId,
-          reason: form.reason || undefined,
-          academicYearId: academicYear?.id,
-        }),
+      await transfersService.create({
+        studentId: form.studentId,
+        fromClassId: form.fromClassId,
+        toClassId: form.toClassId,
+        reason: form.reason || undefined,
+        academicYearId: academicYear?.id,
       });
       setIsCreateModalOpen(false);
       setForm(EMPTY_FORM);
@@ -162,11 +152,7 @@ export default function TransfersPage() {
   const handleConfirmApprove = async () => {
     if (!selectedTransfer) return;
     try {
-      await fetch(`/api/transfers/${selectedTransfer.id}/approve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ approvedBy: 'director' }),
-      });
+      await transfersService.approve(selectedTransfer.id, { approvedBy: 'director' });
       setIsApproveModalOpen(false);
       setSelectedTransfer(null);
       loadTransfers();
@@ -178,11 +164,7 @@ export default function TransfersPage() {
   const handleConfirmReject = async () => {
     if (!selectedTransfer) return;
     try {
-      await fetch(`/api/transfers/${selectedTransfer.id}/reject`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: rejectReason || undefined }),
-      });
+      await transfersService.reject(selectedTransfer.id, { reason: rejectReason || undefined });
       setIsRejectModalOpen(false);
       setSelectedTransfer(null);
       setRejectReason('');

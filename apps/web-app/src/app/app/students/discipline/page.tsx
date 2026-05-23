@@ -13,6 +13,8 @@ import {
   FormModal,
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { disciplineService } from '@/services/discipline.service';
+import { studentsService } from '@/services/students.service';
 
 interface DisciplinaryAction {
   id: string;
@@ -76,11 +78,8 @@ export default function DisciplinePage() {
         academicYearId: academicYear.id,
         schoolLevelId: schoolLevel.id,
       });
-      const response = await fetch(`/api/discipline?${params}`);
-      if (response.ok) {
-        const data = await response.json();
-        setActions(Array.isArray(data) ? data : []);
-      }
+      const data = await disciplineService.getAll(Object.fromEntries(params.entries()));
+      setActions(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Failed to load disciplinary actions:', error);
     } finally {
@@ -96,11 +95,8 @@ export default function DisciplinePage() {
         schoolLevelId: schoolLevel.id,
         limit: '200',
       });
-      const response = await fetch(`/api/students?${params}`);
-      if (response.ok) {
-        const data = await response.json();
-        setStudents(Array.isArray(data) ? data : (data.data ?? []));
-      }
+      const data = await studentsService.getAll(Object.fromEntries(params.entries()));
+      setStudents(Array.isArray(data) ? data : (data.data ?? []));
     } catch (error) {
       console.error('Failed to load students:', error);
     }
@@ -110,18 +106,14 @@ export default function DisciplinePage() {
     if (!form.studentId || !form.actionType || !form.description || !form.actionDate) return;
     setIsSaving(true);
     try {
-      await fetch('/api/discipline', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          studentId: form.studentId,
-          actionType: form.actionType,
-          description: form.description,
-          actionDate: new Date(form.actionDate).toISOString(),
-          duration: form.duration ? parseInt(form.duration, 10) : undefined,
-          academicYearId: academicYear?.id,
-          schoolLevelId: schoolLevel?.id,
-        }),
+      await disciplineService.create({
+        studentId: form.studentId,
+        actionType: form.actionType,
+        description: form.description,
+        actionDate: new Date(form.actionDate).toISOString(),
+        duration: form.duration ? parseInt(form.duration, 10) : undefined,
+        academicYearId: academicYear?.id,
+        schoolLevelId: schoolLevel?.id,
       });
       setIsCreateModalOpen(false);
       setForm(EMPTY_FORM);

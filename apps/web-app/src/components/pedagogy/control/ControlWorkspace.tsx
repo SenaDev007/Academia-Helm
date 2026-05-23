@@ -36,12 +36,11 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  FormModal, 
-  ConfirmModal 
-} from '@/components/modules/blueprint';
+import { FormModal, ConfirmModal } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
+import { pedagogyService } from '@/services/pedagogy.service';
+import { useToast } from '@/components/ui/use-toast';
+import { networkDetectionService } from '@/lib/offline/network-detection.service';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -74,7 +73,17 @@ interface KpiDashboard {
 
 export default function ControlWorkspace() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
+
+  useEffect(() => {
+    const cleanup = networkDetectionService.onNetworkStatusChange((online) => {
+      setIsOffline(!online);
+    });
+    setIsOffline(!networkDetectionService.isConnected());
+    return cleanup;
+  }, []);
   
   // Data
   const [kpis, setKpis] = useState<KpiDashboard | null>(null);
@@ -89,10 +98,10 @@ export default function ControlWorkspace() {
     setLoading(true);
     try {
       const [kpiData, orionData, pendingData] = await Promise.all([
-        pedagogyFetch<KpiDashboard>(`/api/pedagogy/kpi/dashboard?academicYearId=${academicYear.id}`),
-        pedagogyFetch<any>(`/api/pedagogy/orion/dashboard?academicYearId=${academicYear.id}`),
+        pedagogyService.getKpiDashboard(academicYear.id).catch(() => null),
+        pedagogyService.getOrionDashboard(academicYear.id).catch(() => ({ insights: [], riskFlags: [] })),
         // On simule la récupération des documents en attente de validation
-        pedagogyFetch<any[]>(`/api/pedagogy/class-diaries?status=SUBMITTED`)
+        pedagogyService.getClassDiaries('').then((res: any[]) => (res || []).filter(d => d.status === 'SUBMITTED')).catch(() => [])
       ]);
       setKpis(kpiData);
       setInsights(orionData.insights || []);
@@ -111,6 +120,12 @@ export default function ControlWorkspace() {
 
   return (
     <div className="space-y-6 pb-10">
+      {isOffline && (
+        <div className="bg-amber-50 text-amber-800 p-4 rounded-2xl flex items-center gap-3">
+          <AlertTriangle className="w-5 h-5 text-amber-500" />
+          <p className="text-sm font-medium">Vous êtes en mode hors ligne. Certaines données d'analyse peuvent ne pas être à jour.</p>
+        </div>
+      )}
       {/* Navigation Tabs */}
       <div className="flex border-b border-gray-100 bg-white rounded-t-3xl px-4">
         <button 

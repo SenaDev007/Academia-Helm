@@ -82,34 +82,11 @@ export class ContextInterceptor implements NestInterceptor {
     // Attacher le contexte à la requête
     this.contextService.attachContextToRequest(request, resolvedContext);
 
-    // Forcer l'injection du schoolLevelId dans le body pour CREATE/UPDATE
-    if (request.body && typeof request.body === 'object') {
-      // Empêcher la modification du schoolLevelId
-      if (request.body.schoolLevelId && request.body.schoolLevelId !== resolvedContext.schoolLevelId) {
-        throw new BadRequestException(
-          'Cannot modify school_level_id in request body. This is a security violation.'
-        );
-      }
-      // Injecter automatiquement si absent
-      if (!request.body.schoolLevelId) {
-        request.body.schoolLevelId = resolvedContext.schoolLevelId;
-      }
-    }
-
-    // Forcer l'injection du schoolLevelId dans les query params
-    if (request.query) {
-      // Empêcher la modification du schoolLevelId
-      if (request.query.schoolLevelId && request.query.schoolLevelId !== resolvedContext.schoolLevelId) {
-        throw new BadRequestException(
-          'Cannot specify different school_level_id in query parameters.'
-        );
-      }
-      // Injecter automatiquement si absent
-      if (!request.query.schoolLevelId) {
-        request.query.schoolLevelId = resolvedContext.schoolLevelId;
-      }
-    }
-
+    // We NO LONGER inject schoolLevelId into request.body or request.query here.
+    // The controllers extract it cleanly via the @SchoolLevelId() decorator.
+    // Injecting it into request.body causes ValidationPipe (with forbidNonWhitelisted: true) to throw 400 Bad Request
+    // because the property is not defined in the corresponding DTOs.
+    
     return next.handle();
   }
 }

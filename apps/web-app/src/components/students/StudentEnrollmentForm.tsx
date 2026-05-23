@@ -11,7 +11,10 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { AlertCircle, Info, CheckCircle, Users, FileText, BookOpen, Camera } from 'lucide-react';
+import { Camera, Upload, X, CheckCircle, AlertCircle, Info, Calendar, Link2, Trash2, Users, FileText, BookOpen } from 'lucide-react';
+import { studentsService } from '@/services/students.service';
+import { financeService } from '@/services/finance.service';
+import { classesService } from '@/services/classes.service';
 import { motion } from 'framer-motion';
 import { formatGradeLabel } from '@/lib/utils';
 import { localDb } from '@/lib/offline/local-db.service';
@@ -70,7 +73,7 @@ export default function StudentEnrollmentForm({
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string>(initialData?.photoUrl || '');
-  const [photoSyncStatus, setPhotoSyncStatus] = useState<'idle' | 'pending' | 'synced'>('idle');
+  const [photoSyncStatus, setPhotoSyncStatus] = useState<'idle' | 'pending' | 'synced' | 'failed'>('idle');
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -127,8 +130,7 @@ export default function StudentEnrollmentForm({
     setIsLoadingClasses(true);
     const params = new URLSearchParams({ academicYearId });
     if (schoolLevelId && schoolLevelId !== 'ALL') params.set('schoolLevelId', schoolLevelId);
-    fetch(`/api/classes?${params}`)
-      .then((r) => (r.ok ? r.json() : []))
+    classesService.getAll(Object.fromEntries(params.entries()))
       .then((data: any) => {
         const list = Array.isArray(data) ? data : data?.data ?? data?.classes ?? [];
         setClassesList(list.map((c: any) => ({ id: c.id, name: c.name || c.code || c.id })));
@@ -145,17 +147,14 @@ export default function StudentEnrollmentForm({
         schoolLevelId,
       });
 
-      const response = await fetch(`/api/finance/fee-regimes?${params}`);
-      if (response.ok) {
-        const data = await response.json();
-        setRegimes(data);
+      const data = await financeService.getFeeRegimes(Object.fromEntries(params.entries()));
+      setRegimes(data);
 
-        // Sélectionner le régime par défaut
-        const defaultRegime = data.find((r: FeeRegime) => r.isDefault);
-        if (defaultRegime) {
-          setSelectedRegime(defaultRegime);
-          setFormData((prev) => ({ ...prev, feeRegimeId: defaultRegime.id }));
-        }
+      // Sélectionner le régime par défaut
+      const defaultRegime = data.find((r: FeeRegime) => r.isDefault);
+      if (defaultRegime) {
+        setSelectedRegime(defaultRegime);
+        setFormData((prev) => ({ ...prev, feeRegimeId: defaultRegime.id }));
       }
     } catch (error) {
       console.error('Failed to load fee regimes:', error);
@@ -207,19 +206,16 @@ export default function StudentEnrollmentForm({
         return;
       }
 
-      // En ligne : upload immédiat vers l'API Next
-      const fd = new FormData();
-      fd.append('file', file);
-      const res = await fetch('/api/students/upload-photo', {
-        method: 'POST',
-        body: fd,
-      });
-      const data = await res.json();
-      if (!res.ok || !data?.photoUrl) {
-        throw new Error(data?.error || 'Erreur lors de l\'upload de la photo');
+      // En ligne : upload immédiat via service
+      const formDataObj = new FormData();
+      formDataObj.append('file', file);
+      const data = await studentsService.uploadPhoto(formDataObj as any);
+      if (!data?.photoUrl && !data?.url) {
+        throw new Error('Erreur lors de l\'upload de la photo');
       }
-      setFormData((prev) => ({ ...prev, photoUrl: data.photoUrl }));
-      setPhotoPreviewUrl(data.photoUrl);
+      const finalUrl = data.photoUrl || data.url;
+      setFormData((prev) => ({ ...prev, photoUrl: finalUrl }));
+      setPhotoPreviewUrl(finalUrl);
       setPhotoSyncStatus('synced');
     } catch (err: any) {
       setError(err.message || 'Erreur lors de l\'upload de la photo');
@@ -237,26 +233,27 @@ export default function StudentEnrollmentForm({
       for (const record of pending) {
         const blob: Blob | undefined = record.blob;
         if (!blob) continue;
-        const fd = new FormData();
-        fd.append('file', blob);
-        const res = await fetch('/api/students/upload-photo', {
-          method: 'POST',
-          body: fd,
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data?.photoUrl) {
-          // Conserver en PENDING ; l'utilisateur pourra réessayer plus tard
-          continue;
+        const formDataObj = new FormData();
+        formDataObj.append('file', blob);
+
+        try {
+          const data = await studentsService.uploadPhoto(formDataObj as any);
+          if (data.photoUrl || data.url) {
+            const url = data.photoUrl || data.url;
+            await localDb.execute('student_photos', 'put', {
+              ...record,
+              syncStatus: 'SYNCED',
+              syncedAt: new Date().toISOString(),
+              remoteUrl: url,
+            });
+            setFormData((prev) => ({ ...prev, photoUrl: url }));
+            setPhotoPreviewUrl(url);
+            setPhotoSyncStatus('synced');
+          }
+        } catch (err) {
+          console.error('Erreur upload photo:', err);
+          setPhotoSyncStatus('failed');
         }
-        await localDb.execute('student_photos', 'put', {
-          ...record,
-          syncStatus: 'SYNCED',
-          syncedAt: new Date().toISOString(),
-          remoteUrl: data.photoUrl,
-        });
-        setFormData((prev) => ({ ...prev, photoUrl: data.photoUrl }));
-        setPhotoPreviewUrl(data.photoUrl);
-        setPhotoSyncStatus('synced');
       }
     } catch {
       // Pas bloquant pour le wizard
@@ -658,34 +655,35 @@ export default function StudentEnrollmentForm({
           {/* Aperçu caméra ou photo capturée */}
           <div className="flex flex-col items-center">
             <div className="relative w-full max-w-sm aspect-[3/4] bg-gray-100 rounded-xl overflow-hidden border-2 border-gray-200 flex items-center justify-center">
-              {isCameraActive ? (
-                <>
-                  <video
-                    ref={videoRef}
-                    className="absolute inset-0 w-full h-full object-cover"
-                    playsInline
-                    autoPlay
-                    muted
-                  />
-                  <div className="absolute inset-0 border-4 border-white/60 rounded-lg pointer-events-none m-2">
-                    <div className="absolute inset-x-4 top-1/3 h-px bg-white/50" />
-                    <div className="absolute left-1/2 top-1/4 bottom-1/3 w-px -translate-x-1/2 bg-white/50" />
-                  </div>
-                </>
-              ) : photoPreviewUrl ? (
+              
+              <div className={`absolute inset-0 w-full h-full ${isCameraActive ? 'block' : 'hidden'}`}>
+                <video
+                  ref={videoRef}
+                  className="absolute inset-0 w-full h-full object-cover"
+                  playsInline
+                  autoPlay
+                  muted
+                />
+                <div className="absolute inset-0 border-4 border-white/60 rounded-lg pointer-events-none m-2">
+                  <div className="absolute inset-x-4 top-1/3 h-px bg-white/50" />
+                  <div className="absolute left-1/2 top-1/4 bottom-1/3 w-px -translate-x-1/2 bg-white/50" />
+                </div>
+              </div>
+
+              {!isCameraActive && photoPreviewUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={photoPreviewUrl}
                   alt="Aperçu photo élève"
                   className="w-full h-full object-cover"
                 />
-              ) : (
+              ) : !isCameraActive && !photoPreviewUrl ? (
                 <div className="text-center p-6 text-gray-500">
                   <Camera className="w-12 h-12 mx-auto mb-2 opacity-50" />
                   <p className="text-sm">Aucune photo</p>
                   <p className="text-xs mt-1">Prenez la photo ou importez depuis la galerie</p>
                 </div>
-              )}
+              ) : null}
             </div>
 
             {cameraError && (

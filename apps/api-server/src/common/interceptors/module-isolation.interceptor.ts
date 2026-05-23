@@ -54,10 +54,9 @@ export class ModuleIsolationInterceptor implements NestInterceptor {
       );
     }
 
-    // Forcer le schoolLevelId dans le body pour les opérations CREATE/UPDATE
-    if (body && typeof body === 'object' && !body.schoolLevelId) {
-      body.schoolLevelId = schoolLevelId;
-    }
+    // We NO LONGER inject schoolLevelId into the body here.
+    // It causes ValidationPipe errors (forbidNonWhitelisted) for DTOs that don't declare it.
+    // The controllers extract schoolLevelId via the @SchoolLevelId() decorator instead.
 
     return next.handle();
   }

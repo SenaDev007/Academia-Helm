@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import NewPaymentModal from './NewPaymentModal';
+import { financeService } from '@/services/finance.service';
 
 const METHOD_LABELS: Record<string, string> = {
   CASH: 'Espèces',
@@ -28,11 +29,8 @@ export default function TransactionsContent() {
     if (!academicYear?.id) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/finance/transactions?academicYearId=${academicYear.id}`, { credentials: 'include' });
-      if (res.ok) {
-        const data = await res.json();
-        setTransactions(Array.isArray(data) ? data : []);
-      }
+      const data = await financeService.getTransactions({ academicYearId: academicYear.id });
+      setTransactions(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error(e);
     } finally {
@@ -46,9 +44,9 @@ export default function TransactionsContent() {
 
   useEffect(() => {
     if (!academicYear?.id) return;
-    fetch(`/api/finance/student-accounts?academicYearId=${academicYear.id}`, { credentials: 'include' })
-      .then((r) => r.ok ? r.json() : [])
-      .then((d) => setAccounts(Array.isArray(d) ? d : []));
+    financeService.getStudentAccounts({ academicYearId: academicYear.id })
+      .then((d) => setAccounts(Array.isArray(d) ? d : []))
+      .catch(() => setAccounts([]));
   }, [academicYear?.id]);
 
   const formatXOF = (n: number) =>

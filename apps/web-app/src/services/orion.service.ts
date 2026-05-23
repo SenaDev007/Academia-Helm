@@ -49,13 +49,24 @@ export async function getOrionMonthlySummary(period?: string): Promise<OrionMont
  * Alertes hiérarchisées : INFO, ATTENTION, CRITIQUE
  */
 export async function getOrionAlerts(
-  level?: 'INFO' | 'ATTENTION' | 'CRITIQUE',
-  acknowledged = false
+  params?: {
+    level?: 'INFO' | 'ATTENTION' | 'CRITIQUE';
+    acknowledged?: boolean;
+    alertType?: string;
+    academicYearId?: string;
+  }
 ): Promise<OrionAlert[]> {
-  const params: Record<string, any> = { acknowledged: !acknowledged };
-  if (level) params.level = level;
+  const requestParams: Record<string, any> = {};
+  if (params?.acknowledged !== undefined) {
+    requestParams.acknowledged = params.acknowledged;
+  } else {
+    requestParams.acknowledged = true;
+  }
+  if (params?.level) requestParams.level = params.level;
+  if (params?.alertType) requestParams.alertType = params.alertType;
+  if (params?.academicYearId) requestParams.academicYearId = params.academicYearId;
   
-  const response = await apiClient.get<OrionAlert[]>('/orion/alerts', { params });
+  const response = await apiClient.get<OrionAlert[]>('/orion/alerts', { params: requestParams });
   return response.data;
 }
 
@@ -101,4 +112,14 @@ export async function updateOrionConfig(config: Partial<OrionConfig>): Promise<O
   const response = await apiClient.put<OrionConfig>('/orion/config', config);
   return response.data;
 }
+
+export const orionService = {
+  ask: askOrion,
+  getMonthlySummary: getOrionMonthlySummary,
+  getAlerts: getOrionAlerts,
+  acknowledgeAlert: acknowledgeOrionAlert,
+  getHistory: getOrionHistory,
+  getConfig: getOrionConfig,
+  updateConfig: updateOrionConfig,
+};
 

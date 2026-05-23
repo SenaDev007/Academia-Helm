@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard,
@@ -23,7 +23,14 @@ import {
   MoreVertical,
   ArrowRight,
   AlertTriangle,
+  Edit,
+  Trash2,
 } from 'lucide-react';
+import { FormModal } from '@/components/modules/blueprint';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { pedagogyService } from '@/services/pedagogy.service';
+import { useToast } from '@/components/ui/use-toast';
+import { useAuth } from '@/hooks/useAuth';
 
 const TABS = [
   { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard },
@@ -40,6 +47,113 @@ const TABS = [
 
 export default function TeacherTasksWorkspace() {
   const [activeTab, setActiveTab] = useState('dashboard');
+  const { academicYear, schoolLevel } = useModuleContext();
+  const { user } = useAuth();
+  const { toast } = useToast();
+  
+  const [loading, setLoading] = useState(false);
+  const [homeworks, setHomeworks] = useState<any[]>([]);
+  const [teachers, setTeachers] = useState<any[]>([]);
+  const [classes, setClasses] = useState<any[]>([]);
+  const [subjects, setSubjects] = useState<any[]>([]);
+
+  // Modals
+  const [modal, setModal] = useState<'none' | 'create-homework' | 'edit-homework'>('none');
+  const [selectedHomework, setSelectedHomework] = useState<any | null>(null);
+
+  const loadData = useCallback(async () => {
+    if (!academicYear?.id) return;
+    setLoading(true);
+    try {
+      const [hwData, teachersData, classesData, subjectsData] = await Promise.all([
+        pedagogyService.getHomeworkEntries(),
+        pedagogyService.getTeachers(),
+        pedagogyService.getAcademicClasses(academicYear.id),
+        pedagogyService.getSubjects(academicYear.id)
+      ]);
+      setHomeworks(hwData || []);
+      setTeachers(teachersData || []);
+      setClasses(classesData || []);
+      setSubjects(subjectsData || []);
+    } catch (e) {
+      console.error("Error loading tasks workspace data:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [academicYear?.id]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const handleCreateHomework = async (data: any) => {
+    if (!academicYear?.id) return;
+    try {
+      const selectedClass = classes.find(c => c.id === data.classId);
+      const schoolLevelId = selectedClass?.schoolLevelId || schoolLevel?.id || "default-level";
+
+      await pedagogyService.createHomeworkEntry({
+        ...data,
+        academicYearId: academicYear.id,
+        schoolLevelId,
+        dueDate: new Date(data.dueDate).toISOString(),
+        maxScore: data.maxScore ? parseFloat(data.maxScore) : undefined
+      });
+      toast({
+        title: "Succès",
+        description: "Le devoir a été créé avec succès.",
+      });
+      loadData();
+      setModal('none');
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e.message || "Impossible de créer le devoir.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleEditHomework = async (data: any) => {
+    if (!selectedHomework?.id) return;
+    try {
+      await pedagogyService.updateHomeworkEntry(selectedHomework.id, {
+        ...data,
+        dueDate: new Date(data.dueDate).toISOString(),
+        maxScore: data.maxScore ? parseFloat(data.maxScore) : undefined
+      });
+      toast({
+        title: "Succès",
+        description: "Le devoir a été mis à jour avec succès.",
+      });
+      loadData();
+      setModal('none');
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e.message || "Impossible de mettre à jour le devoir.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleDeleteHomework = async (id: string) => {
+    if (!confirm("Voulez-vous vraiment supprimer ce devoir ?")) return;
+    try {
+      await pedagogyService.deleteHomeworkEntry(id);
+      toast({
+        title: "Succès",
+        description: "Le devoir a été supprimé.",
+      });
+      loadData();
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e.message || "Impossible de supprimer le devoir.",
+        variant: "destructive"
+      });
+    }
+  };
 
   return (
     <div className="flex flex-col h-full bg-slate-50/30">
@@ -58,7 +172,10 @@ export default function TeacherTasksWorkspace() {
               <Filter className="w-4 h-4" />
               Filtres
             </button>
-            <button className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 rounded-xl text-sm font-semibold text-white transition-all shadow-lg shadow-indigo-100">
+            <button 
+              onClick={() => setModal('create-homework')}
+              className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 rounded-xl text-sm font-semibold text-white transition-all shadow-lg shadow-indigo-100"
+            >
               <Plus className="w-4 h-4" />
               Nouvelle Activité
             </button>
@@ -98,8 +215,19 @@ export default function TeacherTasksWorkspace() {
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
           >
-            {activeTab === 'dashboard' && <TasksDashboard />}
-            {activeTab === 'homework' && <HomeworkList />}
+            {activeTab === 'dashboard' && <TasksDashboard homeworks={homeworks} />}
+            {activeTab === 'homework' && (
+              <HomeworkList 
+                homeworks={homeworks} 
+                classes={classes} 
+                subjects={subjects} 
+                onDelete={handleDeleteHomework}
+                onEdit={(hw) => {
+                  setSelectedHomework(hw);
+                  setModal('edit-homework');
+                }}
+              />
+            )}
             {activeTab === 'research' && <ResearchExposes />}
             {activeTab === 'lessons' && <LessonsTracking />}
             {activeTab === 'notebooks' && <NotebooksCopies />}
@@ -111,11 +239,71 @@ export default function TeacherTasksWorkspace() {
           </motion.div>
         </AnimatePresence>
       </div>
+
+      {/* Modal New Homework */}
+      <FormModal
+        isOpen={modal === 'create-homework'}
+        onClose={() => setModal('none')}
+        title="Créer un Devoir / Exercice"
+        onSave={handleCreateHomework}
+        fields={[
+          { name: 'title', label: 'Titre du devoir', type: 'text', placeholder: 'Ex: Calcul des fractions' },
+          { name: 'description', label: 'Consigne / Description', type: 'textarea', placeholder: 'Ex: Faire les exercices 4 et 5 page 42' },
+          { 
+            name: 'classId', 
+            label: 'Classe', 
+            type: 'select', 
+            options: classes.map(c => ({ value: c.id, label: c.name })) 
+          },
+          { 
+            name: 'subjectId', 
+            label: 'Matière', 
+            type: 'select', 
+            options: subjects.map(s => ({ value: s.id, label: s.name })) 
+          },
+          { name: 'dueDate', label: 'Date d\'échéance', type: 'date' },
+          { name: 'maxScore', label: 'Note maximale (Optionnel)', type: 'number', placeholder: 'Ex: 20' }
+        ]}
+      />
+
+      {/* Modal Edit Homework */}
+      <FormModal
+        isOpen={modal === 'edit-homework'}
+        onClose={() => setModal('none')}
+        title="Modifier le Devoir / Exercice"
+        initialData={selectedHomework ? {
+          ...selectedHomework,
+          dueDate: selectedHomework.dueDate ? selectedHomework.dueDate.split('T')[0] : ''
+        } : null}
+        onSave={handleEditHomework}
+        fields={[
+          { name: 'title', label: 'Titre du devoir', type: 'text', placeholder: 'Ex: Calcul des fractions' },
+          { name: 'description', label: 'Consigne / Description', type: 'textarea', placeholder: 'Ex: Faire les exercices 4 et 5 page 42' },
+          { 
+            name: 'classId', 
+            label: 'Classe', 
+            type: 'select', 
+            options: classes.map(c => ({ value: c.id, label: c.name })) 
+          },
+          { 
+            name: 'subjectId', 
+            label: 'Matière', 
+            type: 'select', 
+            options: subjects.map(s => ({ value: s.id, label: s.name })) 
+          },
+          { name: 'dueDate', label: 'Date d\'échéance', type: 'date' },
+          { name: 'maxScore', label: 'Note maximale (Optionnel)', type: 'number', placeholder: 'Ex: 20' }
+        ]}
+      />
     </div>
   );
 }
 
-function TasksDashboard() {
+interface TasksDashboardProps {
+  homeworks?: any[];
+}
+
+function TasksDashboard({ homeworks }: TasksDashboardProps) {
   return (
     <div className="space-y-8">
       {/* Quick Stats */}
@@ -253,64 +441,89 @@ function TasksDashboard() {
   );
 }
 
-function HomeworkList() {
+interface HomeworkListProps {
+  homeworks: any[];
+  classes: any[];
+  subjects: any[];
+  onDelete: (id: string) => Promise<void>;
+  onEdit: (hw: any) => void;
+}
+
+function HomeworkList({ homeworks, classes, subjects, onDelete, onEdit }: HomeworkListProps) {
+  const getClassLabel = (classId: string) => classes.find(c => c.id === classId)?.name || classId;
+  const getSubjectLabel = (subjectId: string) => subjects.find(s => s.id === subjectId)?.name || subjectId;
+
   return (
     <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
       <div className="p-6 border-b border-slate-50 flex items-center justify-between">
         <h3 className="font-bold text-slate-900 text-lg">Gestion des Devoirs & Exercices</h3>
         <div className="flex items-center gap-3">
-           <div className="relative">
-             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-             <input type="text" placeholder="Rechercher..." className="pl-9 pr-4 py-2 bg-slate-50 border-none rounded-xl text-sm w-64" />
-           </div>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input type="text" placeholder="Rechercher..." className="pl-9 pr-4 py-2 bg-slate-50 border-none rounded-xl text-sm w-64" />
+          </div>
         </div>
       </div>
       <table className="w-full text-left">
         <thead>
           <tr className="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-            <th className="px-6 py-4">Titre & Type</th>
+            <th className="px-6 py-4">Titre & Description</th>
             <th className="px-6 py-4">Matière</th>
             <th className="px-6 py-4">Classe</th>
             <th className="px-6 py-4">Échéance</th>
-            <th className="px-6 py-4">Statut Parent</th>
+            <th className="px-6 py-4">Points Max</th>
             <th className="px-6 py-4 text-right">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-50">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <tr key={i} className="hover:bg-slate-50/30 transition-colors group">
-              <td className="px-6 py-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-slate-50 rounded-lg">
-                    <ClipboardList className="w-4 h-4 text-indigo-500" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-slate-900 text-sm">Devoir Maison n°{i}</h4>
-                    <span className="text-[10px] text-slate-400 font-medium">Exercice écrit</span>
-                  </div>
-                </div>
-              </td>
-              <td className="px-6 py-4 text-sm font-semibold text-slate-700">Français</td>
-              <td className="px-6 py-4 text-sm text-slate-600">CM2 Alpha</td>
-              <td className="px-6 py-4">
-                <div className="flex items-center gap-2">
-                  <Clock className="w-3.5 h-3.5 text-slate-400" />
-                  <span className="text-xs text-slate-600">18 Mai 2025</span>
-                </div>
-              </td>
-              <td className="px-6 py-4">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                  <span className="text-xs font-bold text-emerald-700">Notifié (85%)</span>
-                </div>
-              </td>
-              <td className="px-6 py-4 text-right">
-                <button className="p-2 text-slate-300 hover:text-indigo-600 transition-colors">
-                  <MoreVertical className="w-4 h-4" />
-                </button>
+          {homeworks.length === 0 ? (
+            <tr>
+              <td colSpan={6} className="px-6 py-8 text-center text-slate-400 text-sm">
+                Aucun devoir enregistré.
               </td>
             </tr>
-          ))}
+          ) : (
+            homeworks.map((hw) => (
+              <tr key={hw.id} className="hover:bg-slate-50/30 transition-colors group">
+                <td className="px-6 py-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-slate-50 rounded-lg">
+                      <ClipboardList className="w-4 h-4 text-indigo-500" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-sm">{hw.title}</h4>
+                      <p className="text-xs text-slate-400 max-w-xs truncate">{hw.description || 'Pas de description'}</p>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-6 py-4 text-sm font-semibold text-slate-700">{getSubjectLabel(hw.subjectId)}</td>
+                <td className="px-6 py-4 text-sm text-slate-600">{getClassLabel(hw.classId)}</td>
+                <td className="px-6 py-4">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-3.5 h-3.5 text-slate-400" />
+                    <span className="text-xs text-slate-600">{hw.dueDate ? new Date(hw.dueDate).toLocaleDateString() : 'N/A'}</span>
+                  </div>
+                </td>
+                <td className="px-6 py-4 text-sm text-slate-600">{hw.maxScore || 'Non noté'}</td>
+                <td className="px-6 py-4 text-right">
+                  <div className="flex justify-end gap-2">
+                    <button 
+                      onClick={() => onEdit(hw)}
+                      className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded-lg transition-colors animate-none"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => onDelete(hw.id)}
+                      className="p-2 text-slate-400 hover:text-rose-600 hover:bg-slate-50 rounded-lg transition-colors animate-none"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
     </div>

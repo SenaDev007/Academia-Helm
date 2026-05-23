@@ -19,6 +19,8 @@ import {
   Users,
   RefreshCw,
 } from 'lucide-react';
+import { studentsService } from '@/services/students.service';
+import { toast } from '@/components/ui/toast';
 
 interface IdCard {
   id: string;
@@ -74,16 +76,12 @@ export default function StudentIdCardsSection() {
   const loadStats = async () => {
     try {
       setIsLoading(true);
-      const academicYearId = localStorage.getItem('academicYearId') || undefined;
-      const url = `/api/students/id-cards/stats${academicYearId ? `?academicYearId=${academicYearId}` : ''}`;
-      
-      const response = await fetch(url);
-      if (response.ok) {
-        const data = await response.json();
-        setStats(data);
-      }
-    } catch (error) {
+      const academicYearId = localStorage.getItem('academicYearId') || '';
+      const data = await studentsService.getIdCardStats(academicYearId);
+      setStats(data);
+    } catch (error: any) {
       console.error('Error loading stats:', error);
+      toast({ title: 'Erreur', description: error.message || 'Impossible de charger les statistiques', variant: 'error' });
     } finally {
       setIsLoading(false);
     }
@@ -100,31 +98,16 @@ export default function StudentIdCardsSection() {
       const schoolLevelId = localStorage.getItem('schoolLevelId') || '';
 
       if (!academicYearId || !schoolLevelId) {
-        alert('Veuillez sélectionner une année scolaire et un niveau');
+        toast({ title: 'Attention', description: 'Veuillez sélectionner une année scolaire et un niveau', variant: 'error' });
         return;
       }
 
-      const response = await fetch('/api/students/id-cards/generate-bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          academicYearId,
-          schoolLevelId,
-          status: 'ACTIVE',
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        alert(`${data.succeeded} carte(s) générée(s) avec succès sur ${data.total}`);
-        loadStats();
-      } else {
-        const error = await response.json();
-        alert(`Erreur: ${error.message || 'Échec de la génération en lot'}`);
-      }
-    } catch (error) {
+      const data = await studentsService.generateBulkIdCards({ academicYearId, schoolLevelId });
+      toast({ title: 'Succès', description: `${data.succeeded} carte(s) générée(s) avec succès sur ${data.total}`, variant: 'success' });
+      loadStats();
+    } catch (error: any) {
       console.error('Error generating bulk ID cards:', error);
-      alert('Erreur lors de la génération en lot');
+      toast({ title: 'Erreur', description: error.message || 'Erreur lors de la génération en lot', variant: 'error' });
     } finally {
       setIsLoading(false);
     }
@@ -132,31 +115,21 @@ export default function StudentIdCardsSection() {
 
   const handleRevokeCard = async () => {
     if (!selectedCard || !revokeReason.trim()) {
-      alert('Veuillez saisir un motif de révocation');
+      toast({ title: 'Attention', description: 'Veuillez saisir un motif de révocation', variant: 'error' });
       return;
     }
 
     try {
       setIsLoading(true);
-      const response = await fetch(`/api/students/id-cards/card/${selectedCard.id}/revoke`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: revokeReason }),
-      });
-
-      if (response.ok) {
-        alert('Carte révoquée avec succès');
-        setIsRevokeModalOpen(false);
-        setSelectedCard(null);
-        setRevokeReason('');
-        loadStats();
-      } else {
-        const error = await response.json();
-        alert(`Erreur: ${error.message || 'Échec de la révocation'}`);
-      }
-    } catch (error) {
+      await studentsService.revokeIdCard(selectedCard.id, revokeReason);
+      toast({ title: 'Succès', description: 'Carte révoquée avec succès', variant: 'success' });
+      setIsRevokeModalOpen(false);
+      setSelectedCard(null);
+      setRevokeReason('');
+      loadStats();
+    } catch (error: any) {
       console.error('Error revoking card:', error);
-      alert('Erreur lors de la révocation');
+      toast({ title: 'Erreur', description: error.message || 'Erreur lors de la révocation', variant: 'error' });
     } finally {
       setIsLoading(false);
     }

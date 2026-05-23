@@ -24,6 +24,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { FormModal, ConfirmModal } from '@/components/modules/blueprint';
 import AdmissionForm from './AdmissionForm';
 import { toast } from '@/components/ui/toast';
+import { studentsService } from '@/services/students.service';
 
 interface Admission {
   id: string;
@@ -59,17 +60,15 @@ export default function AdmissionsContent() {
   const loadAdmissions = async () => {
     setIsLoading(true);
     try {
-      const params = new URLSearchParams({
+      const params = {
         academicYearId: academicYear?.id || '',
         ...(schoolLevel?.id && { schoolLevelId: schoolLevel.id }),
-      });
-      const response = await fetch(`/api/students/admissions?${params}`);
-      if (response.ok) {
-        const data = await response.json();
-        setAdmissions(data);
-      }
-    } catch (e) {
+      };
+      const data = await studentsService.getAdmissions(params);
+      setAdmissions(data);
+    } catch (e: any) {
       console.error('Failed to load admissions:', e);
+      toast({ title: 'Erreur', description: e.message || 'Erreur lors du chargement des admissions', variant: 'error' });
     } finally {
       setIsLoading(false);
     }
@@ -78,21 +77,12 @@ export default function AdmissionsContent() {
   const handleCreate = async (data: any) => {
     setIsActionPending(true);
     try {
-      const res = await fetch('/api/students/admissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      if (res.ok) {
-        toast({ title: 'Succès', description: 'Dossier d\'admission créé avec succès', variant: 'success' });
-        setIsCreateModalOpen(false);
-        loadAdmissions();
-      } else {
-        const error = await res.json();
-        toast({ title: 'Erreur', description: error.message || 'Erreur lors de la création', variant: 'error' });
-      }
-    } catch (e) {
-      toast({ title: 'Erreur', description: 'Erreur réseau', variant: 'error' });
+      await studentsService.createAdmission(data);
+      toast({ title: 'Succès', description: 'Dossier d\'admission créé avec succès', variant: 'success' });
+      setIsCreateModalOpen(false);
+      loadAdmissions();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message || 'Erreur lors de la création', variant: 'error' });
     } finally {
       setIsActionPending(false);
     }
@@ -101,19 +91,12 @@ export default function AdmissionsContent() {
   const handleConvert = async (id: string) => {
     setIsActionPending(true);
     try {
-      const res = await fetch(`/api/students/admissions/${id}/convert`, {
-        method: 'POST',
-      });
-      if (res.ok) {
-        toast({ title: 'Succès', description: 'Candidat converti en élève avec succès !', variant: 'success' });
-        setIsConvertModalOpen(false);
-        loadAdmissions();
-      } else {
-        const error = await res.json();
-        toast({ title: 'Erreur', description: error.message || 'Erreur lors de la conversion', variant: 'error' });
-      }
-    } catch (e) {
-      toast({ title: 'Erreur', description: 'Erreur réseau', variant: 'error' });
+      await studentsService.convertAdmission(id);
+      toast({ title: 'Succès', description: 'Candidat converti en élève avec succès !', variant: 'success' });
+      setIsConvertModalOpen(false);
+      loadAdmissions();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message || 'Erreur lors de la conversion', variant: 'error' });
     } finally {
       setIsActionPending(false);
     }
@@ -122,19 +105,11 @@ export default function AdmissionsContent() {
   const handleDecide = async (id: string, decision: 'ACCEPTED' | 'REJECTED') => {
     setIsActionPending(true);
     try {
-      const res = await fetch(`/api/students/admissions/${id}/decide`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision, comment: 'Dossier revu par l\'administration' }),
-      });
-      if (res.ok) {
-        toast({ title: 'Succès', description: `Dossier ${decision === 'ACCEPTED' ? 'accepté' : 'refusé'}`, variant: 'success' });
-        loadAdmissions();
-      } else {
-        toast({ title: 'Erreur', description: 'Erreur lors de la décision', variant: 'error' });
-      }
-    } catch (e) {
-      toast({ title: 'Erreur', description: 'Erreur réseau', variant: 'error' });
+      await studentsService.decideAdmission(id, { decision, comment: 'Dossier revu par l\'administration' });
+      toast({ title: 'Succès', description: `Dossier ${decision === 'ACCEPTED' ? 'accepté' : 'refusé'}`, variant: 'success' });
+      loadAdmissions();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message || 'Erreur lors de la décision', variant: 'error' });
     } finally {
       setIsActionPending(false);
     }

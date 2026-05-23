@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import { ModuleContainer, FormModal } from '@/components/modules/blueprint';
+import { ModuleContainer, FormModal, ConfirmModal } from '@/components/modules/blueprint';
+import { useToast } from '@/components/ui/use-toast';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { formatGradeLabel } from '@/lib/utils';
 import { pedagogyFetch, academicStructureUrl } from '@/lib/pedagogy/academic-structure-client';
@@ -40,6 +41,7 @@ const emptyForm = {
 
 export default function ClassDiariesPage() {
   const { academicYear, schoolLevel } = useModuleContext();
+  const { toast } = useToast();
   const [classDiaries, setClassDiaries] = useState<ClassDiary[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -49,6 +51,7 @@ export default function ClassDiariesPage() {
   const [classes, setClasses] = useState<Resource[]>([]);
   const [classSubjects, setClassSubjects] = useState<ClassSubject[]>([]);
   const [loadingClassSubjects, setLoadingClassSubjects] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const loadClassDiaries = useCallback(async () => {
     if (!academicYear || !schoolLevel) return;
@@ -134,13 +137,27 @@ export default function ClassDiariesPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Supprimer cette entrée du cahier de textes ?')) return;
+  const handleDelete = (id: string) => {
+    setDeleteId(id);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteId) return;
     try {
-      await pedagogyFetch(`/api/class-diaries/${id}`, { method: 'DELETE' });
+      await pedagogyFetch(`/api/class-diaries/${deleteId}`, { method: 'DELETE' });
+      toast({
+        title: "Succès",
+        description: "L'entrée a été supprimée avec succès.",
+      });
       await loadClassDiaries();
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Erreur lors de la suppression');
+      toast({
+        title: "Erreur",
+        description: e instanceof Error ? e.message : 'Erreur lors de la suppression',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeleteId(null);
     }
   };
 
@@ -310,6 +327,17 @@ export default function ClassDiariesPage() {
           </div>
         </div>
       </FormModal>
+
+      <ConfirmModal
+        isOpen={!!deleteId}
+        title="Supprimer l'entrée"
+        message="Voulez-vous vraiment supprimer cette entrée du cahier de textes ?"
+        type="danger"
+        confirmLabel="Supprimer"
+        cancelLabel="Annuler"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeleteId(null)}
+      />
     </>
   );
 }

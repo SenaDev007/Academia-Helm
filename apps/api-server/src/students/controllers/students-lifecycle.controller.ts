@@ -11,7 +11,7 @@ import { StudentsLifecycleService } from '../services/students-lifecycle.service
 import { StudentIdCardService } from '../services/student-id-card.service';
 import { EducmasterExcelExportService } from '../services/educmaster-excel-export.service';
 
-@Controller('api/students')
+@Controller('students')
 @UseGuards(JwtAuthGuard)
 export class StudentsLifecycleController {
   constructor(
@@ -19,6 +19,15 @@ export class StudentsLifecycleController {
     private readonly idCard: StudentIdCardService,
     private readonly educmasterExcel: EducmasterExcelExportService,
   ) {}
+
+  @Get('enrollments')
+  async getEnrollments(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId?: string,
+    @Query('schoolLevelId') schoolLevelId?: string,
+  ) {
+    return this.lifecycle.getEnrollments(tenantId, { academicYearId, schoolLevelId });
+  }
 
   @Post('pre-register')
   async preRegister(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {

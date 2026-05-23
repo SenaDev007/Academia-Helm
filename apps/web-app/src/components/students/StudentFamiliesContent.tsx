@@ -5,6 +5,8 @@ import { Users, Plus, Search, Filter, Mail, Phone, MapPin, Shield, Star, Heart, 
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LoadingState } from '@/components/ui/feedback/LoadingState';
+import { studentsService } from '@/services/students.service';
+import { toast } from '@/components/ui/toast';
 
 interface StudentWithGuardians {
   id: string;
@@ -37,17 +39,16 @@ export default function StudentFamiliesContent() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const params = new URLSearchParams({
+      const params = {
         academicYearId: academicYear?.id || '',
         schoolLevelId: schoolLevel?.id || '',
         includeGuardians: 'true',
-      });
-      const res = await fetch(`/api/students?${params}`);
-      if (res.ok) {
-        setStudents(await res.json());
-      }
-    } catch (e) {
+      };
+      const data = await studentsService.getAll(params);
+      setStudents(data);
+    } catch (e: any) {
       console.error(e);
+      toast({ title: 'Erreur', description: e.message || 'Impossible de charger les familles', variant: 'error' });
     } finally {
       setIsLoading(false);
     }

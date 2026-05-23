@@ -75,7 +75,11 @@ class LocalDbService {
       'school_levels', 'homeworks', 'incidents', 'loans', 'sessions', 
       'messages', 'notifications', 'alerts', 'reports', 'orion_alerts',
       'exam_candidates', 'exam_results', 'exam_pvs', 'pedagogical_files',
-      'disciplinary_incidents'
+      'disciplinary_incidents',
+      'class_diaries', 'lesson_plans', 'lesson_journals', 'lesson_journal_entries',
+      'weekly_semainier_daily_entries', 'teacher_class_assignments', 'homework_entries',
+      'teacher_profiles', 'academic_series', 'series_subjects',
+      'pedagogical_materials', 'material_stocks', 'material_movements', 'teacher_material_assignments'
     ];
 
     entities.forEach(storeName => {
@@ -195,7 +199,7 @@ class LocalDbService {
           default:
             reject(new Error('Invalid operation'));
             return;
-        }
+          }
 
         request.onsuccess = () => resolve();
         request.onerror = () => reject(request.error);
@@ -266,6 +270,6 @@ class LocalDbService {
 // Instance singleton
 export const localDb = new LocalDbService({
   dbName: 'academia-helm-local',
-  version: 3, // + schema_version, sync_operations, sync_conflicts, device_registry_local
+  version: 7, // + pedagogy modules (updated version for subjects, series, profiles, materials stores)
 });
 

@@ -16,7 +16,7 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 import { GetTenant } from '../../common/decorators/tenant.decorator';
 import { StudentsOrionService } from '../services/students-orion.service';
 
-@Controller('api/students/orion')
+@Controller('students/orion')
 @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
 @Roles('ADMIN', 'DIRECTOR')
 export class StudentsOrionController {

@@ -8,6 +8,7 @@ import { ModuleHeader, SubModuleNavigation, ModuleContentArea } from '@/componen
 import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { financeService } from '@/services/finance.service';
 
 export default function FinanceAuditPage() {
   const [anomalies, setAnomalies] = useState<any[]>([]);
@@ -16,8 +17,8 @@ export default function FinanceAuditPage() {
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/finance/anomalies?limit=30', { credentials: 'include' }).then((r) => (r.ok ? r.json() : [])),
-      fetch('/api/finance/audit-logs?limit=30', { credentials: 'include' }).then((r) => (r.ok ? r.json() : [])),
+      financeService.getAnomalies(30).catch(() => []),
+      financeService.getAuditLogs(30).catch(() => []),
     ]).then(([a, l]) => {
       setAnomalies(Array.isArray(a) ? a : []);
       setAuditLogs(Array.isArray(l) ? l : []);

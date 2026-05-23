@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
+import { financeService } from '@/services/finance.service';
 
 const formatXOF = (n: number) =>
   new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', maximumFractionDigits: 0 }).format(n);
@@ -43,26 +44,26 @@ export default function ExpensesPage() {
     if (filterCategory) params.set('categoryId', filterCategory);
     if (filterFrom) params.set('from', filterFrom);
     if (filterTo) params.set('to', filterTo);
-    const res = await fetch(`/api/finance/expenses-v2?${params}`, { credentials: 'include' });
-    const data = await res.json();
-    if (res.ok && Array.isArray(data)) setExpenses(data);
+    const data = await financeService.getExpenses(Object.fromEntries(params.entries()));
+    if (Array.isArray(data)) setExpenses(data);
   };
 
   const loadBudgets = async () => {
     if (!academicYear?.id) return;
-    const res = await fetch(`/api/finance/expenses-v2/budgets?academicYearId=${academicYear.id}`, { credentials: 'include' });
-    if (res.ok) {
-      const data = await res.json();
+    try {
+      const data = await financeService.getExpenseBudgets(academicYear.id);
       setBudgets(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setBudgets([]);
     }
   };
 
   useEffect(() => {
     if (!academicYear?.id) return;
     setLoading(true);
-    fetch('/api/finance/expenses/categories', { credentials: 'include' })
-      .then((r) => (r.ok ? r.json() : []))
-      .then((d) => setCategories(Array.isArray(d) ? d : []));
+    financeService.getExpenseCategories()
+      .then((d) => setCategories(Array.isArray(d) ? d : []))
+      .catch(() => setCategories([]));
     loadExpenses().then(() => setLoading(false));
     loadBudgets();
   }, [academicYear?.id, filterStatus, filterCategory, filterFrom, filterTo]);
@@ -74,34 +75,39 @@ export default function ExpensesPage() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!academicYear?.id || !form.categoryId || !form.description || !form.amount) return;
-    const res = await fetch('/api/finance/expenses-v2', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
+    try {
+      await financeService.createExpense({
         academicYearId: academicYear.id,
         categoryId: form.categoryId,
         description: form.description,
         amount: Number(form.amount),
         receiptUrl: form.receiptUrl || undefined,
-      }),
-    });
-    if (res.ok) {
+      });
       setModalCreate(false);
       setForm({ categoryId: '', description: '', amount: '', receiptUrl: '' });
       loadExpenses();
       loadBudgets();
+    } catch (error) {
+      console.error('Erreur lors de la création:', error);
     }
   };
 
   const handleApprove = async (id: string) => {
-    const res = await fetch(`/api/finance/expenses-v2/${id}/approve`, { method: 'PATCH', credentials: 'include' });
-    if (res.ok) loadExpenses();
+    try {
+      await financeService.approveExpense(id);
+      loadExpenses();
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   const handleReject = async (id: string) => {
-    const res = await fetch(`/api/finance/expenses-v2/${id}/reject`, { method: 'PATCH', credentials: 'include' });
-    if (res.ok) loadExpenses();
+    try {
+      await financeService.rejectExpense(id);
+      loadExpenses();
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   const subModuleTabs = FINANCE_SUBMODULE_TABS.map((t) => ({

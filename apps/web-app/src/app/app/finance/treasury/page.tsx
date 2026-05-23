@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
+import { financeService } from '@/services/finance.service';
 
 const formatXOF = (n: number) =>
   new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', maximumFractionDigits: 0 }).format(n);
@@ -31,8 +32,7 @@ export default function TreasuryPage() {
     if (!academicYear?.id) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/finance/treasury/daily-closures?academicYearId=${academicYear.id}`, { credentials: 'include' });
-      const data = await res.json();
+      const data = await financeService.getTreasuryClosures(academicYear.id);
       setClosures(Array.isArray(data) ? data : []);
     } finally {
       setLoading(false);
@@ -48,30 +48,27 @@ export default function TreasuryPage() {
     if (!academicYear?.id) return;
     setSubmitting(true);
     try {
-      const res = await fetch('/api/finance/treasury/daily-closures', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          academicYearId: academicYear.id,
-          date: closureDate,
-          physicalAmount: physicalAmount ? Number(physicalAmount) : undefined,
-          validate: true,
-        }),
+      await financeService.createTreasuryClosure({
+        academicYearId: academicYear.id,
+        date: closureDate,
+        physicalAmount: physicalAmount ? Number(physicalAmount) : undefined,
+        validate: true,
       });
-      if (res.ok) {
-        setModalClosure(false);
-        setPhysicalAmount('');
-        loadClosures();
-      }
+      setModalClosure(false);
+      setPhysicalAmount('');
+      loadClosures();
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleValidate = async (id: string) => {
-    const res = await fetch(`/api/finance/treasury/daily-closures/${id}/validate`, { method: 'PATCH', credentials: 'include' });
-    if (res.ok) loadClosures();
+    try {
+      await financeService.validateTreasuryClosure(id);
+      loadClosures();
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const subModuleTabs = FINANCE_SUBMODULE_TABS.map((t) => ({

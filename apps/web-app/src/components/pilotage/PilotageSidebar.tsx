@@ -14,7 +14,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import {
   LayoutDashboard,
   Users,
@@ -111,6 +111,8 @@ export default function PilotageSidebar({
   onCloseMobileDrawer,
 }: PilotageSidebarProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const tenantParam = searchParams.get('tenant');
   const { currentLevel } = useSchoolLevel();
   const { enabledSet, loading } = useEnabledFeatureCodes();
   const isSuperDirector =
@@ -225,11 +227,12 @@ export default function PilotageSidebar({
                     {mainModules.map((item) => {
               const Icon = item.icon;
               const active = isActive(item.path);
+              const href = tenantParam ? `${item.path}?tenant=${tenantParam}` : item.path;
               
               return (
                 <Link
                   key={item.path}
-                  href={item.path}
+                  href={href}
                   onClick={onCloseMobileDrawer}
                   className={`group flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
                     active
@@ -326,10 +329,12 @@ export default function PilotageSidebar({
               ) : (
                 platformModules.map((item) => {
                   const Icon = item.icon;
+                  const href = tenantParam ? `${item.path}?tenant=${tenantParam}` : item.path;
+
                   return (
                     <Link
                       key={item.path}
-                      href={item.path}
+                      href={href}
                       className="flex items-center justify-center p-2.5 rounded-lg transition-all duration-200 text-blue-100 hover:bg-blue-800/60 hover:text-white"
                       title={item.label}
                     >
@@ -350,7 +355,7 @@ export default function PilotageSidebar({
                 </p>
               )}
               <Link
-                href={generalModule.path}
+                href={tenantParam ? `${generalModule.path}?tenant=${tenantParam}` : generalModule.path}
                 onClick={onCloseMobileDrawer}
                 className={`group flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-200 border-l-2 ${
                   isActive(generalModule.path)
@@ -397,11 +402,12 @@ export default function PilotageSidebar({
                     {supplementaryModules.map((item) => {
               const Icon = item.icon;
               const active = isActive(item.path);
+              const href = tenantParam ? `${item.path}?tenant=${tenantParam}` : item.path;
               
               return (
                 <Link
                   key={item.path}
-                  href={item.path}
+                  href={href}
                   className={`group flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
                     active
                       ? 'bg-gradient-to-r from-blue-700 to-blue-600 text-white shadow-md shadow-blue-900/30'
@@ -430,10 +436,11 @@ export default function PilotageSidebar({
               supplementaryModules.map((item) => {
                 const Icon = item.icon;
                 const active = isActive(item.path);
+                const href = tenantParam ? `${item.path}?tenant=${tenantParam}` : item.path;
                 return (
                   <Link
                     key={item.path}
-                    href={item.path}
+                    href={href}
                     className="flex items-center justify-center p-2.5 rounded-lg transition-all duration-200 text-blue-100 hover:bg-blue-800/60 hover:text-white"
                     title={item.label}
                   >
@@ -447,7 +454,7 @@ export default function PilotageSidebar({
           {/* Paramètres */}
           <div className="mt-auto pt-4 border-t border-blue-700/50">
             <Link
-              href="/app/settings"
+              href={tenantParam ? `/app/settings?tenant=${tenantParam}` : '/app/settings'}
               onClick={onCloseMobileDrawer}
               className={`group flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
                 isActive('/app/settings')

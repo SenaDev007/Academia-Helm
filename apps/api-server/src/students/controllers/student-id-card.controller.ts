@@ -29,7 +29,7 @@ import { GetTenant } from '../../common/decorators/tenant.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { StudentIdCardService } from '../services/student-id-card.service';
 
-@Controller('api/students/id-cards')
+@Controller('students/id-cards')
 @UseGuards(JwtAuthGuard, TenantGuard)
 export class StudentIdCardController {
   constructor(private readonly idCardService: StudentIdCardService) {}

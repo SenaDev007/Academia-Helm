@@ -18,7 +18,7 @@ import { DisciplinePrismaService } from './discipline-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 
-@Controller('api/discipline')
+@Controller('discipline')
 @UseGuards(JwtAuthGuard)
 export class DisciplinePrismaController {
   constructor(private readonly disciplineService: DisciplinePrismaService) {}

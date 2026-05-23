@@ -87,6 +87,14 @@ class NetworkDetectionService {
     callback(this.isOnline);
   }
 
+  onNetworkStatusChange(callback: NetworkStatusCallback): () => void {
+    this.listeners.push(callback);
+    callback(this.isOnline);
+    return () => {
+      this.removeListener(callback);
+    };
+  }
+
   /**
    * Retire un listener
    */

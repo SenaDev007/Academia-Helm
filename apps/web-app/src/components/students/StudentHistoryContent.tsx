@@ -10,6 +10,8 @@ import { useState, useEffect } from 'react';
 import { History, Milestone, TrendingUp, AlertTriangle, Lock, Unlock, FileText } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { LoadingState } from '@/components/ui/feedback/LoadingState';
+import { studentsService } from '@/services/students.service';
+import { toast } from '@/components/ui/toast';
 
 interface HistoryRecord {
   id: string;
@@ -40,17 +42,16 @@ export default function StudentHistoryContent() {
   const loadHistory = async () => {
     setIsLoading(true);
     try {
-      const params = new URLSearchParams({
+      const params = {
         academicYearId: academicYear?.id || '',
         schoolLevelId: schoolLevel?.id || '',
         includeHistory: 'true',
-      });
-      const res = await fetch(`/api/students?${params}`);
-      if (res.ok) {
-        setData(await res.json());
-      }
-    } catch (e) {
+      };
+      const data = await studentsService.getAll(params);
+      setData(data);
+    } catch (e: any) {
       console.error(e);
+      toast({ title: 'Erreur', description: e.message || 'Impossible de charger l\'historique', variant: 'error' });
     } finally {
       setIsLoading(false);
     }

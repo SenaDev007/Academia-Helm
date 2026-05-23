@@ -24,7 +24,7 @@ import { StudentsPrismaService } from './students-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 
-@Controller('api/students')
+@Controller('students')
 @UseGuards(JwtAuthGuard)
 export class StudentsPrismaController {
   constructor(private readonly studentsService: StudentsPrismaService) {}

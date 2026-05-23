@@ -258,7 +258,7 @@ export async function executePostLoginFlow(
     // ORION uniquement pour les rôles direction (tenir compte du tenant avec id)
     if (['DIRECTOR', 'SUPER_DIRECTOR', 'ADMIN', 'PLATFORM_OWNER'].includes(user.role) && tenant?.id) {
       try {
-        const rawAlerts = await getOrionAlerts('CRITIQUE', false);
+        const rawAlerts = await getOrionAlerts({ level: 'CRITIQUE', acknowledged: false });
         const alerts = Array.isArray(rawAlerts) ? rawAlerts : [];
         orionAlerts = alerts.slice(0, 5).map((alert: any) => ({
           id: alert.id,

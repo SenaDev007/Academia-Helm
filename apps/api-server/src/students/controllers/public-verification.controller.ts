@@ -13,7 +13,7 @@ import { Public } from '@/auth/decorators/public.decorator';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 
-@Controller('api/public/verify')
+@Controller('public/verify')
 export class PublicVerificationController {
   constructor(
     private readonly verificationService: PublicVerificationService,

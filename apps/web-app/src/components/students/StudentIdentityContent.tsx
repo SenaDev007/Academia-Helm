@@ -10,6 +10,8 @@ import { useState, useEffect } from 'react';
 import { User, Shield, Users, Mail, Phone, FileCheck, AlertCircle } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { LoadingState } from '@/components/ui/feedback/LoadingState';
+import { studentsService } from '@/services/students.service';
+import { toast } from '@/components/ui/toast';
 
 interface StudentIdentity {
   id: string;
@@ -46,17 +48,16 @@ export default function StudentIdentityContent() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const params = new URLSearchParams({
+      const params = {
         academicYearId: academicYear?.id || '',
         schoolLevelId: schoolLevel?.id || '',
         includeGuardians: 'true',
-      });
-      const res = await fetch(`/api/students?${params}`);
-      if (res.ok) {
-        setStudents(await res.json());
-      }
-    } catch (e) {
+      };
+      const data = await studentsService.getAll(params);
+      setStudents(data);
+    } catch (e: any) {
       console.error(e);
+      toast({ title: 'Erreur', description: e.message || 'Impossible de charger les étudiants', variant: 'error' });
     } finally {
       setIsLoading(false);
     }
@@ -158,19 +159,10 @@ export default function StudentIdentityContent() {
               <button 
                 onClick={async () => {
                   try {
-                    const res = await fetch(`/api/students/${student.id}/academic-dossier?academicYearId=${academicYear?.id}`);
-                    if (res.ok) {
-                      const blob = await res.blob();
-                      const url = window.URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `DOSSIER_${student.lastName}_${student.firstName}.pdf`;
-                      document.body.appendChild(a);
-                      a.click();
-                      window.URL.revokeObjectURL(url);
-                    }
-                  } catch (e) {
-                    console.error('Download failed', e);
+                    if (!academicYear?.id) return;
+                    await studentsService.downloadAcademicDossier(student.id, academicYear.id);
+                  } catch (e: any) {
+                    toast({ title: 'Erreur', description: 'Erreur lors du téléchargement du dossier', variant: 'error' });
                   }
                 }}
                 className="text-[11px] font-medium text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-md transition-colors flex items-center gap-1"

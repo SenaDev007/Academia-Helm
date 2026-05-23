@@ -6,7 +6,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
-@Controller('api/students/admissions')
+@Controller('students/admissions')
 @UseGuards(JwtAuthGuard)
 export class AdmissionController {
   constructor(private readonly admissionService: AdmissionService) {}

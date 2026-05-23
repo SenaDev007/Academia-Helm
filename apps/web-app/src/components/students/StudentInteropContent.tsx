@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { toast } from '@/components/ui/toast';
+import { studentsService } from '@/services/students.service';
 import { 
   Globe, 
   FileJson, 
@@ -31,39 +32,17 @@ export default function StudentInteropContent() {
 
     setSyncingLevelId(level.id);
     try {
-      const params = new URLSearchParams({
-        academicYearId: academicYear.id,
-        schoolLevelId: level.id,
+      await studentsService.exportEducmasterExcel(academicYear.id, level.id);
+      setLastExport(`${level.label} - ${new Date().toLocaleString('fr-FR')}`);
+      toast({ 
+        title: 'Succès', 
+        description: `Export ${level.label} généré avec succès`, 
+        variant: 'success' 
       });
-      
-      const res = await fetch(`/api/students/export/educmaster-excel?${params}`);
-      if (res.ok) {
-        const blob = await res.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `EDUCMASTER_EXPORT_${level.code}_${academicYear.label}.xlsx`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        setLastExport(`${level.label} - ${new Date().toLocaleString('fr-FR')}`);
-        toast({ 
-          title: 'Succès', 
-          description: `Export ${level.label} généré avec succès`, 
-          variant: 'success' 
-        });
-      } else {
-        const error = await res.json();
-        toast({ 
-          title: 'Erreur', 
-          description: error.message || 'Erreur lors de l\'export', 
-          variant: 'error' 
-        });
-      }
-    } catch (e) {
+    } catch (e: any) {
       toast({ 
         title: 'Erreur', 
-        description: 'Erreur réseau lors de l\'export', 
+        description: e.message || 'Erreur réseau lors de l\'export', 
         variant: 'error' 
       });
     } finally {

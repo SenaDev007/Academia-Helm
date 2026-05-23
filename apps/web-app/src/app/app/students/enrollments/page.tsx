@@ -215,11 +215,13 @@ export default function EnrollmentsPage() {
                 // 1. Créer l'élève
                 const studentResponse = await fetch('/api/students', {
                   method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
+                  headers: { 
+                    'Content-Type': 'application/json',
+                    'x-school-level-id': schoolLevel.id,
+                    'x-academic-year-id': academicYear.id,
+                  },
                   body: JSON.stringify({
                     ...data.student,
-                    academicYearId: academicYear.id,
-                    schoolLevelId: schoolLevel.id,
                   }),
                 });
 
@@ -233,10 +235,13 @@ export default function EnrollmentsPage() {
                 // 2. Créer le profil tarifaire
                 const profileResponse = await fetch('/api/finance/student-fee-profiles', {
                   method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
+                  headers: { 
+                    'Content-Type': 'application/json',
+                    'x-school-level-id': schoolLevel.id,
+                    'x-academic-year-id': academicYear.id,
+                  },
                   body: JSON.stringify({
                     studentId: student.id,
-                    academicYearId: academicYear.id,
                     feeRegimeId: data.feeProfile.feeRegimeId,
                     justification: data.feeProfile.justification,
                   }),
@@ -253,7 +258,11 @@ export default function EnrollmentsPage() {
                     if (!g.firstName.trim() && !g.lastName.trim()) continue;
                     await fetch(`/api/students/${student.id}/guardians`, {
                       method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
+                      headers: { 
+                        'Content-Type': 'application/json',
+                        'x-school-level-id': schoolLevel.id,
+                        'x-academic-year-id': academicYear.id,
+                      },
                       body: JSON.stringify({
                         firstName: g.firstName,
                         lastName: g.lastName,
@@ -270,10 +279,12 @@ export default function EnrollmentsPage() {
                 if (data.classId) {
                   await fetch(`/api/students/${student.id}/enroll`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 
+                      'Content-Type': 'application/json',
+                      'x-school-level-id': schoolLevel.id,
+                      'x-academic-year-id': academicYear.id,
+                    },
                     body: JSON.stringify({
-                      academicYearId: academicYear.id,
-                      schoolLevelId: schoolLevel.id,
                       classId: data.classId,
                       enrollmentType: 'NEW',
                       enrollmentDate: new Date().toISOString(),

@@ -8,6 +8,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { getModalMotion } from '@/lib/motion/presets';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
+import { studentsService } from '@/services/students.service';
+import { financeService } from '@/services/finance.service';
 
 export default function FeeOverrideModal({
   structures,
@@ -24,11 +26,10 @@ export default function FeeOverrideModal({
   const [loading, setLoading] = useState(false);
   const { shouldReduceMotion } = useMotionBudget();
   const modalMotion = getModalMotion(shouldReduceMotion);
-
   useEffect(() => {
-    fetch('/api/students?limit=200', { credentials: 'include' })
-      .then((r) => r.ok ? r.json() : [])
-      .then((d) => setStudents(Array.isArray(d) ? d : d?.data ?? []));
+    studentsService.getAll({ limit: '200' })
+      .then((d) => setStudents(Array.isArray(d) ? d : d?.data ?? []))
+      .catch(() => setStudents([]));
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -37,20 +38,10 @@ export default function FeeOverrideModal({
     if (!studentId || !feeStructureId || isNaN(amount) || !reason.trim()) return;
     setLoading(true);
     try {
-      const res = await fetch('/api/finance/fee-structures/override', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ studentId, feeStructureId, customAmount: amount, reason: reason.trim() }),
-      });
-      if (res.ok) {
-        onClose();
-      } else {
-        const err = await res.json();
-        alert(err?.message || err?.error || 'Erreur');
-      }
-    } catch {
-      alert('Erreur réseau');
+      await financeService.overrideFeeStructure({ studentId, feeStructureId, customAmount: amount, reason: reason.trim() });
+      onClose();
+    } catch (error: any) {
+      alert(error?.message || 'Erreur réseau');
     } finally {
       setLoading(false);
     }

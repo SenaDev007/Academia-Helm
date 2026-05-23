@@ -21,6 +21,7 @@ import {
 import { cn, formatCurrency } from '@/lib/utils';
 import { motion } from 'framer-motion';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { orionService } from '@/services/orion.service';
 
 export default function OrionFinanceVigilance() {
   const { academicYear } = useModuleContext();
@@ -36,11 +37,8 @@ export default function OrionFinanceVigilance() {
   const loadAlerts = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/orion/alerts?alertType=FINANCIAL&academicYearId=${academicYear?.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        setAlerts(data);
-      }
+      const data = await orionService.getAlerts({ alertType: 'FINANCIAL', academicYearId: academicYear?.id });
+      setAlerts(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error(e);
     } finally {

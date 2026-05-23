@@ -27,7 +27,7 @@ import { GetTenant } from '../../common/decorators/tenant.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { StudentIdentifierService } from '../services/student-identifier.service';
 
-@Controller('api/students/identifiers')
+@Controller('students/identifiers')
 @UseGuards(JwtAuthGuard, TenantGuard)
 export class StudentIdentifierController {
   constructor(private readonly identifierService: StudentIdentifierService) {}

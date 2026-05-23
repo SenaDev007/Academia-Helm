@@ -6,6 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useToast } from '@/components/ui/use-toast';
+import { financeService } from '@/services/finance.service';
+import { networkDetectionService } from '@/lib/offline/network-detection.service';
 
 const METHODS = [
   { value: 'CASH', label: 'Espèces' },
@@ -31,6 +34,7 @@ export default function NewPaymentModal({
   const [reference, setReference] = useState('');
   const [preview, setPreview] = useState<{ totalPay: number; lines: { name: string; pay: number }[] } | null>(null);
   const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
 
   const selectedAccount = accounts.find((a) => a.id === studentAccountId);
   const amountNum = parseFloat(amount);
@@ -61,21 +65,19 @@ export default function NewPaymentModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!studentAccountId || !amountNum || amountNum <= 0) return;
+    
+    if (!networkDetectionService.isConnected()) {
+      toast({ title: 'Hors Ligne', description: 'Les transactions financières nécessitent une connexion internet.', variant: 'destructive' });
+      return;
+    }
+
     setLoading(true);
     try {
-      const res = await fetch('/api/finance/transactions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ academicYearId, studentAccountId, amount: amountNum, paymentMethod, reference: reference.trim() || undefined }),
-      });
-      if (res.ok) onSuccess();
-      else {
-        const err = await res.json();
-        alert(err?.message || err?.error || 'Erreur');
-      }
-    } catch {
-      alert('Erreur réseau');
+      await financeService.createTransaction({ academicYearId, studentAccountId, amount: amountNum, paymentMethod, reference: reference.trim() || undefined });
+      toast({ title: 'Paiement enregistré', description: 'Le reçu a été généré avec succès.' });
+      onSuccess();
+    } catch (error: any) {
+      toast({ title: 'Erreur', description: error?.message || 'Impossible d\'enregistrer le paiement', variant: 'destructive' });
     } finally {
       setLoading(false);
     }

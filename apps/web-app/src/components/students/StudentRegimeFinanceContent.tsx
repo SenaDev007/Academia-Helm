@@ -10,6 +10,8 @@ import { useState, useEffect } from 'react';
 import { DollarSign, CreditCard, ShieldAlert, BadgeCheck, Receipt, Wallet, ArrowRight } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { LoadingState } from '@/components/ui/feedback/LoadingState';
+import { studentsService } from '@/services/students.service';
+import { toast } from '@/components/ui/toast';
 
 interface FinanceRecord {
   id: string;
@@ -38,17 +40,16 @@ export default function StudentRegimeFinanceContent() {
   const loadFinanceData = async () => {
     setIsLoading(true);
     try {
-      const params = new URLSearchParams({
+      const params = {
         academicYearId: academicYear?.id || '',
         schoolLevelId: schoolLevel?.id || '',
         includeFinance: 'true',
-      });
-      const res = await fetch(`/api/students?${params}`);
-      if (res.ok) {
-        setData(await res.json());
-      }
-    } catch (e) {
+      };
+      const data = await studentsService.getAll(params);
+      setData(data);
+    } catch (e: any) {
       console.error(e);
+      toast({ title: 'Erreur', description: e.message || 'Impossible de charger la situation financière', variant: 'error' });
     } finally {
       setIsLoading(false);
     }

@@ -20,6 +20,8 @@ import {
   RefreshCw,
   Users
 } from 'lucide-react';
+import { studentsService } from '@/services/students.service';
+import { toast } from '@/components/ui/toast';
 
 interface MatriculeStats {
   total: number;
@@ -44,13 +46,11 @@ export default function StudentMatriculesSection() {
   const loadStats = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch('/api/students/identifiers/stats');
-      if (response.ok) {
-        const data = await response.json();
-        setStats(data);
-      }
-    } catch (error) {
+      const data = await studentsService.getMatriculeStats();
+      setStats(data);
+    } catch (error: any) {
       console.error('Error loading stats:', error);
+      toast({ title: 'Erreur', description: error.message || 'Impossible de charger les statistiques des matricules', variant: 'error' });
     } finally {
       setIsLoading(false);
     }
@@ -59,22 +59,12 @@ export default function StudentMatriculesSection() {
   const handleGenerateMatricule = async (studentId: string) => {
     try {
       setIsLoading(true);
-      const response = await fetch(
-        `/api/students/identifiers/${studentId}/generate?countryCode=BJ`,
-        { method: 'POST' }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        alert(`Matricule généré avec succès: ${data.globalMatricule}`);
-        loadStats();
-      } else {
-        const error = await response.json();
-        alert(`Erreur: ${error.message || 'Échec de la génération'}`);
-      }
-    } catch (error) {
+      const data = await studentsService.generateMatricule(studentId);
+      toast({ title: 'Succès', description: `Matricule généré avec succès: ${data.globalMatricule}`, variant: 'success' });
+      loadStats();
+    } catch (error: any) {
       console.error('Error generating matricule:', error);
-      alert('Erreur lors de la génération du matricule');
+      toast({ title: 'Erreur', description: error.message || 'Erreur lors de la génération du matricule', variant: 'error' });
     } finally {
       setIsLoading(false);
     }
@@ -87,31 +77,20 @@ export default function StudentMatriculesSection() {
 
     try {
       setIsLoading(true);
-      // Récupérer l'année scolaire et le niveau depuis le contexte
       const academicYearId = localStorage.getItem('academicYearId') || '';
       const schoolLevelId = localStorage.getItem('schoolLevelId') || '';
 
-      const response = await fetch('/api/students/identifiers/generate-bulk?countryCode=BJ', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          academicYearId,
-          schoolLevelId,
-          status: 'ACTIVE',
-        }),
+      const data = await studentsService.generateBulkMatricules({
+        academicYearId,
+        schoolLevelId,
+        status: 'ACTIVE',
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        alert(`${data.succeeded} matricule(s) généré(s) avec succès sur ${data.total}`);
-        loadStats();
-      } else {
-        const error = await response.json();
-        alert(`Erreur: ${error.message || 'Échec de la génération en lot'}`);
-      }
-    } catch (error) {
+      toast({ title: 'Succès', description: `${data.succeeded} matricule(s) généré(s) avec succès sur ${data.total}`, variant: 'success' });
+      loadStats();
+    } catch (error: any) {
       console.error('Error generating bulk matricules:', error);
-      alert('Erreur lors de la génération en lot');
+      toast({ title: 'Erreur', description: error.message || 'Erreur lors de la génération en lot', variant: 'error' });
     } finally {
       setIsLoading(false);
     }
@@ -119,27 +98,18 @@ export default function StudentMatriculesSection() {
 
   const handleSearchByMatricule = async () => {
     if (!searchMatricule.trim()) {
-      alert('Veuillez saisir un matricule');
+      toast({ title: 'Attention', description: 'Veuillez saisir un matricule', variant: 'error' });
       return;
     }
 
     try {
       setIsLoading(true);
-      const response = await fetch(
-        `/api/students/identifiers/search/${encodeURIComponent(searchMatricule)}`
-      );
-
-      if (response.ok) {
-        const student = await response.json();
-        alert(`Élève trouvé: ${student.firstName} ${student.lastName}`);
-        setSearchMatricule('');
-      } else {
-        const error = await response.json();
-        alert(`Erreur: ${error.message || 'Matricule non trouvé'}`);
-      }
-    } catch (error) {
+      const student = await studentsService.searchByMatricule(searchMatricule);
+      toast({ title: 'Succès', description: `Élève trouvé: ${student.firstName} ${student.lastName}`, variant: 'success' });
+      setSearchMatricule('');
+    } catch (error: any) {
       console.error('Error searching matricule:', error);
-      alert('Erreur lors de la recherche');
+      toast({ title: 'Erreur', description: error.message || 'Matricule non trouvé', variant: 'error' });
     } finally {
       setIsLoading(false);
     }

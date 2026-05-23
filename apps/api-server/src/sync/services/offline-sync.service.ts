@@ -567,6 +567,27 @@ export class OfflineSyncService {
       student_fee_profiles: 'studentFeeProfile',
       collection_cases: 'collectionCase',
       student_documents: 'studentDocument',
+      fee_structures: 'feeStructure',
+      expenses: 'expense',
+      finance_settings: 'financeSetting',
+      // Pedagogy Models
+      exams: 'exam',
+      class_diaries: 'classDiary',
+      lesson_plans: 'lessonPlan',
+      lesson_journals: 'lessonJournal',
+      lesson_journal_entries: 'lessonJournalEntry',
+      weekly_semainier_daily_entries: 'weeklySemainierDailyEntry',
+      teacher_class_assignments: 'teacherClassAssignment',
+      homework_entries: 'homeworkEntry',
+      subjects: 'subject',
+      teachers: 'teacher',
+      teacher_profiles: 'teacherAcademicProfile',
+      academic_series: 'academicSeries',
+      series_subjects: 'seriesSubject',
+      pedagogical_materials: 'pedagogicalMaterial',
+      material_stocks: 'materialStock',
+      material_movements: 'materialMovement',
+      teacher_material_assignments: 'teacherMaterialAssignment',
     };
 
     return mapping[tableName] || tableName;

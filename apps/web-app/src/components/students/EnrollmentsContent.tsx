@@ -13,6 +13,10 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 import { formatGradeLabel } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import StudentEnrollmentForm from '@/components/students/StudentEnrollmentForm';
+import { studentsService } from '@/services/students.service';
+import { financeService } from '@/services/finance.service';
+import { toast } from '@/components/ui/toast';
+import { apiFetch } from '@/lib/api/client';
 
 interface Enrollment {
   id: string;
@@ -43,17 +47,15 @@ export default function EnrollmentsContent() {
     if (!academicYear || !schoolLevel) return;
     setIsLoading(true);
     try {
-      const params = new URLSearchParams({
+      const params = {
         academicYearId: academicYear.id,
         schoolLevelId: schoolLevel.id,
-      });
-      const response = await fetch(`/api/students/enrollments?${params}`);
-      if (response.ok) {
-        const data = await response.json();
-        setEnrollments(data);
-      }
-    } catch (e) {
+      };
+      const response = await studentsService.getEnrollments(params);
+      setEnrollments(response);
+    } catch (e: any) {
       console.error('Failed to load enrollments:', e);
+      toast({ title: 'Erreur', description: e.message || 'Impossible de charger les inscriptions', variant: 'error' });
     } finally {
       setIsLoading(false);
     }
@@ -255,88 +257,62 @@ export default function EnrollmentsContent() {
               try {
                 let student: any;
                 if (data.operation === 'PRE_REGISTER') {
-                  const preRegResponse = await fetch('/api/students/pre-register', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      academicYearId: academicYear.id,
-                      schoolLevelId: schoolLevel.id,
-                      firstName: data.student.firstName,
-                      lastName: data.student.lastName,
-                      dateOfBirth: data.student.dateOfBirth,
-                      gender: data.student.gender,
-                      nationality: data.student.nationality,
-                      placeOfBirth: data.student.placeOfBirth,
-                      photoUrl: data.student.photoUrl,
-                      regimeType: undefined,
-                      classId: data.classId,
-                    }),
-                  });
-                  if (!preRegResponse.ok) {
-                    const err = await preRegResponse.json().catch(() => ({}));
-                    throw new Error(err.message || "Erreur lors de la pré-inscription");
-                  }
-                  student = await preRegResponse.json();
-                } else {
-                  const studentResponse = await fetch('/api/students', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      ...data.student,
-                      academicYearId: academicYear.id,
-                      schoolLevelId: schoolLevel.id,
-                    }),
-                  });
-                  if (!studentResponse.ok) {
-                    const err = await studentResponse.json().catch(() => ({}));
-                    throw new Error(err.message || "Erreur lors de la création de l'élève");
-                  }
-                  student = await studentResponse.json();
-                }
-                await fetch('/api/finance/student-fee-profiles', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    studentId: student.id,
+                  student = await studentsService.preRegister({
                     academicYearId: academicYear.id,
-                    feeRegimeId: data.feeProfile.feeRegimeId,
-                    justification: data.feeProfile.justification,
-                  }),
+                    schoolLevelId: schoolLevel.id,
+                    firstName: data.student.firstName,
+                    lastName: data.student.lastName,
+                    dateOfBirth: data.student.dateOfBirth,
+                    gender: data.student.gender,
+                    nationality: data.student.nationality,
+                    placeOfBirth: data.student.placeOfBirth,
+                    photoUrl: data.student.photoUrl,
+                    regimeType: undefined,
+                    classId: data.classId,
+                  });
+                } else {
+                  student = await studentsService.create({
+                    ...data.student,
+                    academicYearId: academicYear.id,
+                    schoolLevelId: schoolLevel.id,
+                  });
+                }
+                
+                await financeService.createStudentFeeProfile({
+                  studentId: student.id,
+                  academicYearId: academicYear.id,
+                  feeRegimeId: data.feeProfile.feeRegimeId,
+                  justification: data.feeProfile.justification,
                 }).catch(() => undefined);
                 if (data.guardians?.length) {
                   for (const g of data.guardians) {
                     if (!g.firstName?.trim() && !g.lastName?.trim()) continue;
-                    await fetch(`/api/students/${student.id}/guardians`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
+                    await studentsService.addGuardians(student.id, {
+                      guardians: [{
                         firstName: g.firstName,
                         lastName: g.lastName,
                         relationship: g.relationship || 'GUARDIAN',
                         phone: g.phone,
                         email: g.email,
                         isPrimary: g.isPrimary ?? false,
-                      }),
+                      }]
                     }).catch(() => undefined);
                   }
                 }
                 if (data.classId && data.operation === 'ADMIT') {
-                  await fetch(`/api/students/${student.id}/enroll`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      academicYearId: academicYear.id,
-                      schoolLevelId: schoolLevel.id,
-                      classId: data.classId,
-                      enrollmentType: 'NEW',
-                      enrollmentDate: new Date().toISOString(),
-                    }),
+                  await studentsService.enrollStudent(student.id, {
+                    academicYearId: academicYear.id,
+                    schoolLevelId: schoolLevel.id,
+                    classId: data.classId,
+                    enrollmentType: 'NEW',
+                    enrollmentDate: new Date().toISOString(),
                   }).catch(() => undefined);
                 }
+                toast({ title: 'Succès', description: 'Inscription effectuée avec succès', variant: 'success' });
                 setIsCreateModalOpen(false);
                 loadEnrollments();
               } catch (e: any) {
-                throw e;
+                toast({ title: 'Erreur', description: e.message || 'Erreur lors de l\'inscription', variant: 'error' });
               }
             }}
             onCancel={() => setIsCreateModalOpen(false)}

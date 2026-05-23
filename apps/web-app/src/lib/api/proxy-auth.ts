@@ -14,6 +14,8 @@ const TENANT_ID_COOKIE = 'x-tenant-id';
 export type ProxyAuthHeaders = Record<string, string> & {
   Authorization?: string;
   'x-tenant-id'?: string;
+  'x-school-level-id'?: string;
+  'x-academic-year-id'?: string;
 };
 
 /** Retire les espaces et un éventuel double préfixe Bearer. */
@@ -167,6 +169,16 @@ export async function getProxyAuthHeaders(request: NextRequest): Promise<ProxyAu
     undefined;
   if (tenantId && typeof tenantId === 'string' && tenantId.trim()) {
     headers['x-tenant-id'] = tenantId.trim();
+  }
+
+  const schoolLevelId = request.headers.get('x-school-level-id');
+  if (schoolLevelId) {
+    headers['x-school-level-id'] = schoolLevelId;
+  }
+
+  const academicYearId = request.headers.get('x-academic-year-id');
+  if (academicYearId) {
+    headers['x-academic-year-id'] = academicYearId;
   }
 
   return headers;

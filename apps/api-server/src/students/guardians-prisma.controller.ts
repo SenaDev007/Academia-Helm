@@ -18,7 +18,7 @@ import { GuardiansPrismaService } from './guardians-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 
-@Controller('api/students/:studentId/guardians')
+@Controller('students/:studentId/guardians')
 @UseGuards(JwtAuthGuard)
 export class GuardiansPrismaController {
   constructor(private readonly guardiansService: GuardiansPrismaService) {}

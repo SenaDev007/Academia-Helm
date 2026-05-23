@@ -43,6 +43,37 @@ apiClient.interceptors.request.use(
       if (tenantId && config.headers) {
         config.headers['X-Tenant-ID'] = tenantId;
       }
+
+      // Ajouter le niveau scolaire depuis localStorage
+      const schoolLevelStr = localStorage.getItem('schoolLevel');
+      if (schoolLevelStr) {
+        try {
+          const sl = JSON.parse(schoolLevelStr);
+          if (sl.id && config.headers) {
+            config.headers['x-school-level-id'] = sl.id;
+          }
+        } catch (e) {}
+      }
+
+      // Ajouter l'année académique depuis localStorage
+      const academicYearStr = localStorage.getItem('academicYear');
+      if (academicYearStr) {
+        try {
+          const ay = JSON.parse(academicYearStr);
+          if (ay.id && config.headers) {
+            config.headers['x-academic-year-id'] = ay.id;
+          }
+        } catch (e) {}
+      }
+      
+      // Injecter le type de module dynamiquement
+      const pathParts = window.location.pathname.split('/');
+      if (pathParts.length > 2 && pathParts[1] === 'app') {
+        const moduleType = pathParts[2]; // ex: 'exams', 'hr', 'finance'
+        if (moduleType && config.headers) {
+          config.headers['x-module-type'] = moduleType.toUpperCase();
+        }
+      }
     }
 
     return config;

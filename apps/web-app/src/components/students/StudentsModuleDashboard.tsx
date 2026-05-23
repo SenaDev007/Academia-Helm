@@ -28,6 +28,8 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { studentsService } from '@/services/students.service';
+import { toast } from '@/components/ui/toast';
 
 export interface StudentsModuleDashboardProps {
   /** Callback pour naviguer vers un sous-module (changer l’onglet actif) */
@@ -78,14 +80,13 @@ export default function StudentsModuleDashboard({
       return;
     }
     setLoading(true);
-    const params = new URLSearchParams({
-      academicYearId: academicYear.id,
-      schoolLevelId: schoolLevel.id,
-    });
-    fetch(`/api/students/statistics?${params}`)
-      .then((r) => (r.ok ? r.json() : null))
+    studentsService.getStatistics(academicYear.id, schoolLevel.id)
       .then(setStatistics)
-      .catch(() => setStatistics(null))
+      .catch((e) => {
+        console.error(e);
+        toast({ title: 'Erreur', description: 'Impossible de charger les statistiques du tableau de bord', variant: 'error' });
+        setStatistics(null);
+      })
       .finally(() => setLoading(false));
   }, [academicYear?.id, schoolLevel?.id]);
 

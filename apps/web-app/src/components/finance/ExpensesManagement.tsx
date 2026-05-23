@@ -6,25 +6,58 @@
 
 'use client';
 
-import { useState } from 'react';
-import { 
-  TrendingDown, 
-  Plus, 
-  FileText, 
-  CheckCircle2, 
-  Clock, 
-  AlertCircle,
-  Filter,
-  Search
-} from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { TrendingDown, Plus, CheckCircle2, Clock, AlertCircle, Filter, Search } from 'lucide-react';
 import { cn, formatCurrency } from '@/lib/utils';
+import { financeService } from '@/services/finance.service';
+import { useToast } from '@/components/ui/use-toast';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 export default function ExpensesManagement() {
-  const [expenses, setExpenses] = useState([
-    { id: 'EXP-001', category: 'FOURNITURES', description: 'Papeterie examen', amount: 450000, status: 'PAID', date: '2026-05-10' },
-    { id: 'EXP-002', category: 'MAINTENANCE', description: 'Réparation climatiseurs', amount: 125000, status: 'PENDING', date: '2026-05-12' },
-    { id: 'EXP-003', category: 'ENERGIE', description: 'Facture CIE Mai', amount: 890000, status: 'APPROVED', date: '2026-05-14' },
-  ]);
+  const { toast } = useToast();
+  const [expenses, setExpenses] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [newExpense, setNewExpense] = useState({ description: '', amount: '', category: 'FOURNITURES', date: '' });
+
+  const loadExpenses = async () => {
+    setLoading(true);
+    try {
+      const data = await financeService.getExpenses();
+      setExpenses(Array.isArray(data) ? data : (data.data || []));
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message || 'Impossible de charger les dépenses', variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadExpenses();
+  }, []);
+
+  const handleCreate = async () => {
+    if (!newExpense.description || !newExpense.amount) {
+      toast({ title: 'Erreur', description: 'Veuillez remplir les champs obligatoires.', variant: 'destructive' });
+      return;
+    }
+    try {
+      await financeService.createExpense({
+        ...newExpense,
+        amount: Number(newExpense.amount),
+        date: newExpense.date || new Date().toISOString().split('T')[0]
+      });
+      setModalOpen(false);
+      setNewExpense({ description: '', amount: '', category: 'FOURNITURES', date: '' });
+      toast({ title: 'Succès', description: 'Dépense enregistrée.' });
+      loadExpenses();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message || 'Erreur lors de la création', variant: 'destructive' });
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -42,16 +75,21 @@ export default function ExpensesManagement() {
             <Filter className="w-4 h-4 text-slate-600" />
           </button>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-all">
+        <Button onClick={() => setModalOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-all">
           <Plus className="w-4 h-4" /> Nouvel Engagement
-        </button>
+        </Button>
       </div>
 
       {/* Grid Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: List */}
         <div className="lg:col-span-2 space-y-4">
-          {expenses.map((exp) => (
+          {loading ? (
+            <div className="p-8 text-center text-gray-500 bg-white rounded-2xl border">Chargement...</div>
+          ) : expenses.length === 0 ? (
+            <div className="p-8 text-center text-gray-500 bg-white rounded-2xl border">Aucune dépense trouvée.</div>
+          ) : (
+            expenses.map((exp) => (
             <div key={exp.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex items-center justify-between group">
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-rose-50 rounded-xl group-hover:scale-110 transition-transform">
@@ -84,7 +122,7 @@ export default function ExpensesManagement() {
                 </div>
               </div>
             </div>
-          ))}
+          )))}
         </div>
 
         {/* Right: Summary / Categories */}
@@ -111,9 +149,63 @@ export default function ExpensesManagement() {
                   </div>
                 ))}
              </div>
-          </div>
+           </div>
         </div>
       </div>
+
+      {/* Modal Création */}
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nouvel engagement de dépense</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Description</label>
+              <Input 
+                placeholder="Description de la dépense" 
+                value={newExpense.description} 
+                onChange={(e) => setNewExpense({ ...newExpense, description: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Montant (XOF)</label>
+                <Input 
+                  type="number" 
+                  placeholder="0" 
+                  value={newExpense.amount} 
+                  onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Date</label>
+                <Input 
+                  type="date" 
+                  value={newExpense.date} 
+                  onChange={(e) => setNewExpense({ ...newExpense, date: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Catégorie</label>
+              <Select value={newExpense.category} onValueChange={(v) => setNewExpense({ ...newExpense, category: v })}>
+                <SelectTrigger><SelectValue placeholder="Catégorie" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="FOURNITURES">Fournitures</SelectItem>
+                  <SelectItem value="MAINTENANCE">Maintenance</SelectItem>
+                  <SelectItem value="ENERGIE">Énergie / Eau</SelectItem>
+                  <SelectItem value="PERSONNEL">Personnel</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalOpen(false)}>Annuler</Button>
+            <Button onClick={handleCreate}>Enregistrer</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

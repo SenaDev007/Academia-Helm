@@ -28,6 +28,8 @@ import {
   Shield,
 } from 'lucide-react';
 import { formatGradeLabel } from '@/lib/utils';
+import { studentsService } from '@/services/students.service';
+import { toast } from '@/components/ui/toast';
 
 interface DossierData {
   identity: {
@@ -120,8 +122,7 @@ export default function StudentDossierSection({ studentId }: { studentId: string
     }
     let cancelled = false;
     setVerificationQRLoading(true);
-    fetch(`/api/students/${studentId}/verification-qr?academicYearId=${encodeURIComponent(effectiveAcademicYearId)}`)
-      .then((r) => (r.ok ? r.json() : null))
+    studentsService.getVerificationQR(studentId, effectiveAcademicYearId)
       .then((data) => {
         if (!cancelled && data) setVerificationQR({ publicUrl: data.publicUrl, qrImage: data.qrImage, isActive: data.isActive });
         else if (!cancelled) setVerificationQR(null);
@@ -133,8 +134,7 @@ export default function StudentDossierSection({ studentId }: { studentId: string
 
   useEffect(() => {
     if (selectedTab === 'history' && studentId) {
-      fetch(`/api/students/${studentId}/history`)
-        .then((r) => r.ok ? r.json() : null)
+      studentsService.getHistory(studentId)
         .then(setHistoryData)
         .catch(() => setHistoryData(null));
     }
@@ -160,17 +160,11 @@ export default function StudentDossierSection({ studentId }: { studentId: string
   const loadDossier = async () => {
     try {
       setLoading(true);
-      const url = `/api/students/${studentId}/dossier${academicYearId ? `?academicYearId=${academicYearId}` : ''}`;
-      const response = await fetch(url);
-
-      if (response.ok) {
-        const data = await response.json();
-        setDossier(data);
-      } else {
-        console.error('Failed to load dossier');
-      }
-    } catch (error) {
+      const data = await studentsService.getDossier(studentId, academicYearId);
+      setDossier(data);
+    } catch (error: any) {
       console.error('Error loading dossier:', error);
+      toast({ title: 'Erreur', description: error.message || 'Impossible de charger le dossier', variant: 'error' });
     } finally {
       setLoading(false);
     }
@@ -666,22 +660,9 @@ export default function StudentDossierSection({ studentId }: { studentId: string
                 <button
                   onClick={async () => {
                     try {
-                      const res = await fetch(`/api/students/${dossier.identity.id}/academic-dossier${academicYearId ? `?academicYearId=${academicYearId}` : ''}`);
-                      if (!res.ok) {
-                        window.alert('Impossible de générer le dossier académique (PDF).');
-                        return;
-                      }
-                      const blob = await res.blob();
-                      const url = window.URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `dossier-academique-${dossier.identity.matricule || dossier.identity.id}.pdf`;
-                      document.body.appendChild(a);
-                      a.click();
-                      a.remove();
-                      window.URL.revokeObjectURL(url);
-                    } catch (e) {
-                      window.alert('Erreur lors du téléchargement du dossier académique.');
+                      await studentsService.downloadAcademicDossier(dossier.identity.id, academicYearId);
+                    } catch (e: any) {
+                      toast({ title: 'Erreur', description: e.message || 'Erreur lors du téléchargement du dossier académique.', variant: 'error' });
                     }
                   }}
                   className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
@@ -777,19 +758,12 @@ export default function StudentDossierSection({ studentId }: { studentId: string
                           if (!effectiveAcademicYearId) return;
                           setRegenerateQRLoading(true);
                           try {
-                            const res = await fetch(`/api/students/${studentId}/verification-token/regenerate`, {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ academicYearId: effectiveAcademicYearId }),
-                            });
-                            if (res.ok) {
-                              const qrRes = await fetch(`/api/students/${studentId}/verification-qr?academicYearId=${encodeURIComponent(effectiveAcademicYearId)}`);
-                              const d = qrRes.ok ? await qrRes.json() : null;
-                              if (d) setVerificationQR({ publicUrl: d.publicUrl, qrImage: d.qrImage, isActive: d.isActive });
-                            } else {
-                              const err = await res.json().catch(() => ({}));
-                              window.alert(err.message || 'Régénération impossible (limite anti-abus : 1 fois / 5 min ou rôle insuffisant).');
-                            }
+                            await studentsService.regenerateVerificationQR(studentId, effectiveAcademicYearId);
+                            const d = await studentsService.getVerificationQR(studentId, effectiveAcademicYearId);
+                            if (d) setVerificationQR({ publicUrl: d.publicUrl, qrImage: d.qrImage, isActive: d.isActive });
+                            toast({ title: 'Succès', description: 'QR Code régénéré', variant: 'success' });
+                          } catch (e: any) {
+                            toast({ title: 'Erreur', description: e.message || 'Régénération impossible', variant: 'error' });
                           } finally {
                             setRegenerateQRLoading(false);
                           }

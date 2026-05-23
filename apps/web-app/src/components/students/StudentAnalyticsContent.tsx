@@ -5,6 +5,8 @@ import { Activity, ShieldAlert, BarChart3, TrendingUp, AlertCircle, CheckCircle2
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LoadingState } from '@/components/ui/feedback/LoadingState';
+import { studentsService } from '@/services/students.service';
+import { toast } from '@/components/ui/toast';
 
 export default function StudentAnalyticsContent() {
   const { academicYear } = useModuleContext();
@@ -17,17 +19,19 @@ export default function StudentAnalyticsContent() {
   }, [academicYear]);
 
   const loadOrionData = async () => {
+    if (!academicYear) return;
     setIsLoading(true);
     try {
-      const [kpisRes, alertsRes] = await Promise.all([
-        fetch(`/api/students/orion/kpis?academicYearId=${academicYear?.id}`),
-        fetch(`/api/students/orion/alerts?academicYearId=${academicYear?.id}`)
+      const [kpisData, alertsData] = await Promise.all([
+        studentsService.getOrionKpis(academicYear.id),
+        studentsService.getOrionAlerts(academicYear.id)
       ]);
       
-      if (kpisRes.ok) setKpis(await kpisRes.json());
-      if (alertsRes.ok) setAlerts(await alertsRes.json());
-    } catch (e) {
+      setKpis(kpisData);
+      setAlerts(alertsData);
+    } catch (e: any) {
       console.error('Failed to load ORION data:', e);
+      toast({ title: 'Erreur ORION', description: e.message || 'Impossible de charger les données analytiques', variant: 'error' });
     } finally {
       setIsLoading(false);
     }

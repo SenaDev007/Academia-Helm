@@ -12,11 +12,14 @@ import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useToast } from '@/components/ui/use-toast';
+import { financeService } from '@/services/finance.service';
 
 export default function RecoveryRemindersContent() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const [reminders, setReminders] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,11 +32,8 @@ export default function RecoveryRemindersContent() {
     if (!academicYear?.id) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/finance/recovery-reminders?academicYearId=${academicYear.id}`, { credentials: 'include' });
-      if (res.ok) {
-        const data = await res.json();
-        setReminders(Array.isArray(data) ? data : []);
-      }
+      const data = await financeService.getRecoveryReminders(academicYear.id);
+      setReminders(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error(e);
     } finally {
@@ -47,46 +47,31 @@ export default function RecoveryRemindersContent() {
 
   useEffect(() => {
     if (!academicYear?.id) return;
-    fetch(`/api/finance/student-accounts?academicYearId=${academicYear.id}`, { credentials: 'include' })
-      .then((r) => r.ok ? r.json() : [])
-      .then((d) => setAccounts(Array.isArray(d) ? d : []));
+    financeService.getStudentAccounts({ academicYearId: academicYear.id })
+      .then((d) => setAccounts(Array.isArray(d) ? d : []))
+      .catch(() => setAccounts([]));
   }, [academicYear?.id]);
 
   const handleSendManual = async () => {
     if (!manualAccountId) return;
     try {
-      const res = await fetch('/api/finance/recovery-reminders/manual', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ studentAccountId: manualAccountId, level: manualLevel, channel: 'SMS' }),
-      });
-      if (res.ok) {
-        setManualModal(false);
-        loadReminders();
-      } else {
-        const err = await res.json();
-        alert(err?.message || err?.error || 'Erreur');
-      }
-    } catch {
-      alert('Erreur réseau');
+      await financeService.sendManualRecoveryReminder({ studentAccountId: manualAccountId, level: manualLevel, channel: 'SMS' });
+      setManualModal(false);
+      toast({ title: 'Rappel envoyé', description: 'La relance a été envoyée avec succès.' });
+      loadReminders();
+    } catch (error: any) {
+      toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
     }
   };
 
   const handleRunNightly = async () => {
     setRunNightlyLoading(true);
     try {
-      const res = await fetch('/api/finance/recovery-reminders/run-nightly', {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        alert(`Traitement : ${data.processed} comptes, ${data.created?.length ?? 0} rappels créés.`);
-        loadReminders();
-      }
-    } catch {
-      alert('Erreur');
+      const data = await financeService.runNightlyRecoveryReminders({});
+      toast({ title: 'Détection terminée', description: `${data.processed ?? 0} comptes traités, ${data.created?.length ?? 0} rappels créés.` });
+      loadReminders();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message || 'Erreur lors du traitement', variant: 'destructive' });
     } finally {
       setRunNightlyLoading(false);
     }
@@ -94,12 +79,12 @@ export default function RecoveryRemindersContent() {
 
   const formatXOF = (n: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', maximumFractionDigits: 0 }).format(n);
   const subModuleTabs = FINANCE_SUBMODULE_TABS.map((t) => ({ id: t.id, label: t.label, path: t.path, icon: <t.icon className="w-4 h-4" /> }));
-
   const levelBadge = (level: string) => {
     const v = level === 'FINAL_NOTICE' ? 'destructive' : level === 'URGENT' ? 'default' : 'secondary';
     return <Badge variant={v}>{level}</Badge>;
   };
 
+  // Fix: missing Table import inline - use basic table markup
   return (
     <div className="space-y-6">
       <ModuleHeader

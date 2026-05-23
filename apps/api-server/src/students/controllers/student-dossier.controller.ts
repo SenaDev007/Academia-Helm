@@ -28,7 +28,7 @@ import { Roles } from '@/auth/decorators/roles.decorator';
 import { StudentDossierService } from '../services/student-dossier.service';
 import { PublicVerificationService } from '../services/public-verification.service';
 
-@Controller('api/students')
+@Controller('students')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class StudentDossierController {
   constructor(

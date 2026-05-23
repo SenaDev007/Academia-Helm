@@ -10,6 +10,9 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/components/ui/use-toast';
+import { financeService } from '@/services/finance.service';
+import { classesService } from '@/services/classes.service';
 
 const STATUS_COLORS: Record<string, string> = {
   PAID: 'bg-green-100 text-green-800',
@@ -22,6 +25,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function StudentAccountsContent() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const [accounts, setAccounts] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,11 +42,8 @@ export default function StudentAccountsContent() {
       const params = new URLSearchParams({ academicYearId: academicYear.id });
       if (filterClassId) params.set('classId', filterClassId);
       if (filterStatus) params.set('status', filterStatus);
-      const res = await fetch(`/api/finance/student-accounts?${params}`, { credentials: 'include' });
-      if (res.ok) {
-        const data = await res.json();
-        setAccounts(Array.isArray(data) ? data : []);
-      }
+      const data = await financeService.getStudentAccounts(Object.fromEntries(params.entries()));
+      setAccounts(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error(e);
     } finally {
@@ -55,15 +56,15 @@ export default function StudentAccountsContent() {
   }, [academicYear?.id, filterClassId, filterStatus]);
 
   useEffect(() => {
-    fetch('/api/classes', { credentials: 'include' })
-      .then((r) => (r.ok ? r.json() : []))
-      .then((d) => setClasses(Array.isArray(d) ? d : []));
+    classesService.getAll({})
+      .then((d) => setClasses(Array.isArray(d) ? d : (d.data ?? [])))
+      .catch(() => setClasses([]));
   }, []);
 
   const loadDetail = async (id: string) => {
     try {
-      const res = await fetch(`/api/finance/student-accounts/${id}`, { credentials: 'include' });
-      if (res.ok) setDetailAccount(await res.json());
+      const data = await financeService.getStudentAccountDetails(id);
+      setDetailAccount(data);
     } catch (e) {
       console.error(e);
     }
@@ -72,23 +73,14 @@ export default function StudentAccountsContent() {
   const handleUnblock = async () => {
     if (!unblockModal || !unblockReason.trim()) return;
     try {
-      const res = await fetch(`/api/finance/student-accounts/${unblockModal}/unblock`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ reason: unblockReason }),
-      });
-      if (res.ok) {
-        setUnblockModal(null);
-        setUnblockReason('');
-        loadAccounts();
-        if (detailAccount?.id === unblockModal) loadDetail(unblockModal);
-      } else {
-        const err = await res.json();
-        alert(err?.message || err?.error || 'Erreur');
-      }
-    } catch {
-      alert('Erreur réseau');
+      await financeService.unblockStudentAccount(unblockModal, { reason: unblockReason });
+      setUnblockModal(null);
+      setUnblockReason('');
+      toast({ title: 'Compte débloqué', description: 'Le compte a été débloqué avec succès.' });
+      loadAccounts();
+      if (detailAccount?.id === unblockModal) loadDetail(unblockModal);
+    } catch (error: any) {
+      toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
     }
   };
 

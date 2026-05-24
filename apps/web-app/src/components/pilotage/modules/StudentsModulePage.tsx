@@ -140,7 +140,7 @@ export default function StudentsModulePage() {
   });
   const [classesList, setClassesList] = useState<{ id: string; name: string }[]>([]);
   /** Onglet actif (Dashboard par défaut à l'ouverture du module) */
-  const [activeSubModuleId, setActiveSubModuleId] = useState<string>('a-dashboard');
+  const [activeSubModuleId, setActiveSubModuleId] = useState<string>('dashboard');
   const studentFormRef = useRef<HTMLFormElement>(null);
   const statsUnauthorizedRef = useRef(false);
   const isStatsLoadingRef = useRef(false);

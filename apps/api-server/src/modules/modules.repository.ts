@@ -86,14 +86,17 @@ export class ModulesRepository {
     moduleType: ModuleType,
     schoolLevelId: string,
   ): Promise<boolean> {
+    const whereClause: any = {
+      tenantId,
+      type: moduleType,
+      isEnabled: true,
+      status: ModuleStatus.ACTIVE,
+    };
+    if (schoolLevelId !== 'ALL') {
+      whereClause.schoolLevelId = schoolLevelId;
+    }
     const module = await this.repository.findOne({
-      where: {
-        tenantId,
-        type: moduleType,
-        schoolLevelId,
-        isEnabled: true,
-        status: ModuleStatus.ACTIVE,
-      },
+      where: whereClause,
     });
     return !!module;
   }

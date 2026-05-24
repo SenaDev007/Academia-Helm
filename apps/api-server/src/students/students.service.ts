@@ -83,22 +83,36 @@ export class StudentsService {
   }
 
   async getStatistics(tenantId: string, schoolLevelId: string, academicYearId: string) {
+    const whereClause: any = { tenantId };
+    if (schoolLevelId !== 'ALL') {
+      whereClause.schoolLevelId = schoolLevelId;
+    }
+
     const total = await this.prisma.student.count({
-      where: { tenantId, schoolLevelId }
+      where: whereClause
     });
 
+    const activeWhereClause: any = { 
+      tenantId, 
+      academicYearId,
+      status: 'ACTIVE',
+    };
+    if (schoolLevelId !== 'ALL') {
+      activeWhereClause.student = { schoolLevelId };
+    }
+
     const active = await this.prisma.studentEnrollment.count({
-      where: { 
-        tenantId, 
-        academicYearId,
-        status: 'ACTIVE',
-        student: { schoolLevelId }
-      }
+      where: activeWhereClause
     });
 
     // Identification Rate (élèves avec matricule)
+    const withMatriculeWhereClause: any = { tenantId, NOT: { matricule: null } };
+    if (schoolLevelId !== 'ALL') {
+      withMatriculeWhereClause.schoolLevelId = schoolLevelId;
+    }
+
     const withMatricule = await this.prisma.student.count({
-      where: { tenantId, schoolLevelId, NOT: { matricule: null } }
+      where: withMatriculeWhereClause
     });
 
     return {

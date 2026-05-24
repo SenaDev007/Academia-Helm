@@ -414,6 +414,9 @@ model Tenant {
   weeklySemainierIncidents         WeeklySemainierIncident[]
   weeklySemainiers                 WeeklySemainier[]
   whatsappLogs                     WhatsappLog[]
+  resourceUsages                   TenantResourceUsage[]             @relation("TenantResourceUsages")
+  resourceAnnotations              TenantResourceAnnotation[]        @relation("TenantResourceAnnotations")
+
 
   @@index([subdomain])
   @@index([slug])
@@ -4808,6 +4811,8 @@ model Staff {
   taxWithholdings     TaxWithholding[]
   transportAttendants TransportAttendant[]
   transportDrivers    TransportDriver[]
+  globalResourceUsages TenantResourceUsage[] @relation("StaffResourceUsages")
+  globalResourceAnnotations TenantResourceAnnotation[] @relation("StaffResourceAnnotations")
 
   @@index([tenantId])
   @@index([employeeNumber])
@@ -12917,4 +12922,73 @@ enum AcademicSettingsStatus {
   ACTIVE
   LOCKED
   ARCHIVED
+}
+
+model GlobalPedagogicalResource {
+  id               String                    @id @default(uuid())
+  title            String
+  description      String?
+  type             String
+  subjectArea      String
+  gradeLevel       String
+  tags             String[]
+  isPublished      Boolean                   @default(false)
+  authorId         String?
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+  versions         GlobalResourceVersion[]
+  usages           TenantResourceUsage[]
+  annotations      TenantResourceAnnotation[]
+
+  @@index([subjectArea])
+  @@index([gradeLevel])
+  @@map("global_pedagogical_resources")
+}
+
+model GlobalResourceVersion {
+  id               String                    @id @default(uuid())
+  resourceId       String
+  version          Int
+  content          Json
+  changeLog        String?
+  createdAt        DateTime                  @default(now())
+  resource         GlobalPedagogicalResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@index([resourceId])
+  @@map("global_resource_versions")
+}
+
+model TenantResourceUsage {
+  id               String                    @id @default(uuid())
+  tenantId         String
+  resourceId       String
+  teacherId        String?
+  usedAt           DateTime                  @default(now())
+  context          String?
+  tenant           Tenant                    @relation("TenantResourceUsages", fields: [tenantId], references: [id], onDelete: Cascade)
+  resource         GlobalPedagogicalResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  teacher          Staff?                    @relation("StaffResourceUsages", fields: [teacherId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([resourceId])
+  @@index([teacherId])
+  @@map("tenant_resource_usages")
+}
+
+model TenantResourceAnnotation {
+  id               String                    @id @default(uuid())
+  tenantId         String
+  resourceId       String
+  teacherId        String
+  content          String
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+  tenant           Tenant                    @relation("TenantResourceAnnotations", fields: [tenantId], references: [id], onDelete: Cascade)
+  resource         GlobalPedagogicalResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  teacher          Staff                     @relation("StaffResourceAnnotations", fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([resourceId])
+  @@index([teacherId])
+  @@map("tenant_resource_annotations")
 }

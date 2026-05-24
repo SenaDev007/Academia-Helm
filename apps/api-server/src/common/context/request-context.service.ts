@@ -228,6 +228,9 @@ export class RequestContextService {
    * Valide que le niveau scolaire existe et appartient au tenant
    */
   private async validateSchoolLevel(tenantId: string, schoolLevelId: string): Promise<void> {
+    if (schoolLevelId === 'ALL') {
+      return;
+    }
     try {
       const schoolLevel = await this.schoolLevelsService.findOne(schoolLevelId, tenantId);
       if (!schoolLevel) {
@@ -266,6 +269,10 @@ export class RequestContextService {
       throw new ForbiddenException(
         `Module ${moduleType} is not enabled for school level ${schoolLevelId}`
       );
+    }
+
+    if (schoolLevelId === 'ALL') {
+      return;
     }
 
     // Vérifier les dépendances

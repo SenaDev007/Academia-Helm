@@ -64,6 +64,8 @@ import { ContextModule } from './common/context/context.module';
 import { ContextModule as TenantContextModule } from './context/context.module';
 import { SynthesisModule } from './modules/synthesis/synthesis.module';
 import { SyncModule } from './sync/sync.module';
+import { ScolariteModule } from './modules/scolarite/scolarite.module';
+import { FinancesModule } from './modules/finances/finances.module';
 import { CommonModule } from './common/common.module';
 import { SecurityModule } from './security/security.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
@@ -221,8 +223,8 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     // Module-specific calculation modules
     // Note: Ces modules fournissent des endpoints de calcul par module
     // Les modules métier (StudentsModule, PaymentsModule, etc.) restent pour CRUD
-    // ScolariteModule, // Décommenter quand prêt
-    // FinancesModule, // Décommenter quand prêt
+    ScolariteModule,
+    FinancesModule,
     
     // Synthesis module (Module général de synthèse - Lecture seule)
     SynthesisModule,

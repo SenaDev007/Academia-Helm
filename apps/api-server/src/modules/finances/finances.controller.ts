@@ -31,7 +31,7 @@ import { ModuleTypeRequired } from '../../common/decorators/module-type.decorato
 import { ModuleType } from '../../modules/entities/module.entity';
 import { Permissions } from '../../auth/decorators/permissions.decorator';
 
-@Controller('api/finances')
+@Controller('finances')
 @UseGuards(
   JwtAuthGuard,
   ContextValidationGuard, // Valide tenant + school_level + module

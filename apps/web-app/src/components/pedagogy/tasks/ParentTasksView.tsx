@@ -18,11 +18,7 @@ import {
   FileText
 } from 'lucide-react';
 
-const MOCK_TASKS = [
-  { id: 1, title: 'Calcul des fractions', subject: 'Mathématiques', type: 'Exercice', deadline: 'Demain', priority: 'HIGH', status: 'TODO' },
-  { id: 2, title: 'La colonisation', subject: 'Histoire', type: 'Exposé', deadline: 'Vendredi', priority: 'MEDIUM', status: 'IN_PROGRESS' },
-  { id: 3, title: 'Le dormeur du val', subject: 'Poésie', type: 'Récitation', deadline: 'Lundi', priority: 'LOW', status: 'TODO' },
-];
+const TASKS: any[] = [];
 
 export default function ParentTasksView() {
   const [selectedTask, setSelectedTask] = useState<any>(null);
@@ -40,7 +36,7 @@ export default function ParentTasksView() {
         </div>
         <div className="bg-indigo-50 px-4 py-2 rounded-xl border border-indigo-100 flex items-center gap-3">
           <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse" />
-          <span className="text-xs font-bold text-indigo-700 uppercase tracking-widest">3 Activités en attente</span>
+          <span className="text-xs font-bold text-indigo-700 uppercase tracking-widest">{TASKS.length} Activités en attente</span>
         </div>
       </div>
 
@@ -59,51 +55,60 @@ export default function ParentTasksView() {
               </div>
             </div>
             <div className="divide-y divide-slate-50">
-              {MOCK_TASKS.map((task) => (
-                <div key={task.id} className="p-6 hover:bg-slate-50/50 transition-all group">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="flex gap-4">
-                      <div className={`p-3 rounded-2xl ${
-                        task.priority === 'HIGH' ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-400'
-                      }`}>
-                        <ClipboardList className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-[10px] font-bold text-indigo-600 uppercase">{task.subject}</span>
-                          <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded-md font-bold uppercase">{task.type}</span>
+              {TASKS.length === 0 ? (
+                <div className="p-12 flex flex-col items-center justify-center text-center gap-3">
+                  <ClipboardList className="w-10 h-10 text-slate-200" />
+                  <p className="text-sm font-bold text-slate-400">Aucun devoir en attente</p>
+                  <p className="text-xs text-slate-300">Les prochains devoirs de votre enfant apparaîtront ici</p>
+                </div>
+              ) : (
+                TASKS.map((task) => (
+                  <div key={task.id} className="p-6 hover:bg-slate-50/50 transition-all group">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="flex gap-4">
+                        <div className={`p-3 rounded-2xl ${
+                          task.priority === 'HIGH' ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-400'
+                        }`}>
+                          <ClipboardList className="w-6 h-6" />
                         </div>
-                        <h4 className="text-lg font-bold text-slate-900">{task.title}</h4>
-                        <div className="flex items-center gap-4 mt-2">
-                           <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
-                             <Clock className="w-3.5 h-3.5" />
-                             Échéance : {task.deadline}
-                           </div>
-                           {task.priority === 'HIGH' && (
-                             <div className="flex items-center gap-1.5 text-xs text-rose-600 font-bold">
-                               <AlertCircle className="w-3.5 h-3.5" />
-                               Urgent
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[10px] font-bold text-indigo-600 uppercase">{task.subject}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded-md font-bold uppercase">{task.type}</span>
+                          </div>
+                          <h4 className="text-lg font-bold text-slate-900">{task.title}</h4>
+                          <div className="flex items-center gap-4 mt-2">
+                             <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                               <Clock className="w-3.5 h-3.5" />
+                               Échéance : {task.deadline}
                              </div>
-                           )}
+                             {task.priority === 'HIGH' && (
+                               <div className="flex items-center gap-1.5 text-xs text-rose-600 font-bold">
+                                 <AlertCircle className="w-3.5 h-3.5" />
+                                 Urgent
+                               </div>
+                             )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-3 self-end md:self-center">
-                      <button 
-                        onClick={() => setSelectedTask(task)}
-                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold text-slate-600 transition-all"
-                      >
-                        Détails
-                      </button>
-                      <button className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-xl text-xs font-bold text-white transition-all shadow-lg shadow-indigo-100">
-                        Marquer comme fait
-                      </button>
+                      <div className="flex items-center gap-3 self-end md:self-center">
+                        <button 
+                          onClick={() => setSelectedTask(task)}
+                          className="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold text-slate-600 transition-all"
+                        >
+                          Détails
+                        </button>
+                        <button className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-xl text-xs font-bold text-white transition-all shadow-lg shadow-indigo-100">
+                          Marquer comme fait
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
+
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="p-6 bg-emerald-50 border border-emerald-100 rounded-3xl">

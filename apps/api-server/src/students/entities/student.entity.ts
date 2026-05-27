@@ -27,7 +27,7 @@ export class Student {
   schoolLevelId: string;
 
   @ManyToOne(() => SchoolLevel, { nullable: false, onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'school_level_id' })
+  @JoinColumn({ name: 'schoolLevelId' })
   schoolLevel: SchoolLevel;
 
   @Column()
@@ -36,31 +36,23 @@ export class Student {
   @Column()
   lastName: string;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, type: 'timestamp' })
   dateOfBirth: Date;
 
   @Column({ nullable: true })
   gender: string;
 
-  @Column({ nullable: true })
-  email: string;
+  email?: string; // Non mappé en base
 
-  @Column({ nullable: true })
-  phone: string;
+  phone?: string; // Non mappé en base
 
-  @Column({ nullable: true, type: 'text' })
-  address: string;
+  address?: string; // Non mappé en base
 
-  @Column({ nullable: true })
-  createdBy: string;
+  createdBy?: string; // Non mappé en base
 
-  @ManyToOne(() => User, { nullable: true })
-  @JoinColumn({ name: 'createdBy' })
-  creator: User;
-
-  @CreateDateColumn()
+  @CreateDateColumn({ type: 'timestamp', name: 'createdAt' })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ type: 'timestamp', name: 'updatedAt' })
   updatedAt: Date;
 }

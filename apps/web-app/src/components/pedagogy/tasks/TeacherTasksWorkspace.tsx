@@ -335,37 +335,39 @@ function TasksDashboard({ homeworks }: TasksDashboardProps) {
               </button>
             </div>
             <div className="divide-y divide-slate-50">
-              {[
-                { type: 'Exercice', subject: 'Mathématiques', title: 'Calcul des fractions', target: 'CM2 Alpha', date: 'Pour demain', status: 'NOTIFIED' },
-                { type: 'Exposé', subject: 'Histoire', title: 'La colonisation', target: 'Groupe B', date: 'Vendredi', status: 'PENDING' },
-                { type: 'Récitation', subject: 'Poésie', title: 'Le dormeur du val', target: 'CM1', date: 'Terminé', status: 'COMPLETED' },
-              ].map((activity, i) => (
-                <div key={i} className="p-4 flex items-center justify-between hover:bg-slate-50/50 transition-colors">
-                  <div className="flex items-center gap-4">
-                    <div className="p-2 bg-slate-50 rounded-xl">
-                      <ClipboardList className="w-5 h-5 text-slate-400" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-indigo-600 uppercase">{activity.subject}</span>
-                        <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded-md font-bold uppercase">{activity.type}</span>
-                      </div>
-                      <h4 className="font-bold text-slate-900 text-sm">{activity.title}</h4>
-                      <p className="text-xs text-slate-500">{activity.target} • {activity.date}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
-                      activity.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'
-                    }`}>
-                      {activity.status === 'COMPLETED' ? 'Terminé' : 'En cours'}
-                    </span>
-                    <button className="p-2 text-slate-300 hover:text-slate-600 transition-colors">
-                      <MoreVertical className="w-4 h-4" />
-                    </button>
-                  </div>
+              {(!homeworks || homeworks.length === 0) ? (
+                <div className="p-10 flex flex-col items-center justify-center text-center gap-3">
+                  <ClipboardList className="w-8 h-8 text-slate-200" />
+                  <p className="text-sm font-bold text-slate-400">Aucune activité récente</p>
+                  <p className="text-xs text-slate-300">Les devoirs et exercices créés apparaîtront ici</p>
                 </div>
-              ))}
+              ) : (
+                homeworks.slice(0, 5).map((hw: any, i: number) => (
+                  <div key={hw.id ?? i} className="p-4 flex items-center justify-between hover:bg-slate-50/50 transition-colors">
+                    <div className="flex items-center gap-4">
+                      <div className="p-2 bg-slate-50 rounded-xl">
+                        <ClipboardList className="w-5 h-5 text-slate-400" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-indigo-600 uppercase">{hw.subjectId || 'Matière'}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded-md font-bold uppercase">Devoir</span>
+                        </div>
+                        <h4 className="font-bold text-slate-900 text-sm">{hw.title}</h4>
+                        <p className="text-xs text-slate-500">{hw.classId || ''}{hw.dueDate ? ` • ${new Date(hw.dueDate).toLocaleDateString()}` : ''}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="px-2 py-1 rounded-full text-[10px] font-bold uppercase bg-blue-100 text-blue-700">
+                        En cours
+                      </span>
+                      <button className="p-2 text-slate-300 hover:text-slate-600 transition-colors">
+                        <MoreVertical className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 

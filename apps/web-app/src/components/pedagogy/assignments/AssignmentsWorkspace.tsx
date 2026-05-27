@@ -167,7 +167,6 @@ export default function AssignmentsWorkspace() {
     // Calculer la charge totale réelle pour ce prof dans toutes les classes
     // Note: Pour un vrai dashboard, il faudrait une vue globale du backend
     // Ici on simule avec les données locales (ce qui n'est pas suffisant si on ne charge pas tout)
-    // TODO: Utiliser un endpoint de statistiques backend
     return 0; 
   };
 

@@ -30,7 +30,13 @@ export const SchoolLevelId = createParamDecorator(
       return request['schoolLevelId'];
     }
 
-    // Priorité 3 : Depuis les query params
+    // Priorité 3 : Depuis les headers HTTP
+    const headerSchoolLevelId = request.headers['x-school-level-id'] || request.headers['X-School-Level-ID'];
+    if (headerSchoolLevelId) {
+      return headerSchoolLevelId as string;
+    }
+
+    // Priorité 4 : Depuis les query params
     if (request.query?.schoolLevelId) {
       return request.query.schoolLevelId as string;
     }

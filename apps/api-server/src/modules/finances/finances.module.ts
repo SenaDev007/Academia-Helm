@@ -20,12 +20,16 @@ import { FinancesController } from './finances.controller';
 import { CalculationService } from '../../common/services/calculation.service';
 import { PaymentsModule } from '../../payments/payments.module';
 import { ExpensesModule } from '../../expenses/expenses.module';
+import { UsersModule } from '../../users/users.module';
+import { AuditLogsModule } from '../../audit-logs/audit-logs.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Payment, Expense]),
     PaymentsModule,
     ExpensesModule,
+    UsersModule,
+    AuditLogsModule,
   ],
   controllers: [FinancesController],
   providers: [

@@ -49,10 +49,11 @@ export class SchoolLevel {
   tenantId: string;
 
   @ManyToOne(() => Tenant, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'tenant_id' })
+  @JoinColumn({ name: 'tenantId' })
   tenant: Tenant;
 
   @Column({
+    name: 'code',
     type: 'varchar',
     length: 50,
     enum: SchoolLevelType,
@@ -62,20 +63,19 @@ export class SchoolLevel {
   @Column({ type: 'varchar', length: 255 })
   name: string; // Ex: "Maternelle", "Primaire", "Secondaire"
 
-  @Column({ type: 'varchar', length: 50, nullable: true })
-  abbreviation: string; // Ex: "MAT", "PRI", "SEC"
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  label: string;
 
-  @Column({ type: 'text', nullable: true })
-  description: string | null;
+  abbreviation?: string; // Non mappé en base
+
+  description?: string | null; // Non mappé en base
 
   @Column({ type: 'int', default: 0 })
   order: number; // Ordre d'affichage (0 = Maternelle, 1 = Primaire, 2 = Secondaire)
 
-  @Column({ type: 'boolean', default: true })
-  isActive: boolean;
+  isActive: boolean = true; // Non mappé en base
 
-  @Column({ type: 'jsonb', nullable: true })
-  metadata: Record<string, any> | null; // Configuration spécifique par niveau
+  metadata?: Record<string, any> | null; // Non mappé en base
 
   // Relations avec les entités métier
   @OneToMany(() => Student, (student) => student.schoolLevel)
@@ -102,10 +102,10 @@ export class SchoolLevel {
   }, (subject: any) => subject.schoolLevel)
   subjects: Subject[];
 
-  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
+  @CreateDateColumn({ type: 'timestamptz', name: 'createdAt' })
   createdAt: Date;
 
-  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updatedAt' })
   updatedAt: Date;
 }
 

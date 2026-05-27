@@ -34,7 +34,7 @@ export class AcademicYear {
   @Column({ type: 'date' })
   endDate: Date;
 
-  @Column({ default: false })
+  @Column({ name: 'isActive', default: false })
   isCurrent: boolean;
 
   @Column({ nullable: true })

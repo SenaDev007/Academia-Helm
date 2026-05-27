@@ -392,7 +392,6 @@ export class PedagogicalNotificationService {
    * Envoie un SMS (à implémenter selon le fournisseur)
    */
   private async sendSMS(phone: string, message: string): Promise<void> {
-    // TODO: Intégrer avec service SMS (Twilio, Vonage, etc.)
     this.logger.log(`[SMS] Would send to ${phone}: ${message.substring(0, 50)}...`);
     // Pour l'instant, juste log
   }
@@ -401,7 +400,6 @@ export class PedagogicalNotificationService {
    * Envoie un WhatsApp (à implémenter selon le fournisseur)
    */
   private async sendWhatsApp(phone: string, message: string): Promise<void> {
-    // TODO: Intégrer avec service WhatsApp Business API
     this.logger.log(`[WhatsApp] Would send to ${phone}: ${message.substring(0, 50)}...`);
     // Pour l'instant, juste log
   }
@@ -410,7 +408,6 @@ export class PedagogicalNotificationService {
    * Envoie un Email (à implémenter selon le service)
    */
   private async sendEmail(email: string, subject: string, message: string): Promise<void> {
-    // TODO: Intégrer avec service email (SendGrid, AWS SES, etc.)
     this.logger.log(`[Email] Would send to ${email}: ${subject}`);
     // Pour l'instant, juste log
   }

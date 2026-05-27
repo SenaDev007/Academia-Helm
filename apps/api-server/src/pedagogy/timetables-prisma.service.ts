@@ -161,7 +161,7 @@ export class TimetablesPrismaService {
       entityType: 'TIMETABLE_SLOT',
       entityId: entry.id,
       action: 'CREATE',
-      performedBy: 'SYSTEM', // TODO: Get user from context if possible
+      performedBy: 'SYSTEM',
       newData: entry,
     });
 

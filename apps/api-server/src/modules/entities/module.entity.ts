@@ -76,7 +76,7 @@ export class Module {
   tenantId: string;
 
   @ManyToOne(() => Tenant, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'tenant_id' })
+  @JoinColumn({ name: 'tenantId' })
   tenant: Tenant;
 
   @Column({
@@ -99,7 +99,7 @@ export class Module {
   schoolLevelId: string;
 
   @ManyToOne(() => SchoolLevel, { nullable: false, onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'school_level_id' })
+  @JoinColumn({ name: 'schoolLevelId' })
   schoolLevel: SchoolLevel;
 
   @Column({
@@ -131,10 +131,10 @@ export class Module {
   @Column({ type: 'varchar', length: 100, nullable: true })
   icon: string; // Nom de l'icône (ex: 'Users', 'Calculator')
 
-  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
+  @CreateDateColumn({ type: 'timestamptz', name: 'createdAt' })
   createdAt: Date;
 
-  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updatedAt' })
   updatedAt: Date;
 }
 

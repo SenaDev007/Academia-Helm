@@ -96,6 +96,16 @@ export class StudentsController {
     return this.studentsService.findAll(tenantId, schoolLevelId, pagination, academicYearId);
   }
 
+  @Get('statistics')
+  @Permissions('students.read')
+  getStatistics(
+    @TenantId() tenantId: string,
+    @SchoolLevelId() schoolLevelId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    return this.studentsService.getStatistics(tenantId, schoolLevelId, academicYearId);
+  }
+
   @Get(':id')
   @Permissions('students.read', 'students.manage')
   findOne(
@@ -131,15 +141,7 @@ export class StudentsController {
     return this.studentsService.delete(id, tenantId, schoolLevelId);
   }
 
-  @Get('statistics')
-  @Permissions('students.read')
-  getStatistics(
-    @TenantId() tenantId: string,
-    @SchoolLevelId() schoolLevelId: string,
-    @Query('academicYearId') academicYearId: string,
-  ) {
-    return this.studentsService.getStatistics(tenantId, schoolLevelId, academicYearId);
-  }
+
 
   @Post(':id/export-educmaster')
   @Permissions('students.read')

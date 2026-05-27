@@ -22,6 +22,8 @@ import { CalculationService } from '../../common/services/calculation.service';
 import { StudentsModule } from '../../students/students.module';
 import { ClassesModule } from '../../classes/classes.module';
 import { AbsencesModule } from '../../absences/absences.module';
+import { UsersModule } from '../../users/users.module';
+import { AuditLogsModule } from '../../audit-logs/audit-logs.module';
 
 @Module({
   imports: [
@@ -29,6 +31,8 @@ import { AbsencesModule } from '../../absences/absences.module';
     StudentsModule,
     ClassesModule,
     AbsencesModule,
+    UsersModule,
+    AuditLogsModule,
   ],
   controllers: [ScolariteController],
   providers: [

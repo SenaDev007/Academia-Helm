@@ -367,7 +367,7 @@ export class PedagogyOrionService {
     const teachersWithoutLibraryUsage = await this.prisma.staff.findMany({
       where: {
         tenantId,
-        category: 'PEDAGOGICAL',
+        roleType: 'TEACHER',
         status: 'ACTIVE',
         globalResourceUsages: { none: {} }
       }

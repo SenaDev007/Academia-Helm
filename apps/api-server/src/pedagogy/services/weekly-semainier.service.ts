@@ -410,7 +410,6 @@ export class WeeklySemainierService {
 
     // Si incident critique, escalader vers QHSE
     if (incident.escalatedToQHSE) {
-      // TODO: Créer un incident QHSE automatiquement
       this.logger.log(`Critical incident ${incident.id} should be escalated to QHSE`);
     }
 

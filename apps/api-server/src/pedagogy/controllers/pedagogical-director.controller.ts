@@ -299,7 +299,6 @@ export class PedagogicalDirectorController {
     );
 
     // Notifier l'enseignant
-    // TODO: Créer un document pédagogique de type SEMAINIER pour la notification
     // await this.notificationService.notifyValidation(...)
 
     return semainier;

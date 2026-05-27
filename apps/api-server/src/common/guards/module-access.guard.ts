@@ -41,8 +41,17 @@ export class ModuleAccessGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<Request>();
-    const tenantId = request['tenantId'];
-    const schoolLevelId = request['schoolLevelId'] || request.body?.schoolLevelId;
+    
+    const tenantId = request['tenantId'] || 
+                     request.headers['x-tenant-id'] ||
+                     (request['user'] as any)?.tenantId ||
+                     request.query?.tenantId ||
+                     request.body?.tenantId;
+                     
+    const schoolLevelId = request['schoolLevelId'] ||
+                          request.headers['x-school-level-id'] ||
+                          request.query?.schoolLevelId ||
+                          request.body?.schoolLevelId;
 
     if (!tenantId) {
       throw new ForbiddenException('Tenant ID not found');
@@ -50,6 +59,14 @@ export class ModuleAccessGuard implements CanActivate {
 
     if (!schoolLevelId) {
       throw new ForbiddenException('School Level ID is required for module access');
+    }
+
+    // Populate request object for other guards/interceptors
+    if (tenantId && !request['tenantId']) {
+      request['tenantId'] = tenantId;
+    }
+    if (schoolLevelId && !request['schoolLevelId']) {
+      request['schoolLevelId'] = schoolLevelId;
     }
 
     // Vérifier que le module est activé pour ce niveau

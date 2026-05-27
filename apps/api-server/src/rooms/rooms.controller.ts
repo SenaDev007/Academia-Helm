@@ -4,6 +4,7 @@ import {
   Post,
   Body,
   Patch,
+  Put,
   Param,
   Delete,
   Query,
@@ -58,6 +59,7 @@ export class RoomsController {
     return this.roomsService.findOne(id, tenantId);
   }
 
+  @Put(':id')
   @Patch(':id')
   update(
     @Param('id') id: string,

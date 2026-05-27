@@ -67,7 +67,7 @@ export class Subject {
   academicTrackId: string | null;
 
   @ManyToOne(() => AcademicTrack, { nullable: true, onDelete: 'SET NULL' })
-  @JoinColumn({ name: 'academic_track_id' })
+  @JoinColumn({ name: 'academicTrackId' })
   academicTrack: AcademicTrack | null;
 
   @BeforeInsert()

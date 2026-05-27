@@ -26,7 +26,7 @@ import {
   OneToMany,
 } from 'typeorm';
 import { Tenant } from '../../tenants/entities/tenant.entity';
-import { Student } from '../../students/entities/student.entity';
+import type { Student } from '../../students/entities/student.entity';
 // ✅ Import de type uniquement pour éviter la référence circulaire
 import type { Class } from '../../classes/entities/class.entity';
 // ✅ Import de type uniquement pour éviter la référence circulaire
@@ -78,7 +78,10 @@ export class SchoolLevel {
   metadata?: Record<string, any> | null; // Non mappé en base
 
   // Relations avec les entités métier
-  @OneToMany(() => Student, (student) => student.schoolLevel)
+  @OneToMany(() => {
+    const { Student } = require('../../students/entities/student.entity');
+    return Student;
+  }, (student: any) => student.schoolLevel)
   students: Student[];
 
   @OneToMany(() => {

@@ -122,7 +122,15 @@ function roomDisplayName(r: RoomRow): string {
 }
 
 function roomTypeDisplay(r: RoomRow): string {
-  return r.roomType ?? '—';
+  if (!r.roomType) return '—';
+  const mapping: Record<string, string> = {
+    CLASSROOM: 'Salle de classe',
+    LAB: 'Laboratoire',
+    IT: 'Informatique',
+    EXAM: 'Examen',
+    OTHER: 'Autre',
+  };
+  return mapping[r.roomType.toUpperCase()] ?? r.roomType;
 }
 
 export function AcademicStructureWorkspace() {
@@ -269,11 +277,13 @@ export function AcademicStructureWorkspace() {
 
   const COMMON_EQUIPMENT = useMemo(() => [
     'Tableau blanc',
+    'Tableau noir',
     'Vidéoprojecteur',
     'Climatisation',
     'Ordinateurs',
     'Wi-Fi',
     'Microscopes',
+    'Verrerie',
     'Prises électriques',
     'Haut-parleurs',
     'Armoire de rangement',

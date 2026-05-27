@@ -29,7 +29,9 @@ import {
   Sparkles,
   ArrowUpRight,
   Filter,
-  Download
+  Download,
+  Loader2,
+  ClipboardList,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -39,12 +41,15 @@ import {
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAuth } from '@/hooks/useAuth';
-import { pedagogyFetch, academicStructureUrl } from '@/lib/pedagogy/academic-structure-client';
+import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { pedagogyService } from '@/services/pedagogy.service';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+
+const PRIMARY = '#1A2BA6';
+const ACCENT = '#F5A623';
 
 // --- Types ---
 
@@ -56,7 +61,7 @@ interface Subject {
   weeklyHours?: number;
   description?: string;
   language?: string;
-  schoolLevel?: { id: string; label: string; code: string };
+  schoolLevel?: { id: string; name?: string; label: string; code: string };
   programs?: SubjectProgram[];
 }
 
@@ -79,7 +84,7 @@ interface SubjectProgram {
 type SubTab = 'catalogue' | 'series' | 'classes' | 'programs';
 
 export default function SubjectsWorkspace() {
-  const { academicYear, schoolLevel, tenantId } = useModuleContext();
+  const { academicYear, tenantId } = useModuleContext();
   const { user } = useAuth();
   const { toast } = useToast();
   const [tab, setTab] = useState<SubTab>('catalogue');
@@ -91,6 +96,10 @@ export default function SubjectsWorkspace() {
   const [classes, setClasses] = useState<any[]>([]);
   const [levels, setLevels] = useState<any[]>([]);
   const [search, setSearch] = useState('');
+
+  // Class-Subject Assignments Map
+  const [classSubjectsMap, setClassSubjectsMap] = useState<Record<string, any[]>>({});
+  const [loadingClassSubjects, setLoadingClassSubjects] = useState(false);
 
   // Form states
   const [subjectForm, setSubjectForm] = useState({
@@ -122,7 +131,7 @@ export default function SubjectsWorkspace() {
   // Modals
   const [modal, setModal] = useState<'none' | 'create-subject' | 'create-series' | 'edit-subject' | 'edit-series' | 'mass-assignment'>('none');
 
-  const [selected, setSelected] = useState<any>(null);
+  const [uploading, setUploading] = useState(false);
 
   /** Lien Paramètres → onglet Structure (activation des niveaux officiels). */
   const settingsHref = useMemo(() => {
@@ -178,6 +187,30 @@ export default function SubjectsWorkspace() {
     }
   }, [academicYear?.id]);
 
+  const loadClassSubjects = useCallback(async () => {
+    if (!academicYear?.id || classes.length === 0) return;
+    setLoadingClassSubjects(true);
+    try {
+      const map: Record<string, any[]> = {};
+      await Promise.all(
+        classes.map(async (cls) => {
+          try {
+            const data = await pedagogyService.getClassSubjects(cls.id, academicYear.id);
+            map[cls.id] = data || [];
+          } catch (err) {
+            console.error(`Failed to load subjects for class ${cls.id}`, err);
+            map[cls.id] = [];
+          }
+        })
+      );
+      setClassSubjectsMap(map);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingClassSubjects(false);
+    }
+  }, [academicYear?.id, classes]);
+
   useEffect(() => {
     loadSubjects();
     loadSeries();
@@ -185,7 +218,13 @@ export default function SubjectsWorkspace() {
     loadLevels();
   }, [loadSubjects, loadSeries, loadClasses, loadLevels]);
 
-  const [uploading, setUploading] = useState(false);
+  useEffect(() => {
+    if (classes.length > 0) {
+      loadClassSubjects();
+    } else {
+      setClassSubjectsMap({});
+    }
+  }, [classes, loadClassSubjects]);
 
   const handleMassAssign = async () => {
      if (selectedClasses.length === 0 || selectedSubjects.length === 0) return;
@@ -209,6 +248,7 @@ export default function SubjectsWorkspace() {
        setSelectedClasses([]);
        setSelectedSubjects([]);
        loadSubjects();
+       loadClassSubjects();
      } catch (e: any) {
        toast({
          title: "Erreur",
@@ -216,6 +256,24 @@ export default function SubjectsWorkspace() {
          variant: "destructive"
        });
      }
+  };
+
+  const handleRemoveClassSubject = async (assignmentId: string) => {
+    if (!confirm("Voulez-vous vraiment retirer cette matière de cette classe ?")) return;
+    try {
+      await pedagogyService.removeClassSubject(assignmentId);
+      toast({
+        title: "Succès",
+        description: "Matière retirée de la classe.",
+      });
+      loadClassSubjects();
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e.message || "Impossible de retirer la matière.",
+        variant: "destructive"
+      });
+    }
   };
 
   const handleSaveSubject = async () => {
@@ -349,8 +407,16 @@ export default function SubjectsWorkspace() {
       });
 
       loadSubjects();
-    } catch (e) {
-      console.error(e);
+      toast({
+        title: "Succès",
+        description: "Le programme officiel a été téléversé avec succès.",
+      });
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e.message || "Impossible de téléverser le document.",
+        variant: "destructive"
+      });
     } finally {
       setUploading(false);
     }
@@ -364,79 +430,91 @@ export default function SubjectsWorkspace() {
         body: { userId: user.id }
       });
       loadSubjects();
-    } catch (e) {
-      console.error(e);
+      toast({
+        title: "Succès",
+        description: "Le programme officiel a été approuvé et signé.",
+      });
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e.message || "Impossible d'approuver le document.",
+        variant: "destructive"
+      });
     }
   };
-
-
-
-
-
-  // --- Renderers ---
 
   return (
     <div className="space-y-6">
       {/* Banner / Connection Paramètres */}
-      <div 
-        className="flex flex-col gap-3 rounded-2xl border border-indigo-100 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between"
-        style={{ borderLeftWidth: 4, borderLeftColor: '#4f46e5' }}
+      <div
+        className="flex flex-col gap-4 rounded-xl border bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"
+        style={{ borderLeftWidth: 4, borderLeftColor: PRIMARY }}
       >
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center">
-            <BookOpen className="w-6 h-6 text-indigo-600" />
-          </div>
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-indigo-500">
-              Année Scolaire Active
-            </p>
-            <p className="text-lg font-black text-gray-900">{academicYear?.label || 'Chargement...'}</p>
-          </div>
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            Année scolaire active
+          </p>
+          <p className="text-lg font-semibold text-slate-900">{academicYear?.label || 'Chargement...'}</p>
         </div>
-        
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setSubjectForm({
+                id: '',
+                code: '',
+                name: '',
+                coefficient: 1,
+                weeklyHours: 4,
+                schoolLevelId: levels[0]?.id || '',
+                description: '',
+              });
+              setModal('create-subject');
+            }}
+            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:opacity-95"
+            style={{ backgroundColor: PRIMARY }}
+          >
+            <Plus className="h-4 w-4" />
+            Nouvelle matière
+          </button>
           <a
             href={settingsHref}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-gray-600 bg-gray-50 rounded-xl hover:bg-gray-100 transition-all border border-gray-100"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
           >
-            <ExternalLink className="w-4 h-4" />
+            <ExternalLink className="h-4 w-4" style={{ color: ACCENT }} />
             Paramètres
           </a>
-          <button 
-            onClick={() => setModal('create-subject')}
-            className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100 font-bold text-sm"
-          >
-            <Plus className="w-4 h-4" />
-            Nouvelle Matière
-          </button>
         </div>
       </div>
 
       {/* Navigation Interne */}
-      <div className="bg-white/80 backdrop-blur-md rounded-2xl p-1.5 border border-gray-200 flex gap-1 shadow-sm">
-        {(['catalogue', 'series', 'classes', 'programs'] as SubTab[]).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={cn(
-              "relative px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300",
-              tab === t ? "text-indigo-600" : "text-gray-500 hover:text-gray-900 hover:bg-gray-50"
-            )}
-          >
-            {tab === t && (
-              <motion.div
-                layoutId="subject-active-pill"
-                className="absolute inset-0 bg-indigo-50 rounded-xl"
-                transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-              />
-            )}
-            <span className="relative z-10 capitalize">
-              {t === 'catalogue' ? 'Catalogue Matières' : 
-               t === 'series' ? 'Séries (Secondaire)' : 
-               t === 'classes' ? 'Affectation Classes' : 'Programmes Officiels'}
-            </span>
-          </button>
-        ))}
+      <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-50/80 p-1">
+        {[
+          { id: 'catalogue', label: 'Catalogue Matières', icon: BookOpen },
+          { id: 'series', label: 'Séries (Secondaire)', icon: Layers },
+          { id: 'classes', label: 'Affectation Classes', icon: ClipboardList },
+          { id: 'programs', label: 'Programmes Officiels', icon: FileText },
+        ].map((t) => {
+          const Icon = t.icon;
+          const active = tab === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id as SubTab)}
+              className={cn(
+                'inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition',
+                active
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900',
+              )}
+              style={active ? { color: PRIMARY } : undefined}
+            >
+              <Icon className="h-4 w-4 shrink-0 opacity-80" />
+              {t.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Zone de contenu dynamique */}
@@ -447,18 +525,18 @@ export default function SubjectsWorkspace() {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -10 }}
           transition={{ duration: 0.3 }}
-          className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden"
+          className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
         >
           {tab === 'catalogue' && (
             <div className="p-6 space-y-6">
               {/* Toolbar */}
               <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
                 <div className="relative w-full sm:w-96">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
                     type="text"
                     placeholder="Chercher une matière (Code, Nom...)"
-                    className="w-full pl-11 pr-4 py-3 rounded-2xl bg-gray-50 border-none focus:ring-2 focus:ring-indigo-500 text-sm font-medium transition-all"
+                    className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 text-sm font-medium transition-all"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                   />
@@ -466,64 +544,59 @@ export default function SubjectsWorkspace() {
               </div>
 
               {/* Grid / Table Catalogue */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="min-w-full text-sm">
                   <thead>
-                    <tr className="border-b border-gray-50 text-[10px] font-black uppercase tracking-widest text-gray-400">
-                      <th className="px-4 py-4">Matière</th>
-                      <th className="px-4 py-4">Niveau</th>
-                      <th className="px-4 py-4 text-center">Volume (h)</th>
-                      <th className="px-4 py-4 text-center">Coeff par défaut</th>
-                      <th className="px-4 py-4 text-right">Actions</th>
+                    <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <th className="px-4 py-3">Matière</th>
+                      <th className="px-4 py-3">Niveau Scolaire</th>
+                      <th className="px-4 py-3 text-center">Volume Hebdo</th>
+                      <th className="px-4 py-3 text-center">Coefficient</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-50">
+                  <tbody>
                     {loading ? (
                       <tr>
                         <td colSpan={5} className="py-20 text-center">
-                          <div className="flex flex-col items-center gap-3">
-                            <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-                            <span className="text-sm font-bold text-gray-400">Génération du catalogue...</span>
+                          <div className="flex flex-col items-center justify-center gap-2 text-sm text-slate-500">
+                            <Loader2 className="h-6 w-6 animate-spin" style={{ color: PRIMARY }} />
+                            <span>Chargement du catalogue...</span>
                           </div>
                         </td>
                       </tr>
                     ) : subjects.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="py-20 text-center">
-                          <div className="max-w-xs mx-auto space-y-4">
-                            <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center mx-auto">
-                              <BookOpen className="w-8 h-8 text-gray-200" />
-                            </div>
-                            <p className="text-sm text-gray-400 font-medium">Aucune matière n'est définie pour cette année scolaire.</p>
+                        <td colSpan={5} className="py-20 text-center text-slate-500">
+                          <div className="max-w-xs mx-auto space-y-2">
+                            <BookOpen className="w-8 h-8 text-slate-300 mx-auto" />
+                            <p className="text-sm font-medium">Aucune matière n'est définie pour cette année scolaire.</p>
                           </div>
                         </td>
                       </tr>
                     ) : (
-                      subjects.filter(s => s.name.toLowerCase().includes(search.toLowerCase()) || s.code.toLowerCase().includes(search.toLowerCase())).map((subject) => (
-                        <tr key={subject.id} className="group hover:bg-gray-50/50 transition-colors">
-                          <td className="px-4 py-5">
-                            <div className="flex items-center gap-4">
-                              <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 font-black text-xs">
-                                {subject.code.substring(0, 3)}
-                              </div>
+                      subjects
+                        .filter(
+                          (s) =>
+                            s.name.toLowerCase().includes(search.toLowerCase()) ||
+                            s.code.toLowerCase().includes(search.toLowerCase()),
+                        )
+                        .map((subject) => (
+                          <tr key={subject.id} className="border-b border-slate-100 hover:bg-slate-50/80">
+                            <td className="px-4 py-3">
                               <div>
-                                <h4 className="font-bold text-gray-900">{subject.name}</h4>
-                                <span className="text-[10px] font-mono text-gray-400 uppercase tracking-tighter">{subject.code}</span>
+                                <div className="font-semibold text-slate-900">{subject.name}</div>
+                                <div className="text-xs text-slate-400 uppercase">{subject.code}</div>
                               </div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-5">
-                            <span className="text-sm font-medium text-gray-500">{subject.schoolLevel?.label ?? 'N/A'}</span>
-                          </td>
-                          <td className="px-4 py-5 text-center">
-                            <span className="px-2.5 py-1 bg-gray-100 rounded-lg text-xs font-bold text-gray-600">{subject.weeklyHours ?? 0}h</span>
-                          </td>
-                          <td className="px-4 py-5 text-center">
-                            <span className="text-sm font-black text-indigo-600">{subject.coefficient}</span>
-                          </td>
-                          <td className="px-4 py-5 text-right">
-                            <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button 
+                            </td>
+                            <td className="px-4 py-3 text-slate-600">
+                              {subject.schoolLevel?.name ?? subject.schoolLevel?.label ?? '—'}
+                            </td>
+                            <td className="px-4 py-3 text-center text-slate-600 font-medium">{subject.weeklyHours ?? 0}h</td>
+                            <td className="px-4 py-3 text-center font-bold text-slate-900">{subject.coefficient}</td>
+                            <td className="px-4 py-3 text-right">
+                              <button
+                                type="button"
                                 onClick={() => {
                                   setSubjectForm({
                                     id: subject.id,
@@ -536,20 +609,21 @@ export default function SubjectsWorkspace() {
                                   });
                                   setModal('edit-subject');
                                 }}
-                                className="p-2 rounded-xl hover:bg-white hover:shadow-sm text-gray-400 hover:text-indigo-600 transition-all"
+                                className="mr-3 text-sm font-medium hover:underline"
+                                style={{ color: PRIMARY }}
                               >
-                                <Edit className="w-4 h-4" />
+                                Modifier
                               </button>
-                              <button 
+                              <button
+                                type="button"
                                 onClick={() => handleDeleteSubject(subject.id)}
-                                className="p-2 rounded-xl hover:bg-white hover:shadow-sm text-gray-400 hover:text-rose-600 transition-all"
+                                className="text-sm font-medium text-rose-700 hover:underline"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                Supprimer
                               </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
+                            </td>
+                          </tr>
+                        ))
                     )}
                   </tbody>
                 </table>
@@ -559,8 +633,8 @@ export default function SubjectsWorkspace() {
 
           {tab === 'series' && (
             <div className="p-6 space-y-6">
-               <div className="bg-amber-50 rounded-2xl p-4 border border-amber-100 flex gap-4">
-                 <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600 flex-shrink-0">
+               <div className="bg-amber-50 rounded-xl p-4 border border-amber-100 flex gap-4">
+                 <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center text-amber-600 flex-shrink-0">
                    <Info className="w-5 h-5" />
                  </div>
                  <div className="space-y-1">
@@ -571,39 +645,11 @@ export default function SubjectsWorkspace() {
                  </div>
                </div>
 
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                 {series.map(s => (
-                   <div 
-                     key={s.id} 
-                     onClick={() => {
-                       setSeriesForm({
-                         id: s.id,
-                         name: s.name,
-                         description: s.description || '',
-                         levelId: s.level?.id || '',
-                       });
-                       setModal('edit-series');
-                     }}
-                     className="p-5 rounded-3xl border border-gray-100 hover:border-indigo-200 transition-all hover:shadow-lg hover:shadow-indigo-50 group cursor-pointer relative overflow-hidden"
-                   >
-                     <div className="absolute top-0 right-0 p-4 opacity-[0.03] scale-150 rotate-12">
-                       <Layers className="w-20 h-20 text-indigo-900" />
-                     </div>
-                     <div className="flex justify-between items-start mb-4">
-                        <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-black text-lg shadow-lg shadow-indigo-100">
-                          {s.name}
-                        </div>
-                        <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-indigo-600 transition-colors" />
-                     </div>
-                     <h4 className="font-bold text-gray-900 text-lg mb-1">Série {s.name}</h4>
-                     <p className="text-sm text-gray-500 font-medium mb-4 line-clamp-2">{s.description || 'Aucune description'}</p>
-                     <div className="pt-4 border-t border-gray-50 flex items-center justify-between">
-                       <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">{s.level?.name || 'Secondaire'}</span>
-                       <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[9px] font-black uppercase tracking-tight">Active</span>
-                     </div>
-                   </div>
-                 ))}
+               {/* Toolbar */}
+               <div className="flex justify-between items-center">
+                 <h3 className="text-base font-semibold text-slate-900">Liste des séries enregistrées</h3>
                  <button 
+                  type="button"
                   onClick={() => {
                     setSeriesForm({
                       id: '',
@@ -613,163 +659,366 @@ export default function SubjectsWorkspace() {
                     });
                     setModal('create-series');
                   }}
-                  className="p-5 rounded-3xl border-2 border-dashed border-gray-200 hover:border-indigo-400 hover:bg-indigo-50/30 transition-all flex flex-col items-center justify-center gap-3 text-gray-400 hover:text-indigo-600"
+                  className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:opacity-95"
+                  style={{ backgroundColor: PRIMARY }}
                  >
-                   <div className="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center">
-                     <Plus className="w-6 h-6" />
-                   </div>
-                   <span className="text-sm font-bold">Ajouter une Série</span>
+                   <Plus className="h-4 w-4" />
+                   Ajouter une Série
                  </button>
+               </div>
+
+               {/* Table Series */}
+               <div className="overflow-x-auto rounded-xl border border-slate-200">
+                 <table className="min-w-full text-sm">
+                   <thead>
+                     <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                       <th className="px-4 py-3">Série</th>
+                       <th className="px-4 py-3">Niveau Scolaire</th>
+                       <th className="px-4 py-3">Description</th>
+                       <th className="px-4 py-3 text-center">Statut</th>
+                       <th className="px-4 py-3 text-right">Actions</th>
+                     </tr>
+                   </thead>
+                   <tbody>
+                     {series.length === 0 ? (
+                       <tr>
+                         <td colSpan={5} className="py-20 text-center text-slate-500">
+                           <div className="max-w-xs mx-auto space-y-2">
+                             <Layers className="w-8 h-8 text-slate-300 mx-auto" />
+                             <p className="text-sm font-medium">Aucune série n'est définie.</p>
+                           </div>
+                         </td>
+                       </tr>
+                     ) : (
+                       series.map((s) => (
+                         <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50/80">
+                           <td className="px-4 py-3 font-semibold text-slate-900">
+                             Série {s.name}
+                           </td>
+                           <td className="px-4 py-3 text-slate-600">
+                             {s.level?.name || 'Secondaire'}
+                           </td>
+                           <td className="px-4 py-3 text-slate-600">
+                             {s.description || '—'}
+                           </td>
+                           <td className="px-4 py-3 text-center">
+                             <span className="rounded-full bg-emerald-100 text-emerald-900 px-2.5 py-0.5 text-xs font-semibold">
+                               Active
+                             </span>
+                           </td>
+                           <td className="px-4 py-3 text-right">
+                             <button
+                               type="button"
+                               onClick={() => {
+                                 setSeriesForm({
+                                   id: s.id,
+                                   name: s.name,
+                                   description: s.description || '',
+                                   levelId: s.level?.id || '',
+                                 });
+                                 setModal('edit-series');
+                               }}
+                               className="mr-3 text-sm font-medium hover:underline"
+                               style={{ color: PRIMARY }}
+                             >
+                               Modifier
+                             </button>
+                           </td>
+                         </tr>
+                       ))
+                     )}
+                   </tbody>
+                 </table>
                </div>
             </div>
           )}
 
           {tab === 'classes' && (
-             <div className="p-10 text-center space-y-4">
-                <div className="w-20 h-20 bg-indigo-50 rounded-3xl flex items-center justify-center mx-auto text-indigo-600">
-                   <ArrowUpRight className="w-10 h-10" />
-                </div>
-                <h3 className="text-xl font-bold text-gray-900">Affectation des Matières</h3>
-                <p className="text-gray-500 max-w-sm mx-auto text-sm">Gérez les coefficients et volumes horaires spécifiques pour chaque classe en fonction de sa série.</p>
-                <div className="pt-6">
-                   <button 
-                    onClick={() => setModal('mass-assignment')}
-                    className="px-8 py-3 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 hover:scale-105 transition-all flex items-center gap-2 mx-auto"
-                   >
-                     <Sparkles className="w-4 h-4" />
-                     Lancer l'assistant d'affectation
-                   </button>
-                </div>
+             <div className="p-6 space-y-6">
+               {/* Header Info Banner */}
+               <div className="bg-amber-50 rounded-xl p-4 border border-amber-100 flex gap-4">
+                 <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center text-amber-600 flex-shrink-0">
+                   <Info className="w-5 h-5" />
+                 </div>
+                 <div className="space-y-1">
+                   <h5 className="text-sm font-bold text-amber-900">Affectation des Matières aux Classes</h5>
+                   <p className="text-xs text-amber-700 leading-relaxed">
+                     Gérez les coefficients et volumes horaires spécifiques pour chaque classe. Vous pouvez affecter des matières en masse ou retirer individuellement des matières affectées.
+                   </p>
+                 </div>
+               </div>
+
+               {/* Toolbar */}
+               <div className="flex justify-between items-center">
+                 <h3 className="text-base font-semibold text-slate-900">Matières affectées par classe</h3>
+                 <button 
+                  type="button"
+                  onClick={() => {
+                    setSelectedClasses([]);
+                    setSelectedSubjects([]);
+                    setModal('mass-assignment');
+                  }}
+                  className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:opacity-95"
+                  style={{ backgroundColor: PRIMARY }}
+                 >
+                   <Sparkles className="w-4 h-4" />
+                   Assistant d'affectation
+                 </button>
+               </div>
+
+               {/* Table Classes Assignments */}
+               <div className="overflow-x-auto rounded-xl border border-slate-200">
+                 <table className="min-w-full text-sm">
+                   <thead>
+                     <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                       <th className="px-4 py-3">Classe</th>
+                       <th className="px-4 py-3">Série</th>
+                       <th className="px-4 py-3">Matières affectées</th>
+                       <th className="px-4 py-3 text-center">Volume Hebdo Total</th>
+                       <th className="px-4 py-3 text-right">Actions</th>
+                     </tr>
+                   </thead>
+                   <tbody>
+                     {loadingClassSubjects ? (
+                       <tr>
+                         <td colSpan={5} className="py-20 text-center">
+                           <div className="flex flex-col items-center justify-center gap-2 text-sm text-slate-500">
+                             <Loader2 className="h-6 w-6 animate-spin" style={{ color: PRIMARY }} />
+                             <span>Chargement des affectations...</span>
+                           </div>
+                         </td>
+                       </tr>
+                     ) : classes.length === 0 ? (
+                       <tr>
+                         <td colSpan={5} className="py-20 text-center text-slate-500">
+                           Aucune classe disponible pour cette année scolaire.
+                         </td>
+                       </tr>
+                     ) : (
+                       classes.map((c) => {
+                         const classSubjects = classSubjectsMap[c.id] || [];
+                         const totalHours = classSubjects.reduce(
+                           (sum: number, cs: any) => sum + (cs.weeklyHours || 0),
+                           0
+                         );
+
+                         return (
+                           <tr key={c.id} className="border-b border-slate-100 hover:bg-slate-50/80">
+                             <td className="px-4 py-3 font-semibold text-slate-900">
+                               {c.name}
+                             </td>
+                             <td className="px-4 py-3 text-slate-600">
+                               {c.series ? (
+                                 <span className="inline-flex items-center rounded bg-indigo-50 border border-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+                                   {c.series.name}
+                                 </span>
+                               ) : (
+                                 '—'
+                               )}
+                             </td>
+                             <td className="px-4 py-3">
+                               {classSubjects.length === 0 ? (
+                                 <span className="text-xs text-slate-400 font-medium">Aucune matière affectée</span>
+                               ) : (
+                                 <div className="flex flex-wrap gap-1.5 py-1">
+                                   {classSubjects.map((cs: any) => (
+                                     <span
+                                       key={cs.id}
+                                       className="inline-flex items-center gap-1 rounded bg-slate-100 pl-2 pr-1.5 py-0.5 text-xs font-semibold text-slate-800 border border-slate-200"
+                                     >
+                                       <span>
+                                         {cs.subject?.name} <span className="text-[10px] text-slate-500 font-normal">(Coeff. {cs.coefficient} · {cs.weeklyHours}h)</span>
+                                       </span>
+                                       <button
+                                         type="button"
+                                         onClick={() => handleRemoveClassSubject(cs.id)}
+                                         className="rounded-full hover:bg-slate-200 p-0.5 text-slate-500 hover:text-slate-900 transition-colors"
+                                       >
+                                         <Plus className="h-3 w-3 rotate-45 shrink-0" />
+                                       </button>
+                                     </span>
+                                   ))}
+                                 </div>
+                               )}
+                             </td>
+                             <td className="px-4 py-3 text-center font-bold text-slate-700">
+                               {totalHours}h
+                             </td>
+                             <td className="px-4 py-3 text-right">
+                               <button
+                                 type="button"
+                                 onClick={() => {
+                                   setSelectedClasses([c.id]);
+                                   setSelectedSubjects([]);
+                                   setModal('mass-assignment');
+                                 }}
+                                 className="text-sm font-medium hover:underline"
+                                 style={{ color: PRIMARY }}
+                               >
+                                 Affecter
+                               </button>
+                             </td>
+                           </tr>
+                         );
+                       })
+                     )}
+                   </tbody>
+                 </table>
+               </div>
              </div>
           )}
 
 
           {tab === 'programs' && (
-            <div className="p-6 space-y-8">
-               <div className="flex items-center justify-between border-b border-gray-50 pb-6">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-600">
-                      <FileText className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-bold text-gray-900">Programmes Officiels</h3>
-                      <p className="text-sm text-gray-500 font-medium">Documents PDF de référence institutionnelle (Signés & Scellés)</p>
-                    </div>
-                  </div>
-                  <button className="flex items-center gap-2 text-indigo-600 font-bold text-sm hover:underline">
-                    <Download className="w-4 h-4" />
-                    Tout télécharger (.zip)
-                  </button>
+            <div className="p-6 space-y-6">
+               <div className="flex flex-col gap-1">
+                  <h3 className="text-base font-semibold text-slate-900">Programmes Officiels de Référence</h3>
+                  <p className="text-xs text-slate-500">Documents PDF de référence institutionnelle (Signés & Scellés).</p>
                </div>
 
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                 {subjects.map(s => {
-                   const latestProgram = s.programs && s.programs.length > 0 ? s.programs[0] : null;
-                   const isApproved = !!latestProgram?.approvedAt;
+               <div className="overflow-x-auto rounded-xl border border-slate-200">
+                 <table className="min-w-full text-sm">
+                   <thead>
+                     <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                       <th className="px-4 py-3">Matière</th>
+                       <th className="px-4 py-3">Niveau Scolaire</th>
+                       <th className="px-4 py-3 text-center">Version</th>
+                       <th className="px-4 py-3 text-center">Statut d'Approbation</th>
+                       <th className="px-4 py-3 text-right">Actions</th>
+                     </tr>
+                   </thead>
+                   <tbody>
+                     {subjects.length === 0 ? (
+                       <tr>
+                         <td colSpan={5} className="py-20 text-center text-slate-500">
+                           Aucune matière disponible pour associer un programme.
+                         </td>
+                       </tr>
+                     ) : (
+                       subjects.map((s) => {
+                         const latestProgram = s.programs && s.programs.length > 0 ? s.programs[0] : null;
+                         const isApproved = !!latestProgram?.approvedAt;
 
-                   return (
-                    <div key={s.id} className="p-5 bg-gray-50/50 rounded-3xl border border-gray-100 flex flex-col gap-4 hover:border-indigo-100 transition-all">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                           <div className="w-12 h-12 bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center">
-                              <FileText className={cn("w-6 h-6", latestProgram ? "text-rose-500" : "text-gray-200")} />
-                           </div>
-                           <div>
-                              <h4 className="font-bold text-gray-900 text-sm">{s.name}</h4>
-                              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{s.code}</p>
-                           </div>
-                        </div>
-                        {isApproved && (
-                          <div className="flex flex-col items-end">
-                            <span className="text-[9px] font-black text-emerald-600 uppercase">Validé</span>
-                            <span className="text-[8px] text-gray-400">{format(new Date(latestProgram!.approvedAt!), 'dd/MM/yyyy', { locale: fr })}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        {latestProgram ? (
-                          <div className="flex-1 flex items-center gap-2 p-2 bg-white rounded-xl border border-gray-100">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                            <span className="text-xs font-bold text-gray-600 truncate">v{latestProgram.version}</span>
-                            <a 
-                              href={latestProgram.documentUrl} 
-                              target="_blank" 
-                              rel="noreferrer"
-                              className="ml-auto p-1.5 hover:bg-gray-50 rounded-lg text-indigo-600"
-                            >
-                              <ExternalLink className="w-4 h-4" />
-                            </a>
-                          </div>
-                        ) : (
-                          <div className="flex-1 p-2 border-2 border-dashed border-gray-200 rounded-xl text-center">
-                            <span className="text-[10px] font-bold text-gray-400">Aucun document</span>
-                          </div>
-                        )}
-
-                        <div className="relative group">
-                           <input 
-                              type="file" 
-                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
-                              accept=".pdf"
-                              onChange={(e) => {
-                                 const file = e.target.files?.[0];
-                                 if (file) handleUploadProgram(s.id, file);
-                              }}
-                           />
-                           <button className={cn(
-                              "p-2.5 rounded-xl bg-gray-100 text-gray-400 group-hover:bg-indigo-600 group-hover:text-white transition-all",
-                              uploading && "opacity-50 cursor-not-allowed"
-                           )}>
-                             <Plus className="w-4 h-4" />
-                           </button>
-                        </div>
-                      </div>
-
-                      {latestProgram && !isApproved && (
-                        <button 
-                          onClick={() => handleApproveProgram(latestProgram.id)}
-                          className="w-full py-2 bg-indigo-50 text-indigo-600 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all"
-                        >
-                          Approuver & Signer
-                        </button>
-                      )}
-                    </div>
-                   );
-                 })}
+                         return (
+                           <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50/80">
+                             <td className="px-4 py-3">
+                               <div>
+                                 <div className="font-semibold text-slate-900">{s.name}</div>
+                                 <div className="text-xs text-slate-400 uppercase">{s.code}</div>
+                               </div>
+                             </td>
+                             <td className="px-4 py-3 text-slate-600">
+                               {s.schoolLevel?.name ?? s.schoolLevel?.label ?? '—'}
+                             </td>
+                             <td className="px-4 py-3 text-center text-slate-600 font-medium">
+                               {latestProgram ? `v${latestProgram.version}` : '—'}
+                             </td>
+                             <td className="px-4 py-3 text-center">
+                               {latestProgram ? (
+                                 isApproved ? (
+                                   <span className="inline-flex items-center gap-1 rounded bg-emerald-50 text-emerald-700 px-2 py-0.5 text-xs font-semibold border border-emerald-200">
+                                     <CheckCircle2 className="w-3.5 h-3.5" />
+                                     Validé le {format(new Date(latestProgram.approvedAt!), 'dd/MM/yyyy', { locale: fr })}
+                                   </span>
+                                 ) : (
+                                   <span className="inline-flex items-center gap-1 rounded bg-amber-50 text-amber-700 px-2 py-0.5 text-xs font-semibold border border-amber-200">
+                                     <AlertCircle className="w-3.5 h-3.5" />
+                                     En attente d'approbation
+                                   </span>
+                                 )
+                               ) : (
+                                 <span className="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-600 px-2 py-0.5 text-xs font-semibold border border-slate-200">
+                                   Non importé
+                                 </span>
+                               )}
+                             </td>
+                             <td className="px-4 py-3 text-right">
+                               <div className="flex items-center justify-end gap-2">
+                                 {latestProgram && (
+                                   <>
+                                     <a 
+                                       href={latestProgram.documentUrl} 
+                                       target="_blank" 
+                                       rel="noreferrer"
+                                       className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-800 border border-slate-200 rounded hover:bg-slate-200 transition-colors animate-none"
+                                     >
+                                       <Download className="w-3 h-3" />
+                                       Télécharger
+                                     </a>
+                                     {!isApproved && (
+                                       <button 
+                                         type="button"
+                                         onClick={() => handleApproveProgram(latestProgram.id)}
+                                         className="text-xs font-semibold px-2.5 py-1 text-white rounded hover:opacity-95 transition-all"
+                                         style={{ backgroundColor: PRIMARY }}
+                                       >
+                                         Approuver
+                                       </button>
+                                     )}
+                                   </>
+                                 )}
+                                 <div className="relative inline-block">
+                                    <input 
+                                       type="file" 
+                                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
+                                       accept=".pdf"
+                                       onChange={(e) => {
+                                          const file = e.target.files?.[0];
+                                          if (file) handleUploadProgram(s.id, file);
+                                       }}
+                                       disabled={uploading}
+                                    />
+                                    <button 
+                                      type="button"
+                                      className="text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-800 border border-slate-200 rounded hover:bg-slate-200 transition-colors disabled:opacity-50"
+                                      disabled={uploading}
+                                    >
+                                      {latestProgram ? 'Remplacer PDF' : 'Importer PDF'}
+                                    </button>
+                                 </div>
+                               </div>
+                             </td>
+                           </tr>
+                         );
+                       })
+                     )}
+                   </tbody>
+                 </table>
                </div>
-
             </div>
           )}
         </motion.div>
       </AnimatePresence>
 
       {/* Orion Insight Banner */}
-      <motion.div 
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ delay: 0.5 }}
-        className="bg-gradient-to-r from-indigo-900 to-blue-900 rounded-3xl p-6 text-white shadow-xl shadow-indigo-200 relative overflow-hidden"
+      <div 
+        className="rounded-xl border bg-white p-6 shadow-sm relative overflow-hidden"
+        style={{ borderLeftWidth: 4, borderLeftColor: PRIMARY }}
       >
-        <div className="absolute top-0 right-0 p-6 opacity-10">
-          <Sparkles className="w-24 h-24" />
+        <div className="absolute top-0 right-0 p-6 opacity-5">
+          <Sparkles className="w-24 h-24" style={{ color: PRIMARY }} />
         </div>
-        <div className="flex items-center gap-6 relative">
-          <div className="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20">
-            <CheckCircle2 className="w-8 h-8 text-indigo-300" />
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between relative">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-lg bg-slate-50 flex items-center justify-center border border-slate-200">
+              <CheckCircle2 className="w-6 h-6" style={{ color: PRIMARY }} />
+            </div>
+            <div>
+              <h4 className="text-base font-bold text-slate-900">Intelligence Pédagogique ORION</h4>
+              <p className="text-slate-600 text-sm max-w-2xl leading-relaxed mt-0.5">
+                Toutes les matières obligatoires sont couvertes pour le niveau primaire. 
+                Attention : 3 matières en série D n'ont pas encore de volume horaire défini.
+              </p>
+            </div>
           </div>
-          <div>
-            <h4 className="text-lg font-black tracking-tight mb-1">Intelligence Pédagogique ORION</h4>
-            <p className="text-indigo-100/80 text-sm max-w-2xl leading-relaxed">
-              Toutes les matières obligatoires sont couvertes pour le niveau primaire. 
-              Attention : 3 matières en série D n'ont pas encore de volume horaire défini.
-            </p>
-          </div>
-          <button className="ml-auto px-6 py-3 bg-white text-indigo-900 rounded-2xl font-bold text-sm hover:bg-indigo-50 transition-all">
+          <button 
+            type="button"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 self-start sm:self-center"
+          >
             Analyser tout
           </button>
         </div>
-      </motion.div>
+      </div>
 
       {/* Modals */}
       <FormModal
@@ -781,20 +1030,20 @@ export default function SubjectsWorkspace() {
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
-              <label className="text-xs font-black uppercase text-gray-400">Code Matière</label>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Code Matière</label>
               <input 
                 type="text" 
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 font-bold" 
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800" 
                 placeholder="EX: MATH-01" 
                 value={subjectForm.code}
                 onChange={(e) => setSubjectForm({ ...subjectForm, code: e.target.value })}
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-black uppercase text-gray-400">Nom</label>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Nom</label>
               <input 
                 type="text" 
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 font-bold" 
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800" 
                 placeholder="Mathématiques" 
                 value={subjectForm.name}
                 onChange={(e) => setSubjectForm({ ...subjectForm, name: e.target.value })}
@@ -803,20 +1052,20 @@ export default function SubjectsWorkspace() {
           </div>
           <div className="grid grid-cols-2 gap-4">
              <div className="space-y-1">
-               <label className="text-xs font-black uppercase text-gray-400">Coefficient</label>
+               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Coefficient</label>
                <input 
                  type="number" 
-                 className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 font-bold" 
+                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800" 
                  placeholder="2" 
                  value={subjectForm.coefficient}
                  onChange={(e) => setSubjectForm({ ...subjectForm, coefficient: Number(e.target.value) })}
                />
              </div>
              <div className="space-y-1">
-               <label className="text-xs font-black uppercase text-gray-400">Volume Hebdo (h)</label>
+               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Volume Hebdo (h)</label>
                <input 
                  type="number" 
-                 className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 font-bold" 
+                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800" 
                  placeholder="4" 
                  value={subjectForm.weeklyHours}
                  onChange={(e) => setSubjectForm({ ...subjectForm, weeklyHours: Number(e.target.value) })}
@@ -824,9 +1073,9 @@ export default function SubjectsWorkspace() {
              </div>
           </div>
           <div className="space-y-1">
-             <label className="text-xs font-black uppercase text-gray-400">Niveau Scolaire</label>
+             <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Niveau Scolaire</label>
              <select
-               className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm"
+               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white"
                value={subjectForm.schoolLevelId}
                onChange={(e) => setSubjectForm({ ...subjectForm, schoolLevelId: e.target.value })}
              >
@@ -847,21 +1096,21 @@ export default function SubjectsWorkspace() {
       >
         <div className="space-y-4">
           <div className="space-y-1">
-            <label className="text-xs font-black uppercase text-gray-400">Nom de la série</label>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Nom de la série</label>
             <input 
               type="text" 
-              className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 font-bold" 
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800" 
               placeholder="EX: Série D" 
               value={seriesForm.name}
               onChange={(e) => setSeriesForm({ ...seriesForm, name: e.target.value })}
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-black uppercase text-gray-400">Niveau</label>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Niveau</label>
             <select
               value={seriesForm.levelId}
               onChange={(e) => setSeriesForm({ ...seriesForm, levelId: e.target.value })}
-              className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white"
             >
               <option value="">Sélectionner un niveau</option>
               {levels.map(l => (
@@ -870,9 +1119,9 @@ export default function SubjectsWorkspace() {
             </select>
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-black uppercase text-gray-400">Description</label>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Description</label>
             <textarea 
-              className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm" 
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white" 
               placeholder="Description ou commentaires..." 
               value={seriesForm.description}
               onChange={(e) => setSeriesForm({ ...seriesForm, description: e.target.value })}
@@ -889,9 +1138,9 @@ export default function SubjectsWorkspace() {
         size="large"
       >
         <div className="space-y-6">
-          <div className="bg-indigo-50 p-4 rounded-2xl flex gap-3">
-             <Info className="w-5 h-5 text-indigo-600 mt-1" />
-             <p className="text-sm text-indigo-900 font-medium leading-relaxed">
+          <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 flex gap-3">
+             <Info className="w-5 h-5 text-slate-500 mt-1 shrink-0" />
+             <p className="text-sm text-slate-700 leading-relaxed">
                Cet assistant permet de lier plusieurs matières à plusieurs classes simultanément. 
                Si vous activez l'option <b>"Priorité aux coefficients de série"</b>, le système ignorera les valeurs saisies ici pour utiliser celles définies dans le catalogue des séries pour chaque couple classe/matière.
              </p>
@@ -900,21 +1149,22 @@ export default function SubjectsWorkspace() {
           <div className="grid grid-cols-2 gap-8">
             {/* Colonne Classes */}
             <div className="space-y-3">
-              <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Étape 1 : Choisir les Classes ({selectedClasses.length})</label>
-              <div className="bg-gray-50 rounded-2xl p-4 max-h-60 overflow-y-auto space-y-2 border border-gray-100">
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Étape 1 : Choisir les Classes ({selectedClasses.length})</label>
+              <div className="bg-slate-50 rounded-lg p-4 max-h-60 overflow-y-auto space-y-2 border border-slate-200">
                 {classes.map(c => (
-                  <label key={c.id} className="flex items-center gap-3 p-2 hover:bg-white rounded-xl transition-colors cursor-pointer group">
+                  <label key={c.id} className="flex items-center gap-3 p-2 hover:bg-white rounded-lg transition-colors cursor-pointer group border border-transparent hover:border-slate-200">
                     <input 
                       type="checkbox" 
-                      className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      className="w-4 h-4 rounded border-gray-300 focus:ring-slate-500"
+                      style={{ color: PRIMARY }}
                       checked={selectedClasses.includes(c.id)}
                       onChange={(e) => {
                         if (e.target.checked) setSelectedClasses([...selectedClasses, c.id]);
                         else setSelectedClasses(selectedClasses.filter(id => id !== c.id));
                       }}
                     />
-                    <span className="text-sm font-bold text-gray-700 group-hover:text-indigo-600">{c.name}</span>
-                    {c.series && <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-600 rounded text-[8px] font-black">{c.series.name}</span>}
+                    <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900">{c.name}</span>
+                    {c.series && <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px] font-semibold border border-indigo-100">{c.series.name}</span>}
                   </label>
                 ))}
               </div>
@@ -922,41 +1172,42 @@ export default function SubjectsWorkspace() {
 
             {/* Colonne Matières */}
             <div className="space-y-3">
-               <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Étape 2 : Choisir les Matières ({selectedSubjects.length})</label>
-               <div className="bg-gray-50 rounded-2xl p-4 max-h-60 overflow-y-auto space-y-2 border border-gray-100">
+               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Étape 2 : Choisir les Matières ({selectedSubjects.length})</label>
+               <div className="bg-slate-50 rounded-lg p-4 max-h-60 overflow-y-auto space-y-2 border border-slate-200">
                 {subjects.map(s => (
-                  <label key={s.id} className="flex items-center gap-3 p-2 hover:bg-white rounded-xl transition-colors cursor-pointer group">
+                  <label key={s.id} className="flex items-center gap-3 p-2 hover:bg-white rounded-lg transition-colors cursor-pointer group border border-transparent hover:border-slate-200">
                     <input 
                       type="checkbox" 
-                      className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      className="w-4 h-4 rounded border-gray-300 focus:ring-slate-500"
+                      style={{ color: PRIMARY }}
                       checked={selectedSubjects.includes(s.id)}
                       onChange={(e) => {
                         if (e.target.checked) setSelectedSubjects([...selectedSubjects, s.id]);
                         else setSelectedSubjects(selectedSubjects.filter(id => id !== s.id));
                       }}
                     />
-                    <span className="text-sm font-bold text-gray-700 group-hover:text-indigo-600">{s.name}</span>
+                    <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900">{s.name}</span>
                   </label>
                 ))}
               </div>
             </div>
           </div>
 
-          <div className="pt-4 border-t border-gray-100 grid grid-cols-3 gap-6">
+          <div className="pt-4 border-t border-slate-200 grid grid-cols-3 gap-6">
              <div className="space-y-1">
-               <label className="text-[10px] font-black uppercase text-gray-400">Coefficient Global</label>
+               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Coefficient Global</label>
                <input 
                 type="number" 
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800"
                 value={massConfig.coefficient}
                 onChange={(e) => setMassConfig({...massConfig, coefficient: parseFloat(e.target.value)})}
                />
              </div>
              <div className="space-y-1">
-               <label className="text-[10px] font-black uppercase text-gray-400">Heures Hebdo</label>
+               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Heures Hebdo</label>
                <input 
                 type="number" 
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800"
                 value={massConfig.weeklyHours}
                 onChange={(e) => setMassConfig({...massConfig, weeklyHours: parseInt(e.target.value)})}
                />
@@ -965,11 +1216,12 @@ export default function SubjectsWorkspace() {
                 <input 
                   type="checkbox" 
                   id="use-series" 
-                  className="w-5 h-5 rounded-lg border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  className="w-5 h-5 rounded border-gray-300 focus:ring-slate-500"
+                  style={{ color: PRIMARY }}
                   checked={massConfig.useSeries}
                   onChange={(e) => setMassConfig({...massConfig, useSeries: e.target.checked})}
                 />
-                <label htmlFor="use-series" className="text-xs font-black text-gray-600 cursor-pointer">Priorité aux coefficients de série</label>
+                <label htmlFor="use-series" className="text-xs font-semibold text-slate-700 cursor-pointer">Priorité aux coefficients de série</label>
              </div>
           </div>
         </div>
@@ -977,5 +1229,3 @@ export default function SubjectsWorkspace() {
     </div>
   );
 }
-
-

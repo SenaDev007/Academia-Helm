@@ -115,7 +115,7 @@ export default function TimetablesWorkspace() {
     try {
       const [tts, cls, rms, tchs] = await Promise.all([
         pedagogyFetch<Timetable[]>(`/api/pedagogy/timetables?academicYearId=${academicYear.id}`),
-        pedagogyFetch<AcademicClass[]>(`/api/pedagogy/academic-classes?academicYearId=${academicYear.id}`),
+        pedagogyFetch<AcademicClass[]>(`/api/pedagogy/academic-structure/classes?academicYearId=${academicYear.id}`),
         pedagogyFetch<Room[]>(`/api/pedagogy/rooms`),
         pedagogyFetch<any[]>(`/api/pedagogy/teacher-profiles?academicYearId=${academicYear.id}`)
       ]);

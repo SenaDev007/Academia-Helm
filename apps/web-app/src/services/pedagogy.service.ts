@@ -259,7 +259,7 @@ class PedagogyService {
       return LocalSearchService.search("classes", { tenantId: getTenantId(), filters: { academicYearId } });
     }
     try {
-      return await apiFetch(`/api/pedagogy/academic-classes?academicYearId=${academicYearId}`);
+      return await apiFetch(`/api/pedagogy/academic-structure/classes?academicYearId=${academicYearId}`);
     } catch (e) {
       return LocalSearchService.search("classes", { tenantId: getTenantId(), filters: { academicYearId } });
     }
@@ -274,6 +274,10 @@ class PedagogyService {
     } catch (e) {
       return LocalSearchService.search("class_subjects", { tenantId: getTenantId(), filters: { classId, academicYearId } });
     }
+  }
+
+  async removeClassSubject(id: string): Promise<any> {
+    return apiFetch(`/api/pedagogy/class-subjects/${id}`, { method: 'DELETE' });
   }
 
   async createTeacherAssignment(data: any): Promise<any> {

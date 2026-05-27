@@ -1519,8 +1519,7 @@ export function AcademicStructureWorkspace() {
                 classes.map((c) => (
                   <tr key={c.id} className="border-b border-slate-100 hover:bg-slate-50/80">
                     <td className="px-4 py-3 font-medium text-slate-900">
-                      {c.name}{' '}
-                      <span className="text-slate-400">({c.code})</span>
+                      {c.name}
                     </td>
                     <td className="px-4 py-3 text-slate-600">{c.cycle?.name ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{c.level?.name ?? '—'}</td>

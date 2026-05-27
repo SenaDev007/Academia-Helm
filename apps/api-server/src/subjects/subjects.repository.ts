@@ -25,7 +25,7 @@ export class SubjectsRepository {
   async findAll(tenantId: string, level?: string, academicYearId?: string): Promise<Subject[]> {
     const where: any = { tenantId };
     if (level) {
-      where.level = level;
+      where.schoolLevelId = level;
     }
     if (academicYearId) {
       where.academicYearId = academicYearId;

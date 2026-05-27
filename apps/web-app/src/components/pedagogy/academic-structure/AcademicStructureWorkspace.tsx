@@ -265,6 +265,115 @@ export function AcademicStructureWorkspace() {
     description: '',
     equipmentCsv: '',
   });
+  const [isDescriptionManual, setIsDescriptionManual] = useState(false);
+
+  const COMMON_EQUIPMENT = useMemo(() => [
+    'Tableau blanc',
+    'Vidéoprojecteur',
+    'Climatisation',
+    'Ordinateurs',
+    'Wi-Fi',
+    'Microscopes',
+    'Prises électriques',
+    'Haut-parleurs',
+    'Armoire de rangement',
+    'Tableau interactif',
+    'Lavabo',
+  ], []);
+
+  const generateSmartDescription = useCallback((type: string, csv: string): string => {
+    const items = csv.split(',')
+      .map(i => i.trim())
+      .filter(i => i.length > 0);
+    
+    let typeLabel = "salle de classe";
+    let baseDesc = "";
+    
+    switch (type) {
+      case 'CLASSROOM':
+        typeLabel = "salle de classe";
+        baseDesc = "conçue pour accueillir les cours théoriques et les activités d'apprentissage quotidiennes";
+        break;
+      case 'LAB':
+        typeLabel = "laboratoire de sciences";
+        baseDesc = "aménagé spécifiquement pour les séances de travaux pratiques (TP) et les expérimentations scientifiques";
+        break;
+      case 'IT':
+        typeLabel = "salle informatique";
+        baseDesc = "dédiée aux enseignements technologiques, aux travaux sur ordinateur et à l'apprentissage du numérique";
+        break;
+      case 'EXAM':
+        typeLabel = "salle d'examen";
+        baseDesc = "configurée de manière optimale pour garantir le calme et la conformité lors des épreuves et des évaluations";
+        break;
+      default:
+        typeLabel = "salle polyvalente";
+        baseDesc = "adaptée à divers besoins pédagogiques et activités multidisciplinaires";
+    }
+
+    if (items.length === 0) {
+      return `Cette ${typeLabel} est ${baseDesc}.`;
+    }
+
+    let equipmentList = "";
+    if (items.length === 1) {
+      equipmentList = items[0];
+    } else {
+      equipmentList = items.slice(0, -1).join(', ') + ' et ' + items[items.length - 1];
+    }
+
+    return `Cette ${typeLabel} est ${baseDesc}. Elle est équipée de : ${equipmentList}.`;
+  }, []);
+
+  const toggleEquipment = useCallback((item: string) => {
+    const currentItems = roomForm.equipmentCsv
+      .split(',')
+      .map(i => i.trim())
+      .filter(i => i.length > 0);
+    
+    const lowerItem = item.toLowerCase();
+    const existsIdx = currentItems.findIndex(i => i.toLowerCase() === lowerItem);
+    
+    let newItems: string[];
+    if (existsIdx >= 0) {
+      newItems = currentItems.filter((_, idx) => idx !== existsIdx);
+    } else {
+      newItems = [...currentItems, item];
+    }
+    
+    const newCsv = newItems.join(', ');
+    
+    setRoomForm(prev => {
+      const updated = { ...prev, equipmentCsv: newCsv };
+      if (!isDescriptionManual) {
+        updated.description = generateSmartDescription(prev.roomType, newCsv);
+      }
+      return updated;
+    });
+  }, [roomForm.equipmentCsv, isDescriptionManual, generateSmartDescription]);
+  const handleRoomTypeChange = useCallback((newType: string) => {
+    setRoomForm(prev => {
+      const updated = { ...prev, roomType: newType };
+      if (!isDescriptionManual) {
+        updated.description = generateSmartDescription(newType, prev.equipmentCsv);
+      }
+      return updated;
+    });
+  }, [isDescriptionManual, generateSmartDescription]);
+
+  const openRoomModal = useCallback((r: RoomRow) => {
+    setIsDescriptionManual(!!r.description);
+    setRoomForm({
+      roomCode: r.roomCode ?? '',
+      roomName: r.roomName ?? '',
+      roomType: r.roomType ?? 'CLASSROOM',
+      capacity: r.capacity ?? '',
+      status: r.status ?? 'ACTIVE',
+      description: r.description ?? '',
+      equipmentCsv: Array.isArray(r.equipment) ? r.equipment.join(', ') : '',
+    });
+    setRoomModal({ mode: 'edit', room: r });
+  }, []);
 
   const [trackDraft, setTrackDraft] = useState<Record<string, string>>({});
   const [trackSaving, setTrackSaving] = useState<Record<string, boolean>>({});
@@ -995,7 +1104,16 @@ export function AcademicStructureWorkspace() {
       setSeriesForm({ name: '', description: '' });
       setSeriesModal({ mode: 'create' });
     } else if (tab === 'rooms') {
-      setRoomForm({ roomCode: '', roomName: '', roomType: 'CLASSROOM', capacity: '', status: 'ACTIVE', description: '', equipmentCsv: '' });
+      setIsDescriptionManual(false);
+      setRoomForm({
+        roomCode: '',
+        roomName: '',
+        roomType: 'CLASSROOM',
+        capacity: '',
+        status: 'ACTIVE',
+        description: generateSmartDescription('CLASSROOM', ''),
+        equipmentCsv: '',
+      });
       setRoomModal({ mode: 'create' });
     }
   };
@@ -1705,18 +1823,7 @@ export function AcademicStructureWorkspace() {
                         type="button"
                         className="mr-3 text-sm font-medium hover:underline"
                         style={{ color: PRIMARY }}
-                        onClick={() => {
-                          setRoomForm({
-                            roomCode: r.roomCode ?? '',
-                            roomName: r.roomName ?? '',
-                            roomType: r.roomType ?? 'CLASSROOM',
-                            capacity: r.capacity ?? '',
-                            status: r.status ?? 'ACTIVE',
-                            description: r.description ?? '',
-                            equipmentCsv: Array.isArray(r.equipment) ? r.equipment.join(', ') : '',
-                          });
-                          setRoomModal({ mode: 'edit', room: r });
-                        }}
+                        onClick={() => openRoomModal(r)}
                       >
                         Modifier
                       </button>
@@ -2310,7 +2417,7 @@ export function AcademicStructureWorkspace() {
             <select
               className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
               value={roomForm.roomType}
-              onChange={(e) => setRoomForm((f) => ({ ...f, roomType: e.target.value }))}
+              onChange={(e) => handleRoomTypeChange(e.target.value)}
             >
               <option value="CLASSROOM">Salle de classe</option>
               <option value="LAB">Laboratoire</option>
@@ -2341,25 +2448,78 @@ export function AcademicStructureWorkspace() {
               onChange={(e) => setRoomForm((f) => ({ ...f, capacity: e.target.value }))}
             />
           </label>
-          <label className="block text-sm sm:col-span-2">
-            <span className="text-slate-600">Équipements (séparés par des virgules)</span>
+          <div className="block text-sm sm:col-span-2">
+            <span className="text-slate-600 font-medium">Équipements</span>
             <input
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-medium"
               value={roomForm.equipmentCsv}
-              onChange={(e) => setRoomForm((f) => ({ ...f, equipmentCsv: e.target.value }))}
+              onChange={(e) => {
+                setRoomForm((f) => {
+                  const updated = { ...f, equipmentCsv: e.target.value };
+                  if (!isDescriptionManual) {
+                    updated.description = generateSmartDescription(f.roomType, e.target.value);
+                  }
+                  return updated;
+                });
+              }}
               placeholder="Ex. Tableau, Projecteur, Climatisation"
             />
-          </label>
-          <label className="block text-sm sm:col-span-2">
-            <span className="text-slate-600">Description (optionnel)</span>
+            <div className="mt-2">
+              <span className="text-xs text-slate-500 block mb-1.5 font-semibold">Sélection rapide :</span>
+              <div className="flex flex-wrap gap-1.5">
+                {COMMON_EQUIPMENT.map((eq) => {
+                  const isActive = roomForm.equipmentCsv
+                    .split(',')
+                    .map(i => i.trim().toLowerCase())
+                    .includes(eq.toLowerCase());
+                  return (
+                    <button
+                      key={eq}
+                      type="button"
+                      onClick={() => toggleEquipment(eq)}
+                      className={cn(
+                        "px-2.5 py-1 rounded-full text-xs font-semibold border transition-all duration-200 active:scale-95",
+                        isActive
+                          ? "bg-indigo-600 border-indigo-600 text-white shadow-sm"
+                          : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100 hover:border-slate-300"
+                      )}
+                    >
+                      {eq}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+          <div className="block text-sm sm:col-span-2">
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-slate-600 font-medium">Description (optionnel)</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsDescriptionManual(false);
+                  setRoomForm(prev => ({
+                    ...prev,
+                    description: generateSmartDescription(prev.roomType, prev.equipmentCsv)
+                  }));
+                }}
+                className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 transition-all"
+                title="Régénérer la description automatique"
+              >
+                ✨ Régénérer
+              </button>
+            </div>
             <textarea
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-medium"
               rows={3}
               value={roomForm.description}
-              onChange={(e) => setRoomForm((f) => ({ ...f, description: e.target.value }))}
+              onChange={(e) => {
+                setIsDescriptionManual(true);
+                setRoomForm((f) => ({ ...f, description: e.target.value }));
+              }}
               placeholder="Notes internes (localisation, contraintes, etc.)"
             />
-          </label>
+          </div>
           <p className="text-xs text-slate-500 sm:col-span-2">
             Les salles sont filtrées sur l’année scolaire active.
           </p>

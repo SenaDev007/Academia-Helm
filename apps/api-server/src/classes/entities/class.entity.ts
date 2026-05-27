@@ -6,6 +6,9 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
+  BeforeInsert,
+  BeforeUpdate,
+  AfterLoad,
 } from 'typeorm';
 import { Tenant } from '../../tenants/entities/tenant.entity';
 import { User } from '../../users/entities/user.entity';
@@ -28,15 +31,14 @@ export class Class {
   @Column()
   name: string;
 
-  @Column({ type: 'uuid', nullable: false })
+  @Column({ name: 'schoolLevelId', type: 'uuid', nullable: false })
   schoolLevelId: string;
 
   @ManyToOne(() => SchoolLevel, { nullable: false, onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'school_level_id' })
+  @JoinColumn({ name: 'schoolLevelId' })
   schoolLevel: SchoolLevel;
 
-  // Ancien champ level conservé pour compatibilité (déprécié)
-  @Column({ nullable: true })
+  // Ancien champ level conservé pour compatibilité (déprécié) - virtuel
   level: string;
 
   @Column({ nullable: true })
@@ -70,12 +72,20 @@ export class Class {
   @Column({ nullable: true, type: 'text' })
   description: string;
 
-  @Column({ nullable: true })
-  createdBy: string;
+  @BeforeInsert()
+  @BeforeUpdate()
+  syncFields() {
+    if (this.level && !this.schoolLevelId) {
+      this.schoolLevelId = this.level;
+    } else if (this.schoolLevelId && !this.level) {
+      this.level = this.schoolLevelId;
+    }
+  }
 
-  @ManyToOne(() => User, { nullable: true })
-  @JoinColumn({ name: 'createdBy' })
-  creator: User;
+  @AfterLoad()
+  populateVirtualFields() {
+    this.level = this.schoolLevelId;
+  }
 
   @CreateDateColumn()
   createdAt: Date;
@@ -83,4 +93,5 @@ export class Class {
   @UpdateDateColumn()
   updatedAt: Date;
 }
+
 

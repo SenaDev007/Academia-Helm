@@ -5,6 +5,10 @@ export class CreateSubjectDto {
   name: string;
 
   @IsString()
+  @IsOptional()
+  abbreviation?: string;
+
+  @IsString()
   code: string;
 
   @IsString()

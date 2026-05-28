@@ -2278,6 +2278,7 @@ model Subject {
   schoolLevelId                String
   academicTrackId              String?
   name                         String
+  abbreviation                 String?
   code                         String
   coefficient                  Float                         @default(1.0)
   createdAt                    DateTime                      @default(now())

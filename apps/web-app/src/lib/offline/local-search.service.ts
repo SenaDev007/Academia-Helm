@@ -26,7 +26,8 @@ export class LocalSearchService {
     
     let results = allData;
 
-    // 1. Filtre par Tenant (Isolation obligatoire)
+    // 1. Filtre par Tenant (Isolation obligatoire) et exclusion des éléments supprimés localement (_deleted)
+    results = results.filter((item: any) => !item._deleted);
     if (options.tenantId) {
       results = results.filter((item: any) => item.tenantId === options.tenantId);
     }

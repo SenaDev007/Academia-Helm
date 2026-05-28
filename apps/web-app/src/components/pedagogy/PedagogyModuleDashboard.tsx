@@ -340,41 +340,7 @@ export function PedagogyModuleDashboard() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard
-          index={0}
-          title={isTeacher ? "Ma Conformité" : "Taux de Conformité"}
-          value={control?.ok && control.data ? `${Math.round(control.data.overallRate * 100)}%` : '—'}
-          icon={ShieldCheck}
-          color="indigo"
-          trend="+2.4%"
-        />
-        <KpiCard
-          index={1}
-          title={isTeacher ? "Documents Validés" : "Enseignants Actifs"}
-          value={isTeacher 
-            ? (orionKpis?.ok && orionKpis.data?.documents?.approved ? orionKpis.data.documents.approved : '—')
-            : (control?.ok && control.data?.totalActiveProfiles ? control.data.totalActiveProfiles : '—')}
-          icon={isTeacher ? BookOpen : Users}
-          color="emerald"
-        />
-        <KpiCard
-          index={2}
-          title={isTeacher ? "Corrections à Faire" : "Risques ORION"}
-          value={isTeacher
-            ? (orionKpis?.ok && orionKpis.data?.documents?.rejected ? orionKpis.data.documents.rejected : 0)
-            : (advancedOrion?.ok && advancedOrion.data?.summary?.riskFlagsCount ? advancedOrion.data.summary.riskFlagsCount : 0)}
-          icon={AlertCircle}
-          color={isTeacher ? 'rose' : (advancedOrion?.ok && advancedOrion.data?.summary?.criticalRisks ? 'rose' : 'amber')}
-        />
-        <KpiCard
-          index={3}
-          title={isTeacher ? "Sara AI Insights" : "Insights Générés"}
-          value={advancedOrion?.ok && advancedOrion.data?.summary?.insightsCount ? advancedOrion.data.summary.insightsCount : 0}
-          icon={Sparkles}
-          color="purple"
-        />
-      </div>
+
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-8">

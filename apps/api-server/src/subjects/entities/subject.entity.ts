@@ -32,6 +32,9 @@ export class Subject {
   @Column()
   name: string;
 
+  @Column({ nullable: true })
+  abbreviation: string;
+
   @Column()
   code: string;
 

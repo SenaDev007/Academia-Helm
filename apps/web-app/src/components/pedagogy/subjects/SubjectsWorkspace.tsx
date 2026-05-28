@@ -51,6 +51,73 @@ import { fr } from 'date-fns/locale';
 const PRIMARY = '#1A2BA6';
 const ACCENT = '#F5A623';
 
+// --- Catalogue de matières par défaut (suggestions dans le modal) ---
+const DEFAULT_SUBJECTS_CATALOGUE: Record<
+  string,
+  Array<{ name: string; code: string; description?: string }>
+> = {
+  MATERNELLE: [
+    {
+      name: 'Développement du bien-être (Santé & Environnement)',
+      code: 'DOM1',
+      description: 'Éducation pour la santé · Éducation à des réflexions de santé',
+    },
+    {
+      name: 'Développement du bien-être physique et moteur',
+      code: 'DOM2',
+      description: 'Éducation du mouvement · Gestuelle · Rythmique',
+    },
+    {
+      name: 'Développement des aptitudes cognitives et intellectuelles',
+      code: 'DOM3',
+      description: 'Observation · Éducation sensorielle · Pré-lecture · Pré-écriture · Pré-mathématique',
+    },
+    {
+      name: 'Développement des sentiments et émotions',
+      code: 'DOM4',
+      description: 'Expression plastique · Expression émotionnelle',
+    },
+    {
+      name: 'Développement des relations et de l\'interaction sociale',
+      code: 'DOM5',
+      description: 'Langage · Conte · Comptine · Poésie · Chant',
+    },
+  ],
+  PRIMAIRE: [
+    { name: 'Expression Écrite',                          code: 'EXPR_EC' },
+    { name: 'Lecture',                                    code: 'LECT'    },
+    { name: 'Dictée',                                     code: 'DICT'    },
+    { name: 'Mathématiques',                              code: 'MATH'    },
+    { name: 'Éducation Scientifique et Technologique',    code: 'EST'     },
+    { name: 'Éducation Sociale',                          code: 'ES'      },
+    { name: 'Éducation Artistique (EA) Vivant',           code: 'EA_VIV'  },
+    { name: 'Éducation Artistique (EA) Plastique',        code: 'EA_PLAS' },
+    { name: 'Éducation Physique et Sportive',             code: 'EPS'     },
+  ],
+  SECONDAIRE: [
+    { name: 'Communication Écrite',                       code: 'COMM_EC' },
+    { name: 'Lecture',                                    code: 'LECT'    },
+    { name: 'Anglais',                                    code: 'ANG'     },
+    { name: 'Français',                                   code: 'FR'      },
+    { name: 'Espagnol',                                   code: 'ESP'     },
+    { name: 'Allemand',                                   code: 'ALL'     },
+    { name: 'Mathématiques',                              code: 'MATH'    },
+    { name: 'Physique Chimie et Technologie',             code: 'PCT'     },
+    { name: 'Science de la Vie et de la Terre',           code: 'SVT'     },
+    { name: 'Éducation Physique et Sportive',             code: 'EPS'     },
+  ],
+};
+
+/** Résout un SchoolLevel vers la clé de catalogue (MATERNELLE | PRIMAIRE | SECONDAIRE | null) */
+function resolveLevelKey(level?: { code?: string; name?: string; label?: string }): string | null {
+  if (!level) return null;
+  const haystack = `${level.code ?? ''} ${level.name ?? ''} ${level.label ?? ''}`.toUpperCase();
+  if (haystack.includes('MATERN')) return 'MATERNELLE';
+  if (haystack.includes('PRIMA') || haystack.includes('PRIM')) return 'PRIMAIRE';
+  if (haystack.includes('SECOND') || haystack.includes('SEC') || haystack.includes('LYCEE') || haystack.includes('LYCEA')) return 'SECONDAIRE';
+  return null;
+}
+
 // --- Types ---
 
 interface Subject {
@@ -170,6 +237,12 @@ export default function SubjectsWorkspace() {
            nameOrLabel.includes('primaire') || 
            code.startsWith('MAT') || 
            code.startsWith('PRI');
+  }, [selectedLevelObj]);
+
+  /** Suggestions de matières pour le niveau sélectionné dans le modal */
+  const defaultSuggestionsForLevel = useMemo(() => {
+    const key = resolveLevelKey(selectedLevelObj);
+    return key ? DEFAULT_SUBJECTS_CATALOGUE[key] ?? [] : [];
   }, [selectedLevelObj]);
 
   useEffect(() => {
@@ -1005,6 +1078,55 @@ export default function SubjectsWorkspace() {
                </select>
             </div>
           </div>
+
+          {/* ── Suggestions de matières par défaut ────────────────────────── */}
+          {modal === 'create-subject' && defaultSuggestionsForLevel.length > 0 && (
+            <div className="rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50/60 to-slate-50 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-indigo-500" />
+                  <span className="text-xs font-bold uppercase tracking-wide text-indigo-700">
+                    Matières suggérées pour ce niveau
+                  </span>
+                </div>
+                <span className="text-[10px] text-slate-400 font-medium">Cliquez pour pré-remplir</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {defaultSuggestionsForLevel.map((suggestion) => {
+                  const isAlreadyCreated = subjects.some(
+                    s => s.code === suggestion.code && s.schoolLevelId === subjectForm.schoolLevelId
+                  );
+                  return (
+                    <button
+                      key={suggestion.code}
+                      type="button"
+                      disabled={isAlreadyCreated}
+                      title={suggestion.description ?? suggestion.name}
+                      onClick={() =>
+                        setSubjectForm(prev => ({
+                          ...prev,
+                          code: suggestion.code,
+                          name: suggestion.name,
+                          description: suggestion.description ?? '',
+                        }))
+                      }
+                      className={cn(
+                        'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all',
+                        isAlreadyCreated
+                          ? 'cursor-not-allowed bg-slate-100 text-slate-400 line-through'
+                          : 'cursor-pointer bg-white border border-indigo-200 text-indigo-800 shadow-sm hover:bg-indigo-600 hover:text-white hover:border-indigo-600 hover:shadow-md active:scale-95'
+                      )}
+                    >
+                      {isAlreadyCreated && <CheckCircle2 className="w-3 h-3" />}
+                      <span>{suggestion.code}</span>
+                      <span className="font-normal opacity-80">— {suggestion.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
              <div className="space-y-1">
                <div className="flex justify-between items-center">

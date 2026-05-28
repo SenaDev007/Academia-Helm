@@ -207,7 +207,7 @@ export default function SubjectsWorkspace() {
     });
   }, [classes, filterClassLevelId, filterClassSeriesId]);
 
-  // Modals
+  // Modal state
   const [modal, setModal] = useState<'none' | 'create-subject' | 'edit-subject' | 'mass-assignment'>('none');
 
   const [uploading, setUploading] = useState(false);
@@ -215,6 +215,10 @@ export default function SubjectsWorkspace() {
   // Confirmation states
   const [subjectToDelete, setSubjectToDelete] = useState<Subject | null>(null);
   const [assignmentToRemove, setAssignmentToRemove] = useState<{ id: string; name: string } | null>(null);
+
+  // Multi-sélection des suggestions de matières par défaut
+  const [selectedSuggestions, setSelectedSuggestions] = useState<Set<string>>(new Set());
+  const [bulkSaving, setBulkSaving] = useState(false);
 
   /** Lien Paramètres → onglet Structure (activation des niveaux officiels). */
   const settingsHref = useMemo(() => {
@@ -244,6 +248,11 @@ export default function SubjectsWorkspace() {
     const key = resolveLevelKey(selectedLevelObj);
     return key ? DEFAULT_SUBJECTS_CATALOGUE[key] ?? [] : [];
   }, [selectedLevelObj]);
+
+  // Réinitialiser la sélection quand le niveau change ou quand on ferme le modal
+  useEffect(() => {
+    setSelectedSuggestions(new Set());
+  }, [subjectForm.schoolLevelId, modal]);
 
   useEffect(() => {
     if (isPrimaryOrMaternelle && !subjectForm.id) {
@@ -443,6 +452,45 @@ export default function SubjectsWorkspace() {
         variant: "destructive"
       });
     }
+  };
+
+  /**
+   * Enregistrement groupé des matières sélectionnées dans le panneau de suggestions.
+   * Chaque matière est créée séquentiellement ; les doublons sont ignorés silencieusement.
+   */
+  const handleBulkCreateSuggestions = async () => {
+    if (selectedSuggestions.size === 0 || !subjectForm.schoolLevelId || !academicYear?.id) return;
+    setBulkSaving(true);
+    const toCreate = defaultSuggestionsForLevel.filter(s => selectedSuggestions.has(s.code));
+    let created = 0;
+    let skipped = 0;
+    for (const suggestion of toCreate) {
+      try {
+        await pedagogyService.createSubject({
+          academicYearId: academicYear.id,
+          schoolLevelId: subjectForm.schoolLevelId,
+          code: suggestion.code,
+          name: suggestion.name,
+          coefficient: isPrimaryOrMaternelle ? 1.0 : 1.0,
+          weeklyHours: 0,
+          description: suggestion.description,
+        });
+        created++;
+      } catch {
+        // Code déjà existant → on ignore
+        skipped++;
+      }
+    }
+    setBulkSaving(false);
+    setSelectedSuggestions(new Set());
+    await loadSubjects();
+    toast({
+      title: created > 0 ? `${created} matière${created > 1 ? 's' : ''} créée${created > 1 ? 's' : ''}` : 'Aucune matière créée',
+      description: skipped > 0
+        ? `${skipped} matière${skipped > 1 ? 's' : ''} ignorée${skipped > 1 ? 's' : ''} (déjà existante${skipped > 1 ? 's' : ''}).`
+        : 'Toutes les matières sélectionnées ont été ajoutées.',
+    });
+    if (created > 0) setModal('none');
   };
 
   const handleDeleteSubject = async (id: string) => {
@@ -1079,9 +1127,10 @@ export default function SubjectsWorkspace() {
             </div>
           </div>
 
-          {/* ── Suggestions de matières par défaut ────────────────────────── */}
+          {/* ── Suggestions de matières par défaut (multi-sélection) ──────── */}
           {modal === 'create-subject' && defaultSuggestionsForLevel.length > 0 && (
             <div className="rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50/60 to-slate-50 p-4 space-y-3">
+              {/* En-tête */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-indigo-500" />
@@ -1089,41 +1138,133 @@ export default function SubjectsWorkspace() {
                     Matières suggérées pour ce niveau
                   </span>
                 </div>
-                <span className="text-[10px] text-slate-400 font-medium">Cliquez pour pré-remplir</span>
+                <button
+                  type="button"
+                  className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 transition-colors"
+                  onClick={() => {
+                    const available = defaultSuggestionsForLevel.filter(
+                      s => !subjects.some(sub => sub.code === s.code && sub.schoolLevelId === subjectForm.schoolLevelId)
+                    );
+                    if (selectedSuggestions.size === available.length) {
+                      setSelectedSuggestions(new Set());
+                    } else {
+                      setSelectedSuggestions(new Set(available.map(s => s.code)));
+                    }
+                  }}
+                >
+                  {selectedSuggestions.size === defaultSuggestionsForLevel.filter(
+                    s => !subjects.some(sub => sub.code === s.code && sub.schoolLevelId === subjectForm.schoolLevelId)
+                  ).length && selectedSuggestions.size > 0
+                    ? 'Tout désélectionner'
+                    : 'Tout sélectionner'}
+                </button>
               </div>
-              <div className="flex flex-wrap gap-2">
+
+              {/* Grille de chips multi-sélection */}
+              <div className="flex flex-col gap-2">
                 {defaultSuggestionsForLevel.map((suggestion) => {
                   const isAlreadyCreated = subjects.some(
                     s => s.code === suggestion.code && s.schoolLevelId === subjectForm.schoolLevelId
                   );
+                  const isSelected = selectedSuggestions.has(suggestion.code);
+
                   return (
                     <button
                       key={suggestion.code}
                       type="button"
                       disabled={isAlreadyCreated}
                       title={suggestion.description ?? suggestion.name}
-                      onClick={() =>
-                        setSubjectForm(prev => ({
-                          ...prev,
-                          code: suggestion.code,
-                          name: suggestion.name,
-                          description: suggestion.description ?? '',
-                        }))
-                      }
+                      onClick={() => {
+                        if (isAlreadyCreated) return;
+                        setSelectedSuggestions(prev => {
+                          const next = new Set(prev);
+                          if (next.has(suggestion.code)) next.delete(suggestion.code);
+                          else next.add(suggestion.code);
+                          return next;
+                        });
+                      }}
                       className={cn(
-                        'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all',
+                        'w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-left transition-all border',
                         isAlreadyCreated
-                          ? 'cursor-not-allowed bg-slate-100 text-slate-400 line-through'
-                          : 'cursor-pointer bg-white border border-indigo-200 text-indigo-800 shadow-sm hover:bg-indigo-600 hover:text-white hover:border-indigo-600 hover:shadow-md active:scale-95'
+                          ? 'cursor-not-allowed bg-slate-50 border-slate-200 text-slate-400'
+                          : isSelected
+                          ? 'cursor-pointer bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-200'
+                          : 'cursor-pointer bg-white border-slate-200 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50'
                       )}
                     >
-                      {isAlreadyCreated && <CheckCircle2 className="w-3 h-3" />}
-                      <span>{suggestion.code}</span>
-                      <span className="font-normal opacity-80">— {suggestion.name}</span>
+                      {/* Checkbox visuelle */}
+                      <span className={cn(
+                        'w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all',
+                        isAlreadyCreated
+                          ? 'border-slate-300 bg-slate-100'
+                          : isSelected
+                          ? 'border-white bg-white'
+                          : 'border-slate-300 bg-white'
+                      )}>
+                        {isAlreadyCreated
+                          ? <CheckCircle2 className="w-3 h-3 text-slate-400" />
+                          : isSelected
+                          ? <CheckCircle2 className="w-3 h-3 text-indigo-600" />
+                          : null
+                        }
+                      </span>
+
+                      {/* Contenu */}
+                      <span className="flex-1 min-w-0">
+                        <span className={cn(
+                          'font-semibold text-xs uppercase tracking-wider mr-2',
+                          isSelected ? 'text-indigo-200' : 'text-indigo-500'
+                        )}>
+                          {suggestion.code}
+                        </span>
+                        <span className={cn(
+                          'font-medium',
+                          isAlreadyCreated && 'line-through opacity-50'
+                        )}>
+                          {suggestion.name}
+                        </span>
+                        {suggestion.description && (
+                          <span className={cn(
+                            'block text-xs mt-0.5 truncate',
+                            isSelected ? 'text-indigo-200' : 'text-slate-400'
+                          )}>
+                            {suggestion.description}
+                          </span>
+                        )}
+                      </span>
+
+                      {isAlreadyCreated && (
+                        <span className={cn(
+                          'text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 shrink-0'
+                        )}>
+                          Déjà ajoutée
+                        </span>
+                      )}
                     </button>
                   );
                 })}
               </div>
+
+              {/* Barre d'action groupée */}
+              {selectedSuggestions.size > 0 && (
+                <div className="flex items-center justify-between pt-2 border-t border-indigo-200">
+                  <span className="text-sm font-semibold text-indigo-700">
+                    {selectedSuggestions.size} matière{selectedSuggestions.size > 1 ? 's' : ''} sélectionnée{selectedSuggestions.size > 1 ? 's' : ''}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={bulkSaving}
+                    onClick={handleBulkCreateSuggestions}
+                    className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-md hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {bulkSaving ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" /> Enregistrement...</>
+                    ) : (
+                      <><Plus className="w-4 h-4" /> Enregistrer {selectedSuggestions.size} matière{selectedSuggestions.size > 1 ? 's' : ''}</>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

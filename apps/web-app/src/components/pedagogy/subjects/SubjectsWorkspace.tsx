@@ -81,7 +81,7 @@ interface SubjectProgram {
 }
 
 // --- Tabs ---
-type SubTab = 'catalogue' | 'series' | 'classes' | 'programs';
+type SubTab = 'catalogue' | 'classes' | 'programs';
 
 export default function SubjectsWorkspace() {
   const { academicYear, tenantId } = useModuleContext();
@@ -92,10 +92,8 @@ export default function SubjectsWorkspace() {
 
   // Data
   const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [series, setSeries] = useState<AcademicSeries[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
   const [schoolLevels, setSchoolLevels] = useState<any[]>([]);
-  const [academicLevels, setAcademicLevels] = useState<any[]>([]);
   const [search, setSearch] = useState('');
 
   // Class-Subject Assignments Map
@@ -113,13 +111,6 @@ export default function SubjectsWorkspace() {
     description: '',
   });
 
-  const [seriesForm, setSeriesForm] = useState({
-    id: '',
-    name: '',
-    description: '',
-    levelId: '',
-  });
-
   // Mass Assignment State
   const [selectedClasses, setSelectedClasses] = useState<string[]>([]);
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
@@ -130,7 +121,7 @@ export default function SubjectsWorkspace() {
   });
 
   // Modals
-  const [modal, setModal] = useState<'none' | 'create-subject' | 'create-series' | 'edit-subject' | 'edit-series' | 'mass-assignment'>('none');
+  const [modal, setModal] = useState<'none' | 'create-subject' | 'edit-subject' | 'mass-assignment'>('none');
 
   const [uploading, setUploading] = useState(false);
 
@@ -158,16 +149,6 @@ export default function SubjectsWorkspace() {
     }
   }, [academicYear?.id]);
 
-  const loadSeries = useCallback(async () => {
-    if (!academicYear?.id) return;
-    try {
-      const data = await pedagogyService.getSeries(academicYear.id);
-      setSeries(data || []);
-    } catch (e) {
-      console.error(e);
-    }
-  }, [academicYear?.id]);
-
   const loadClasses = useCallback(async () => {
     if (!academicYear?.id) return;
     try {
@@ -189,16 +170,6 @@ export default function SubjectsWorkspace() {
       console.error('Error loading school levels:', e);
     }
   }, []);
-
-  const loadAcademicLevels = useCallback(async () => {
-    if (!academicYear?.id) return;
-    try {
-      const data = await pedagogyFetch<any[]>(`/api/pedagogy/academic-structure/levels?academicYearId=${academicYear.id}`);
-      setAcademicLevels(data || []);
-    } catch (e) {
-      console.error('Error loading academic levels:', e);
-    }
-  }, [academicYear?.id]);
 
   const loadClassSubjects = useCallback(async () => {
     if (!academicYear?.id || classes.length === 0) return;
@@ -226,11 +197,9 @@ export default function SubjectsWorkspace() {
 
   useEffect(() => {
     loadSubjects();
-    loadSeries();
     loadClasses();
     loadSchoolLevels();
-    loadAcademicLevels();
-  }, [loadSubjects, loadSeries, loadClasses, loadSchoolLevels, loadAcademicLevels]);
+  }, [loadSubjects, loadClasses, loadSchoolLevels]);
 
   useEffect(() => {
     if (classes.length > 0) {
@@ -356,47 +325,7 @@ export default function SubjectsWorkspace() {
     }
   };
 
-  const handleSaveSeries = async () => {
-    if (!seriesForm.name.trim() || !seriesForm.levelId) {
-      toast({
-        title: "Champs manquants",
-        description: "Veuillez saisir un nom et sélectionner un niveau.",
-        variant: "destructive"
-      });
-      return;
-    }
-    try {
-      if (modal === 'create-series') {
-        await pedagogyService.createSeries({
-          academicYearId: academicYear?.id,
-          levelId: seriesForm.levelId,
-          name: seriesForm.name.trim(),
-          description: seriesForm.description.trim(),
-        });
-        toast({
-          title: "Succès",
-          description: "La série a été créée.",
-        });
-      } else {
-        await pedagogyService.updateSeries(seriesForm.id, {
-          name: seriesForm.name.trim(),
-          description: seriesForm.description.trim(),
-        });
-        toast({
-          title: "Succès",
-          description: "La série a été mise à jour.",
-        });
-      }
-      setModal('none');
-      loadSeries();
-    } catch (e: any) {
-      toast({
-        title: "Erreur",
-        description: e.message || "Une erreur est survenue.",
-        variant: "destructive"
-      });
-    }
-  };
+
 
   const handleUploadProgram = async (subjectId: string, file: File) => {
     setUploading(true);
@@ -505,7 +434,6 @@ export default function SubjectsWorkspace() {
       <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-50/80 p-1">
         {[
           { id: 'catalogue', label: 'Catalogue Matières', icon: BookOpen },
-          { id: 'series', label: 'Séries (Secondaire)', icon: Layers },
           { id: 'classes', label: 'Affectation Classes', icon: ClipboardList },
           { id: 'programs', label: 'Programmes Officiels', icon: FileText },
         ].map((t) => {
@@ -645,107 +573,7 @@ export default function SubjectsWorkspace() {
             </div>
           )}
 
-          {tab === 'series' && (
-            <div className="p-6 space-y-6">
-               <div className="bg-amber-50 rounded-xl p-4 border border-amber-100 flex gap-4">
-                 <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center text-amber-600 flex-shrink-0">
-                   <Info className="w-5 h-5" />
-                 </div>
-                 <div className="space-y-1">
-                   <h5 className="text-sm font-bold text-amber-900">Séries du Secondaire</h5>
-                   <p className="text-xs text-amber-700 leading-relaxed">
-                     Les séries (A, C, D, etc.) permettent de regrouper les matières et de définir des coefficients spécifiques pour le niveau Secondaire.
-                   </p>
-                 </div>
-               </div>
 
-               {/* Toolbar */}
-               <div className="flex justify-between items-center">
-                 <h3 className="text-base font-semibold text-slate-900">Liste des séries enregistrées</h3>
-                 <button 
-                  type="button"
-                  onClick={() => {
-                    setSeriesForm({
-                      id: '',
-                      name: '',
-                      description: '',
-                      levelId: academicLevels.find(l => /secondaire/i.test(l.name))?.id || academicLevels[0]?.id || '',
-                    });
-                    setModal('create-series');
-                  }}
-                  className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:opacity-95"
-                  style={{ backgroundColor: PRIMARY }}
-                 >
-                   <Plus className="h-4 w-4" />
-                   Ajouter une Série
-                 </button>
-               </div>
-
-               {/* Table Series */}
-               <div className="overflow-x-auto rounded-xl border border-slate-200">
-                 <table className="min-w-full text-sm">
-                   <thead>
-                     <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                       <th className="px-4 py-3">Série</th>
-                       <th className="px-4 py-3">Niveau Scolaire</th>
-                       <th className="px-4 py-3">Description</th>
-                       <th className="px-4 py-3 text-center">Statut</th>
-                       <th className="px-4 py-3 text-right">Actions</th>
-                     </tr>
-                   </thead>
-                   <tbody>
-                     {series.length === 0 ? (
-                       <tr>
-                         <td colSpan={5} className="py-20 text-center text-slate-500">
-                           <div className="max-w-xs mx-auto space-y-2">
-                             <Layers className="w-8 h-8 text-slate-300 mx-auto" />
-                             <p className="text-sm font-medium">Aucune série n'est définie.</p>
-                           </div>
-                         </td>
-                       </tr>
-                     ) : (
-                       series.map((s) => (
-                         <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50/80">
-                           <td className="px-4 py-3 font-semibold text-slate-900">
-                             Série {s.name}
-                           </td>
-                           <td className="px-4 py-3 text-slate-600">
-                             {s.level?.name || 'Secondaire'}
-                           </td>
-                           <td className="px-4 py-3 text-slate-600">
-                             {s.description || '—'}
-                           </td>
-                           <td className="px-4 py-3 text-center">
-                             <span className="rounded-full bg-emerald-100 text-emerald-900 px-2.5 py-0.5 text-xs font-semibold">
-                               Active
-                             </span>
-                           </td>
-                           <td className="px-4 py-3 text-right">
-                             <button
-                               type="button"
-                               onClick={() => {
-                                 setSeriesForm({
-                                   id: s.id,
-                                   name: s.name,
-                                   description: s.description || '',
-                                   levelId: s.level?.id || '',
-                                 });
-                                 setModal('edit-series');
-                               }}
-                               className="mr-3 text-sm font-medium hover:underline"
-                               style={{ color: PRIMARY }}
-                             >
-                               Modifier
-                             </button>
-                           </td>
-                         </tr>
-                       ))
-                     )}
-                   </tbody>
-                 </table>
-               </div>
-            </div>
-          )}
 
           {tab === 'classes' && (
              <div className="p-6 space-y-6">
@@ -1102,47 +930,7 @@ export default function SubjectsWorkspace() {
         </div>
       </FormModal>
 
-      <FormModal
-        title={modal === 'edit-series' ? 'Modifier la série' : 'Nouvelle Série'}
-        isOpen={modal === 'create-series' || modal === 'edit-series'}
-        onClose={() => setModal('none')}
-        onConfirm={handleSaveSeries}
-      >
-        <div className="space-y-4">
-          <div className="space-y-1">
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Nom de la série</label>
-            <input 
-              type="text" 
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800" 
-              placeholder="EX: Série D" 
-              value={seriesForm.name}
-              onChange={(e) => setSeriesForm({ ...seriesForm, name: e.target.value })}
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Niveau</label>
-            <select
-              value={seriesForm.levelId}
-              onChange={(e) => setSeriesForm({ ...seriesForm, levelId: e.target.value })}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white"
-            >
-              <option value="">Sélectionner un niveau</option>
-              {academicLevels.map(l => (
-                <option key={l.id} value={l.id}>{l.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-1">
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Description</label>
-            <textarea 
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white" 
-              placeholder="Description ou commentaires..." 
-              value={seriesForm.description}
-              onChange={(e) => setSeriesForm({ ...seriesForm, description: e.target.value })}
-            />
-          </div>
-        </div>
-      </FormModal>
+
 
       <FormModal
         title="Assistant d'affectation en masse"

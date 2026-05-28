@@ -96,6 +96,7 @@ export default function SubjectsWorkspace() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
   const [schoolLevels, setSchoolLevels] = useState<any[]>([]);
+  const [series, setSeries] = useState<any[]>([]);
   const [search, setSearch] = useState('');
 
   // Class-Subject Assignments Map
@@ -122,6 +123,22 @@ export default function SubjectsWorkspace() {
     coefficient: 1.0,
     useSeries: true
   });
+
+  // Class filtering for mass assignment
+  const [filterClassLevelId, setFilterClassLevelId] = useState<string>('');
+  const [filterClassSeriesId, setFilterClassSeriesId] = useState<string>('');
+
+  const filteredClasses = useMemo(() => {
+    return classes.filter(c => {
+      if (filterClassLevelId && c.levelId !== filterClassLevelId && c.level?.id !== filterClassLevelId) {
+        return false;
+      }
+      if (filterClassSeriesId && c.seriesId !== filterClassSeriesId && c.series?.id !== filterClassSeriesId) {
+        return false;
+      }
+      return true;
+    });
+  }, [classes, filterClassLevelId, filterClassSeriesId]);
 
   // Modals
   const [modal, setModal] = useState<'none' | 'create-subject' | 'edit-subject' | 'mass-assignment'>('none');
@@ -156,10 +173,10 @@ export default function SubjectsWorkspace() {
   }, [selectedLevelObj]);
 
   useEffect(() => {
-    if (isPrimaryOrMaternelle) {
+    if (isPrimaryOrMaternelle && !subjectForm.id) {
       setSubjectForm(prev => ({ ...prev, coefficient: 1 }));
     }
-  }, [isPrimaryOrMaternelle]);
+  }, [isPrimaryOrMaternelle, subjectForm.id]);
 
   // --- Loaders ---
 
@@ -198,6 +215,16 @@ export default function SubjectsWorkspace() {
     }
   }, []);
 
+  const loadSeries = useCallback(async () => {
+    if (!academicYear?.id) return;
+    try {
+      const data = await pedagogyFetch<any[]>(`/api/pedagogy/academic-series?academicYearId=${academicYear.id}`);
+      setSeries(data || []);
+    } catch (e) {
+      console.error('Error loading series:', e);
+    }
+  }, [academicYear?.id]);
+
   const loadClassSubjects = useCallback(async () => {
     if (!academicYear?.id || classes.length === 0) return;
     setLoadingClassSubjects(true);
@@ -226,7 +253,8 @@ export default function SubjectsWorkspace() {
     loadSubjects();
     loadClasses();
     loadSchoolLevels();
-  }, [loadSubjects, loadClasses, loadSchoolLevels]);
+    loadSeries();
+  }, [loadSubjects, loadClasses, loadSchoolLevels, loadSeries]);
 
   useEffect(() => {
     if (classes.length > 0) {
@@ -776,7 +804,11 @@ export default function SubjectsWorkspace() {
                      <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                        <th className="px-4 py-3">Matière</th>
                        <th className="px-4 py-3">Niveau Scolaire</th>
-                       <th className="px-4 py-3 text-center">Version</th>
+                       <th className="px-4 py-3 text-center">
+                         <span className="cursor-help border-b border-dashed border-slate-300 pb-0.5" title="Version du programme d'études officiel (commence à 1.0 par défaut)">
+                           Version
+                         </span>
+                       </th>
                        <th className="px-4 py-3 text-center">Statut d'Approbation</th>
                        <th className="px-4 py-3 text-right">Actions</th>
                      </tr>
@@ -802,7 +834,11 @@ export default function SubjectsWorkspace() {
                                </div>
                              </td>
                              <td className="px-4 py-3 text-slate-600">
-                               {s.schoolLevel?.name ?? s.schoolLevel?.label ?? '—'}
+                               {s.schoolLevel?.name ?? 
+                                s.schoolLevel?.label ?? 
+                                schoolLevels.find(l => l.id === s.schoolLevelId || l.id === (s as any).level)?.label ??
+                                schoolLevels.find(l => l.id === s.schoolLevelId || l.id === (s as any).level)?.name ??
+                                '—'}
                              </td>
                              <td className="px-4 py-3 text-center text-slate-600 font-medium">
                                {latestProgram ? `v${latestProgram.version}` : '—'}
@@ -973,18 +1009,17 @@ export default function SubjectsWorkspace() {
              <div className="space-y-1">
                <div className="flex justify-between items-center">
                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Coefficient</label>
-                 {isPrimaryOrMaternelle && (
-                   <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 mb-1">
-                     Bloqué à 1 (Mat/Pri)
-                   </span>
-                 )}
+                  {isPrimaryOrMaternelle && (
+                    <span className="text-[10px] font-bold text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 mb-1">
+                      Par défaut 1 (Mat/Pri)
+                    </span>
+                  )}
                </div>
                <input 
                  type="number" 
-                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 disabled:bg-slate-50 disabled:text-slate-400" 
+                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800" 
                  placeholder="2" 
                  value={subjectForm.coefficient}
-                 disabled={isPrimaryOrMaternelle}
                  onChange={(e) => setSubjectForm({ ...subjectForm, coefficient: Number(e.target.value) })}
                />
              </div>
@@ -1024,23 +1059,76 @@ export default function SubjectsWorkspace() {
             {/* Colonne Classes */}
             <div className="space-y-3">
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Étape 1 : Choisir les Classes ({selectedClasses.length})</label>
+              
+              {/* Filtres de sélection rapide */}
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={filterClassLevelId}
+                  onChange={(e) => setFilterClassLevelId(e.target.value)}
+                  className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500/20"
+                >
+                  <option value="">Tous les niveaux</option>
+                  {schoolLevels.map(l => (
+                    <option key={l.id} value={l.id}>{l.label || l.name}</option>
+                  ))}
+                </select>
+                <select
+                  value={filterClassSeriesId}
+                  onChange={(e) => setFilterClassSeriesId(e.target.value)}
+                  className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500/20"
+                >
+                  <option value="">Toutes les séries</option>
+                  {series.map(s => (
+                    <option key={s.id} value={s.id}>{s.name} {s.description ? `— ${s.description}` : ''}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Raccourcis de sélection */}
+              <div className="flex gap-2 justify-between">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const allFilteredIds = filteredClasses.map(c => c.id);
+                    setSelectedClasses(Array.from(new Set([...selectedClasses, ...allFilteredIds])));
+                  }}
+                  className="text-[10px] font-bold text-slate-600 hover:text-slate-900 hover:underline"
+                >
+                  Tout sélectionner
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const allFilteredIds = filteredClasses.map(c => c.id);
+                    setSelectedClasses(selectedClasses.filter(id => !allFilteredIds.includes(id)));
+                  }}
+                  className="text-[10px] font-bold text-slate-600 hover:text-slate-900 hover:underline"
+                >
+                  Tout désélectionner
+                </button>
+              </div>
+
               <div className="bg-slate-50 rounded-lg p-4 max-h-60 overflow-y-auto space-y-2 border border-slate-200">
-                {classes.map(c => (
-                  <label key={c.id} className="flex items-center gap-3 p-2 hover:bg-white rounded-lg transition-colors cursor-pointer group border border-transparent hover:border-slate-200">
-                    <input 
-                      type="checkbox" 
-                      className="w-4 h-4 rounded border-gray-300 focus:ring-slate-500"
-                      style={{ color: PRIMARY }}
-                      checked={selectedClasses.includes(c.id)}
-                      onChange={(e) => {
-                        if (e.target.checked) setSelectedClasses([...selectedClasses, c.id]);
-                        else setSelectedClasses(selectedClasses.filter(id => id !== c.id));
-                      }}
-                    />
-                    <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900">{c.name}</span>
-                    {c.series && <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px] font-semibold border border-indigo-100">{c.series.name}</span>}
-                  </label>
-                ))}
+                {filteredClasses.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-6">Aucune classe ne correspond aux filtres.</p>
+                ) : (
+                  filteredClasses.map(c => (
+                    <label key={c.id} className="flex items-center gap-3 p-2 hover:bg-white rounded-lg transition-colors cursor-pointer group border border-transparent hover:border-slate-200">
+                      <input 
+                        type="checkbox" 
+                        className="w-4 h-4 rounded border-gray-300 focus:ring-slate-500"
+                        style={{ color: PRIMARY }}
+                        checked={selectedClasses.includes(c.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) setSelectedClasses([...selectedClasses, c.id]);
+                          else setSelectedClasses(selectedClasses.filter(id => id !== c.id));
+                        }}
+                      />
+                      <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900">{c.name}</span>
+                      {c.series && <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px] font-semibold border border-indigo-100">{c.series.name}</span>}
+                    </label>
+                  ))
+                )}
               </div>
             </div>
 

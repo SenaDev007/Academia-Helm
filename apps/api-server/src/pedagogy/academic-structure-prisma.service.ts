@@ -312,6 +312,7 @@ export class AcademicStructurePrismaService {
   ): Promise<void> {
     try {
       await this.syncAcademicCyclesFromEducationSettings(tenantId, academicYearId);
+      await this.syncAcademicSeriesFromEducationSettings(tenantId, academicYearId);
 
       const eduLevels = await this.prisma.educationLevel.findMany({
         where: { tenantId },
@@ -319,7 +320,10 @@ export class AcademicStructurePrismaService {
           cycles: {
             orderBy: { order: 'asc' },
             include: {
-              grades: { orderBy: { order: 'asc' } },
+              grades: {
+                orderBy: { order: 'asc' },
+                include: { series: true }
+              },
             },
           },
         },
@@ -376,6 +380,21 @@ export class AcademicStructurePrismaService {
               });
               const capacitySync = this.capacityFromEducationClassrooms(physicalClassrooms);
 
+              let seriesId: string | null = null;
+              if (eg.seriesId && eg.series?.code) {
+                const academicSeries = await tx.academicSeries.findFirst({
+                  where: {
+                    tenantId,
+                    academicYearId,
+                    levelId: academicLevel.id,
+                    name: eg.series.code,
+                  },
+                });
+                if (academicSeries) {
+                  seriesId = academicSeries.id;
+                }
+              }
+
               const existing = await tx.academicClass.findFirst({
                 where: { tenantId, academicYearId, code },
               });
@@ -388,6 +407,7 @@ export class AcademicStructurePrismaService {
                     cycleId: academicCycle.id,
                     name: className,
                     isActive,
+                    seriesId,
                     ...(capacitySync !== undefined ? { capacity: capacitySync } : {}),
                   },
                 });
@@ -401,6 +421,7 @@ export class AcademicStructurePrismaService {
                     name: className,
                     code,
                     isActive,
+                    seriesId,
                     ...(capacitySync !== undefined ? { capacity: capacitySync } : {}),
                   },
                 });
@@ -713,6 +734,7 @@ export class AcademicStructurePrismaService {
         level: true,
         cycle: true,
         room: true,
+        series: true,
         mainTeacher: { select: { id: true, firstName: true, lastName: true, matricule: true } },
       },
       orderBy: [{ cycle: { orderIndex: 'asc' } }, { name: 'asc' }],
@@ -803,7 +825,7 @@ export class AcademicStructurePrismaService {
   async getClassOrThrow(id: string, tenantId: string) {
     const cls = await this.prisma.academicClass.findFirst({
       where: { id, tenantId },
-      include: { level: true, cycle: true, room: true, mainTeacher: true },
+      include: { level: true, cycle: true, room: true, series: true, mainTeacher: true },
     });
     if (!cls) throw new NotFoundException('Classe non trouvée.');
     return cls;

@@ -213,7 +213,7 @@ export class SubjectsPrismaService {
   /**
    * Synchronise le catalogue des matières pour une année donnée.
    * 1. Copie les matières de l'année précédente si l'année actuelle est vide.
-   * 2. (Futur) Aligne sur le catalogue national si applicable.
+   * 2. Si aucune année précédente, insère le catalogue par défaut selon les niveaux scolaires configurés.
    */
   async syncSubjectsFromSettings(tenantId: string, academicYearId?: string) {
     if (!academicYearId) return;
@@ -239,25 +239,144 @@ export class SubjectsPrismaService {
       orderBy: { startDate: 'desc' }
     });
 
-    if (!previousYear) return;
+    if (previousYear) {
+      // Copier les matières de l'année précédente
+      const sourceSubjects = await this.prisma.subject.findMany({
+        where: { tenantId, academicYearId: previousYear.id }
+      });
 
-    // Copier les matières de l'année précédente
-    const sourceSubjects = await this.prisma.subject.findMany({
-      where: { tenantId, academicYearId: previousYear.id }
+      if (sourceSubjects.length > 0) {
+        await this.prisma.$transaction(
+          sourceSubjects.map(s => {
+            const { id, createdAt, updatedAt, ...data } = s;
+            return this.prisma.subject.create({
+              data: {
+                ...data,
+                academicYearId: academicYearId
+              }
+            });
+          })
+        );
+        return;
+      }
+    }
+
+    // Aucune année précédente ou aucune matière copiée : insérer le catalogue par défaut
+    await this.seedDefaultSubjects(tenantId, academicYearId);
+  }
+
+  /**
+   * Insère le catalogue de matières par défaut selon les niveaux scolaires configurés.
+   * Chaque matière est créée avec coefficient 1.0 par défaut (personnalisable par l'utilisateur).
+   */
+  private async seedDefaultSubjects(tenantId: string, academicYearId: string) {
+    // Récupérer tous les niveaux scolaires du tenant
+    const schoolLevels = await this.prisma.schoolLevel.findMany({
+      where: { tenantId },
     });
 
-    if (sourceSubjects.length === 0) return;
+    if (schoolLevels.length === 0) return;
 
-    await this.prisma.$transaction(
-      sourceSubjects.map(s => {
-        const { id, createdAt, updatedAt, ...data } = s;
-        return this.prisma.subject.create({
-          data: {
-            ...data,
-            academicYearId: academicYearId
-          }
+    // Catalogue par défaut : Maternelle (code contient MATERNELLE ou MATERNAL)
+    const defaultSubjectsByLevel: Record<string, Array<{ name: string; code: string; description?: string }>> = {
+      MATERNELLE: [
+        {
+          name: 'Développement du bien-être (Santé & Environnement)',
+          code: 'DOM1',
+          description: 'Éducation pour la santé, Éducation à des réflexions de santé',
+        },
+        {
+          name: 'Développement du bien-être physique et moteur',
+          code: 'DOM2',
+          description: 'Éducation du mouvement, Gestuelle, Rythmique',
+        },
+        {
+          name: 'Développement des aptitudes cognitives et intellectuelles',
+          code: 'DOM3',
+          description: 'Observation, Éducation sensorielle, Pré-lecture, Pré-écriture, Pré-mathématique',
+        },
+        {
+          name: 'Développement des sentiments et émotions',
+          code: 'DOM4',
+          description: 'Expression plastique, Expression émotionnelle',
+        },
+        {
+          name: 'Développement des relations sociales',
+          code: 'DOM5',
+          description: 'Langage, Conte, Comptine, Poésie, Chant',
+        },
+      ],
+      PRIMAIRE: [
+        { name: 'Expression Écrite', code: 'EXPR_EC' },
+        { name: 'Lecture', code: 'LECT' },
+        { name: 'Dictée', code: 'DICT' },
+        { name: 'Mathématiques', code: 'MATH' },
+        { name: 'Éducation Scientifique et Technologique', code: 'EST' },
+        { name: 'Éducation Sociale', code: 'ES' },
+        { name: 'Éducation Artistique Vivant', code: 'EA_VIV' },
+        { name: 'Éducation Artistique Plastique', code: 'EA_PLAS' },
+        { name: 'Éducation Physique et Sportive', code: 'EPS' },
+      ],
+      SECONDAIRE: [
+        { name: 'Communication Écrite', code: 'COMM_EC' },
+        { name: 'Lecture', code: 'LECT' },
+        { name: 'Anglais', code: 'ANG' },
+        { name: 'Français', code: 'FR' },
+        { name: 'Espagnol', code: 'ESP' },
+        { name: 'Allemand', code: 'ALL' },
+        { name: 'Mathématiques', code: 'MATH' },
+        { name: 'Physique Chimie et Technologie', code: 'PCT' },
+        { name: 'Science de la Vie et de la Terre', code: 'SVT' },
+        { name: 'Éducation Physique et Sportive', code: 'EPS' },
+      ],
+    };
+
+    const subjectsToCreate: Array<{
+      tenantId: string;
+      academicYearId: string;
+      schoolLevelId: string;
+      name: string;
+      code: string;
+      coefficient: number;
+      description?: string;
+    }> = [];
+
+    for (const level of schoolLevels) {
+      // Matcher le niveau par son code (insensible à la casse, on cherche le mot-clé)
+      const levelCodeUpper = level.code.toUpperCase();
+      let matchedKey: string | null = null;
+
+      if (levelCodeUpper.includes('MATERN') || levelCodeUpper.includes('MATERNAL')) {
+        matchedKey = 'MATERNELLE';
+      } else if (levelCodeUpper.includes('PRIMA') || levelCodeUpper.includes('PRIM')) {
+        matchedKey = 'PRIMAIRE';
+      } else if (levelCodeUpper.includes('SECOND') || levelCodeUpper.includes('SEC') || levelCodeUpper.includes('LYCEA') || levelCodeUpper.includes('LYCEE')) {
+        matchedKey = 'SECONDAIRE';
+      }
+
+      if (!matchedKey) continue;
+
+      const defaults = defaultSubjectsByLevel[matchedKey];
+      for (const subj of defaults) {
+        subjectsToCreate.push({
+          tenantId,
+          academicYearId,
+          schoolLevelId: level.id,
+          name: subj.name,
+          code: subj.code,
+          coefficient: 1.0,
+          description: subj.description,
         });
-      })
+      }
+    }
+
+    if (subjectsToCreate.length === 0) return;
+
+    // Insertion groupée dans une transaction
+    await this.prisma.$transaction(
+      subjectsToCreate.map(data =>
+        this.prisma.subject.create({ data })
+      )
     );
   }
 }

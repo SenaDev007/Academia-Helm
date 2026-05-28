@@ -12,7 +12,6 @@ export class SubjectsService {
     return this.subjectsRepository.create({
       ...createSubjectDto,
       tenantId,
-      createdBy,
     });
   }
 

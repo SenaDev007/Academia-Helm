@@ -61,6 +61,7 @@ interface Subject {
   weeklyHours?: number;
   description?: string;
   language?: string;
+  schoolLevelId?: string;
   schoolLevel?: { id: string; name?: string; label: string; code: string };
   programs?: SubjectProgram[];
 }
@@ -124,6 +125,10 @@ export default function SubjectsWorkspace() {
   const [modal, setModal] = useState<'none' | 'create-subject' | 'edit-subject' | 'mass-assignment'>('none');
 
   const [uploading, setUploading] = useState(false);
+
+  // Confirmation states
+  const [subjectToDelete, setSubjectToDelete] = useState<Subject | null>(null);
+  const [assignmentToRemove, setAssignmentToRemove] = useState<{ id: string; name: string } | null>(null);
 
   /** Lien Paramètres → onglet Structure (activation des niveaux officiels). */
   const settingsHref = useMemo(() => {
@@ -242,7 +247,6 @@ export default function SubjectsWorkspace() {
   };
 
   const handleRemoveClassSubject = async (assignmentId: string) => {
-    if (!confirm("Voulez-vous vraiment retirer cette matière de cette classe ?")) return;
     try {
       await pedagogyService.removeClassSubject(assignmentId);
       toast({
@@ -308,7 +312,6 @@ export default function SubjectsWorkspace() {
   };
 
   const handleDeleteSubject = async (id: string) => {
-    if (!confirm("Voulez-vous vraiment supprimer cette matière ?")) return;
     try {
       await pedagogyService.deleteSubject(id);
       toast({
@@ -532,7 +535,11 @@ export default function SubjectsWorkspace() {
                               </div>
                             </td>
                             <td className="px-4 py-3 text-slate-600">
-                              {subject.schoolLevel?.name ?? subject.schoolLevel?.label ?? '—'}
+                              {subject.schoolLevel?.name ?? 
+                               subject.schoolLevel?.label ?? 
+                               schoolLevels.find(l => l.id === subject.schoolLevelId || l.id === (subject as any).level)?.label ??
+                               schoolLevels.find(l => l.id === subject.schoolLevelId || l.id === (subject as any).level)?.name ??
+                               '—'}
                             </td>
                             <td className="px-4 py-3 text-center text-slate-600 font-medium">{subject.weeklyHours ?? 0}h</td>
                             <td className="px-4 py-3 text-center font-bold text-slate-900">{subject.coefficient}</td>
@@ -546,7 +553,7 @@ export default function SubjectsWorkspace() {
                                     name: subject.name,
                                     coefficient: subject.coefficient,
                                     weeklyHours: subject.weeklyHours || 0,
-                                    schoolLevelId: subject.schoolLevel?.id || '',
+                                    schoolLevelId: subject.schoolLevel?.id || subject.schoolLevelId || (subject as any).level || '',
                                     description: subject.description || '',
                                   });
                                   setModal('edit-subject');
@@ -558,7 +565,7 @@ export default function SubjectsWorkspace() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => handleDeleteSubject(subject.id)}
+                                onClick={() => setSubjectToDelete(subject)}
                                 className="text-sm font-medium text-rose-700 hover:underline"
                               >
                                 Supprimer
@@ -673,7 +680,7 @@ export default function SubjectsWorkspace() {
                                        </span>
                                        <button
                                          type="button"
-                                         onClick={() => handleRemoveClassSubject(cs.id)}
+                                         onClick={() => setAssignmentToRemove({ id: cs.id, name: cs.subject?.name })}
                                          className="rounded-full hover:bg-slate-200 p-0.5 text-slate-500 hover:text-slate-900 transition-colors"
                                        >
                                          <Plus className="h-3 w-3 rotate-45 shrink-0" />
@@ -1028,6 +1035,39 @@ export default function SubjectsWorkspace() {
           </div>
         </div>
       </FormModal>
+
+      {/* Confirmation Modals */}
+      <ConfirmModal
+        title="Supprimer la matière"
+        message={`Voulez-vous vraiment supprimer la matière "${subjectToDelete?.name}" ? Cette action est irréversible et affectera toutes les classes associées.`}
+        type="danger"
+        isOpen={subjectToDelete !== null}
+        confirmLabel="Supprimer"
+        cancelLabel="Annuler"
+        onConfirm={async () => {
+          if (subjectToDelete) {
+            await handleDeleteSubject(subjectToDelete.id);
+            setSubjectToDelete(null);
+          }
+        }}
+        onCancel={() => setSubjectToDelete(null)}
+      />
+
+      <ConfirmModal
+        title="Retirer la matière de la classe"
+        message={`Voulez-vous vraiment retirer la matière "${assignmentToRemove?.name}" de cette classe ?`}
+        type="warning"
+        isOpen={assignmentToRemove !== null}
+        confirmLabel="Retirer"
+        cancelLabel="Annuler"
+        onConfirm={async () => {
+          if (assignmentToRemove) {
+            await handleRemoveClassSubject(assignmentToRemove.id);
+            setAssignmentToRemove(null);
+          }
+        }}
+        onCancel={() => setAssignmentToRemove(null)}
+      />
     </div>
   );
 }

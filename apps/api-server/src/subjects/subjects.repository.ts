@@ -18,7 +18,7 @@ export class SubjectsRepository {
   async findOne(id: string, tenantId: string): Promise<Subject | null> {
     return this.repository.findOne({
       where: { id, tenantId },
-      relations: ['academicYear'],
+      relations: ['academicYear', 'schoolLevel'],
     });
   }
 
@@ -32,6 +32,7 @@ export class SubjectsRepository {
     }
     return this.repository.find({
       where,
+      relations: ['schoolLevel'],
       order: { code: 'ASC' },
     });
   }

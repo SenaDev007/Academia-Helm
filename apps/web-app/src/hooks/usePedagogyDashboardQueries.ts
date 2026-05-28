@@ -9,7 +9,6 @@ import {
   pedagogyOrionAdvancedUrl,
   pedagogyOrionKpisUrl,
   pedagogyStructureLevelsUrl,
-  SUBJECTS_API,
   timetablesForYearUrl,
   roomsForYearUrl,
 } from '@/lib/query/pedagogy-dashboard-fetch';
@@ -123,12 +122,6 @@ export function usePedagogyDashboardQueries(
         staleTime: STALE_MS,
       },
       {
-        queryKey: pedagogyKeys.subjectsList(),
-        queryFn: () => fetchJson<unknown[]>(SUBJECTS_API),
-        enabled,
-        staleTime: STALE_MS,
-      },
-      {
         queryKey: pedagogyKeys.timetablesList(y),
         queryFn: () => fetchJson<unknown[]>(timetablesForYearUrl(y)),
         enabled,
@@ -143,12 +136,13 @@ export function usePedagogyDashboardQueries(
     ],
   });
 
-  const [qControl, qSnap, qOrionAdv, qOrionKpis, qStruct, qSubjects, qTt, qRooms] = results;
+  const [qControl, qSnap, qOrionAdv, qOrionKpis, qStruct, qTt, qRooms] = results;
 
-  const isLoading = enabled && results.some((r) => r.isLoading);
-  const isError = results.some((r) => r.isError);
-  const isFetching = results.some((r) => r.isFetching);
-  const error = results.find((r) => r.isError)?.error;
+  // Seule la requête principale Control détermine les états globaux de chargement et d'erreur critique
+  const isLoading = enabled && qControl.isLoading;
+  const isError = qControl.isError;
+  const isFetching = qControl.isFetching;
+  const error = qControl.error;
 
   const control = sliceFromQuery<ControlDashboardData>(qControl as any, 'Erreur contrôle');
 
@@ -162,14 +156,7 @@ export function usePedagogyDashboardQueries(
   const orionKpis = sliceFromQuery<any>(qOrionKpis as any, 'Erreur KPI');
   const structure = sliceFromQuery<any>(qStruct as any, 'Erreur structure');
 
-  const rawSubj = sliceFromQuery<any[]>(qSubjects as any, 'Erreur matières');
-  const subjectsCount: LoadSlice<number> | null =
-    rawSubj && rawSubj.ok
-      ? {
-          ok: true as const,
-          data: Array.isArray(rawSubj.data) ? rawSubj.data.length : 0,
-        }
-      : (rawSubj as LoadSlice<number> | null);
+  const subjectsCount = null;
 
   const rawTt = sliceFromQuery<any[]>(qTt as any, 'Erreur EDT');
   const timetableCount: LoadSlice<number> | null =

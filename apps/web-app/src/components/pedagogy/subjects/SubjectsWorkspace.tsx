@@ -94,7 +94,8 @@ export default function SubjectsWorkspace() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [series, setSeries] = useState<AcademicSeries[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
-  const [levels, setLevels] = useState<any[]>([]);
+  const [schoolLevels, setSchoolLevels] = useState<any[]>([]);
+  const [academicLevels, setAcademicLevels] = useState<any[]>([]);
   const [search, setSearch] = useState('');
 
   // Class-Subject Assignments Map
@@ -177,13 +178,25 @@ export default function SubjectsWorkspace() {
     }
   }, [academicYear?.id]);
 
-  const loadLevels = useCallback(async () => {
+  const loadSchoolLevels = useCallback(async () => {
+    try {
+      const res = await fetch('/api/school-levels', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        setSchoolLevels(data || []);
+      }
+    } catch (e) {
+      console.error('Error loading school levels:', e);
+    }
+  }, []);
+
+  const loadAcademicLevels = useCallback(async () => {
     if (!academicYear?.id) return;
     try {
       const data = await pedagogyFetch<any[]>(`/api/pedagogy/academic-structure/levels?academicYearId=${academicYear.id}`);
-      setLevels(data || []);
+      setAcademicLevels(data || []);
     } catch (e) {
-      console.error(e);
+      console.error('Error loading academic levels:', e);
     }
   }, [academicYear?.id]);
 
@@ -215,8 +228,9 @@ export default function SubjectsWorkspace() {
     loadSubjects();
     loadSeries();
     loadClasses();
-    loadLevels();
-  }, [loadSubjects, loadSeries, loadClasses, loadLevels]);
+    loadSchoolLevels();
+    loadAcademicLevels();
+  }, [loadSubjects, loadSeries, loadClasses, loadSchoolLevels, loadAcademicLevels]);
 
   useEffect(() => {
     if (classes.length > 0) {
@@ -466,7 +480,7 @@ export default function SubjectsWorkspace() {
                 name: '',
                 coefficient: 1,
                 weeklyHours: 4,
-                schoolLevelId: levels[0]?.id || '',
+                schoolLevelId: schoolLevels[0]?.id || '',
                 description: '',
               });
               setModal('create-subject');
@@ -655,7 +669,7 @@ export default function SubjectsWorkspace() {
                       id: '',
                       name: '',
                       description: '',
-                      levelId: levels.find(l => /secondaire/i.test(l.name))?.id || levels[0]?.id || '',
+                      levelId: academicLevels.find(l => /secondaire/i.test(l.name))?.id || academicLevels[0]?.id || '',
                     });
                     setModal('create-series');
                   }}
@@ -1080,8 +1094,8 @@ export default function SubjectsWorkspace() {
                onChange={(e) => setSubjectForm({ ...subjectForm, schoolLevelId: e.target.value })}
              >
                <option value="">Sélectionner un niveau</option>
-               {levels.map(l => (
-                 <option key={l.id} value={l.id}>{l.name}</option>
+               {schoolLevels.map(l => (
+                 <option key={l.id} value={l.id}>{l.label || l.name}</option>
                ))}
              </select>
           </div>
@@ -1113,7 +1127,7 @@ export default function SubjectsWorkspace() {
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white"
             >
               <option value="">Sélectionner un niveau</option>
-              {levels.map(l => (
+              {academicLevels.map(l => (
                 <option key={l.id} value={l.id}>{l.name}</option>
               ))}
             </select>

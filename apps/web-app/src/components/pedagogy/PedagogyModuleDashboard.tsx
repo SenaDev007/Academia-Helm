@@ -33,6 +33,9 @@ import { PEDAGOGY_SUBMODULE_TABS } from '@/components/pedagogy/pedagogy-tabs';
 import ParentTasksView from '@/components/pedagogy/tasks/ParentTasksView';
 import { cn } from '@/lib/utils';
 
+const PRIMARY = '#1A2BA6';
+const ACCENT = '#F5A623';
+
 interface ControlDashboard {
   lessonPlanRate: number;
   journalRate: number;
@@ -97,12 +100,6 @@ interface KpiSnapshot {
   classId?: string | null;
 }
 
-/** Seuils direction — alignés avec la fiche contrôle pédagogique */
-const THRESHOLDS = {
-  CRITICAL: 0.35,
-  WARNING: 0.55,
-};
-
 function KpiCard({
   title,
   value,
@@ -113,17 +110,17 @@ function KpiCard({
 }: {
   title: string;
   value: string | number;
-  icon: ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string; style?: React.CSSProperties }>;
   trend?: string;
   color?: 'indigo' | 'emerald' | 'amber' | 'rose' | 'purple';
   index?: number;
 }) {
   const colors = {
-    indigo: 'from-indigo-500/10 to-blue-500/5 text-indigo-600 border-indigo-100',
-    emerald: 'from-emerald-500/10 to-teal-500/5 text-emerald-600 border-emerald-100',
-    amber: 'from-amber-500/10 to-orange-500/5 text-amber-600 border-amber-100',
-    rose: 'from-rose-500/10 to-pink-500/5 text-rose-600 border-rose-100',
-    purple: 'from-purple-500/10 to-fuchsia-500/5 text-purple-600 border-purple-100',
+    indigo: 'from-blue-500/10 to-indigo-500/5 text-blue-800 border-slate-200',
+    emerald: 'from-emerald-500/10 to-teal-500/5 text-emerald-600 border-slate-200',
+    amber: 'from-amber-500/10 to-orange-500/5 text-amber-600 border-slate-200',
+    rose: 'from-rose-500/10 to-pink-500/5 text-rose-600 border-slate-200',
+    purple: 'from-purple-500/10 to-fuchsia-500/5 text-purple-600 border-slate-200',
   };
 
   return (
@@ -132,7 +129,7 @@ function KpiCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: index * 0.1 }}
       className={cn(
-        'relative overflow-hidden rounded-2xl border bg-white p-5 shadow-sm transition-all hover:shadow-md hover:-translate-y-1',
+        'relative overflow-hidden rounded-xl border bg-white p-5 shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5',
         colors[color]
       )}
     >
@@ -140,19 +137,19 @@ function KpiCard({
         <Icon className="h-24 w-24" />
       </div>
       <div className="flex items-center justify-between">
-        <div className={cn('rounded-xl bg-white p-2.5 shadow-sm border', colors[color].split(' ')[2])}>
-          <Icon className="h-5 w-5" />
+        <div className={cn('rounded-lg bg-slate-50 p-2.5 border border-slate-200')}>
+          <Icon className="h-5 w-5" style={{ color: PRIMARY }} />
         </div>
         {trend && (
-          <span className="flex items-center gap-1 text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
+          <span className="flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
             <TrendingUp className="h-3 w-3" />
             {trend}
           </span>
         )}
       </div>
       <div className="mt-4">
-        <p className="text-sm font-medium text-gray-500">{title}</p>
-        <h3 className="text-2xl font-bold text-gray-900 mt-1">{value}</h3>
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{title}</p>
+        <h3 className="text-2xl font-bold text-slate-900 mt-1">{value}</h3>
       </div>
     </motion.div>
   );
@@ -161,11 +158,9 @@ function KpiCard({
 function ProgressCircle({
   rate,
   label,
-  color = 'indigo',
 }: {
   rate: number;
   label: string;
-  color?: string;
 }) {
   const percentage = Math.round(rate * 100);
   const strokeColor = percentage < 35 ? '#ef4444' : percentage < 55 ? '#f59e0b' : '#10b981';
@@ -196,17 +191,16 @@ function ProgressCircle({
           <span className="text-sm font-bold text-gray-900">{percentage}%</span>
         </div>
       </div>
-      <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wider text-center leading-tight">
+      <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider text-center leading-tight">
         {label}
       </span>
     </div>
   );
 }
 
-function CompletionTrendChart({ snapshots }: { snapshots: KpiSnapshot[] }) {
+function CompletionTrendChart({ snapshots }: { snapshots: any[] }) {
   if (snapshots.length < 2) return null;
 
-  // Simple sparkline approach
   const max = Math.max(...snapshots.map((s) => s.lessonPlanRate), 0.1);
   const points = snapshots
     .slice(-10)
@@ -218,8 +212,8 @@ function CompletionTrendChart({ snapshots }: { snapshots: KpiSnapshot[] }) {
       <svg viewBox="0 0 100 100" className="h-full w-full" preserveAspectRatio="none">
         <defs>
           <linearGradient id="gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="#4f46e5" stopOpacity="0.2" />
-            <stop offset="100%" stopColor="#4f46e5" stopOpacity="0" />
+            <stop offset="0%" stopColor={PRIMARY} stopOpacity="0.2" />
+            <stop offset="100%" stopColor={PRIMARY} stopOpacity="0" />
           </linearGradient>
         </defs>
         <path
@@ -232,7 +226,7 @@ function CompletionTrendChart({ snapshots }: { snapshots: KpiSnapshot[] }) {
           transition={{ duration: 1.5 }}
           d={`M ${points}`}
           fill="none"
-          stroke="#4f46e5"
+          stroke={PRIMARY}
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -249,7 +243,6 @@ export function PedagogyModuleDashboard() {
   const invalidate = useInvalidatePedagogyDashboard();
 
   const isTeacher = ['TEACHER', 'TEACHER_RESP'].includes(user?.role ?? '');
-  const isDirector = ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'director', 'admin'].includes(user?.role ?? '');
   const isParent = ['PARENT', 'STUDENT'].includes(user?.role ?? '');
 
   const tenantId = useMemo(() => {
@@ -272,13 +265,13 @@ export function PedagogyModuleDashboard() {
 
   if (!academicYear) {
     return (
-      <div className="flex h-[60vh] flex-col items-center justify-center space-y-4 rounded-3xl border-2 border-dashed bg-gray-50/50 p-12 text-center animate-in fade-in zoom-in duration-500">
-        <div className="rounded-2xl bg-white p-4 shadow-sm border">
-          <Calendar className="h-12 w-12 text-gray-300" />
+      <div className="flex h-[60vh] flex-col items-center justify-center space-y-4 rounded-xl border-2 border-dashed bg-gray-50/50 p-12 text-center animate-in fade-in zoom-in duration-500 border-slate-200">
+        <div className="rounded-xl bg-white p-4 shadow-sm border border-slate-200">
+          <Calendar className="h-12 w-12 text-slate-300" />
         </div>
         <div className="max-w-sm space-y-2">
-          <h2 className="text-xl font-semibold text-gray-900">Initialisation requise</h2>
-          <p className="text-gray-500">
+          <h2 className="text-xl font-bold text-slate-900">Initialisation requise</h2>
+          <p className="text-slate-500 text-sm">
             Veuillez sélectionner une année scolaire dans le menu global pour activer le tableau de bord pédagogique.
           </p>
         </div>
@@ -288,9 +281,9 @@ export function PedagogyModuleDashboard() {
 
   if (isError) {
     return (
-      <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-rose-800 animate-in slide-in-from-top duration-300">
+      <div className="rounded-xl border border-rose-200 bg-rose-50 p-6 text-rose-800 animate-in slide-in-from-top duration-300">
         <div className="flex items-center gap-3">
-          <AlertCircle className="h-6 w-6" />
+          <AlertCircle className="h-6 w-6 shrink-0" />
           <div>
             <h3 className="font-bold">Erreur de chargement</h3>
             <p className="text-sm opacity-90">{(error as Error)?.message || 'Impossible de récupérer les données du dashboard.'}</p>
@@ -298,7 +291,7 @@ export function PedagogyModuleDashboard() {
         </div>
         <button
           onClick={() => invalidate()}
-          className="mt-4 flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700 transition-colors"
+          className="mt-4 flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 transition-colors"
         >
           <RefreshCw className="h-4 w-4" />
           Réessayer
@@ -324,7 +317,7 @@ export function PedagogyModuleDashboard() {
           <motion.h1 
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="text-3xl font-bold text-gray-900 tracking-tight"
+            className="text-3xl font-bold text-slate-900 tracking-tight"
           >
             {isTeacher ? 'Mon Espace Pédagogique' : 'Veille Pédagogique'}
           </motion.h1>
@@ -332,17 +325,17 @@ export function PedagogyModuleDashboard() {
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.1 }}
-            className="text-gray-500 mt-1"
+            className="text-slate-500 mt-1"
           >
-            Année scolaire <span className="font-semibold text-indigo-600">{academicYear.label}</span>
+            Année scolaire <span className="font-bold" style={{ color: PRIMARY }}>{academicYear.label}</span>
           </motion.p>
         </div>
         <button
           onClick={() => invalidate()}
           disabled={isFetching}
-          className="group flex items-center gap-2 rounded-xl border bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:opacity-50"
+          className="group flex items-center gap-2 rounded-lg border bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-gray-50 border-slate-200 disabled:opacity-50"
         >
-          <RefreshCw className={cn('h-4 w-4 text-indigo-500 transition-transform duration-500', isFetching && 'animate-spin')} />
+          <RefreshCw className={cn('h-4 w-4 transition-transform duration-500', isFetching && 'animate-spin')} style={{ color: PRIMARY }} />
           {isFetching ? 'Synchronisation...' : 'Actualiser'}
         </button>
       </div>
@@ -389,26 +382,26 @@ export function PedagogyModuleDashboard() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4 }}
-            className="rounded-3xl border bg-white p-6 shadow-sm overflow-hidden relative"
+            className="rounded-xl border bg-white p-6 shadow-sm overflow-hidden relative border-slate-200"
           >
             <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none">
-              <Activity className="h-32 w-32 text-indigo-600" />
+              <Activity className="h-32 w-32" style={{ color: PRIMARY }} />
             </div>
             
             <div className="flex items-center justify-between mb-8">
               <div>
-                <h2 className="text-xl font-bold text-gray-900">{isTeacher ? 'Ma Production Pédagogique' : 'Production Documentaire'}</h2>
-                <p className="text-sm text-gray-500">{isTeacher ? 'Suivi de mes soumissions' : 'Taux de complétion par type de document'}</p>
+                <h2 className="text-xl font-bold text-slate-900">{isTeacher ? 'Ma Production Pédagogique' : 'Production Documentaire'}</h2>
+                <p className="text-sm text-slate-500">{isTeacher ? 'Suivi de mes soumissions' : 'Taux de complétion par type de document'}</p>
               </div>
-              <Link href={isTeacher ? "/app/pedagogy/production" : "/app/pedagogy/control"} className="text-sm font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1">
+              <Link href={isTeacher ? "/app/pedagogy/production" : "/app/pedagogy/control"} className="text-sm font-semibold hover:underline flex items-center gap-1" style={{ color: PRIMARY }}>
                 Détails <ArrowRight className="h-4 w-4" />
               </Link>
             </div>
 
             {isLoading ? (
-              <div className="flex h-32 items-center justify-center gap-3 text-gray-400">
-                <Loader2 className="h-5 w-5 animate-spin" />
-                Chargement des indicateurs...
+              <div className="flex h-32 items-center justify-center gap-3 text-slate-400">
+                <Loader2 className="h-5 w-5 animate-spin" style={{ color: PRIMARY }} />
+                <span>Chargement des indicateurs...</span>
               </div>
             ) : (
               control?.ok && control.data && (
@@ -422,14 +415,14 @@ export function PedagogyModuleDashboard() {
             )}
 
             {snapshots?.ok && snapshots.data && snapshots.data.length > 0 && (
-              <div className="mt-8 pt-6 border-t border-gray-50">
+              <div className="mt-8 pt-6 border-t border-slate-100">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Tendance (10 derniers jours)</span>
-                  <span className="text-xs font-medium text-emerald-600 flex items-center gap-1">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Tendance (10 derniers jours)</span>
+                  <span className="text-xs font-semibold text-emerald-700 flex items-center gap-1">
                     <TrendingUp className="h-3 w-3" /> Croissance stable
                   </span>
                 </div>
-                <CompletionTrendChart snapshots={snapshots.data as any} />
+                <CompletionTrendChart snapshots={snapshots.data} />
               </div>
             )}
           </motion.section>
@@ -439,20 +432,20 @@ export function PedagogyModuleDashboard() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.5 }}
           >
-            <h2 className="mb-4 text-lg font-bold text-gray-900 px-1">Accès Rapides</h2>
+            <h2 className="mb-4 text-lg font-bold text-slate-900 px-1">Accès Rapides</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {shortcuts.map((tab, idx) => {
+              {shortcuts.map((tab) => {
                 const Icon = tab.icon;
                 return (
                   <Link
                     key={tab.id}
                     href={tab.path}
-                    className="group flex flex-col items-center justify-center gap-3 rounded-2xl border bg-white p-5 text-center transition-all hover:border-indigo-200 hover:shadow-md active:scale-95"
+                    className="group flex flex-col items-center justify-center gap-3 rounded-xl border bg-white p-5 text-center transition-all border-slate-200 hover:border-slate-300 hover:shadow-sm active:scale-98"
                   >
-                    <div className="rounded-xl bg-gray-50 p-3 text-gray-400 transition-colors group-hover:bg-indigo-50 group-hover:text-indigo-600">
+                    <div className="rounded-lg bg-slate-50 p-3 text-slate-400 transition-colors group-hover:bg-slate-100 group-hover:text-slate-900">
                       <Icon className="h-6 w-6" />
                     </div>
-                    <span className="text-sm font-semibold text-gray-700 group-hover:text-indigo-900">{tab.label}</span>
+                    <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900">{tab.label}</span>
                   </Link>
                 );
               })}
@@ -465,7 +458,7 @@ export function PedagogyModuleDashboard() {
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.6 }}
-            className="rounded-3xl border bg-slate-900 p-6 shadow-xl text-white relative overflow-hidden"
+            className="rounded-xl border bg-slate-900 p-6 shadow-sm text-white relative overflow-hidden"
           >
             <div className="absolute -right-12 -bottom-12 opacity-10">
               <Target className="h-48 w-48" />
@@ -479,9 +472,9 @@ export function PedagogyModuleDashboard() {
             <div className="space-y-4">
               {isTeacher ? (
                 <div className="space-y-4">
-                   <div className="rounded-xl bg-white/5 border border-white/10 p-3">
+                   <div className="rounded-lg bg-white/5 border border-white/10 p-3">
                      <p className="text-xs text-white/80 leading-relaxed italic">
-                       &quot;Bonjour {user?.firstName}, je peux vous aider à structurer votre prochaine fiche pédagogique ou à renseigner votre cahier journal.&quot;
+                       &quot;Bonjour, je peux vous aider à structurer votre prochaine fiche pédagogique ou à renseigner votre cahier journal.&quot;
                      </p>
                    </div>
                    <div className="grid grid-cols-1 gap-2">
@@ -496,13 +489,13 @@ export function PedagogyModuleDashboard() {
               ) : (
                 advancedOrion?.ok && advancedOrion.data?.riskFlags && advancedOrion.data.riskFlags.length > 0 ? (
                   advancedOrion.data.riskFlags.slice(0, 3).map((risk: any) => (
-                    <div key={risk.id} className="rounded-xl bg-white/5 border border-white/10 p-3 flex gap-3">
+                    <div key={risk.id} className="rounded-lg bg-white/5 border border-white/10 p-3 flex gap-3">
                       <div className={cn(
                         "mt-1 h-2 w-2 shrink-0 rounded-full",
                         risk.level === 'RED' ? 'bg-rose-500 shadow-[0_0_8px_#f43f5e]' : 'bg-amber-500 shadow-[0_0_8px_#f59e0b]'
                       )} />
                       <div className="space-y-1">
-                        <p className="text-xs font-medium text-white/90 leading-snug">{risk.message}</p>
+                        <p className="text-xs font-semibold text-white/90 leading-snug">{risk.message}</p>
                         <p className="text-[10px] text-white/40">{new Date(risk.createdAt).toLocaleDateString()}</p>
                       </div>
                     </div>
@@ -510,7 +503,7 @@ export function PedagogyModuleDashboard() {
                 ) : (
                   <div className="py-8 text-center space-y-2">
                     <BarChart3 className="h-8 w-8 text-white/20 mx-auto" />
-                    <p className="text-xs text-white/40">Aucun risque critique détecté par l'IA.</p>
+                    <p className="text-xs text-white/40 font-semibold">Aucun risque critique détecté par l'IA.</p>
                   </div>
                 )
               )}
@@ -518,7 +511,7 @@ export function PedagogyModuleDashboard() {
 
             <Link
               href="/app/pedagogy/orion"
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-bold text-white transition-all hover:bg-blue-500 active:scale-95 shadow-lg shadow-blue-900/20"
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg py-3 text-sm font-bold text-white transition-all hover:opacity-95 bg-blue-600 shadow-md shadow-blue-900/10"
             >
               Consulter Orion Intelligence
               <ArrowRight className="h-4 w-4" />
@@ -529,27 +522,27 @@ export function PedagogyModuleDashboard() {
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.7 }}
-            className="rounded-3xl border bg-white p-6 shadow-sm"
+            className="rounded-xl border bg-white p-6 shadow-sm border-slate-200"
           >
-            <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-indigo-500" />
+            <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <Building2 className="h-5 w-5" style={{ color: PRIMARY }} />
               Infrastructure
             </h2>
             <div className="space-y-4">
-              <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 border border-gray-100">
-                <span className="text-sm font-medium text-gray-600">Emplois du temps</span>
+              <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100">
+                <span className="text-sm font-medium text-slate-600">Emplois du temps</span>
                 <span className={cn(
                   "px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase",
-                  timetableCount?.ok ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                  timetableCount?.ok ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"
                 )}>
                   {timetableCount?.ok ? "Opérationnel" : "Manquant"}
                 </span>
               </div>
-              <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 border border-gray-100">
-                <span className="text-sm font-medium text-gray-600">Salles de classe</span>
+              <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100">
+                <span className="text-sm font-medium text-slate-600">Salles de classe</span>
                 <span className={cn(
                   "px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase",
-                  roomCount?.ok ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                  roomCount?.ok ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"
                 )}>
                   {roomCount?.ok ? `${roomCount.data} salles` : "0 salles"}
                 </span>

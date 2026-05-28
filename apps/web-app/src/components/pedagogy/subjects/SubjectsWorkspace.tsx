@@ -57,6 +57,7 @@ interface Subject {
   id: string;
   name: string;
   code: string;
+  abbreviation?: string;
   coefficient: number;
   weeklyHours?: number;
   description?: string;

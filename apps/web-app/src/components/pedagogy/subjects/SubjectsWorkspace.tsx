@@ -560,7 +560,7 @@ export default function SubjectsWorkspace() {
       description: failed > 0
         ? `${failed} échec${failed > 1 ? 's' : ''} (matières utilisées par des classes).`
         : `Suppression effectuée avec succès.`,
-      variant: failed > 0 && deleted === 0 ? 'destructive' : 'default',
+      variant: failed > 0 && deleted === 0 ? 'destructive' : undefined,
     });
   };
 

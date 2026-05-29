@@ -217,6 +217,10 @@ export default function SubjectsWorkspace() {
   const [selectedSuggestions, setSelectedSuggestions] = useState<Set<string>>(new Set());
   const [bulkSaving, setBulkSaving] = useState(false);
 
+  // Sélection multiple pour la suppression dans le tableau
+  const [selectedSubjectIds, setSelectedSubjectIds] = useState<Set<string>>(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+
   /** Lien Paramètres → onglet Structure (activation des niveaux officiels). */
   const settingsHref = useMemo(() => {
     const params = new URLSearchParams();
@@ -520,8 +524,44 @@ export default function SubjectsWorkspace() {
         description: e.message || "Impossible de supprimer la matière.",
         variant: "destructive"
       });
-      loadSubjects(); // Recharger le vrai état en cas d'erreur
+      loadSubjects();
     }
+  };
+
+  /**
+   * Suppression groupée des matières sélectionnées dans le tableau.
+   * Mise à jour optimiste immédiate, suppression séquentielle en background.
+   */
+  const handleBulkDeleteSubjects = async () => {
+    const ids = Array.from(selectedSubjectIds);
+    if (ids.length === 0) return;
+
+    // Mise à jour optimiste
+    setSubjects(prev => prev.filter(s => !selectedSubjectIds.has(s.id)));
+    setSelectedSubjectIds(new Set());
+    setConfirmBulkDelete(false);
+
+    let deleted = 0;
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        await pedagogyService.deleteSubject(id);
+        deleted++;
+      } catch {
+        failed++;
+      }
+    }
+
+    await loadSubjects();
+    toast({
+      title: deleted > 0
+        ? `${deleted} matière${deleted > 1 ? 's' : ''} supprimée${deleted > 1 ? 's' : ''}`
+        : 'Aucune matière supprimée',
+      description: failed > 0
+        ? `${failed} échec${failed > 1 ? 's' : ''} (matières utilisées par des classes).`
+        : `Suppression effectuée avec succès.`,
+      variant: failed > 0 && deleted === 0 ? 'destructive' : 'default',
+    });
   };
 
 
@@ -726,11 +766,84 @@ export default function SubjectsWorkspace() {
                 </div>
               </div>
 
+              {/* Barre d'actions flottante (sélection multiple) */}
+              <AnimatePresence>
+                {selectedSubjectIds.size > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 16 }}
+                    transition={{ duration: 0.2 }}
+                    className="flex items-center justify-between rounded-xl border border-rose-200 bg-rose-50 px-4 py-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-rose-600 text-white text-xs font-bold">
+                        {selectedSubjectIds.size}
+                      </span>
+                      <span className="text-sm font-semibold text-rose-900">
+                        matière{selectedSubjectIds.size > 1 ? 's' : ''} sélectionnée{selectedSubjectIds.size > 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSubjectIds(new Set())}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold text-rose-700 border border-rose-300 bg-white hover:bg-rose-50 transition-all"
+                      >
+                        Désélectionner
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmBulkDelete(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-sm transition-all active:scale-95"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Supprimer {selectedSubjectIds.size} sélection{selectedSubjectIds.size > 1 ? 's' : ''}
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {/* Grid / Table Catalogue */}
               <div className="overflow-x-auto rounded-xl border border-slate-200">
                 <table className="min-w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      {/* Case à cocher globale */}
+                      <th className="w-10 px-4 py-3">
+                        <input
+                          type="checkbox"
+                          aria-label="Sélectionner toutes les matières"
+                          className="w-4 h-4 rounded border-slate-300 accent-indigo-600 cursor-pointer"
+                          checked={
+                            filteredSubjects.length > 0 &&
+                            filteredSubjects.every(s => selectedSubjectIds.has(s.id))
+                          }
+                          ref={(el) => {
+                            if (el) {
+                              el.indeterminate =
+                                selectedSubjectIds.size > 0 &&
+                                !filteredSubjects.every(s => selectedSubjectIds.has(s.id));
+                            }
+                          }}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedSubjectIds(prev => {
+                                const next = new Set(prev);
+                                filteredSubjects.forEach(s => next.add(s.id));
+                                return next;
+                              });
+                            } else {
+                              setSelectedSubjectIds(prev => {
+                                const next = new Set(prev);
+                                filteredSubjects.forEach(s => next.delete(s.id));
+                                return next;
+                              });
+                            }
+                          }}
+                        />
+                      </th>
                       <th className="px-4 py-3">Matière</th>
                       <th className="px-4 py-3">Niveau Scolaire</th>
                       <th className="px-4 py-3 text-center">Volume Hebdo</th>
@@ -741,7 +854,7 @@ export default function SubjectsWorkspace() {
                   <tbody>
                     {loading ? (
                       <tr>
-                        <td colSpan={5} className="py-20 text-center">
+                        <td colSpan={6} className="py-20 text-center">
                           <div className="flex flex-col items-center justify-center gap-2 text-sm text-slate-500">
                             <Loader2 className="h-6 w-6 animate-spin" style={{ color: PRIMARY }} />
                             <span>Chargement du catalogue...</span>
@@ -750,7 +863,7 @@ export default function SubjectsWorkspace() {
                       </tr>
                     ) : filteredSubjects.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="py-20 text-center text-slate-500">
+                        <td colSpan={6} className="py-20 text-center text-slate-500">
                           <div className="max-w-xs mx-auto space-y-2">
                             <BookOpen className="w-8 h-8 text-slate-300 mx-auto" />
                             <p className="text-sm font-medium">
@@ -772,8 +885,35 @@ export default function SubjectsWorkspace() {
                         </td>
                       </tr>
                     ) : (
-                      filteredSubjects.map((subject) => (
-                          <tr key={subject.id} className="border-b border-slate-100 hover:bg-slate-50/80">
+                      filteredSubjects.map((subject) => {
+                        const isRowSelected = selectedSubjectIds.has(subject.id);
+                        return (
+                          <tr
+                            key={subject.id}
+                            className={cn(
+                              'border-b border-slate-100 transition-colors',
+                              isRowSelected
+                                ? 'bg-indigo-50/70 hover:bg-indigo-50'
+                                : 'hover:bg-slate-50/80'
+                            )}
+                          >
+                            {/* Checkbox ligne */}
+                            <td className="w-10 px-4 py-3">
+                              <input
+                                type="checkbox"
+                                aria-label={`Sélectionner ${subject.name}`}
+                                className="w-4 h-4 rounded border-slate-300 accent-indigo-600 cursor-pointer"
+                                checked={isRowSelected}
+                                onChange={(e) => {
+                                  setSelectedSubjectIds(prev => {
+                                    const next = new Set(prev);
+                                    if (e.target.checked) next.add(subject.id);
+                                    else next.delete(subject.id);
+                                    return next;
+                                  });
+                                }}
+                              />
+                            </td>
                             <td className="px-4 py-3">
                               <div>
                                 <div className="font-semibold text-slate-900 flex items-center gap-2">
@@ -826,7 +966,8 @@ export default function SubjectsWorkspace() {
                               </button>
                             </td>
                           </tr>
-                        ))
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -1541,6 +1682,17 @@ export default function SubjectsWorkspace() {
           }
         }}
         onCancel={() => setAssignmentToRemove(null)}
+      />
+      {/* Confirmation suppression multiple */}
+      <ConfirmModal
+        title={`Supprimer ${selectedSubjectIds.size} matière${selectedSubjectIds.size > 1 ? 's' : ''}`}
+        message={`Voulez-vous vraiment supprimer ${selectedSubjectIds.size} matière${selectedSubjectIds.size > 1 ? 's' : ''} sélectionnée${selectedSubjectIds.size > 1 ? 's' : ''} ? Cette action est irréversible. Les matières utilisées par des classes ne pourront pas être supprimées.`}
+        type="danger"
+        isOpen={confirmBulkDelete}
+        confirmLabel={`Supprimer ${selectedSubjectIds.size} matière${selectedSubjectIds.size > 1 ? 's' : ''}`}
+        cancelLabel="Annuler"
+        onConfirm={handleBulkDeleteSubjects}
+        onCancel={() => setConfirmBulkDelete(false)}
       />
     </div>
   );

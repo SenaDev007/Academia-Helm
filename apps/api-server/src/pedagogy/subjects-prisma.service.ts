@@ -280,31 +280,23 @@ export class SubjectsPrismaService {
     // Catalogue par défaut : Maternelle (code contient MATERNELLE ou MATERNAL)
     const defaultSubjectsByLevel: Record<string, Array<{ name: string; code: string; description?: string }>> = {
       MATERNELLE: [
-        {
-          name: 'Développement du bien-être (Santé & Environnement)',
-          code: 'DOM1',
-          description: 'Éducation pour la santé, Éducation à des réflexions de santé',
-        },
-        {
-          name: 'Développement du bien-être physique et moteur',
-          code: 'DOM2',
-          description: 'Éducation du mouvement, Gestuelle, Rythmique',
-        },
-        {
-          name: 'Développement des aptitudes cognitives et intellectuelles',
-          code: 'DOM3',
-          description: 'Observation, Éducation sensorielle, Pré-lecture, Pré-écriture, Pré-mathématique',
-        },
-        {
-          name: 'Développement des sentiments et émotions',
-          code: 'DOM4',
-          description: 'Expression plastique, Expression émotionnelle',
-        },
-        {
-          name: 'Développement des relations sociales',
-          code: 'DOM5',
-          description: 'Langage, Conte, Comptine, Poésie, Chant',
-        },
+        { name: 'Éducation pour la santé',             code: 'MAT_ES'   },
+        { name: 'Éducation à des réflexions de santé', code: 'MAT_ERS'  },
+        { name: 'Éducation du mouvement',              code: 'MAT_EM'   },
+        { name: 'Gestuelle',                           code: 'MAT_GEST' },
+        { name: 'Rythmique',                           code: 'MAT_RYTH' },
+        { name: 'Observation',                         code: 'MAT_OBS'  },
+        { name: 'Éducation sensorielle',               code: 'MAT_SENS' },
+        { name: 'Pré-lecture',                         code: 'MAT_PLEC' },
+        { name: 'Pré-écriture',                        code: 'MAT_PECR' },
+        { name: 'Pré-mathématique',                    code: 'MAT_PMAT' },
+        { name: 'Expression plastique',                code: 'MAT_EPLA' },
+        { name: 'Expression émotionnelle',             code: 'MAT_EEMO' },
+        { name: 'Langage',                             code: 'MAT_LANG' },
+        { name: 'Conte',                               code: 'MAT_CONT' },
+        { name: 'Comptine',                            code: 'MAT_COMP' },
+        { name: 'Poésie',                              code: 'MAT_POES' },
+        { name: 'Chant',                               code: 'MAT_CHAN' },
       ],
       PRIMAIRE: [
         { name: 'Expression Écrite', code: 'EXPR_EC' },

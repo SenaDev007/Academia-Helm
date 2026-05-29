@@ -1615,23 +1615,81 @@ export default function SubjectsWorkspace() {
 
             {/* Colonne Matières */}
             <div className="space-y-3">
-               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Étape 2 : Choisir les Matières ({selectedSubjects.length})</label>
+               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                 Étape 2 : Choisir les Matières ({selectedSubjects.length})
+               </label>
+
+               {/* Synchronisation et sélection rapide des matières filtrées */}
+               <div className="flex gap-2 justify-between">
+                 <button
+                   type="button"
+                   onClick={() => {
+                     const matchedSubjects = subjects.filter(s => {
+                       if (!filterClassLevelId) return true;
+                       return s.schoolLevelId === filterClassLevelId || (s.schoolLevel && s.schoolLevel.id === filterClassLevelId);
+                     });
+                     const matchedIds = matchedSubjects.map(s => s.id);
+                     setSelectedSubjects(Array.from(new Set([...selectedSubjects, ...matchedIds])));
+                   }}
+                   className="text-[10px] font-bold text-slate-600 hover:text-slate-900 hover:underline"
+                 >
+                   Sélectionner filtrées
+                 </button>
+                 <button
+                   type="button"
+                   onClick={() => {
+                     const matchedSubjects = subjects.filter(s => {
+                       if (!filterClassLevelId) return true;
+                       return s.schoolLevelId === filterClassLevelId || (s.schoolLevel && s.schoolLevel.id === filterClassLevelId);
+                     });
+                     const matchedIds = matchedSubjects.map(s => s.id);
+                     setSelectedSubjects(selectedSubjects.filter(id => !matchedIds.includes(id)));
+                   }}
+                   className="text-[10px] font-bold text-slate-600 hover:text-slate-900 hover:underline"
+                 >
+                   Désélectionner filtrées
+                 </button>
+               </div>
+
                <div className="bg-slate-50 rounded-lg p-4 max-h-60 overflow-y-auto space-y-2 border border-slate-200">
-                {subjects.map(s => (
-                  <label key={s.id} className="flex items-center gap-3 p-2 hover:bg-white rounded-lg transition-colors cursor-pointer group border border-transparent hover:border-slate-200">
-                    <input 
-                      type="checkbox" 
-                      className="w-4 h-4 rounded border-gray-300 focus:ring-slate-500"
-                      style={{ color: PRIMARY }}
-                      checked={selectedSubjects.includes(s.id)}
-                      onChange={(e) => {
-                        if (e.target.checked) setSelectedSubjects([...selectedSubjects, s.id]);
-                        else setSelectedSubjects(selectedSubjects.filter(id => id !== s.id));
-                      }}
-                    />
-                    <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900">{s.name}</span>
-                  </label>
-                ))}
+                {subjects
+                  .filter(s => {
+                    // Si un niveau de classe est filtré à l'étape 1, on affiche uniquement les matières de ce niveau
+                    if (!filterClassLevelId) return true;
+                    return s.schoolLevelId === filterClassLevelId || (s.schoolLevel && s.schoolLevel.id === filterClassLevelId);
+                  })
+                  .length === 0 ? (
+                    <p className="text-xs text-slate-400 text-center py-6">Aucune matière ne correspond à ce niveau.</p>
+                  ) : (
+                    subjects
+                      .filter(s => {
+                        if (!filterClassLevelId) return true;
+                        return s.schoolLevelId === filterClassLevelId || (s.schoolLevel && s.schoolLevel.id === filterClassLevelId);
+                      })
+                      .map(s => (
+                        <label key={s.id} className="flex items-center gap-3 p-2 hover:bg-white rounded-lg transition-colors cursor-pointer group border border-transparent hover:border-slate-200">
+                          <input 
+                            type="checkbox" 
+                            className="w-4 h-4 rounded border-gray-300 focus:ring-slate-500"
+                            style={{ color: PRIMARY }}
+                            checked={selectedSubjects.includes(s.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) setSelectedSubjects([...selectedSubjects, s.id]);
+                              else setSelectedSubjects(selectedSubjects.filter(id => id !== s.id));
+                            }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 block truncate">{s.name}</span>
+                            <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">{s.code}</span>
+                          </div>
+                          {s.schoolLevel && (
+                            <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[9px] font-semibold border border-slate-200 shrink-0">
+                              {s.schoolLevel.label || s.schoolLevel.name}
+                            </span>
+                          )}
+                        </label>
+                      ))
+                  )}
               </div>
             </div>
           </div>

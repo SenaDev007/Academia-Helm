@@ -1233,7 +1233,7 @@ export default function SubjectsWorkspace() {
                       key={suggestion.code}
                       type="button"
                       disabled={isAlreadyCreated}
-                      title={suggestion.description ?? suggestion.name}
+                      title={`${suggestion.name} (${suggestion.abbreviation})`}
                       onClick={() => {
                         if (isAlreadyCreated) return;
                         setSelectedSuggestions(prev => {
@@ -1283,14 +1283,12 @@ export default function SubjectsWorkspace() {
                         )}>
                           {suggestion.name}
                         </span>
-                        {suggestion.description && (
-                          <span className={cn(
-                            'block text-xs mt-0.5 truncate',
+                        <span className={cn(
+                            'block text-xs mt-0.5 truncate font-medium',
                             isSelected ? 'text-indigo-200' : 'text-slate-400'
                           )}>
-                            {suggestion.description}
+                            Abrév. : {suggestion.abbreviation}
                           </span>
-                        )}
                       </span>
 
                       {isAlreadyCreated && (

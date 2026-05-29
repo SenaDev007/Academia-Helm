@@ -52,53 +52,55 @@ const PRIMARY = '#1A2BA6';
 const ACCENT = '#F5A623';
 
 // --- Catalogue de matières par défaut (suggestions dans le modal) ---
+// Structure : { name, code (abrév + numéro), abbreviation }
 const DEFAULT_SUBJECTS_CATALOGUE: Record<
   string,
-  Array<{ name: string; code: string; description?: string }>
+  Array<{ name: string; code: string; abbreviation: string }>
 > = {
   MATERNELLE: [
-    { name: 'Éducation pour la santé',              code: 'MAT_ES'   },
-    { name: 'Éducation à des réflexions de santé',  code: 'MAT_ERS'  },
-    { name: 'Éducation du mouvement',               code: 'MAT_EM'   },
-    { name: 'Gestuelle',                            code: 'MAT_GEST' },
-    { name: 'Rythmique',                            code: 'MAT_RYTH' },
-    { name: 'Observation',                          code: 'MAT_OBS'  },
-    { name: 'Éducation sensorielle',                code: 'MAT_SENS' },
-    { name: 'Pré-lecture',                          code: 'MAT_PLEC' },
-    { name: 'Pré-écriture',                         code: 'MAT_PECR' },
-    { name: 'Pré-mathématique',                     code: 'MAT_PMAT' },
-    { name: 'Expression plastique',                 code: 'MAT_EPLA' },
-    { name: 'Expression émotionnelle',              code: 'MAT_EEMO' },
-    { name: 'Langage',                              code: 'MAT_LANG' },
-    { name: 'Conte',                                code: 'MAT_CONT' },
-    { name: 'Comptine',                             code: 'MAT_COMP' },
-    { name: 'Poésie',                               code: 'MAT_POES' },
-    { name: 'Chant',                                code: 'MAT_CHAN' },
+    { name: 'Éducation pour la santé',              abbreviation: 'ES',   code: 'ES-01'   },
+    { name: 'Éducation à des réflexions de santé',  abbreviation: 'ERS',  code: 'ERS-02'  },
+    { name: 'Éducation du mouvement',               abbreviation: 'EM',   code: 'EM-03'   },
+    { name: 'Gestuelle',                            abbreviation: 'GEST', code: 'GEST-04' },
+    { name: 'Rythmique',                            abbreviation: 'RYTH', code: 'RYTH-05' },
+    { name: 'Observation',                          abbreviation: 'OBS',  code: 'OBS-06'  },
+    { name: 'Éducation sensorielle',                abbreviation: 'ESENS',code: 'ESENS-07'},
+    { name: 'Pré-lecture',                          abbreviation: 'PLEC', code: 'PLEC-08' },
+    { name: 'Pré-écriture',                         abbreviation: 'PECR', code: 'PECR-09' },
+    { name: 'Pré-mathématique',                     abbreviation: 'PMAT', code: 'PMAT-10' },
+    { name: 'Expression plastique',                 abbreviation: 'EP',   code: 'EP-11'   },
+    { name: 'Expression émotionnelle',              abbreviation: 'EE',   code: 'EE-12'   },
+    { name: 'Langage',                              abbreviation: 'LANG', code: 'LANG-13' },
+    { name: 'Conte',                                abbreviation: 'CONT', code: 'CONT-14' },
+    { name: 'Comptine',                             abbreviation: 'COMP', code: 'COMP-15' },
+    { name: 'Poésie',                               abbreviation: 'POES', code: 'POES-16' },
+    { name: 'Chant',                                abbreviation: 'CHAN', code: 'CHAN-17' },
   ],
   PRIMAIRE: [
-    { name: 'Expression Écrite',                          code: 'EXPR_EC' },
-    { name: 'Lecture',                                    code: 'LECT'    },
-    { name: 'Dictée',                                     code: 'DICT'    },
-    { name: 'Mathématiques',                              code: 'MATH'    },
-    { name: 'Éducation Scientifique et Technologique',    code: 'EST'     },
-    { name: 'Éducation Sociale',                          code: 'ES'      },
-    { name: 'Éducation Artistique (EA) Vivant',           code: 'EA_VIV'  },
-    { name: 'Éducation Artistique (EA) Plastique',        code: 'EA_PLAS' },
-    { name: 'Éducation Physique et Sportive',             code: 'EPS'     },
+    { name: 'Expression Écrite',                         abbreviation: 'EE',   code: 'EE-01'   },
+    { name: 'Lecture',                                   abbreviation: 'LECT', code: 'LECT-02' },
+    { name: 'Dictée',                                    abbreviation: 'DICT', code: 'DICT-03' },
+    { name: 'Mathématiques',                             abbreviation: 'MATH', code: 'MATH-04' },
+    { name: 'Éducation Scientifique et Technologique',   abbreviation: 'EST',  code: 'EST-05'  },
+    { name: 'Éducation Sociale',                         abbreviation: 'ES',   code: 'ES-06'   },
+    { name: 'Éducation Artistique (EA) Vivant',          abbreviation: 'EAV',  code: 'EAV-07'  },
+    { name: 'Éducation Artistique (EA) Plastique',       abbreviation: 'EAP',  code: 'EAP-08'  },
+    { name: 'Éducation Physique et Sportive',            abbreviation: 'EPS',  code: 'EPS-09'  },
   ],
   SECONDAIRE: [
-    { name: 'Communication Écrite',                       code: 'COMM_EC' },
-    { name: 'Lecture',                                    code: 'LECT'    },
-    { name: 'Anglais',                                    code: 'ANG'     },
-    { name: 'Français',                                   code: 'FR'      },
-    { name: 'Espagnol',                                   code: 'ESP'     },
-    { name: 'Allemand',                                   code: 'ALL'     },
-    { name: 'Mathématiques',                              code: 'MATH'    },
-    { name: 'Physique Chimie et Technologie',             code: 'PCT'     },
-    { name: 'Science de la Vie et de la Terre',           code: 'SVT'     },
-    { name: 'Éducation Physique et Sportive',             code: 'EPS'     },
+    { name: 'Communication Écrite',                      abbreviation: 'CE',   code: 'CE-01'   },
+    { name: 'Lecture',                                   abbreviation: 'LECT', code: 'LECT-02' },
+    { name: 'Anglais',                                   abbreviation: 'ANG',  code: 'ANG-03'  },
+    { name: 'Français',                                  abbreviation: 'FR',   code: 'FR-04'   },
+    { name: 'Espagnol',                                  abbreviation: 'ESP',  code: 'ESP-05'  },
+    { name: 'Allemand',                                  abbreviation: 'ALL',  code: 'ALL-06'  },
+    { name: 'Mathématiques',                             abbreviation: 'MATH', code: 'MATH-07' },
+    { name: 'Physique Chimie et Technologie',            abbreviation: 'PCT',  code: 'PCT-08'  },
+    { name: 'Science de la Vie et de la Terre',          abbreviation: 'SVT',  code: 'SVT-09'  },
+    { name: 'Éducation Physique et Sportive',            abbreviation: 'EPS',  code: 'EPS-10'  },
   ],
 };
+
 
 /** Résout un SchoolLevel vers la clé de catalogue (MATERNELLE | PRIMAIRE | SECONDAIRE | null) */
 function resolveLevelKey(level?: { code?: string; name?: string; label?: string }): string | null {
@@ -187,6 +189,9 @@ export default function SubjectsWorkspace() {
   const [filterClassLevelId, setFilterClassLevelId] = useState<string>('');
   const [filterClassSeriesId, setFilterClassSeriesId] = useState<string>('');
 
+  // Filtre par niveau scolaire sur le tableau catalogue
+  const [filterLevelId, setFilterLevelId] = useState<string>('ALL');
+
   const filteredClasses = useMemo(() => {
     return classes.filter(c => {
       if (filterClassLevelId && c.levelId !== filterClassLevelId && c.level?.id !== filterClassLevelId) {
@@ -240,6 +245,21 @@ export default function SubjectsWorkspace() {
     const key = resolveLevelKey(selectedLevelObj);
     return key ? DEFAULT_SUBJECTS_CATALOGUE[key] ?? [] : [];
   }, [selectedLevelObj]);
+
+  /** Matières filtrées par niveau + recherche textuelle pour le tableau */
+  const filteredSubjects = useMemo(() => {
+    return subjects.filter((s) => {
+      const matchesSearch =
+        s.name.toLowerCase().includes(search.toLowerCase()) ||
+        s.code.toLowerCase().includes(search.toLowerCase()) ||
+        (s.abbreviation ?? '').toLowerCase().includes(search.toLowerCase());
+      const matchesLevel =
+        filterLevelId === 'ALL' ||
+        s.schoolLevel?.id === filterLevelId ||
+        s.schoolLevelId === filterLevelId;
+      return matchesSearch && matchesLevel;
+    });
+  }, [subjects, search, filterLevelId]);
 
   // Réinitialiser la sélection quand le niveau change ou quand on ferme le modal
   useEffect(() => {
@@ -463,13 +483,12 @@ export default function SubjectsWorkspace() {
           schoolLevelId: subjectForm.schoolLevelId,
           code: suggestion.code,
           name: suggestion.name,
-          coefficient: isPrimaryOrMaternelle ? 1.0 : 1.0,
+          abbreviation: suggestion.abbreviation,
+          coefficient: 1.0,
           weeklyHours: 0,
-          description: suggestion.description,
         });
         created++;
       } catch {
-        // Code déjà existant → on ignore
         skipped++;
       }
     }
@@ -652,17 +671,58 @@ export default function SubjectsWorkspace() {
         >
           {tab === 'catalogue' && (
             <div className="p-6 space-y-6">
-              {/* Toolbar */}
-              <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-                <div className="relative w-full sm:w-96">
+              {/* Toolbar : Recherche + Filtre par niveau */}
+              <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+                {/* Barre de recherche */}
+                <div className="relative w-full sm:w-80">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
                     type="text"
-                    placeholder="Chercher une matière (Code, Nom...)"
+                    placeholder="Chercher une matière (Code, Nom, Abrév.)"
                     className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 text-sm font-medium transition-all"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                   />
+                </div>
+
+                {/* Filtres par niveau */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1">
+                    <Filter className="w-3.5 h-3.5" /> Niveau
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setFilterLevelId('ALL')}
+                    className={cn(
+                      'px-3 py-1.5 rounded-full text-xs font-semibold border transition-all',
+                      filterLevelId === 'ALL'
+                        ? 'bg-slate-800 text-white border-slate-800 shadow-sm'
+                        : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
+                    )}
+                  >
+                    Tous ({subjects.length})
+                  </button>
+                  {schoolLevels.map((level) => {
+                    const count = subjects.filter(
+                      s => s.schoolLevel?.id === level.id || s.schoolLevelId === level.id
+                    ).length;
+                    return (
+                      <button
+                        key={level.id}
+                        type="button"
+                        onClick={() => setFilterLevelId(filterLevelId === level.id ? 'ALL' : level.id)}
+                        className={cn(
+                          'px-3 py-1.5 rounded-full text-xs font-semibold border transition-all',
+                          filterLevelId === level.id
+                            ? 'text-white border-transparent shadow-sm'
+                            : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
+                        )}
+                        style={filterLevelId === level.id ? { backgroundColor: PRIMARY } : undefined}
+                      >
+                        {level.label || level.name} ({count})
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -688,23 +748,31 @@ export default function SubjectsWorkspace() {
                           </div>
                         </td>
                       </tr>
-                    ) : subjects.length === 0 ? (
+                    ) : filteredSubjects.length === 0 ? (
                       <tr>
                         <td colSpan={5} className="py-20 text-center text-slate-500">
                           <div className="max-w-xs mx-auto space-y-2">
                             <BookOpen className="w-8 h-8 text-slate-300 mx-auto" />
-                            <p className="text-sm font-medium">Aucune matière n'est définie pour cette année scolaire.</p>
+                            <p className="text-sm font-medium">
+                              {subjects.length === 0
+                                ? "Aucune matière n'est définie pour cette année scolaire."
+                                : `Aucune matière pour le niveau sélectionné.`
+                              }
+                            </p>
+                            {filterLevelId !== 'ALL' && (
+                              <button
+                                type="button"
+                                onClick={() => setFilterLevelId('ALL')}
+                                className="text-xs text-indigo-600 hover:underline font-medium"
+                              >
+                                Voir toutes les matières
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
                     ) : (
-                      subjects
-                        .filter(
-                          (s) =>
-                            s.name.toLowerCase().includes(search.toLowerCase()) ||
-                            s.code.toLowerCase().includes(search.toLowerCase()),
-                        )
-                        .map((subject) => (
+                      filteredSubjects.map((subject) => (
                           <tr key={subject.id} className="border-b border-slate-100 hover:bg-slate-50/80">
                             <td className="px-4 py-3">
                               <div>

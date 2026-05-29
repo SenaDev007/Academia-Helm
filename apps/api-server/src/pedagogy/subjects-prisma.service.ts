@@ -278,50 +278,51 @@ export class SubjectsPrismaService {
     if (schoolLevels.length === 0) return;
 
     // Catalogue par défaut : Maternelle (code contient MATERNELLE ou MATERNAL)
-    const defaultSubjectsByLevel: Record<string, Array<{ name: string; code: string; description?: string }>> = {
+    const defaultSubjectsByLevel: Record<string, Array<{ name: string; code: string; abbreviation: string }>> = {
       MATERNELLE: [
-        { name: 'Éducation pour la santé',             code: 'MAT_ES'   },
-        { name: 'Éducation à des réflexions de santé', code: 'MAT_ERS'  },
-        { name: 'Éducation du mouvement',              code: 'MAT_EM'   },
-        { name: 'Gestuelle',                           code: 'MAT_GEST' },
-        { name: 'Rythmique',                           code: 'MAT_RYTH' },
-        { name: 'Observation',                         code: 'MAT_OBS'  },
-        { name: 'Éducation sensorielle',               code: 'MAT_SENS' },
-        { name: 'Pré-lecture',                         code: 'MAT_PLEC' },
-        { name: 'Pré-écriture',                        code: 'MAT_PECR' },
-        { name: 'Pré-mathématique',                    code: 'MAT_PMAT' },
-        { name: 'Expression plastique',                code: 'MAT_EPLA' },
-        { name: 'Expression émotionnelle',             code: 'MAT_EEMO' },
-        { name: 'Langage',                             code: 'MAT_LANG' },
-        { name: 'Conte',                               code: 'MAT_CONT' },
-        { name: 'Comptine',                            code: 'MAT_COMP' },
-        { name: 'Poésie',                              code: 'MAT_POES' },
-        { name: 'Chant',                               code: 'MAT_CHAN' },
+        { name: 'Éducation pour la santé',             abbreviation: 'ES',    code: 'ES-01'    },
+        { name: 'Éducation à des réflexions de santé', abbreviation: 'ERS',   code: 'ERS-02'   },
+        { name: 'Éducation du mouvement',              abbreviation: 'EM',    code: 'EM-03'    },
+        { name: 'Gestuelle',                           abbreviation: 'GEST',  code: 'GEST-04'  },
+        { name: 'Rythmique',                           abbreviation: 'RYTH',  code: 'RYTH-05'  },
+        { name: 'Observation',                         abbreviation: 'OBS',   code: 'OBS-06'   },
+        { name: 'Éducation sensorielle',               abbreviation: 'ESENS', code: 'ESENS-07' },
+        { name: 'Pré-lecture',                         abbreviation: 'PLEC',  code: 'PLEC-08'  },
+        { name: 'Pré-écriture',                        abbreviation: 'PECR',  code: 'PECR-09'  },
+        { name: 'Pré-mathématique',                    abbreviation: 'PMAT',  code: 'PMAT-10'  },
+        { name: 'Expression plastique',                abbreviation: 'EP',    code: 'EP-11'    },
+        { name: 'Expression émotionnelle',             abbreviation: 'EE',    code: 'EE-12'    },
+        { name: 'Langage',                             abbreviation: 'LANG',  code: 'LANG-13'  },
+        { name: 'Conte',                               abbreviation: 'CONT',  code: 'CONT-14'  },
+        { name: 'Comptine',                            abbreviation: 'COMP',  code: 'COMP-15'  },
+        { name: 'Poésie',                              abbreviation: 'POES',  code: 'POES-16'  },
+        { name: 'Chant',                               abbreviation: 'CHAN',  code: 'CHAN-17'   },
       ],
       PRIMAIRE: [
-        { name: 'Expression Écrite', code: 'EXPR_EC' },
-        { name: 'Lecture', code: 'LECT' },
-        { name: 'Dictée', code: 'DICT' },
-        { name: 'Mathématiques', code: 'MATH' },
-        { name: 'Éducation Scientifique et Technologique', code: 'EST' },
-        { name: 'Éducation Sociale', code: 'ES' },
-        { name: 'Éducation Artistique Vivant', code: 'EA_VIV' },
-        { name: 'Éducation Artistique Plastique', code: 'EA_PLAS' },
-        { name: 'Éducation Physique et Sportive', code: 'EPS' },
+        { name: 'Expression Écrite',                        abbreviation: 'EE',   code: 'EE-01'   },
+        { name: 'Lecture',                                  abbreviation: 'LECT', code: 'LECT-02' },
+        { name: 'Dictée',                                   abbreviation: 'DICT', code: 'DICT-03' },
+        { name: 'Mathématiques',                            abbreviation: 'MATH', code: 'MATH-04' },
+        { name: 'Éducation Scientifique et Technologique',  abbreviation: 'EST',  code: 'EST-05'  },
+        { name: 'Éducation Sociale',                        abbreviation: 'ES',   code: 'ES-06'   },
+        { name: 'Éducation Artistique (EA) Vivant',         abbreviation: 'EAV',  code: 'EAV-07'  },
+        { name: 'Éducation Artistique (EA) Plastique',      abbreviation: 'EAP',  code: 'EAP-08'  },
+        { name: 'Éducation Physique et Sportive',           abbreviation: 'EPS',  code: 'EPS-09'  },
       ],
       SECONDAIRE: [
-        { name: 'Communication Écrite', code: 'COMM_EC' },
-        { name: 'Lecture', code: 'LECT' },
-        { name: 'Anglais', code: 'ANG' },
-        { name: 'Français', code: 'FR' },
-        { name: 'Espagnol', code: 'ESP' },
-        { name: 'Allemand', code: 'ALL' },
-        { name: 'Mathématiques', code: 'MATH' },
-        { name: 'Physique Chimie et Technologie', code: 'PCT' },
-        { name: 'Science de la Vie et de la Terre', code: 'SVT' },
-        { name: 'Éducation Physique et Sportive', code: 'EPS' },
+        { name: 'Communication Écrite',                     abbreviation: 'CE',   code: 'CE-01'   },
+        { name: 'Lecture',                                  abbreviation: 'LECT', code: 'LECT-02' },
+        { name: 'Anglais',                                  abbreviation: 'ANG',  code: 'ANG-03'  },
+        { name: 'Français',                                 abbreviation: 'FR',   code: 'FR-04'   },
+        { name: 'Espagnol',                                 abbreviation: 'ESP',  code: 'ESP-05'  },
+        { name: 'Allemand',                                 abbreviation: 'ALL',  code: 'ALL-06'  },
+        { name: 'Mathématiques',                            abbreviation: 'MATH', code: 'MATH-07' },
+        { name: 'Physique Chimie et Technologie',           abbreviation: 'PCT',  code: 'PCT-08'  },
+        { name: 'Science de la Vie et de la Terre',         abbreviation: 'SVT',  code: 'SVT-09'  },
+        { name: 'Éducation Physique et Sportive',           abbreviation: 'EPS',  code: 'EPS-10'  },
       ],
     };
+
 
     const subjectsToCreate: Array<{
       tenantId: string;
@@ -330,7 +331,7 @@ export class SubjectsPrismaService {
       name: string;
       code: string;
       coefficient: number;
-      description?: string;
+      abbreviation: string;
     }> = [];
 
     for (const level of schoolLevels) {
@@ -356,11 +357,12 @@ export class SubjectsPrismaService {
           schoolLevelId: level.id,
           name: subj.name,
           code: subj.code,
+          abbreviation: subj.abbreviation,
           coefficient: 1.0,
-          description: subj.description,
         });
       }
     }
+
 
     if (subjectsToCreate.length === 0) return;
 

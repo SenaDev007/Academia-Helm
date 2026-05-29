@@ -421,6 +421,12 @@ export default function SubjectsWorkspace() {
   };
 
   const handleSaveSubject = async () => {
+    // Si des suggestions sont sélectionnées, on fait une création multiple
+    if (modal === 'create-subject' && selectedSuggestions.size > 0) {
+      await handleBulkCreateSuggestions();
+      return;
+    }
+
     if (!subjectForm.code.trim() || !subjectForm.name.trim() || !subjectForm.schoolLevelId) {
       toast({
         title: "Champs manquants",
@@ -1277,7 +1283,20 @@ export default function SubjectsWorkspace() {
         title={modal === 'edit-subject' ? 'Modifier la matière' : 'Nouvelle Matière'}
         isOpen={modal === 'create-subject' || modal === 'edit-subject'}
         onClose={() => setModal('none')}
-        onConfirm={handleSaveSubject}
+        onConfirm={selectedSuggestions.size > 0 ? undefined : handleSaveSubject}
+        actions={
+          selectedSuggestions.size > 0 ? (
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setModal('none')}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Fermer
+              </button>
+            </div>
+          ) : undefined
+        }
       >
         <div className="space-y-4">
           <div className="grid grid-cols-3 gap-4">

@@ -1,43 +1,41 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Search, Filter, Mail, Phone, MapPin, Briefcase, User, GraduationCap, Building2, UserCheck, FileText, Clock, DollarSign, Shield, Users } from 'lucide-react';
-import { ModuleHeader, SubModuleNavigation } from '@/components/modules/blueprint';
+import {
+  Plus, Search, Phone, Briefcase, GraduationCap,
+  User, Loader2, Users,
+} from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { apiFetch } from '@/lib/api/client';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 import { AddStaffModal } from '../_components/modals/AddStaffModal';
-import { usePathname } from 'next/navigation';
+import { motion } from 'framer-motion';
+import { cn } from '@/lib/utils';
+
+const PRIMARY = '#1A2BA6';
+
+const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  ACTIVE:    { label: 'En poste',  className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
+  INACTIVE:  { label: 'Inactif',   className: 'bg-slate-100 text-slate-500 border border-slate-200' },
+  SUSPENDED: { label: 'Suspendu', className: 'bg-amber-50 text-amber-700 border border-amber-200' },
+};
+
+const CATEGORY_LABEL: Record<string, string> = {
+  PEDAGOGICAL: 'Corps Enseignant',
+  ADMIN: 'Administration',
+  SUPPORT: "Personnel d'appui",
+};
 
 export default function StaffPage() {
-  const { tenant, academicYear } = useModuleContext();
-  const pathname = usePathname();
+  const { tenant } = useModuleContext();
   const [staff, setStaff] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('ALL');
   const [filterStatus, setFilterStatus] = useState('ACTIVE');
-
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
-  const subModuleTabs = [
-    { id: 'overview', label: "Vue d'ensemble", path: '/app/hr', icon: UserCheck, exact: true },
-    { id: 'staff', label: 'Personnel', path: '/app/hr/staff', icon: Users },
-    { id: 'contracts', label: 'Contrats', path: '/app/hr/contracts', icon: FileText },
-    { id: 'leaves', label: 'Congés & Absences', path: '/app/hr/leaves', icon: Clock },
-    { id: 'planning', label: 'Planning', path: '/app/hr/planning', icon: Clock },
-    { id: 'allowances', label: 'Indemnités', path: '/app/hr/allowances', icon: DollarSign },
-    { id: 'payroll', label: 'Paie', path: '/app/hr/payroll', icon: DollarSign },
-    { id: 'cnss', label: 'CNSS', path: '/app/hr/cnss', icon: Shield },
-    { id: 'reporting', label: 'Rapports', path: '/app/hr/reporting', icon: FileText },
-    { id: 'settings', label: 'Paramètres', path: '/app/hr/settings', icon: Shield },
-  ];
-
-  useEffect(() => {
-    fetchStaff();
-  }, [tenant?.id, filterCategory, filterStatus]);
+  useEffect(() => { fetchStaff(); }, [tenant?.id, filterCategory, filterStatus]);
 
   async function fetchStaff() {
     if (!tenant?.id) return;
@@ -46,7 +44,6 @@ export default function StaffPage() {
       let url = `/hr/staff?tenantId=${tenant.id}`;
       if (filterCategory !== 'ALL') url += `&category=${filterCategory}`;
       if (filterStatus !== 'ALL') url += `&status=${filterStatus}`;
-      
       const result = await apiFetch<any[]>(url);
       setStaff(result);
     } catch (error) {
@@ -56,101 +53,111 @@ export default function StaffPage() {
     }
   }
 
-  const filteredStaff = staff.filter(s => 
+  const filteredStaff = staff.filter((s) =>
     `${s.firstName} ${s.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (s.staffCode && s.staffCode.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
+  const selectClass =
+    'rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 ' +
+    'focus:outline-none focus:border-[#1A2BA6] focus:ring-2 focus:ring-[#1A2BA6]/10 transition shadow-sm';
+
   return (
-    <div className="space-y-6 pb-20">
-      <AddStaffModal 
-        isOpen={isAddModalOpen} 
-        onClose={() => setIsAddModalOpen(false)} 
+    <div className="space-y-0 pb-20">
+      <AddStaffModal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
         onSuccess={fetchStaff}
         tenantId={tenant?.id || ''}
       />
-      <ModuleHeader
-        title="Gestion du Personnel"
-        description="Fiche normalisée, documents et suivi de carrière de l'ensemble des collaborateurs."
-        icon="rh"
-        kpis={[
-          { label: 'Effectif total', value: staff.length.toString(), unit: 'pers.' },
-          { label: 'Enseignants', value: staff.filter(s => s.category === 'PEDAGOGICAL').length.toString(), unit: '' },
-          { label: 'Administratifs', value: staff.filter(s => s.category === 'ADMIN').length.toString(), unit: '' },
-          { label: 'Non déclarés CNSS', value: staff.filter(s => s.cnssStatus === 'NOT_DECLARED').length.toString(), unit: '' },
-        ]}
-      />
 
-      <div className="px-6">
-        <SubModuleNavigation tabs={subModuleTabs} currentPath={pathname} />
-        
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 mt-6">
+      {/* ── Toolbar ── */}
+      <div className="px-6 pt-6">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+          {/* Search + Filters */}
           <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-            <div className="relative flex-grow md:flex-grow-0 md:w-80">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <div className="relative flex-grow md:flex-grow-0 md:w-72">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <input
                 type="text"
-                placeholder="Nom, prénom ou matricule..."
-                className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-100 rounded-xl shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all outline-none"
+                placeholder="Nom, prénom ou matricule…"
+                className={
+                  'w-full rounded-xl border border-slate-200 bg-white pl-9 pr-4 py-2.5 text-sm ' +
+                  'placeholder:text-slate-400 focus:outline-none focus:border-[#1A2BA6] ' +
+                  'focus:ring-2 focus:ring-[#1A2BA6]/10 transition shadow-sm'
+                }
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-            
-            <div className="flex items-center gap-2">
-              <select 
-                className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-sm font-medium shadow-sm outline-none focus:ring-2 focus:ring-blue-500"
-                value={filterCategory}
-                onChange={(e) => setFilterCategory(e.target.value)}
-              >
-                <option value="ALL">Toutes les catégories</option>
-                <option value="PEDAGOGICAL">Corps Enseignant</option>
-                <option value="ADMIN">Administration</option>
-                <option value="SUPPORT">Personnel d'appui</option>
-              </select>
-
-              <select 
-                className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-sm font-medium shadow-sm outline-none focus:ring-2 focus:ring-blue-500"
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-              >
-                <option value="ALL">Tous les statuts</option>
-                <option value="ACTIVE">Actif</option>
-                <option value="INACTIVE">Inactif</option>
-                <option value="SUSPENDED">Suspendu</option>
-              </select>
-            </div>
+            <select className={selectClass} value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
+              <option value="ALL">Toutes les catégories</option>
+              <option value="PEDAGOGICAL">Corps Enseignant</option>
+              <option value="ADMIN">Administration</option>
+              <option value="SUPPORT">Personnel d'appui</option>
+            </select>
+            <select className={selectClass} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+              <option value="ALL">Tous les statuts</option>
+              <option value="ACTIVE">Actif</option>
+              <option value="INACTIVE">Inactif</option>
+              <option value="SUSPENDED">Suspendu</option>
+            </select>
           </div>
 
-          <button 
+          {/* CTA */}
+          <button
             onClick={() => setIsAddModalOpen(true)}
-            className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-md hover:shadow-lg transition-all font-semibold whitespace-nowrap"
+            className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition whitespace-nowrap"
+            style={{ backgroundColor: PRIMARY }}
           >
-            <Plus size={20} />
+            <Plus className="h-4 w-4" />
             Nouveau collaborateur
           </button>
         </div>
 
+        {/* KPI strip */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+          {[
+            { label: 'Effectif total', value: staff.length },
+            { label: 'Enseignants', value: staff.filter((s) => s.category === 'PEDAGOGICAL').length },
+            { label: 'Administratifs', value: staff.filter((s) => s.category === 'ADMIN').length },
+            { label: 'Non déclarés CNSS', value: staff.filter((s) => s.cnssStatus === 'NOT_DECLARED').length },
+          ].map((k, i) => (
+            <div key={i} className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{k.label}</p>
+              <p className="text-xl font-bold text-slate-900 mt-0.5">{k.value}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Grid */}
         {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-pulse">
-            {[1, 2, 3, 4, 5, 6].map(i => (
-              <div key={i} className="h-64 bg-gray-100 rounded-2xl" />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="h-56 rounded-xl border border-slate-200 bg-slate-100 animate-pulse" />
             ))}
           </div>
         ) : filteredStaff.length === 0 ? (
-          <div className="text-center py-20 bg-white rounded-3xl border-2 border-dashed border-gray-100">
-            <div className="p-4 bg-gray-50 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
-              <User className="text-gray-400" size={32} />
+          <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/30 p-16 text-center">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm mb-4">
+              <Users className="h-10 w-10 text-slate-300" />
             </div>
-            <h3 className="text-xl font-bold text-gray-800">Aucun collaborateur trouvé</h3>
-            <p className="text-gray-500 mt-2 max-w-sm mx-auto">
+            <h3 className="text-base font-bold text-slate-800">Aucun collaborateur trouvé</h3>
+            <p className="text-sm text-slate-500 mt-2 max-w-sm">
               Ajustez vos filtres ou commencez par ajouter un nouveau membre à votre effectif.
             </p>
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="mt-5 flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition"
+              style={{ backgroundColor: PRIMARY }}
+            >
+              <Plus className="h-4 w-4" /> Ajouter un collaborateur
+            </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredStaff.map((member) => (
-              <StaffCard key={member.id} member={member} />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {filteredStaff.map((member, idx) => (
+              <StaffCard key={member.id} member={member} index={idx} />
             ))}
           </div>
         )}
@@ -159,79 +166,85 @@ export default function StaffPage() {
   );
 }
 
-function StaffCard({ member }: { member: any }) {
-  const statusColors: any = {
-    ACTIVE: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-    INACTIVE: 'bg-gray-50 text-gray-600 border-gray-100',
-    SUSPENDED: 'bg-amber-50 text-amber-700 border-amber-100',
-  };
+function StaffCard({ member, index }: { member: any; index: number }) {
+  const status = STATUS_CONFIG[member.status] || STATUS_CONFIG.INACTIVE;
 
   return (
-    <Card className="group border-none shadow-sm hover:shadow-xl transition-all duration-300 rounded-2xl overflow-hidden bg-white">
-      <CardContent className="p-0">
-        <div className="p-6">
-          <div className="flex justify-between items-start mb-4">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center text-blue-600 font-bold text-xl shadow-inner">
-                {member.firstName[0]}{member.lastName[0]}
-              </div>
-              <div>
-                <h4 className="font-bold text-gray-900 text-lg group-hover:text-blue-600 transition-colors">
-                  {member.firstName} {member.lastName}
-                </h4>
-                <p className="text-xs font-bold text-blue-500 tracking-wider uppercase">
-                  {member.staffCode || 'MAT-PENDING'}
-                </p>
-              </div>
-            </div>
-            <Badge className={`px-3 py-1 rounded-full border ${statusColors[member.status] || statusColors.INACTIVE}`}>
-              {member.status === 'ACTIVE' ? 'En poste' : member.status}
-            </Badge>
-          </div>
-
-          <div className="space-y-3 mb-6">
-            <div className="flex items-center gap-3 text-sm text-gray-600">
-              <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center text-gray-400">
-                <Briefcase size={16} />
-              </div>
-              <span>{member.position || 'Poste non défini'}</span>
-            </div>
-            <div className="flex items-center gap-3 text-sm text-gray-600">
-              <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center text-gray-400">
-                <GraduationCap size={16} />
-              </div>
-              <span>{member.category === 'PEDAGOGICAL' ? 'Corps Enseignant' : 'Personnel Admin'}</span>
-            </div>
-            {member.phone && (
-              <div className="flex items-center gap-3 text-sm text-gray-600">
-                <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center text-gray-400">
-                  <Phone size={16} />
-                </div>
-                <span>{member.phone}</span>
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between pt-4 border-t border-gray-50">
-            <div className="flex -space-x-2">
-              {/* Documents indicators */}
-              {['CNI', 'DIP', 'CNSS'].map((doc, i) => (
-                <div key={i} className="w-7 h-7 rounded-full bg-white border border-gray-100 flex items-center justify-center text-[10px] font-bold text-gray-400 shadow-sm" title={doc}>
-                  {doc}
-                </div>
-              ))}
-            </div>
-            <Link 
-              href={`/app/hr/staff/${member.id}`}
-              className="px-4 py-2 text-sm font-bold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: index * 0.05 }}
+      className="group rounded-xl border border-slate-200 bg-white shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 overflow-hidden"
+    >
+      <div className="p-5">
+        {/* Header card */}
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div
+              className="w-12 h-12 rounded-xl flex items-center justify-center text-base font-bold shadow-sm"
+              style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}
             >
-              Gérer la fiche →
-            </Link>
+              {member.firstName?.[0]}{member.lastName?.[0]}
+            </div>
+            <div>
+              <h4 className="font-bold text-slate-900 text-sm leading-tight group-hover:text-[#1A2BA6] transition-colors">
+                {member.firstName} {member.lastName}
+              </h4>
+              <p className="text-[10px] font-bold uppercase tracking-wider mt-0.5" style={{ color: PRIMARY }}>
+                {member.staffCode || 'MAT-PENDING'}
+              </p>
+            </div>
           </div>
+          <span className={cn('px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase', status.className)}>
+            {status.label}
+          </span>
         </div>
-      </CardContent>
-    </Card>
+
+        {/* Infos */}
+        <div className="space-y-2 mb-4">
+          <div className="flex items-center gap-2.5 text-sm text-slate-600">
+            <div className="w-7 h-7 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center">
+              <Briefcase className="h-3.5 w-3.5 text-slate-400" />
+            </div>
+            <span className="truncate">{member.position || 'Poste non défini'}</span>
+          </div>
+          <div className="flex items-center gap-2.5 text-sm text-slate-600">
+            <div className="w-7 h-7 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center">
+              <GraduationCap className="h-3.5 w-3.5 text-slate-400" />
+            </div>
+            <span>{CATEGORY_LABEL[member.category] || member.category}</span>
+          </div>
+          {member.phone && (
+            <div className="flex items-center gap-2.5 text-sm text-slate-600">
+              <div className="w-7 h-7 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center">
+                <Phone className="h-3.5 w-3.5 text-slate-400" />
+              </div>
+              <span>{member.phone}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+          <div className="flex gap-1.5">
+            {['CNI', 'DIP', 'CNSS'].map((doc) => (
+              <span
+                key={doc}
+                className="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded border border-slate-200 text-slate-400 bg-slate-50"
+              >
+                {doc}
+              </span>
+            ))}
+          </div>
+          <Link
+            href={`/app/hr/staff/${member.id}`}
+            className="text-xs font-bold hover:underline flex items-center gap-1 transition-colors"
+            style={{ color: PRIMARY }}
+          >
+            Gérer la fiche →
+          </Link>
+        </div>
+      </div>
+    </motion.div>
   );
 }
-
-

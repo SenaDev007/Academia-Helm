@@ -1,34 +1,30 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, DollarSign, Calendar, FileText, CheckCircle2, Clock, ChevronRight, Calculator, CreditCard, ShieldCheck, UserCheck, Shield, Users } from 'lucide-react';
-import { ModuleHeader, SubModuleNavigation } from '@/components/modules/blueprint';
+import {
+  Plus, DollarSign, Calendar, ChevronRight,
+  Calculator, CreditCard, ShieldCheck, Clock, Loader2,
+} from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { apiFetch } from '@/lib/api/client';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { motion } from 'framer-motion';
+import { cn } from '@/lib/utils';
+
+const PRIMARY = '#1A2BA6';
+
+const STATUS_CONFIG: Record<string, { label: string; className: string; icon: React.ComponentType<any> }> = {
+  OPEN:       { label: 'Ouvert',   className: 'bg-blue-50 text-[#1A2BA6] border border-blue-200',    icon: Clock },
+  CALCULATED: { label: 'Calculé',  className: 'bg-amber-50 text-amber-600 border border-amber-200',  icon: Calculator },
+  VALIDATED:  { label: 'Validé',   className: 'bg-emerald-50 text-emerald-600 border border-emerald-200', icon: ShieldCheck },
+  PAID:       { label: 'Payé',     className: 'bg-emerald-600 text-white border border-emerald-600',  icon: CreditCard },
+};
 
 export default function PayrollPage() {
   const { tenant, academicYear } = useModuleContext();
-  const pathname = usePathname();
   const [payrolls, setPayrolls] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
-
-  const subModuleTabs = [
-    { id: 'overview', label: "Vue d'ensemble", path: '/app/hr', icon: UserCheck, exact: true },
-    { id: 'staff', label: 'Personnel', path: '/app/hr/staff', icon: Users },
-    { id: 'contracts', label: 'Contrats', path: '/app/hr/contracts', icon: FileText },
-    { id: 'leaves', label: 'Congés & Absences', path: '/app/hr/leaves', icon: Clock },
-    { id: 'planning', label: 'Planning', path: '/app/hr/planning', icon: Clock },
-    { id: 'allowances', label: 'Indemnités', path: '/app/hr/allowances', icon: DollarSign },
-    { id: 'payroll', label: 'Paie', path: '/app/hr/payroll', icon: DollarSign },
-    { id: 'cnss', label: 'CNSS', path: '/app/hr/cnss', icon: Shield },
-    { id: 'reporting', label: 'Rapports', path: '/app/hr/reporting', icon: FileText },
-    { id: 'settings', label: 'Paramètres', path: '/app/hr/settings', icon: Shield },
-  ];
 
   useEffect(() => {
     async function fetchData() {
@@ -37,7 +33,7 @@ export default function PayrollPage() {
         setLoading(true);
         const [payrollData, statsData] = await Promise.all([
           apiFetch<any[]>(`/hr/payroll/periods?tenantId=${tenant.id}`),
-          apiFetch<any>(`/hr/payroll/statistics?tenantId=${tenant.id}&academicYearId=${academicYear?.id}`)
+          apiFetch<any>(`/hr/payroll/statistics?tenantId=${tenant.id}&academicYearId=${academicYear?.id}`),
         ]);
         setPayrolls(payrollData);
         setStats(statsData);
@@ -47,51 +43,76 @@ export default function PayrollPage() {
         setLoading(false);
       }
     }
-
     fetchData();
   }, [tenant?.id, academicYear?.id]);
 
-  return (
-    <div className="space-y-6 pb-20">
-      <ModuleHeader
-        title="Gestion de la Paie"
-        description="Moteur de calcul des salaires, retenues fiscales (IRPP) et sociales (CNSS)."
-        icon="rh"
-        kpis={[
-          { label: 'Masse annuelle', value: stats?.totalAmount ? `${Math.round(stats.totalAmount / 1000000)}M` : '0', unit: 'XOF' },
-          { label: 'Effectif moyen', value: stats?.totalStaff?.toString() || '0', unit: 'pers.' },
-          { label: 'Dernière paie', value: payrolls[0]?.startDate ? new Date(payrolls[0].startDate).toLocaleDateString('fr-FR', { month: 'short' }) : 'N/A', unit: '' },
-        ]}
-      />
+  const lastPayroll = payrolls[0];
 
-      <div className="px-6">
-        <SubModuleNavigation tabs={subModuleTabs} currentPath={pathname} />
-        
-        <div className="flex justify-between items-center mb-8 mt-6">
-          <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-            <DollarSign size={24} className="text-blue-600" />
+  return (
+    <div className="pb-20">
+      <div className="px-6 pt-6 space-y-6">
+
+        {/* KPI strip */}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          {[
+            {
+              label: 'Masse annuelle',
+              value: stats?.totalAmount ? `${Math.round(stats.totalAmount / 1000000)}M XOF` : '—',
+            },
+            {
+              label: 'Effectif moyen',
+              value: stats?.totalStaff ? `${stats.totalStaff} pers.` : '—',
+            },
+            {
+              label: 'Dernière paie',
+              value: lastPayroll?.startDate
+                ? new Date(lastPayroll.startDate).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+                : '—',
+            },
+          ].map((k, i) => (
+            <div key={i} className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{k.label}</p>
+              <p className="text-base font-bold text-slate-900 mt-0.5">{k.value}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Toolbar */}
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+            <DollarSign className="h-5 w-5" style={{ color: PRIMARY }} />
             Historique des Paies
           </h3>
-          <button className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-md transition-all font-semibold">
-            <Plus size={20} />
+          <button
+            className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition"
+            style={{ backgroundColor: PRIMARY }}
+          >
+            <Plus className="h-4 w-4" />
             Nouvelle Période
           </button>
         </div>
 
+        {/* List */}
         {loading ? (
-          <div className="space-y-4 animate-pulse">
-            {[1, 2, 3].map(i => <div key={i} className="h-24 bg-gray-100 rounded-2xl" />)}
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-20 rounded-xl border border-slate-200 bg-slate-100 animate-pulse" />
+            ))}
           </div>
         ) : payrolls.length === 0 ? (
-          <div className="text-center py-20 bg-white rounded-3xl border-2 border-dashed border-gray-100">
-            <CreditCard className="mx-auto text-gray-300 mb-4" size={48} />
-            <h3 className="text-xl font-bold text-gray-800">Aucune paie enregistrée</h3>
-            <p className="text-gray-500 mt-2">Commencez par initialiser une période de paie pour l'exercice en cours.</p>
+          <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/30 p-16 text-center">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm mb-4">
+              <CreditCard className="h-10 w-10 text-slate-300" />
+            </div>
+            <h3 className="text-base font-bold text-slate-800">Aucune paie enregistrée</h3>
+            <p className="text-sm text-slate-500 mt-2">
+              Commencez par initialiser une période de paie pour l'exercice en cours.
+            </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4">
-            {payrolls.map((payroll) => (
-              <PayrollRow key={payroll.id} payroll={payroll} />
+          <div className="space-y-3">
+            {payrolls.map((payroll, idx) => (
+              <PayrollRow key={payroll.id} payroll={payroll} index={idx} />
             ))}
           </div>
         )}
@@ -100,68 +121,75 @@ export default function PayrollPage() {
   );
 }
 
-function PayrollRow({ payroll }: { payroll: any }) {
-  const statusConfig: any = {
-    OPEN: { label: 'Ouvert', color: 'bg-blue-50 text-blue-600', icon: Clock },
-    CALCULATED: { label: 'Calculé', color: 'bg-amber-50 text-amber-600', icon: Calculator },
-    VALIDATED: { label: 'Validé', color: 'bg-emerald-50 text-emerald-600', icon: ShieldCheck },
-    PAID: { label: 'Payé', color: 'bg-emerald-500 text-white', icon: CreditCard },
-  };
-
-  const config = statusConfig[payroll.status] || statusConfig.OPEN;
-  const Icon = config.icon || Clock;
-
-  const monthLabel = new Date(payroll.startDate).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+function PayrollRow({ payroll, index }: { payroll: any; index: number }) {
+  const config = STATUS_CONFIG[payroll.status] || STATUS_CONFIG.OPEN;
+  const StatusIcon = config.icon;
+  const monthLabel = new Date(payroll.startDate).toLocaleDateString('fr-FR', {
+    month: 'long',
+    year: 'numeric',
+  });
 
   return (
-    <Link href={`/app/hr/payroll/${payroll.id}`}>
-      <Card className="border-none shadow-sm hover:shadow-md transition-all rounded-2xl overflow-hidden bg-white group">
-        <CardContent className="p-0">
-          <div className="p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.05 }}
+    >
+      <Link href={`/app/hr/payroll/${payroll.id}`}>
+        <div className="group rounded-xl border border-slate-200 bg-white shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all overflow-hidden">
+          <div className="p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            {/* Month badge + title */}
             <div className="flex items-center gap-4">
-              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-xl shadow-inner ${
-                payroll.status === 'PAID' ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'
-              }`}>
+              <div
+                className="w-12 h-12 rounded-xl flex items-center justify-center font-black text-sm shrink-0"
+                style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}
+              >
                 {monthLabel.substring(0, 3).toUpperCase()}
               </div>
               <div>
-                <h4 className="font-bold text-gray-900 text-lg capitalize">{monthLabel}</h4>
+                <h4 className="font-bold text-slate-900 text-sm capitalize">{monthLabel}</h4>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <Badge variant="outline" className={`text-[10px] uppercase font-bold py-0 border-none ${config.color}`}>
-                    <Icon size={12} className="mr-1" /> {config.label}
-                  </Badge>
-                  <span className="text-xs text-gray-400 font-medium">
+                  <span className={cn(
+                    'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase',
+                    config.className
+                  )}>
+                    <StatusIcon className="h-3 w-3" />
+                    {config.label}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-medium">
                     {payroll._count?.payrolls || 0} bulletins
                   </span>
                 </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-2 gap-12 flex-grow max-w-xl px-4">
-              <div className="space-y-1">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest text-right md:text-left">Net à Payer</p>
-                <div className="text-lg font-black text-gray-900 text-right md:text-left">
-                  {Number(payroll.totalAmount).toLocaleString()} <span className="text-xs font-bold">XOF</span>
-                </div>
+            {/* Amounts */}
+            <div className="grid grid-cols-2 gap-8 flex-grow max-w-md">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">Net à Payer</p>
+                <p className="text-lg font-black text-slate-900">
+                  {Number(payroll.totalAmount).toLocaleString()}
+                  <span className="text-xs font-bold ml-1 text-slate-400">XOF</span>
+                </p>
               </div>
-              
-              <div className="hidden md:block space-y-1">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Période</p>
-                <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                  <Calendar size={14} className="text-gray-400" />
-                  {new Date(payroll.startDate).toLocaleDateString()} → {new Date(payroll.endDate).toLocaleDateString()}
+              <div className="hidden md:block">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">Période</p>
+                <div className="flex items-center gap-1.5 text-sm font-medium text-slate-700">
+                  <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                  {new Date(payroll.startDate).toLocaleDateString('fr-FR')}
+                  <span className="text-slate-300">→</span>
+                  {new Date(payroll.endDate).toLocaleDateString('fr-FR')}
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-50 text-gray-300 group-hover:bg-blue-50 group-hover:text-blue-600 transition-all">
-              <ChevronRight size={24} />
+            {/* Arrow */}
+            <div className="w-9 h-9 rounded-full border border-slate-200 flex items-center justify-center text-slate-300 group-hover:border-[#1A2BA6] group-hover:text-[#1A2BA6] transition-all shrink-0">
+              <ChevronRight className="h-5 w-5" />
             </div>
           </div>
-        </CardContent>
-      </Card>
-    </Link>
+        </div>
+      </Link>
+    </motion.div>
   );
 }
-
-

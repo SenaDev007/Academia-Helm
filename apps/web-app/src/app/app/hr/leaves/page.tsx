@@ -1,55 +1,33 @@
-/**
- * ============================================================================
- * HR MODULE - LEAVES PAGE
- * ============================================================================
- */
-
 'use client';
 
 import { useState, useEffect } from 'react';
-import { 
-  Plus, 
-  Calendar, 
-  Clock, 
-  CheckCircle2, 
-  XCircle, 
-  AlertCircle,
-  FileText,
-  Search,
-  Filter,
-  User,
-  Coffee,
-  UserCheck,
-  DollarSign,
-  Shield,
-  Users
+import {
+  Plus, Calendar, CheckCircle2, XCircle, FileText,
+  Coffee, Loader2,
 } from 'lucide-react';
-import { ModuleHeader, SubModuleNavigation } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { apiFetch } from '@/lib/api/client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { usePathname } from 'next/navigation';
+import { motion } from 'framer-motion';
+import { cn } from '@/lib/utils';
+
+const PRIMARY = '#1A2BA6';
+
+const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  PENDING:  { label: 'En attente', className: 'text-amber-600' },
+  APPROVED: { label: 'Approuvé',   className: 'text-emerald-600' },
+  REJECTED: { label: 'Refusé',     className: 'text-rose-600' },
+};
+
+function calculateDays(start: string, end: string) {
+  const diff = Math.abs(new Date(end).getTime() - new Date(start).getTime());
+  return Math.ceil(diff / 86400000) + 1;
+}
 
 export default function LeavesPage() {
-  const { tenant, academicYear } = useModuleContext();
-  const pathname = usePathname();
+  const { tenant } = useModuleContext();
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('PENDING');
-
-  const subModuleTabs = [
-    { id: 'overview', label: "Vue d'ensemble", path: '/app/hr', icon: UserCheck, exact: true },
-    { id: 'staff', label: 'Personnel', path: '/app/hr/staff', icon: Users },
-    { id: 'contracts', label: 'Contrats', path: '/app/hr/contracts', icon: FileText },
-    { id: 'leaves', label: 'Congés & Absences', path: '/app/hr/leaves', icon: Clock },
-    { id: 'planning', label: 'Planning', path: '/app/hr/planning', icon: Clock },
-    { id: 'allowances', label: 'Indemnités', path: '/app/hr/allowances', icon: DollarSign },
-    { id: 'payroll', label: 'Paie', path: '/app/hr/payroll', icon: DollarSign },
-    { id: 'cnss', label: 'CNSS', path: '/app/hr/cnss', icon: Shield },
-    { id: 'reporting', label: 'Rapports', path: '/app/hr/reporting', icon: FileText },
-    { id: 'settings', label: 'Paramètres', path: '/app/hr/settings', icon: Shield },
-  ];
 
   useEffect(() => {
     async function fetchLeaves() {
@@ -58,7 +36,6 @@ export default function LeavesPage() {
         setLoading(true);
         let url = `/hr/leaves/requests?tenantId=${tenant.id}`;
         if (filterStatus !== 'ALL') url += `&status=${filterStatus}`;
-        
         const result = await apiFetch<any[]>(url);
         setRequests(result);
       } catch (error) {
@@ -67,159 +44,199 @@ export default function LeavesPage() {
         setLoading(false);
       }
     }
-
     fetchLeaves();
   }, [tenant?.id, filterStatus]);
 
-  const kpis = [
-    { label: 'Demandes en attente', value: requests.filter(r => r.status === 'PENDING').length.toString(), color: 'amber' },
-    { label: 'Approuvées ce mois', value: requests.filter(r => r.status === 'APPROVED').length.toString(), color: 'emerald' },
-    { label: 'Absences ce jour', value: '3', color: 'blue' }, // Mocked or fetched separately
-  ];
-
   return (
-    <div className="space-y-6 pb-20">
-      <ModuleHeader
-        title="Congés & Absences"
-        description="Gestion des demandes de congés, suivi des absences et calcul automatisé des soldes."
-        icon="rh"
-        kpis={kpis.map(k => ({ label: k.label, value: k.value, unit: '' }))}
-      />
+    <div className="pb-20">
+      <div className="px-6 pt-6 space-y-6">
 
-      <div className="px-6">
-        <SubModuleNavigation tabs={subModuleTabs} currentPath={pathname} />
-
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-            <div className="flex bg-white p-1 rounded-xl shadow-sm border border-gray-100">
-              {['PENDING', 'APPROVED', 'ALL'].map((status) => (
-                <button
-                  key={status}
-                  onClick={() => setFilterStatus(status)}
-                  className={`px-4 py-2 text-sm font-bold rounded-lg transition-all ${
-                    filterStatus === status 
-                      ? 'bg-blue-600 text-white shadow-md' 
-                      : 'text-gray-500 hover:bg-gray-50'
-                  }`}
-                >
-                  {status === 'PENDING' ? 'En attente' : status === 'APPROVED' ? 'Approuvés' : 'Tous'}
-                </button>
-              ))}
+        {/* KPI strip */}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          {[
+            { label: 'Demandes en attente', value: requests.filter((r) => r.status === 'PENDING').length },
+            { label: 'Approuvées ce mois',  value: requests.filter((r) => r.status === 'APPROVED').length },
+            { label: 'Absences ce jour',    value: 0 },
+          ].map((k, i) => (
+            <div key={i} className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{k.label}</p>
+              <p className="text-xl font-bold text-slate-900 mt-0.5">{k.value}</p>
             </div>
+          ))}
+        </div>
+
+        {/* Toolbar */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          {/* Tab switcher */}
+          <div className="flex bg-white border border-slate-200 rounded-xl p-1 shadow-sm gap-1">
+            {[
+              { key: 'PENDING',  label: 'En attente' },
+              { key: 'APPROVED', label: 'Approuvés' },
+              { key: 'ALL',      label: 'Tous' },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setFilterStatus(key)}
+                className={cn(
+                  'px-4 py-2 text-sm font-semibold rounded-lg transition-all',
+                  filterStatus === key
+                    ? 'text-white shadow-sm'
+                    : 'text-slate-500 hover:bg-slate-50'
+                )}
+                style={filterStatus === key ? { backgroundColor: PRIMARY } : undefined}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
-          <button className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-md transition-all font-semibold">
-            <Plus size={20} />
+          <button
+            className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition whitespace-nowrap"
+            style={{ backgroundColor: PRIMARY }}
+          >
+            <Plus className="h-4 w-4" />
             Nouvelle demande
           </button>
         </div>
 
+        {/* Content */}
         {loading ? (
-          <div className="space-y-4 animate-pulse">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="h-20 bg-gray-100 rounded-2xl" />
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-16 rounded-xl border border-slate-200 bg-slate-100 animate-pulse" />
             ))}
           </div>
         ) : requests.length === 0 ? (
-          <div className="text-center py-20 bg-white rounded-3xl border-2 border-dashed border-gray-100">
-            <Coffee className="mx-auto text-gray-300 mb-4" size={48} />
-            <h3 className="text-xl font-bold text-gray-800">Aucune demande trouvée</h3>
-            <p className="text-gray-500 mt-2">Le personnel est actuellement au complet ou aucune demande n'a été faite.</p>
+          <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/30 p-16 text-center">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm mb-4">
+              <Coffee className="h-10 w-10 text-slate-300" />
+            </div>
+            <h3 className="text-base font-bold text-slate-800">Aucune demande trouvée</h3>
+            <p className="text-sm text-slate-500 mt-2">
+              Le personnel est au complet ou aucune demande n'a été soumise.
+            </p>
           </div>
         ) : (
-          <div className="bg-white rounded-3xl shadow-sm overflow-hidden border border-gray-50">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm"
+          >
             <table className="w-full text-left">
               <thead>
-                <tr className="bg-gray-50/50 border-b border-gray-100">
-                  <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Collaborateur</th>
-                  <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Type / Motif</th>
-                  <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Période</th>
-                  <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Durée</th>
-                  <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Statut</th>
-                  <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest text-right">Actions</th>
+                <tr className="border-b border-slate-200 bg-slate-50">
+                  {['Collaborateur', 'Type / Motif', 'Période', 'Durée', 'Statut', 'Actions'].map((h, i) => (
+                    <th
+                      key={h}
+                      className={cn(
+                        'px-5 py-3.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500',
+                        i === 5 && 'text-right'
+                      )}
+                    >
+                      {h}
+                    </th>
+                  ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
-                {requests.map((request) => (
-                  <tr key={request.id} className="hover:bg-blue-50/10 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 font-bold text-xs">
-                          {request.staff?.firstName[0]}{request.staff?.lastName[0]}
+              <tbody className="divide-y divide-slate-100">
+                {requests.map((request, idx) => {
+                  const s = STATUS_CONFIG[request.status] || STATUS_CONFIG.PENDING;
+                  return (
+                    <motion.tr
+                      key={request.id}
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.04 }}
+                      className="hover:bg-slate-50/50 transition-colors"
+                    >
+                      {/* Collaborateur */}
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold shrink-0"
+                            style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}
+                          >
+                            {request.staff?.firstName?.[0]}{request.staff?.lastName?.[0]}
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-900">
+                              {request.staff?.firstName} {request.staff?.lastName}
+                            </p>
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                              {request.staff?.staffCode}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-bold text-gray-900 text-sm">{request.staff?.firstName} {request.staff?.lastName}</p>
-                          <p className="text-[10px] text-gray-400 font-bold uppercase">{request.staff?.staffCode}</p>
+                      </td>
+
+                      {/* Type / Motif */}
+                      <td className="px-5 py-4">
+                        <p className="text-sm font-semibold text-slate-700">{request.type}</p>
+                        <p className="text-xs text-slate-400 italic truncate max-w-[180px]">
+                          "{request.reason || 'Pas de motif'}"
+                        </p>
+                      </td>
+
+                      {/* Période */}
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-1.5 text-sm text-slate-600 font-medium">
+                          <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                          {new Date(request.startDate).toLocaleDateString('fr-FR')}
+                          <span className="text-slate-300">→</span>
+                          {new Date(request.endDate).toLocaleDateString('fr-FR')}
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-semibold text-gray-700">{request.type}</span>
-                        <span className="text-xs text-gray-400 truncate max-w-[200px] italic">"{request.reason || 'Pas de motif'}"</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2 text-sm text-gray-600 font-medium">
-                        <Calendar size={14} className="text-gray-400" />
-                        {new Date(request.startDate).toLocaleDateString()}
-                        <span className="text-gray-300">→</span>
-                        {new Date(request.endDate).toLocaleDateString()}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <Badge variant="outline" className="bg-gray-50 text-gray-600 border-none font-bold">
-                        {calculateDays(request.startDate, request.endDate)} jrs
-                      </Badge>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        {request.status === 'PENDING' && <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />}
-                        <span className={`text-xs font-bold uppercase tracking-wider ${
-                          request.status === 'APPROVED' ? 'text-emerald-600' :
-                          request.status === 'REJECTED' ? 'text-rose-600' :
-                          'text-amber-600'
-                        }`}>
-                          {request.status === 'PENDING' ? 'En attente' : request.status === 'APPROVED' ? 'Approuvé' : 'Refusé'}
+                      </td>
+
+                      {/* Durée */}
+                      <td className="px-5 py-4">
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                          {calculateDays(request.startDate, request.endDate)} jrs
                         </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      {request.status === 'PENDING' ? (
-                        <div className="flex justify-end gap-2">
-                          <button 
-                            className="p-2 hover:bg-emerald-50 text-emerald-600 rounded-lg transition-colors"
-                            title="Approuver"
-                          >
-                            <CheckCircle2 size={20} />
-                          </button>
-                          <button 
-                            className="p-2 hover:bg-rose-50 text-rose-600 rounded-lg transition-colors"
-                            title="Rejeter"
-                          >
-                            <XCircle size={20} />
-                          </button>
+                      </td>
+
+                      {/* Statut */}
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-1.5">
+                          {request.status === 'PENDING' && (
+                            <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                          )}
+                          <span className={cn('text-xs font-bold uppercase tracking-wider', s.className)}>
+                            {s.label}
+                          </span>
                         </div>
-                      ) : (
-                        <button className="text-gray-400 hover:text-blue-600 transition-colors">
-                          <FileText size={20} />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+
+                      {/* Actions */}
+                      <td className="px-5 py-4 text-right">
+                        {request.status === 'PENDING' ? (
+                          <div className="flex justify-end gap-1.5">
+                            <button
+                              className="p-1.5 rounded-lg hover:bg-emerald-50 text-emerald-600 transition-colors"
+                              title="Approuver"
+                            >
+                              <CheckCircle2 className="h-5 w-5" />
+                            </button>
+                            <button
+                              className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-500 transition-colors"
+                              title="Rejeter"
+                            >
+                              <XCircle className="h-5 w-5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <button className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+                            <FileText className="h-5 w-5" />
+                          </button>
+                        )}
+                      </td>
+                    </motion.tr>
+                  );
+                })}
               </tbody>
             </table>
-          </div>
+          </motion.div>
         )}
       </div>
     </div>
   );
-}
-
-function calculateDays(start: string, end: string) {
-  const s = new Date(start);
-  const e = new Date(end);
-  const diffTime = Math.abs(e.getTime() - s.getTime());
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 }

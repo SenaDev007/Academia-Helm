@@ -1,25 +1,25 @@
 /**
  * ============================================================================
- * HR OVERVIEW COMPONENT - MODULE 5
+ * HR OVERVIEW COMPONENT
+ * Design harmonisé avec le pattern pédagogie (SubjectsWorkspace)
  * ============================================================================
  */
 
 'use client';
 
 import React from 'react';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { OrionPanel } from '@/components/ui/orion/OrionPanel';
-import { OrionAlertItem } from '@/components/ui/orion/OrionAlertItem';
-import { 
-  Users, 
-  UserCheck, 
-  TrendingUp, 
-  AlertTriangle, 
-  DollarSign, 
+import { motion } from 'framer-motion';
+import {
+  Users,
+  UserCheck,
+  TrendingUp,
+  DollarSign,
   Calendar,
   Briefcase,
-  ShieldCheck
+  ShieldCheck,
+  ArrowRight,
+  BarChart3,
+  Target,
 } from 'lucide-react';
 import {
   BarChart,
@@ -29,21 +29,61 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  LineChart,
-  Line
 } from 'recharts';
+import { cn } from '@/lib/utils';
+import Link from 'next/link';
+
+const PRIMARY = '#1A2BA6';
+const ACCENT = '#F5A623';
 
 interface HROverviewProps {
   data: any;
   loading: boolean;
 }
 
+function KpiCard({
+  label,
+  value,
+  subValue,
+  icon: Icon,
+  index = 0,
+}: {
+  label: string;
+  value: string | number;
+  subValue?: string;
+  icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
+  index?: number;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: index * 0.08 }}
+      className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all"
+    >
+      <div className="absolute -right-4 -top-4 opacity-[0.04]">
+        <Icon className="h-24 w-24" />
+      </div>
+      <div className="flex items-start justify-between">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+          <Icon className="h-5 w-5" style={{ color: PRIMARY }} />
+        </div>
+      </div>
+      <div className="mt-4">
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</p>
+        <h3 className="text-2xl font-bold text-slate-900 mt-1">{value}</h3>
+        {subValue && <p className="text-xs text-slate-400 mt-0.5">{subValue}</p>}
+      </div>
+    </motion.div>
+  );
+}
+
 export function HROverview({ data, loading }: HROverviewProps) {
   if (loading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-pulse">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-32 bg-gray-100 rounded-xl" />
+          <div key={i} className="h-32 rounded-xl border border-slate-200 bg-slate-100 animate-pulse" />
         ))}
       </div>
     );
@@ -55,148 +95,196 @@ export function HROverview({ data, loading }: HROverviewProps) {
     totalAdmin: 0,
     monthlyPayroll: 0,
     cnssCharges: 0,
-    leaveCount: 0
+    leaveCount: 0,
   };
 
   const payrollHistory = data?.payrollHistory || [];
   const orionAlerts = data?.orionAlerts || [];
 
   const kpis = [
-    { 
-      label: 'Effectif Total', 
-      value: snapshot.totalStaff, 
-      subValue: `${snapshot.totalTeachers} ens. / ${snapshot.totalAdmin} admin`,
+    {
+      label: 'Effectif Total',
+      value: snapshot.totalStaff,
+      subValue: `${snapshot.totalTeachers} ens. · ${snapshot.totalAdmin} admin`,
       icon: Users,
-      color: 'blue'
     },
-    { 
-      label: 'Masse Salariale', 
-      value: `${Number(snapshot.monthlyPayroll).toLocaleString()} XOF`, 
+    {
+      label: 'Masse Salariale',
+      value: `${Number(snapshot.monthlyPayroll).toLocaleString()} XOF`,
       subValue: 'Dernier mois validé',
       icon: DollarSign,
-      color: 'emerald'
     },
-    { 
-      label: 'Charges Sociales', 
-      value: `${Number(snapshot.cnssCharges).toLocaleString()} XOF`, 
+    {
+      label: 'Charges Sociales',
+      value: `${Number(snapshot.cnssCharges).toLocaleString()} XOF`,
       subValue: 'Cotisations CNSS estimées',
       icon: ShieldCheck,
-      color: 'blue'
     },
-    { 
-      label: 'Congés Actifs', 
-      value: snapshot.leaveCount, 
+    {
+      label: 'Congés Actifs',
+      value: snapshot.leaveCount,
       subValue: 'Personnes absentes ce jour',
       icon: Calendar,
-      color: 'amber'
-    }
+    },
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 pb-12">
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpis.map((kpi, idx) => {
-          const Icon = kpi.icon;
-          return (
-            <Card key={idx} className="border-none shadow-sm hover:shadow-md transition-shadow">
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-500">{kpi.label}</p>
-                    <h3 className="text-2xl font-bold mt-1">{kpi.value}</h3>
-                    <p className="text-xs text-gray-400 mt-1">{kpi.subValue}</p>
-                  </div>
-                  <div className={`p-3 rounded-xl bg-${kpi.color}-50 text-${kpi.color}-600`}>
-                    <Icon size={24} />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
+        {kpis.map((kpi, idx) => (
+          <KpiCard key={kpi.label} {...kpi} index={idx} />
+        ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Payroll History Chart */}
-        <Card className="lg:col-span-2 border-none shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <TrendingUp size={20} className="text-emerald-500" />
-              Évolution de la Masse Salariale
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px] w-full">
+      {/* Main content grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Payroll Chart */}
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          className="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+        >
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">Évolution de la Masse Salariale</h2>
+              <p className="text-sm text-slate-500">Historique des 12 derniers mois</p>
+            </div>
+            <Link
+              href="/app/hr/payroll"
+              className="flex items-center gap-1 text-sm font-semibold hover:underline"
+              style={{ color: PRIMARY }}
+            >
+              Détails <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+
+          {payrollHistory.length > 0 ? (
+            <div className="h-[260px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={payrollHistory}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                  <XAxis dataKey="periodName" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#9ca3af' }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#9ca3af' }} />
-                  <Tooltip 
-                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                <BarChart data={payrollHistory} barGap={4}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis
+                    dataKey="periodName"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 11, fill: '#94a3b8' }}
                   />
-                  <Bar dataKey="totalNet" name="Net à payer" fill="#10b981" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="totalGross" name="Brut Total" fill="#94a3b8" radius={[4, 4, 0, 0]} />
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 11, fill: '#94a3b8' }}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      borderRadius: '12px',
+                      border: '1px solid #e2e8f0',
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+                      fontSize: '12px',
+                    }}
+                  />
+                  <Bar dataKey="totalNet" name="Net à payer" fill={PRIMARY} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="totalGross" name="Brut Total" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
-          </CardContent>
-        </Card>
+          ) : (
+            <div className="flex h-[260px] items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/30">
+              <div className="text-center space-y-2">
+                <BarChart3 className="h-8 w-8 text-slate-300 mx-auto" />
+                <p className="text-sm text-slate-400 font-semibold">Aucun historique disponible</p>
+              </div>
+            </div>
+          )}
+        </motion.section>
 
-        {/* ORION Insights */}
-        <div className="space-y-6">
-          <OrionPanel 
-            title="Cockpit de Surveillance ORION"
-          >
-            <div className="space-y-3 mt-4">
-              {orionAlerts.length > 0 ? (
-                orionAlerts.map((alert: any, idx: number) => (
-                  <OrionAlertItem 
-                    key={idx}
-                    id={`alert-${idx}`}
-                    severity={alert.severity}
-                    title={alert.title}
-                    message={alert.description}
-                  />
-                ))
-              ) : (
-                <div className="p-4 bg-emerald-50 text-emerald-700 rounded-xl flex items-center gap-3">
-                  <UserCheck size={20} />
-                  <p className="text-sm font-medium">Tout est en ordre. Aucune anomalie détectée.</p>
+        {/* ORION Cockpit */}
+        <motion.section
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.5 }}
+          className="rounded-xl bg-slate-900 p-6 shadow-sm text-white relative overflow-hidden"
+        >
+          <div className="absolute -right-12 -bottom-12 opacity-10">
+            <Target className="h-48 w-48" />
+          </div>
+          <div className="flex items-center gap-2 mb-6">
+            <div className="h-2 w-2 rounded-full bg-blue-400 animate-pulse" />
+            <h2 className="text-lg font-bold">Cockpit ORION</h2>
+          </div>
+
+          <div className="space-y-3">
+            {orionAlerts.length > 0 ? (
+              orionAlerts.slice(0, 4).map((alert: any, idx: number) => (
+                <div key={idx} className="rounded-lg bg-white/5 border border-white/10 p-3 flex gap-3">
+                  <div className={cn(
+                    'mt-1 h-2 w-2 shrink-0 rounded-full',
+                    alert.severity === 'HIGH' || alert.severity === 'CRITICAL'
+                      ? 'bg-rose-500 shadow-[0_0_8px_#f43f5e]'
+                      : 'bg-amber-400 shadow-[0_0_8px_#fbbf24]'
+                  )} />
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-semibold text-white/90 leading-snug">{alert.title}</p>
+                    <p className="text-[10px] text-white/50">{alert.description}</p>
+                  </div>
                 </div>
-              )}
-            </div>
-            
-            <div className="mt-6 p-4 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Conseil ORION</h4>
-              <p className="text-sm text-gray-600 italic">
-                "Pensez à préparer les déclarations CNSS avant le 15 du mois pour éviter les pénalités de retard."
-              </p>
-            </div>
-          </OrionPanel>
-        </div>
+              ))
+            ) : (
+              <div className="py-8 text-center space-y-2">
+                <UserCheck className="h-8 w-8 text-white/20 mx-auto" />
+                <p className="text-xs text-white/40 font-semibold">Aucune anomalie détectée.</p>
+                <p className="text-[10px] text-white/30">Tout est en ordre dans le module RH.</p>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 pt-4 border-t border-white/10">
+            <p className="text-[10px] text-white/30 italic leading-relaxed">
+              "Pensez à préparer les déclarations CNSS avant le 15 du mois pour éviter les pénalités de retard."
+            </p>
+          </div>
+
+          <Link
+            href="/app/hr/reporting"
+            className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold text-white transition hover:opacity-90 bg-[#1A2BA6] shadow-md"
+          >
+            Consulter les rapports
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </motion.section>
       </div>
 
-      {/* Quick Access Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {[
-          { label: 'Générer la paie', icon: DollarSign, color: 'emerald' },
-          { label: 'Déclaration CNSS', icon: Briefcase, color: 'blue' },
-          { label: 'Planifier congés', icon: Calendar, color: 'amber' },
-        ].map((action, idx) => (
-          <button 
-            key={idx}
-            className={`flex items-center justify-center gap-3 p-4 bg-white border border-gray-100 rounded-xl hover:border-${action.color}-200 hover:bg-${action.color}-50 transition-all group shadow-sm`}
-          >
-            <div className={`p-2 rounded-lg bg-${action.color}-50 text-${action.color}-600 group-hover:bg-white`}>
-              <action.icon size={20} />
-            </div>
-            <span className="font-semibold text-gray-700">{action.label}</span>
-          </button>
-        ))}
-      </div>
+      {/* Quick Actions */}
+      <motion.section
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.6 }}
+      >
+        <h2 className="text-base font-bold text-slate-900 mb-4">Actions Rapides</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {[
+            { label: 'Générer la paie', icon: DollarSign, href: '/app/hr/payroll' },
+            { label: 'Déclaration CNSS', icon: Briefcase, href: '/app/hr/cnss' },
+            { label: 'Planifier congés', icon: Calendar, href: '/app/hr/leaves' },
+          ].map((action, idx) => {
+            const Icon = action.icon;
+            return (
+              <Link
+                key={idx}
+                href={action.href}
+                className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:shadow-md hover:border-slate-300 transition-all"
+              >
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 group-hover:bg-blue-50 transition-colors">
+                  <Icon className="h-5 w-5 text-slate-400 group-hover:text-[#1A2BA6] transition-colors" />
+                </div>
+                <span className="font-semibold text-slate-700 group-hover:text-slate-900 text-sm">{action.label}</span>
+                <ArrowRight className="h-4 w-4 text-slate-300 group-hover:text-slate-500 ml-auto transition-colors" />
+              </Link>
+            );
+          })}
+        </div>
+      </motion.section>
     </div>
   );
 }
-

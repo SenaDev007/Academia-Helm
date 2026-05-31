@@ -1,35 +1,30 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Search, FileText, Calendar, DollarSign, Clock, AlertCircle, FileCheck, User, UserCheck, Shield, Users } from 'lucide-react';
-import { ModuleHeader, SubModuleNavigation } from '@/components/modules/blueprint';
+import {
+  Plus, Search, FileText, Calendar, DollarSign,
+  AlertCircle, FileCheck, Loader2, Files,
+} from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { apiFetch } from '@/lib/api/client';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { motion } from 'framer-motion';
+import { cn } from '@/lib/utils';
+
+const PRIMARY = '#1A2BA6';
+
+const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  ACTIVE:     { label: 'En vigueur',  className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
+  EXPIRED:    { label: 'Expiré',      className: 'bg-slate-100 text-slate-500 border border-slate-200' },
+  TERMINATED: { label: 'Résilié',     className: 'bg-rose-50 text-rose-600 border border-rose-200' },
+};
 
 export default function ContractsPage() {
-  const { tenant, academicYear } = useModuleContext();
-  const pathname = usePathname();
+  const { tenant } = useModuleContext();
   const [contracts, setContracts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('ACTIVE');
-
-  const subModuleTabs = [
-    { id: 'overview', label: "Vue d'ensemble", path: '/app/hr', icon: UserCheck, exact: true },
-    { id: 'staff', label: 'Personnel', path: '/app/hr/staff', icon: Users },
-    { id: 'contracts', label: 'Contrats', path: '/app/hr/contracts', icon: FileText },
-    { id: 'leaves', label: 'Congés & Absences', path: '/app/hr/leaves', icon: Clock },
-    { id: 'planning', label: 'Planning', path: '/app/hr/planning', icon: Clock },
-    { id: 'allowances', label: 'Indemnités', path: '/app/hr/allowances', icon: DollarSign },
-    { id: 'payroll', label: 'Paie', path: '/app/hr/payroll', icon: DollarSign },
-    { id: 'cnss', label: 'CNSS', path: '/app/hr/cnss', icon: Shield },
-    { id: 'reporting', label: 'Rapports', path: '/app/hr/reporting', icon: FileText },
-    { id: 'settings', label: 'Paramètres', path: '/app/hr/settings', icon: Shield },
-  ];
 
   useEffect(() => {
     async function fetchContracts() {
@@ -38,7 +33,6 @@ export default function ContractsPage() {
         setLoading(true);
         let url = `/hr/contracts?tenantId=${tenant.id}`;
         if (filterStatus !== 'ALL') url += `&status=${filterStatus}`;
-        
         const result = await apiFetch<any[]>(url);
         setContracts(result);
       } catch (error) {
@@ -47,82 +41,96 @@ export default function ContractsPage() {
         setLoading(false);
       }
     }
-
     fetchContracts();
   }, [tenant?.id, filterStatus]);
 
-  const filteredContracts = contracts.filter(c => 
-    `${c.staff?.firstName} ${c.staff?.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (c.staff?.staffCode && c.staff?.staffCode.toLowerCase().includes(searchQuery.toLowerCase()))
+  const expiringSoon = contracts.filter((c) => {
+    if (!c.endDate || c.status !== 'ACTIVE') return false;
+    const diff = (new Date(c.endDate).getTime() - Date.now()) / 86400000;
+    return diff > 0 && diff <= 30;
+  });
+
+  const filteredContracts = contracts.filter(
+    (c) =>
+      `${c.staff?.firstName} ${c.staff?.lastName}`
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase()) ||
+      (c.staff?.staffCode &&
+        c.staff.staffCode.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
-  return (
-    <div className="space-y-6 pb-20">
-      <ModuleHeader
-        title="Gestion des Contrats"
-        description="Moteur de versioning, avenants et suivi des échéances contractuelles."
-        icon="rh"
-        kpis={[
-          { label: 'Contrats actifs', value: contracts.filter(c => c.status === 'ACTIVE').length.toString(), unit: '' },
-          { label: 'CDI en cours', value: contracts.filter(c => c.type === 'CDI' && c.status === 'ACTIVE').length.toString(), unit: '' },
-          { label: 'Échéances J-30', value: contracts.filter(c => {
-            if (!c.endDate || c.status !== 'ACTIVE') return false;
-            const diff = (new Date(c.endDate).getTime() - new Date().getTime()) / (1000 * 3600 * 24);
-            return diff > 0 && diff <= 30;
-          }).length.toString(), unit: '' },
-        ]}
-      />
+  const inputClass =
+    'rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 ' +
+    'focus:outline-none focus:border-[#1A2BA6] focus:ring-2 focus:ring-[#1A2BA6]/10 transition shadow-sm';
 
-      <div className="px-6">
-        <SubModuleNavigation tabs={subModuleTabs} currentPath={pathname} />
-        
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 mt-6">
+  return (
+    <div className="pb-20">
+      <div className="px-6 pt-6 space-y-6">
+
+        {/* KPI strip */}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          {[
+            { label: 'Contrats actifs', value: contracts.filter((c) => c.status === 'ACTIVE').length },
+            { label: 'CDI en cours', value: contracts.filter((c) => c.type === 'CDI' && c.status === 'ACTIVE').length },
+            { label: 'Échéances J-30', value: expiringSoon.length },
+          ].map((k, i) => (
+            <div key={i} className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{k.label}</p>
+              <p className="text-xl font-bold text-slate-900 mt-0.5">{k.value}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Toolbar */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-            <div className="relative flex-grow md:flex-grow-0 md:w-80">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <div className="relative flex-grow md:flex-grow-0 md:w-72">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <input
                 type="text"
-                placeholder="Rechercher par nom ou matricule..."
-                className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-100 rounded-xl shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all outline-none"
+                placeholder="Rechercher par nom ou matricule…"
+                className={inputClass + ' pl-9 w-full'}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-            
-            <select 
-              className="bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-sm font-medium shadow-sm outline-none focus:ring-2 focus:ring-blue-500"
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-            >
+            <select className={inputClass} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
               <option value="ACTIVE">Contrats Actifs</option>
               <option value="ALL">Historique Complet</option>
               <option value="EXPIRED">Expirés</option>
               <option value="TERMINATED">Terminés</option>
             </select>
           </div>
-
-          <button className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-md hover:shadow-lg transition-all font-semibold">
-            <Plus size={20} />
+          <button
+            className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition whitespace-nowrap"
+            style={{ backgroundColor: PRIMARY }}
+          >
+            <Plus className="h-4 w-4" />
             Nouveau contrat / Avenant
           </button>
         </div>
 
+        {/* List */}
         {loading ? (
-          <div className="space-y-4 animate-pulse">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="h-24 bg-gray-100 rounded-2xl" />
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-20 rounded-xl border border-slate-200 bg-slate-100 animate-pulse" />
             ))}
           </div>
         ) : filteredContracts.length === 0 ? (
-          <div className="text-center py-20 bg-white rounded-3xl border-2 border-dashed border-gray-100">
-            <FileText className="mx-auto text-gray-300 mb-4" size={48} />
-            <h3 className="text-xl font-bold text-gray-800">Aucun contrat trouvé</h3>
-            <p className="text-gray-500 mt-2">Commencez par générer un contrat pour un membre du personnel.</p>
+          <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/30 p-16 text-center">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm mb-4">
+              <Files className="h-10 w-10 text-slate-300" />
+            </div>
+            <h3 className="text-base font-bold text-slate-800">Aucun contrat trouvé</h3>
+            <p className="text-sm text-slate-500 mt-2">
+              Commencez par générer un contrat pour un membre du personnel.
+            </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4">
-            {filteredContracts.map((contract) => (
-              <ContractRow key={contract.id} contract={contract} />
+          <div className="space-y-3">
+            {filteredContracts.map((contract, idx) => (
+              <ContractRow key={contract.id} contract={contract} index={idx} />
             ))}
           </div>
         )}
@@ -131,86 +139,103 @@ export default function ContractsPage() {
   );
 }
 
-function ContractRow({ contract }: { contract: any }) {
+function ContractRow({ contract, index }: { contract: any; index: number }) {
   const isExpiringSoon = () => {
     if (!contract.endDate || contract.status !== 'ACTIVE') return false;
-    const diff = (new Date(contract.endDate).getTime() - new Date().getTime()) / (1000 * 3600 * 24);
+    const diff = (new Date(contract.endDate).getTime() - Date.now()) / 86400000;
     return diff > 0 && diff <= 30;
   };
 
+  const status = STATUS_CONFIG[contract.status] || STATUS_CONFIG.EXPIRED;
+
   return (
-    <Card className={`border-none shadow-sm hover:shadow-md transition-all rounded-2xl overflow-hidden bg-white ${isExpiringSoon() ? 'ring-1 ring-amber-200 bg-amber-50/10' : ''}`}>
-      <CardContent className="p-0">
-        <div className="p-4 md:p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg shadow-inner ${
-              contract.status === 'ACTIVE' ? 'bg-blue-50 text-blue-600' : 'bg-gray-50 text-gray-400'
-            }`}>
-              {contract.type[0]}
-            </div>
-            <div>
-              <h4 className="font-bold text-gray-900">
-                {contract.staff?.firstName} {contract.staff?.lastName}
-              </h4>
-              <div className="flex items-center gap-2 mt-0.5">
-                <Badge variant="outline" className="text-[10px] uppercase font-bold py-0">
-                  {contract.type}
-                </Badge>
-                <span className="text-xs text-gray-400 font-medium">#{contract.staff?.staffCode}</span>
-              </div>
-            </div>
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.04 }}
+      className={cn(
+        'rounded-xl border bg-white shadow-sm hover:shadow-md transition-all overflow-hidden',
+        isExpiringSoon() ? 'border-amber-200 bg-amber-50/20' : 'border-slate-200'
+      )}
+    >
+      <div className="p-4 md:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        {/* Identity */}
+        <div className="flex items-center gap-3 min-w-0">
+          <div
+            className="w-11 h-11 rounded-xl flex items-center justify-center font-bold text-base shrink-0"
+            style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}
+          >
+            {contract.type?.[0]}
           </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-8 md:gap-12 flex-grow max-w-2xl px-4">
-            <div className="space-y-1">
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Période</p>
-              <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                <Calendar size={14} className="text-gray-400" />
-                {new Date(contract.startDate).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })}
-                {' → '}
-                {contract.endDate ? new Date(contract.endDate).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' }) : 'Indéfini'}
-              </div>
+          <div className="min-w-0">
+            <h4 className="font-bold text-slate-900 text-sm truncate">
+              {contract.staff?.firstName} {contract.staff?.lastName}
+            </h4>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-slate-500">
+                {contract.type}
+              </span>
+              <span className="text-[10px] text-slate-400 font-medium">
+                #{contract.staff?.staffCode}
+              </span>
             </div>
-
-            <div className="space-y-1">
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Salaire de base</p>
-              <div className="flex items-center gap-2 text-sm font-bold text-emerald-600">
-                <DollarSign size={14} />
-                {Number(contract.baseSalary).toLocaleString()} XOF
-              </div>
-            </div>
-
-            <div className="hidden md:block space-y-1">
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Statut / Alerte</p>
-              <div className="flex items-center gap-2">
-                {isExpiringSoon() ? (
-                  <div className="flex items-center gap-1 text-xs font-bold text-amber-600 animate-pulse">
-                    <AlertCircle size={14} /> Expiration proche
-                  </div>
-                ) : (
-                  <Badge className={contract.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}>
-                    {contract.status === 'ACTIVE' ? 'En vigueur' : contract.status}
-                  </Badge>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 w-full md:w-auto border-t md:border-none pt-4 md:pt-0">
-            <button className="flex-grow md:flex-grow-0 px-4 py-2 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
-              Gérer l'avenant
-            </button>
-            <Link 
-              href={`/app/hr/contracts/${contract.id}`}
-              className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
-            >
-              <FileCheck size={20} />
-            </Link>
           </div>
         </div>
-      </CardContent>
-    </Card>
+
+        {/* Details */}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-6 flex-grow max-w-xl">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Période</p>
+            <div className="flex items-center gap-1.5 text-sm font-medium text-slate-700">
+              <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+              <span>
+                {new Date(contract.startDate).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })}
+                {' → '}
+                {contract.endDate
+                  ? new Date(contract.endDate).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })
+                  : 'Indéfini'}
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Salaire de base</p>
+            <div className="flex items-center gap-1.5 text-sm font-bold text-emerald-600">
+              <DollarSign className="h-3.5 w-3.5 shrink-0" />
+              {Number(contract.baseSalary).toLocaleString()} XOF
+            </div>
+          </div>
+
+          <div className="hidden md:block">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Statut</p>
+            {isExpiringSoon() ? (
+              <div className="flex items-center gap-1 text-xs font-bold text-amber-600 animate-pulse">
+                <AlertCircle className="h-3.5 w-3.5" /> Expiration proche
+              </div>
+            ) : (
+              <span className={cn('px-2 py-0.5 rounded-full text-[10px] font-bold uppercase', status.className)}>
+                {status.label}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-2 border-t md:border-none pt-3 md:pt-0 w-full md:w-auto">
+          <button
+            className="flex-grow md:flex-grow-0 text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors"
+            style={{ color: PRIMARY }}
+          >
+            Gérer l'avenant
+          </button>
+          <Link
+            href={`/app/hr/contracts/${contract.id}`}
+            className="p-2 text-slate-400 hover:text-[#1A2BA6] transition-colors rounded-lg hover:bg-slate-50"
+          >
+            <FileCheck className="h-5 w-5" />
+          </Link>
+        </div>
+      </div>
+    </motion.div>
   );
 }
-
-

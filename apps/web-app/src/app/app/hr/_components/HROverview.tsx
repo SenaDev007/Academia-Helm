@@ -7,12 +7,11 @@
 
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Users,
   UserCheck,
-  TrendingUp,
   DollarSign,
   Calendar,
   Briefcase,
@@ -20,6 +19,7 @@ import {
   ArrowRight,
   BarChart3,
   Target,
+  RefreshCw,
 } from 'lucide-react';
 import {
   BarChart,
@@ -32,14 +32,10 @@ import {
 } from 'recharts';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { apiFetch } from '@/lib/api/client';
 
 const PRIMARY = '#1A2BA6';
-const ACCENT = '#F5A623';
-
-interface HROverviewProps {
-  data: any;
-  loading: boolean;
-}
 
 function KpiCard({
   label,
@@ -78,55 +74,52 @@ function KpiCard({
   );
 }
 
-export function HROverview({ data, loading }: HROverviewProps) {
-  if (loading) {
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-32 rounded-xl border border-slate-200 bg-slate-100 animate-pulse" />
-        ))}
-      </div>
-    );
+export function HROverview() {
+  const { tenant, academicYear } = useModuleContext();
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [isFetching, setIsFetching] = useState(false);
+
+  async function fetchData() {
+    if (!tenant?.id || !academicYear?.id) { setLoading(false); return; }
+    try {
+      setIsFetching(true);
+      const result = await apiFetch<any>(`/hr/overview/dashboard?tenantId=${tenant.id}&academicYearId=${academicYear.id}`);
+      setData(result);
+    } catch (error) {
+      console.error('Error fetching HR overview:', error);
+    } finally {
+      setLoading(false);
+      setIsFetching(false);
+    }
   }
 
-  const snapshot = data?.snapshot || {
-    totalStaff: 0,
-    totalTeachers: 0,
-    totalAdmin: 0,
-    monthlyPayroll: 0,
-    cnssCharges: 0,
-    leaveCount: 0,
-  };
+  useEffect(() => { fetchData(); }, [tenant?.id, academicYear?.id]);
 
+  const snapshot = data?.snapshot || { totalStaff: 0, totalTeachers: 0, totalAdmin: 0, monthlyPayroll: 0, cnssCharges: 0, leaveCount: 0 };
   const payrollHistory = data?.payrollHistory || [];
   const orionAlerts = data?.orionAlerts || [];
 
   const kpis = [
-    {
-      label: 'Effectif Total',
-      value: snapshot.totalStaff,
-      subValue: `${snapshot.totalTeachers} ens. · ${snapshot.totalAdmin} admin`,
-      icon: Users,
-    },
-    {
-      label: 'Masse Salariale',
-      value: `${Number(snapshot.monthlyPayroll).toLocaleString()} XOF`,
-      subValue: 'Dernier mois validé',
-      icon: DollarSign,
-    },
-    {
-      label: 'Charges Sociales',
-      value: `${Number(snapshot.cnssCharges).toLocaleString()} XOF`,
-      subValue: 'Cotisations CNSS estimées',
-      icon: ShieldCheck,
-    },
-    {
-      label: 'Congés Actifs',
-      value: snapshot.leaveCount,
-      subValue: 'Personnes absentes ce jour',
-      icon: Calendar,
-    },
+    { label: 'Effectif Total', value: snapshot.totalStaff, subValue: `${snapshot.totalTeachers} ens. · ${snapshot.totalAdmin} admin`, icon: Users },
+    { label: 'Masse Salariale', value: `${Number(snapshot.monthlyPayroll).toLocaleString()} XOF`, subValue: 'Dernier mois validé', icon: DollarSign },
+    { label: 'Charges Sociales', value: `${Number(snapshot.cnssCharges).toLocaleString()} XOF`, subValue: 'Cotisations CNSS estimées', icon: ShieldCheck },
+    { label: 'Congés Actifs', value: snapshot.leaveCount, subValue: 'Personnes absentes ce jour', icon: Calendar },
   ];
+
+  if (loading) {
+    return (
+      <div className="space-y-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map((i) => <div key={i} className="h-32 rounded-xl border border-slate-200 bg-slate-100 animate-pulse" />)}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 h-72 rounded-xl border border-slate-200 bg-slate-100 animate-pulse" />
+          <div className="h-72 rounded-xl bg-slate-800 animate-pulse" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 pb-12">

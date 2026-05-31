@@ -45,6 +45,12 @@ export const HR_SUBMODULE_TABS = [
     icon: Clock,
   },
   {
+    id: 'attendance',
+    label: 'Présences',
+    path: '/app/hr/attendance',
+    icon: CalendarDays,
+  },
+  {
     id: 'planning',
     label: 'Planning',
     path: '/app/hr/planning',

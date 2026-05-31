@@ -479,11 +479,15 @@ export default function SubjectsWorkspace() {
   /**
    * Enregistrement groupé des matières sélectionnées dans le panneau de suggestions.
    * Chaque matière est créée séquentiellement ; les doublons sont ignorés silencieusement.
+   * Les valeurs de coefficient et volume horaire hebdomadaire sont lues depuis le formulaire.
    */
   const handleBulkCreateSuggestions = async () => {
     if (selectedSuggestions.size === 0 || !subjectForm.schoolLevelId || !academicYear?.id) return;
     setBulkSaving(true);
     const toCreate = defaultSuggestionsForLevel.filter(s => selectedSuggestions.has(s.code));
+    // Lire les valeurs communes depuis le formulaire (définies par l'utilisateur)
+    const bulkCoefficient = Number(subjectForm.coefficient) || 1.0;
+    const bulkWeeklyHours = Number(subjectForm.weeklyHours) ?? 0;
     let created = 0;
     let skipped = 0;
     for (const suggestion of toCreate) {
@@ -494,8 +498,8 @@ export default function SubjectsWorkspace() {
           code: suggestion.code,
           name: suggestion.name,
           abbreviation: suggestion.abbreviation,
-          coefficient: 1.0,
-          weeklyHours: 0,
+          coefficient: bulkCoefficient,
+          weeklyHours: bulkWeeklyHours,
         });
         created++;
       } catch {
@@ -1465,26 +1469,33 @@ export default function SubjectsWorkspace() {
 
               {/* Barre d'action groupée */}
               {selectedSuggestions.size > 0 && (
-                <div className="flex items-center justify-between pt-2 border-t border-indigo-200">
-                  <span className="text-sm font-semibold text-indigo-700">
-                    {selectedSuggestions.size} matière{selectedSuggestions.size > 1 ? 's' : ''} sélectionnée{selectedSuggestions.size > 1 ? 's' : ''}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={bulkSaving}
-                    onClick={handleBulkCreateSuggestions}
-                    className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-md hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                  >
-                    {bulkSaving ? (
-                      <><Loader2 className="w-4 h-4 animate-spin" /> Enregistrement...</>
-                    ) : (
-                      <><Plus className="w-4 h-4" /> Enregistrer {selectedSuggestions.size} matière{selectedSuggestions.size > 1 ? 's' : ''}</>
-                    )}
-                  </button>
+                <div className="space-y-2 pt-2 border-t border-indigo-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-indigo-700">
+                      {selectedSuggestions.size} matière{selectedSuggestions.size > 1 ? 's' : ''} sélectionnée{selectedSuggestions.size > 1 ? 's' : ''}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={bulkSaving}
+                      onClick={handleBulkCreateSuggestions}
+                      className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-md hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {bulkSaving ? (
+                        <><Loader2 className="w-4 h-4 animate-spin" /> Enregistrement...</>
+                      ) : (
+                        <><Plus className="w-4 h-4" /> Enregistrer {selectedSuggestions.size} matière{selectedSuggestions.size > 1 ? 's' : ''}</>
+                      )}
+                    </button>
+                  </div>
+                  {/* Rappel contextuel : les champs Coefficient/Horaire ci-dessous s'appliquent à toutes les matières */}
+                  <p className="text-[11px] text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-1.5 leading-relaxed">
+                    💡 Les valeurs <strong>Coefficient</strong> et <strong>Volume Hebdo</strong> définies ci-dessous seront appliquées à toutes les matières sélectionnées.
+                  </p>
                 </div>
               )}
             </div>
           )}
+
 
           <div className="grid grid-cols-2 gap-4">
              <div className="space-y-1">

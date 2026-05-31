@@ -51,20 +51,28 @@ export class TeacherAcademicProfilePrismaController {
     body: {
       academicYearId: string;
       teacherId: string;
-      maxWeeklyHours: number;
+      maxWeeklyHours: any;
       isSemainier?: boolean;
     },
   ) {
-    return this.service.createProfile({ ...body, tenantId });
+    return this.service.createProfile({
+      ...body,
+      maxWeeklyHours: body.maxWeeklyHours !== undefined ? Number(body.maxWeeklyHours) : 18,
+      tenantId,
+    });
   }
 
   @Put(':id')
   async updateProfile(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() body: { maxWeeklyHours?: number; isSemainier?: boolean; isActive?: boolean },
+    @Body() body: { maxWeeklyHours?: any; isSemainier?: boolean; isActive?: boolean },
   ) {
-    return this.service.updateProfile(id, tenantId, body);
+    const updateData: any = { ...body };
+    if (body.maxWeeklyHours !== undefined) {
+      updateData.maxWeeklyHours = Number(body.maxWeeklyHours);
+    }
+    return this.service.updateProfile(id, tenantId, updateData);
   }
 
   // ---------- Qualifications ----------
@@ -119,18 +127,27 @@ export class TeacherAcademicProfilePrismaController {
     @Param('profileId') profileId: string,
     @TenantId() tenantId: string,
     @Body()
-    body: { academicYearId: string; dayOfWeek: number; startTime: string; endTime: string },
+    body: { academicYearId: string; dayOfWeek: any; startTime: string; endTime: string },
   ) {
-    return this.service.createAvailability({ ...body, profileId, tenantId });
+    return this.service.createAvailability({
+      ...body,
+      dayOfWeek: Number(body.dayOfWeek),
+      profileId,
+      tenantId,
+    });
   }
 
   @Put('availabilities/:availabilityId')
   async updateAvailability(
     @Param('availabilityId') availabilityId: string,
     @TenantId() tenantId: string,
-    @Body() body: { dayOfWeek?: number; startTime?: string; endTime?: string },
+    @Body() body: { dayOfWeek?: any; startTime?: string; endTime?: string },
   ) {
-    return this.service.updateAvailability(availabilityId, tenantId, body);
+    const updateData: any = { ...body };
+    if (body.dayOfWeek !== undefined) {
+      updateData.dayOfWeek = Number(body.dayOfWeek);
+    }
+    return this.service.updateAvailability(availabilityId, tenantId, updateData);
   }
 
   @Delete('availabilities/:availabilityId')

@@ -259,6 +259,73 @@ export default function TeachersAcademicWorkspace() {
     }
   };
 
+  // --- Niveaux Autorisés ---
+  const [schoolLevels, setSchoolLevels] = useState<any[]>([]);
+  const loadSchoolLevels = useCallback(async () => {
+    try {
+      const res = await fetch('/api/school-levels', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        setSchoolLevels(data || []);
+      }
+    } catch (e) {
+      console.error('Error loading school levels:', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (modal === 'add-authorization') loadSchoolLevels();
+  }, [modal, loadSchoolLevels]);
+
+  const handleAddLevelAuthorization = async (levelId: string) => {
+    if (!activeProfile || !academicYear?.id) return;
+    try {
+      await pedagogyFetch(`/api/pedagogy/teacher-profiles/${activeProfile.id}/level-authorizations`, {
+        method: 'POST',
+        body: {
+          academicYearId: academicYear.id,
+          levelId
+        }
+      });
+      const updated = await pedagogyFetch<TeacherAcademicProfile>(`/api/pedagogy/teacher-profiles/${activeProfile.id}`);
+      setProfiles(prev => prev.map(p => p.id === updated.id ? updated : p));
+      setActiveProfile(updated);
+      setModal('none');
+      toast({
+        title: "Succès",
+        description: "Niveau autorisé ajouté.",
+      });
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e.message || "Erreur lors de l'ajout.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleRemoveLevelAuthorization = async (levelId: string) => {
+    if (!activeProfile) return;
+    try {
+      await pedagogyFetch(`/api/pedagogy/teacher-profiles/${activeProfile.id}/level-authorizations/${levelId}`, {
+        method: 'DELETE'
+      });
+      const updated = await pedagogyFetch<TeacherAcademicProfile>(`/api/pedagogy/teacher-profiles/${activeProfile.id}`);
+      setProfiles(prev => prev.map(p => p.id === updated.id ? updated : p));
+      setActiveProfile(updated);
+      toast({
+        title: "Succès",
+        description: "Autorisation retirée.",
+      });
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e.message || "Erreur lors du retrait.",
+        variant: "destructive"
+      });
+    }
+  };
+
   // --- Availabilities ---
 
   const handleAddAvailability = async (data: any) => {
@@ -545,7 +612,10 @@ export default function TeachersAcademicWorkspace() {
                     <ShieldCheck className="w-5 h-5 text-indigo-600" />
                     Niveaux Autorisés
                   </h4>
-                  <button className="flex items-center gap-2 text-xs font-black text-indigo-600 hover:bg-indigo-50 px-3 py-1.5 rounded-xl transition-all">
+                  <button 
+                    onClick={() => setModal('add-authorization')}
+                    className="flex items-center gap-2 text-xs font-black text-indigo-600 hover:bg-indigo-50 px-3 py-1.5 rounded-xl transition-all"
+                  >
                     <Plus className="w-4 h-4" />
                     AJOUTER
                   </button>
@@ -557,8 +627,11 @@ export default function TeachersAcademicWorkspace() {
                   ) : (
                     activeProfile.levelAuthorizations.map((la: any) => (
                       <div key={la.id} className="px-4 py-2 bg-indigo-50 text-indigo-700 rounded-xl font-bold text-xs flex items-center gap-2">
-                        {la.level.name}
-                        <button className="hover:text-red-500 transition-colors">
+                        {la.level?.name || la.level?.label || 'Niveau'}
+                        <button 
+                          onClick={() => handleRemoveLevelAuthorization(la.levelId || la.level?.id)}
+                          className="hover:text-red-500 transition-colors"
+                        >
                           <X className="w-3 h-3" />
                         </button>
                       </div>
@@ -723,6 +796,22 @@ export default function TeachersAcademicWorkspace() {
             label: 'Heure de Fin',
             type: 'time',
             placeholder: '10:00'
+          }
+        ]}
+      />
+
+      {/* Modal Add Level Authorization */}
+      <FormModal
+        isOpen={modal === 'add-authorization'}
+        onClose={() => setModal('none')}
+        title="Ajouter une Autorisation de Niveau"
+        onSave={(data) => handleAddLevelAuthorization(data.levelId)}
+        fields={[
+          {
+            name: 'levelId',
+            label: 'Niveau Scolaire',
+            type: 'select',
+            options: schoolLevels.map(l => ({ value: l.id, label: l.label || l.name }))
           }
         ]}
       />

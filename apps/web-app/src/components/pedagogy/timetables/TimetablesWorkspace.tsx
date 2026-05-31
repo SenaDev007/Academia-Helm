@@ -30,7 +30,9 @@ import {
   Search,
   MoreVertical,
   Trash2,
-  Printer
+  Printer,
+  X,
+  Settings
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -104,8 +106,251 @@ export default function TimetablesWorkspace() {
   const [subjects, setSubjects] = useState<any[]>([]);
   const [teachers, setTeachers] = useState<any[]>([]);
 
+  // Breaks configuration
+  interface BreakPeriod {
+    id: string;
+    name: string;
+    startTime: string;
+    endTime: string;
+  }
+  const [breaks, setBreaks] = useState<BreakPeriod[]>([
+    { id: '1', name: 'Récréation', startTime: '10:00', endTime: '10:30' },
+    { id: '2', name: 'Pause Déjeuner', startTime: '12:00', endTime: '13:00' }
+  ]);
+
+  // Timetables automatic generation
+  const [generating, setGenerating] = useState(false);
+
+  const handleAutoGenerate = async () => {
+    if (!activeTimetableId || !academicYear?.id || !selectedId) return;
+    if (viewMode !== 'class') {
+      toast({
+        title: "Sélection requise",
+        description: "Sélectionnez d'abord une classe à gauche pour générer son emploi du temps.",
+      });
+      return;
+    }
+
+    setGenerating(true);
+    try {
+      // 1. Charger les matières et affectations de la classe
+      const classSubjects = await pedagogyFetch<any[]>(`/api/pedagogy/class-subjects/${selectedId}?academicYearId=${academicYear.id}`);
+      if (!classSubjects || classSubjects.length === 0) {
+        throw new Error("Aucune matière configurée pour cette classe. Veuillez ajouter des matières au niveau ou à la classe d'abord.");
+      }
+
+      // 2. Déterminer les créneaux hebdomadaires libres (hors pauses)
+      const slots: { day: number; start: string; end: string }[] = [];
+      for (let day = 1; day <= 6; day++) {
+        for (let hour = 8; hour < 17; hour++) {
+          const startStr = `${hour.toString().padStart(2, '0')}:00`;
+          const endStr = `${(hour + 1).toString().padStart(2, '0')}:00`;
+
+          // Vérifier si ce créneau chevauche une pause
+          const isBreak = breaks.some(b =>
+            (startStr >= b.startTime && startStr < b.endTime) ||
+            (endStr > b.startTime && endStr <= b.endTime)
+          );
+
+          if (!isBreak) {
+            slots.push({ day, start: startStr, end: endStr });
+          }
+        }
+      }
+
+      // Mélanger aléatoirement les créneaux pour une répartition homogène
+      const shuffledSlots = [...slots].sort(() => Math.random() - 0.5);
+
+      // Supprimer les cours existants pour cette classe pour régénérer proprement
+      const currentClassEntries = entries.filter(e => e.class?.id === selectedId);
+      const deletePromises = currentClassEntries.map(e =>
+        pedagogyFetch(`/api/pedagogy/timetables/entries/${e.id}`, { method: 'DELETE' })
+      );
+      await Promise.all(deletePromises);
+
+      // Conserver les créneaux des autres classes pour éviter les collisions de profs
+      const otherClassEntries = entries.filter(e => e.class?.id !== selectedId);
+
+      const scheduledEntries: any[] = [];
+
+      // ── Détection du mode pédagogique ──────────────────────────────────────
+      // Maternelle / Primaire → Titulaire Unique (1 enseignant pour toutes les matières)
+      // Secondaire            → Spécialiste (1 enseignant par matière)
+      const selectedClass = classes.find(c => c.id === selectedId);
+      const levelName = (selectedClass as any)?.level?.name || '';
+      const lvl = levelName.toUpperCase();
+      const isHomeroomMode =
+        lvl.includes('MATERN') || lvl.includes('PRIMA') || lvl.includes('PRIM');
+
+      if (isHomeroomMode) {
+        // ── MODE TITULAIRE (Maternelle / Primaire) ──────────────────────────
+        // Un seul enseignant titulaire gère toutes les matières.
+        const homeroomTeacher =
+          classSubjects.find((cs: any) => cs.assignments?.[0]?.teacher)
+            ?.assignments?.[0]?.teacher || null;
+        const homeroomTeacherId: string | null = homeroomTeacher?.id || null;
+
+        const homeroomProfile = homeroomTeacherId
+          ? teachers.find((t: any) => t.teacherId === homeroomTeacherId)
+          : null;
+
+        for (const cs of classSubjects) {
+          const weeklyHours = cs.weeklyHours || 0;
+          const subjectId = cs.subject.id;
+          let hoursScheduled = 0;
+
+          for (const slot of shuffledSlots) {
+            if (hoursScheduled >= weeklyHours) break;
+
+            // Contrainte 1 : La classe est-elle déjà occupée ?
+            const classBusy = scheduledEntries.some(
+              e => e.dayOfWeek === slot.day && e.startTime === slot.start
+            );
+            if (classBusy) continue;
+
+            // Contrainte 2 : Le titulaire est-il indisponible ?
+            if (homeroomTeacherId && homeroomProfile?.availabilities?.length > 0) {
+              const available = homeroomProfile.availabilities.some(
+                (av: any) =>
+                  av.dayOfWeek === slot.day &&
+                  slot.start >= av.startTime &&
+                  slot.end <= av.endTime
+              );
+              if (!available) continue;
+            }
+
+            // Contrainte 3 : Max 2 heures de la même matière par jour
+            const hoursOnDay = scheduledEntries.filter(
+              e => e.dayOfWeek === slot.day && e.subjectId === subjectId
+            ).length;
+            if (hoursOnDay >= 2) continue;
+
+            scheduledEntries.push({
+              timetableId: activeTimetableId,
+              academicYearId: academicYear.id,
+              schoolLevelId: schoolLevel?.id || 'ALL',
+              dayOfWeek: slot.day,
+              startTime: slot.start,
+              endTime: slot.end,
+              subjectId,
+              teacherId: homeroomTeacherId,
+              classId: selectedId,
+            });
+            hoursScheduled++;
+          }
+
+          if (hoursScheduled < weeklyHours) {
+            toast({
+              title: "Planification Partielle",
+              description: `Impossible de placer toutes les heures de ${cs.subject.name} (${hoursScheduled}/${weeklyHours}h).`,
+              variant: "warning" as any,
+            });
+          }
+        }
+
+      } else {
+        // ── MODE SPÉCIALISTE (Secondaire) ───────────────────────────────────
+        // Chaque matière a son propre enseignant — contraintes anti-collision inter-classes.
+        for (const cs of classSubjects) {
+          const weeklyHours = cs.weeklyHours || 0;
+          const subjectId = cs.subject.id;
+          const teacher = cs.assignments?.[0]?.teacher;
+          const teacherId = teacher?.id;
+
+          let hoursScheduled = 0;
+
+          for (const slot of shuffledSlots) {
+            if (hoursScheduled >= weeklyHours) break;
+
+            // Contrainte 1 : La classe est-elle déjà occupée ?
+            const classBusy = scheduledEntries.some(e => e.dayOfWeek === slot.day && e.startTime === slot.start);
+            if (classBusy) continue;
+
+            // Contrainte 2 : Le professeur est-il déjà occupé ?
+            if (teacherId) {
+              const teacherBusy = otherClassEntries.some(e =>
+                e.dayOfWeek === slot.day &&
+                e.startTime === slot.start &&
+                e.teacher?.id === teacherId
+              );
+              if (teacherBusy) continue;
+
+              const teacherBusyLocal = scheduledEntries.some(e =>
+                e.dayOfWeek === slot.day &&
+                e.startTime === slot.start &&
+                e.teacherId === teacherId
+              );
+              if (teacherBusyLocal) continue;
+
+              const teacherProfile = teachers.find((t: any) => t.teacherId === teacherId);
+              if (teacherProfile?.availabilities?.length > 0) {
+                const available = teacherProfile.availabilities.some((av: any) =>
+                  av.dayOfWeek === slot.day &&
+                  slot.start >= av.startTime &&
+                  slot.end <= av.endTime
+                );
+                if (!available) continue;
+              }
+            }
+
+            // Contrainte 3 : Max 2 heures de la même matière par jour
+            const hoursOnDay = scheduledEntries.filter(e => e.dayOfWeek === slot.day && e.subjectId === subjectId).length;
+            if (hoursOnDay >= 2) continue;
+
+            scheduledEntries.push({
+              timetableId: activeTimetableId,
+              academicYearId: academicYear.id,
+              schoolLevelId: schoolLevel?.id || 'ALL',
+              dayOfWeek: slot.day,
+              startTime: slot.start,
+              endTime: slot.end,
+              subjectId,
+              teacherId: teacherId || null,
+              classId: selectedId,
+            });
+
+            hoursScheduled++;
+          }
+
+          if (hoursScheduled < weeklyHours) {
+            toast({
+              title: "Planification Partielle",
+              description: `Impossible de placer toutes les heures de ${cs.subject.name} (${hoursScheduled}/${weeklyHours}h) en raison de contraintes trop strictes.`,
+              variant: "warning" as any,
+            });
+          }
+        }
+      }
+
+      // Enregistrer les entrées générées
+      const savePromises = scheduledEntries.map(entry =>
+        pedagogyFetch(`/api/pedagogy/timetables/entries`, {
+          method: 'POST',
+          body: entry,
+        })
+      );
+      await Promise.all(savePromises);
+
+      loadEntries();
+      toast({
+        title: isHomeroomMode ? "✅ Emploi du temps généré (Mode Titulaire)" : "✅ Emploi du temps généré",
+        description: isHomeroomMode
+          ? `${scheduledEntries.length} créneaux planifiés avec le titulaire de ${selectedClass?.name || 'la classe'}.`
+          : "L'emploi du temps de la classe a été généré et optimisé automatiquement !",
+      });
+    } catch (e: any) {
+      toast({
+        title: "Erreur lors de la génération",
+        description: e.message || "Erreur lors du calcul de l'emploi du temps.",
+        variant: "destructive",
+      });
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   // Modals
-  const [modal, setModal] = useState<'none' | 'create-timetable' | 'add-entry'>('none');
+  const [modal, setModal] = useState<'none' | 'create-timetable' | 'add-entry' | 'settings-breaks'>('none');
 
   // --- Loaders ---
 
@@ -208,6 +453,23 @@ export default function TimetablesWorkspace() {
   // --- Grid Component ---
   const GridCell = ({ day, hour }: { day: number, hour: number }) => {
     const timeStr = `${hour.toString().padStart(2, '0')}:00`;
+    
+    // Check if this slot falls in a configured break
+    const activeBreak = breaks.find(b => 
+      timeStr >= b.startTime && timeStr < b.endTime
+    );
+
+    if (activeBreak) {
+      return (
+        <div className="min-h-[80px] border-r border-b border-gray-100 bg-gray-50 flex items-center justify-center p-2 select-none relative overflow-hidden">
+          <div className="absolute inset-0 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:16px_16px] opacity-60" />
+          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-center rotate-[-12deg] z-10 bg-white/80 px-2 py-1 rounded border border-slate-100 shadow-sm">
+            {activeBreak.name}
+          </span>
+        </div>
+      );
+    }
+
     const slotEntries = filteredEntries.filter(e => 
       e.dayOfWeek === day && 
       e.startTime <= timeStr && 
@@ -331,7 +593,31 @@ export default function TimetablesWorkspace() {
             </div>
           </div>
           <div className="flex gap-2">
-            <button className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-100 rounded-2xl text-xs font-black text-gray-600 hover:bg-gray-50 transition-all">
+            <button 
+              onClick={() => setModal('settings-breaks')}
+              className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-100 rounded-2xl text-xs font-black text-gray-600 hover:bg-gray-50 transition-all shadow-sm"
+            >
+              <Clock className="w-4 h-4 text-indigo-600" />
+              PAUSES & PLAGES
+            </button>
+            {viewMode === 'class' && (
+              <button 
+                onClick={handleAutoGenerate}
+                disabled={generating}
+                className={cn(
+                  "flex items-center gap-2 px-5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-2xl text-xs font-black transition-all shadow-sm",
+                  generating && "opacity-75 cursor-not-allowed"
+                )}
+              >
+                {generating ? (
+                  <div className="w-3.5 h-3.5 border-2 border-indigo-700 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Calendar className="w-4 h-4" />
+                )}
+                {generating ? "GÉNÉRATION..." : "AUTO-GÉNÉRER"}
+              </button>
+            )}
+            <button className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-100 rounded-2xl text-xs font-black text-gray-600 hover:bg-gray-50 transition-all shadow-sm">
               <Printer className="w-4 h-4" />
               IMPRIMER PDF
             </button>
@@ -400,6 +686,78 @@ export default function TimetablesWorkspace() {
           <div className="flex justify-end gap-3 mt-6">
             <button onClick={() => setModal('none')} className="px-4 py-2 text-sm font-bold text-gray-500">Annuler</button>
             <button onClick={() => handleAddEntry({})} className="px-4 py-2 text-sm font-bold bg-indigo-600 text-white rounded-lg">Enregistrer</button>
+          </div>
+        </div>
+      </FormModal>
+
+      {/* Modal Settings Breaks */}
+      <FormModal
+        isOpen={modal === 'settings-breaks'}
+        onClose={() => setModal('none')}
+        title="Configuration des Plages de Pause"
+        size="md"
+      >
+        <div className="space-y-4 p-4">
+          <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">Configurez les heures de pause générale de l'établissement :</p>
+          
+          <div className="space-y-3">
+            {breaks.map(b => (
+              <div key={b.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+                <div>
+                  <p className="text-xs font-bold text-gray-900 uppercase">{b.name}</p>
+                  <p className="text-[10px] font-bold text-indigo-600 tracking-wider mt-0.5">{b.startTime} - {b.endTime}</p>
+                </div>
+                <button 
+                  onClick={() => setBreaks(prev => prev.filter(item => item.id !== b.id))}
+                  className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div className="border-t border-gray-100 pt-4 space-y-3">
+            <p className="text-xs font-bold text-gray-700 uppercase">Ajouter une nouvelle pause</p>
+            <div className="grid grid-cols-2 gap-3">
+              <input 
+                type="text" 
+                id="new-break-name" 
+                placeholder="Nom (ex: Goûter)" 
+                className="col-span-2 p-2.5 text-xs font-medium bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-indigo-500" 
+              />
+              <input 
+                type="time" 
+                id="new-break-start" 
+                className="p-2.5 text-xs font-medium bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-indigo-500" 
+              />
+              <input 
+                type="time" 
+                id="new-break-end" 
+                className="p-2.5 text-xs font-medium bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-indigo-500" 
+              />
+            </div>
+            <button 
+              onClick={() => {
+                const nameInput = document.getElementById('new-break-name') as HTMLInputElement;
+                const startInput = document.getElementById('new-break-start') as HTMLInputElement;
+                const endInput = document.getElementById('new-break-end') as HTMLInputElement;
+                if (nameInput?.value && startInput?.value && endInput?.value) {
+                  setBreaks(prev => [...prev, {
+                    id: Math.random().toString(),
+                    name: nameInput.value,
+                    startTime: startInput.value,
+                    endTime: endInput.value
+                  }]);
+                  nameInput.value = '';
+                  startInput.value = '';
+                  endInput.value = '';
+                }
+              }}
+              className="w-full py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-indigo-700 transition-all"
+            >
+              Ajouter la pause
+            </button>
           </div>
         </div>
       </FormModal>

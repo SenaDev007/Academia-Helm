@@ -50,6 +50,18 @@ import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import AssignmentsWorkspace from '../assignments/AssignmentsWorkspace';
 
+// --- Helpers ---
+
+/**
+ * Détermine si un niveau est de type Titulaire Unique (Maternelle ou Primaire).
+ * Retourne false pour le Secondaire (mode Spécialiste).
+ */
+const isHomeroomLevel = (levelName?: string): boolean => {
+  if (!levelName) return false;
+  const n = levelName.toUpperCase();
+  return n.includes('MATERN') || n.includes('PRIMA') || n.includes('PRIM');
+};
+
 // --- Types ---
 
 interface Teacher {
@@ -905,16 +917,42 @@ export default function TeachersAcademicWorkspace() {
                             icon = <Clock className="w-3.5 h-3.5" />;
                           }
 
+                          // Déterminer si ce prof est un titulaire (Maternelle/Primaire)
+                          // On se base sur les niveaux autorisés déclarés dans son profil
+                          const homeroomDetails = globalWorkloads[t.id]?.details || [];
+                          const homeroomClasses = homeroomDetails.reduce((acc: Record<string, { totalHours: number; levelName: string }>, d: any) => {
+                            const lvlName = d.levelName || '';
+                            if (isHomeroomLevel(lvlName)) {
+                              if (!acc[d.className]) acc[d.className] = { totalHours: 0, levelName: lvlName };
+                              acc[d.className].totalHours += d.hours;
+                            }
+                            return acc;
+                          }, {});
+                          const isHomeroom = Object.keys(homeroomClasses).length > 0 &&
+                            homeroomDetails.every((d: any) => isHomeroomLevel(d.levelName || ''));
+
                           return (
                             <tr key={t.id} className="text-sm group hover:bg-gray-50/30 transition-all">
                               {/* Teacher Info */}
                               <td className="py-4 pr-4">
                                 <div className="flex items-center gap-3">
-                                  <div className="w-9 h-9 bg-gray-100 rounded-xl flex items-center justify-center font-black text-xs text-gray-600">
+                                  <div className={cn(
+                                    'w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs',
+                                    isHomeroom
+                                      ? 'bg-amber-100 text-amber-700'
+                                      : 'bg-gray-100 text-gray-600'
+                                  )}>
                                     {t.firstName[0]}{t.lastName[0]}
                                   </div>
                                   <div>
-                                    <p className="font-bold text-gray-900">{t.lastName} {t.firstName}</p>
+                                    <div className="flex items-center gap-2">
+                                      <p className="font-bold text-gray-900">{t.lastName} {t.firstName}</p>
+                                      {isHomeroom && (
+                                        <span className="text-[8px] font-black bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full uppercase tracking-wide">
+                                          ★ Titulaire
+                                        </span>
+                                      )}
+                                    </div>
                                     <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">{t.matricule}</p>
                                   </div>
                                 </div>
@@ -925,7 +963,12 @@ export default function TeachersAcademicWorkspace() {
                                 <div className="flex flex-wrap gap-1">
                                   {profile?.levelAuthorizations && profile.levelAuthorizations.length > 0 ? (
                                     profile.levelAuthorizations.map((la: any) => (
-                                      <span key={la.id} className="text-[9px] font-black uppercase tracking-wide px-2 py-0.5 rounded-lg bg-gray-50 border border-gray-100 text-gray-600">
+                                      <span key={la.id} className={cn(
+                                        'text-[9px] font-black uppercase tracking-wide px-2 py-0.5 rounded-lg border',
+                                        isHomeroomLevel(la.level?.name)
+                                          ? 'bg-amber-50 border-amber-100 text-amber-700'
+                                          : 'bg-gray-50 border-gray-100 text-gray-600'
+                                      )}>
                                         {la.level?.name}
                                       </span>
                                     ))
@@ -935,19 +978,25 @@ export default function TeachersAcademicWorkspace() {
                                 </div>
                               </td>
 
-                              {/* Habilitations */}
+                              {/* Habilitations / Mode */}
                               <td className="py-4 pr-4">
-                                <div className="flex flex-wrap gap-1">
-                                  {profile?.subjectQualifications && profile.subjectQualifications.length > 0 ? (
-                                    profile.subjectQualifications.map((sq: any) => (
-                                      <span key={sq.id} className="text-[9px] font-black uppercase tracking-wide px-2 py-0.5 rounded-lg bg-indigo-50/50 border border-indigo-100/50 text-indigo-700">
-                                        {sq.subject?.code}
-                                      </span>
-                                    ))
-                                  ) : (
-                                    <span className="text-[10px] text-gray-400 italic font-bold">Aucune</span>
-                                  )}
-                                </div>
+                                {isHomeroom ? (
+                                  <span className="text-[9px] font-black text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-lg uppercase tracking-wide">
+                                    Toutes matières (titulaire)
+                                  </span>
+                                ) : (
+                                  <div className="flex flex-wrap gap-1">
+                                    {profile?.subjectQualifications && profile.subjectQualifications.length > 0 ? (
+                                      profile.subjectQualifications.map((sq: any) => (
+                                        <span key={sq.id} className="text-[9px] font-black uppercase tracking-wide px-2 py-0.5 rounded-lg bg-indigo-50/50 border border-indigo-100/50 text-indigo-700">
+                                          {sq.subject?.code}
+                                        </span>
+                                      ))
+                                    ) : (
+                                      <span className="text-[10px] text-gray-400 italic font-bold">Aucune</span>
+                                    )}
+                                  </div>
+                                )}
                               </td>
 
                               {/* Workload hours progress */}
@@ -958,31 +1007,46 @@ export default function TeachersAcademicWorkspace() {
                                     <span className="text-[9px] font-black text-gray-400">{percent}%</span>
                                   </div>
                                   <div className="w-full bg-gray-100 h-1.5 rounded-full overflow-hidden">
-                                    <div className={cn("h-full rounded-full transition-all duration-500", barColorClass)} style={{ width: `${percent}%` }} />
+                                    <div className={cn('h-full rounded-full transition-all duration-500', barColorClass)} style={{ width: `${percent}%` }} />
                                   </div>
                                 </div>
                               </td>
 
                               {/* Status Badge */}
                               <td className="py-4 pr-4 text-center">
-                                <span className={cn("inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wide", statusColorClass)}>
+                                <span className={cn('inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wide', statusColorClass)}>
                                   {icon}
                                   {statusLabel}
                                 </span>
                               </td>
 
-                              {/* Assigned courses details list */}
+                              {/* Assigned courses / classes details */}
                               <td className="py-4 text-right">
-                                <div className="inline-flex flex-col items-end gap-1 max-w-[200px] text-left">
-                                  {globalWorkloads[t.id]?.details && globalWorkloads[t.id].details.length > 0 ? (
-                                    globalWorkloads[t.id].details.map((d: any, idx: number) => (
-                                      <div key={idx} className="text-[10px] font-bold text-gray-600 bg-gray-50 border border-gray-100 rounded-lg px-2 py-1 flex items-center justify-between gap-3 w-full">
-                                        <span className="truncate">{d.className} - {d.subjectCode}</span>
-                                        <span className="font-black text-indigo-600 whitespace-nowrap">{d.hours}h</span>
-                                      </div>
-                                    ))
+                                <div className="inline-flex flex-col items-end gap-1 max-w-[220px] text-left">
+                                  {isHomeroom ? (
+                                    // Mode Titulaire : afficher les classes prises en charge
+                                    Object.keys(homeroomClasses).length > 0 ? (
+                                      Object.entries(homeroomClasses).map(([className, info]: [string, any]) => (
+                                        <div key={className} className="text-[10px] font-bold bg-amber-50 border border-amber-100 text-amber-800 rounded-lg px-2 py-1 flex items-center justify-between gap-3 w-full">
+                                          <span className="truncate">★ {className}</span>
+                                          <span className="font-black whitespace-nowrap">{info.totalHours}h</span>
+                                        </div>
+                                      ))
+                                    ) : (
+                                      <span className="text-[10px] text-gray-400 italic font-bold">Aucune classe affectée</span>
+                                    )
                                   ) : (
-                                    <span className="text-[10px] text-gray-400 italic font-bold">Aucun cours affecté</span>
+                                    // Mode Spécialiste : afficher les cours par matière
+                                    globalWorkloads[t.id]?.details && globalWorkloads[t.id].details.length > 0 ? (
+                                      globalWorkloads[t.id].details.map((d: any, idx: number) => (
+                                        <div key={idx} className="text-[10px] font-bold text-gray-600 bg-gray-50 border border-gray-100 rounded-lg px-2 py-1 flex items-center justify-between gap-3 w-full">
+                                          <span className="truncate">{d.className} – {d.subjectCode}</span>
+                                          <span className="font-black text-indigo-600 whitespace-nowrap">{d.hours}h</span>
+                                        </div>
+                                      ))
+                                    ) : (
+                                      <span className="text-[10px] text-gray-400 italic font-bold">Aucun cours affecté</span>
+                                    )
                                   )}
                                 </div>
                               </td>

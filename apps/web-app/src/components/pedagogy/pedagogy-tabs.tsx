@@ -47,6 +47,13 @@ export const PEDAGOGY_SUBMODULE_TABS = [
     roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'director', 'admin'],
   },
   {
+    id: 'timetables',
+    label: 'Emploi du temps',
+    path: '/app/pedagogy/timetables',
+    icon: CalendarDays,
+    roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'director', 'admin', 'TEACHER', 'TEACHER_RESP'],
+  },
+  {
     id: 'teacher-space',
     label: 'Espace Pédagogie',
     path: '/app/pedagogy/production',

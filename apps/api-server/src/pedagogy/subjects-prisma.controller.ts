@@ -29,8 +29,15 @@ export class SubjectsPrismaController {
     @TenantId() tenantId: string,
     @Body() createDto: any,
   ) {
+    const formattedData = { ...createDto };
+    if (createDto.coefficient !== undefined) {
+      formattedData.coefficient = Number(createDto.coefficient) || 1.0;
+    }
+    if (createDto.weeklyHours !== undefined) {
+      formattedData.weeklyHours = parseInt(createDto.weeklyHours, 10) || 0;
+    }
     return this.subjectsService.createSubject({
-      ...createDto,
+      ...formattedData,
       tenantId,
     });
   }
@@ -65,7 +72,14 @@ export class SubjectsPrismaController {
     @TenantId() tenantId: string,
     @Body() updateDto: any,
   ) {
-    return this.subjectsService.updateSubject(id, tenantId, updateDto);
+    const formattedData = { ...updateDto };
+    if (updateDto.coefficient !== undefined) {
+      formattedData.coefficient = Number(updateDto.coefficient) || 1.0;
+    }
+    if (updateDto.weeklyHours !== undefined) {
+      formattedData.weeklyHours = parseInt(updateDto.weeklyHours, 10) || 0;
+    }
+    return this.subjectsService.updateSubject(id, tenantId, formattedData);
   }
 
   @Delete(':id')

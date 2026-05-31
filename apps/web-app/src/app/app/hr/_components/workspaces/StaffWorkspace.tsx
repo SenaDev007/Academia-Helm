@@ -8,7 +8,7 @@ import {
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { apiFetch } from '@/lib/api/client';
 import Link from 'next/link';
-import { AddStaffModal } from '../modals/AddStaffModal';
+import { OnboardingWizardModal } from '../modals/OnboardingWizardModal';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
@@ -64,7 +64,7 @@ export function StaffWorkspace() {
 
   return (
     <div className="space-y-6 pb-12">
-      <AddStaffModal
+      <OnboardingWizardModal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
         onSuccess={fetchStaff}

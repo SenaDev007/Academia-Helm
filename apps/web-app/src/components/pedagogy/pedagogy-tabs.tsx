@@ -41,16 +41,9 @@ export const PEDAGOGY_SUBMODULE_TABS = [
   },
   {
     id: 'teachers-academic',
-    label: 'Enseignants académiques',
+    label: 'Enseignants & Affectations',
     path: '/app/pedagogy/teachers',
     icon: Users,
-    roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'director', 'admin'],
-  },
-  {
-    id: 'assignments',
-    label: 'Affectations & charges',
-    path: '/app/pedagogy/assignments',
-    icon: ClipboardList,
     roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'director', 'admin'],
   },
   {

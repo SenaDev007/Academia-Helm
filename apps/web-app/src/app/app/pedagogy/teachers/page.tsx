@@ -17,10 +17,10 @@ export default function TeachersPage() {
   return (
     <ModuleContainer
       header={{
-        title: 'Enseignants académiques',
+        title: 'Enseignants & Affectations',
         description: academicYear
-          ? `Profils, habilitations et charge horaire — année ${academicYear.label}`
-          : 'Gestion institutionnelle du corps enseignant',
+          ? `Profils académiques, habilitations, affectations par classe et charge globale — année ${academicYear.label}`
+          : 'Gestion unifiée du corps enseignant et des charges de cours',
         icon: 'users',
         kpis: [
           { label: 'Effectif', value: '24', trend: 'Stable', trendType: 'neutral' },

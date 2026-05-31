@@ -1,49 +1,25 @@
 /**
- * ============================================================================
- * MODULE 2 : ORGANISATION PÉDAGOGIQUE - AFFECTATIONS & CHARGES
- * ============================================================================
+ * REDIRECTION DE L'ANCIENNE PAGE D'AFFECTATIONS VERS L'ONGLET UNIÉ
  */
 
 'use client';
 
-import { ModuleContainer } from '@/components/modules/blueprint';
-import { PEDAGOGY_SUBMODULE_TABS } from '@/components/pedagogy/pedagogy-tabs';
-import AssignmentsWorkspace from '@/components/pedagogy/assignments/AssignmentsWorkspace';
-import { useModuleContext } from '@/hooks/useModuleContext';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function AssignmentsPage() {
-  const { academicYear } = useModuleContext();
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace('/app/pedagogy/teachers');
+  }, [router]);
 
   return (
-    <ModuleContainer
-      header={{
-        title: 'Affectations & Charges',
-        description: academicYear
-          ? `Attribution des enseignants aux matières par classe — année ${academicYear.label}`
-          : 'Organisation des binômes pédagogiques et contrôle des volumes horaires',
-        icon: 'clipboardList',
-        kpis: [
-          { label: 'Taux Affectation', value: '65%', trend: '+12%', trendType: 'up' },
-          { label: 'Heures Total', value: '420h', trend: 'Stable', trendType: 'neutral' },
-          { label: 'Surcharges', value: '0', trend: '-2', trendType: 'down' },
-        ]
-      }}
-      subModules={{
-        modules: PEDAGOGY_SUBMODULE_TABS.map((tab) => {
-          const Icon = tab.icon;
-          return {
-            id: tab.id,
-            label: tab.label,
-            href: tab.path,
-            icon: <Icon className="w-4 h-4" />,
-          };
-        }),
-        activeModuleId: 'assignments',
-      }}
-      content={{
-        layout: 'custom',
-        children: <AssignmentsWorkspace />,
-      }}
-    />
+    <div className="flex h-screen items-center justify-center bg-gray-50/50">
+      <div className="flex flex-col items-center gap-4">
+        <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm font-bold text-gray-500 tracking-wide uppercase">Redirection en cours...</p>
+      </div>
+    </div>
   );
 }

@@ -49,6 +49,9 @@ import { pedagogyService } from '@/services/pedagogy.service';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 
+const PRIMARY = '#1A2BA6';
+const ACCENT = '#F5A623';
+
 // --- Types ---
 
 interface AcademicClass {
@@ -282,49 +285,51 @@ export default function AssignmentsWorkspace() {
   }, [classes]);
 
   return (
-    <div className="flex h-[calc(100vh-12rem)] gap-6 overflow-hidden">
+    <div className="flex h-[calc(100vh-23rem)] overflow-hidden bg-white">
 
       {/* ── Sidebar : Liste des Classes ── */}
-      <div className="w-72 bg-white rounded-3xl border border-gray-100 flex flex-col shadow-sm overflow-hidden">
-        <div className="p-5 border-b border-gray-50">
-          <h2 className="text-base font-black text-gray-900 flex items-center gap-2">
-            <Layers className="w-4 h-4 text-indigo-600" />
+      <div className="w-72 border-r border-slate-200 flex flex-col bg-slate-50/20 overflow-hidden">
+        <div className="p-4 border-b border-slate-200 bg-slate-50/50">
+          <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+            <Layers className="w-4 h-4" style={{ color: PRIMARY }} />
             Classes
           </h2>
-          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">
+          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1">
             {classes.length} classe{classes.length > 1 ? 's' : ''} configurée{classes.length > 1 ? 's' : ''}
           </p>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-2 space-y-3">
+        <div className="flex-1 overflow-y-auto p-2 space-y-3 bg-white">
           {Object.entries(groupedClasses).map(([levelName, levelClasses]) => (
             <div key={levelName}>
-              <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest px-3 py-1">
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider px-3 py-1">
                 {levelName}
               </p>
               <div className="space-y-0.5">
                 {levelClasses.map(c => (
                   <button
                     key={c.id}
+                    type="button"
                     onClick={() => setSelectedClassId(c.id)}
                     className={cn(
-                      'w-full text-left px-4 py-3 rounded-2xl transition-all',
+                      'w-full text-left px-3 py-2.5 rounded-lg transition-all border border-transparent',
                       selectedClassId === c.id
-                        ? 'bg-indigo-600 shadow-lg shadow-indigo-200'
-                        : 'hover:bg-gray-50'
+                        ? 'bg-slate-50 shadow-sm'
+                        : 'hover:bg-slate-50/80'
                     )}
+                    style={selectedClassId === c.id ? { borderLeft: `3px solid ${PRIMARY}`, paddingLeft: '9px' } : undefined}
                   >
                     <div className="flex items-center justify-between">
                       <p className={cn(
-                        'font-bold text-sm',
-                        selectedClassId === c.id ? 'text-white' : 'text-gray-900'
+                        'font-bold text-xs',
+                        selectedClassId === c.id ? 'text-slate-900' : 'text-slate-800'
                       )}>
                         {c.name}
                       </p>
                       {selectedClassId !== c.id && <LevelBadge cls={c} />}
                     </div>
                     {selectedClassId === c.id && (
-                      <p className="text-[9px] text-indigo-200 font-bold uppercase tracking-wide mt-0.5">
+                      <p className="text-[9px] font-bold uppercase tracking-wider mt-0.5" style={{ color: PRIMARY }}>
                         {isHomeroomLevel(c.level?.name) ? '📚 Titulaire Unique' : '🎓 Spécialiste / Matière'}
                       </p>
                     )}
@@ -335,23 +340,23 @@ export default function AssignmentsWorkspace() {
           ))}
           {classes.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center px-4">
-              <Layers className="w-10 h-10 text-gray-200 mb-3" />
-              <p className="text-xs text-gray-400 font-bold">Aucune classe configurée</p>
+              <Layers className="w-8 h-8 text-slate-300 mb-3" />
+              <p className="text-xs text-slate-400 font-bold">Aucune classe configurée</p>
             </div>
           )}
         </div>
       </div>
 
       {/* ── Zone principale ── */}
-      <div className="flex-1 flex flex-col gap-0 bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="flex-1 flex flex-col gap-0 bg-white overflow-hidden">
 
         {/* Header */}
-        <div className="p-6 border-b border-gray-50 bg-gray-50/30 flex items-center justify-between">
+        <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between">
           <div>
-            <h3 className="text-xl font-black text-gray-900">
+            <h3 className="text-base font-bold text-slate-900">
               {selectedClass?.name || 'Sélectionnez une classe'}
             </h3>
-            <p className="text-xs text-gray-500 font-bold uppercase tracking-widest mt-0.5">
+            <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mt-0.5">
               {isHomeroom
                 ? '📚 Mode Titulaire — 1 enseignant pour toutes les matières'
                 : '🎓 Mode Spécialiste — 1 enseignant par matière'}
@@ -359,26 +364,23 @@ export default function AssignmentsWorkspace() {
           </div>
 
           {selectedClass && (
-            <div className={cn(
-              'flex items-center gap-3 px-5 py-3 rounded-2xl border',
-              isHomeroom
-                ? 'bg-amber-50 border-amber-100'
-                : 'bg-violet-50 border-violet-100'
-            )}>
+            <div 
+              className="flex items-center gap-3 px-3 py-1.5 rounded-lg border text-xs"
+              style={isHomeroom 
+                ? { backgroundColor: `${ACCENT}15`, borderColor: `${ACCENT}30` }
+                : { backgroundColor: '#f5f3ff', borderColor: '#ddd6fe' }
+              }
+            >
               {isHomeroom ? (
-                <Star className="w-4 h-4 text-amber-600" />
+                <Star className="w-4 h-4" style={{ color: ACCENT }} />
               ) : (
                 <GraduationCap className="w-4 h-4 text-violet-600" />
               )}
               <div>
-                <p className={cn('text-xs font-black uppercase tracking-widest',
-                  isHomeroom ? 'text-amber-900' : 'text-violet-900'
-                )}>
+                <p className="font-bold uppercase tracking-wider text-slate-700">
                   {isHomeroom ? 'Maternelle / Primaire' : 'Secondaire'}
                 </p>
-                <p className={cn('text-[9px] font-bold',
-                  isHomeroom ? 'text-amber-600' : 'text-violet-600'
-                )}>
+                <p className="text-[10px] font-medium text-slate-500 mt-0.5">
                   {classSubjects.length} matière{classSubjects.length > 1 ? 's' : ''}
                   {' '}• {isHomeroom
                     ? (homeroomFullyAssigned ? '✅ Titulaire affecté' : '⚠️ Sans titulaire')
@@ -391,24 +393,24 @@ export default function AssignmentsWorkspace() {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-4 bg-white">
           {!selectedClass ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
-              <Layers className="w-16 h-16 text-gray-200 mb-4" />
-              <p className="text-gray-400 font-bold">Sélectionnez une classe à gauche</p>
+              <Layers className="w-12 h-12 text-slate-300 mb-4" />
+              <p className="text-slate-400 text-xs font-bold">Sélectionnez une classe à gauche</p>
             </div>
           ) : isHomeroom ? (
             /* ══════════════════════════════════════════════════
                MODE TITULAIRE UNIQUE (Maternelle / Primaire)
                ══════════════════════════════════════════════════ */
-            <div className="max-w-2xl mx-auto space-y-6">
+            <div className="max-w-2xl mx-auto space-y-4">
 
               {/* Bannière d'explication */}
-              <div className="bg-amber-50 border border-amber-100 rounded-2xl p-5 flex items-start gap-4">
-                <Info className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 flex items-start gap-3">
+                <Info className="w-4 h-4 text-slate-500 mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="text-sm font-black text-amber-900">Modèle Titulaire Unique</p>
-                  <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+                  <p className="text-xs font-bold text-slate-800">Modèle Titulaire Unique</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed font-medium">
                     En Maternelle et en Primaire, <strong>un seul enseignant titulaire</strong> gère l'ensemble
                     des matières de sa classe. Définissez-le ici — il sera automatiquement affecté
                     à toutes les {classSubjects.length} matières de <strong>{selectedClass.name}</strong>.
@@ -418,64 +420,67 @@ export default function AssignmentsWorkspace() {
 
               {/* Carte Titulaire */}
               <div className={cn(
-                'rounded-3xl border-2 p-6 transition-all',
+                'rounded-lg border p-5 bg-white shadow-sm transition-all',
                 homeroomFullyAssigned
-                  ? 'border-emerald-200 bg-emerald-50/30'
-                  : 'border-dashed border-amber-200 bg-amber-50/20'
+                  ? 'border-slate-200'
+                  : 'border-dashed border-slate-300'
               )}>
-                <div className="flex items-center gap-4 mb-6">
-                  <div className={cn(
-                    'w-14 h-14 rounded-2xl flex items-center justify-center',
-                    homeroomFullyAssigned ? 'bg-emerald-100' : 'bg-amber-100'
-                  )}>
+                <div className="flex items-center gap-3 mb-4">
+                  <div 
+                    className="w-10 h-10 rounded-lg flex items-center justify-center"
+                    style={{ backgroundColor: `${PRIMARY}15` }}
+                  >
                     {homeroomFullyAssigned
-                      ? <UserCheck className="w-7 h-7 text-emerald-600" />
-                      : <UserPlus className="w-7 h-7 text-amber-600" />
+                      ? <UserCheck className="w-5 h-5" style={{ color: PRIMARY }} />
+                      : <UserPlus className="w-5 h-5" style={{ color: PRIMARY }} />
                     }
                   </div>
                   <div>
-                    <h4 className="text-lg font-black text-gray-900">Enseignant Titulaire</h4>
-                    <p className="text-xs text-gray-500 font-bold">Classe : {selectedClass.name}</p>
+                    <h4 className="text-sm font-bold text-slate-900">Enseignant Titulaire</h4>
+                    <p className="text-xs text-slate-500 font-medium">Classe : {selectedClass.name}</p>
                   </div>
                 </div>
 
                 {homeroomFullyAssigned && currentHomeroom ? (
                   <div className="space-y-4">
                     {/* Avatar + Nom */}
-                    <div className="flex items-center gap-5 p-5 bg-white rounded-2xl border border-emerald-100 shadow-sm">
-                      <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center text-white text-lg font-black shadow-lg shadow-indigo-200">
+                    <div className="flex items-center gap-4 p-4 bg-slate-50/50 rounded-lg border border-slate-200">
+                      <div 
+                        className="w-10 h-10 rounded-lg flex items-center justify-center text-white text-xs font-bold shadow-md"
+                        style={{ backgroundColor: PRIMARY }}
+                      >
                         {currentHomeroom.firstName[0]}{currentHomeroom.lastName[0]}
                       </div>
                       <div className="flex-1">
-                        <p className="text-base font-black text-gray-900">
+                        <p className="text-sm font-bold text-slate-900">
                           {currentHomeroom.lastName} {currentHomeroom.firstName}
                         </p>
-                        <p className="text-xs text-gray-500 font-bold">
+                        <p className="text-xs text-slate-500 font-semibold mt-0.5">
                           Titulaire de {selectedClass.name}
                         </p>
-                        <div className="flex items-center gap-2 mt-1.5">
-                          <span className="text-[9px] bg-emerald-100 text-emerald-700 font-black uppercase px-2 py-0.5 rounded-full">
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[8px] bg-emerald-50 border border-emerald-100 text-emerald-700 font-bold uppercase px-2 py-0.5 rounded-full">
                             ✓ Affecté à toutes les matières
                           </span>
                         </div>
                       </div>
-                      <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+                      <CheckCircle2 className="w-5 h-5 text-emerald-500" />
                     </div>
 
                     {/* Matières gérées */}
                     <div>
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-2">
                         Matières gérées
                       </p>
                       <div className="grid grid-cols-2 gap-2">
                         {classSubjects.map(cs => (
-                          <div key={cs.id} className="flex items-center gap-2 p-2.5 bg-white rounded-xl border border-gray-100 text-xs">
-                            <div className="w-7 h-7 bg-indigo-50 rounded-lg flex items-center justify-center font-black text-[9px] text-indigo-600 flex-shrink-0">
+                          <div key={cs.id} className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 text-xs bg-white">
+                            <div className="w-7 h-7 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-center font-bold text-[9px] text-slate-600 flex-shrink-0">
                               {cs.subject.code}
                             </div>
                             <div className="min-w-0">
-                              <p className="font-bold text-gray-800 truncate">{cs.subject.name}</p>
-                              <p className="text-[9px] text-gray-400 font-bold">{cs.weeklyHours}h/sem</p>
+                              <p className="font-bold text-slate-800 truncate">{cs.subject.name}</p>
+                              <p className="text-[9px] text-slate-400 font-semibold">{cs.weeklyHours}h/sem</p>
                             </div>
                           </div>
                         ))}
@@ -483,10 +488,11 @@ export default function AssignmentsWorkspace() {
                     </div>
 
                     {/* Actions */}
-                    <div className="flex gap-3 pt-2">
+                    <div className="flex gap-2 pt-2">
                       <button
                         onClick={() => { setSearch(''); setModal('assign-homeroom'); }}
-                        className="flex-1 flex items-center justify-center gap-2 py-3 bg-indigo-600 text-white rounded-2xl font-black text-xs hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200"
+                        className="flex-1 flex items-center justify-center gap-2 py-2 text-xs font-semibold text-white rounded-lg transition-all shadow-sm hover:opacity-95"
+                        style={{ backgroundColor: PRIMARY }}
                       >
                         <Replace className="w-4 h-4" />
                         Remplacer le titulaire
@@ -494,7 +500,7 @@ export default function AssignmentsWorkspace() {
                       <button
                         onClick={handleRemoveHomeroom}
                         disabled={bulkAssigning}
-                        className="px-5 py-3 bg-red-50 text-red-600 rounded-2xl font-black text-xs hover:bg-red-100 transition-all border border-red-100"
+                        className="px-4 py-2 bg-red-50 text-red-600 rounded-lg font-semibold text-xs hover:bg-red-100 transition-all border border-red-200"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -503,26 +509,25 @@ export default function AssignmentsWorkspace() {
                 ) : (
                   <button
                     onClick={() => { setSearch(''); setModal('assign-homeroom'); }}
-                    className="w-full py-10 border-2 border-dashed border-amber-200 rounded-2xl flex flex-col items-center justify-center gap-3 text-amber-500 hover:border-amber-400 hover:bg-amber-50/50 transition-all"
+                    className="w-full py-8 border-2 border-dashed border-slate-300 rounded-lg flex flex-col items-center justify-center gap-2 text-slate-500 hover:border-slate-400 hover:bg-slate-50/50 transition-all bg-white"
                   >
-                    <UserPlus className="w-10 h-10" />
+                    <UserPlus className="w-8 h-8" style={{ color: PRIMARY }} />
                     <div className="text-center">
-                      <p className="font-black text-sm">Désigner le titulaire</p>
-                      <p className="text-xs opacity-70">Il sera affecté à toutes les matières</p>
+                      <p className="font-bold text-xs text-slate-800">Désigner le titulaire</p>
+                      <p className="text-[11px] text-slate-400 font-medium">Il sera affecté à toutes les matières</p>
                     </div>
                   </button>
                 )}
               </div>
             </div>
-
           ) : (
             /* ══════════════════════════════════════════════════
                MODE SPÉCIALISTE (Secondaire)
                ══════════════════════════════════════════════════ */
             <div className="space-y-4">
-              <div className="bg-violet-50 border border-violet-100 rounded-2xl p-4 flex items-center gap-3">
-                <GraduationCap className="w-5 h-5 text-violet-600 flex-shrink-0" />
-                <p className="text-xs text-violet-800 font-bold">
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 flex items-center gap-3">
+                <GraduationCap className="w-5 h-5 flex-shrink-0" style={{ color: PRIMARY }} />
+                <p className="text-xs text-slate-700 font-medium">
                   Niveau secondaire — Affectez <strong>un enseignant spécialisé par matière</strong>.
                   Chaque enseignant peut intervenir dans plusieurs classes.
                 </p>
@@ -536,20 +541,20 @@ export default function AssignmentsWorkspace() {
                       key={cs.id}
                       layout
                       className={cn(
-                        'p-5 rounded-3xl border transition-all flex flex-col gap-4',
+                        'p-4 rounded-lg border transition-all flex flex-col gap-3',
                         assigned
-                          ? 'bg-white border-indigo-100 shadow-md shadow-indigo-50'
-                          : 'bg-gray-50/50 border-dashed border-gray-200'
+                          ? 'bg-white border-slate-200 shadow-sm'
+                          : 'bg-slate-50/50 border-dashed border-slate-300'
                       )}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center font-black text-xs text-indigo-600">
+                          <div className="w-9 h-9 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-center font-bold text-xs text-slate-600">
                             {cs.subject.code}
                           </div>
                           <div>
-                            <h4 className="font-bold text-gray-900 text-sm">{cs.subject.name}</h4>
-                            <span className="text-[10px] font-bold text-gray-400 flex items-center gap-1">
+                            <h4 className="font-bold text-slate-900 text-xs">{cs.subject.name}</h4>
+                            <span className="text-[10px] font-semibold text-slate-400 flex items-center gap-1 mt-0.5">
                               <Clock className="w-3 h-3" /> {cs.weeklyHours}h/sem · Coeff. {cs.coefficient}
                             </span>
                           </div>
@@ -557,7 +562,7 @@ export default function AssignmentsWorkspace() {
                         {assigned && (
                           <button
                             onClick={() => handleRemoveAssignment(cs.assignments[0].id)}
-                            className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                            className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -566,15 +571,18 @@ export default function AssignmentsWorkspace() {
 
                       <div>
                         {assigned ? (
-                          <div className="flex items-center gap-3 p-3 bg-indigo-50/50 rounded-2xl border border-indigo-50">
-                            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white text-[10px] font-black">
+                          <div className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg border border-slate-200">
+                            <div 
+                              className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-[10px] font-bold"
+                              style={{ backgroundColor: PRIMARY }}
+                            >
                               {assigned.firstName[0]}{assigned.lastName[0]}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-black text-indigo-900 truncate">
+                              <p className="text-xs font-bold text-slate-900 truncate">
                                 {assigned.lastName} {assigned.firstName}
                               </p>
-                              <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest">
+                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
                                 Enseignant Affecté
                               </p>
                             </div>
@@ -587,7 +595,7 @@ export default function AssignmentsWorkspace() {
                               setSearch('');
                               setModal('assign-teacher');
                             }}
-                            className="w-full py-3 border-2 border-dashed border-gray-200 rounded-2xl flex items-center justify-center gap-2 text-gray-400 hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50/30 transition-all text-xs font-black uppercase tracking-widest"
+                            className="w-full py-2 border border-dashed border-slate-350 rounded-lg flex items-center justify-center gap-2 text-slate-400 hover:border-slate-400 hover:text-slate-800 hover:bg-slate-50 transition-all text-xs font-semibold bg-white shadow-sm"
                           >
                             <UserPlus className="w-4 h-4" />
                             Affecter un enseignant
@@ -600,10 +608,10 @@ export default function AssignmentsWorkspace() {
               </div>
 
               {classSubjects.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-20 text-center">
-                  <BookOpen className="w-14 h-14 text-gray-200 mb-4" />
-                  <p className="text-gray-500 font-bold">Aucune matière configurée</p>
-                  <p className="text-xs text-gray-400 mt-1">Ajoutez d'abord des matières dans le Catalogue</p>
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <BookOpen className="w-10 h-10 text-slate-300 mb-4" />
+                  <p className="text-slate-500 text-xs font-bold">Aucune matière configurée</p>
+                  <p className="text-[11px] text-slate-400 mt-1">Ajoutez d'abord des matières dans le Catalogue</p>
                 </div>
               )}
             </div>
@@ -611,24 +619,22 @@ export default function AssignmentsWorkspace() {
         </div>
       </div>
 
-      {/* ══════════════════════════════════════════════════
-          MODAL : Affecter titulaire (Maternelle/Primaire)
-          ══════════════════════════════════════════════════ */}
+      {/* ── Modal : Affecter titulaire (Maternelle/Primaire) ── */}
       <FormModal
         isOpen={modal === 'assign-homeroom'}
         onClose={() => setModal('none')}
         title="Désigner le Titulaire de Classe"
         size="lg"
       >
-        <div className="space-y-5">
+        <div className="space-y-4">
           {/* Info classe */}
-          <div className="p-4 bg-amber-50 rounded-2xl flex items-center gap-4 border border-amber-100">
-            <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-sm">
-              <Star className="w-6 h-6 text-amber-500" />
+          <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3 border border-slate-200">
+            <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shadow-sm border border-slate-100">
+              <Star className="w-5 h-5 text-amber-500" />
             </div>
             <div>
-              <p className="text-sm font-black text-amber-900">Titulaire de {selectedClass?.name}</p>
-              <p className="text-xs text-amber-700 mt-0.5">
+              <p className="text-xs font-bold text-slate-900">Titulaire de {selectedClass?.name}</p>
+              <p className="text-[11px] text-slate-500 mt-0.5 font-medium">
                 Cet enseignant gérera toutes les{' '}
                 <strong>{classSubjects.length} matières</strong> de la classe.
               </p>
@@ -637,18 +643,18 @@ export default function AssignmentsWorkspace() {
 
           {/* Recherche */}
           <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
               placeholder="Chercher un enseignant..."
-              className="w-full pl-11 pr-4 py-3 rounded-2xl bg-gray-50 border-none focus:ring-2 focus:ring-amber-400 text-sm font-medium"
+              className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 text-sm font-medium transition-all"
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
           </div>
 
           {/* Liste */}
-          <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+          <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
             {filteredTeachers.map(t => {
               const isCurrentHomeroom = currentHomeroom?.id === t.teacherId;
               const authorized = isAuthorized(t, selectedClass?.level?.id);
@@ -658,32 +664,36 @@ export default function AssignmentsWorkspace() {
                   disabled={!authorized || bulkAssigning}
                   onClick={() => handleAssignHomeroom(t.teacherId)}
                   className={cn(
-                    'w-full flex items-center justify-between p-4 rounded-2xl border transition-all text-left',
+                    'w-full flex items-center justify-between p-3 rounded-lg border transition-all text-left bg-white',
                     isCurrentHomeroom
-                      ? 'bg-amber-50 border-amber-200 ring-2 ring-amber-300'
+                      ? 'border-slate-350 bg-slate-50 shadow-sm'
                       : authorized
-                      ? 'bg-white border-gray-100 hover:border-amber-400 hover:shadow-md hover:shadow-amber-50'
-                      : 'bg-gray-50 border-transparent opacity-40 cursor-not-allowed'
+                      ? 'border-slate-200 hover:border-slate-400 hover:shadow-sm'
+                      : 'bg-slate-50 border-transparent opacity-40 cursor-not-allowed'
                   )}
+                  style={isCurrentHomeroom ? { borderLeft: `3px solid ${PRIMARY}`, paddingLeft: '9px' } : undefined}
                 >
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center text-white text-xs font-black shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div 
+                      className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold shadow-sm"
+                      style={{ backgroundColor: PRIMARY }}
+                    >
                       {t.teacher.firstName[0]}{t.teacher.lastName[0]}
                     </div>
                     <div>
-                      <p className="font-bold text-gray-900 text-sm">
+                      <p className="font-bold text-slate-900 text-xs">
                         {t.teacher.lastName} {t.teacher.firstName}
                       </p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[8px] font-bold text-gray-400">
+                      <div className="flex items-center gap-2 mt-0.5 text-[9px] font-semibold text-slate-400">
+                        <span>
                           {t.teacher.matricule}
                         </span>
-                        <span className="text-gray-200">•</span>
-                        <span className="text-[8px] font-bold text-indigo-500">
+                        <span>•</span>
+                        <span style={{ color: PRIMARY }}>
                           Max {t.maxWeeklyHours}h/sem
                         </span>
                         {isCurrentHomeroom && (
-                          <span className="text-[8px] font-black bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded-full">
+                          <span className="text-[8px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full">
                             Titulaire actuel
                           </span>
                         )}
@@ -691,46 +701,44 @@ export default function AssignmentsWorkspace() {
                     </div>
                   </div>
                   {authorized && !isCurrentHomeroom && (
-                    <UserPlus className="w-5 h-5 text-gray-300" />
+                    <UserPlus className="w-4 h-4 text-slate-400" />
                   )}
                   {isCurrentHomeroom && (
-                    <CheckCircle2 className="w-5 h-5 text-amber-500" />
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                   )}
                 </button>
               );
             })}
             {filteredTeachers.length === 0 && (
-              <p className="text-center text-sm text-gray-400 py-8 font-bold">Aucun enseignant trouvé</p>
+              <p className="text-center text-xs text-slate-400 py-8 font-bold">Aucun enseignant trouvé</p>
             )}
           </div>
 
           {bulkAssigning && (
-            <div className="flex items-center justify-center gap-3 py-3 text-amber-600">
-              <div className="w-4 h-4 border-2 border-amber-300 border-t-amber-600 rounded-full animate-spin" />
-              <p className="text-sm font-bold">Affectation en cours...</p>
+            <div className="flex items-center justify-center gap-2 py-2 text-slate-600">
+              <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: PRIMARY, borderTopColor: 'transparent' }} />
+              <p className="text-xs font-bold">Affectation en cours...</p>
             </div>
           )}
         </div>
       </FormModal>
 
-      {/* ══════════════════════════════════════════════════
-          MODAL : Affecter enseignant spécialiste (Secondaire)
-          ══════════════════════════════════════════════════ */}
+      {/* ── Modal : Affecter enseignant spécialiste (Secondaire) ── */}
       <FormModal
         isOpen={modal === 'assign-teacher'}
         onClose={() => setModal('none')}
         title="Affecter un Enseignant Spécialiste"
         size="lg"
       >
-        <div className="space-y-5">
+        <div className="space-y-4">
           {/* Info matière */}
-          <div className="p-4 bg-violet-50 rounded-2xl flex items-center gap-4 border border-violet-100">
-            <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center font-black text-indigo-600 shadow-sm text-sm">
+          <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3 border border-slate-200">
+            <div className="w-9 h-9 bg-white border border-slate-200 rounded-lg flex items-center justify-center font-bold text-slate-600 shadow-sm text-xs">
               {activeSubject?.subject.code}
             </div>
             <div>
-              <p className="text-sm font-black text-violet-900">{activeSubject?.subject.name}</p>
-              <p className="text-xs text-violet-600 font-bold uppercase tracking-widest">
+              <p className="text-xs font-bold text-slate-900">{activeSubject?.subject.name}</p>
+              <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">
                 Charge : {activeSubject?.weeklyHours}h · Coeff. {activeSubject?.coefficient}
               </p>
             </div>
@@ -738,18 +746,18 @@ export default function AssignmentsWorkspace() {
 
           {/* Recherche */}
           <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
               placeholder="Chercher par nom ou habilitation..."
-              className="w-full pl-11 pr-4 py-3 rounded-2xl bg-gray-50 border-none focus:ring-2 focus:ring-indigo-500 text-sm font-medium"
+              className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 text-sm font-medium transition-all"
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
           </div>
 
           {/* Liste */}
-          <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+          <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
             {filteredTeachers.map(t => {
               const qualified = isQualified(t, activeSubject?.subject.id || '');
               const authorized = isAuthorized(t, selectedClass?.level?.id);
@@ -759,42 +767,42 @@ export default function AssignmentsWorkspace() {
                   disabled={!qualified || !authorized}
                   onClick={() => handleAssignTeacher(t.teacherId)}
                   className={cn(
-                    'w-full flex items-center justify-between p-4 rounded-2xl border transition-all text-left',
+                    'w-full flex items-center justify-between p-3 rounded-lg border transition-all text-left bg-white',
                     qualified && authorized
-                      ? 'bg-white border-gray-100 hover:border-indigo-600 hover:shadow-lg hover:shadow-indigo-50'
-                      : 'bg-gray-50 border-transparent opacity-50 cursor-not-allowed'
+                      ? 'border-slate-200 hover:border-slate-400 hover:shadow-sm'
+                      : 'bg-slate-50 border-transparent opacity-50 cursor-not-allowed'
                   )}
                 >
-                  <div className="flex items-center gap-4">
-                    <div className={cn(
-                      'w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs',
-                      qualified && authorized ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-400'
-                    )}>
+                  <div className="flex items-center gap-3">
+                    <div 
+                      className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs"
+                      style={qualified && authorized ? { backgroundColor: PRIMARY, color: '#fff' } : { backgroundColor: '#f1f5f9', color: '#94a3b8' }}
+                    >
                       {t.teacher.firstName[0]}{t.teacher.lastName[0]}
                     </div>
                     <div>
-                      <p className="font-bold text-gray-900 text-sm">
+                      <p className="font-bold text-slate-900 text-xs">
                         {t.teacher.lastName} {t.teacher.firstName}
                       </p>
-                      <div className="flex items-center gap-2 mt-0.5">
+                      <div className="flex items-center gap-2 mt-0.5 text-[9px] font-semibold">
                         <span className={cn(
-                          'text-[8px] font-black uppercase px-1.5 py-0.5 rounded',
-                          qualified ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                          'font-bold uppercase px-1.5 py-0.5 rounded-full border text-[8px]',
+                          qualified ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-red-50 border-red-100 text-red-700'
                         )}>
                           {qualified ? 'Habilité' : 'Non Habilité'}
                         </span>
-                        <span className="text-[8px] font-bold text-gray-400">
+                        <span className="text-slate-400">
                           Capacité : {t.maxWeeklyHours}h
                         </span>
                       </div>
                     </div>
                   </div>
-                  {qualified && authorized && <UserPlus className="w-5 h-5 text-indigo-300" />}
+                  {qualified && authorized && <UserPlus className="w-4 h-4" style={{ color: PRIMARY }} />}
                 </button>
               );
             })}
             {filteredTeachers.length === 0 && (
-              <p className="text-center text-sm text-gray-400 py-8 font-bold">Aucun enseignant trouvé</p>
+              <p className="text-center text-xs text-slate-400 py-8 font-bold">Aucun enseignant trouvé</p>
             )}
           </div>
         </div>

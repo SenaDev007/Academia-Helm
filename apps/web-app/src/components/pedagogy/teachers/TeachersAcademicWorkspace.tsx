@@ -62,6 +62,9 @@ const isHomeroomLevel = (levelName?: string): boolean => {
   return n.includes('MATERN') || n.includes('PRIMA') || n.includes('PRIM');
 };
 
+const PRIMARY = '#1A2BA6';
+const ACCENT = '#F5A623';
+
 // --- Types ---
 
 interface Teacher {
@@ -95,6 +98,56 @@ export default function TeachersAcademicWorkspace() {
   const [search, setSearch] = useState('');
   const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null);
   const [activeProfile, setActiveProfile] = useState<TeacherAcademicProfile | null>(null);
+
+  // Modals forms states
+  const [profileForm, setProfileForm] = useState({
+    maxWeeklyHours: 18,
+    isSemainier: false,
+  });
+
+  const [qualificationForm, setQualificationForm] = useState({
+    subjectId: '',
+    certified: true,
+  });
+
+  const [teacherForm, setTeacherForm] = useState({
+    firstName: '',
+    lastName: '',
+    matricule: '',
+    email: '',
+  });
+
+  const [availabilityForm, setAvailabilityForm] = useState({
+    dayOfWeek: 1,
+    startTime: '08:00',
+    endTime: '10:00',
+  });
+
+  const [authorizationForm, setAuthorizationForm] = useState({
+    levelId: '',
+  });
+
+  // Synchroniser les formulaires d'édition quand le profil ou l'enseignant change
+  useEffect(() => {
+    if (activeProfile) {
+      setProfileForm({
+        maxWeeklyHours: activeProfile.maxWeeklyHours || 18,
+        isSemainier: activeProfile.isSemainier || false,
+      });
+    }
+  }, [activeProfile]);
+
+  useEffect(() => {
+    const t = teachers.find(t => t.id === selectedTeacherId);
+    if (t) {
+      setTeacherForm({
+        firstName: t.firstName || '',
+        lastName: t.lastName || '',
+        matricule: t.matricule || '',
+        email: t.email || '',
+      });
+    }
+  }, [selectedTeacherId, teachers]);
 
   // Tabs selection
   const [activeSubTab, setActiveSubTab] = useState<'teachers' | 'assignments' | 'workloads'>('teachers');
@@ -462,130 +515,140 @@ export default function TeachersAcademicWorkspace() {
   );
 
   return (
-    <div className="flex flex-col gap-6 h-[calc(100vh-12rem)] overflow-hidden">
-      {/* Premium Segmented Controls Tab Bar */}
-      <div className="flex items-center justify-between bg-white border border-gray-100 p-2 rounded-2xl shadow-sm">
-        <div className="flex gap-2">
-          <button
-            onClick={() => setActiveSubTab('teachers')}
-            className={cn(
-              "flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all",
-              activeSubTab === 'teachers'
-                ? "bg-indigo-600 text-white shadow-md shadow-indigo-100"
-                : "text-gray-500 hover:text-gray-900 hover:bg-gray-50"
-            )}
-          >
-            <Users className="w-4 h-4" />
-            Profils & Disponibilités
-          </button>
-          
-          <button
-            onClick={() => setActiveSubTab('assignments')}
-            className={cn(
-              "flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all",
-              activeSubTab === 'assignments'
-                ? "bg-indigo-600 text-white shadow-md shadow-indigo-100"
-                : "text-gray-500 hover:text-gray-900 hover:bg-gray-50"
-            )}
-          >
-            <ClipboardList className="w-4 h-4" />
-            Affectations par Classe
-          </button>
-
-          <button
-            onClick={() => setActiveSubTab('workloads')}
-            className={cn(
-              "flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all",
-              activeSubTab === 'workloads'
-                ? "bg-indigo-600 text-white shadow-md shadow-indigo-100"
-                : "text-gray-500 hover:text-gray-900 hover:bg-gray-50"
-            )}
-          >
-            <BarChart3 className="w-4 h-4" />
-            Charge Horaire Globale
-          </button>
+    <div className="space-y-6">
+      {/* Banner / Connection Paramètres */}
+      <div
+        className="flex flex-col gap-4 rounded-xl border bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"
+        style={{ borderLeftWidth: 4, borderLeftColor: PRIMARY }}
+      >
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            Année scolaire active
+          </p>
+          <p className="text-lg font-semibold text-slate-900">{academicYear?.label || 'Chargement...'}</p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {activeSubTab === 'teachers' && (
+            <button
+              type="button"
+              onClick={() => {
+                setTeacherForm({
+                  firstName: '',
+                  lastName: '',
+                  matricule: '',
+                  email: '',
+                });
+                setModal('create-teacher');
+              }}
+              className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:opacity-95"
+              style={{ backgroundColor: PRIMARY }}
+            >
+              <Plus className="h-4 w-4" />
+              Créer un enseignant
+            </button>
+          )}
+        </div>
+      </div>
 
-        {activeSubTab === 'teachers' && (
-          <button
-            onClick={() => setModal('create-teacher')}
-            className="flex items-center gap-2 px-4 py-2.5 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-600 hover:text-white font-black text-xs uppercase tracking-wider transition-all shadow-sm"
-          >
-            <Plus className="w-4 h-4" />
-            Créer un enseignant
-          </button>
-        )}
+      {/* Navigation Interne */}
+      <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-50/80 p-1">
+        {[
+          { id: 'teachers', label: 'Profils & Disponibilités', icon: Users },
+          { id: 'assignments', label: 'Affectations par Classe', icon: ClipboardList },
+          { id: 'workloads', label: 'Charge Horaire Globale', icon: BarChart3 },
+        ].map((t) => {
+          const Icon = t.icon;
+          const active = activeSubTab === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setActiveSubTab(t.id as any)}
+              className={cn(
+                'inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition',
+                active
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900',
+              )}
+              style={active ? { color: PRIMARY } : undefined}
+            >
+              <Icon className="h-4 w-4 shrink-0 opacity-80" />
+              {t.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Main Views */}
-      <div className="flex-1 overflow-hidden">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         {activeSubTab === 'teachers' && (
-          <div className="flex h-full gap-6 overflow-hidden">
+          <div className="flex h-[calc(100vh-23rem)] overflow-hidden">
             {/* Liste des enseignants (Gauche) */}
-            <div className="w-1/3 bg-white rounded-3xl border border-gray-100 flex flex-col shadow-sm">
-              <div className="p-6 border-b border-gray-50 space-y-4">
+            <div className="w-1/3 border-r border-slate-200 flex flex-col bg-slate-50/20">
+              <div className="p-4 border-b border-slate-200 bg-slate-50/50 space-y-3">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                    <Users className="w-6 h-6 text-indigo-600" />
+                  <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <Users className="w-4 h-4" style={{ color: PRIMARY }} />
                     Corps Enseignant
                   </h2>
                 </div>
                 <div className="relative">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
                     type="text"
                     placeholder="Rechercher par nom ou matricule..."
-                    className="w-full pl-11 pr-4 py-3 rounded-2xl bg-gray-50 border-none focus:ring-2 focus:ring-indigo-500 text-sm font-medium transition-all"
+                    className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 text-sm font-medium transition-all"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                   />
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              <div className="flex-1 overflow-y-auto p-2 space-y-1 bg-white">
                 {loading ? (
                   <div className="p-8 text-center space-y-3">
-                    <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto" />
-                    <p className="text-sm text-gray-400 font-medium">Chargement des dossiers...</p>
+                    <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin mx-auto" style={{ borderColor: PRIMARY, borderTopColor: 'transparent' }} />
+                    <p className="text-xs text-slate-400 font-medium">Chargement des dossiers...</p>
                   </div>
                 ) : filteredTeachers.length === 0 ? (
-                  <div className="p-8 text-center text-gray-400 text-sm italic">
+                  <div className="p-8 text-center text-slate-400 text-xs italic">
                     Aucun enseignant trouvé.
                   </div>
                 ) : (
                   filteredTeachers.map(teacher => {
-                    const hasProfile = profiles.some(p => p.teacherId === teacher.id);
                     const isSelected = selectedTeacherId === teacher.id;
                     
                     return (
                       <button
                         key={teacher.id}
+                        type="button"
                         onClick={() => selectTeacher(teacher.id)}
                         className={cn(
-                          "w-full text-left p-4 rounded-2xl transition-all flex items-center justify-between group",
-                          isSelected ? "bg-indigo-50 border-indigo-100" : "hover:bg-gray-50 border-transparent"
+                          "w-full text-left p-3 rounded-lg transition-all flex items-center justify-between group border border-transparent",
+                          isSelected ? "bg-slate-50 shadow-sm" : "hover:bg-slate-50/80"
                         )}
+                        style={isSelected ? { borderLeft: `3px solid ${PRIMARY}`, paddingLeft: '9px' } : undefined}
                       >
                         <div className="flex items-center gap-3">
-                          <div className={cn(
-                            "w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs shadow-sm transition-all",
-                            isSelected ? "bg-indigo-600 text-white" : "bg-white text-gray-600 border border-gray-100"
-                          )}>
+                          <div 
+                            className="w-9 h-9 rounded-lg flex items-center justify-center font-bold text-xs shadow-sm transition-all"
+                            style={isSelected ? { backgroundColor: PRIMARY, color: '#fff' } : { backgroundColor: '#f1f5f9', color: '#475569' }}
+                          >
                             {teacher.firstName[0]}{teacher.lastName[0]}
                           </div>
                           <div>
-                            <p className={cn("font-bold text-sm", isSelected ? "text-indigo-900" : "text-gray-900")}>
+                            <p className={cn("font-bold text-xs", isSelected ? "text-slate-900" : "text-slate-800")}>
                               {teacher.lastName} {teacher.firstName}
                             </p>
-                            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mt-0.5">
                               {teacher.matricule}
                             </p>
                           </div>
                         </div>
                         <ChevronRight className={cn(
-                          "w-4 h-4 transition-all",
-                          isSelected ? "text-indigo-600 translate-x-1" : "text-gray-300 opacity-0 group-hover:opacity-100"
-                        )} />
+                          "w-3.5 h-3.5 transition-all text-slate-400",
+                          isSelected ? "translate-x-1" : "opacity-0 group-hover:opacity-100"
+                        )} style={isSelected ? { color: PRIMARY } : undefined} />
                       </button>
                     );
                   })
@@ -594,23 +657,26 @@ export default function TeachersAcademicWorkspace() {
             </div>
 
             {/* Fiche active (Droite) */}
-            <div className="flex-1 bg-white rounded-3xl border border-gray-100 flex flex-col shadow-sm overflow-hidden">
+            <div className="flex-1 bg-white flex flex-col overflow-hidden">
               {selectedTeacherId ? (
                 activeProfile ? (
                   <div className="flex-1 flex flex-col overflow-hidden">
                     {/* Header Profil */}
-                    <div className="p-6 border-b border-gray-50 bg-gray-50/30 flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-white text-xl font-black shadow-lg shadow-indigo-100">
+                    <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div 
+                          className="w-12 h-12 rounded-lg flex items-center justify-center text-white text-lg font-bold shadow-md"
+                          style={{ backgroundColor: PRIMARY }}
+                        >
                           {activeProfile.teacher.firstName[0]}{activeProfile.teacher.lastName[0]}
                         </div>
                         <div>
-                          <h3 className="text-xl font-bold text-gray-900">
+                          <h3 className="text-base font-bold text-slate-900">
                             {activeProfile.teacher.lastName} {activeProfile.teacher.firstName}
                           </h3>
-                          <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-0.5 flex items-center gap-1.5">
+                          <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-0.5 flex items-center gap-1.5">
                             <span>{activeProfile.teacher.matricule}</span>
-                            <span className="w-1 h-1 rounded-full bg-gray-300" />
+                            <span className="w-1 h-1 rounded-full bg-slate-300" />
                             <span className={activeProfile.isActive ? "text-emerald-600" : "text-red-500"}>
                               {activeProfile.isActive ? 'Actif' : 'Inactif'}
                             </span>
@@ -621,13 +687,14 @@ export default function TeachersAcademicWorkspace() {
                       <div className="flex items-center gap-2">
                         <button 
                           onClick={() => setModal('edit-teacher')}
-                          className="px-4 py-2 border border-gray-100 rounded-xl hover:bg-gray-50 text-xs font-black uppercase tracking-wider text-gray-600 transition-all"
+                          className="px-3 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 rounded-lg transition-all shadow-sm"
                         >
                           Infos Perso
                         </button>
                         <button 
                           onClick={() => setModal('edit-profile')}
-                          className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl text-xs font-black uppercase tracking-wider transition-all"
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm transition hover:opacity-95"
+                          style={{ backgroundColor: PRIMARY }}
                         >
                           Paramètres Profil
                         </button>
@@ -635,65 +702,72 @@ export default function TeachersAcademicWorkspace() {
                     </div>
 
                     {/* Contenu Profil */}
-                    <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-white">
                       {/* KPI Summary Cards */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="p-5 rounded-2xl border border-gray-100 bg-gray-50/30 flex items-center gap-4">
-                          <Clock className="w-8 h-8 text-indigo-600" />
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50/30 flex items-center gap-3">
+                          <Clock className="w-6 h-6" style={{ color: PRIMARY }} />
                           <div>
-                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Volume Max</p>
-                            <p className="text-lg font-black text-gray-900">{activeProfile.maxWeeklyHours}h/sem</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Volume Max</p>
+                            <p className="text-sm font-bold text-slate-900">{activeProfile.maxWeeklyHours}h/sem</p>
                           </div>
                         </div>
 
-                        <div className="p-5 rounded-2xl border border-gray-100 bg-gray-50/30 flex items-center gap-4">
-                          <ShieldCheck className="w-8 h-8 text-emerald-500" />
+                        <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50/30 flex items-center gap-3">
+                          <ShieldCheck className="w-6 h-6 text-emerald-500" />
                           <div>
-                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Habilitations</p>
-                            <p className="text-lg font-black text-gray-900">{activeProfile.subjectQualifications.length} matières</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Habilitations</p>
+                            <p className="text-sm font-bold text-slate-900">{activeProfile.subjectQualifications.length} matières</p>
                           </div>
                         </div>
 
-                        <div className="p-5 rounded-2xl border border-gray-100 bg-gray-50/30 flex items-center gap-4">
-                          <Calendar className="w-8 h-8 text-indigo-600" />
+                        <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50/30 flex items-center gap-3">
+                          <Calendar className="w-6 h-6" style={{ color: PRIMARY }} />
                           <div>
-                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Niveaux</p>
-                            <p className="text-lg font-black text-gray-900">{activeProfile.levelAuthorizations.length} autorisés</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Niveaux</p>
+                            <p className="text-sm font-bold text-slate-900">{activeProfile.levelAuthorizations.length} autorisés</p>
                           </div>
                         </div>
                       </div>
 
                       {/* Section : Habilitations Matières */}
-                      <div className="space-y-4 pt-4 border-t border-gray-50">
+                      <div className="space-y-3 pt-3 border-t border-slate-100">
                         <div className="flex items-center justify-between">
-                          <h4 className="font-bold text-gray-900 text-sm flex items-center gap-2">
-                            <BookOpen className="w-4 h-4 text-indigo-600" />
+                          <h4 className="font-bold text-slate-800 text-xs flex items-center gap-2">
+                            <BookOpen className="w-4 h-4" style={{ color: PRIMARY }} />
                             Matières qualifiées (Habilitations)
                           </h4>
                           <button 
-                            onClick={() => setModal('add-qualification')}
-                            className="text-indigo-600 hover:text-indigo-800 text-xs font-black uppercase tracking-wider flex items-center gap-1"
+                            onClick={() => {
+                              setQualificationForm({
+                                subjectId: subjects[0]?.id || '',
+                                certified: true,
+                              });
+                              setModal('add-qualification');
+                            }}
+                            className="text-xs font-semibold flex items-center gap-1 hover:underline"
+                            style={{ color: PRIMARY }}
                           >
                             <Plus className="w-3.5 h-3.5" /> Ajouter
                           </button>
                         </div>
                         {activeProfile.subjectQualifications.length === 0 ? (
-                          <div className="p-4 bg-gray-50 rounded-2xl text-center text-xs text-gray-400 italic">
+                          <div className="p-4 bg-slate-50 rounded-lg text-center text-xs text-slate-400 italic border border-slate-100">
                             Aucune matière qualifiée déclarée. L'enseignant ne pourra être affecté dans l'assistant.
                           </div>
                         ) : (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                             {activeProfile.subjectQualifications.map(q => (
-                              <div key={q.id} className="p-4 rounded-2xl border border-gray-100 bg-white shadow-sm flex items-center justify-between group">
+                              <div key={q.id} className="p-3 rounded-lg border border-slate-200 bg-white shadow-sm flex items-center justify-between group">
                                 <div>
-                                  <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 tracking-wider">
+                                  <span className="text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-slate-600 tracking-wider">
                                     {q.subject.code}
                                   </span>
-                                  <p className="font-bold text-gray-800 text-xs mt-1.5">{q.subject.name}</p>
+                                  <p className="font-bold text-slate-800 text-xs mt-1">{q.subject.name}</p>
                                 </div>
                                 <button 
                                   onClick={() => handleRemoveQualification(q.subjectId)}
-                                  className="text-gray-300 hover:text-red-500 p-1 rounded transition-all opacity-0 group-hover:opacity-100"
+                                  className="text-slate-300 hover:text-red-500 p-1 rounded transition-all opacity-0 group-hover:opacity-100"
                                 >
                                   <X className="w-4 h-4" />
                                 </button>
@@ -704,35 +778,41 @@ export default function TeachersAcademicWorkspace() {
                       </div>
 
                       {/* Section : Niveaux Autorisés */}
-                      <div className="space-y-4 pt-4 border-t border-gray-50">
+                      <div className="space-y-3 pt-3 border-t border-slate-100">
                         <div className="flex items-center justify-between">
-                          <h4 className="font-bold text-gray-900 text-sm flex items-center gap-2">
-                            <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                          <h4 className="font-bold text-slate-800 text-xs flex items-center gap-2">
+                            <ShieldCheck className="w-4 h-4" style={{ color: PRIMARY }} />
                             Niveaux Scolaires Autorisés
                           </h4>
                           <button 
-                            onClick={() => setModal('add-authorization')}
-                            className="text-indigo-600 hover:text-indigo-800 text-xs font-black uppercase tracking-wider flex items-center gap-1"
+                            onClick={() => {
+                              setAuthorizationForm({
+                                levelId: schoolLevels[0]?.id || '',
+                              });
+                              setModal('add-authorization');
+                            }}
+                            className="text-xs font-semibold flex items-center gap-1 hover:underline"
+                            style={{ color: PRIMARY }}
                           >
                             <Plus className="w-3.5 h-3.5" /> Ajouter
                           </button>
                         </div>
                         {activeProfile.levelAuthorizations.length === 0 ? (
-                          <div className="p-4 bg-gray-50 rounded-2xl text-center text-xs text-gray-400 italic">
+                          <div className="p-4 bg-slate-50 rounded-lg text-center text-xs text-slate-400 italic border border-slate-100">
                             Aucun niveau spécifique autorisé. (Par défaut : habilité sur tous les niveaux).
                           </div>
                         ) : (
-                          <div className="flex flex-wrap gap-2">
+                          <div className="flex flex-wrap gap-1.5">
                             {activeProfile.levelAuthorizations.map(auth => (
-                              <div key={auth.id} className="pl-3 pr-2 py-1.5 rounded-full border border-indigo-100 bg-indigo-50/50 flex items-center gap-2 group transition-all">
-                                <span className="text-[10px] font-black uppercase text-indigo-900">
+                              <div key={auth.id} className="pl-3 pr-2 py-1 rounded-full border border-slate-200 bg-slate-50/50 flex items-center gap-1.5 group transition-all text-xs font-bold text-slate-700">
+                                <span className="text-[10px] font-bold uppercase tracking-wider">
                                   {auth.level.name}
                                 </span>
                                 <button 
                                   onClick={() => handleRemoveLevelAuthorization(auth.levelId)}
-                                  className="text-indigo-400 hover:text-red-500 rounded-full transition-all"
+                                  className="text-slate-400 hover:text-red-500 rounded-full transition-all"
                                 >
-                                  <X className="w-3.5 h-3.5" />
+                                  <X className="w-3 h-3" />
                                 </button>
                               </div>
                             ))}
@@ -741,41 +821,49 @@ export default function TeachersAcademicWorkspace() {
                       </div>
 
                       {/* Section : Disponibilités Hebdomadaires */}
-                      <div className="space-y-4 pt-4 border-t border-gray-50">
+                      <div className="space-y-3 pt-3 border-t border-slate-100">
                         <div className="flex items-center justify-between">
-                          <h4 className="font-bold text-gray-900 text-sm flex items-center gap-2">
-                            <Calendar className="w-4 h-4 text-indigo-600" />
+                          <h4 className="font-bold text-slate-800 text-xs flex items-center gap-2">
+                            <Calendar className="w-4 h-4" style={{ color: PRIMARY }} />
                             Disponibilités d'emploi du temps
                           </h4>
                           <button 
-                            onClick={() => setModal('add-availability')}
-                            className="text-indigo-600 hover:text-indigo-800 text-xs font-black uppercase tracking-wider flex items-center gap-1"
+                            onClick={() => {
+                              setAvailabilityForm({
+                                dayOfWeek: 1,
+                                startTime: '08:00',
+                                endTime: '10:00',
+                              });
+                              setModal('add-availability');
+                            }}
+                            className="text-xs font-semibold flex items-center gap-1 hover:underline"
+                            style={{ color: PRIMARY }}
                           >
                             <Plus className="w-3.5 h-3.5" /> Ajouter un créneau
                           </button>
                         </div>
                         {activeProfile.availabilities.length === 0 ? (
-                          <div className="p-4 bg-gray-50 rounded-2xl text-center text-xs text-gray-400 italic">
+                          <div className="p-4 bg-slate-50 rounded-lg text-center text-xs text-slate-400 italic border border-slate-100">
                             Aucune contrainte horaire déclarée. Enseignant disponible 100% du temps.
                           </div>
                         ) : (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                             {activeProfile.availabilities.map(av => {
                               const dayLabel = DAYS.find(d => d.id === av.dayOfWeek)?.label || 'Jour';
                               return (
-                                <div key={av.id} className="p-4 rounded-2xl border border-gray-100 bg-white shadow-sm flex items-center justify-between group">
+                                <div key={av.id} className="p-3 rounded-lg border border-slate-200 bg-white shadow-sm flex items-center justify-between group">
                                   <div>
-                                    <p className="font-bold text-gray-800 text-xs">{dayLabel}</p>
-                                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1 flex items-center gap-1">
-                                      <Clock className="w-3 h-3 text-indigo-600" />
+                                    <p className="font-bold text-slate-800 text-xs">{dayLabel}</p>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1 flex items-center gap-1">
+                                      <Clock className="w-3 h-3 text-slate-500" />
                                       {av.startTime} à {av.endTime}
                                     </p>
                                   </div>
                                   <button 
                                     onClick={() => handleDeleteAvailability(av.id)}
-                                    className="text-gray-300 hover:text-red-500 p-1 rounded transition-all opacity-0 group-hover:opacity-100"
+                                    className="text-slate-300 hover:text-red-500 p-1 rounded transition-all opacity-0 group-hover:opacity-100"
                                   >
-                                    <Trash2 className="w-4 h-4" />
+                                    <Trash2 className="w-3.5 h-3.5" />
                                   </button>
                                 </div>
                               );
@@ -786,26 +874,27 @@ export default function TeachersAcademicWorkspace() {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-6">
-                    <div className="w-20 h-20 bg-indigo-50 rounded-3xl flex items-center justify-center text-indigo-600 shadow-lg shadow-indigo-50">
-                      <Users className="w-10 h-10" />
+                  <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-4">
+                    <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 border border-slate-200 shadow-sm">
+                      <Users className="w-8 h-8" />
                     </div>
-                    <div className="max-w-sm space-y-2">
-                      <h3 className="text-xl font-bold text-gray-900">Profil Académique Non Initialisé</h3>
-                      <p className="text-xs text-gray-400 font-medium">
+                    <div className="max-w-xs space-y-1">
+                      <h3 className="text-sm font-bold text-slate-900">Profil Académique Non Initialisé</h3>
+                      <p className="text-xs text-slate-400 font-medium">
                         Cet enseignant est enregistré dans le personnel, mais son profil académique de cours pour cette année n'est pas encore créé.
                       </p>
                     </div>
                     <button 
                       onClick={handleCreateProfile}
-                      className="px-6 py-3 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100"
+                      className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:opacity-95"
+                      style={{ backgroundColor: PRIMARY }}
                     >
                       Initialiser le profil académique
                     </button>
                   </div>
                 )
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-gray-400 italic">
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-400 text-xs italic">
                   Sélectionnez un enseignant pour afficher son profil.
                 </div>
               )}
@@ -820,38 +909,38 @@ export default function TeachersAcademicWorkspace() {
         )}
 
         {activeSubTab === 'workloads' && (
-          <div className="h-full flex flex-col gap-6 overflow-hidden">
+          <div className="flex flex-col gap-6 p-6">
             {/* KPI Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm flex items-center gap-4">
-                <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600">
-                  <Users className="w-6 h-6" />
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-slate-50 border border-slate-100" style={{ color: PRIMARY }}>
+                  <Users className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Enseignants Actifs</p>
-                  <p className="text-2xl font-black text-gray-900 mt-0.5">{teachers.length}</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Enseignants Actifs</p>
+                  <p className="text-lg font-bold text-slate-900 mt-0.5">{teachers.length}</p>
                 </div>
               </div>
 
-              <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm flex items-center gap-4">
-                <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600">
-                  <TrendingUp className="w-6 h-6" />
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-slate-50 border border-slate-100 text-emerald-600">
+                  <TrendingUp className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Heures Totales Affectées</p>
-                  <p className="text-2xl font-black text-gray-900 mt-0.5">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Heures Totales Affectées</p>
+                  <p className="text-lg font-bold text-slate-900 mt-0.5">
                     {Object.values(globalWorkloads).reduce((sum, w) => sum + w.assigned, 0)}h
                   </p>
                 </div>
               </div>
 
-              <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm flex items-center gap-4">
-                <div className="w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600">
-                  <ShieldAlert className="w-6 h-6" />
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-slate-50 border border-slate-100 text-amber-500">
+                  <ShieldAlert className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Professeurs Surchargés</p>
-                  <p className="text-2xl font-black text-gray-900 mt-0.5">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Professeurs Surchargés</p>
+                  <p className="text-lg font-bold text-slate-900 mt-0.5">
                     {teachers.filter(t => {
                       const profile = profiles.find(p => p.teacherId === t.id);
                       const assigned = globalWorkloads[t.id]?.assigned || 0;
@@ -864,36 +953,36 @@ export default function TeachersAcademicWorkspace() {
             </div>
 
             {/* List Table of Workloads */}
-            <div className="flex-1 bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
-              <div className="p-6 border-b border-gray-50 bg-gray-50/20">
-                <h3 className="text-lg font-black text-gray-900">Suivi Global de la Charge Académique</h3>
-                <p className="text-xs text-gray-500 font-bold uppercase tracking-widest mt-1">Comparatif charges réelles vs capacités maximales</p>
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+              <div className="p-4 border-b border-slate-200 bg-slate-50/50">
+                <h3 className="text-sm font-bold text-slate-900">Suivi Global de la Charge Académique</h3>
+                <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mt-1">Comparatif charges réelles vs capacités maximales</p>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-6">
+              <div className="overflow-x-auto p-4">
                 {workloadLoading ? (
-                  <div className="flex flex-col items-center justify-center h-64 gap-4">
-                    <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-                    <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Analyse et agrégation des charges...</p>
+                  <div className="flex flex-col items-center justify-center py-12 gap-3">
+                    <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: PRIMARY, borderTopColor: 'transparent' }} />
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Analyse et agrégation des charges...</p>
                   </div>
                 ) : teachers.length === 0 ? (
-                  <div className="p-12 text-center text-gray-400 italic text-sm">
+                  <div className="py-12 text-center text-slate-400 italic text-xs">
                     Aucun dossier enseignant disponible.
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
+                  <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                    <table className="w-full text-left border-collapse text-xs">
                       <thead>
-                        <tr className="border-b border-gray-100 text-[10px] font-black text-gray-400 uppercase tracking-wider">
-                          <th className="pb-4 font-black">Enseignant</th>
-                          <th className="pb-4 font-black">Niveaux Autorisés</th>
-                          <th className="pb-4 font-black">Habilitations</th>
-                          <th className="pb-4 font-black">Charge / Capacité</th>
-                          <th className="pb-4 font-black text-center">Statut</th>
-                          <th className="pb-4 font-black text-right">Détails des cours</th>
+                        <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          <th className="px-4 py-3 font-bold">Enseignant</th>
+                          <th className="px-4 py-3 font-bold">Niveaux Autorisés</th>
+                          <th className="px-4 py-3 font-bold">Habilitations</th>
+                          <th className="px-4 py-3 font-bold">Charge / Capacité</th>
+                          <th className="px-4 py-3 font-bold text-center">Statut</th>
+                          <th className="px-4 py-3 font-bold text-right">Détails des cours</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-50">
+                      <tbody className="divide-y divide-slate-100 bg-white">
                         {teachers.map(t => {
                           const profile = profiles.find(p => p.teacherId === t.id);
                           const assigned = globalWorkloads[t.id]?.assigned || 0;
@@ -904,7 +993,7 @@ export default function TeachersAcademicWorkspace() {
                           let statusColorClass = "bg-emerald-50 text-emerald-700 border border-emerald-100";
                           let barColorClass = "bg-emerald-500";
                           let icon = <CheckCircle2 className="w-3.5 h-3.5" />;
-
+ 
                           if (assigned > capacity) {
                             statusLabel = "Surchargé";
                             statusColorClass = "bg-rose-50 text-rose-700 border border-rose-100";
@@ -916,7 +1005,7 @@ export default function TeachersAcademicWorkspace() {
                             barColorClass = "bg-indigo-500";
                             icon = <Clock className="w-3.5 h-3.5" />;
                           }
-
+ 
                           // Déterminer si ce prof est un titulaire (Maternelle/Primaire)
                           // On se base sur les niveaux autorisés déclarés dans son profil
                           const homeroomDetails = globalWorkloads[t.id]?.details || [];
@@ -930,83 +1019,81 @@ export default function TeachersAcademicWorkspace() {
                           }, {});
                           const isHomeroom = Object.keys(homeroomClasses).length > 0 &&
                             homeroomDetails.every((d: any) => isHomeroomLevel(d.levelName || ''));
-
+ 
                           return (
-                            <tr key={t.id} className="text-sm group hover:bg-gray-50/30 transition-all">
+                            <tr key={t.id} className="group hover:bg-slate-50/50 transition-all">
                               {/* Teacher Info */}
-                              <td className="py-4 pr-4">
+                              <td className="px-4 py-3">
                                 <div className="flex items-center gap-3">
-                                  <div className={cn(
-                                    'w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs',
-                                    isHomeroom
-                                      ? 'bg-amber-100 text-amber-700'
-                                      : 'bg-gray-100 text-gray-600'
-                                  )}>
+                                  <div 
+                                    className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs"
+                                    style={isHomeroom ? { backgroundColor: `${ACCENT}20`, color: ACCENT } : { backgroundColor: '#f1f5f9', color: '#475569' }}
+                                  >
                                     {t.firstName[0]}{t.lastName[0]}
                                   </div>
                                   <div>
                                     <div className="flex items-center gap-2">
-                                      <p className="font-bold text-gray-900">{t.lastName} {t.firstName}</p>
+                                      <p className="font-bold text-slate-900">{t.lastName} {t.firstName}</p>
                                       {isHomeroom && (
-                                        <span className="text-[8px] font-black bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full uppercase tracking-wide">
+                                        <span className="text-[8px] font-bold bg-amber-50 border border-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full uppercase tracking-wide">
                                           ★ Titulaire
                                         </span>
                                       )}
                                     </div>
-                                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">{t.matricule}</p>
+                                    <p className="text-[9px] font-semibold text-slate-400 mt-0.5">{t.matricule}</p>
                                   </div>
                                 </div>
                               </td>
-
+ 
                               {/* Authorized Levels */}
-                              <td className="py-4 pr-4">
+                              <td className="px-4 py-3">
                                 <div className="flex flex-wrap gap-1">
                                   {profile?.levelAuthorizations && profile.levelAuthorizations.length > 0 ? (
                                     profile.levelAuthorizations.map((la: any) => (
                                       <span key={la.id} className={cn(
-                                        'text-[9px] font-black uppercase tracking-wide px-2 py-0.5 rounded-lg border',
+                                        'text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border',
                                         isHomeroomLevel(la.level?.name)
                                           ? 'bg-amber-50 border-amber-100 text-amber-700'
-                                          : 'bg-gray-50 border-gray-100 text-gray-600'
+                                          : 'bg-slate-50 border-slate-200 text-slate-600'
                                       )}>
                                         {la.level?.name}
                                       </span>
                                     ))
                                   ) : (
-                                    <span className="text-[10px] text-gray-400 italic font-bold">Tous niveaux</span>
+                                    <span className="text-[10px] text-slate-400 italic font-bold">Tous niveaux</span>
                                   )}
                                 </div>
                               </td>
-
+ 
                               {/* Habilitations / Mode */}
-                              <td className="py-4 pr-4">
+                              <td className="px-4 py-3">
                                 {isHomeroom ? (
-                                  <span className="text-[9px] font-black text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-lg uppercase tracking-wide">
-                                    Toutes matières (titulaire)
+                                  <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-lg uppercase tracking-wider">
+                                    Toutes matières
                                   </span>
                                 ) : (
                                   <div className="flex flex-wrap gap-1">
                                     {profile?.subjectQualifications && profile.subjectQualifications.length > 0 ? (
                                       profile.subjectQualifications.map((sq: any) => (
-                                        <span key={sq.id} className="text-[9px] font-black uppercase tracking-wide px-2 py-0.5 rounded-lg bg-indigo-50/50 border border-indigo-100/50 text-indigo-700">
+                                        <span key={sq.id} className="text-[9px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
                                           {sq.subject?.code}
                                         </span>
                                       ))
                                     ) : (
-                                      <span className="text-[10px] text-gray-400 italic font-bold">Aucune</span>
+                                      <span className="text-[10px] text-slate-400 italic font-bold">Aucune</span>
                                     )}
                                   </div>
                                 )}
                               </td>
-
+ 
                               {/* Workload hours progress */}
-                              <td className="py-4 pr-4 min-w-[150px]">
+                              <td className="px-4 py-3 min-w-[150px]">
                                 <div className="space-y-1">
                                   <div className="flex justify-between items-baseline">
-                                    <span className="text-xs font-black text-gray-900">{assigned}h <span className="text-gray-400 font-bold">/ {capacity}h</span></span>
-                                    <span className="text-[9px] font-black text-gray-400">{percent}%</span>
+                                    <span className="text-xs font-bold text-slate-900">{assigned}h <span className="text-slate-400 font-normal">/ {capacity}h</span></span>
+                                    <span className="text-[9px] font-bold text-slate-400">{percent}%</span>
                                   </div>
-                                  <div className="w-full bg-gray-100 h-1.5 rounded-full overflow-hidden">
+                                  <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden">
                                     <div className={cn('h-full rounded-full transition-all duration-500', barColorClass)} style={{ width: `${percent}%` }} />
                                   </div>
                                 </div>
@@ -1068,116 +1155,253 @@ export default function TeachersAcademicWorkspace() {
         isOpen={modal === 'edit-profile'}
         onClose={() => setModal('none')}
         title="Modifier Paramètres Académiques"
-        onSave={handleUpdateProfile}
-        initialData={activeProfile}
-        fields={[
-          {
-            name: 'maxWeeklyHours',
-            label: 'Volume Horaire Hebdomadaire Maximum (h)',
-            type: 'number',
-            placeholder: '18'
-          },
-          {
-            name: 'isSemainier',
-            label: 'Soumis au Semainier',
-            type: 'checkbox'
-          }
-        ]}
-      />
+        onConfirm={async () => {
+          await handleUpdateProfile({
+            maxWeeklyHours: Number(profileForm.maxWeeklyHours),
+            isSemainier: Boolean(profileForm.isSemainier),
+          });
+        }}
+      >
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Volume Horaire Hebdomadaire Maximum (h)</label>
+            <input 
+              type="number" 
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white" 
+              placeholder="18" 
+              value={profileForm.maxWeeklyHours}
+              onChange={(e) => setProfileForm({ ...profileForm, maxWeeklyHours: Number(e.target.value) })}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <input 
+              type="checkbox" 
+              id="isSemainier"
+              className="w-4 h-4 rounded border-slate-300 accent-indigo-600 cursor-pointer" 
+              checked={profileForm.isSemainier}
+              onChange={(e) => setProfileForm({ ...profileForm, isSemainier: e.target.checked })}
+            />
+            <label htmlFor="isSemainier" className="text-sm font-medium text-slate-700 cursor-pointer select-none">Soumis au Semainier</label>
+          </div>
+        </div>
+      </FormModal>
 
       {/* Modal Add Qualification */}
       <FormModal
         isOpen={modal === 'add-qualification'}
         onClose={() => setModal('none')}
         title="Nouvelle Habilitation"
-        onSave={(data) => handleAddQualification(data.subjectId)}
-        fields={[
-          {
-            name: 'subjectId',
-            label: 'Matière',
-            type: 'select',
-            options: subjects.map(s => ({ value: s.id, label: `${s.code} - ${s.name}` }))
-          },
-          {
-            name: 'certified',
-            label: 'Habilitation officielle (Diplômé)',
-            type: 'checkbox'
-          }
-        ]}
-      />
+        onConfirm={async () => {
+          await handleAddQualification(qualificationForm.subjectId);
+        }}
+      >
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Matière</label>
+            <select
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white"
+              value={qualificationForm.subjectId}
+              onChange={(e) => setQualificationForm({ ...qualificationForm, subjectId: e.target.value })}
+            >
+              <option value="">Sélectionner une matière</option>
+              {subjects.map(s => (
+                <option key={s.id} value={s.id}>{s.code} - {s.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <input 
+              type="checkbox" 
+              id="certified"
+              className="w-4 h-4 rounded border-slate-300 accent-indigo-600 cursor-pointer" 
+              checked={qualificationForm.certified}
+              onChange={(e) => setQualificationForm({ ...qualificationForm, certified: e.target.checked })}
+            />
+            <label htmlFor="certified" className="text-sm font-medium text-slate-700 cursor-pointer select-none">Habilitation officielle (Diplômé)</label>
+          </div>
+        </div>
+      </FormModal>
 
       {/* Modal Create Teacher */}
       <FormModal
         isOpen={modal === 'create-teacher'}
         onClose={() => setModal('none')}
         title="Nouvel Enseignant"
-        onSave={handleCreateTeacher}
-        fields={[
-          { name: 'firstName', label: 'Prénom', type: 'text', placeholder: 'Jean' },
-          { name: 'lastName', label: 'Nom', type: 'text', placeholder: 'DUPONT' },
-          { name: 'matricule', label: 'Matricule', type: 'text', placeholder: 'ENS-2024-001' },
-          { name: 'email', label: 'Email', type: 'email', placeholder: 'jean.dupont@ecole.com' }
-        ]}
-      />
+        onConfirm={async () => {
+          await handleCreateTeacher(teacherForm);
+        }}
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Prénom</label>
+              <input 
+                type="text" 
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white" 
+                placeholder="Jean" 
+                value={teacherForm.firstName}
+                onChange={(e) => setTeacherForm({ ...teacherForm, firstName: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Nom</label>
+              <input 
+                type="text" 
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white" 
+                placeholder="DUPONT" 
+                value={teacherForm.lastName}
+                onChange={(e) => setTeacherForm({ ...teacherForm, lastName: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Matricule</label>
+              <input 
+                type="text" 
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white" 
+                placeholder="ENS-2024-001" 
+                value={teacherForm.matricule}
+                onChange={(e) => setTeacherForm({ ...teacherForm, matricule: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Email</label>
+              <input 
+                type="email" 
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white" 
+                placeholder="jean.dupont@ecole.com" 
+                value={teacherForm.email}
+                onChange={(e) => setTeacherForm({ ...teacherForm, email: e.target.value })}
+              />
+            </div>
+          </div>
+        </div>
+      </FormModal>
 
       {/* Modal Edit Teacher Info */}
       <FormModal
         isOpen={modal === 'edit-teacher'}
         onClose={() => setModal('none')}
         title="Modifier Informations"
-        onSave={handleUpdateTeacher}
-        initialData={teachers.find(t => t.id === selectedTeacherId)}
-        fields={[
-          { name: 'firstName', label: 'Prénom', type: 'text' },
-          { name: 'lastName', label: 'Nom', type: 'text' },
-          { name: 'matricule', label: 'Matricule', type: 'text', disabled: true },
-          { name: 'email', label: 'Email', type: 'email' }
-        ]}
-      />
+        onConfirm={async () => {
+          await handleUpdateTeacher(teacherForm);
+        }}
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Prénom</label>
+              <input 
+                type="text" 
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white" 
+                value={teacherForm.firstName}
+                onChange={(e) => setTeacherForm({ ...teacherForm, firstName: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Nom</label>
+              <input 
+                type="text" 
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white" 
+                value={teacherForm.lastName}
+                onChange={(e) => setTeacherForm({ ...teacherForm, lastName: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Matricule</label>
+              <input 
+                type="text" 
+                disabled
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-400 bg-slate-55 focus:outline-none cursor-not-allowed" 
+                value={teacherForm.matricule}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Email</label>
+              <input 
+                type="email" 
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white" 
+                value={teacherForm.email}
+                onChange={(e) => setTeacherForm({ ...teacherForm, email: e.target.value })}
+              />
+            </div>
+          </div>
+        </div>
+      </FormModal>
 
       {/* Modal Add Availability */}
       <FormModal
         isOpen={modal === 'add-availability'}
         onClose={() => setModal('none')}
         title="Ajouter une Disponibilité"
-        onSave={handleAddAvailability}
-        fields={[
-          {
-            name: 'dayOfWeek',
-            label: 'Jour de la semaine',
-            type: 'select',
-            options: DAYS.map(d => ({ value: d.id, label: d.label }))
-          },
-          {
-            name: 'startTime',
-            label: 'Heure de Début',
-            type: 'time',
-            placeholder: '08:00'
-          },
-          {
-            name: 'endTime',
-            label: 'Heure de Fin',
-            type: 'time',
-            placeholder: '10:00'
-          }
-        ]}
-      />
+        onConfirm={async () => {
+          await handleAddAvailability(availabilityForm);
+        }}
+      >
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Jour de la semaine</label>
+            <select
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white"
+              value={availabilityForm.dayOfWeek}
+              onChange={(e) => setAvailabilityForm({ ...availabilityForm, dayOfWeek: Number(e.target.value) })}
+            >
+              {DAYS.map(d => (
+                <option key={d.id} value={d.id}>{d.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Heure de Début</label>
+              <input 
+                type="time" 
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white" 
+                value={availabilityForm.startTime}
+                onChange={(e) => setAvailabilityForm({ ...availabilityForm, startTime: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Heure de Fin</label>
+              <input 
+                type="time" 
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white" 
+                value={availabilityForm.endTime}
+                onChange={(e) => setAvailabilityForm({ ...availabilityForm, endTime: e.target.value })}
+              />
+            </div>
+          </div>
+        </div>
+      </FormModal>
 
       {/* Modal Add Level Authorization */}
       <FormModal
         isOpen={modal === 'add-authorization'}
         onClose={() => setModal('none')}
         title="Ajouter une Autorisation de Niveau"
-        onSave={(data) => handleAddLevelAuthorization(data.levelId)}
-        fields={[
-          {
-            name: 'levelId',
-            label: 'Niveau Scolaire',
-            type: 'select',
-            options: schoolLevels.map(l => ({ value: l.id, label: l.label || l.name }))
-          }
-        ]}
-      />
+        onConfirm={async () => {
+          await handleAddLevelAuthorization(authorizationForm.levelId);
+        }}
+      >
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Niveau Scolaire</label>
+            <select
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white"
+              value={authorizationForm.levelId}
+              onChange={(e) => setAuthorizationForm({ ...authorizationForm, levelId: e.target.value })}
+            >
+              <option value="">Sélectionner un niveau</option>
+              {schoolLevels.map(l => (
+                <option key={l.id} value={l.id}>{l.label || l.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </FormModal>
     </div>
   );
 }

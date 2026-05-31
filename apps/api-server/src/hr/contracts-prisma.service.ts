@@ -22,26 +22,20 @@ export class ContractsPrismaService {
     tenantId: string;
     academicYearId?: string;
     staffId: string;
-    type: string;
+    contractType: string;
     startDate: Date;
     endDate?: Date;
     baseSalary?: number;
-    hourlyRate?: number;
-    hoursPerWeek?: number;
-    isRenewable?: boolean;
-    conditions?: string;
+    paymentMode?: string;
     status?: string;
+    terms?: any;
+    templateId?: string;
   }) {
-    // Vérifier qu'il n'y a pas déjà un contrat actif pour ce personnel
+    // Désactiver l'éventuel contrat actif existant
     const activeContract = await this.prisma.contract.findFirst({
-      where: {
-        staffId: data.staffId,
-        status: 'ACTIVE',
-      },
+      where: { staffId: data.staffId, status: 'ACTIVE' },
     });
-
     if (activeContract) {
-      // Désactiver l'ancien contrat
       await this.prisma.contract.update({
         where: { id: activeContract.id },
         data: { status: 'EXPIRED' },
@@ -50,9 +44,19 @@ export class ContractsPrismaService {
 
     return this.prisma.contract.create({
       data: {
-        ...data,
-        status: data.status || 'ACTIVE',
+        tenantId: data.tenantId,
+        staffId: data.staffId,
+        contractType: data.contractType,
+        startDate: data.startDate,
+        endDate: data.endDate ?? null,
+        baseSalary: data.baseSalary ?? 0,
+        paymentMode: data.paymentMode ?? 'BANK',
+        status: data.status ?? 'ACTIVE',
+        terms: data.terms ?? null,
+        templateId: data.templateId ?? null,
+        academicYearId: data.academicYearId ?? null,
       },
+      include: { staff: true },
     });
   }
 
@@ -65,16 +69,9 @@ export class ContractsPrismaService {
     status?: string;
   }) {
     const where: any = { tenantId };
-    
-    if (filters?.staffId) {
-      where.staffId = filters.staffId;
-    }
-    if (filters?.type) {
-      where.type = filters.type;
-    }
-    if (filters?.status) {
-      where.status = filters.status;
-    }
+    if (filters?.staffId) where.staffId = filters.staffId;
+    if (filters?.type) where.contractType = filters.type;
+    if (filters?.status && filters.status !== 'ALL') where.status = filters.status;
 
     return this.prisma.contract.findMany({
       where,
@@ -85,8 +82,11 @@ export class ContractsPrismaService {
             firstName: true,
             lastName: true,
             staffCode: true,
+            position: true,
+            category: true,
           },
         },
+        template: { select: { id: true, name: true } },
       },
       orderBy: { startDate: 'desc' },
     });

@@ -19,6 +19,7 @@ import { TaxService } from './services/tax.service';
 import { PayrollTaxService } from './services/payroll-tax.service';
 import { PayrollPdfService } from './services/payroll-pdf.service';
 import { HROrionService } from './services/hr-orion.service';
+import { ContractPdfService } from './services/contract-pdf.service';
 import { HrKpiService } from './hr-kpi.service';
 import { StaffPrismaController } from './staff-prisma.controller';
 import { ContractsPrismaController } from './contracts-prisma.controller';
@@ -47,6 +48,7 @@ import { OrionModule } from '../orion/orion.module';
     PayrollTaxService,
     PayrollPdfService,
     HROrionService,
+    ContractPdfService,
     HrKpiService,
   ],
   controllers: [
@@ -73,6 +75,7 @@ import { OrionModule } from '../orion/orion.module';
     PayrollTaxService,
     PayrollPdfService,
     HROrionService,
+    ContractPdfService,
     HrKpiService,
   ],
 })

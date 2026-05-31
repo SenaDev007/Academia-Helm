@@ -1,9 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Search, FileText, Calendar, DollarSign, AlertCircle, FileCheck, Files } from 'lucide-react';
+import {
+  Plus, Search, FileText, Calendar, DollarSign, AlertCircle,
+  FileCheck, Files, Download, PenTool, Loader2,
+} from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { apiFetch } from '@/lib/api/client';
+import { toast } from '@/components/ui/toast';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -60,10 +64,11 @@ export function ContractsWorkspace() {
   return (
     <div className="space-y-6 pb-12">
       {/* KPI strip */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: 'Contrats actifs', value: contracts.filter((c) => c.status === 'ACTIVE').length },
-          { label: 'CDI en cours', value: contracts.filter((c) => c.type === 'CDI' && c.status === 'ACTIVE').length },
+          { label: 'CDI en cours', value: contracts.filter((c) => c.contractType === 'CDI' && c.status === 'ACTIVE').length },
+          { label: 'Non signés', value: contracts.filter((c) => c.status === 'ACTIVE' && !c.signedAt).length },
           { label: 'Échéances J-30', value: expiringSoon.length },
         ].map((k, i) => (
           <div key={i} className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
@@ -129,12 +134,27 @@ export function ContractsWorkspace() {
 }
 
 function ContractRow({ contract, index }: { contract: any; index: number }) {
+  const [generating, setGenerating] = useState(false);
+
   const isExpiringSoon = () => {
     if (!contract.endDate || contract.status !== 'ACTIVE') return false;
     const diff = (new Date(contract.endDate).getTime() - Date.now()) / 86400000;
     return diff > 0 && diff <= 30;
   };
   const status = STATUS_CONFIG[contract.status] || STATUS_CONFIG.EXPIRED;
+  const isSigned = !!contract.signedAt;
+
+  async function handleGeneratePdf() {
+    try {
+      setGenerating(true);
+      await apiFetch(`/hr/contracts/${contract.id}/generate-pdf`, { method: 'POST' });
+      toast({ variant: 'success', title: 'PDF généré avec succès !' });
+    } catch {
+      toast({ variant: 'error', title: 'Erreur lors de la génération PDF.' });
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   return (
     <motion.div
@@ -146,13 +166,22 @@ function ContractRow({ contract, index }: { contract: any; index: number }) {
       <div className="p-4 md:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-11 h-11 rounded-xl flex items-center justify-center font-bold text-base shrink-0" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
-            {contract.type?.[0]}
+            {contract.contractType?.[0]}
           </div>
           <div className="min-w-0">
             <h4 className="font-bold text-slate-900 text-sm truncate">{contract.staff?.firstName} {contract.staff?.lastName}</h4>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-slate-500">{contract.type}</span>
+            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-slate-500">{contract.contractType}</span>
               <span className="text-[10px] text-slate-400 font-medium">#{contract.staff?.staffCode}</span>
+              {isSigned ? (
+                <span className="text-[10px] font-bold text-emerald-700 flex items-center gap-0.5">
+                  <PenTool className="h-2.5 w-2.5" /> Signé
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold text-amber-600 flex items-center gap-0.5">
+                  <PenTool className="h-2.5 w-2.5" /> Non signé
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -180,8 +209,17 @@ function ContractRow({ contract, index }: { contract: any; index: number }) {
           </div>
         </div>
         <div className="flex items-center gap-2 border-t md:border-none pt-3 md:pt-0 w-full md:w-auto">
-          <button className="flex-grow md:flex-grow-0 text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors" style={{ color: PRIMARY }}>Gérer l'avenant</button>
-          <Link href={`/app/hr/contracts/${contract.id}`} className="p-2 text-slate-400 hover:text-[#1A2BA6] transition-colors rounded-lg hover:bg-slate-50"><FileCheck className="h-5 w-5" /></Link>
+          <button
+            onClick={handleGeneratePdf}
+            disabled={generating}
+            className="flex-shrink-0 p-2 text-slate-400 hover:text-[#1A2BA6] transition-colors rounded-lg hover:bg-slate-50"
+            title="Générer PDF"
+          >
+            {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          </button>
+          <Link href={`/app/hr/contracts/${contract.id}`} className="flex-grow md:flex-grow-0 flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors" style={{ color: PRIMARY }}>
+            <FileCheck className="h-4 w-4" /> Ouvrir le contrat
+          </Link>
         </div>
       </div>
     </motion.div>

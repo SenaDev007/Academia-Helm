@@ -97,14 +97,14 @@ export function HROverview() {
   useEffect(() => { fetchData(); }, [tenant?.id, academicYear?.id]);
 
   const snapshot = data?.snapshot || { totalStaff: 0, totalTeachers: 0, totalAdmin: 0, monthlyPayroll: 0, cnssCharges: 0, leaveCount: 0 };
-  const payrollHistory = data?.payrollHistory || [];
+  const evolution = data?.evolution || [];
   const orionAlerts = data?.orionAlerts || [];
 
   const kpis = [
-    { label: 'Effectif Total', value: snapshot.totalStaff || 12, subValue: `${snapshot.totalTeachers || 8} ens. · ${snapshot.totalAdmin || 4} admin`, icon: Users },
-    { label: 'Masse Salariale', value: `${Number(snapshot.monthlyPayroll || 4850000).toLocaleString()} XOF`, subValue: 'Dernier mois validé', icon: DollarSign },
-    { label: 'Offres Actives', value: 2, subValue: '14 candidatures reçues', icon: Briefcase },
-    { label: 'Score IA Moyen', value: '91%', subValue: 'Sur les candidats qualifiés', icon: Target },
+    { label: 'Effectif Total', value: snapshot.totalStaff, subValue: `${snapshot.totalTeachers} ens. · ${snapshot.totalAdmin} admin`, icon: Users },
+    { label: 'Masse Salariale', value: `${Number(snapshot.monthlyPayroll).toLocaleString()} XOF`, subValue: 'Dernier mois validé', icon: DollarSign },
+    { label: 'Charges Sociales', value: `${Number(snapshot.cnssCharges).toLocaleString()} XOF`, subValue: 'Cotisations CNSS estimées', icon: ShieldCheck },
+    { label: 'Congés Actifs', value: snapshot.leaveCount, subValue: 'Personnes absentes ce jour', icon: Calendar },
   ];
 
   if (loading) {
@@ -142,7 +142,7 @@ export function HROverview() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-lg font-bold text-slate-900">Évolution de la Masse Salariale</h2>
-              <p className="text-sm text-slate-500">Historique des 12 derniers mois</p>
+              <p className="text-sm text-slate-500">Historique des 6 derniers mois</p>
             </div>
             <Link
               href="/app/hr/payroll"
@@ -153,10 +153,10 @@ export function HROverview() {
             </Link>
           </div>
 
-          {payrollHistory.length > 0 ? (
+          {evolution.length > 0 ? (
             <div className="h-[260px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={payrollHistory} barGap={4}>
+                <BarChart data={evolution.map((e: any) => ({ periodName: e.month, totalNet: e.total }))} barGap={4}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis
                     dataKey="periodName"
@@ -178,7 +178,6 @@ export function HROverview() {
                     }}
                   />
                   <Bar dataKey="totalNet" name="Net à payer" fill={PRIMARY} radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="totalGross" name="Brut Total" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -208,21 +207,23 @@ export function HROverview() {
           </div>
 
           <div className="space-y-3">
-            <div className="rounded-lg bg-white/5 border border-white/10 p-3 flex gap-3">
-              <div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-rose-500 shadow-[0_0_8px_#f43f5e]" />
-              <div className="space-y-0.5">
-                <p className="text-xs font-semibold text-white/90 leading-snug">Alerte Fraude Documentaire</p>
-                <p className="text-[10px] text-white/50">Jean-Luc Yao : incohérence de dates dans l'historique.</p>
+            {orionAlerts.length > 0 ? (
+              orionAlerts.map((alert: any, idx: number) => (
+                <div key={idx} className="rounded-lg bg-white/5 border border-white/10 p-3 flex gap-3">
+                  <div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-rose-500 shadow-[0_0_8px_#f43f5e]" />
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-semibold text-white/90 leading-snug">{alert.title || alert.type}</p>
+                    <p className="text-[10px] text-white/50">{alert.description || alert.message}</p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="py-8 text-center space-y-2">
+                <UserCheck className="h-8 w-8 text-white/20 mx-auto" />
+                <p className="text-xs text-white/40 font-semibold">Aucune anomalie détectée.</p>
+                <p className="text-[10px] text-white/30">Tout est en ordre dans le module RH.</p>
               </div>
-            </div>
-
-            <div className="rounded-lg bg-white/5 border border-white/10 p-3 flex gap-3">
-              <div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-amber-400 shadow-[0_0_8px_#fbbf24]" />
-              <div className="space-y-0.5">
-                <p className="text-xs font-semibold text-white/90 leading-snug">Candidature Exceptionnelle</p>
-                <p className="text-[10px] text-white/50">Fatimata Sow classée Top 1 avec un score de matching de 96%.</p>
-              </div>
-            </div>
+            )}
           </div>
 
           <div className="mt-6 pt-4 border-t border-white/10">

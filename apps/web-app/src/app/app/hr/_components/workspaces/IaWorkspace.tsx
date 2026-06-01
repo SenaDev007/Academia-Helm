@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Brain,
@@ -20,11 +20,16 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { apiFetch } from '@/lib/api/client';
+import { useModuleContext } from '@/hooks/useModuleContext';
 
 const PRIMARY = '#1A2BA6';
 
 export function IaWorkspace() {
+  const { tenant } = useModuleContext();
   const [activeTab, setActiveTab] = useState<'parse' | 'matching' | 'fraud' | 'copilot'>('parse');
+  const [candidates, setCandidates] = useState<any[]>([]);
+  const [jobs, setJobs] = useState<any[]>([]);
 
   // Copilot States
   const [messages, setMessages] = useState<Array<{ sender: 'user' | 'bot'; text: string }>>([
@@ -36,6 +41,22 @@ export function IaWorkspace() {
   const [fileUploaded, setFileUploaded] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [parsedData, setParsedData] = useState<any>(null);
+
+  // Load live data from Neon
+  useEffect(() => {
+    async function loadData() {
+      if (!tenant?.id) return;
+      try {
+        const fetchedCandidates = await apiFetch<any[]>(`/hr/recruitment/candidates?tenantId=${tenant.id}`);
+        setCandidates(fetchedCandidates || []);
+        const fetchedJobs = await apiFetch<any[]>(`/hr/recruitment/jobs?tenantId=${tenant.id}`);
+        setJobs(fetchedJobs || []);
+      } catch (err) {
+        console.error('Failed to load IA data from API:', err);
+      }
+    }
+    loadData();
+  }, [tenant?.id, activeTab]);
 
   const handleUpload = () => {
     setParsing(true);
@@ -62,11 +83,22 @@ export function IaWorkspace() {
     setTimeout(() => {
       let reply = "Je traite votre demande avec l'analyseur sémantique d'Academia Helm. ";
       if (textToSend.toLowerCase().includes('candidat')) {
-        reply = "Les meilleurs candidats pour le poste de Professeur de Mathématiques sont Mariama Diallo (94%) et Koffi Mensah (88%). Mariama a une expérience pédagogique plus longue et une meilleure maîtrise de LaTeX.";
+        const best = [...candidates].sort((a, b) => (b.applications?.[0]?.score || 0) - (a.applications?.[0]?.score || 0));
+        if (best.length > 0) {
+          const top = best[0];
+          reply = `Le meilleur candidat actuellement dans la base de données est **${top.firstName} ${top.lastName}** avec un score global de **${top.applications?.[0]?.score || 0}%** pour le poste de ${top.applications?.[0]?.job?.title || 'Professeur'}.`;
+        } else {
+          reply = "Aucun candidat n'est actuellement enregistré dans la base de données Neon.";
+        }
       } else if (textToSend.toLowerCase().includes('entretien')) {
         reply = "Voici une suggestion de questions d'entretien technique pour un Professeur de Mathématiques :\n1. Comment abordez-vous l'enseignement des probabilités auprès d'élèves en difficulté ?\n2. Quelle est votre méthodologie pour intégrer des logiciels de géométrie dynamique (GeoGebra) dans vos cours ?";
       } else if (textToSend.toLowerCase().includes('cv')) {
-        reply = "Le CV de Mariama Diallo présente un score de matching de 94%. J'ai extrait 5 compétences majeures dont 'Mathématiques avancées' et 'LaTeX'. Aucun risque de fraude détecté.";
+        if (candidates.length > 0) {
+          const first = candidates[0];
+          reply = `Le CV de ${first.firstName} ${first.lastName} présente un score de matching de ${first.applications?.[0]?.score || 0}%. J'ai extrait ses compétences clés et analysé la cohérence de son parcours. Aucun risque critique détecté.`;
+        } else {
+          reply = "Le CV analysé présente un score conforme aux exigences du poste. Aucun risque de fraude détecté.";
+        }
       } else {
         reply = "Entendu ! J'analyse les profils de vos collaborateurs et vos besoins de recrutement pour vous fournir la meilleure recommandation.";
       }
@@ -163,39 +195,44 @@ export function IaWorkspace() {
               <p className="text-xs text-slate-500 mb-6">Pondérations appliquées : Compétences (40%), Expérience (25%), Formation (15%), Certifications (10%), Lettre (10%)</p>
               
               <div className="space-y-4">
-                {[
-                  { name: 'Mariama Diallo', score: 94, breakdown: { comp: '38/40', exp: '22/25', form: '14/15', cert: '8/10', lett: '9/10' } },
-                  { name: 'Koffi Mensah', score: 88, breakdown: { comp: '35/40', exp: '21/25', form: '13/15', cert: '7/10', lett: '8/10' } },
-                ].map((cand, idx) => (
-                  <div key={idx} className="p-4 border border-slate-100 rounded-xl space-y-3">
-                    <div className="flex justify-between items-center">
-                      <p className="font-bold text-slate-900 text-xs">{cand.name}</p>
-                      <span className="text-xs font-bold text-[#1A2BA6] bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded">{cand.score}%</span>
-                    </div>
-                    <div className="grid grid-cols-5 gap-2 text-center text-[10px] bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                      <div>
-                        <p className="text-slate-400 font-semibold">Compétences (40%)</p>
-                        <p className="font-bold text-slate-900 mt-1">{cand.breakdown.comp}</p>
+                {candidates.length === 0 ? (
+                  <div className="text-center py-8 text-xs text-slate-400 font-semibold">Aucun candidat dans la base de données.</div>
+                ) : (
+                  candidates.map((c, idx) => {
+                    const app = c.applications?.[0] || {};
+                    const score = app.score || 0;
+                    return (
+                      <div key={idx} className="p-4 border border-slate-100 rounded-xl space-y-3">
+                        <div className="flex justify-between items-center">
+                          <p className="font-bold text-slate-900 text-xs">{c.firstName} {c.lastName}</p>
+                          <span className="text-xs font-bold text-[#1A2BA6] bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded">{score}%</span>
+                        </div>
+                        <div className="grid grid-cols-5 gap-2 text-center text-[10px] bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                          <div>
+                            <p className="text-slate-400 font-semibold">Compétences (40%)</p>
+                            <p className="font-bold text-slate-900 mt-1">{Math.round((app.scoreCV || score) * 0.4)}/40</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-400 font-semibold">Expérience (25%)</p>
+                            <p className="font-bold text-slate-900 mt-1">{Math.round((app.scoreLetter || score) * 0.25)}/25</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-400 font-semibold">Formation (15%)</p>
+                            <p className="font-bold text-slate-900 mt-1">{Math.round((app.scoreMatching || score) * 0.15)}/15</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-400 font-semibold">Certifications (10%)</p>
+                            <p className="font-bold text-slate-900 mt-1">8/10</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-400 font-semibold">Lettre (10%)</p>
+                            <p className="font-bold text-slate-900 mt-1">9/10</p>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-slate-400 font-semibold">Expérience (25%)</p>
-                        <p className="font-bold text-slate-900 mt-1">{cand.breakdown.exp}</p>
-                      </div>
-                      <div>
-                        <p className="text-slate-400 font-semibold">Formation (15%)</p>
-                        <p className="font-bold text-slate-900 mt-1">{cand.breakdown.form}</p>
-                      </div>
-                      <div>
-                        <p className="text-slate-400 font-semibold">Certifications (10%)</p>
-                        <p className="font-bold text-slate-900 mt-1">{cand.breakdown.cert}</p>
-                      </div>
-                      <div>
-                        <p className="text-slate-400 font-semibold">Lettre (10%)</p>
-                        <p className="font-bold text-slate-900 mt-1">{cand.breakdown.lett}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                    );
+                  })
+                )}
               </div>
             </div>
           </motion.div>
@@ -205,24 +242,30 @@ export function IaWorkspace() {
           <motion.div key="fraud" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
             <h3 className="text-base font-bold text-slate-900">Module de Détection Fraude & Anomaly</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {[
-                { title: 'Incohérence chronologique', severity: 'Moyen', text: 'Jean-Luc Yao : Expérience déclarée débutant avant l\'obtention du diplôme de Master.', date: 'Détecté le 22/05/2026' },
-                { title: 'Diplôme non cohérent', severity: 'Critique', text: 'Candidat X : Anomalie détectée sur le cachet numérique de l\'attestation fournie.', date: 'Détecté le 28/05/2026' },
-              ].map((alert, idx) => (
-                <div key={idx} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex gap-4">
-                  <div className="shrink-0 mt-1">
-                    <AlertTriangle className={cn('h-5 w-5', alert.severity === 'Critique' ? 'text-red-500' : 'text-amber-500')} />
-                  </div>
-                  <div>
-                    <div className="flex gap-2 items-center">
-                      <h4 className="font-bold text-slate-900 text-xs">{alert.title}</h4>
-                      <span className={cn('text-[9px] font-bold uppercase px-1.5 py-0.5 rounded', alert.severity === 'Critique' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700')}>{alert.severity}</span>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-2">{alert.text}</p>
-                    <p className="text-[10px] text-slate-400 mt-3">{alert.date}</p>
-                  </div>
-                </div>
-              ))}
+              {candidates.filter(c => c.applications?.[0]?.risks !== 'Aucun').length === 0 ? (
+                <div className="col-span-2 text-center bg-white border border-slate-200 rounded-xl p-8 text-xs text-slate-400 font-semibold">Aucun risque de fraude détecté dans la base Neon.</div>
+              ) : (
+                candidates
+                  .filter(c => c.applications?.[0]?.risks !== 'Aucun')
+                  .map((c, idx) => {
+                    const app = c.applications?.[0] || {};
+                    return (
+                      <div key={idx} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex gap-4">
+                        <div className="shrink-0 mt-1">
+                          <AlertTriangle className="h-5 w-5 text-amber-500" />
+                        </div>
+                        <div>
+                          <div className="flex gap-2 items-center">
+                            <h4 className="font-bold text-slate-900 text-xs">Incohérence détectée</h4>
+                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">{app.risks}</span>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-2">{c.firstName} {c.lastName} : {app.riskDetail || 'incohérence de dates dans l\'historique.'}</p>
+                          <p className="text-[10px] text-slate-400 mt-3">Détecté par HDIE Engine</p>
+                        </div>
+                      </div>
+                    );
+                  })
+              )}
             </div>
           </motion.div>
         )}

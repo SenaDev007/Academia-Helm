@@ -232,14 +232,8 @@ export default function PortalPage() {
     if (!selectedPortal || !selectedSchool) return;
 
     if (selectedPortal === 'PUBLIC') {
-      // Pour le portail public, on redirige vers la page d'inscription de l'école (format professionnel)
-      const signupUrl = getTenantRedirectUrl({
-        tenantSlug: selectedSchool.slug,
-        tenantId: selectedSchool.id,
-        path: '/signup',
-        portalType: 'PUBLIC',
-      });
-      window.location.href = signupUrl;
+      // Pour le portail public, on redirige vers l'espace carrières / offres d'emploi public
+      window.location.href = `/jobs?school=${selectedSchool.slug}`;
       return;
     }
 

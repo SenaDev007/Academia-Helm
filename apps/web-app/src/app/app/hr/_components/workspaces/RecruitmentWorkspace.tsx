@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Briefcase,
   Users,
-  GitBranch,
   Calendar,
   ClipboardList,
   UserCheck,
@@ -24,28 +23,20 @@ import {
   DollarSign,
   MapPin,
   GraduationCap,
-  ShieldCheck,
   FileText,
   Bookmark,
+  Edit2,
+  CalendarDays,
+  UserPlus,
+  Star,
+  Linkedin,
+  BookOpen
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { apiFetch } from '@/lib/api/client';
 import { useModuleContext } from '@/hooks/useModuleContext';
 
 const PRIMARY = '#1A2BA6';
-
-const PIPELINE_COLUMNS = [
-  'NOUVEAU',
-  'ANALYSE IA',
-  'PRÉSÉLECTIONNÉ',
-  'ENTRETIEN RH',
-  'ENTRETIEN TECHNIQUE',
-  'TEST',
-  'VALIDATION',
-  'OFFRE',
-  'EMBAUCHÉ',
-  'REJETÉ',
-];
 
 interface Job {
   id: string;
@@ -55,7 +46,7 @@ interface Job {
   loc: string;
   date: string;
   candidates: number;
-  status: 'BROUILLON' | 'EN VALIDATION' | 'VALIDÉE' | 'PUBLIÉE' | 'SUSPENDUE' | 'CLÔTURÉE' | 'ARCHIVÉE';
+  status: string;
   description?: string;
   missions?: string;
   responsibilities?: string;
@@ -69,6 +60,8 @@ interface Job {
 interface Candidate {
   id: string;
   name: string;
+  firstName: string;
+  lastName: string;
   email: string;
   phone: string;
   address: string;
@@ -79,226 +72,405 @@ interface Candidate {
   scoreMatching: number;
   category: string;
   matchDetail: string;
-  risks: 'Aucun' | 'Faible' | 'Moyen (Incohérence dates)' | 'Critique';
+  risks: string;
   riskDetail?: string;
   date: string;
   status: string;
   history: Array<{ action: string; date: string; user: string }>;
+  academicProfile?: {
+    teachingLevel?: string;
+    subjects?: string[];
+    pedagogicalExperience?: string;
+  };
 }
 
-const FALLBACK_JOBS: Job[] = [
-  {
-    id: '1',
-    ref: 'OFF-2026-001',
-    title: 'Professeur de Mathématiques (Secondaire)',
-    dept: 'Sciences',
-    loc: 'Cotonou',
-    date: '2026-05-10',
-    candidates: 14,
-    status: 'PUBLIÉE',
-    description: 'Enseigner les mathématiques aux classes de terminale S.',
-    missions: 'Préparation des cours, évaluation des élèves, suivi pédagogique.',
-    responsibilities: 'Garantir la progression des élèves et préparer au baccalauréat.',
-    academicLevel: 'Master en Mathématiques ou équivalent',
-    experience: '3 ans minimum',
-    skillsRequired: 'Algèbre, Analyse, Pédagogie active, GeoGebra',
-    salary: '450 000 XOF - 600 000 XOF',
-    contractType: 'CDI',
-  },
-  {
-    id: '2',
-    ref: 'OFF-2026-002',
-    title: 'Directeur des Études Adjoint',
-    dept: 'Administration',
-    loc: 'Abidjan',
-    date: '2026-05-15',
-    candidates: 8,
-    status: 'PUBLIÉE',
-  },
-];
+interface Interview {
+  id: string;
+  candidateId: string;
+  candidate?: { firstName: string; lastName: string };
+  type: string;
+  date: string;
+  time: string;
+  format: string;
+  evaluator: string;
+  score: number;
+  comments?: string;
+}
 
-const FALLBACK_CANDIDATES: Candidate[] = [
-  {
-    id: 'c1',
-    name: 'Mariama Diallo',
-    email: 'mariama.diallo@email.com',
-    phone: '+229 97 00 11 22',
-    address: 'Lot 405, Cadjehoun, Cotonou',
-    job: 'Professeur de Mathématiques',
-    score: 94,
-    scoreCV: 95,
-    scoreLetter: 90,
-    scoreMatching: 96,
-    category: 'Excellent',
-    matchDetail: '95% compétences en algèbre et analyse, 90% expérience en lycée d\'excellence.',
-    risks: 'Aucun',
-    date: '2026-05-12',
-    status: 'ENTRETIEN RH',
-    history: [
-      { action: 'Candidature déposée', date: '2026-05-12 09:30', user: 'Système' },
-      { action: 'Analyse IA effectuée - Score 94%', date: '2026-05-12 09:32', user: 'HDIE Engine' },
-      { action: 'Passage au statut Entretien RH', date: '2026-05-13 14:00', user: 'Sarah G.' },
-    ],
-  },
-];
+interface Test {
+  id: string;
+  name: string;
+  type: string;
+  description?: string;
+  results?: Array<{
+    id: string;
+    candidateId: string;
+    candidate: { firstName: string; lastName: string };
+    score: number;
+    result: string;
+  }>;
+}
+
+interface TalentPool {
+  id: string;
+  candidateId: string;
+  candidate: { firstName: string; lastName: string; email: string; phone: string };
+  category: string;
+  status: string;
+  createdAt: string;
+}
 
 export function RecruitmentWorkspace() {
   const { tenant } = useModuleContext();
-  const [activeTab, setActiveTab] = useState<'jobs' | 'candidates' | 'pipeline' | 'interviews' | 'tests' | 'embauches' | 'talent_pool'>('jobs');
-  const [jobs, setJobs] = useState<Job[]>(FALLBACK_JOBS);
-  const [candidates, setCandidates] = useState<Candidate[]>(FALLBACK_CANDIDATES);
-  const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
+  const [activeTab, setActiveTab] = useState<'jobs' | 'candidates' | 'interviews' | 'tests' | 'embauches' | 'talent_pool'>('jobs');
   const [loading, setLoading] = useState(false);
 
-  // Audits of Kanban moves
-  const [auditLogs, setAuditLogs] = useState<Array<{ id: string; name: string; from: string; to: string; date: string }>>([]);
+  // Core data states
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [interviews, setInterviews] = useState<Interview[]>([]);
+  const [tests, setTests] = useState<Test[]>([]);
+  const [talentPool, setTalentPool] = useState<TalentPool[]>([]);
 
-  // Form states for creating a job
+  // Detailed Modal/Form states
+  const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
+  const [activeCandidateTab, setActiveCandidateTab] = useState<'identity' | 'profile' | 'documents' | 'ia' | 'history'>('profile');
+  const [recruiterRating, setRecruiterRating] = useState<number>(0);
+  const [recruiterComment, setRecruiterComment] = useState<string>('');
+
+
+  // Add Job Form State
   const [isAddJobOpen, setIsAddJobOpen] = useState(false);
   const [newJob, setNewJob] = useState<Partial<Job>>({
-    title: '', dept: '', loc: '', status: 'BROUILLON', contractType: 'CDI', salary: '', academicLevel: '', experience: '', skillsRequired: '', description: '', missions: '', responsibilities: '',
+    title: '', dept: '', loc: '', status: 'PUBLIÉE', contractType: 'CDI', salary: '', academicLevel: '', experience: '', skillsRequired: '', description: '', missions: '', responsibilities: '',
   });
 
-  const [activeCandidateTab, setActiveCandidateTab] = useState<'identity' | 'documents' | 'ia' | 'history'>('identity');
+  // Add Candidate Form State
+  const [isAddCandidateOpen, setIsAddCandidateOpen] = useState(false);
+  const [newCandidate, setNewCandidate] = useState({
+    firstName: '', lastName: '', email: '', phone: '', address: '', gender: 'M', jobId: '', status: 'NOUVEAU'
+  });
 
-  // Load data from NestJS API
-  useEffect(() => {
-    async function loadData() {
-      if (!tenant?.id) return;
-      try {
-        setLoading(true);
-        const fetchedJobs = await apiFetch<any[]>(`/hr/recruitment/jobs?tenantId=${tenant.id}`);
-        if (fetchedJobs && fetchedJobs.length > 0) {
-          setJobs(fetchedJobs.map(j => ({
-            ...j,
-            date: j.createdAt ? j.createdAt.split('T')[0] : new Date().toISOString().split('T')[0],
-            candidates: j._count?.applications || 0,
-          })));
-        }
+  // Add Interview Form State
+  const [isAddInterviewOpen, setIsAddInterviewOpen] = useState(false);
+  const [newInterview, setNewInterview] = useState({
+    candidateId: '', type: 'RH', date: '', time: '', format: 'Visioconférence', evaluator: '', score: '0', comments: ''
+  });
 
-        const fetchedCandidates = await apiFetch<any[]>(`/hr/recruitment/candidates?tenantId=${tenant.id}`);
-        if (fetchedCandidates && fetchedCandidates.length > 0) {
-          setCandidates(fetchedCandidates.map(c => ({
-            id: c.id,
-            name: `${c.firstName} ${c.lastName}`,
-            email: c.email,
-            phone: c.phone || '',
-            address: c.address || '',
-            job: c.applications?.[0]?.job?.title || 'Non spécifié',
-            score: c.applications?.[0]?.score || 0,
-            scoreCV: c.applications?.[0]?.scoreCV || 0,
-            scoreLetter: c.applications?.[0]?.scoreLetter || 0,
-            scoreMatching: c.applications?.[0]?.scoreMatching || 0,
-            category: c.applications?.[0]?.score >= 90 ? 'Excellent' : 'Bon',
-            matchDetail: c.applications?.[0]?.matchDetail || '',
-            risks: c.applications?.[0]?.risks || 'Aucun',
-            riskDetail: c.applications?.[0]?.riskDetail || '',
-            date: c.createdAt ? c.createdAt.split('T')[0] : new Date().toISOString().split('T')[0],
-            status: c.applications?.[0]?.status || 'NOUVEAU',
-            history: c.applications?.[0]?.history || [{ action: 'Candidature déposée', date: new Date().toISOString().replace('T', ' ').slice(0, 16), user: 'Système' }],
-          })));
-        }
-      } catch (err) {
-        console.error('Error loading recruitment data, falling back to mocks:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadData();
-  }, [tenant?.id, activeTab]);
+  // Add Test Form State
+  const [isAddTestOpen, setIsAddTestOpen] = useState(false);
+  const [newTest, setNewTest] = useState({
+    name: '', type: 'Technique', description: ''
+  });
 
-  async function handleCreateJob(e: React.FormEvent) {
-    e.preventDefault();
+  // Log Test Result Form State
+  const [isAddTestResultOpen, setIsAddTestResultOpen] = useState(false);
+  const [newTestResult, setNewTestResult] = useState({
+    testId: '', candidateId: '', score: '50', result: 'ADMIS'
+  });
+
+  // Add to Talent Pool Form State
+  const [isAddTalentOpen, setIsAddTalentOpen] = useState(false);
+  const [newTalent, setNewTalent] = useState({
+    candidateId: '', category: 'Développement', status: 'Disponible'
+  });
+
+  // Load all datasets
+  const loadData = async () => {
     if (!tenant?.id) return;
     try {
-      const created = await apiFetch<any>(`/hr/recruitment/jobs?tenantId=${tenant.id}`, {
-        method: 'POST',
-        body: newJob,
-      });
-      // Refresh
+      setLoading(true);
+      // Fetch Jobs
       const fetchedJobs = await apiFetch<any[]>(`/hr/recruitment/jobs?tenantId=${tenant.id}`);
-      if (fetchedJobs && fetchedJobs.length > 0) {
+      if (fetchedJobs) {
         setJobs(fetchedJobs.map(j => ({
           ...j,
           date: j.createdAt ? j.createdAt.split('T')[0] : new Date().toISOString().split('T')[0],
           candidates: j._count?.applications || 0,
         })));
       }
-      setIsAddJobOpen(false);
-      setNewJob({ title: '', dept: '', loc: '', status: 'BROUILLON', contractType: 'CDI' });
-    } catch (err) {
-      console.error('Failed to create job, saving to local state:', err);
-      const localJob: Job = {
-        id: String(jobs.length + 1),
-        ref: `OFF-2026-00${jobs.length + 1}`,
-        title: newJob.title || '',
-        dept: newJob.dept || '',
-        loc: newJob.loc || '',
-        date: new Date().toISOString().split('T')[0],
-        candidates: 0,
-        status: (newJob.status as any) || 'BROUILLON',
-        contractType: newJob.contractType,
-        salary: newJob.salary,
-        academicLevel: newJob.academicLevel,
-        experience: newJob.experience,
-        skillsRequired: newJob.skillsRequired,
-        description: newJob.description,
-        missions: newJob.missions,
-        responsibilities: newJob.responsibilities,
-      };
-      setJobs([localJob, ...jobs]);
-      setIsAddJobOpen(false);
-    }
-  }
 
-  async function handleMoveCandidate(candidateId: string, toStatus: string) {
-    const candidate = candidates.find((c) => c.id === candidateId);
-    if (!candidate) return;
-    const fromStatus = candidate.status;
-    
-    try {
-      // Find candidate application to update
-      const app = candidate.history?.[0]; // or make api call
-      if (candidate.id.startsWith('c')) {
-        throw new Error('Local mock candidate');
+      // Fetch Candidates
+      const fetchedCandidates = await apiFetch<any[]>(`/hr/recruitment/candidates?tenantId=${tenant.id}`);
+      if (fetchedCandidates) {
+        setCandidates(fetchedCandidates.map(c => ({
+          id: c.id,
+          firstName: c.firstName,
+          lastName: c.lastName,
+          name: `${c.firstName} ${c.lastName}`,
+          email: c.email,
+          phone: c.phone || '',
+          address: c.address || '',
+          job: c.applications?.[0]?.job?.title || 'Aucun poste',
+          score: c.applications?.[0]?.score || 0,
+          scoreCV: c.applications?.[0]?.scoreCV || 0,
+          scoreLetter: c.applications?.[0]?.scoreLetter || 0,
+          scoreMatching: c.applications?.[0]?.scoreMatching || 0,
+          category: c.applications?.[0]?.score >= 90 ? 'Excellent' : 'Bon',
+          matchDetail: c.applications?.[0]?.matchDetail || '',
+          risks: c.applications?.[0]?.risks || 'Aucun',
+          riskDetail: c.applications?.[0]?.riskDetail || '',
+          date: c.createdAt ? c.createdAt.split('T')[0] : new Date().toISOString().split('T')[0],
+          status: c.applications?.[0]?.status || 'NOUVEAU',
+          history: c.applications?.[0]?.history || [{ action: 'Profil créé', date: new Date().toISOString().replace('T', ' ').slice(0, 16), user: 'Système' }],
+          academicProfile: c.academicProfile || null,
+        })));
       }
+
+      // Fetch Interviews
+      const fetchedInterviews = await apiFetch<any[]>(`/hr/recruitment/interviews?tenantId=${tenant.id}`);
+      if (fetchedInterviews) {
+        setInterviews(fetchedInterviews.map(i => ({
+          ...i,
+          date: i.date ? i.date.split('T')[0] : '',
+        })));
+      }
+
+      // Fetch Tests
+      const fetchedTests = await apiFetch<any[]>(`/hr/recruitment/tests?tenantId=${tenant.id}`);
+      if (fetchedTests) {
+        setTests(fetchedTests);
+      }
+
+      // Fetch Talent Pool
+      const fetchedTalent = await apiFetch<any[]>(`/hr/recruitment/talent-pool?tenantId=${tenant.id}`);
+      if (fetchedTalent) {
+        setTalentPool(fetchedTalent);
+      }
+
+    } catch (err) {
+      console.error('Error fetching recruitment datasets:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, [tenant?.id, activeTab]);
+
+  // Create Job
+  const handleCreateJob = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tenant?.id) return;
+    try {
+      await apiFetch(`/hr/recruitment/jobs?tenantId=${tenant.id}`, {
+        method: 'POST',
+        body: newJob,
+      });
+      setIsAddJobOpen(false);
+      setNewJob({ title: '', dept: '', loc: '', status: 'PUBLIÉE', contractType: 'CDI' });
+      loadData();
+    } catch (err) {
+      console.error('Failed to create job:', err);
+    }
+  };
+
+  // Create Candidate and Application
+  const handleCreateCandidate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tenant?.id) return;
+    try {
+      // 1. Create Candidate
+      const createdCandidate = await apiFetch<any>(`/hr/recruitment/candidates?tenantId=${tenant.id}`, {
+        method: 'POST',
+        body: {
+          firstName: newCandidate.firstName,
+          lastName: newCandidate.lastName,
+          email: newCandidate.email,
+          phone: newCandidate.phone,
+          address: newCandidate.address,
+          gender: newCandidate.gender,
+        }
+      });
+
+      // 2. Create associated application if Job is selected
+      if (newCandidate.jobId && createdCandidate?.id) {
+        await apiFetch(`/hr/recruitment/applications?tenantId=${tenant.id}`, {
+          method: 'POST',
+          body: {
+            jobId: newCandidate.jobId,
+            candidateId: createdCandidate.id,
+            status: newCandidate.status,
+          }
+        });
+      }
+
+      setIsAddCandidateOpen(false);
+      setNewCandidate({ firstName: '', lastName: '', email: '', phone: '', address: '', gender: 'M', jobId: '', status: 'NOUVEAU' });
+      loadData();
+    } catch (err) {
+      console.error('Failed to create candidate/application:', err);
+    }
+  };
+
+  // Delete Job Offer
+  const handleDeleteJob = async (id: string) => {
+    if (!confirm('Voulez-vous supprimer cette offre ?')) return;
+    try {
+      await apiFetch(`/hr/recruitment/jobs/${id}`, { method: 'DELETE' });
+      loadData();
+    } catch (err) {
+      console.error('Failed to delete job:', err);
+    }
+  };
+
+  // Delete Candidate
+  const handleDeleteCandidate = async (id: string) => {
+    if (!confirm('Voulez-vous supprimer ce candidat ?')) return;
+    try {
+      await apiFetch(`/hr/recruitment/candidates/${id}`, { method: 'DELETE' });
+      loadData();
+    } catch (err) {
+      console.error('Failed to delete candidate:', err);
+    }
+  };
+
+  // Schedule Interview
+  const handleCreateInterview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tenant?.id) return;
+    try {
+      await apiFetch(`/hr/recruitment/interviews?tenantId=${tenant.id}`, {
+        method: 'POST',
+        body: newInterview,
+      });
+      setIsAddInterviewOpen(false);
+      setNewInterview({ candidateId: '', type: 'RH', date: '', time: '', format: 'Visioconférence', evaluator: '', score: '0', comments: '' });
+      loadData();
+    } catch (err) {
+      console.error('Failed to schedule interview:', err);
+    }
+  };
+
+  // Delete Interview
+  const handleDeleteInterview = async (id: string) => {
+    if (!confirm('Annuler cet entretien ?')) return;
+    try {
+      await apiFetch(`/hr/recruitment/interviews/${id}`, { method: 'DELETE' });
+      loadData();
+    } catch (err) {
+      console.error('Failed to delete interview:', err);
+    }
+  };
+
+  // Create Test
+  const handleCreateTest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tenant?.id) return;
+    try {
+      await apiFetch(`/hr/recruitment/tests?tenantId=${tenant.id}`, {
+        method: 'POST',
+        body: newTest,
+      });
+      setIsAddTestOpen(false);
+      setNewTest({ name: '', type: 'Technique', description: '' });
+      loadData();
+    } catch (err) {
+      console.error('Failed to create test:', err);
+    }
+  };
+
+  // Delete Test
+  const handleDeleteTest = async (id: string) => {
+    if (!confirm('Supprimer ce test ?')) return;
+    try {
+      await apiFetch(`/hr/recruitment/tests/${id}`, { method: 'DELETE' });
+      loadData();
+    } catch (err) {
+      console.error('Failed to delete test:', err);
+    }
+  };
+
+  // Saisir un Résultat de Test
+  const handleCreateTestResult = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await apiFetch(`/hr/recruitment/test-results`, {
+        method: 'POST',
+        body: newTestResult,
+      });
+      setIsAddTestResultOpen(false);
+      setNewTestResult({ testId: '', candidateId: '', score: '50', result: 'ADMIS' });
+      loadData();
+    } catch (err) {
+      console.error('Failed to save test result:', err);
+    }
+  };
+
+  // Remove Test Result
+  const handleDeleteTestResult = async (id: string) => {
+    if (!confirm('Supprimer ce résultat de test ?')) return;
+    try {
+      await apiFetch(`/hr/recruitment/test-results/${id}`, { method: 'DELETE' });
+      loadData();
+    } catch (err) {
+      console.error('Failed to delete test result:', err);
+    }
+  };
+
+  // Add candidate to Talent Pool
+  const handleAddToTalentPool = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await apiFetch(`/hr/recruitment/talent-pool/${newTalent.candidateId}`, {
+        method: 'POST',
+        body: {
+          category: newTalent.category,
+          status: newTalent.status,
+        }
+      });
+      setIsAddTalentOpen(false);
+      setNewTalent({ candidateId: '', category: 'Développement', status: 'Disponible' });
+      loadData();
+    } catch (err) {
+      console.error('Failed to register to talent pool:', err);
+    }
+  };
+
+  // Remove candidate from Talent Pool
+  const handleRemoveFromTalent = async (id: string) => {
+    if (!confirm('Retirer cette fiche de la base de talents ?')) return;
+    try {
+      await apiFetch(`/hr/recruitment/talent-pool/${id}`, { method: 'DELETE' });
+      loadData();
+    } catch (err) {
+      console.error('Failed to remove from talent pool:', err);
+    }
+  };
+
+  // Move candidate application status
+  const handleMoveCandidate = async (candidateId: string, toStatus: string) => {
+    const candidate = candidates.find(c => c.id === candidateId);
+    if (!candidate) return;
+    try {
+      // Find candidate application to update status
+      const app = candidate.history?.[0]; // or fetch from backend API
       await apiFetch(`/hr/recruitment/applications/${candidateId}/status`, {
         method: 'PUT',
         body: { status: toStatus },
       });
+      loadData();
     } catch (err) {
-      console.warn('Local update only (mock or failure):', err);
+      console.error('Failed to change status:', err);
     }
+  };
 
-    setCandidates(
-      candidates.map((c) =>
-        c.id === candidateId
-          ? {
-              ...c,
-              status: toStatus,
-              history: [...c.history, { action: `Passage au statut ${toStatus}`, date: new Date().toISOString().replace('T', ' ').slice(0, 16), user: 'Sarah G. (RH)' }],
-            }
-          : c
-      )
-    );
-
-    setAuditLogs([
-      {
-        id: String(auditLogs.length + 1),
-        name: candidate.name,
-        from: fromStatus,
-        to: toStatus,
-        date: new Date().toLocaleTimeString('fr-FR'),
-      },
-      ...auditLogs,
-    ]);
-  }
+  // Filter Hired Candidates for "Embauches"
+  const hiredCandidates = candidates.filter(c => c.status === 'EMBAUCHÉ' || c.status === 'VALIDATION' || c.status === 'OFFRE');
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Internal Subtabs */}
+      {/* Sub tabs header navigation */}
       <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
-        {[{ id: 'jobs', label: "Offres d'emploi", icon: Briefcase }, { id: 'candidates', label: 'Candidatures', icon: Users }, { id: 'pipeline', label: 'Pipeline (Kanban)', icon: GitBranch }, { id: 'interviews', label: 'Entretiens', icon: Calendar }, { id: 'tests', label: 'Tests', icon: ClipboardList }, { id: 'embauches', label: 'Embauches', icon: UserCheck }, { id: 'talent_pool', label: 'Base de talents', icon: Award }].map((tab) => {
+        {[
+          { id: 'jobs', label: "Offres d'emploi", icon: Briefcase },
+          { id: 'candidates', label: 'Candidatures', icon: Users },
+          { id: 'interviews', label: 'Entretiens', icon: Calendar },
+          { id: 'tests', label: 'Tests', icon: ClipboardList },
+          { id: 'embauches', label: 'Embauches', icon: UserCheck },
+          { id: 'talent_pool', label: 'Base de talents', icon: Award }
+        ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
           return (
@@ -321,10 +493,11 @@ export function RecruitmentWorkspace() {
         <div className="space-y-3">{[1, 2, 3].map((i) => <div key={i} className="h-20 bg-slate-50 animate-pulse rounded-xl" />)}</div>
       ) : (
         <AnimatePresence mode="wait">
+          {/* TAB: JOBS */}
           {activeTab === 'jobs' && (
             <motion.div key="jobs" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
               <div className="flex justify-between items-center">
-                <h3 className="text-base font-bold text-slate-900">Offres de recrutement actives</h3>
+                <h3 className="text-base font-bold text-slate-900">Offres d'emploi actives</h3>
                 <button
                   onClick={() => setIsAddJobOpen(true)}
                   className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition"
@@ -334,26 +507,40 @@ export function RecruitmentWorkspace() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {jobs.map((job) => (
-                  <div key={job.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-all relative overflow-hidden">
-                    <div className="flex justify-between items-start">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{job.ref}</span>
-                      <span className={cn('px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase border', job.status === 'PUBLIÉE' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-200')}>{job.status}</span>
+              {jobs.length === 0 ? (
+                <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
+                  <Briefcase className="h-10 w-10 text-slate-300 mx-auto mb-3" />
+                  <p className="text-xs text-slate-500 font-semibold">Aucune offre d'emploi enregistrée.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {jobs.map((job) => (
+                    <div key={job.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-all relative overflow-hidden flex flex-col justify-between">
+                      <div>
+                        <div className="flex justify-between items-start">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{job.ref}</span>
+                          <div className="flex items-center gap-2">
+                            <span className={cn('px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase border', job.status === 'PUBLIÉE' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-200')}>{job.status}</span>
+                            <button onClick={() => handleDeleteJob(job.id)} className="text-slate-400 hover:text-red-600 transition">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                        <h4 className="font-bold text-slate-900 mt-2 text-sm">{job.title}</h4>
+                        <div className="mt-4 flex flex-col gap-1.5 text-xs text-slate-500 border-t border-slate-50 pt-3">
+                          <span className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" /> {job.loc} · {job.contractType || 'CDI'}</span>
+                          {job.salary && <span className="flex items-center gap-1.5"><DollarSign className="h-3.5 w-3.5" /> {job.salary}</span>}
+                          {job.academicLevel && <span className="flex items-center gap-1.5"><GraduationCap className="h-3.5 w-3.5" /> {job.academicLevel}</span>}
+                        </div>
+                      </div>
+                      <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center">
+                        <span className="text-xs font-semibold text-[#1A2BA6]">{job.candidates} Candidats</span>
+                        <span className="text-[10px] text-slate-400">Créé le {job.date}</span>
+                      </div>
                     </div>
-                    <h4 className="font-bold text-slate-900 mt-2 text-sm">{job.title}</h4>
-                    <div className="mt-4 flex flex-col gap-1.5 text-xs text-slate-500 border-t border-slate-50 pt-3">
-                      <span className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" /> {job.loc} · {job.contractType || 'CDI'}</span>
-                      {job.salary && <span className="flex items-center gap-1.5"><DollarSign className="h-3.5 w-3.5" /> {job.salary}</span>}
-                      {job.academicLevel && <span className="flex items-center gap-1.5"><GraduationCap className="h-3.5 w-3.5" /> {job.academicLevel}</span>}
-                    </div>
-                    <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center">
-                      <span className="text-xs font-semibold text-[#1A2BA6]">{job.candidates} Candidats</span>
-                      <span className="text-[10px] text-slate-400">Créé le {job.date}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
 
               {/* Create Job Modal */}
               {isAddJobOpen && (
@@ -430,48 +617,155 @@ export function RecruitmentWorkspace() {
             </motion.div>
           )}
 
+          {/* TAB: CANDIDATES */}
           {activeTab === 'candidates' && (
             <motion.div key="candidates" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-              <h3 className="text-base font-bold text-slate-900">Candidatures reçues</h3>
-              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                <table className="w-full border-collapse text-left text-xs">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider">
-                      <th className="p-4">Candidat</th>
-                      <th className="p-4">Poste ciblé</th>
-                      <th className="p-4 text-center">Score global</th>
-                      <th className="p-4">Risques</th>
-                      <th className="p-4">Statut</th>
-                      <th className="p-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {candidates.map((c) => (
-                      <tr key={c.id} className="hover:bg-slate-50/50 transition">
-                        <td className="p-4 font-bold text-slate-950">{c.name}</td>
-                        <td className="p-4 text-slate-600">{c.job}</td>
-                        <td className="p-4 text-center">
-                          <span className="font-bold text-[#1A2BA6] bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">{c.score}%</span>
-                        </td>
-                        <td className="p-4">
-                          <span className={cn('inline-flex items-center gap-1 font-semibold', c.risks === 'Aucun' ? 'text-emerald-600' : 'text-amber-600')}>
-                            {c.risks}
-                          </span>
-                        </td>
-                        <td className="p-4 font-bold text-slate-500">{c.status}</td>
-                        <td className="p-4 text-right">
-                          <button
-                            onClick={() => { setSelectedCandidate(c); setActiveCandidateTab('identity'); }}
-                            className="text-xs font-bold text-[#1A2BA6] hover:underline"
-                          >
-                            Détails fiche →
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="flex justify-between items-center">
+                <h3 className="text-base font-bold text-slate-900">Candidatures reçues</h3>
+                <button
+                  onClick={() => setIsAddCandidateOpen(true)}
+                  className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition"
+                  style={{ backgroundColor: PRIMARY }}
+                >
+                  <UserPlus className="h-4 w-4" /> Enregistrer un candidat
+                </button>
               </div>
+
+              {candidates.length === 0 ? (
+                <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
+                  <Users className="h-10 w-10 text-slate-300 mx-auto mb-3" />
+                  <p className="text-xs text-slate-500 font-semibold">Aucun candidat enregistré.</p>
+                </div>
+              ) : (
+                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                  <table className="w-full border-collapse text-left text-xs text-slate-600">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider">
+                        <th className="p-4">Candidat</th>
+                        <th className="p-4">Poste ciblé</th>
+                        <th className="p-4 text-center">Score global</th>
+                        <th className="p-4">Risques</th>
+                        <th className="p-4">Statut</th>
+                        <th className="p-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {candidates.map((c) => (
+                        <tr key={c.id} className="hover:bg-slate-50/50 transition">
+                          <td className="p-4 font-bold text-slate-950">{c.name}</td>
+                          <td className="p-4 text-slate-600">{c.job}</td>
+                          <td className="p-4 text-center">
+                            <span className="font-bold text-[#1A2BA6] bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">{c.score}%</span>
+                          </td>
+                          <td className="p-4">
+                            <span className={cn('inline-flex items-center gap-1 font-semibold px-2 py-0.5 rounded-full text-[10px]', c.risks === 'Aucun' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-amber-50 text-amber-600 border border-amber-100')}>
+                              {c.risks}
+                            </span>
+                          </td>
+                          <td className="p-4">
+                            <select
+                              value={c.status}
+                              onChange={(e) => handleMoveCandidate(c.id, e.target.value)}
+                              className="bg-slate-50 border border-slate-200 text-[10px] font-bold rounded-lg px-2 py-1 uppercase"
+                            >
+                              <option value="NOUVEAU">Nouveau</option>
+                              <option value="ANALYSE IA">Analyse IA</option>
+                              <option value="PRÉSÉLECTIONNÉ">Présélectionné</option>
+                              <option value="ENTRETIEN RH">Entretien RH</option>
+                              <option value="ENTRETIEN TECHNIQUE">Entretien Technique</option>
+                              <option value="TEST">Test</option>
+                              <option value="VALIDATION">Validation</option>
+                              <option value="OFFRE">Offre</option>
+                              <option value="EMBAUCHÉ">Embauché</option>
+                              <option value="REJETÉ">Rejeté</option>
+                            </select>
+                          </td>
+                          <td className="p-4 text-right flex justify-end gap-3 items-center">
+                            <button
+                              onClick={() => { setSelectedCandidate(c); setActiveCandidateTab('identity'); }}
+                              className="text-xs font-bold text-[#1A2BA6] hover:underline"
+                            >
+                              Détails fiche →
+                            </button>
+                            <button onClick={() => handleDeleteCandidate(c.id)} className="text-slate-400 hover:text-red-600 transition">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Add Candidate Form Modal */}
+              {isAddCandidateOpen && (
+                <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-100">
+                    <h3 className="font-bold text-slate-900 text-base mb-4">Enregistrer une candidature</h3>
+                    <form onSubmit={handleCreateCandidate} className="space-y-4">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Prénom</label>
+                          <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newCandidate.firstName} onChange={(e) => setNewCandidate({ ...newCandidate, firstName: e.target.value })} required />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Nom</label>
+                          <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newCandidate.lastName} onChange={(e) => setNewCandidate({ ...newCandidate, lastName: e.target.value })} required />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Email</label>
+                          <input type="email" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newCandidate.email} onChange={(e) => setNewCandidate({ ...newCandidate, email: e.target.value })} required />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Téléphone</label>
+                          <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newCandidate.phone} onChange={(e) => setNewCandidate({ ...newCandidate, phone: e.target.value })} required />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Adresse</label>
+                          <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newCandidate.address} onChange={(e) => setNewCandidate({ ...newCandidate, address: e.target.value })} />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Genre</label>
+                          <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newCandidate.gender} onChange={(e) => setNewCandidate({ ...newCandidate, gender: e.target.value })}>
+                            <option value="M">Masculin</option>
+                            <option value="F">Féminin</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Associer à l'offre</label>
+                          <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newCandidate.jobId} onChange={(e) => setNewCandidate({ ...newCandidate, jobId: e.target.value })} required>
+                            <option value="">-- Choisir une offre d'emploi --</option>
+                            {jobs.map(j => <option key={j.id} value={j.id}>{j.title}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Statut initial</label>
+                          <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newCandidate.status} onChange={(e) => setNewCandidate({ ...newCandidate, status: e.target.value })}>
+                            <option value="NOUVEAU">Nouveau</option>
+                            <option value="PRÉSÉLECTIONNÉ">Présélectionné</option>
+                            <option value="ENTRETIEN RH">Entretien RH</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 justify-end mt-6">
+                        <button type="button" onClick={() => setIsAddCandidateOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs">Annuler</button>
+                        <button type="submit" className="px-4 py-2 text-white rounded-lg text-xs font-semibold" style={{ backgroundColor: PRIMARY }}>Enregistrer</button>
+                      </div>
+                    </form>
+                  </motion.div>
+                </div>
+              )}
 
               {/* Candidate Detail Modal */}
               {selectedCandidate && (
@@ -488,7 +782,8 @@ export function RecruitmentWorkspace() {
                     {/* Tabs header */}
                     <div className="flex gap-4 border-b border-slate-100 pb-2 mb-4">
                       {[
-                        { id: 'identity', label: 'Identité' },
+                        { id: 'profile', label: 'Profil Carrière' },
+                        { id: 'identity', label: 'Contact' },
                         { id: 'documents', label: 'Documents' },
                         { id: 'ia', label: 'Analyse IA' },
                         { id: 'history', label: 'Historique' },
@@ -504,24 +799,178 @@ export function RecruitmentWorkspace() {
                     </div>
 
                     {/* Tab contents */}
-                    <div className="min-h-[200px] text-xs">
+                    <div className="min-h-[280px] text-xs">
+                      {activeCandidateTab === 'profile' && (() => {
+                        let parsedProfile: any = {};
+                        try {
+                          if (selectedCandidate.academicProfile?.pedagogicalExperience) {
+                            parsedProfile = JSON.parse(selectedCandidate.academicProfile.pedagogicalExperience);
+                          }
+                        } catch (e) {}
+                        const experiencesList = parsedProfile.experiences || [];
+                        const educationList = parsedProfile.education || [];
+                        const candidatePitch = parsedProfile.pitch || "";
+                        const candidateLinkedin = parsedProfile.linkedinUrl || "";
+                        const candidateSkills = selectedCandidate.academicProfile?.subjects || [];
+
+                        return (
+                          <div className="space-y-5 overflow-y-auto max-h-[55vh] pr-2">
+                            {/* Profile Header */}
+                            <div className="bg-gradient-to-r from-[#1A2BA6] to-indigo-700 rounded-xl p-4 text-white flex justify-between items-center shadow-sm">
+                              <div>
+                                <h4 className="font-extrabold text-sm">{selectedCandidate.name}</h4>
+                                <p className="text-[10px] text-indigo-100 font-medium">Postulant : {selectedCandidate.job}</p>
+                              </div>
+                              {candidateLinkedin && (
+                                <a
+                                  href={candidateLinkedin}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-1.5 bg-white text-[#0A66C2] px-3 py-1.5 rounded-lg text-[10px] font-bold hover:bg-slate-50 transition"
+                                >
+                                  <Linkedin className="h-3.5 w-3.5 fill-[#0A66C2]" /> Voir Profil
+                                </a>
+                              )}
+                            </div>
+
+                            {/* Pitch / A propos */}
+                            {candidatePitch && (
+                              <div className="space-y-1">
+                                <h5 className="font-bold text-slate-800 uppercase tracking-wider text-[9px] text-[#1A2BA6]">À propos</h5>
+                                <p className="text-slate-600 bg-slate-50 border border-slate-100 rounded-lg p-3 leading-relaxed whitespace-pre-line">{candidatePitch}</p>
+                              </div>
+                            )}
+
+                            {/* Work Experience */}
+                            <div className="space-y-2">
+                              <h5 className="font-bold text-slate-800 uppercase tracking-wider text-[9px] text-[#1A2BA6] flex items-center gap-1">
+                                <Briefcase className="h-3.5 w-3.5" /> Expérience Professionnelle
+                              </h5>
+                              {experiencesList.length === 0 ? (
+                                <p className="text-slate-400 italic text-[10px]">Aucune expérience saisie.</p>
+                              ) : (
+                                <div className="border-l border-slate-200 pl-3 ml-1.5 space-y-3">
+                                  {experiencesList.map((exp: any, i: number) => (
+                                    <div key={i} className="relative">
+                                      <div className="absolute -left-[17px] top-1.5 w-2 h-2 rounded-full bg-[#1A2BA6] ring-4 ring-white" />
+                                      <p className="font-bold text-slate-800 text-[11px]">{exp.title}</p>
+                                      <p className="text-[9px] text-slate-500">{exp.company} · {exp.years}</p>
+                                      {exp.description && <p className="text-[10px] text-slate-600 mt-1 italic leading-relaxed">{exp.description}</p>}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Education */}
+                            <div className="space-y-2">
+                              <h5 className="font-bold text-slate-800 uppercase tracking-wider text-[9px] text-[#1A2BA6] flex items-center gap-1">
+                                <BookOpen className="h-3.5 w-3.5" /> Formation
+                              </h5>
+                              {educationList.length === 0 ? (
+                                <p className="text-slate-400 italic text-[10px]">Aucun diplôme saisi.</p>
+                              ) : (
+                                <div className="space-y-2">
+                                  {educationList.map((edu: any, i: number) => (
+                                    <div key={i} className="bg-slate-50 border border-slate-100 rounded-lg p-2.5">
+                                      <p className="font-bold text-slate-800">{edu.degree}</p>
+                                      <p className="text-[10px] text-slate-500">{edu.school} · {edu.year}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Skills */}
+                            <div className="space-y-2">
+                              <h5 className="font-bold text-slate-800 uppercase tracking-wider text-[9px] text-[#1A2BA6] flex items-center gap-1">
+                                <Award className="h-3.5 w-3.5" /> Compétences normalisées
+                              </h5>
+                              {candidateSkills.length === 0 ? (
+                                <p className="text-slate-400 italic text-[10px]">Aucune compétence répertoriée.</p>
+                              ) : (
+                                <div className="flex flex-wrap gap-1">
+                                  {candidateSkills.map((s: string) => (
+                                    <span key={s} className="px-2 py-0.5 bg-indigo-50 border border-indigo-100 text-[#1A2BA6] rounded font-semibold text-[9px]">{s}</span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Recruiter Evaluation Widget */}
+                            <div className="border-t border-slate-100 pt-4 space-y-3">
+                              <h5 className="font-bold text-slate-800 uppercase tracking-wider text-[9px] text-[#1A2BA6]">Évaluation Recruteur</h5>
+                              <div className="bg-slate-50 rounded-xl p-3 border border-slate-200/60 space-y-3">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] text-slate-500 font-semibold">Note (1-5 étoiles) :</span>
+                                  <div className="flex gap-1">
+                                    {[1, 2, 3, 4, 5].map((star) => (
+                                      <button
+                                        type="button"
+                                        key={star}
+                                        onClick={() => setRecruiterRating(star)}
+                                        className="text-slate-300 hover:scale-110 transition"
+                                      >
+                                        <Star className={cn('h-4 w-4', recruiterRating >= star ? 'text-amber-500 fill-amber-500' : 'text-slate-300')} />
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div className="space-y-2">
+                                  <textarea
+                                    value={recruiterComment}
+                                    onChange={(e) => setRecruiterComment(e.target.value)}
+                                    placeholder="Écrire un avis de recrutement..."
+                                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[10px] h-12 focus:outline-none focus:border-[#1A2BA6]"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      if (!selectedCandidate) return;
+                                      try {
+                                        await apiFetch(`/hr/recruitment/applications/${selectedCandidate.id}/status`, {
+                                          method: 'PUT',
+                                          body: {
+                                            status: selectedCandidate.status,
+                                            review: `Évaluation: ${recruiterRating}/5. Note: ${recruiterComment}`
+                                          }
+                                        });
+                                        alert('Avis enregistré !');
+                                        setRecruiterComment('');
+                                        setRecruiterRating(0);
+                                        loadData();
+                                      } catch (err) {
+                                        console.error(err);
+                                      }
+                                    }}
+                                    className="px-3 py-1.5 bg-[#1A2BA6] text-white rounded-lg text-[9px] font-bold hover:opacity-90 transition"
+                                  >
+                                    Enregistrer l'évaluation
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                       {activeCandidateTab === 'identity' && (
                         <div className="space-y-3">
                           <p><strong>Email:</strong> {selectedCandidate.email}</p>
                           <p><strong>Téléphone:</strong> {selectedCandidate.phone}</p>
                           <p><strong>Adresse:</strong> {selectedCandidate.address}</p>
                           <p><strong>Date de dépôt:</strong> {selectedCandidate.date}</p>
+                          <p><strong>Statut:</strong> {selectedCandidate.status}</p>
                         </div>
                       )}
                       {activeCandidateTab === 'documents' && (
                         <div className="space-y-3">
                           <div className="flex items-center gap-2 p-2.5 border border-slate-100 rounded-lg hover:bg-slate-50 cursor-pointer">
                             <FileText className="h-4 w-4 text-[#1A2BA6]" />
-                            <span>Curriculum_Vitae_{selectedCandidate.name.replace(' ', '_')}.pdf</span>
+                            <span>Curriculum_Vitae_{selectedCandidate.lastName}_{selectedCandidate.firstName}.pdf</span>
                           </div>
                           <div className="flex items-center gap-2 p-2.5 border border-slate-100 rounded-lg hover:bg-slate-50 cursor-pointer">
                             <FileText className="h-4 w-4 text-[#1A2BA6]" />
-                            <span>Lettre_Motivation_{selectedCandidate.name.replace(' ', '_')}.pdf</span>
+                            <span>Lettre_Motivation_{selectedCandidate.lastName}_{selectedCandidate.firstName}.pdf</span>
                           </div>
                         </div>
                       )}
@@ -543,7 +992,7 @@ export function RecruitmentWorkspace() {
                           </div>
                           <div>
                             <p className="font-bold text-slate-700">Détail du matching :</p>
-                            <p className="text-slate-600 mt-1">{selectedCandidate.matchDetail}</p>
+                            <p className="text-slate-600 mt-1">{selectedCandidate.matchDetail || "En attente d'évaluation IA."}</p>
                           </div>
                           {selectedCandidate.risks !== 'Aucun' && (
                             <div className="p-3 bg-amber-50 border border-amber-100 rounded-lg text-amber-800 flex gap-2">
@@ -576,74 +1025,416 @@ export function RecruitmentWorkspace() {
             </motion.div>
           )}
 
-          {activeTab === 'pipeline' && (
-            <motion.div key="pipeline" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+          {/* TAB: INTERVIEWS */}
+          {activeTab === 'interviews' && (
+            <motion.div key="interviews" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
               <div className="flex justify-between items-center">
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">Pipeline de recrutement complet (10 Colonnes)</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">Glissez-déposez ou cliquez sur les flèches pour modifier les statuts</p>
-                </div>
+                <h3 className="text-base font-bold text-slate-900">Calendrier des Entretiens</h3>
+                <button
+                  onClick={() => setIsAddInterviewOpen(true)}
+                  className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition"
+                  style={{ backgroundColor: PRIMARY }}
+                >
+                  <CalendarDays className="h-4 w-4" /> Programmer un entretien
+                </button>
               </div>
 
-              {/* Kanban Columns */}
-              <div className="flex gap-4 overflow-x-auto pb-4 max-w-full">
-                {PIPELINE_COLUMNS.map((colName) => {
-                  const colCandidates = candidates.filter((c) => c.status === colName);
-                  return (
-                    <div key={colName} className="bg-slate-50 border border-slate-200 rounded-xl p-3 min-w-[220px] max-w-[220px] flex flex-col h-[400px]">
-                      <div className="flex justify-between items-center mb-3">
-                        <span className="text-[10px] font-bold text-slate-600 truncate">{colName}</span>
-                        <span className="text-xs font-bold text-slate-400">{colCandidates.length}</span>
-                      </div>
-                      <div className="space-y-3 flex-grow overflow-y-auto">
-                        {colCandidates.map((c) => (
-                          <div key={c.id} className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm hover:border-[#1A2BA6] transition">
-                            <p className="font-bold text-slate-900 text-xs">{c.name}</p>
-                            <p className="text-[9px] text-slate-500 mt-1">{c.job}</p>
-                            <div className="flex justify-between items-center mt-3 pt-2 border-t border-slate-100">
-                              <span className="text-[10px] text-indigo-600 font-bold">{c.score}%</span>
-                              <div className="flex gap-1">
-                                <select
-                                  className="text-[9px] font-bold bg-slate-100 border border-slate-200 rounded px-1"
-                                  value={c.status}
-                                  onChange={(e) => handleMoveCandidate(c.id, e.target.value)}
-                                >
-                                  {PIPELINE_COLUMNS.map((col) => (
-                                    <option key={col} value={col}>{col}</option>
-                                  ))}
-                                </select>
-                              </div>
-                            </div>
+              {interviews.length === 0 ? (
+                <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
+                  <Calendar className="h-10 w-10 text-slate-300 mx-auto mb-3" />
+                  <p className="text-xs text-slate-500 font-semibold">Aucun entretien programmé.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {interviews.map((int) => (
+                    <div key={int.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col justify-between">
+                      <div>
+                        <div className="flex justify-between items-start">
+                          <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-blue-50 text-blue-700 border border-blue-100">{int.type}</span>
+                          <button onClick={() => handleDeleteInterview(int.id)} className="text-slate-400 hover:text-red-600 transition">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <h4 className="font-bold text-slate-900 mt-3 text-xs">
+                          {int.candidate ? `${int.candidate.firstName} ${int.candidate.lastName}` : 'Candidat inconnu'}
+                        </h4>
+                        <div className="mt-4 flex flex-col gap-1.5 text-xs text-slate-500 border-t border-slate-50 pt-3">
+                          <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" /> {int.date} à {int.time}</span>
+                          <span className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" /> Format : {int.format}</span>
+                          <span className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Évaluateur : {int.evaluator}</span>
+                        </div>
+                        {int.comments && (
+                          <div className="mt-3 bg-slate-50 p-2.5 rounded-lg border border-slate-100 text-[10px] text-slate-600">
+                            {int.comments}
                           </div>
-                        ))}
+                        )}
+                      </div>
+                      <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center">
+                        <span className="text-[10px] font-semibold text-slate-400">Note technique :</span>
+                        <span className="font-bold text-[#1A2BA6] bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">{int.score}/100</span>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
+                  ))}
+                </div>
+              )}
 
-              {/* Audits */}
-              {auditLogs.length > 0 && (
-                <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-                  <h4 className="font-bold text-slate-900 text-xs mb-3 flex items-center gap-1.5"><Info className="h-4 w-4 text-slate-400" /> Journal d'audit en temps réel</h4>
-                  <div className="space-y-1.5 text-xs text-slate-600 max-h-[120px] overflow-y-auto">
-                    {auditLogs.map((log) => (
-                      <p key={log.id}>[ {log.date} ] <strong>{log.name}</strong> déplacé de <em>{log.from}</em> à <strong className="text-[#1A2BA6]">{log.to}</strong></p>
-                    ))}
-                  </div>
+              {/* Schedule Interview Modal */}
+              {isAddInterviewOpen && (
+                <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-100">
+                    <h3 className="font-bold text-slate-900 text-base mb-4">Programmer un entretien</h3>
+                    <form onSubmit={handleCreateInterview} className="space-y-4">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Candidat</label>
+                        <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newInterview.candidateId} onChange={(e) => setNewInterview({ ...newInterview, candidateId: e.target.value })} required>
+                          <option value="">-- Choisir un candidat --</option>
+                          {candidates.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Type d'entretien</label>
+                          <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newInterview.type} onChange={(e) => setNewInterview({ ...newInterview, type: e.target.value })}>
+                            <option value="RH">Entretien RH</option>
+                            <option value="TECHNIQUE">Entretien Technique</option>
+                            <option value="DIRECTIONS">Entretien de Direction</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Format</label>
+                          <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newInterview.format} onChange={(e) => setNewInterview({ ...newInterview, format: e.target.value })}>
+                            <option value="Visioconférence">Visioconférence</option>
+                            <option value="Présentiel">Présentiel</option>
+                            <option value="Téléphone">Téléphone</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Date</label>
+                          <input type="date" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newInterview.date} onChange={(e) => setNewInterview({ ...newInterview, date: e.target.value })} required />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Heure</label>
+                          <input type="time" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newInterview.time} onChange={(e) => setNewInterview({ ...newInterview, time: e.target.value })} required />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Score (RH/Tech)</label>
+                          <input type="number" min="0" max="100" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newInterview.score} onChange={(e) => setNewInterview({ ...newInterview, score: e.target.value })} />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="col-span-2">
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Évaluateur (RH/Manager)</label>
+                          <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newInterview.evaluator} onChange={(e) => setNewInterview({ ...newInterview, evaluator: e.target.value })} required placeholder="Sarah G. / Dev Lead" />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Commentaires</label>
+                        <textarea className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-16" value={newInterview.comments} onChange={(e) => setNewInterview({ ...newInterview, comments: e.target.value })} />
+                      </div>
+
+                      <div className="flex gap-2 justify-end mt-6">
+                        <button type="button" onClick={() => setIsAddInterviewOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs">Annuler</button>
+                        <button type="submit" className="px-4 py-2 text-white rounded-lg text-xs font-semibold" style={{ backgroundColor: PRIMARY }}>Programmer</button>
+                      </div>
+                    </form>
+                  </motion.div>
                 </div>
               )}
             </motion.div>
           )}
 
-          {/* Other tabs */}
-          {activeTab !== 'jobs' && activeTab !== 'candidates' && activeTab !== 'pipeline' && (
-            <motion.div key={activeTab} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-white border border-slate-200 rounded-xl p-8 text-center py-12">
-              <Bookmark className="h-10 w-10 text-indigo-500 mx-auto mb-3" />
-              <h4 className="font-bold text-slate-800 text-sm">Gestion du sous-module : {activeTab.toUpperCase()}</h4>
-              <p className="text-xs text-slate-500 max-w-md mx-auto mt-2">
-                Conformément à la feuille de route du Tome 2, cet espace est initialisé et prêt pour la saisie de vos données opérationnelles.
-              </p>
+          {/* TAB: TESTS */}
+          {activeTab === 'tests' && (
+            <motion.div key="tests" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+              <div className="flex justify-between items-center">
+                <h3 className="text-base font-bold text-slate-900">Épreuves et Tests d'évaluation</h3>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setIsAddTestResultOpen(true)}
+                    className="flex items-center gap-2 border border-[#1A2BA6] text-[#1A2BA6] rounded-xl px-4 py-2.5 text-xs font-bold transition hover:bg-indigo-50"
+                  >
+                    Saisir un résultat
+                  </button>
+                  <button
+                    onClick={() => setIsAddTestOpen(true)}
+                    className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:opacity-90 transition"
+                    style={{ backgroundColor: PRIMARY }}
+                  >
+                    <Plus className="h-4 w-4" /> Créer un test
+                  </button>
+                </div>
+              </div>
+
+              {tests.length === 0 ? (
+                <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
+                  <ClipboardList className="h-10 w-10 text-slate-300 mx-auto mb-3" />
+                  <p className="text-xs text-slate-500 font-semibold">Aucun test d'évaluation enregistré.</p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {tests.map((test) => (
+                    <div key={test.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+                      <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+                        <div>
+                          <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-amber-50 text-amber-700 border border-amber-100">{test.type}</span>
+                          <h4 className="font-bold text-slate-900 mt-2 text-sm">{test.name}</h4>
+                          {test.description && <p className="text-xs text-slate-500 mt-1">{test.description}</p>}
+                        </div>
+                        <button onClick={() => handleDeleteTest(test.id)} className="text-slate-400 hover:text-red-600 transition">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+
+                      <div className="mt-4">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Candidats ayant passé ce test</span>
+                        {(!test.results || test.results.length === 0) ? (
+                          <span className="text-xs text-slate-400 italic">Aucun résultat enregistré pour le moment.</span>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {test.results.map((res) => (
+                              <div key={res.id} className="bg-slate-50 border border-slate-100 rounded-lg p-3 flex justify-between items-center text-xs">
+                                <div>
+                                  <p className="font-bold text-slate-800">{res.candidate ? `${res.candidate.firstName} ${res.candidate.lastName}` : 'Inconnu'}</p>
+                                  <p className="text-[10px] text-slate-500 mt-0.5">Statut: {res.result}</p>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <span className="font-bold text-[#1A2BA6] bg-white border border-slate-200 rounded-full px-2 py-0.5">{res.score}/100</span>
+                                  <button onClick={() => handleDeleteTestResult(res.id)} className="text-slate-400 hover:text-red-500 transition">
+                                    ✕
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Create Test Modal */}
+              {isAddTestOpen && (
+                <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-100">
+                    <h3 className="font-bold text-slate-900 text-base mb-4">Créer une épreuve / test</h3>
+                    <form onSubmit={handleCreateTest} className="space-y-4">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Nom de l'épreuve</label>
+                        <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newTest.name} onChange={(e) => setNewTest({ ...newTest, name: e.target.value })} required />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Type de test</label>
+                        <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newTest.type} onChange={(e) => setNewTest({ ...newTest, type: e.target.value })}>
+                          <option value="Technique">Technique</option>
+                          <option value="RH / Psychotechnique">RH / Psychotechnique</option>
+                          <option value="Anglais">Langue / Anglais</option>
+                          <option value="Compétences transverses">Compétences transverses</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Description / Objectifs</label>
+                        <textarea className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-20" value={newTest.description} onChange={(e) => setNewTest({ ...newTest, description: e.target.value })} />
+                      </div>
+                      <div className="flex gap-2 justify-end mt-6">
+                        <button type="button" onClick={() => setIsAddTestOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs">Annuler</button>
+                        <button type="submit" className="px-4 py-2 text-white rounded-lg text-xs font-semibold" style={{ backgroundColor: PRIMARY }}>Enregistrer</button>
+                      </div>
+                    </form>
+                  </motion.div>
+                </div>
+              )}
+
+              {/* Log Test Result Modal */}
+              {isAddTestResultOpen && (
+                <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-100">
+                    <h3 className="font-bold text-slate-900 text-base mb-4">Saisir le score d'un candidat</h3>
+                    <form onSubmit={handleCreateTestResult} className="space-y-4">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Sélectionner l'épreuve</label>
+                        <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newTestResult.testId} onChange={(e) => setNewTestResult({ ...newTestResult, testId: e.target.value })} required>
+                          <option value="">-- Choisir le test --</option>
+                          {tests.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Candidat</label>
+                        <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newTestResult.candidateId} onChange={(e) => setNewTestResult({ ...newTestResult, candidateId: e.target.value })} required>
+                          <option value="">-- Choisir le candidat --</option>
+                          {candidates.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Score obtenu (/100)</label>
+                          <input type="number" min="0" max="100" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newTestResult.score} onChange={(e) => setNewTestResult({ ...newTestResult, score: e.target.value })} required />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Résultat final</label>
+                          <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newTestResult.result} onChange={(e) => setNewTestResult({ ...newTestResult, result: e.target.value })}>
+                            <option value="ADMIS">Admis / Validé</option>
+                            <option value="REJETÉ">Échec / Non retenu</option>
+                            <option value="RÉSERVE">Liste d'attente</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 justify-end mt-6">
+                        <button type="button" onClick={() => setIsAddTestResultOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs">Annuler</button>
+                        <button type="submit" className="px-4 py-2 text-white rounded-lg text-xs font-semibold" style={{ backgroundColor: PRIMARY }}>Enregistrer</button>
+                      </div>
+                    </form>
+                  </motion.div>
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {/* TAB: EMBAUCHES */}
+          {activeTab === 'embauches' && (
+            <motion.div key="embauches" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+              <h3 className="text-base font-bold text-slate-900">Embauches et Offres contractuelles</h3>
+              <p className="text-xs text-slate-500">Visualisez les candidats validés en phase finale ou déjà recrutés dans l'établissement.</p>
+
+              {hiredCandidates.length === 0 ? (
+                <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
+                  <UserCheck className="h-10 w-10 text-slate-300 mx-auto mb-3" />
+                  <p className="text-xs text-slate-500 font-semibold">Aucun recrutement validé pour le moment.</p>
+                </div>
+              ) : (
+                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                  <table className="w-full border-collapse text-left text-xs text-slate-600">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider">
+                        <th className="p-4">Candidat</th>
+                        <th className="p-4">Poste concerné</th>
+                        <th className="p-4">Score final</th>
+                        <th className="p-4">Date de décision</th>
+                        <th className="p-4">Statut</th>
+                        <th className="p-4 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {hiredCandidates.map((c) => (
+                        <tr key={c.id} className="hover:bg-slate-50/50 transition">
+                          <td className="p-4 font-bold text-slate-950">{c.name}</td>
+                          <td className="p-4 text-slate-600">{c.job}</td>
+                          <td className="p-4">
+                            <span className="font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">{c.score}%</span>
+                          </td>
+                          <td className="p-4 text-slate-500">{c.date}</td>
+                          <td className="p-4 font-bold text-slate-700">
+                            <span className="uppercase text-[9px] bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">{c.status}</span>
+                          </td>
+                          <td className="p-4 text-right">
+                            <button
+                              onClick={() => handleMoveCandidate(c.id, 'EMBAUCHÉ')}
+                              className="text-xs font-bold text-[#1A2BA6] hover:underline"
+                              disabled={c.status === 'EMBAUCHÉ'}
+                            >
+                              {c.status === 'EMBAUCHÉ' ? 'Recrutement Actif' : 'Confirmer le recrutement'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {/* TAB: TALENT POOL */}
+          {activeTab === 'talent_pool' && (
+            <motion.div key="talent_pool" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+              <div className="flex justify-between items-center">
+                <h3 className="text-base font-bold text-slate-900">Base de talents</h3>
+                <button
+                  onClick={() => setIsAddTalentOpen(true)}
+                  className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition"
+                  style={{ backgroundColor: PRIMARY }}
+                >
+                  <Award className="h-4 w-4" /> Ajouter à la base
+                </button>
+              </div>
+
+              {talentPool.length === 0 ? (
+                <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
+                  <Award className="h-10 w-10 text-slate-300 mx-auto mb-3" />
+                  <p className="text-xs text-slate-500 font-semibold">Aucun profil enregistré dans la base de talents.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {talentPool.map((tp) => (
+                    <div key={tp.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col justify-between">
+                      <div>
+                        <div className="flex justify-between items-start">
+                          <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-amber-50 text-amber-700 border border-amber-100">{tp.category}</span>
+                          <button onClick={() => handleRemoveFromTalent(tp.id)} className="text-slate-400 hover:text-red-600 transition">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <h4 className="font-bold text-slate-900 mt-3 text-xs">
+                          {tp.candidate ? `${tp.candidate.firstName} ${tp.candidate.lastName}` : 'Profil'}
+                        </h4>
+                        {tp.candidate && (
+                          <div className="mt-3 text-xs text-slate-500 space-y-1">
+                            <p><strong>Email:</strong> {tp.candidate.email}</p>
+                            <p><strong>Tél:</strong> {tp.candidate.phone}</p>
+                          </div>
+                        )}
+                      </div>
+                      <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center">
+                        <span className="text-[10px] text-slate-400">Statut :</span>
+                        <span className="text-xs font-bold text-[#1A2BA6]">{tp.status}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Add to Talent Pool Modal */}
+              {isAddTalentOpen && (
+                <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-100">
+                    <h3 className="font-bold text-slate-900 text-base mb-4">Ajouter un candidat à la base de talents</h3>
+                    <form onSubmit={handleAddToTalentPool} className="space-y-4">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Candidat</label>
+                        <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newTalent.candidateId} onChange={(e) => setNewTalent({ ...newTalent, candidateId: e.target.value })} required>
+                          <option value="">-- Choisir le candidat --</option>
+                          {candidates.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Catégorie technique/métier</label>
+                          <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newTalent.category} onChange={(e) => setNewTalent({ ...newTalent, category: e.target.value })} required placeholder="Ex: Informatique, Admin" />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Statut du profil</label>
+                          <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newTalent.status} onChange={(e) => setNewTalent({ ...newTalent, status: e.target.value })} required placeholder="Ex: Disponible, En poste" />
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 justify-end mt-6">
+                        <button type="button" onClick={() => setIsAddTalentOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs">Annuler</button>
+                        <button type="submit" className="px-4 py-2 text-white rounded-lg text-xs font-semibold" style={{ backgroundColor: PRIMARY }}>Ajouter</button>
+                      </div>
+                    </form>
+                  </motion.div>
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

@@ -348,6 +348,11 @@ model Tenant {
   staffDocuments                   StaffDocument[]
   staffEvaluations                 StaffEvaluation[]
   staffTrainings                   StaffTraining[]
+  hrJobs                           HrJob[]
+  hrCandidates                     HrCandidate[]
+  hrApplications                   HrApplication[]
+  hrInterviews                     HrInterview[]
+  hrTests                          HrTest[]
   storePayments                    StorePayment[]
   studentAcademicRecords           StudentAcademicRecord[]
   studentAccounts                  StudentAccount[]
@@ -12993,3 +12998,190 @@ model TenantResourceAnnotation {
   @@index([teacherId])
   @@map("tenant_resource_annotations")
 }
+
+model HrJob {
+  id              String          @id @default(uuid())
+  tenantId        String
+  ref             String          @unique
+  title           String
+  dept            String
+  loc             String
+  status          String          @default("BROUILLON")
+  description     String?
+  missions        String?
+  responsibilities String?
+  academicLevel   String?
+  experience      String?
+  skillsRequired  String?
+  salary          String?
+  contractType    String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  applications    HrApplication[]
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("hr_jobs")
+}
+
+model HrCandidate {
+  id                    String                 @id @default(uuid())
+  tenantId              String
+  firstName             String
+  lastName              String
+  email                 String
+  phone                 String
+  address               String?
+  gender                String?
+  dateOfBirth           DateTime?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  applications          HrApplication[]
+  interviews            HrInterview[]
+  testResults           HrTestResult[]
+  aiReports             HrAiReport[]
+  talentPool            HrTalentPool?
+  academicProfile       AcademicProfile?
+  teachingCertifications TeachingCertification[]
+  academicScores        AcademicScore?
+  tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("hr_candidates")
+}
+
+model HrApplication {
+  id             String       @id @default(uuid())
+  tenantId       String
+  jobId          String
+  candidateId    String
+  status         String       @default("NOUVEAU")
+  score          Int          @default(0)
+  scoreCV        Int          @default(0)
+  scoreLetter    Int          @default(0)
+  scoreMatching  Int          @default(0)
+  risks          String       @default("Aucun")
+  riskDetail     String?
+  matchDetail    String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  job            HrJob        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  candidate      HrCandidate  @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  aiReports      HrAiReport[]
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([jobId])
+  @@index([candidateId])
+  @@map("hr_applications")
+}
+
+model HrInterview {
+  id          String      @id @default(uuid())
+  tenantId    String
+  candidateId String
+  type        String
+  date        DateTime
+  time        String
+  format      String
+  evaluator   String
+  score       Int         @default(0)
+  comments    String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  candidate   HrCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([candidateId])
+  @@map("hr_interviews")
+}
+
+model HrTest {
+  id          String         @id @default(uuid())
+  tenantId    String
+  name        String
+  type        String
+  description String?
+  createdAt   DateTime       @default(now())
+  results     HrTestResult[]
+  tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("hr_tests")
+}
+
+model HrTestResult {
+  id          String      @id @default(uuid())
+  testId      String
+  candidateId String
+  score       Int
+  result      String
+  createdAt   DateTime    @default(now())
+  test        HrTest      @relation(fields: [testId], references: [id], onDelete: Cascade)
+  candidate   HrCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([testId])
+  @@index([candidateId])
+  @@map("hr_test_results")
+}
+
+model HrAiReport {
+  id            String        @id @default(uuid())
+  candidateId   String
+  applicationId String
+  reportType    String
+  content       String
+  generatedAt   DateTime      @default(now())
+  candidate     HrCandidate   @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  application   HrApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([candidateId])
+  @@index([applicationId])
+  @@map("hr_ai_reports")
+}
+
+model HrTalentPool {
+  id          String      @id @default(uuid())
+  candidateId String      @unique
+  category    String
+  status      String
+  createdAt   DateTime    @default(now())
+  candidate   HrCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@map("hr_talent_pool")
+}
+
+model AcademicProfile {
+  id                   String      @id @default(uuid())
+  candidateId          String      @unique
+  teachingLevel        String
+  subjects             String[]
+  pedagogicalExperience String?
+  candidate            HrCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@map("hr_academic_profiles")
+}
+
+model TeachingCertification {
+  id                String      @id @default(uuid())
+  candidateId       String
+  certificationName String
+  issuer            String
+  candidate         HrCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([candidateId])
+  @@map("hr_teaching_certifications")
+}
+
+model AcademicScore {
+  id               String      @id @default(uuid())
+  candidateId      String      @unique
+  pedagogicalScore Int
+  academicScore    Int
+  globalScore      Int
+  candidate        HrCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@map("hr_academic_scores")
+}
+

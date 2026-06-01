@@ -6,11 +6,13 @@
  */
 
 import {
-  UserCheck,
+  LayoutDashboard,
+  Briefcase,
   Users,
-  FileText,
+  Brain,
   Clock,
   CalendarDays,
+  Calendar,
   DollarSign,
   CreditCard,
   Shield,
@@ -21,22 +23,28 @@ import {
 export const HR_SUBMODULE_TABS = [
   {
     id: 'overview',
-    label: "Vue d'ensemble",
+    label: 'Tableau de bord',
     path: '/app/hr',
-    icon: UserCheck,
+    icon: LayoutDashboard,
     exact: true,
   },
   {
-    id: 'staff',
-    label: 'Personnel',
-    path: '/app/hr/staff',
+    id: 'recruitment',
+    label: 'Recrutement',
+    path: '/app/hr/recruitment',
+    icon: Briefcase,
+  },
+  {
+    id: 'collaborators',
+    label: 'Collaborateurs',
+    path: '/app/hr/collaborators',
     icon: Users,
   },
   {
-    id: 'contracts',
-    label: 'Contrats',
-    path: '/app/hr/contracts',
-    icon: FileText,
+    id: 'ia',
+    label: 'IA RH',
+    path: '/app/hr/ia',
+    icon: Brain,
   },
   {
     id: 'leaves',
@@ -54,7 +62,7 @@ export const HR_SUBMODULE_TABS = [
     id: 'planning',
     label: 'Planning',
     path: '/app/hr/planning',
-    icon: CalendarDays,
+    icon: Calendar,
   },
   {
     id: 'allowances',
@@ -87,3 +95,4 @@ export const HR_SUBMODULE_TABS = [
     icon: Settings,
   },
 ] as const;
+

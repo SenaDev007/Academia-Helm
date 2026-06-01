@@ -1031,3 +1031,4 @@ export class ContractPdfService {
 </body>
 </html>`;
   }
+}

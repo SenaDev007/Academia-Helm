@@ -167,6 +167,6 @@ export class ContractsPrismaController {
    */
   @Get('templates/default/:type')
   async getDefaultTemplate(@Param('type') type: string) {
-    return { template: this.contractPdfService.getDefaultTemplate(type) };
+    return { template: JSON.stringify(this.contractPdfService.getDefaultArticles(type)) };
   }
 }

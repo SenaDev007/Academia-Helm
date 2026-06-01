@@ -158,7 +158,18 @@ export class ContractPdfService {
         where: { tenantId, contractType: contract.contractType, isActive: true },
         orderBy: { createdAt: 'desc' },
       });
-      templateSource = activeTemplate?.template || this.getDefaultTemplate(contract.contractType);
+      templateSource = activeTemplate?.template || JSON.stringify(this.getDefaultArticles(contract.contractType));
+    }
+
+    // Si c'est un modèle structuré en JSON (articles), construire le HTML correspondant
+    if (templateSource.trim().startsWith('[')) {
+      try {
+        const articles = JSON.parse(templateSource);
+        templateSource = this.buildHtmlFromArticles(articles, contract.contractType);
+      } catch (err) {
+        this.logger.error('Failed to parse articles JSON template, falling back to legacy HTML template', err);
+        templateSource = this.getDefaultTemplate(contract.contractType);
+      }
     }
 
     // 3. Générer le QR Code de vérification
@@ -713,4 +724,310 @@ export class ContractPdfService {
 </body>
 </html>`;
   }
-}
+
+  getDefaultArticles(type: string): any[] {
+    const isCDI = type === 'CDI';
+    const isStage = type === 'STAGE';
+
+    return [
+      {
+        title: "Article 1 — Nature et Objet du Contrat",
+        content: `L'Employé(e) est engagé(e) en qualité de <strong>{{staffPosition}}</strong> au sein de l'établissement <strong>{{schoolName}}</strong> dans le cadre d'un <strong>{{contractTypeLabel}}</strong>.`
+      },
+      {
+        title: "Article 2 — Durée et Période d'essai",
+        content: isCDI 
+          ? `Le présent contrat est conclu pour une durée indéterminée et prend effet à compter du <strong>{{startDate}}</strong>. Il est soumis à une période d'essai de trois (3) mois.` 
+          : `Le présent contrat est conclu à durée déterminée pour la période du <strong>{{startDate}}</strong> au <strong>{{endDate}}</strong>. Il comprend une période d'essai d'un (1) mois.`
+      },
+      {
+        title: "Article 3 — Rémunération",
+        content: isStage
+          ? `Le stagiaire percevra une gratification mensuelle nette de <strong>{{baseSalary}} {{currency}}</strong>, payée par <strong>{{paymentMode}}</strong>.`
+          : `En contrepartie de son travail, l'Employé(e) percevra un salaire brut mensuel de <strong>{{baseSalary}} {{currency}}</strong>, versé mensuellement par <strong>{{paymentMode}}</strong>.`
+      },
+      {
+        title: "Article 4 — Droits et Obligations des Parties",
+        content: `L'Employé(e) s'engage à exercer ses fonctions avec diligence, à respecter le règlement intérieur de l'établissement et à préserver la confidentialité. L'Employeur s'engage à lui fournir les moyens nécessaires à sa mission et à verser la rémunération convenue.`
+      },
+      {
+        title: "Article 5 — Dispositions diverses",
+        content: `Toute modification du présent contrat fera l'objet d'un avenant écrit. Tout litige né de son exécution sera soumis aux autorités compétentes et au droit du travail applicable.`
+      }
+    ];
+  }
+
+  buildHtmlFromArticles(articles: any[], contractType: string): string {
+    let articlesHtml = '';
+    for (const art of articles) {
+      if (!art || typeof art !== 'object') continue;
+      articlesHtml += `
+  <!-- ${art.title || 'Article'} -->
+  <div class="section">
+    <div class="section-title">${art.title || ''}</div>
+    <div class="article">
+      <p>${art.content || ''}</p>
+    </div>
+  </div>`;
+    }
+
+    return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Times New Roman', serif;
+      color: #1a1a1a;
+      font-size: 12pt;
+      line-height: 1.7;
+      background: white;
+    }
+    .watermark {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) rotate(-45deg);
+      font-size: 72pt;
+      color: rgba(26, 43, 166, 0.04);
+      font-weight: bold;
+      z-index: 0;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .page { position: relative; z-index: 1; }
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 3px solid #1A2BA6;
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+    }
+    .school-info h1 { font-size: 18pt; color: #1A2BA6; font-weight: bold; }
+    .school-info p { font-size: 9pt; color: #555; margin-top: 2px; }
+    .contract-meta { text-align: right; }
+    .contract-meta .ref {
+      font-size: 8pt;
+      color: #888;
+      border: 1px solid #ddd;
+      padding: 4px 8px;
+      border-radius: 4px;
+      display: inline-block;
+      margin-bottom: 4px;
+    }
+    /* Title */
+    .contract-title {
+      text-align: center;
+      margin: 28px 0 24px;
+    }
+    .contract-title h2 {
+      font-size: 15pt;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      border: 2px solid #1A2BA6;
+      display: inline-block;
+      padding: 8px 32px;
+      color: #1A2BA6;
+    }
+    /* Sections */
+    .section {
+      margin-bottom: 22px;
+      page-break-inside: avoid;
+    }
+    .section-title {
+      font-size: 11pt;
+      font-weight: bold;
+      color: #1A2BA6;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 4px;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    /* Info grid */
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 24px;
+    }
+    .info-row {
+      display: flex;
+      gap: 6px;
+    }
+    .info-label { font-weight: bold; color: #444; min-width: 130px; font-size: 10pt; }
+    .info-value { color: #1a1a1a; font-size: 10pt; }
+    /* Article */
+    .article { margin-bottom: 16px; }
+    .article p { font-size: 10.5pt; text-align: justify; margin-top: 4px; }
+    
+    /* Signature area */
+    .signature-section {
+      margin-top: 40px;
+      page-break-inside: avoid;
+    }
+    .sig-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 30px;
+      margin-top: 20px;
+    }
+    .sig-box {
+      border: 1px dashed #cbd5e1;
+      border-radius: 8px;
+      padding: 16px;
+      min-height: 130px;
+      display: flex;
+      flex-direction: column;
+    }
+    .sig-title {
+      font-size: 9pt;
+      font-weight: bold;
+      text-transform: uppercase;
+      color: #64748b;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+    .sig-name { font-size: 10pt; font-weight: bold; color: #1a1a1a; }
+    .sig-date { font-size: 8.5pt; color: #888; margin-top: 4px; }
+    .sig-image { max-height: 70px; max-width: 180px; margin-top: 6px; }
+    .sig-placeholder {
+      flex: 1;
+      display: flex;
+      align-items: flex-end;
+      font-size: 8.5pt;
+      color: #94a3b8;
+      font-style: italic;
+    }
+    /* Footer */
+    .footer {
+      margin-top: 36px;
+      padding-top: 12px;
+      border-top: 1px solid #e2e8f0;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    .footer-left { font-size: 8pt; color: #94a3b8; }
+    .footer-qr { text-align: right; }
+    .footer-qr img { width: 64px; height: 64px; }
+    .footer-qr p { font-size: 7pt; color: #94a3b8; margin-top: 2px; }
+    /* Status badge */
+    .status-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 8pt;
+      font-weight: bold;
+      background: #dcfce7;
+      color: #166534;
+      border: 1px solid #bbf7d0;
+    }
+    .status-badge.unsigned {
+      background: #fef9c3;
+      color: #854d0e;
+      border-color: #fef08a;
+    }
+  </style>
+</head>
+<body>
+<div class="watermark">ACADEMIA HUB</div>
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="school-info">
+      <h1>{{schoolName}}</h1>
+      <p>{{schoolAddress}}</p>
+      <p>{{schoolCountry}}</p>
+    </div>
+    <div class="contract-meta">
+      <div class="ref">Réf. CONTRAT-{{contractId}}</div>
+      <p style="font-size:8pt;color:#888;">Émis le {{generatedAt}} à {{generatedTime}}</p>
+      {{#if isSigned}}
+        <span class="status-badge">✓ SIGNÉ</span>
+      {{else}}
+        <span class="status-badge unsigned">EN ATTENTE DE SIGNATURE</span>
+      {{/if}}
+    </div>
+  </div>
+
+  <!-- Title -->
+  <div class="contract-title">
+    <h2>{{contractTypeLabel}}</h2>
+  </div>
+
+  <!-- Preamble -->
+  <div class="section">
+    <p style="font-size:10.5pt; text-align:justify;">
+      Entre les soussignés, <strong>{{schoolName}}</strong>, établissement scolaire sis à
+      {{schoolAddress}}, ci-après dénommé <em>« L\'Employeur »</em>,
+    </p>
+    <p style="font-size:10.5pt; text-align:justify; margin-top:8px;">
+      Et <strong>{{civilite}} {{staffFullName}}</strong>, né(e) le {{staffBirthDate}},
+      ci-après dénommé(e) <em>« L\'Employé(e) »</em>,
+    </p>
+    <p style="font-size:10.5pt; margin-top:8px;">
+      Il a été convenu et arrêté ce qui suit :
+    </p>
+  </div>
+
+  <!-- Articles du contrat générés dynamiquement -->
+  \${articlesHtml}
+
+  <!-- Signature Section -->
+  <div class="signature-section">
+    <div class="section-title">Signatures</div>
+    <p style="font-size:10pt; color:#555; margin-bottom:16px;">
+      Fait en deux (2) exemplaires originaux, dont un remis à chaque partie.
+      Chaque partie reconnaît avoir lu et accepté les termes du présent contrat.
+    </p>
+    <div class="sig-grid">
+      <!-- Employeur -->
+      <div class="sig-box">
+        <p class="sig-title">Pour l'Établissement (Employeur)</p>
+        <p class="sig-name">{{schoolName}}</p>
+        {{#if isSigned}}
+          <p class="sig-date">Fait le : {{signedAt}}</p>
+        {{else}}
+          <div class="sig-placeholder">Signature & cachet de l'établissement</div>
+        {{/if}}
+      </div>
+      <!-- Employé -->
+      <div class="sig-box">
+        <p class="sig-title">L'Employé(e) — Lu et approuvé</p>
+        <p class="sig-name">{{civilite}} {{staffFullName}}</p>
+        {{#if isSigned}}
+          <p class="sig-date">Signé le : {{signedAt}}</p>
+          {{#if signatureData}}
+            <img class="sig-image" src="{{signatureData}}" alt="Signature électronique" />
+          {{/if}}
+        {{else}}
+          <div class="sig-placeholder">Signature de l'employé(e)</div>
+        {{/if}}
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="footer-left">
+      <p><strong>Academia Hub</strong> — Système de Gestion Scolaire</p>
+      <p>Document généré automatiquement. Réf. : {{contractId}}</p>
+      <p>Vérification : {{verificationUrl}}</p>
+    </div>
+    {{#if qrCodeDataUrl}}
+    <div class="footer-qr">
+      <img src="{{qrCodeDataUrl}}" alt="QR Code de vérification" />
+      <p>Scanner pour vérifier</p>
+    </div>
+    {{/if}}
+  </div>
+
+</div>
+</body>
+</html>`;
+  }

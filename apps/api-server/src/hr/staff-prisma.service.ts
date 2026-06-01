@@ -1,62 +1,112 @@
 /**
  * ============================================================================
- * STAFF PRISMA SERVICE - MODULE 5
+ * STAFF PRISMA SERVICE - MODULE 5 (SCHEMA-ALIGNED v2)
  * ============================================================================
- * 
- * Service pour la gestion du personnel
- * 
+ *
+ * Service aligné sur le schéma Prisma réel :
+ * - employeeNumber (unique, auto-généré si absent)
+ * - roleType (ex category: PEDAGOGICAL→TEACHER, ADMIN→ADMIN, SUPPORT→SUPPORT)
+ * - StaffDocument : { documentType, fileName, filePath, mimeType }
+ *
  * ============================================================================
  */
 
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 
+// Mapping catégorie UI → roleType Prisma
+const CATEGORY_TO_ROLE: Record<string, string> = {
+  PEDAGOGICAL: 'TEACHER',
+  ADMIN:       'ADMIN',
+  SUPPORT:     'SUPPORT',
+  TEACHER:     'TEACHER',
+};
+
+function generateEmployeeNumber(): string {
+  const year = new Date().getFullYear().toString().slice(-2);
+  const rand = Math.floor(Math.random() * 90000) + 10000;
+  return `STF-${year}-${rand}`;
+}
+
 @Injectable()
 export class StaffPrismaService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Crée un membre du personnel
+   * Crée un membre du personnel.
+   * Accepte les champs envoyés par l'OnboardingWizard et les mappe
+   * correctement au schéma Prisma (employeeNumber, roleType, etc.)
    */
   async createStaff(data: {
     tenantId: string;
     academicYearId?: string;
-    staffCode: string;
+    // Champs wizard
     firstName: string;
     lastName: string;
     gender?: string;
-    dateOfBirth?: Date;
-    nationalId?: string;
-    cnssNumber?: string;
-    maritalStatus?: string;
-    numberOfChildren?: number;
+    birthDate?: string | Date;
     phone?: string;
     email?: string;
     address?: string;
     position?: string;
-    category?: string;
-    levelAssigned?: string;
-    hireDate?: Date;
+    category?: string;     // PEDAGOGICAL / ADMIN / SUPPORT → mappé en roleType
+    roleType?: string;     // Accepté directement si fourni
     status?: string;
-    cnssStatus?: string;
+    // Champs optionnels avancés
+    staffCode?: string;    // Utilisé comme préfixe employeeNumber si fourni
+    employeeNumber?: string;
+    hireDate?: string | Date;
+    qualifications?: string;
+    notes?: string;
+    department?: string;
   }) {
-    // Vérifier l'unicité du code staff
-    const existing = await this.prisma.staff.findUnique({
-      where: { staffCode: data.staffCode },
-    });
+    // Générer un numéro d'employé si non fourni
+    const employeeNumber = data.employeeNumber
+      || data.staffCode
+      || generateEmployeeNumber();
 
+    // Vérifier l'unicité du numéro d'employé
+    const existing = await this.prisma.staff.findUnique({
+      where: { employeeNumber },
+    });
     if (existing) {
-      throw new BadRequestException(`Staff with code ${data.staffCode} already exists`);
+      // Générer un nouveau numéro unique en cas de collision
+      const newNumber = `${employeeNumber}-${Date.now().toString().slice(-4)}`;
+      return this.doCreateStaff(data, newNumber);
     }
 
-    return this.prisma.staff.create({
+    return this.doCreateStaff(data, employeeNumber);
+  }
+
+  private async doCreateStaff(data: any, employeeNumber: string) {
+    const roleType = data.roleType
+      || CATEGORY_TO_ROLE[data.category || '']
+      || 'TEACHER';
+
+    const created = await this.prisma.staff.create({
       data: {
-        ...data,
-        category: data.category || 'PEDAGOGICAL',
-        status: data.status || 'ACTIVE',
-        cnssStatus: data.cnssStatus || 'NOT_DECLARED',
+        tenantId:       data.tenantId,
+        academicYearId: data.academicYearId || null,
+        employeeNumber,
+        firstName:      data.firstName,
+        lastName:       data.lastName,
+        gender:         data.gender || null,
+        birthDate:      data.birthDate ? new Date(data.birthDate) : null,
+        phone:          data.phone || null,
+        email:          data.email || null,
+        address:        data.address || null,
+        position:       data.position || null,
+        department:     data.department || null,
+        roleType,
+        hireDate:       data.hireDate ? new Date(data.hireDate) : new Date(),
+        status:         data.status || 'ACTIVE',
+        qualifications: data.qualifications || null,
+        notes:          data.notes || null,
       },
     });
+
+    // Retourner avec staffCode alias pour compatibilité frontend
+    return { ...created, staffCode: created.employeeNumber, category: data.category || 'PEDAGOGICAL' };
   }
 
   /**
@@ -69,21 +119,15 @@ export class StaffPrismaService {
     levelAssigned?: string;
   }) {
     const where: any = { tenantId };
-    
-    if (filters?.academicYearId) {
-      where.academicYearId = filters.academicYearId;
-    }
+    if (filters?.academicYearId) where.academicYearId = filters.academicYearId;
+    if (filters?.status && filters.status !== 'ALL') where.status = filters.status;
     if (filters?.category) {
-      where.category = filters.category;
-    }
-    if (filters?.status) {
-      where.status = filters.status;
-    }
-    if (filters?.levelAssigned) {
-      where.levelAssigned = filters.levelAssigned;
+      // Mapper category UI → roleType
+      const role = CATEGORY_TO_ROLE[filters.category];
+      if (role) where.roleType = role;
     }
 
-    return this.prisma.staff.findMany({
+    const staff = await this.prisma.staff.findMany({
       where,
       include: {
         contracts: {
@@ -92,11 +136,18 @@ export class StaffPrismaService {
           take: 1,
         },
         documents: {
-          orderBy: { uploadedAt: 'desc' },
+          orderBy: { createdAt: 'desc' },
         },
       },
       orderBy: { lastName: 'asc' },
     });
+
+    // Ajouter staffCode et category aliases pour compatibilité frontend
+    return staff.map((s) => ({
+      ...s,
+      staffCode: s.employeeNumber,
+      category: Object.entries(CATEGORY_TO_ROLE).find(([, v]) => v === s.roleType)?.[0] || s.roleType,
+    }));
   }
 
   /**
@@ -106,30 +157,11 @@ export class StaffPrismaService {
     const staff = await this.prisma.staff.findFirst({
       where: { id, tenantId },
       include: {
-        contracts: {
-          orderBy: { startDate: 'desc' },
-        },
-        documents: {
-          orderBy: { uploadedAt: 'desc' },
-        },
-        attendance: {
-          take: 30,
-          orderBy: { date: 'desc' },
-        },
-        evaluations: {
-          take: 10,
-          orderBy: { createdAt: 'desc' },
-        },
-        trainings: {
-          orderBy: { createdAt: 'desc' },
-        },
-        payrolls: {
-          take: 12,
-          orderBy: { createdAt: 'desc' },
-          include: {
-            payrollPeriod: true,
-          },
-        },
+        contracts: { orderBy: { startDate: 'desc' } },
+        documents: { orderBy: { createdAt: 'desc' } },
+        attendance: { take: 30, orderBy: { date: 'desc' } },
+        evaluations: { take: 10, orderBy: { createdAt: 'desc' } },
+        trainings: { orderBy: { createdAt: 'desc' } },
       },
     });
 
@@ -137,18 +169,35 @@ export class StaffPrismaService {
       throw new NotFoundException(`Staff with ID ${id} not found`);
     }
 
-    return staff;
+    return {
+      ...staff,
+      staffCode: staff.employeeNumber,
+      category: Object.entries(CATEGORY_TO_ROLE).find(([, v]) => v === staff.roleType)?.[0] || staff.roleType,
+    };
   }
 
   /**
    * Met à jour un membre du personnel
    */
   async updateStaff(id: string, tenantId: string, data: any) {
-    const staff = await this.findStaffById(id, tenantId);
+    await this.findStaffById(id, tenantId);
+
+    // Mapper les champs UI vers Prisma
+    const updateData: any = { ...data };
+    if (data.category) {
+      updateData.roleType = CATEGORY_TO_ROLE[data.category] || data.category;
+      delete updateData.category;
+    }
+    if (data.staffCode) {
+      delete updateData.staffCode; // Non modifiable directement
+    }
+    if (data.birthDate) {
+      updateData.birthDate = new Date(data.birthDate);
+    }
 
     return this.prisma.staff.update({
       where: { id },
-      data,
+      data: updateData,
     });
   }
 
@@ -156,30 +205,40 @@ export class StaffPrismaService {
    * Archive un membre du personnel
    */
   async archiveStaff(id: string, tenantId: string) {
-    const staff = await this.findStaffById(id, tenantId);
-
+    await this.findStaffById(id, tenantId);
     return this.prisma.staff.update({
       where: { id },
-      data: { status: 'INACTIVE' }, // Conformément aux enums probables
+      data: { status: 'INACTIVE' },
     });
   }
 
-  // ============================================================================
-  // STAFF DOCUMENTS
-  // ============================================================================
+  // ─── STAFF DOCUMENTS ──────────────────────────────────────────────────────
 
   /**
-   * Ajoute un document à un membre du personnel
+   * Ajoute un document à un membre du personnel.
+   * Champs alignés sur le schéma Prisma : documentType, fileName, filePath, mimeType
    */
   async addStaffDocument(data: {
     tenantId: string;
     staffId: string;
-    type: string;
-    fileUrl: string;
-    version?: number;
+    documentType: string;  // CV / CNI / BIRTH_CERTIFICATE / DIPLOMA / OTHER
+    fileName: string;
+    filePath: string;
+    fileSize?: number;
+    mimeType?: string;
+    uploadedBy?: string;
   }) {
     return this.prisma.staffDocument.create({
-      data,
+      data: {
+        tenantId:     data.tenantId,
+        staffId:      data.staffId,
+        documentType: data.documentType,
+        fileName:     data.fileName,
+        filePath:     data.filePath,
+        fileSize:     data.fileSize || null,
+        mimeType:     data.mimeType || 'application/pdf',
+        uploadedBy:   data.uploadedBy || null,
+      },
     });
   }
 
@@ -188,12 +247,8 @@ export class StaffPrismaService {
    */
   async findStaffDocuments(staffId: string, tenantId: string) {
     return this.prisma.staffDocument.findMany({
-      where: {
-        staffId,
-        tenantId,
-      },
-      orderBy: { uploadedAt: 'desc' },
+      where: { staffId, tenantId },
+      orderBy: { createdAt: 'desc' },
     });
   }
 }
-

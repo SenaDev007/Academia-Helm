@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import {
   Save, Settings, ShieldAlert, CheckCircle2, Loader2,
-  FileText, Plus, Trash2, Edit3, X,
+  FileText, Plus, Trash2, Edit3, X, ArrowUp, ArrowDown,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { apiFetch } from '@/lib/api/client';
@@ -41,6 +41,58 @@ export function SettingsWorkspace() {
   const [editingTemplate, setEditingTemplate] = useState<any>(null);
   const [newTemplate, setNewTemplate] = useState({ name: '', contractType: 'CDI', template: '' });
   const [savingTemplate, setSavingTemplate] = useState(false);
+
+  const [articles, setArticles] = useState<{ title: string; content: string }[]>([]);
+  const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
+
+  const insertPlaceholder = (placeholder: string) => {
+    if (focusedIndex === null) return;
+    const updated = [...articles];
+    updated[focusedIndex].content = (updated[focusedIndex].content || '') + placeholder;
+    setArticles(updated);
+  };
+
+  const addArticle = () => {
+    setArticles([...articles, { title: `Article ${articles.length + 1} — Titre`, content: '' }]);
+  };
+
+  const removeArticle = (index: number) => {
+    setArticles(articles.filter((_, i) => i !== index));
+  };
+
+  const moveArticle = (index: number, direction: 'up' | 'down') => {
+    const nextIndex = direction === 'up' ? index - 1 : index + 1;
+    if (nextIndex < 0 || nextIndex >= articles.length) return;
+    const updated = [...articles];
+    const temp = updated[index];
+    updated[index] = updated[nextIndex];
+    updated[nextIndex] = temp;
+    setArticles(updated);
+  };
+
+  // Synchronise les articles lors du changement de showNewTemplate ou d'édition
+  useEffect(() => {
+    if (editingTemplate?.template) {
+      try {
+        const parsed = JSON.parse(editingTemplate.template);
+        if (Array.isArray(parsed)) {
+          setArticles(parsed);
+        } else {
+          setArticles([{ title: "Contenu du contrat", content: editingTemplate.template }]);
+        }
+      } catch (e) {
+        setArticles([{ title: "Contenu du contrat", content: editingTemplate.template }]);
+      }
+    }
+  }, [editingTemplate?.id]);
+
+  useEffect(() => {
+    if (showNewTemplate) {
+      loadDefaultTemplate('CDI');
+    } else {
+      setArticles([]);
+    }
+  }, [showNewTemplate]);
 
   useEffect(() => {
     if (!tenant?.id) return;
@@ -89,6 +141,16 @@ export function SettingsWorkspace() {
       } else {
         setNewTemplate((prev) => ({ ...prev, template: data.template }));
       }
+      try {
+        const parsed = JSON.parse(data.template);
+        if (Array.isArray(parsed)) {
+          setArticles(parsed);
+        } else {
+          setArticles([{ title: "Contenu du contrat", content: data.template }]);
+        }
+      } catch (e) {
+        setArticles([{ title: "Contenu du contrat", content: data.template }]);
+      }
       toast({ variant: 'success', title: 'Modèle par défaut chargé.' });
     } catch {
       toast({ variant: 'error', title: 'Erreur lors du chargement.' });
@@ -123,17 +185,22 @@ export function SettingsWorkspace() {
     e.preventDefault();
     try {
       setSavingTemplate(true);
+      const templatePayload = JSON.stringify(articles);
       if (editingTemplate) {
         await apiFetch(`/hr/contracts/templates/${editingTemplate.id}`, {
           method: 'PUT',
-          body: JSON.stringify({ name: editingTemplate.name, template: editingTemplate.template }),
+          body: JSON.stringify({ name: editingTemplate.name, template: templatePayload }),
         });
         toast({ variant: 'success', title: 'Modèle mis à jour.' });
         setEditingTemplate(null);
       } else {
         await apiFetch('/hr/contracts/templates', {
           method: 'POST',
-          body: JSON.stringify(newTemplate),
+          body: JSON.stringify({
+            name: newTemplate.name,
+            contractType: newTemplate.contractType,
+            template: templatePayload,
+          }),
         });
         toast({ variant: 'success', title: 'Modèle créé avec succès.' });
         setNewTemplate({ name: '', contractType: 'CDI', template: '' });
@@ -347,36 +414,131 @@ export function SettingsWorkspace() {
                       </div>
                     </div>
                     <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className={labelClass + ' mb-0'}>Contenu HTML (Handlebars)</label>
+                      <div className="flex items-center justify-between mb-3">
+                        <label className={labelClass + ' mb-0 text-sm'}>Articles & Clauses du Contrat</label>
                         <button
                           type="button"
                           onClick={() => loadDefaultTemplate(editingTemplate?.contractType || newTemplate.contractType)}
                           className="text-xs font-semibold hover:underline"
                           style={{ color: PRIMARY }}
                         >
-                          ↓ Charger le modèle par défaut
+                          ↓ Charger les articles par défaut
                         </button>
                       </div>
-                      <textarea
-                        required
-                        rows={14}
-                        placeholder={'<!DOCTYPE html>\n<html lang="fr">\n...\n</html>'}
-                        className={inputClass + ' font-mono text-xs leading-relaxed resize-y'}
-                        value={editingTemplate ? editingTemplate.template : newTemplate.template}
-                        onChange={(e) => editingTemplate
-                          ? setEditingTemplate({ ...editingTemplate, template: e.target.value })
-                          : setNewTemplate({ ...newTemplate, template: e.target.value })}
-                      />
-                      <p className="text-[10px] text-slate-400 mt-1.5">
-                        Variables : <code className="bg-slate-100 px-1 rounded font-mono">{'{{schoolName}}'}</code>,{' '}
-                        <code className="bg-slate-100 px-1 rounded font-mono">{'{{staffFullName}}'}</code>,{' '}
-                        <code className="bg-slate-100 px-1 rounded font-mono">{'{{baseSalary}}'}</code>,{' '}
-                        <code className="bg-slate-100 px-1 rounded font-mono">{'{{startDate}}'}</code>,{' '}
-                        <code className="bg-slate-100 px-1 rounded font-mono">{'{{qrCodeDataUrl}}'}</code>, etc.
-                      </p>
+                      
+                      {/* Note explanation */}
+                      <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 mb-4 text-xs text-slate-500">
+                        ℹ️ Rédigez uniquement les clauses textuelles (le corps) du contrat. 
+                        Le système injecte automatiquement le design premium, l'en-tête de l'école, 
+                        les informations des parties (Article 1), le bloc de signature électronique 
+                        et le QR code de vérification.
+                      </div>
+
+                      {/* Articles list */}
+                      <div className="space-y-4 mb-4">
+                        {articles.map((art, idx) => (
+                          <div key={idx} className="p-4 bg-slate-50/50 border border-slate-200 rounded-xl space-y-3 relative">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-slate-500">Clause #{idx + 1}</span>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  disabled={idx === 0}
+                                  onClick={() => moveArticle(idx, 'up')}
+                                  className="p-1 hover:bg-slate-200 disabled:opacity-30 rounded text-slate-600 transition"
+                                >
+                                  <ArrowUp className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={idx === articles.length - 1}
+                                  onClick={() => moveArticle(idx, 'down')}
+                                  className="p-1 hover:bg-slate-200 disabled:opacity-30 rounded text-slate-600 transition"
+                                >
+                                  <ArrowDown className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => removeArticle(idx)}
+                                  className="p-1 hover:bg-rose-100 text-rose-600 rounded transition"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            <div>
+                              <input
+                                type="text"
+                                required
+                                placeholder="Titre de la clause (ex : Article 3 — Horaires et congés)"
+                                className={inputClass + " bg-white font-semibold text-slate-800"}
+                                value={art.title || ''}
+                                onChange={(e) => {
+                                  const updated = [...articles];
+                                  updated[idx].title = e.target.value;
+                                  setArticles(updated);
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <textarea
+                                required
+                                rows={4}
+                                placeholder="Saisissez le texte de l'article ici... Utilisez les balises pour insérer des informations de l'employé."
+                                className={inputClass + " bg-white leading-relaxed resize-y"}
+                                value={art.content || ''}
+                                onFocus={() => setFocusedIndex(idx)}
+                                onChange={(e) => {
+                                  const updated = [...articles];
+                                  updated[idx].content = e.target.value;
+                                  setArticles(updated);
+                                }}
+                              />
+                            </div>
+
+                            {focusedIndex === idx && (
+                              <div className="pt-1.5 border-t border-slate-100">
+                                <p className="text-[10px] text-slate-400 mb-1.5 font-semibold uppercase">Balises magiques (Cliquez pour insérer dans cette clause) :</p>
+                                <div className="flex flex-wrap gap-1">
+                                  {[
+                                    { tag: '{{staffFullName}}', label: '👤 Nom Employé' },
+                                    { tag: '{{staffPosition}}', label: '💼 Poste/Fonction' },
+                                    { tag: '{{baseSalary}}', label: '💵 Salaire Brut' },
+                                    { tag: '{{paymentMode}}', label: '💳 Mode Paiement' },
+                                    { tag: '{{startDate}}', label: '📅 Date Début' },
+                                    { tag: '{{endDate}}', label: '📅 Date Fin' },
+                                    { tag: '{{schoolName}}', label: '🏫 Nom École' },
+                                    { tag: '{{currency}}', label: '🪙 Devise' },
+                                    { tag: '{{academicYear}}', label: '📅 Année Scolaire' },
+                                  ].map((item) => (
+                                    <button
+                                      key={item.tag}
+                                      type="button"
+                                      onClick={() => insertPlaceholder(item.tag)}
+                                      className="text-[10px] font-semibold bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 text-slate-600 hover:text-[#1A2BA6] px-2 py-0.5 rounded transition shadow-sm"
+                                    >
+                                      {item.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={addArticle}
+                        className="w-full flex items-center justify-center gap-1.5 py-2.5 bg-slate-50 hover:bg-slate-100 border border-dashed border-slate-300 hover:border-slate-400 rounded-xl text-xs font-bold text-slate-600 transition"
+                      >
+                        <Plus className="h-4 w-4" /> Ajouter un article / clause
+                      </button>
                     </div>
-                    <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
+
+                    <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 mt-6">
                       <button
                         type="button"
                         onClick={() => { setShowNewTemplate(false); setEditingTemplate(null); }}

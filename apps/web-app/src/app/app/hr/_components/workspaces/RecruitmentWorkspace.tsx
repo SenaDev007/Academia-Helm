@@ -35,6 +35,7 @@ import {
 import { cn } from '@/lib/utils';
 import { apiFetch } from '@/lib/api/client';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { toast } from '@/components/ui/toast';
 
 const PRIMARY = '#1A2BA6';
 
@@ -256,13 +257,15 @@ export function RecruitmentWorkspace() {
     try {
       await apiFetch(`/hr/recruitment/jobs?tenantId=${tenant.id}`, {
         method: 'POST',
-        body: newJob,
+        body: JSON.stringify(newJob),
       });
+      toast({ variant: 'success', title: 'Offre d\'emploi créée avec succès !' });
       setIsAddJobOpen(false);
-      setNewJob({ title: '', dept: '', loc: '', status: 'PUBLIÉE', contractType: 'CDI' });
+      setNewJob({ title: '', dept: '', loc: '', status: 'PUBLIÉE', contractType: 'CDI', salary: '', academicLevel: '', experience: '', skillsRequired: '', description: '', missions: '', responsibilities: '' });
       loadData();
     } catch (err) {
       console.error('Failed to create job:', err);
+      toast({ variant: 'error', title: 'Erreur lors de la création de l\'offre d\'emploi.' });
     }
   };
 
@@ -274,33 +277,35 @@ export function RecruitmentWorkspace() {
       // 1. Create Candidate
       const createdCandidate = await apiFetch<any>(`/hr/recruitment/candidates?tenantId=${tenant.id}`, {
         method: 'POST',
-        body: {
+        body: JSON.stringify({
           firstName: newCandidate.firstName,
           lastName: newCandidate.lastName,
           email: newCandidate.email,
           phone: newCandidate.phone,
           address: newCandidate.address,
           gender: newCandidate.gender,
-        }
+        })
       });
 
       // 2. Create associated application if Job is selected
       if (newCandidate.jobId && createdCandidate?.id) {
         await apiFetch(`/hr/recruitment/applications?tenantId=${tenant.id}`, {
           method: 'POST',
-          body: {
+          body: JSON.stringify({
             jobId: newCandidate.jobId,
             candidateId: createdCandidate.id,
             status: newCandidate.status,
-          }
+          })
         });
       }
 
+      toast({ variant: 'success', title: 'Candidat enregistré avec succès !' });
       setIsAddCandidateOpen(false);
       setNewCandidate({ firstName: '', lastName: '', email: '', phone: '', address: '', gender: 'M', jobId: '', status: 'NOUVEAU' });
       loadData();
     } catch (err) {
       console.error('Failed to create candidate/application:', err);
+      toast({ variant: 'error', title: 'Erreur lors de l\'enregistrement du candidat.' });
     }
   };
 
@@ -323,6 +328,7 @@ export function RecruitmentWorkspace() {
       loadData();
     } catch (err) {
       console.error('Failed to delete candidate:', err);
+      toast({ variant: 'error', title: 'Erreur lors de la suppression du candidat.' });
     }
   };
 
@@ -333,13 +339,15 @@ export function RecruitmentWorkspace() {
     try {
       await apiFetch(`/hr/recruitment/interviews?tenantId=${tenant.id}`, {
         method: 'POST',
-        body: newInterview,
+        body: JSON.stringify(newInterview),
       });
+      toast({ variant: 'success', title: 'Entretien programmé avec succès !' });
       setIsAddInterviewOpen(false);
       setNewInterview({ candidateId: '', type: 'RH', date: '', time: '', format: 'Visioconférence', evaluator: '', score: '0', comments: '' });
       loadData();
     } catch (err) {
       console.error('Failed to schedule interview:', err);
+      toast({ variant: 'error', title: 'Erreur lors de la programmation de l\'entretien.' });
     }
   };
 
@@ -348,9 +356,11 @@ export function RecruitmentWorkspace() {
     if (!confirm('Annuler cet entretien ?')) return;
     try {
       await apiFetch(`/hr/recruitment/interviews/${id}`, { method: 'DELETE' });
+      toast({ variant: 'success', title: 'Entretien annulé avec succès.' });
       loadData();
     } catch (err) {
       console.error('Failed to delete interview:', err);
+      toast({ variant: 'error', title: 'Erreur lors de l\'annulation de l\'entretien.' });
     }
   };
 
@@ -361,13 +371,15 @@ export function RecruitmentWorkspace() {
     try {
       await apiFetch(`/hr/recruitment/tests?tenantId=${tenant.id}`, {
         method: 'POST',
-        body: newTest,
+        body: JSON.stringify(newTest),
       });
+      toast({ variant: 'success', title: 'Test d\'évaluation créé avec succès !' });
       setIsAddTestOpen(false);
       setNewTest({ name: '', type: 'Technique', description: '' });
       loadData();
     } catch (err) {
       console.error('Failed to create test:', err);
+      toast({ variant: 'error', title: 'Erreur lors de la création du test.' });
     }
   };
 
@@ -376,9 +388,11 @@ export function RecruitmentWorkspace() {
     if (!confirm('Supprimer ce test ?')) return;
     try {
       await apiFetch(`/hr/recruitment/tests/${id}`, { method: 'DELETE' });
+      toast({ variant: 'success', title: 'Test supprimé.' });
       loadData();
     } catch (err) {
       console.error('Failed to delete test:', err);
+      toast({ variant: 'error', title: 'Erreur lors de la suppression du test.' });
     }
   };
 
@@ -388,13 +402,15 @@ export function RecruitmentWorkspace() {
     try {
       await apiFetch(`/hr/recruitment/test-results`, {
         method: 'POST',
-        body: newTestResult,
+        body: JSON.stringify(newTestResult),
       });
+      toast({ variant: 'success', title: 'Résultat de test enregistré !' });
       setIsAddTestResultOpen(false);
       setNewTestResult({ testId: '', candidateId: '', score: '50', result: 'ADMIS' });
       loadData();
     } catch (err) {
       console.error('Failed to save test result:', err);
+      toast({ variant: 'error', title: 'Erreur lors de l\'enregistrement du résultat.' });
     }
   };
 
@@ -403,9 +419,11 @@ export function RecruitmentWorkspace() {
     if (!confirm('Supprimer ce résultat de test ?')) return;
     try {
       await apiFetch(`/hr/recruitment/test-results/${id}`, { method: 'DELETE' });
+      toast({ variant: 'success', title: 'Résultat supprimé.' });
       loadData();
     } catch (err) {
       console.error('Failed to delete test result:', err);
+      toast({ variant: 'error', title: 'Erreur lors de la suppression du résultat.' });
     }
   };
 
@@ -415,16 +433,18 @@ export function RecruitmentWorkspace() {
     try {
       await apiFetch(`/hr/recruitment/talent-pool/${newTalent.candidateId}`, {
         method: 'POST',
-        body: {
+        body: JSON.stringify({
           category: newTalent.category,
           status: newTalent.status,
-        }
+        })
       });
+      toast({ variant: 'success', title: 'Profil ajouté à la base de talents.' });
       setIsAddTalentOpen(false);
       setNewTalent({ candidateId: '', category: 'Développement', status: 'Disponible' });
       loadData();
     } catch (err) {
       console.error('Failed to register to talent pool:', err);
+      toast({ variant: 'error', title: 'Erreur lors de l\'ajout à la base de talents.' });
     }
   };
 
@@ -444,15 +464,15 @@ export function RecruitmentWorkspace() {
     const candidate = candidates.find(c => c.id === candidateId);
     if (!candidate) return;
     try {
-      // Find candidate application to update status
-      const app = candidate.history?.[0]; // or fetch from backend API
       await apiFetch(`/hr/recruitment/applications/${candidateId}/status`, {
         method: 'PUT',
-        body: { status: toStatus },
+        body: JSON.stringify({ status: toStatus }),
       });
+      toast({ variant: 'success', title: 'Statut du candidat mis à jour !' });
       loadData();
     } catch (err) {
       console.error('Failed to change status:', err);
+      toast({ variant: 'error', title: 'Erreur lors du changement de statut.' });
     }
   };
 

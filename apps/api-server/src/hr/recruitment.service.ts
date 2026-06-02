@@ -18,7 +18,7 @@ export class RecruitmentPrismaService {
     return this.prisma.hrJob.create({
       data: {
         tenantId,
-        ref: data.ref || `OFF-${Date.now().toString().slice(-4)}`,
+        ref: data.ref || `OFF-${Date.now().toString().slice(-6)}-${Math.floor(10 + Math.random() * 90)}`,
         title: data.title,
         dept: data.dept,
         loc: data.loc,

@@ -459,8 +459,36 @@ export function RecruitmentWorkspace() {
   // Filter Hired Candidates for "Embauches"
   const hiredCandidates = candidates.filter(c => c.status === 'EMBAUCHÉ' || c.status === 'VALIDATION' || c.status === 'OFFRE');
 
+  // KPI calculations for dashboard cards (Tome 2 & 3)
+  const totalJobs = jobs.filter(j => j.status === 'PUBLIÉE').length;
+  const totalApplications = candidates.length;
+  const totalInterviews = interviews.length;
+  const avgIaScore = candidates.length > 0 ? Math.round(candidates.reduce((sum, c) => sum + c.score, 0) / candidates.length) : 0;
+  const fraudAlerts = candidates.filter(c => c.risks && c.risks !== 'Aucun').length;
+  const totalHired = candidates.filter(c => c.status === 'EMBAUCHÉ').length;
+
   return (
     <div className="space-y-6 pb-12">
+      {/* Cockpit Analytics HTIP (Tome 2 & 3) */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        {[
+          { label: 'Offres Actives', value: totalJobs, sub: 'Recrutement ouvert', bg: 'bg-indigo-50/50 border-indigo-100/50' },
+          { label: 'Candidatures', value: totalApplications, sub: 'Dossiers reçus', bg: 'bg-indigo-50/50 border-indigo-100/50' },
+          { label: 'Entretiens', value: totalInterviews, sub: 'Planifiés', bg: 'bg-indigo-50/50 border-indigo-100/50' },
+          { label: 'Score IA Moyen', value: `${avgIaScore}%`, sub: 'Adéquation HTIP', bg: 'bg-amber-50/50 border-amber-100/50' },
+          { label: 'Alertes Risque', value: fraudAlerts, sub: 'Détections HDIE', bg: 'bg-rose-50/50 border-rose-100/50' },
+          { label: 'Recrutements', value: totalHired, sub: 'Candidats embauchés', bg: 'bg-emerald-50/50 border-emerald-100/50' }
+        ].map((card, i) => (
+          <div key={i} className={`border rounded-xl p-4 shadow-sm flex flex-col justify-between hover:shadow-md transition-all ${card.bg}`}>
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{card.label}</span>
+            <div className="flex items-baseline gap-1.5 mt-2">
+              <span className="text-xl font-extrabold text-slate-900">{card.value}</span>
+            </div>
+            <span className="text-[10px] text-slate-500 mt-1 font-medium">{card.sub}</span>
+          </div>
+        ))}
+      </div>
+
       {/* Sub tabs header navigation */}
       <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
         {[

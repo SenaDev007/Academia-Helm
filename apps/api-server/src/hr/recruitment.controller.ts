@@ -64,8 +64,8 @@ export class RecruitmentPrismaController {
   }
 
   @Put('applications/:id/status')
-  async updateApplicationStatus(@Param('id') id: string, @Body('status') status: string) {
-    return this.service.updateApplicationStatus(id, status);
+  async updateApplicationStatus(@Param('id') id: string, @Body() body: { status: string; review?: string }) {
+    return this.service.updateApplicationStatus(id, body.status, body.review);
   }
 
   @Delete('applications/:id')

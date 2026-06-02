@@ -368,12 +368,11 @@ function CareersContent() {
                           <div
                             key={job.id}
                             onClick={() => setSelectedJob(job)}
-                            className={cn(
-                              'cursor-pointer border p-4 rounded-xl transition-all',
+                            className={`cursor-pointer border p-4 rounded-xl transition-all ${
                               selectedJob?.id === job.id 
                                 ? 'bg-indigo-50/50 border-[#1A2BA6] shadow-sm' 
                                 : 'bg-white border-slate-200 hover:border-slate-300'
-                            )}
+                            }`}
                           >
                             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{job.ref}</span>
                             <h4 className="font-bold text-slate-900 text-xs mt-1">{job.title}</h4>

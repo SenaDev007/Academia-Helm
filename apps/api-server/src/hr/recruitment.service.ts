@@ -135,11 +135,69 @@ export class RecruitmentPrismaService {
     });
   }
 
-  async updateApplicationStatus(id: string, status: string) {
-    return this.prisma.hrApplication.update({
+  async updateApplicationStatus(id: string, status: string, review?: string) {
+    const updatedApp = await this.prisma.hrApplication.update({
       where: { id },
-      data: { status },
+      data: { 
+        status,
+        ...(review ? { matchDetail: review } : {})
+      },
+      include: {
+        candidate: true,
+        job: true,
+      }
     });
+
+    if (status === 'EMBAUCHÉ') {
+      // Check if employee already exists with this email
+      const existingStaff = await this.prisma.staff.findFirst({
+        where: { email: updatedApp.candidate.email, tenantId: updatedApp.tenantId }
+      });
+
+      if (!existingStaff) {
+        // Find academic year if available
+        const currentYear = await this.prisma.academicYear.findFirst({
+          where: { tenantId: updatedApp.tenantId, status: 'ACTIVE' }
+        });
+
+        // Determine roleType
+        const jobTitle = (updatedApp.job.title || '').toLowerCase();
+        const isTeacher = jobTitle.includes('enseignant') || jobTitle.includes('prof') || jobTitle.includes('teacher') || jobTitle.includes('instituteur');
+        const roleType = isTeacher ? 'TEACHER' : 'ADMIN';
+
+        // Parse salary (if it's a number like 400000)
+        let parsedSalary = null;
+        if (updatedApp.job.salary) {
+          const matched = updatedApp.job.salary.match(/\d+/);
+          if (matched) {
+            parsedSalary = parseFloat(matched[0]);
+          }
+        }
+
+        await this.prisma.staff.create({
+          data: {
+            tenantId: updatedApp.tenantId,
+            academicYearId: currentYear?.id || null,
+            employeeNumber: `EMP-${Date.now().toString().slice(-6)}`,
+            firstName: updatedApp.candidate.firstName,
+            lastName: updatedApp.candidate.lastName,
+            gender: updatedApp.candidate.gender,
+            email: updatedApp.candidate.email,
+            phone: updatedApp.candidate.phone,
+            address: updatedApp.candidate.address,
+            position: updatedApp.job.title,
+            department: updatedApp.job.dept,
+            roleType,
+            hireDate: new Date(),
+            contractType: updatedApp.job.contractType || 'CDI',
+            status: 'ACTIVE',
+            salary: parsedSalary,
+          }
+        });
+      }
+    }
+
+    return updatedApp;
   }
 
   async deleteApplication(id: string) {

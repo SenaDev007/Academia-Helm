@@ -41,6 +41,7 @@ export default function PremiumHeader() {
     { path: '/modules', label: 'Modules' },
     { path: '/blog', label: 'Blog' },
     { path: '/#tarification', label: 'Tarification' },
+    { path: '/jobs', label: 'Recrutement' },
     { path: '/federis', label: 'Academia Federis', isInstitutional: true },
     { path: '/securite', label: 'Sécurité & Méthode' },
     { path: '/contact', label: 'Contact' },

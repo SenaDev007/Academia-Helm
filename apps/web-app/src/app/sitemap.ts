@@ -29,7 +29,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     entry('/tarification', { lastModified: now(), changeFrequency: 'monthly', priority: 0.85 }),
     entry('/orion', { lastModified: now(), changeFrequency: 'monthly', priority: 0.85 }),
     entry('/patronat-examens', { lastModified: now(), changeFrequency: 'monthly', priority: 0.8 }),
-    entry('/securite', { lastModified: now(), changeFrequency: 'monthly', priority: 0.8 }),
     entry('/contact', { lastModified: now(), changeFrequency: 'monthly', priority: 0.75 }),
     entry('/testimonials', { lastModified: now(), changeFrequency: 'monthly', priority: 0.65 }),
     entry('/legal/cgu', { lastModified: now(), changeFrequency: 'yearly', priority: 0.35 }),

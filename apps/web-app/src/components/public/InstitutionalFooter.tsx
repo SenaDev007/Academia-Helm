@@ -183,7 +183,6 @@ export default function InstitutionalFooter() {
                   { label: 'Blog & ressources', href: '/blog' },
                   { label: 'Tarification', href: '/#tarification' },
                   { label: 'Recrutement', href: '/jobs' },
-                  { label: 'Sécurité', href: '/securite' },
                   { label: 'Mode offline', href: '/#offline' },
                   { label: 'ORION (IA)', href: '/orion' },
                 ].map((item) => (

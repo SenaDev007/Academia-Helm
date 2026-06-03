@@ -4,6 +4,7 @@
 
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 
 const APPROVED = 'APPROVED';
 
@@ -60,6 +61,7 @@ export class TeachingJournalsPrismaService {
     if (existing) throw new BadRequestException('Journal already exists for this teacher and week.');
     return this.prisma.teachingJournal.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         teacherId: data.teacherId,
@@ -81,7 +83,7 @@ export class TeachingJournalsPrismaService {
     }
     return this.prisma.teachingJournal.update({
       where: { id },
-      data: updateData,
+      data: { ...prismaUpdateDefaults(), ...updateData },
     });
   }
 
@@ -90,7 +92,7 @@ export class TeachingJournalsPrismaService {
     if (existing.status === APPROVED) throw new BadRequestException('Already approved.');
     return this.prisma.teachingJournal.update({
       where: { id },
-      data: { status: APPROVED, approvedAt: new Date(), approvedById },
+      data: { ...prismaUpdateDefaults(), status: APPROVED, approvedAt: new Date(), approvedById },
     });
   }
 
@@ -99,7 +101,7 @@ export class TeachingJournalsPrismaService {
     if (existing.status === APPROVED) throw new BadRequestException('Approved journal cannot be rejected.');
     return this.prisma.teachingJournal.update({
       where: { id },
-      data: { status: 'REJECTED' },
+      data: { ...prismaUpdateDefaults(), status: 'REJECTED' },
     });
   }
 }

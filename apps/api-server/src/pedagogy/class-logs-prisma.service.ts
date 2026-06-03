@@ -5,6 +5,7 @@
 
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 
 @Injectable()
 export class ClassLogsPrismaService {
@@ -53,6 +54,7 @@ export class ClassLogsPrismaService {
   }) {
     return this.prisma.classLog.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         teacherId: data.teacherId,
@@ -79,7 +81,7 @@ export class ClassLogsPrismaService {
     if (data.lessonDate !== undefined) updateData.lessonDate = new Date(data.lessonDate);
     return this.prisma.classLog.update({
       where: { id },
-      data: updateData,
+      data: { ...prismaUpdateDefaults(), ...updateData },
     });
   }
 

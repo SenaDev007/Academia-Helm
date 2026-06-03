@@ -14,6 +14,7 @@ import { CreatePedagogicalMaterialDto } from './dto/create-pedagogical-material.
 import { UpdatePedagogicalMaterialDto } from './dto/update-pedagogical-material.dto';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { createPaginatedResponse } from '../common/helpers/pagination.helper';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 
 @Injectable()
 export class PedagogicalMaterialsPrismaService {
@@ -37,6 +38,7 @@ export class PedagogicalMaterialsPrismaService {
 
     return this.prisma.pedagogicalMaterial.create({
       data: {
+        ...prismaCreateDefaults(),
         ...data,
         isActive: data.isActive ?? true,
       },
@@ -173,7 +175,7 @@ export class PedagogicalMaterialsPrismaService {
 
     return this.prisma.pedagogicalMaterial.update({
       where: { id },
-      data,
+      data: { ...prismaUpdateDefaults(), ...data },
       include: {
         schoolLevel: {
           select: { id: true, name: true, code: true },
@@ -193,7 +195,7 @@ export class PedagogicalMaterialsPrismaService {
 
     return this.prisma.pedagogicalMaterial.update({
       where: { id },
-      data: { isActive: false },
+      data: { ...prismaUpdateDefaults(), isActive: false },
     });
   }
 }

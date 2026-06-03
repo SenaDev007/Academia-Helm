@@ -1,3 +1,4 @@
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 /**
  * Bootstrap RBAC : crée automatiquement les permissions et rôles système en BDD
  * au démarrage de l'API si absents (production-ready, idempotent).
@@ -185,6 +186,7 @@ export class RolesPermissionsBootstrapService {
       if (!role) {
         role = await this.prisma.role.create({
           data: {
+        ...prismaCreateDefaults(),
             tenantId: null,
             name: sr.name,
             description: sr.description,

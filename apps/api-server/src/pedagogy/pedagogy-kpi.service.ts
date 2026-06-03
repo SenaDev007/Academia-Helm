@@ -4,6 +4,7 @@
 
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { prismaCreateDefaults } from '../../common/utils/prisma-helpers';
 
 @Injectable()
 export class PedagogyKpiService {
@@ -72,6 +73,7 @@ export class PedagogyKpiService {
   ) {
     return this.prisma.pedagogicalKpiSnapshot.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         academicYearId,
         teacherId: data.teacherId ?? null,

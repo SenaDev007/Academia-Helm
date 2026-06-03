@@ -1,3 +1,4 @@
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
@@ -24,6 +25,7 @@ export class OrionSettingsService {
     if (!settings) {
       settings = await this.prisma.orionSettings.create({
         data: {
+        ...prismaCreateDefaults(),
           tenantId,
           isEnabled: true,
           alertThresholdCritical: 5,
@@ -77,6 +79,7 @@ export class OrionSettingsService {
     const updated = await this.prisma.orionSettings.update({
       where: { tenantId },
       data: {
+        ...prismaUpdateDefaults(),
         ...data,
         updatedAt: new Date(),
       },

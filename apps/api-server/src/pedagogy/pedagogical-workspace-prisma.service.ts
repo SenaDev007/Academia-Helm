@@ -5,6 +5,7 @@
 
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 
 import { NotificationService } from '../notifications/notification.service';
 const DRAFT = 'DRAFT';
@@ -62,6 +63,7 @@ export class PedagogicalWorkspacePrismaService {
     if (existing) throw new BadRequestException('Un cahier journal existe deja pour cette semaine et cet enseignant.');
     return this.prisma.teachingJournal.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         teacherId: data.teacherId,
@@ -77,7 +79,7 @@ export class PedagogicalWorkspacePrismaService {
     if (j.status === APPROVED) throw new BadRequestException('Modification interdite apres approbation.');
     return this.prisma.teachingJournal.update({
       where: { id },
-      data,
+      data: { ...prismaUpdateDefaults(), ...data },
     });
   }
 
@@ -86,7 +88,7 @@ export class PedagogicalWorkspacePrismaService {
     if (j.status !== DRAFT) throw new BadRequestException('Seul un brouillon peut etre soumis.');
     return this.prisma.teachingJournal.update({
       where: { id },
-      data: { status: SUBMITTED, submittedAt: new Date() },
+      data: { ...prismaUpdateDefaults(), status: SUBMITTED, submittedAt: new Date() },
     });
   }
 
@@ -95,7 +97,7 @@ export class PedagogicalWorkspacePrismaService {
     if (j.status !== SUBMITTED) throw new BadRequestException('Seul un document soumis peut etre approuve.');
     return this.prisma.teachingJournal.update({
       where: { id },
-      data: { status: APPROVED, approvedAt: new Date(), approvedById },
+      data: { ...prismaUpdateDefaults(), status: APPROVED, approvedAt: new Date(), approvedById },
     });
   }
 
@@ -104,7 +106,7 @@ export class PedagogicalWorkspacePrismaService {
     if (j.status !== SUBMITTED) throw new BadRequestException('Seul un document soumis peut etre rejete.');
     return this.prisma.teachingJournal.update({
       where: { id },
-      data: { status: REJECTED },
+      data: { ...prismaUpdateDefaults(), status: REJECTED },
     });
   }
 
@@ -151,6 +153,7 @@ export class PedagogicalWorkspacePrismaService {
   }) {
     const log = await this.prisma.classLog.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         teacherId: data.teacherId,
@@ -190,7 +193,7 @@ export class PedagogicalWorkspacePrismaService {
     await this.getClassLogOrThrow(id, tenantId);
     const updateData: Record<string, unknown> = { ...data };
     if (data.lessonDate) updateData.lessonDate = new Date(data.lessonDate);
-    return this.prisma.classLog.update({ where: { id }, data: updateData });
+    return this.prisma.classLog.update({ where: { id }, data: { ...prismaUpdateDefaults(), ...updateData } });
   }
 
   async deleteClassLog(id: string, tenantId: string) {
@@ -244,6 +247,7 @@ export class PedagogicalWorkspacePrismaService {
     if (existing) throw new BadRequestException('Un semainier existe deja pour cette semaine et cet enseignant.');
     return this.prisma.weeklyReport.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         teacherId: data.teacherId,
@@ -263,7 +267,7 @@ export class PedagogicalWorkspacePrismaService {
   ) {
     const w = await this.getWeeklyReportOrThrow(id, tenantId);
     if (w.status === APPROVED) throw new BadRequestException('Modification interdite apres approbation.');
-    return this.prisma.weeklyReport.update({ where: { id }, data });
+    return this.prisma.weeklyReport.update({ where: { id }, data: { ...prismaUpdateDefaults(), ...data } });
   }
 
   async submitWeeklyReport(id: string, tenantId: string) {
@@ -271,7 +275,7 @@ export class PedagogicalWorkspacePrismaService {
     if (w.status !== DRAFT) throw new BadRequestException('Seul un brouillon peut etre soumis.');
     return this.prisma.weeklyReport.update({
       where: { id },
-      data: { status: SUBMITTED, submittedAt: new Date() },
+      data: { ...prismaUpdateDefaults(), status: SUBMITTED, submittedAt: new Date() },
     });
   }
 
@@ -280,7 +284,7 @@ export class PedagogicalWorkspacePrismaService {
     if (w.status !== SUBMITTED) throw new BadRequestException('Seul un document soumis peut etre approuve.');
     return this.prisma.weeklyReport.update({
       where: { id },
-      data: { status: APPROVED, approvedAt: new Date(), approvedById },
+      data: { ...prismaUpdateDefaults(), status: APPROVED, approvedAt: new Date(), approvedById },
     });
   }
 
@@ -289,7 +293,7 @@ export class PedagogicalWorkspacePrismaService {
     if (w.status !== SUBMITTED) throw new BadRequestException('Seul un document soumis peut etre rejete.');
     return this.prisma.weeklyReport.update({
       where: { id },
-      data: { status: REJECTED },
+      data: { ...prismaUpdateDefaults(), status: REJECTED },
     });
   }
 
@@ -309,6 +313,7 @@ export class PedagogicalWorkspacePrismaService {
   }) {
     return this.prisma.pedagogicalAttachment.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         entityType: data.entityType,
         entityId: data.entityId,
@@ -334,6 +339,7 @@ export class PedagogicalWorkspacePrismaService {
   }) {
     return this.prisma.pedagogicalSignature.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         entityType: data.entityType,
         entityId: data.entityId,

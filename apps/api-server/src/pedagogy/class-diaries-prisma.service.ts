@@ -10,6 +10,7 @@
 
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 
 @Injectable()
 export class ClassDiariesPrismaService {
@@ -49,7 +50,10 @@ export class ClassDiariesPrismaService {
     }
 
     return this.prisma.classDiary.create({
-      data,
+      data: {
+        ...prismaCreateDefaults(),
+        ...data,
+      },
       include: {
         classSubject: {
           include: {
@@ -170,7 +174,7 @@ export class ClassDiariesPrismaService {
 
     return this.prisma.classDiary.update({
       where: { id },
-      data,
+      data: { ...prismaUpdateDefaults(), ...data },
       include: {
         classSubject: {
           include: {

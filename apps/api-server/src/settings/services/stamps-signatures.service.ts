@@ -1,3 +1,4 @@
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 /**
  * ============================================================================
  * CACHETS & SIGNATURES GÉNÉRÉS — PAR TENANT, NIVEAU SCOLAIRE ET RÔLE
@@ -265,6 +266,7 @@ export class StampsSignaturesService {
           generatedAt: now,
         },
         update: {
+         ...prismaUpdateDefaults(),
           ...(circularStampUrl !== null && { circularStampUrl }),
           ...(rectangularStampUrl !== null && { rectangularStampUrl }),
           ...(ovalStampUrl !== null && { ovalStampUrl }),
@@ -276,6 +278,7 @@ export class StampsSignaturesService {
         await this.prisma.tenantStamp.update({
           where: { id: existing.id },
           data: {
+        ...prismaUpdateDefaults(),
             ...(circularStampUrl !== null && { circularStampUrl }),
             ...(rectangularStampUrl !== null && { rectangularStampUrl }),
             ...(ovalStampUrl !== null && { ovalStampUrl }),
@@ -285,6 +288,7 @@ export class StampsSignaturesService {
       } else {
         await this.prisma.tenantStamp.create({
           data: {
+        ...prismaCreateDefaults(),
             tenantId,
             educationLevelId: null,
             circularStampUrl,
@@ -354,6 +358,7 @@ export class StampsSignaturesService {
           generatedAt: now,
         },
         update: {
+          ...prismaUpdateDefaults(),
           holderFirstName: first,
           holderLastName: last,
           generatedAt: now,
@@ -367,6 +372,7 @@ export class StampsSignaturesService {
         row = await this.prisma.tenantSignature.update({
           where: { id: existing.id },
           data: {
+        ...prismaUpdateDefaults(),
             holderFirstName: first,
             holderLastName: last,
             generatedAt: now,
@@ -375,6 +381,7 @@ export class StampsSignaturesService {
       } else {
         row = await this.prisma.tenantSignature.create({
           data: {
+        ...prismaCreateDefaults(),
             tenantId,
             educationLevelId: null,
             role,

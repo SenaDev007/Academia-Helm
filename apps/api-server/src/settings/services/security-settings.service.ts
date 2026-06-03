@@ -1,3 +1,4 @@
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
@@ -24,6 +25,7 @@ export class SecuritySettingsService {
     if (!settings) {
       settings = await this.prisma.securitySettings.create({
         data: {
+        ...prismaCreateDefaults(),
           tenantId,
           passwordMinLength: 8,
           passwordRequireUppercase: true,
@@ -91,6 +93,7 @@ export class SecuritySettingsService {
     const updated = await this.prisma.securitySettings.update({
       where: { tenantId },
       data: {
+        ...prismaUpdateDefaults(),
         ...data,
         updatedAt: new Date(),
       },

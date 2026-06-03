@@ -11,6 +11,7 @@
 
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../../common/utils/prisma-helpers';
 
 @Injectable()
 export class WeeklySemainierService {
@@ -92,6 +93,7 @@ export class WeeklySemainierService {
     // Créer la désignation
     return this.prisma.weeklyDutyAssignment.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         academicYearId,
         schoolLevelId,
@@ -163,13 +165,14 @@ export class WeeklySemainierService {
       // Si changement exceptionnel, désactiver l'ancienne
       await this.prisma.weeklyDutyAssignment.update({
         where: { id: existing.id },
-        data: { isActive: false },
+        data: { ...prismaUpdateDefaults(), isActive: false },
       });
     }
 
     // Créer la désignation manuelle
     return this.prisma.weeklyDutyAssignment.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         academicYearId,
         schoolLevelId,
@@ -248,6 +251,7 @@ export class WeeklySemainierService {
       return this.prisma.weeklySemainier.update({
         where: { id: existing.id },
         data: {
+          ...prismaUpdateDefaults(),
           content,
         },
         include: {
@@ -275,6 +279,7 @@ export class WeeklySemainierService {
     // Créer le semainier
     return this.prisma.weeklySemainier.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         academicYearId,
         schoolLevelId,
@@ -342,6 +347,7 @@ export class WeeklySemainierService {
         },
       },
       create: {
+        ...prismaCreateDefaults(),
         tenantId: semainier.tenantId,
         academicYearId: semainier.academicYearId,
         schoolLevelId: semainier.schoolLevelId,
@@ -352,6 +358,7 @@ export class WeeklySemainierService {
         events: data.events,
       },
       update: {
+        ...prismaUpdateDefaults(),
         observations: data.observations,
         actions: data.actions,
         events: data.events,
@@ -385,6 +392,7 @@ export class WeeklySemainierService {
     // Créer l'incident
     const incident = await this.prisma.weeklySemainierIncident.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: semainier.tenantId,
         academicYearId: semainier.academicYearId,
         schoolLevelId: semainier.schoolLevelId,
@@ -451,6 +459,7 @@ export class WeeklySemainierService {
     return this.prisma.weeklySemainier.update({
       where: { id: semainierId },
       data: {
+        ...prismaUpdateDefaults(),
         status: 'SOUMIS',
         submittedAt: new Date(),
       },
@@ -491,6 +500,7 @@ export class WeeklySemainierService {
     return this.prisma.weeklySemainier.update({
       where: { id: semainierId },
       data: {
+        ...prismaUpdateDefaults(),
         status: 'VALIDATED',
         validatedAt: new Date(),
         validatedBy: directorId,

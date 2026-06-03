@@ -10,6 +10,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../../common/utils/prisma-helpers';
 
 @Injectable()
 export class PedagogicalNotificationService {
@@ -96,6 +97,7 @@ export class PedagogicalNotificationService {
           // Créer la notification dans la base
           const notification = await this.prisma.pedagogicalDocumentNotification.create({
             data: {
+              ...prismaCreateDefaults(),
               tenantId: document.tenantId,
               academicYearId: document.academicYearId,
               schoolLevelId: document.schoolLevelId,
@@ -118,6 +120,7 @@ export class PedagogicalNotificationService {
               await this.prisma.pedagogicalDocumentNotification.update({
                 where: { id: notification.id },
                 data: {
+                  ...prismaUpdateDefaults(),
                   emailSent: true,
                   emailSentAt: new Date(),
                 },

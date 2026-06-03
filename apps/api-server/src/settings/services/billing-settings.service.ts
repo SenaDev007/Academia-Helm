@@ -1,3 +1,4 @@
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { BillingEventType } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
@@ -96,6 +97,7 @@ export class BillingSettingsService {
     const updated = await this.prisma.subscription.update({
       where: { tenantId },
       data: {
+        ...prismaUpdateDefaults(),
         billingCycle: data.billingCycle ?? existing.billingCycle,
         autoRenew: data.autoRenew ?? existing.autoRenew,
         bilingualEnabled: data.bilingualEnabled ?? existing.bilingualEnabled,
@@ -183,6 +185,7 @@ export class BillingSettingsService {
     const updated = await this.prisma.subscription.update({
       where: { tenantId },
       data: {
+        ...prismaUpdateDefaults(),
         plan: newPlan.name,
         planId: newPlan.id,
         amount: newAmount,
@@ -202,6 +205,7 @@ export class BillingSettingsService {
 
     await this.prisma.billingEvent.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         subscriptionId: updated.id,
         type: BillingEventType.ADJUSTMENT,
@@ -319,6 +323,7 @@ export class BillingSettingsService {
     const updated = await this.prisma.subscription.update({
       where: { tenantId },
       data: {
+        ...prismaUpdateDefaults(),
         status: 'CANCELLED',
         cancelledAt: new Date(),
         cancelledBy: userId,
@@ -340,6 +345,7 @@ export class BillingSettingsService {
 
     await this.prisma.billingEvent.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         subscriptionId: updated.id,
         type: BillingEventType.ADJUSTMENT,
@@ -379,6 +385,7 @@ export class BillingSettingsService {
     const updated = await this.prisma.subscription.update({
       where: { tenantId },
       data: {
+        ...prismaUpdateDefaults(),
         status: 'ACTIVE',
         cancelledAt: null,
         cancelledBy: null,

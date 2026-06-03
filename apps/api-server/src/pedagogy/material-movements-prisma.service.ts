@@ -13,6 +13,7 @@ import { PrismaService } from '../database/prisma.service';
 import { CreateMaterialMovementDto } from './dto/create-material-movement.dto';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { createPaginatedResponse } from '../common/helpers/pagination.helper';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 
 @Injectable()
 export class MaterialMovementsPrismaService {
@@ -45,6 +46,7 @@ export class MaterialMovementsPrismaService {
     // Créer le mouvement
     const movement = await this.prisma.materialMovement.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         materialId: data.materialId,
@@ -114,6 +116,7 @@ export class MaterialMovementsPrismaService {
         },
       },
       create: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         materialId: data.materialId,
@@ -183,6 +186,7 @@ export class MaterialMovementsPrismaService {
     await this.prisma.materialStock.update({
       where: { id: stock.id },
       data: {
+        ...prismaUpdateDefaults(),
         quantityTotal: newTotal,
         quantityAvailable: newAvailable,
       },

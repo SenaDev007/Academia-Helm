@@ -10,6 +10,7 @@
 
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 
 @Injectable()
 export class TeachersPrismaService {
@@ -57,6 +58,7 @@ export class TeachersPrismaService {
 
     return this.prisma.teacher.create({
       data: {
+        ...prismaCreateDefaults(),
         ...data,
         matricule,
         status: data.status || 'active',
@@ -182,7 +184,7 @@ export class TeachersPrismaService {
 
     return this.prisma.teacher.update({
       where: { id },
-      data,
+      data: { ...prismaUpdateDefaults(), ...data },
       include: {
         schoolLevel: true,
         department: true,
@@ -199,6 +201,7 @@ export class TeachersPrismaService {
     return this.prisma.teacher.update({
       where: { id },
       data: {
+        ...prismaUpdateDefaults(),
         status: 'archived',
       },
     });

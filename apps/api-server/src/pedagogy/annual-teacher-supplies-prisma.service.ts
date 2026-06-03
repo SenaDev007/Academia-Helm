@@ -13,6 +13,7 @@ import { PrismaService } from '../database/prisma.service';
 import { CreateAnnualTeacherSupplyDto } from './dto/create-annual-teacher-supply.dto';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { createPaginatedResponse } from '../common/helpers/pagination.helper';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 
 @Injectable()
 export class AnnualTeacherSuppliesPrismaService {
@@ -44,7 +45,7 @@ export class AnnualTeacherSuppliesPrismaService {
       // Mettre à jour la quantité
       return this.prisma.annualTeacherSupply.update({
         where: { id: existing.id },
-        data: { quantity: data.quantity },
+        data: { ...prismaUpdateDefaults(), quantity: data.quantity },
         include: {
           teacher: {
             select: {
@@ -69,6 +70,7 @@ export class AnnualTeacherSuppliesPrismaService {
 
     return this.prisma.annualTeacherSupply.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         teacherId: data.teacherId,

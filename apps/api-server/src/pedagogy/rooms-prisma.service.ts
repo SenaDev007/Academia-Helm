@@ -10,6 +10,7 @@
 
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 
 @Injectable()
 export class RoomsPrismaService {
@@ -44,6 +45,7 @@ export class RoomsPrismaService {
 
     return this.prisma.room.create({
       data: {
+        ...prismaCreateDefaults(),
         ...data,
         status: data.status || 'ACTIVE',
         equipment: data.equipment || [],
@@ -228,6 +230,7 @@ export class RoomsPrismaService {
 
     return this.prisma.roomAllocation.create({
       data: {
+        ...prismaCreateDefaults(),
         ...data,
         status: 'ACTIVE',
       },
@@ -338,7 +341,7 @@ export class RoomsPrismaService {
 
     return this.prisma.room.update({
       where: { id },
-      data,
+      data: { ...prismaUpdateDefaults(), ...data },
       include: {
         schoolLevel: true,
         academicYear: true,
@@ -361,6 +364,7 @@ export class RoomsPrismaService {
         startTime: { gt: new Date() },
       },
       data: {
+        ...prismaUpdateDefaults(),
         status: 'CANCELLED',
         notes: reason ? `Maintenance: ${reason}` : 'Maintenance programmée',
       },
@@ -369,6 +373,7 @@ export class RoomsPrismaService {
     return this.prisma.room.update({
       where: { id },
       data: {
+        ...prismaUpdateDefaults(),
         status: 'MAINTENANCE',
         description: reason
           ? `${room.description || ''}\n[Maintenance] ${reason}`
@@ -415,6 +420,7 @@ export class RoomsPrismaService {
     await this.findRoomById(data.roomId, data.tenantId);
     return this.prisma.roomMaintenance.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         roomId: data.roomId,
         startDate: data.startDate,
@@ -453,6 +459,7 @@ export class RoomsPrismaService {
     await this.findRoomById(data.roomId, data.tenantId);
     return this.prisma.roomSchedule.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         roomId: data.roomId,

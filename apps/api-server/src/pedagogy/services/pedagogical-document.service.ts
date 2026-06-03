@@ -10,6 +10,7 @@
 
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../../common/utils/prisma-helpers';
 
 @Injectable()
 export class PedagogicalDocumentService {
@@ -50,6 +51,7 @@ export class PedagogicalDocumentService {
 
     return this.prisma.pedagogicalDocument.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         academicYearId,
         schoolLevelId,
@@ -256,6 +258,7 @@ export class PedagogicalDocumentService {
 
       await this.prisma.pedagogicalDocumentVersion.create({
         data: {
+          ...prismaCreateDefaults(),
           tenantId: document.tenantId,
           academicYearId: document.academicYearId,
           schoolLevelId: document.schoolLevelId,
@@ -271,6 +274,7 @@ export class PedagogicalDocumentService {
     return this.prisma.pedagogicalDocument.update({
       where: { id: documentId },
       data: {
+        ...prismaUpdateDefaults(),
         title: data.title,
         description: data.description,
         content: data.content,

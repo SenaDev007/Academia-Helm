@@ -1,3 +1,4 @@
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
@@ -24,6 +25,7 @@ export class CommunicationSettingsService {
     if (!settings) {
       settings = await this.prisma.settingsCommunication.create({
         data: {
+        ...prismaCreateDefaults(),
           tenantId,
           smsEnabled: false,
           emailEnabled: false,
@@ -117,6 +119,7 @@ export class CommunicationSettingsService {
     const updated = await this.prisma.settingsCommunication.update({
       where: { tenantId },
       data: {
+        ...prismaUpdateDefaults(),
         ...data,
         updatedAt: new Date(),
       },
@@ -244,6 +247,7 @@ export class CommunicationSettingsService {
       return this.prisma.messageTemplate.update({
         where: { id: data.id },
         data: {
+        ...prismaUpdateDefaults(),
           ...data,
           updatedAt: new Date(),
         },
@@ -252,6 +256,7 @@ export class CommunicationSettingsService {
 
     return this.prisma.messageTemplate.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         ...data,
       },

@@ -10,6 +10,7 @@
 
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 
 @Injectable()
 export class LessonPlansPrismaService {
@@ -37,6 +38,7 @@ export class LessonPlansPrismaService {
   ) {
     const lessonPlan = await this.prisma.lessonPlan.create({
       data: {
+        ...prismaCreateDefaults(),
         ...data,
         tenantId,
         status: 'DRAFT',
@@ -54,6 +56,7 @@ export class LessonPlansPrismaService {
     // Create initial version
     await this.prisma.lessonPlanVersion.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         academicYearId: data.academicYearId,
         schoolLevelId: data.schoolLevelId,
@@ -149,6 +152,7 @@ export class LessonPlansPrismaService {
     const updated = await this.prisma.lessonPlan.update({
       where: { id },
       data: {
+        ...prismaUpdateDefaults(),
         title: data.title,
         objectives: data.objectives,
         content: data.content,
@@ -163,6 +167,7 @@ export class LessonPlansPrismaService {
     // Create new version entry
     await this.prisma.lessonPlanVersion.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         academicYearId: current.academicYearId,
         schoolLevelId: current.schoolLevelId,
@@ -186,6 +191,7 @@ export class LessonPlansPrismaService {
     return this.prisma.lessonPlan.update({
       where: { id },
       data: {
+        ...prismaUpdateDefaults(),
         status: 'SUBMITTED',
         submittedAt: new Date(),
       },
@@ -202,6 +208,7 @@ export class LessonPlansPrismaService {
       this.prisma.lessonPlan.update({
         where: { id },
         data: {
+          ...prismaUpdateDefaults(),
           status: 'VALIDATED',
           validatedAt: new Date(),
           validatedBy: validatorId,
@@ -209,6 +216,7 @@ export class LessonPlansPrismaService {
       }),
       this.prisma.lessonPlanValidation.create({
         data: {
+          ...prismaCreateDefaults(),
           tenantId,
           academicYearId: lessonPlan.academicYearId,
           schoolLevelId: lessonPlan.schoolLevelId,
@@ -232,6 +240,7 @@ export class LessonPlansPrismaService {
     return this.prisma.lessonPlan.update({
       where: { id },
       data: {
+        ...prismaUpdateDefaults(),
         status: 'PUBLISHED',
         publishedAt: new Date(),
       },

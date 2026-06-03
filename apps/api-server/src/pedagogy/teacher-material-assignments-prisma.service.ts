@@ -14,6 +14,7 @@ import { CreateTeacherMaterialAssignmentDto } from './dto/create-teacher-materia
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { createPaginatedResponse } from '../common/helpers/pagination.helper';
 import { MaterialMovementsPrismaService } from './material-movements-prisma.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 
 @Injectable()
 export class TeacherMaterialAssignmentsPrismaService {
@@ -102,6 +103,7 @@ export class TeacherMaterialAssignmentsPrismaService {
     // Créer l'attribution
     const assignment = await this.prisma.teacherMaterialAssignment.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         teacherId: data.teacherId,
@@ -284,6 +286,7 @@ export class TeacherMaterialAssignmentsPrismaService {
     return this.prisma.teacherMaterialAssignment.update({
       where: { id },
       data: {
+        ...prismaUpdateDefaults(),
         signed: true,
         signedAt: new Date(),
         signedBy,

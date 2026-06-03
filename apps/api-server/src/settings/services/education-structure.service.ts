@@ -1,3 +1,4 @@
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 
@@ -149,6 +150,7 @@ export class EducationStructureService {
           if (!existingGrade) {
             await this.prisma.educationGrade.create({
               data: {
+        ...prismaCreateDefaults(),
                 cycleId: cycle.id,
                 seriesId: seriesId ?? undefined,
                 name: gr.name,
@@ -261,6 +263,7 @@ export class EducationStructureService {
 
     return this.prisma.classroom.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         academicYearId,
         gradeId: data.gradeId,
@@ -297,6 +300,7 @@ export class EducationStructureService {
     return this.prisma.classroom.update({
       where: { id, tenantId },
       data: {
+        ...prismaUpdateDefaults(),
         ...(data.name !== undefined && { name: data.name.trim() }),
         ...(data.code !== undefined && { code: data.code.trim() || null }),
         ...(data.capacity !== undefined && { capacity: data.capacity }),
@@ -342,6 +346,7 @@ export class EducationStructureService {
     for (const c of classrooms) {
       const createdOne = await this.prisma.classroom.create({
         data: {
+        ...prismaCreateDefaults(),
           tenantId,
           academicYearId: newAcademicYearId,
           gradeId: c.gradeId,

@@ -1,3 +1,4 @@
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { AcademicPeriodType } from '@prisma/client';
@@ -107,6 +108,7 @@ export class AcademicPeriodSettingsService {
 
     const period = await this.prisma.academicPeriod.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         academicYearId,
         name: data.name.trim(),
@@ -268,6 +270,7 @@ export class AcademicPeriodSettingsService {
     for (const p of periods) {
       await this.prisma.academicPeriod.create({
         data: {
+        ...prismaCreateDefaults(),
           tenantId,
           academicYearId,
           name: p.name,

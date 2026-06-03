@@ -1,3 +1,4 @@
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 import { Injectable, BadRequestException, ForbiddenException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
@@ -117,6 +118,7 @@ export class RolesPermissionsService {
 
     const role = await this.prisma.role.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         ...roleData,
         isSystemRole: false,
@@ -180,6 +182,7 @@ export class RolesPermissionsService {
     const updated = await this.prisma.role.update({
       where: { id },
       data: {
+        ...prismaUpdateDefaults(),
         ...data,
         updatedAt: new Date(),
       },
@@ -441,6 +444,7 @@ export class RolesPermissionsService {
     } else {
       await this.prisma.userRole.create({
         data: {
+        ...prismaCreateDefaults(),
           userId,
           roleId,
           tenantId: assignmentTenantId,

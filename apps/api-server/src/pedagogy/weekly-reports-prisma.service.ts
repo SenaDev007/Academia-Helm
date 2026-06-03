@@ -6,6 +6,7 @@
 
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 
 const APPROVED = 'APPROVED';
 
@@ -66,6 +67,7 @@ export class WeeklyReportsPrismaService {
     }
     return this.prisma.weeklyReport.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         teacherId: data.teacherId,
@@ -97,7 +99,7 @@ export class WeeklyReportsPrismaService {
     }
     return this.prisma.weeklyReport.update({
       where: { id },
-      data: updateData,
+      data: { ...prismaUpdateDefaults(), ...updateData },
     });
   }
 
@@ -108,7 +110,7 @@ export class WeeklyReportsPrismaService {
     }
     return this.prisma.weeklyReport.update({
       where: { id },
-      data: { status: APPROVED, approvedAt: new Date(), approvedById },
+      data: { ...prismaUpdateDefaults(), status: APPROVED, approvedAt: new Date(), approvedById },
     });
   }
 
@@ -119,7 +121,7 @@ export class WeeklyReportsPrismaService {
     }
     return this.prisma.weeklyReport.update({
       where: { id },
-      data: { status: 'REJECTED' },
+      data: { ...prismaUpdateDefaults(), status: 'REJECTED' },
     });
   }
 }

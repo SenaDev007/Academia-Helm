@@ -1,3 +1,4 @@
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 /**
  * ============================================================================
  * ELECTRONIC SIGNATURES SERVICE
@@ -109,6 +110,7 @@ export class ElectronicSignaturesService {
     // Créer la signature
     const signature = await this.prisma.certifiedElectronicSignature.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         userId,
         role: data.role,
@@ -172,6 +174,7 @@ export class ElectronicSignaturesService {
     // Créer l'enregistrement de signature
     const signedDocument = await this.prisma.signedDocument.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         documentType: data.documentType,
         documentId: data.documentId,

@@ -1,3 +1,4 @@
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
@@ -65,6 +66,7 @@ export class AcademicYearSettingsService {
     await this.prisma.academicYear.update({
       where: { id: year.id },
       data: {
+        ...prismaUpdateDefaults(),
         preEntryDate: dates.preEntryDate,
         officialStartDate: dates.officialStartDate,
         startDate: dates.startDate,
@@ -161,6 +163,7 @@ export class AcademicYearSettingsService {
     const dates = this.buildYearDates(startYear);
     const created = await this.prisma.academicYear.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: tid,
         name,
         label: `Année scolaire ${name}`,
@@ -279,6 +282,7 @@ export class AcademicYearSettingsService {
 
     const year = await this.prisma.academicYear.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         name: data.name,
         label: data.label,
@@ -490,6 +494,7 @@ export class AcademicYearSettingsService {
       for (const cls of classes) {
         await this.prisma.class.create({
           data: {
+        ...prismaCreateDefaults(),
             tenantId,
             academicYearId: newYear.id,
             schoolLevelId: cls.schoolLevelId,
@@ -510,6 +515,7 @@ export class AcademicYearSettingsService {
       for (const fee of feeDefinitions) {
         await this.prisma.feeDefinition.create({
           data: {
+        ...prismaCreateDefaults(),
             tenantId,
             academicYearId: newYear.id,
             schoolLevelId: fee.schoolLevelId,
@@ -624,6 +630,7 @@ export class AcademicYearSettingsService {
 
     const year = await this.prisma.academicYear.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         name,
         label: `Année scolaire ${name}`,
@@ -712,6 +719,7 @@ export class AcademicYearSettingsService {
     const updated = await this.prisma.academicYear.update({
       where: { id },
       data: {
+        ...prismaUpdateDefaults(),
         isClosed: true,
         closedAt: new Date(),
         closedBy: userId,

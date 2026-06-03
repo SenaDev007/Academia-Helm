@@ -10,6 +10,7 @@
 
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { prismaCreateDefaults } from '../../../common/utils/prisma-helpers';
 
 @Injectable()
 export class PedagogicalAuditService {
@@ -29,6 +30,7 @@ export class PedagogicalAuditService {
   }) {
     return this.prisma.pedagogicalAuditLog.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: params.tenantId,
         entityType: params.entityType,
         entityId: params.entityId,

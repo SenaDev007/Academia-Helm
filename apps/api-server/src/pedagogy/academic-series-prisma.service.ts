@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AcademicStructurePrismaService } from './academic-structure-prisma.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 
 @Injectable()
 export class AcademicSeriesPrismaService {
@@ -38,6 +39,7 @@ export class AcademicSeriesPrismaService {
     if (existing) throw new BadRequestException(`La série "${data.name}" existe déjà.`);
     return this.prisma.academicSeries.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         levelId: data.levelId,
@@ -52,7 +54,7 @@ export class AcademicSeriesPrismaService {
     await this.getSeriesOrThrow(id, tenantId);
     return this.prisma.academicSeries.update({
       where: { id },
-      data,
+      data: { ...prismaUpdateDefaults(), ...data },
       include: { level: true, seriesSubjects: { include: { subject: true } } },
     });
   }
@@ -90,6 +92,7 @@ export class AcademicSeriesPrismaService {
     if (existing) throw new BadRequestException('Cette matière est déjà dans la série.');
     return this.prisma.seriesSubject.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         seriesId: data.seriesId,
@@ -106,7 +109,7 @@ export class AcademicSeriesPrismaService {
     if (!ex) throw new NotFoundException('Lien série-matière non trouvé.');
     return this.prisma.seriesSubject.update({
       where: { id },
-      data,
+      data: { ...prismaUpdateDefaults(), ...data },
       include: { series: true, subject: true },
     });
   }
@@ -133,6 +136,7 @@ export class AcademicSeriesPrismaService {
   }) {
     return this.prisma.subjectProgram.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         subjectId: data.subjectId,
@@ -148,7 +152,7 @@ export class AcademicSeriesPrismaService {
     if (!ex) throw new NotFoundException('Programme non trouvé.');
     return this.prisma.subjectProgram.update({
       where: { id },
-      data: { approvedById, approvedAt: new Date() },
+      data: { ...prismaUpdateDefaults(), approvedById, approvedAt: new Date() },
       include: { subject: true },
     });
   }
@@ -168,6 +172,7 @@ export class AcademicSeriesPrismaService {
     return this.prisma.subjectProgram.update({
       where: { id },
       data: {
+        ...prismaUpdateDefaults(),
         approvedById: userId,
         approvedAt: new Date()
       }

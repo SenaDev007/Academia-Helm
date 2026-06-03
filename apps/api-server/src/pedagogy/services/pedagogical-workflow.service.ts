@@ -11,6 +11,7 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { PedagogicalAuditService } from './pedagogical-audit.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../../common/utils/prisma-helpers';
 
 
 @Injectable()
@@ -51,6 +52,7 @@ export class PedagogicalWorkflowService {
 
     await this.prisma.pedagogicalDocumentVersion.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: document.tenantId,
         academicYearId: document.academicYearId,
         schoolLevelId: document.schoolLevelId,
@@ -66,6 +68,7 @@ export class PedagogicalWorkflowService {
     const updated = await this.prisma.pedagogicalDocument.update({
       where: { id: documentId },
       data: {
+        ...prismaUpdateDefaults(),
         status: 'SUBMITTED',
         submittedAt: new Date(),
       },
@@ -112,6 +115,7 @@ export class PedagogicalWorkflowService {
     // Créer une review
     await this.prisma.pedagogicalDocumentReview.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: document.tenantId,
         academicYearId: document.academicYearId,
         schoolLevelId: document.schoolLevelId,
@@ -127,6 +131,7 @@ export class PedagogicalWorkflowService {
     const updated = await this.prisma.pedagogicalDocument.update({
       where: { id: documentId },
       data: {
+        ...prismaUpdateDefaults(),
         status: 'APPROVED',
         validatedAt: new Date(),
         validatedBy: directorId,
@@ -191,6 +196,7 @@ export class PedagogicalWorkflowService {
     // Créer une review
     await this.prisma.pedagogicalDocumentReview.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: document.tenantId,
         academicYearId: document.academicYearId,
         schoolLevelId: document.schoolLevelId,
@@ -206,6 +212,7 @@ export class PedagogicalWorkflowService {
     const updated = await this.prisma.pedagogicalDocument.update({
       where: { id: documentId },
       data: {
+        ...prismaUpdateDefaults(),
         status: 'REJECTED',
         validatedAt: new Date(),
         validatedBy: directorId,
@@ -274,6 +281,7 @@ export class PedagogicalWorkflowService {
     const updated = await this.prisma.pedagogicalDocument.update({
       where: { id: documentId },
       data: {
+        ...prismaUpdateDefaults(),
         status: 'ACKNOWLEDGED',
         acknowledgedAt: new Date(),
         acknowledgedBy: directorId,
@@ -295,6 +303,7 @@ export class PedagogicalWorkflowService {
     if (comments) {
       await this.prisma.pedagogicalDocumentComment.create({
         data: {
+          ...prismaCreateDefaults(),
           tenantId: document.tenantId,
           academicYearId: document.academicYearId,
           schoolLevelId: document.schoolLevelId,
@@ -336,6 +345,7 @@ export class PedagogicalWorkflowService {
 
     return this.prisma.pedagogicalDocumentComment.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: document.tenantId,
         academicYearId: document.academicYearId,
         schoolLevelId: document.schoolLevelId,

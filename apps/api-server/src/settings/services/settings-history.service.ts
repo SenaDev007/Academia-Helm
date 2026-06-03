@@ -1,3 +1,4 @@
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 
@@ -31,6 +32,7 @@ export class SettingsHistoryService {
       .map((field) =>
         this.prisma.settingsHistory.create({
           data: {
+        ...prismaCreateDefaults(),
             tenantId,
             settingId,
             key: `${key}.${field}`,
@@ -64,6 +66,7 @@ export class SettingsHistoryService {
     if (!tenantId || typeof tenantId !== 'string') return;
     await this.prisma.settingsHistory.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         settingId: null,
         key: `feature.${featureCode}`,

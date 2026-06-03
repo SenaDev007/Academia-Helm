@@ -10,6 +10,7 @@
 
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 
 @Injectable()
 export class SubjectsPrismaService {
@@ -46,6 +47,7 @@ export class SubjectsPrismaService {
 
     return this.prisma.subject.create({
       data: {
+        ...prismaCreateDefaults(),
         ...data,
         coefficient: data.coefficient || 1.0,
       },
@@ -174,7 +176,7 @@ export class SubjectsPrismaService {
 
     return this.prisma.subject.update({
       where: { id },
-      data,
+      data: { ...prismaUpdateDefaults(), ...data },
       include: {
         schoolLevel: true,
         academicYear: true,
@@ -251,6 +253,7 @@ export class SubjectsPrismaService {
             const { id, createdAt, updatedAt, ...data } = s;
             return this.prisma.subject.create({
               data: {
+                ...prismaCreateDefaults(),
                 ...data,
                 academicYearId: academicYearId
               }
@@ -369,7 +372,7 @@ export class SubjectsPrismaService {
     // Insertion groupée dans une transaction
     await this.prisma.$transaction(
       subjectsToCreate.map(data =>
-        this.prisma.subject.create({ data })
+        this.prisma.subject.create({ data: { ...prismaCreateDefaults(), ...data } })
       )
     );
   }

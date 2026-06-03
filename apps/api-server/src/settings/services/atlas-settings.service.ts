@@ -1,3 +1,4 @@
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
@@ -24,6 +25,7 @@ export class AtlasSettingsService {
     if (!settings) {
       settings = await this.prisma.atlasSettings.create({
         data: {
+        ...prismaCreateDefaults(),
           tenantId,
           isEnabled: false,
           scope: 'LIMITED',
@@ -75,6 +77,7 @@ export class AtlasSettingsService {
     const updated = await this.prisma.atlasSettings.update({
       where: { tenantId },
       data: {
+        ...prismaUpdateDefaults(),
         ...data,
         updatedAt: new Date(),
       },

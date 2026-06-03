@@ -1,3 +1,4 @@
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
@@ -114,6 +115,7 @@ export class IdentityProfileService {
           await tx.tenantIdentityProfile.update({
             where: { id: currentVersion.id },
             data: {
+        ...prismaUpdateDefaults(),
               isActive: false,
               deactivatedAt: now,
               deactivatedBy: userId,
@@ -457,6 +459,7 @@ export class IdentityProfileService {
         version: profile.version,
       },
       update: {
+        ...prismaUpdateDefaults(),
         schoolName: profile.schoolName,
         abbreviation: profile.schoolAcronym,
         establishmentType: profile.schoolType,

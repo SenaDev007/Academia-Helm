@@ -1,3 +1,4 @@
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
@@ -24,6 +25,7 @@ export class PedagogicalStructureService {
     if (!structure) {
       structure = await this.prisma.settingsPedagogicalStructure.create({
         data: {
+        ...prismaCreateDefaults(),
           tenantId,
           maternelleEnabled: false,
           primaireEnabled: true,
@@ -81,6 +83,7 @@ export class PedagogicalStructureService {
     const updated = await this.prisma.settingsPedagogicalStructure.update({
       where: { tenantId },
       data: {
+        ...prismaUpdateDefaults(),
         ...data,
         updatedAt: new Date(),
       },

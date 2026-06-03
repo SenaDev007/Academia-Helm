@@ -5,6 +5,7 @@
 
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 
 @Injectable()
 export class TeacherAcademicProfilePrismaService {
@@ -66,6 +67,7 @@ export class TeacherAcademicProfilePrismaService {
     }
     return this.prisma.teacherAcademicProfile.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         teacherId: data.teacherId,
@@ -84,7 +86,7 @@ export class TeacherAcademicProfilePrismaService {
     await this.getProfileOrThrow(profileId, tenantId);
     return this.prisma.teacherAcademicProfile.update({
       where: { id: profileId },
-      data,
+      data: { ...prismaUpdateDefaults(), ...data },
       include: this.profileInclude,
     });
   }
@@ -103,6 +105,7 @@ export class TeacherAcademicProfilePrismaService {
     if (existing) throw new BadRequestException('Cette matière est déjà qualifiée pour ce profil.');
     return this.prisma.teacherSubjectQualification.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         profileId: data.profileId,
@@ -136,6 +139,7 @@ export class TeacherAcademicProfilePrismaService {
     if (existing) throw new BadRequestException('Ce niveau est déjà autorisé pour ce profil.');
     return this.prisma.teacherLevelAuthorization.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         profileId: data.profileId,
@@ -177,6 +181,7 @@ export class TeacherAcademicProfilePrismaService {
     }
     return this.prisma.teacherAvailability.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         profileId: data.profileId,
@@ -201,7 +206,7 @@ export class TeacherAcademicProfilePrismaService {
     }
     return this.prisma.teacherAvailability.update({
       where: { id: availabilityId },
-      data,
+      data: { ...prismaUpdateDefaults(), ...data },
     });
   }
 

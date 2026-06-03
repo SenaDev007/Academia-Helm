@@ -1,3 +1,4 @@
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
@@ -26,6 +27,7 @@ export class BilingualSettingsService {
     if (!settings) {
       settings = await this.prisma.settingsBilingual.create({
         data: {
+        ...prismaCreateDefaults(),
           tenantId,
           isEnabled: false,
           separateSubjects: true,
@@ -156,6 +158,7 @@ export class BilingualSettingsService {
     await this.prisma.settingsBilingual.update({
       where: { tenantId },
       data: {
+        ...prismaUpdateDefaults(),
         migrationStatus: 'IN_PROGRESS',
         updatedAt: new Date(),
       },
@@ -185,6 +188,7 @@ export class BilingualSettingsService {
       await this.prisma.settingsBilingual.update({
         where: { tenantId },
         data: {
+        ...prismaUpdateDefaults(),
           migrationStatus: 'COMPLETED',
           migrationRequired: false,
           migratedAt: new Date(),
@@ -206,6 +210,7 @@ export class BilingualSettingsService {
       await this.prisma.settingsBilingual.update({
         where: { tenantId },
         data: {
+        ...prismaUpdateDefaults(),
           migrationStatus: 'FAILED',
           updatedAt: new Date(),
         },

@@ -1,3 +1,4 @@
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 /**
  * ============================================================================
  * ADMINISTRATIVE SEALS SERVICE
@@ -147,6 +148,7 @@ export class AdministrativeSealsService {
     // Créer le cachet
     const seal = await this.prisma.administrativeSeal.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         schoolId: data.schoolId,
         academicYearId: data.academicYearId,
@@ -287,6 +289,7 @@ export class AdministrativeSealsService {
     // Créer la version
     const version = await this.prisma.administrativeSealVersion.create({
       data: {
+        ...prismaCreateDefaults(),
         sealId,
         format: data.format,
         primaryColor: data.primaryColor,
@@ -400,6 +403,7 @@ export class AdministrativeSealsService {
     // Enregistrer l'utilisation
     const usage = await this.prisma.administrativeSealUsage.create({
       data: {
+        ...prismaCreateDefaults(),
         sealVersionId: data.sealVersionId,
         documentType: data.documentType,
         documentId: data.documentId,
@@ -509,6 +513,7 @@ export class AdministrativeSealsService {
     try {
       await this.prisma.orionAlert.create({
         data: {
+        ...prismaCreateDefaults(),
           tenantId,
           academicYearId: alertData.academicYearId || null,
           schoolLevelId: alertData.schoolLevelId || null,

@@ -11,6 +11,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { PedagogicalAuditService } from './services/pedagogical-audit.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 
 
 @Injectable()
@@ -45,7 +46,10 @@ export class TimetablesPrismaService {
     }
 
     return this.prisma.timeSlot.create({
-      data,
+      data: {
+        ...prismaCreateDefaults(),
+        ...data,
+      },
     });
   }
 
@@ -63,6 +67,7 @@ export class TimetablesPrismaService {
   }) {
     return this.prisma.timetable.create({
       data: {
+        ...prismaCreateDefaults(),
         ...data,
         isActive: true,
       },
@@ -145,7 +150,10 @@ export class TimetablesPrismaService {
     }
 
     const entry = await this.prisma.timetableEntry.create({
-      data,
+      data: {
+        ...prismaCreateDefaults(),
+        ...data,
+      },
       include: {
         class: true,
         subject: true,
@@ -256,7 +264,7 @@ export class TimetablesPrismaService {
 
     return this.prisma.timetable.update({
       where: { id },
-      data,
+      data: { ...prismaUpdateDefaults(), ...data },
       include: {
         academicYear: true,
         schoolLevel: true,

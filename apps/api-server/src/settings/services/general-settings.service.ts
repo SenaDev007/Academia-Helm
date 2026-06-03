@@ -1,3 +1,4 @@
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
@@ -25,6 +26,7 @@ export class GeneralSettingsService {
     if (!settings) {
       settings = await this.prisma.schoolSettings.create({
         data: {
+        ...prismaCreateDefaults(),
           tenantId,
           schoolName: 'Nom de l\'établissement',
           timezone: 'Africa/Porto-Novo',
@@ -107,6 +109,7 @@ export class GeneralSettingsService {
     const updated = await this.prisma.schoolSettings.update({
       where: { tenantId },
       data: {
+        ...prismaUpdateDefaults(),
         ...data,
         version: existing.version + 1,
         updatedAt: new Date(),

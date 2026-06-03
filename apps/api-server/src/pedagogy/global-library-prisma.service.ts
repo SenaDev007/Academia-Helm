@@ -11,6 +11,7 @@
 
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 
 @Injectable()
 export class GlobalLibraryPrismaService {
@@ -100,6 +101,7 @@ export class GlobalLibraryPrismaService {
     return this.prisma.$transaction(async (tx) => {
       const resource = await tx.globalPedagogicalResource.create({
         data: {
+          ...prismaCreateDefaults(),
           ...data,
           version: 1,
         },
@@ -108,6 +110,7 @@ export class GlobalLibraryPrismaService {
       if (data.fileUrl) {
         await tx.globalResourceVersion.create({
           data: {
+            ...prismaCreateDefaults(),
             resourceId: resource.id,
             version: 1,
             fileUrl: data.fileUrl,
@@ -144,6 +147,7 @@ export class GlobalLibraryPrismaService {
         
         await tx.globalResourceVersion.create({
           data: {
+            ...prismaCreateDefaults(),
             resourceId: id,
             version: nextVersion,
             fileUrl: data.fileUrl!,
@@ -153,6 +157,7 @@ export class GlobalLibraryPrismaService {
         return tx.globalPedagogicalResource.update({
           where: { id },
           data: {
+            ...prismaUpdateDefaults(),
             ...data,
             version: nextVersion,
           },
@@ -162,7 +167,7 @@ export class GlobalLibraryPrismaService {
 
     return this.prisma.globalPedagogicalResource.update({
       where: { id },
-      data,
+      data: { ...prismaUpdateDefaults(), ...data },
     });
   }
 
@@ -196,6 +201,7 @@ export class GlobalLibraryPrismaService {
   }) {
     return this.prisma.tenantResourceUsage.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         resourceId: data.resourceId,
         staffId: data.staffId,
@@ -223,12 +229,13 @@ export class GlobalLibraryPrismaService {
     if (existing) {
       return this.prisma.tenantResourceAnnotation.update({
         where: { id: existing.id },
-        data: { note: data.note }
+        data: { ...prismaUpdateDefaults(), note: data.note }
       });
     }
 
     return this.prisma.tenantResourceAnnotation.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         resourceId: data.resourceId,
         staffId: data.staffId,

@@ -5,6 +5,7 @@
 
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 
 export interface DuplicateStructureResult {
   fromAcademicYearId: string;
@@ -136,6 +137,7 @@ export class AcademicStructurePrismaService {
             await tx.academicLevel.update({
               where: { id: existing.id },
               data: {
+                ...prismaUpdateDefaults(),
                 isActive: el.isEnabled,
                 orderIndex: mapped.orderIndex,
               },
@@ -143,6 +145,7 @@ export class AcademicStructurePrismaService {
           } else {
             await tx.academicLevel.create({
               data: {
+                ...prismaCreateDefaults(),
                 tenantId,
                 academicYearId,
                 name: mapped.name,
@@ -164,7 +167,7 @@ export class AcademicStructurePrismaService {
           if (first) {
             await tx.academicLevel.update({
               where: { id: first.id },
-              data: { isActive: true },
+              data: { ...prismaUpdateDefaults(), isActive: true },
             });
           }
         }
@@ -238,11 +241,12 @@ export class AcademicStructurePrismaService {
             if (existing) {
               await tx.academicCycle.update({
                 where: { id: existing.id },
-                data: cyclePayload,
+                data: { ...prismaUpdateDefaults(), ...cyclePayload },
               });
             } else {
               await tx.academicCycle.create({
                 data: {
+                  ...prismaCreateDefaults(),
                   tenantId,
                   academicYearId,
                   levelId: academicLevel.id,
@@ -271,7 +275,7 @@ export class AcademicStructurePrismaService {
           if (firstUnderActiveLevel) {
             await tx.academicCycle.update({
               where: { id: firstUnderActiveLevel.id },
-              data: { isActive: true },
+              data: { ...prismaUpdateDefaults(), isActive: true },
             });
           }
         }
@@ -403,6 +407,7 @@ export class AcademicStructurePrismaService {
                 await tx.academicClass.update({
                   where: { id: existing.id },
                   data: {
+                    ...prismaUpdateDefaults(),
                     levelId: academicLevel.id,
                     cycleId: academicCycle.id,
                     name: className,
@@ -414,6 +419,7 @@ export class AcademicStructurePrismaService {
               } else {
                 await tx.academicClass.create({
                   data: {
+                    ...prismaCreateDefaults(),
                     tenantId,
                     academicYearId,
                     levelId: academicLevel.id,
@@ -470,12 +476,12 @@ export class AcademicStructurePrismaService {
           if (!settings.isEnabled) {
             await tx.academicClass.update({
               where: { id: c.id },
-              data: { languageTrack: defaultLang },
+              data: { ...prismaUpdateDefaults(), languageTrack: defaultLang },
             });
           } else if (empty) {
             await tx.academicClass.update({
               where: { id: c.id },
-              data: { languageTrack: defaultLang },
+              data: { ...prismaUpdateDefaults(), languageTrack: defaultLang },
             });
           }
         }
@@ -566,12 +572,13 @@ export class AcademicStructurePrismaService {
             if (label != null && existing.description !== label) {
               await tx.academicSeries.update({
                 where: { id: existing.id },
-                data: { description: label },
+                data: { ...prismaUpdateDefaults(), description: label },
               });
             }
           } else {
             await tx.academicSeries.create({
               data: {
+                ...prismaCreateDefaults(),
                 tenantId,
                 academicYearId,
                 levelId: secondaryLevel.id,
@@ -634,6 +641,7 @@ export class AcademicStructurePrismaService {
     }
     return this.prisma.academicLevel.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         name: data.name,
@@ -644,7 +652,7 @@ export class AcademicStructurePrismaService {
 
   async updateLevel(id: string, tenantId: string, data: { name?: string; orderIndex?: number; isActive?: boolean }) {
     await this.getLevelOrThrow(id, tenantId);
-    return this.prisma.academicLevel.update({ where: { id }, data });
+    return this.prisma.academicLevel.update({ where: { id }, data: { ...prismaUpdateDefaults(), ...data } });
   }
 
   async getLevelOrThrow(id: string, tenantId: string) {
@@ -688,6 +696,7 @@ export class AcademicStructurePrismaService {
     }
     return this.prisma.academicCycle.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         levelId: data.levelId,
@@ -703,7 +712,7 @@ export class AcademicStructurePrismaService {
     await this.getCycleOrThrow(id, tenantId);
     return this.prisma.academicCycle.update({
       where: { id },
-      data,
+      data: { ...prismaUpdateDefaults(), ...data },
       include: { level: true },
     });
   }
@@ -763,6 +772,7 @@ export class AcademicStructurePrismaService {
     await this.assertEnglishTrackAllowedIfNeeded(data.tenantId, data.languageTrack);
     return this.prisma.academicClass.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         levelId: data.levelId,
@@ -812,7 +822,7 @@ export class AcademicStructurePrismaService {
     if (data.code) (updateData as { code: string }).code = data.code.trim().toUpperCase().replace(/\s/g, '');
     return this.prisma.academicClass.update({
       where: { id },
-      data: updateData,
+      data: { ...prismaUpdateDefaults(), ...updateData },
       include: {
         level: true,
         cycle: true,
@@ -882,6 +892,7 @@ export class AcademicStructurePrismaService {
       for (const l of sourceLevels) {
         const created = await tx.academicLevel.create({
           data: {
+            ...prismaCreateDefaults(),
             tenantId,
             academicYearId: toAcademicYearId,
             name: l.name,
@@ -906,6 +917,7 @@ export class AcademicStructurePrismaService {
         }
         const created = await tx.academicCycle.create({
           data: {
+            ...prismaCreateDefaults(),
             tenantId,
             academicYearId: toAcademicYearId,
             levelId: newLevelId,
@@ -931,6 +943,7 @@ export class AcademicStructurePrismaService {
         }
         const created = await tx.academicSeries.create({
           data: {
+            ...prismaCreateDefaults(),
             tenantId,
             academicYearId: toAcademicYearId,
             levelId: newLevelId,
@@ -951,6 +964,7 @@ export class AcademicStructurePrismaService {
         if (!newSeriesId) continue;
         await tx.seriesSubject.create({
           data: {
+            ...prismaCreateDefaults(),
             tenantId,
             academicYearId: toAcademicYearId,
             seriesId: newSeriesId,
@@ -976,6 +990,7 @@ export class AcademicStructurePrismaService {
         }
         await tx.academicClass.create({
           data: {
+            ...prismaCreateDefaults(),
             tenantId,
             academicYearId: toAcademicYearId,
             levelId: newLevelId,
@@ -1008,6 +1023,7 @@ export class AcademicStructurePrismaService {
     try {
       await this.prisma.auditLog.create({
         data: {
+          ...prismaCreateDefaults(),
           tenantId,
           userId: userId ?? null,
           action: 'DUPLICATE',

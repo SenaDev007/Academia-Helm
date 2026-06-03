@@ -1,3 +1,4 @@
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
@@ -24,6 +25,7 @@ export class OfflineSyncSettingsService {
     if (!settings) {
       settings = await this.prisma.offlineSyncSettings.create({
         data: {
+        ...prismaCreateDefaults(),
           tenantId,
           isEnabled: true,
           syncFrequencyMinutes: 15,
@@ -75,6 +77,7 @@ export class OfflineSyncSettingsService {
     const updated = await this.prisma.offlineSyncSettings.update({
       where: { tenantId },
       data: {
+        ...prismaUpdateDefaults(),
         ...data,
         updatedAt: new Date(),
       },

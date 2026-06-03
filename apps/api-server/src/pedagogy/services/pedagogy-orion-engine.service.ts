@@ -11,6 +11,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { prismaCreateDefaults } from '../../../common/utils/prisma-helpers';
 
 @Injectable()
 export class PedagogyOrionEngineService {
@@ -61,6 +62,7 @@ export class PedagogyOrionEngineService {
 
     await this.prisma.pedagogicalKpiSnapshot.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         academicYearId,
         ...globalSnapshot,
@@ -84,6 +86,7 @@ export class PedagogyOrionEngineService {
 
       await this.prisma.pedagogicalKpiSnapshot.create({
         data: {
+          ...prismaCreateDefaults(),
           tenantId,
           academicYearId,
           teacherId: teacher.teacherId,
@@ -117,6 +120,7 @@ export class PedagogyOrionEngineService {
     if (lateDocs.length > 5) {
       await this.prisma.orionRiskFlag.create({
         data: {
+          ...prismaCreateDefaults(),
           tenantId,
           academicYearId,
           entityType: 'GLOBAL_PEDAGOGY',
@@ -140,6 +144,7 @@ export class PedagogyOrionEngineService {
     if (totalSubmitted > 0 && (rejectedDocs / totalSubmitted) > 0.4) {
       await this.prisma.orionRiskFlag.create({
         data: {
+          ...prismaCreateDefaults(),
           tenantId,
           academicYearId,
           entityType: 'CONFORMITY',
@@ -162,6 +167,7 @@ export class PedagogyOrionEngineService {
     // 1. Insight sur la progression
     await this.prisma.orionPedagogicalInsight.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         academicYearId,
         scopeType: 'STRATEGY',
@@ -181,6 +187,7 @@ export class PedagogyOrionEngineService {
     if (enClasses > 0) {
       await this.prisma.orionPedagogicalInsight.create({
         data: {
+          ...prismaCreateDefaults(),
           tenantId,
           academicYearId,
           scopeType: 'BILINGUAL',

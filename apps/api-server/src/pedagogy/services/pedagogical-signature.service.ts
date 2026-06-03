@@ -11,6 +11,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import * as crypto from 'crypto';
+import { prismaCreateDefaults } from '../../../common/utils/prisma-helpers';
 
 @Injectable()
 export class PedagogicalSignatureService {
@@ -35,6 +36,7 @@ export class PedagogicalSignatureService {
     // 2. Enregistrer la signature
     return this.prisma.pedagogicalSignature.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: params.tenantId,
         entityType: params.entityType,
         entityId: params.entityId,

@@ -18,6 +18,7 @@ import {
   IsBoolean,
   IsDateString,
   IsUUID,
+  IsIn,
   IsEnum,
   IsArray,
   ValidateNested,
@@ -40,7 +41,7 @@ export class CreateStaffDto {
   @IsOptional() @IsString() address?: string;
   @IsOptional() @IsString() position?: string;
   @IsOptional() @IsString() department?: string;
-  @IsOptional() @IsEnum(['TEACHER', 'ADMIN', 'SUPPORT', 'DIRECTOR', 'OTHER']) roleType?: string;
+  @IsOptional() @IsIn(['TEACHER', 'ADMIN', 'SUPPORT', 'DIRECTOR', 'OTHER']) roleType?: string;
   /** Frontend may send "category" as alias for roleType (e.g. "ADMIN", "PEDAGOGICAL") */
   @IsOptional() @IsString() category?: string;
   @IsOptional() @IsDateString() hireDate?: string;
@@ -63,18 +64,24 @@ export class UpdateStaffDto {
   @IsOptional() @IsString() lastName?: string;
   @IsOptional() @IsString() gender?: string;
   @IsOptional() @IsDateString() dateOfBirth?: string;
+  @IsOptional() @IsDateString() birthDate?: string;
   @IsOptional() @IsString() phone?: string;
   @IsOptional() @IsString() email?: string;
   @IsOptional() @IsString() address?: string;
   @IsOptional() @IsString() position?: string;
   @IsOptional() @IsString() department?: string;
-  @IsOptional() @IsEnum(['TEACHER', 'ADMIN', 'SUPPORT', 'DIRECTOR', 'OTHER']) roleType?: string;
+  @IsOptional() @IsIn(['TEACHER', 'ADMIN', 'SUPPORT', 'DIRECTOR', 'OTHER']) roleType?: string;
   @IsOptional() @IsString() category?: string;
   @IsOptional() @IsDateString() hireDate?: string;
   @IsOptional() @IsString() contractType?: string;
   @IsOptional() @IsNumber() @Type(() => Number) salary?: number;
+  @IsOptional() bankDetails?: Record<string, any>;
+  @IsOptional() emergencyContact?: Record<string, any>;
+  @IsOptional() @IsString() qualifications?: string;
   @IsOptional() @IsString() status?: string;
   @IsOptional() @IsString() notes?: string;
+  @IsOptional() @IsUUID() academicYearId?: string;
+  @IsOptional() @IsUUID() schoolLevelId?: string;
   @IsOptional() @IsString() tenantId?: string;
 }
 
@@ -82,11 +89,11 @@ export class UpdateStaffDto {
 
 export class CreateContractDto {
   @IsUUID() staffId: string;
-  @IsEnum(['CDI', 'CDD', 'VACATAIRE', 'STAGE', 'CONSULTANT']) contractType: string;
+  @IsIn(['CDI', 'CDD', 'VACATAIRE', 'STAGE', 'CONSULTANT']) contractType: string;
   @IsDateString() startDate: string;
   @IsOptional() @IsDateString() endDate?: string;
   @IsNumber() @Type(() => Number) baseSalary: number;
-  @IsOptional() @IsEnum(['BANK', 'CASH', 'MOBILE_MONEY']) paymentMode?: string;
+  @IsOptional() @IsIn(['BANK', 'CASH', 'MOBILE_MONEY']) paymentMode?: string;
   @IsOptional() @IsUUID() templateId?: string;
   @IsOptional() terms?: Record<string, any>;
   @IsOptional() @IsUUID() academicYearId?: string;
@@ -98,16 +105,22 @@ export class CreateContractDto {
 }
 
 export class UpdateContractDto {
+  @IsOptional() @IsUUID() staffId?: string;
+  @IsOptional() @IsIn(['CDI', 'CDD', 'VACATAIRE', 'STAGE', 'CONSULTANT']) contractType?: string;
   @IsOptional() @IsDateString() startDate?: string;
   @IsOptional() @IsDateString() endDate?: string;
   @IsOptional() @IsNumber() @Type(() => Number) baseSalary?: number;
-  @IsOptional() @IsEnum(['BANK', 'CASH', 'MOBILE_MONEY']) paymentMode?: string;
-  @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsIn(['BANK', 'CASH', 'MOBILE_MONEY']) paymentMode?: string;
+  @IsOptional() @IsUUID() templateId?: string;
   @IsOptional() terms?: Record<string, any>;
+  @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsUUID() academicYearId?: string;
+  @IsOptional() @IsUUID() schoolLevelId?: string;
+  @IsOptional() @IsString() tenantId?: string;
 }
 
 export class CreateAmendmentDto {
-  @IsEnum(['SALARY_CHANGE', 'POSITION_CHANGE', 'DURATION_EXTENSION', 'STATUS_CHANGE', 'OTHER']) amendmentType: string;
+  @IsIn(['SALARY_CHANGE', 'POSITION_CHANGE', 'DURATION_EXTENSION', 'STATUS_CHANGE', 'OTHER']) amendmentType: string;
   @IsString() description: string;
   @IsOptional() @IsString() previousValue?: string;
   @IsOptional() @IsString() newValue?: string;
@@ -129,7 +142,7 @@ export class CreatePayrollDto {
 }
 
 export class UpdatePayrollStatusDto {
-  @IsEnum(['DRAFT', 'CALCULATED', 'VALIDATED', 'PAID']) status: string;
+  @IsIn(['DRAFT', 'CALCULATED', 'VALIDATED', 'PAID']) status: string;
 }
 
 export class CreatePayrollPeriodDto {
@@ -137,7 +150,7 @@ export class CreatePayrollPeriodDto {
   @IsOptional() @IsUUID() schoolLevelId?: string;
   /** Name is auto-generated from month/type if not provided */
   @IsOptional() @IsString() name?: string;
-  @IsOptional() @IsEnum(['MONTHLY', 'QUARTERLY', 'ANNUAL', 'OFF_CYCLE']) periodType?: string;
+  @IsOptional() @IsIn(['MONTHLY', 'QUARTERLY', 'ANNUAL', 'OFF_CYCLE']) periodType?: string;
   @IsOptional() @IsString() month?: string;
   @IsDateString() startDate: string;
   @IsDateString() endDate: string;
@@ -162,7 +175,7 @@ export class CreateOneTimeBonusDto {
   @IsUUID() staffId: string;
   @IsNumber() @Min(0) @Type(() => Number) amount: number;
   @IsString() @MaxLength(500) reason: string;
-  @IsOptional() @IsEnum(['PERFORMANCE', 'SIGNING', 'REFERRAL', 'END_OF_YEAR', 'OTHER']) bonusType?: string;
+  @IsOptional() @IsIn(['PERFORMANCE', 'SIGNING', 'REFERRAL', 'END_OF_YEAR', 'OTHER']) bonusType?: string;
 }
 
 // ─── Leave DTOs ──────────────────────────────────────────────────────────────
@@ -171,7 +184,7 @@ export class CreateLeaveRequestDto {
   @IsUUID() academicYearId: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
   @IsUUID() staffId: string;
-  @IsEnum(['ANNUAL', 'SICK', 'MATERNITY', 'PATERNITY', 'UNPAID', 'EXCEPTIONAL']) type: string;
+  @IsIn(['ANNUAL', 'SICK', 'MATERNITY', 'PATERNITY', 'UNPAID', 'EXCEPTIONAL']) type: string;
   @IsDateString() startDate: string;
   @IsDateString() endDate: string;
   @IsOptional() @IsString() reason?: string;
@@ -180,7 +193,7 @@ export class CreateLeaveRequestDto {
 }
 
 export class ProcessLeaveRequestDto {
-  @IsEnum(['APPROVED', 'REJECTED', 'CANCELLED']) status: string;
+  @IsIn(['APPROVED', 'REJECTED', 'CANCELLED']) status: string;
   @IsOptional() @IsUUID() approvedBy?: string;
   @IsOptional() @IsString() rejectedReason?: string;
 }
@@ -249,7 +262,7 @@ export class RecordAttendanceDto {
   @IsDateString() date: string;
   @IsOptional() @IsDateString() checkIn?: string;
   @IsOptional() @IsDateString() checkOut?: string;
-  @IsOptional() @IsEnum(['PRESENT', 'ABSENT', 'LATE', 'HALF_DAY', 'MISSION']) status?: string;
+  @IsOptional() @IsIn(['PRESENT', 'ABSENT', 'LATE', 'HALF_DAY', 'MISSION']) status?: string;
   @IsOptional() @IsNumber() @Type(() => Number) hoursWorked?: number;
   @IsOptional() @IsString() notes?: string;
   @IsUUID() academicYearId: string;
@@ -275,7 +288,7 @@ export class RecordOvertimeDto {
 
 export class CreateContractTemplateDto {
   @IsString() name: string;
-  @IsEnum(['CDI', 'CDD', 'VACATAIRE', 'STAGE', 'CONSULTANT']) contractType: string;
+  @IsIn(['CDI', 'CDD', 'VACATAIRE', 'STAGE', 'CONSULTANT']) contractType: string;
   @IsString() template: string;
   @IsOptional() variables?: Record<string, any>;
 }

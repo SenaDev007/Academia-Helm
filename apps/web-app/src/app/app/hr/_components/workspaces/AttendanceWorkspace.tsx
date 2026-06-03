@@ -59,15 +59,15 @@ export function AttendanceWorkspace() {
       if (!tenant?.id || !selectedStaff?.id || !academicYear?.id) return;
       try {
         // Load attendance history for selected staff
-        const attHistory = await hrFetch<any[]>(hrUrl(`attendance/staff/${selectedStaff.id}`, { academicYearId: academicYear.id }));
+        const attHistory = await hrFetch<any[]>(hrUrl(`attendance/staff/${selectedStaff.id}`, { tenantId: tenant.id, academicYearId: academicYear.id }));
         setAttendances(attHistory);
 
         // Load overtime history for selected staff
-        const otHistory = await hrFetch<any[]>(hrUrl(`attendance/overtime/staff/${selectedStaff.id}`, { academicYearId: academicYear.id }));
+        const otHistory = await hrFetch<any[]>(hrUrl(`attendance/overtime/staff/${selectedStaff.id}`, { tenantId: tenant.id, academicYearId: academicYear.id }));
         setOvertimes(otHistory);
 
         // Load stats
-        const statData = await hrFetch<any>(hrUrl('attendance/statistics', { academicYearId: academicYear.id, staffId: selectedStaff.id }));
+        const statData = await hrFetch<any>(hrUrl('attendance/statistics', { tenantId: tenant.id, academicYearId: academicYear.id, staffId: selectedStaff.id }));
         setStats(statData);
       } catch (err) {
         console.error('Error loading staff details:', err);
@@ -82,7 +82,7 @@ export function AttendanceWorkspace() {
     if (!tenant?.id || !selectedStaff?.id || !academicYear?.id) return;
     try {
       setSavingAttendance(true);
-      await hrFetch(hrUrl('attendance'), {
+      await hrFetch(hrUrl('attendance', { tenantId: tenant.id }), {
         method: 'POST',
         body: {
           academicYearId: academicYear.id,
@@ -94,9 +94,9 @@ export function AttendanceWorkspace() {
         },
       });
       // Refresh
-      const attHistory = await hrFetch<any[]>(hrUrl(`attendance/staff/${selectedStaff.id}`, { academicYearId: academicYear.id }));
+      const attHistory = await hrFetch<any[]>(hrUrl(`attendance/staff/${selectedStaff.id}`, { tenantId: tenant.id, academicYearId: academicYear.id }));
       setAttendances(attHistory);
-      const statData = await hrFetch<any>(hrUrl('attendance/statistics', { academicYearId: academicYear.id, staffId: selectedStaff.id }));
+      const statData = await hrFetch<any>(hrUrl('attendance/statistics', { tenantId: tenant.id, academicYearId: academicYear.id, staffId: selectedStaff.id }));
       setStats(statData);
       setNotes('');
       toast({ variant: 'success', title: 'Présence enregistrée avec succès' });
@@ -113,7 +113,7 @@ export function AttendanceWorkspace() {
     if (!tenant?.id || !selectedStaff?.id || !academicYear?.id) return;
     try {
       setSavingOvertime(true);
-      await hrFetch(hrUrl('attendance/overtime'), {
+      await hrFetch(hrUrl('attendance/overtime', { tenantId: tenant.id }), {
         method: 'POST',
         body: {
           academicYearId: academicYear.id,
@@ -124,7 +124,7 @@ export function AttendanceWorkspace() {
         },
       });
       // Refresh
-      const otHistory = await hrFetch<any[]>(hrUrl(`attendance/overtime/staff/${selectedStaff.id}`, { academicYearId: academicYear.id }));
+      const otHistory = await hrFetch<any[]>(hrUrl(`attendance/overtime/staff/${selectedStaff.id}`, { tenantId: tenant.id, academicYearId: academicYear.id }));
       setOvertimes(otHistory);
       setOvertimeReason('');
       toast({ variant: 'success', title: 'Heures supplémentaires enregistrées avec succès' });

@@ -82,7 +82,7 @@ export class UpdateStaffDto {
 
 export class CreateContractDto {
   @IsUUID() staffId: string;
-  @IsEnum(['CDI', 'CDD', 'VACATAIRE', 'STAGE']) contractType: string;
+  @IsEnum(['CDI', 'CDD', 'VACATAIRE', 'STAGE', 'CONSULTANT']) contractType: string;
   @IsDateString() startDate: string;
   @IsOptional() @IsDateString() endDate?: string;
   @IsNumber() @Type(() => Number) baseSalary: number;
@@ -275,7 +275,7 @@ export class RecordOvertimeDto {
 
 export class CreateContractTemplateDto {
   @IsString() name: string;
-  @IsEnum(['CDI', 'CDD', 'VACATAIRE', 'STAGE']) contractType: string;
+  @IsEnum(['CDI', 'CDD', 'VACATAIRE', 'STAGE', 'CONSULTANT']) contractType: string;
   @IsString() template: string;
   @IsOptional() variables?: Record<string, any>;
 }

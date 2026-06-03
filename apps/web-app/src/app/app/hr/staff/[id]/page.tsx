@@ -174,7 +174,7 @@ export default function StaffDetailPage() {
     e.preventDefault();
     try {
       setDocLoading(true);
-      await hrFetch<any>(hrUrl(`staff/${id}/documents`), {
+      await hrFetch<any>(hrUrl(`staff/${id}/documents`, { tenantId: tenant.id }), {
         method: 'POST',
         body: docForm,
       });

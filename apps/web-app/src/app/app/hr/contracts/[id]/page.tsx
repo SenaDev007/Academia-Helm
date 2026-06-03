@@ -48,7 +48,7 @@ export default function ContractDetailPage() {
   async function fetchContract() {
     try {
       setLoading(true);
-      const data = await hrFetch<any>(hrUrl(`contracts/${contractId}`));
+      const data = await hrFetch<any>(hrUrl(`contracts/${contractId}`, { tenantId: tenant.id }));
       setContract(data);
     } catch (err) {
       console.error(err);
@@ -62,7 +62,7 @@ export default function ContractDetailPage() {
     if (!contract) return;
     try {
       setGenerating(true);
-      await hrFetch<any>(hrUrl(`contracts/${contractId}/generate-pdf`), { method: 'POST' });
+      await hrFetch<any>(hrUrl(`contracts/${contractId}/generate-pdf`, { tenantId: tenant.id }), { method: 'POST' });
       toast({ variant: 'success', title: 'PDF généré avec succès !' });
       fetchContract();
     } catch (err) {

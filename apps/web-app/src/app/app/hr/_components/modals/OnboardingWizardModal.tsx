@@ -92,7 +92,7 @@ export function OnboardingWizardModal({ isOpen, onClose, onSuccess, tenantId }: 
       const docPromises = [];
       if (formData.cvName) {
         docPromises.push(
-          hrFetch(hrUrl(`staff/${staffId}/documents`), {
+          hrFetch(hrUrl(`staff/${staffId}/documents`, { tenantId }), {
             method: 'POST',
             body: {
               documentType: 'CV',
@@ -105,7 +105,7 @@ export function OnboardingWizardModal({ isOpen, onClose, onSuccess, tenantId }: 
       }
       if (formData.cniName) {
         docPromises.push(
-          hrFetch(hrUrl(`staff/${staffId}/documents`), {
+          hrFetch(hrUrl(`staff/${staffId}/documents`, { tenantId }), {
             method: 'POST',
             body: {
               documentType: 'CNI',
@@ -118,7 +118,7 @@ export function OnboardingWizardModal({ isOpen, onClose, onSuccess, tenantId }: 
       }
       if (formData.birthCertName) {
         docPromises.push(
-          hrFetch(hrUrl(`staff/${staffId}/documents`), {
+          hrFetch(hrUrl(`staff/${staffId}/documents`, { tenantId }), {
             method: 'POST',
             body: {
               documentType: 'BIRTH_CERTIFICATE',
@@ -135,7 +135,7 @@ export function OnboardingWizardModal({ isOpen, onClose, onSuccess, tenantId }: 
       }
 
       // 3. Create Employment Contract
-      await hrFetch(hrUrl('contracts'), {
+      await hrFetch(hrUrl('contracts', { tenantId }), {
         method: 'POST',
         body: {
           staffId,

@@ -103,7 +103,7 @@ export function SettingsWorkspace() {
   async function loadRates() {
     try {
       setLoading(true);
-      const data = await hrFetch<any>(hrUrl('payroll/rates/active'));
+      const data = await hrFetch<any>(hrUrl('payroll/rates/active', { tenantId: tenant.id }));
       if (data) {
         setRates({
           cnssEmployeeRate: data.cnssEmployeeRate || 3.6,
@@ -124,7 +124,7 @@ export function SettingsWorkspace() {
   async function loadTemplates() {
     try {
       setTemplatesLoading(true);
-      const data = await hrFetch<any[]>(hrUrl('contracts/templates/list'));
+      const data = await hrFetch<any[]>(hrUrl('contracts/templates/list', { tenantId: tenant.id }));
       setTemplates(data || []);
     } catch (err) {
       console.error('Error loading templates:', err);
@@ -135,7 +135,7 @@ export function SettingsWorkspace() {
 
   async function loadDefaultTemplate(type: string) {
     try {
-      const data = await hrFetch<any>(hrUrl(`contracts/templates/default/${type}`));
+      const data = await hrFetch<any>(hrUrl(`contracts/templates/default/${type}`, { tenantId: tenant.id }));
       if (editingTemplate) {
         setEditingTemplate({ ...editingTemplate, template: data.template });
       } else {
@@ -163,7 +163,7 @@ export function SettingsWorkspace() {
     try {
       setSaving(true);
       setSuccess(false);
-      await hrFetch<any>(hrUrl('payroll/rates'), {
+      await hrFetch<any>(hrUrl('payroll/rates', { tenantId: tenant.id }), {
         method: 'POST',
         body: {
           cnssEmployeeRate: parseFloat(rates.cnssEmployeeRate),
@@ -187,14 +187,14 @@ export function SettingsWorkspace() {
       setSavingTemplate(true);
       const templatePayload = JSON.stringify(articles);
       if (editingTemplate) {
-        await hrFetch<any>(hrUrl(`contracts/templates/${editingTemplate.id}`), {
+        await hrFetch<any>(hrUrl(`contracts/templates/${editingTemplate.id}`, { tenantId: tenant.id }), {
           method: 'PUT',
           body: { name: editingTemplate.name, template: templatePayload },
         });
         toast({ variant: 'success', title: 'Modèle mis à jour.' });
         setEditingTemplate(null);
       } else {
-        await hrFetch<any>(hrUrl('contracts/templates'), {
+        await hrFetch<any>(hrUrl('contracts/templates', { tenantId: tenant.id }), {
           method: 'POST',
           body: {
             name: newTemplate.name,
@@ -217,7 +217,7 @@ export function SettingsWorkspace() {
   async function handleDeleteTemplate(id: string) {
     if (!confirm('Supprimer ce modèle de contrat ?')) return;
     try {
-      await hrFetch<any>(hrUrl(`contracts/templates/${id}`), { method: 'DELETE' });
+      await hrFetch<any>(hrUrl(`contracts/templates/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Modèle supprimé.' });
       loadTemplates();
     } catch {

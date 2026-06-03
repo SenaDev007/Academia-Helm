@@ -66,7 +66,7 @@ export function AllowancesWorkspace() {
     async function loadStaffAllowances() {
       if (!tenant?.id || !selectedStaff?.id) return;
       try {
-        const list = await hrFetch<any[]>(hrUrl(`allowances/staff/${selectedStaff.id}`));
+        const list = await hrFetch<any[]>(hrUrl(`allowances/staff/${selectedStaff.id}`, { tenantId: tenant.id }));
         setStaffAllowances(list);
       } catch (err) {
         console.error('Error loading staff allowances:', err);
@@ -81,7 +81,7 @@ export function AllowancesWorkspace() {
     if (!tenant?.id) return;
     try {
       setSavingType(true);
-      await hrFetch(hrUrl('allowances/types'), {
+      await hrFetch(hrUrl('allowances/types', { tenantId: tenant.id }), {
         method: 'POST',
         body: {
           name: typeName,
@@ -115,7 +115,7 @@ export function AllowancesWorkspace() {
     if (!tenant?.id || !selectedStaff?.id) return;
     try {
       setSavingAssign(true);
-      await hrFetch(hrUrl('allowances/assignments'), {
+      await hrFetch(hrUrl('allowances/assignments', { tenantId: tenant.id }), {
         method: 'POST',
         body: {
           staffId: selectedStaff.id,
@@ -127,7 +127,7 @@ export function AllowancesWorkspace() {
         },
       });
       // Refresh staff allowances
-      const list = await hrFetch<any[]>(hrUrl(`allowances/staff/${selectedStaff.id}`));
+      const list = await hrFetch<any[]>(hrUrl(`allowances/staff/${selectedStaff.id}`, { tenantId: tenant.id }));
       setStaffAllowances(list);
       setIsAssignModalOpen(false);
       toast({ variant: 'success', title: 'Indemnité assignée avec succès' });
@@ -142,9 +142,9 @@ export function AllowancesWorkspace() {
   async function handleRemoveAssignment(id: string) {
     if (!confirm('Voulez-vous vraiment supprimer cette indemnité ?')) return;
     try {
-      await hrFetch(hrUrl(`allowances/assignments/${id}`), { method: 'DELETE' });
+      await hrFetch(hrUrl(`allowances/assignments/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       // Refresh list
-      const list = await hrFetch<any[]>(hrUrl(`allowances/staff/${selectedStaff.id}`));
+      const list = await hrFetch<any[]>(hrUrl(`allowances/staff/${selectedStaff.id}`, { tenantId: tenant.id }));
       setStaffAllowances(list);
       toast({ variant: 'success', title: 'Indemnité supprimée avec succès' });
     } catch (err) {

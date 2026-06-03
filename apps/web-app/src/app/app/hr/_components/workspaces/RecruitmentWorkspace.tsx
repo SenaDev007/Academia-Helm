@@ -315,7 +315,7 @@ export function RecruitmentWorkspace() {
   const handleDeleteJob = async (id: string) => {
     if (!confirm('Voulez-vous supprimer cette offre ?')) return;
     try {
-      await hrFetch(hrUrl(`recruitment/jobs/${id}`), { method: 'DELETE' });
+      await hrFetch(hrUrl(`recruitment/jobs/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Offre d\'emploi supprimée avec succès.' });
       loadData();
     } catch (err) {
@@ -328,7 +328,7 @@ export function RecruitmentWorkspace() {
   const handleDeleteCandidate = async (id: string) => {
     if (!confirm('Voulez-vous supprimer ce candidat ?')) return;
     try {
-      await hrFetch(hrUrl(`recruitment/candidates/${id}`), { method: 'DELETE' });
+      await hrFetch(hrUrl(`recruitment/candidates/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Candidat supprimé avec succès.' });
       loadData();
     } catch (err) {
@@ -360,7 +360,7 @@ export function RecruitmentWorkspace() {
   const handleDeleteInterview = async (id: string) => {
     if (!confirm('Annuler cet entretien ?')) return;
     try {
-      await hrFetch(hrUrl(`recruitment/interviews/${id}`), { method: 'DELETE' });
+      await hrFetch(hrUrl(`recruitment/interviews/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Entretien annulé avec succès.' });
       loadData();
     } catch (err) {
@@ -392,7 +392,7 @@ export function RecruitmentWorkspace() {
   const handleDeleteTest = async (id: string) => {
     if (!confirm('Supprimer ce test ?')) return;
     try {
-      await hrFetch(hrUrl(`recruitment/tests/${id}`), { method: 'DELETE' });
+      await hrFetch(hrUrl(`recruitment/tests/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Test supprimé.' });
       loadData();
     } catch (err) {
@@ -405,7 +405,7 @@ export function RecruitmentWorkspace() {
   const handleCreateTestResult = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await hrFetch(hrUrl('recruitment/test-results'), {
+      await hrFetch(hrUrl('recruitment/test-results', { tenantId: tenant.id }), {
         method: 'POST',
         body: newTestResult,
       });
@@ -423,7 +423,7 @@ export function RecruitmentWorkspace() {
   const handleDeleteTestResult = async (id: string) => {
     if (!confirm('Supprimer ce résultat de test ?')) return;
     try {
-      await hrFetch(hrUrl(`recruitment/test-results/${id}`), { method: 'DELETE' });
+      await hrFetch(hrUrl(`recruitment/test-results/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Résultat supprimé.' });
       loadData();
     } catch (err) {
@@ -436,7 +436,7 @@ export function RecruitmentWorkspace() {
   const handleAddToTalentPool = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await hrFetch(hrUrl(`recruitment/talent-pool/${newTalent.candidateId}`), {
+      await hrFetch(hrUrl(`recruitment/talent-pool/${newTalent.candidateId}`, { tenantId: tenant.id }), {
         method: 'POST',
         body: {
           category: newTalent.category,
@@ -457,7 +457,7 @@ export function RecruitmentWorkspace() {
   const handleRemoveFromTalent = async (id: string) => {
     if (!confirm('Retirer cette fiche de la base de talents ?')) return;
     try {
-      await hrFetch(hrUrl(`recruitment/talent-pool/${id}`), { method: 'DELETE' });
+      await hrFetch(hrUrl(`recruitment/talent-pool/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Profil retiré de la base de talents.' });
       loadData();
     } catch (err) {
@@ -472,7 +472,7 @@ export function RecruitmentWorkspace() {
     if (!candidate) return;
     const applicationId = candidate.applicationId || candidate.id;
     try {
-      await hrFetch(hrUrl(`recruitment/applications/${applicationId}/status`), {
+      await hrFetch(hrUrl(`recruitment/applications/${applicationId}/status`, { tenantId: tenant.id }), {
         method: 'PUT',
         body: { status: toStatus },
       });
@@ -984,7 +984,7 @@ export function RecruitmentWorkspace() {
                                     onClick={async () => {
                                       if (!selectedCandidate) return;
                                       try {
-                                        await hrFetch(hrUrl(`recruitment/applications/${selectedCandidate.id}/status`), {
+                                        await hrFetch(hrUrl(`recruitment/applications/${selectedCandidate.id}/status`, { tenantId: tenant.id }), {
                                           method: 'PUT',
                                           body: {
                                             status: selectedCandidate.status,

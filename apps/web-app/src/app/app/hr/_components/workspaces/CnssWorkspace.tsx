@@ -28,12 +28,12 @@ export function CnssWorkspace() {
       try {
         setLoading(true);
         // Load CNSS declarations
-        const decls = await hrFetch<any[]>(hrUrl('cnss/declarations'));
+        const decls = await hrFetch<any[]>(hrUrl('cnss/declarations', { tenantId: tenant.id }));
         setDeclarations(decls);
 
         // Load active rate via BFF route (country-aware)
         const countryCode = (tenant as any)?.country?.code || 'BJ';
-        const rate = await hrFetch<any>(hrUrl('cnss/rates/active', { countryCode }));
+        const rate = await hrFetch<any>(hrUrl('cnss/rates/active', { tenantId: tenant.id, countryCode }));
         setActiveRate(rate);
       } catch (err) {
         console.error('Error loading CNSS data:', err);
@@ -50,7 +50,7 @@ export function CnssWorkspace() {
     if (!tenant?.id || !academicYear?.id) return;
     try {
       setGenerating(true);
-      await hrFetch<any>(hrUrl('cnss/declarations'), {
+      await hrFetch<any>(hrUrl('cnss/declarations', { tenantId: tenant.id }), {
         method: 'POST',
         body: {
           academicYearId: academicYear.id,
@@ -58,7 +58,7 @@ export function CnssWorkspace() {
         },
       });
       // Refresh
-      const decls = await hrFetch<any[]>(hrUrl('cnss/declarations'));
+      const decls = await hrFetch<any[]>(hrUrl('cnss/declarations', { tenantId: tenant.id }));
       setDeclarations(decls);
       setIsCreateOpen(false);
       toast({ variant: 'success', title: 'Déclaration créée avec succès' });
@@ -73,12 +73,12 @@ export function CnssWorkspace() {
   async function handleUpdateStatus(id: string, status: 'GENERATED' | 'SUBMITTED' | 'PAID') {
     if (!confirm('Confirmer cette action ? Elle est irréversible.')) return;
     try {
-      await hrFetch<any>(hrUrl(`cnss/declarations/${id}/finalize`), {
+      await hrFetch<any>(hrUrl(`cnss/declarations/${id}/finalize`, { tenantId: tenant.id }), {
         method: 'PUT',
         body: { status },
       });
       // Refresh
-      const decls = await hrFetch<any[]>(hrUrl('cnss/declarations'));
+      const decls = await hrFetch<any[]>(hrUrl('cnss/declarations', { tenantId: tenant.id }));
       setDeclarations(decls);
       toast({ variant: 'success', title: 'Statut mis à jour avec succès' });
     } catch (err) {

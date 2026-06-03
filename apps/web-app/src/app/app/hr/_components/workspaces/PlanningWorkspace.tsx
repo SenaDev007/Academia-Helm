@@ -136,7 +136,7 @@ export function PlanningWorkspace() {
     try {
       if (staffId && prev?.scheduleId) {
         // Update existing schedule
-        await hrFetch<any>(hrUrl(`schedules/${prev.scheduleId}`), {
+        await hrFetch<any>(hrUrl(`schedules/${prev.scheduleId}`, { tenantId: tenant.id }), {
           method: 'PUT',
           body: {
             staffId,
@@ -154,7 +154,7 @@ export function PlanningWorkspace() {
         toast({ variant: 'success', title: 'Planning mis à jour' });
       } else if (staffId && !prev?.scheduleId) {
         // Create new schedule
-        const result = await hrFetch<any>(hrUrl('schedules'), {
+        const result = await hrFetch<any>(hrUrl('schedules', { tenantId: tenant.id }), {
           method: 'POST',
           body: {
             staffId,
@@ -177,7 +177,7 @@ export function PlanningWorkspace() {
         toast({ variant: 'success', title: 'Créneau ajouté au planning' });
       } else if (!staffId && prev?.scheduleId) {
         // Delete schedule
-        await hrFetch<any>(hrUrl(`schedules/${prev.scheduleId}`), { method: 'DELETE' });
+        await hrFetch<any>(hrUrl(`schedules/${prev.scheduleId}`, { tenantId: tenant.id }), { method: 'DELETE' });
         toast({ variant: 'success', title: 'Créneau supprimé' });
       }
     } catch (err) {

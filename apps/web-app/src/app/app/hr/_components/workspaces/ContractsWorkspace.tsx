@@ -76,7 +76,7 @@ export function ContractsWorkspace() {
     e.preventDefault();
     try {
       setModalLoading(true);
-      await hrFetch(hrUrl('contracts'), {
+      await hrFetch(hrUrl('contracts', { tenantId: tenant.id }), {
         method: 'POST',
         body: {
           staffId: modalForm.staffId,
@@ -274,7 +274,7 @@ function ContractRow({ contract, index }: { contract: any; index: number }) {
   async function handleGeneratePdf() {
     try {
       setGenerating(true);
-      await hrFetch(hrUrl(`contracts/${contract.id}/generate-pdf`), { method: 'POST' });
+      await hrFetch(hrUrl(`contracts/${contract.id}/generate-pdf`, { tenantId: tenant.id }), { method: 'POST' });
       toast({ variant: 'success', title: 'PDF généré avec succès !' });
     } catch {
       toast({ variant: 'error', title: 'Erreur lors de la génération PDF.' });

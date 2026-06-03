@@ -3,6 +3,7 @@
 import { useRef, useState, useEffect } from 'react';
 import { X, PenTool, Trash2, CheckCircle, Loader2, Shield } from 'lucide-react';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
+import { useModuleContext } from '@/hooks/useModuleContext';
 import { toast } from '@/components/ui/toast';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -16,6 +17,7 @@ interface ContractSignModalProps {
 }
 
 export function ContractSignModal({ isOpen, onClose, onSuccess, contract }: ContractSignModalProps) {
+  const { tenant } = useModuleContext();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
@@ -114,7 +116,7 @@ export function ContractSignModal({ isOpen, onClose, onSuccess, contract }: Cont
 
     try {
       setLoading(true);
-      await hrFetch<any>(hrUrl(`contracts/${contract.id}/sign`), {
+      await hrFetch<any>(hrUrl(`contracts/${contract.id}/sign`, { tenantId: tenant.id }), {
         method: 'POST',
         body: { signatureData, signerName, signerRole: 'Employé' },
       });

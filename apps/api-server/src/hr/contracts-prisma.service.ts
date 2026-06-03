@@ -72,7 +72,7 @@ export class ContractsPrismaService {
     if (filters?.type) where.contractType = filters.type;
     if (filters?.status && filters.status !== 'ALL') where.status = filters.status;
 
-    return this.prisma.contract.findMany({
+    const contracts = await this.prisma.contract.findMany({
       where,
       include: {
         staff: {
@@ -89,6 +89,12 @@ export class ContractsPrismaService {
       },
       orderBy: { startDate: 'desc' },
     });
+
+    // Add staffCode alias so frontend can access contract.staff.staffCode
+    return contracts.map(c => ({
+      ...c,
+      staff: c.staff ? { ...c.staff, staffCode: c.staff.employeeNumber } : c.staff,
+    }));
   }
 
   /**
@@ -119,7 +125,11 @@ export class ContractsPrismaService {
       throw new NotFoundException(`Contract with ID ${id} not found`);
     }
 
-    return contract;
+    // Add staffCode alias so frontend can access contract.staff.staffCode
+    return {
+      ...contract,
+      staff: contract.staff ? { ...contract.staff, staffCode: contract.staff.employeeNumber } : contract.staff,
+    };
   }
 
   /**
@@ -218,6 +228,10 @@ export class ContractsPrismaService {
       },
     });
 
-    return contract;
+    // Add staffCode alias so frontend can access contract.staff.staffCode
+    return contract ? {
+      ...contract,
+      staff: contract.staff ? { ...contract.staff, staffCode: contract.staff.employeeNumber } : contract.staff,
+    } : null;
   }
 }

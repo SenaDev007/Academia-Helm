@@ -83,7 +83,7 @@ export function PayrollWorkspace() {
     e.preventDefault();
     try {
       setModalLoading(true);
-      await hrFetch(hrUrl('payroll/periods'), {
+      await hrFetch(hrUrl('payroll/periods', { tenantId: tenant.id }), {
         method: 'POST',
         body: {
           name: `${MONTHS.find(m => m.value === modalForm.month)?.label || ''} ${modalForm.year}`,

@@ -55,7 +55,7 @@ export function IaWorkspace() {
   useEffect(() => {
     async function loadIaStatus() {
       try {
-        const status = await hrFetch<any>(hrUrl('ia/status'));
+        const status = await hrFetch<any>(hrUrl('ia/status', { tenantId: tenant.id }));
         setIaStatus(status);
       } catch (err) {
         console.error('Failed to load IA status:', err);
@@ -120,7 +120,7 @@ export function IaWorkspace() {
   const handleUpload = async () => {
     setParsing(true);
     try {
-      const result = await hrFetch<any>(hrUrl('ia/parse-cv'), {
+      const result = await hrFetch<any>(hrUrl('ia/parse-cv', { tenantId: tenant.id }), {
         method: 'POST',
         body: { tenantId: tenant?.id },
       });
@@ -152,7 +152,7 @@ export function IaWorkspace() {
 
     try {
       // Use the backend copilot endpoint
-      const result = await hrFetch<any>(hrUrl('ia/copilot'), {
+      const result = await hrFetch<any>(hrUrl('ia/copilot', { tenantId: tenant.id }), {
         method: 'POST',
         body: {
           tenantId: tenant?.id,

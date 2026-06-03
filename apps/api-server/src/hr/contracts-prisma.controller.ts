@@ -47,10 +47,46 @@ export class ContractsPrismaController {
     return this.contractsService.findAllContracts(tenant.id, { staffId, type, status });
   }
 
+  // ─── Staff active contract (MUST be before @Get(':id')) ────────────────────
+
   @Get('staff/:staffId/active')
   async findActiveContract(@GetTenant() tenant: any, @Param('staffId') staffId: string) {
     return this.contractsService.findActiveContract(staffId, tenant.id);
   }
+
+  // ─── Contract Templates (MUST be before @Get(':id')) ───────────────────────
+
+  @Get('templates/list')
+  async listTemplates(@GetTenant() tenant: any) {
+    return this.contractPdfService.listTemplates(tenant.id);
+  }
+
+  @Get('templates/default/:type')
+  async getDefaultTemplate(@Param('type') type: string) {
+    return { template: JSON.stringify(this.contractPdfService.getDefaultArticles(type)) };
+  }
+
+  @Post('templates')
+  async createTemplate(@GetTenant() tenant: any, @Body() data: CreateContractTemplateDto) {
+    return this.contractPdfService.createTemplate(tenant.id, data);
+  }
+
+  @Put('templates/:id')
+  async updateTemplate(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Body() data: any,
+  ) {
+    return this.contractPdfService.updateTemplate(id, tenant.id, data);
+  }
+
+  @Delete('templates/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteTemplate(@GetTenant() tenant: any, @Param('id') id: string) {
+    await this.contractPdfService.deleteTemplate(id, tenant.id);
+  }
+
+  // ─── Parameterized contract routes (AFTER all static routes) ───────────────
 
   @Get(':id')
   async findContractById(@GetTenant() tenant: any, @Param('id') id: string) {
@@ -133,41 +169,5 @@ export class ContractsPrismaController {
       ...body,
       ipAddress: req.ip || req.socket?.remoteAddress,
     });
-  }
-
-  // ─── Contract Templates ──────────────────────────────────────────────────
-
-  @Get('templates/list')
-  async listTemplates(@GetTenant() tenant: any) {
-    return this.contractPdfService.listTemplates(tenant.id);
-  }
-
-  @Post('templates')
-  async createTemplate(@GetTenant() tenant: any, @Body() data: CreateContractTemplateDto) {
-    return this.contractPdfService.createTemplate(tenant.id, data);
-  }
-
-  @Put('templates/:id')
-  async updateTemplate(
-    @GetTenant() tenant: any,
-    @Param('id') id: string,
-    @Body() data: any,
-  ) {
-    return this.contractPdfService.updateTemplate(id, tenant.id, data);
-  }
-
-  @Delete('templates/:id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteTemplate(@GetTenant() tenant: any, @Param('id') id: string) {
-    await this.contractPdfService.deleteTemplate(id, tenant.id);
-  }
-
-  /**
-   * GET /api/hr/contracts/templates/default/:type
-   * Retourne le template HTML par défaut pour un type de contrat.
-   */
-  @Get('templates/default/:type')
-  async getDefaultTemplate(@Param('type') type: string) {
-    return { template: JSON.stringify(this.contractPdfService.getDefaultArticles(type)) };
   }
 }

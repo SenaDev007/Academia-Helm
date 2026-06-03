@@ -55,7 +55,7 @@ export default function PayrollDetailPage() {
   const handleGeneratePayrolls = async () => {
     try {
       setProcessing(true);
-      await hrFetch<any>(hrUrl(`payroll/periods/${id}/generate`), { method: 'POST', body: { tenantId: tenant.id, academicYearId: academicYear?.id } });
+      await hrFetch<any>(hrUrl(`payroll/periods/${id}/generate`, { tenantId: tenant.id }), { method: 'POST', body: { tenantId: tenant.id, academicYearId: academicYear?.id } });
       toast({ variant: 'success', title: 'Lignes de paie générées avec succès' });
       fetchPayroll();
     } catch (error) {
@@ -67,7 +67,7 @@ export default function PayrollDetailPage() {
 
   const handleCalculatePayrollLine = async (lineId: string) => {
     try {
-      await hrFetch<any>(hrUrl(`payroll/${lineId}/calculate`), { method: 'POST', body: { tenantId: tenant.id, academicYearId: academicYear?.id } });
+      await hrFetch<any>(hrUrl(`payroll/${lineId}/calculate`, { tenantId: tenant.id }), { method: 'POST', body: { tenantId: tenant.id, academicYearId: academicYear?.id } });
       toast({ variant: 'success', title: 'Calcul fiscal effectué' });
       fetchPayroll();
     } catch (error) {
@@ -78,7 +78,7 @@ export default function PayrollDetailPage() {
   const handleCalculateAll = async () => {
     try {
       setProcessing(true);
-      await hrFetch<any>(hrUrl(`payroll/periods/${id}/calculate`), { method: 'POST', body: { tenantId: tenant.id, academicYearId: academicYear?.id } });
+      await hrFetch<any>(hrUrl(`payroll/periods/${id}/calculate`, { tenantId: tenant.id }), { method: 'POST', body: { tenantId: tenant.id, academicYearId: academicYear?.id } });
       toast({ variant: 'success', title: 'Calcul global terminé' });
       fetchPayroll();
     } catch (error) {

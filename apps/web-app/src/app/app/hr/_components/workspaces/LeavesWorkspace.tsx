@@ -83,7 +83,7 @@ export function LeavesWorkspace() {
     e.preventDefault();
     try {
       setModalLoading(true);
-      await hrFetch(hrUrl('leaves/requests'), {
+      await hrFetch(hrUrl('leaves/requests', { tenantId: tenant.id }), {
         method: 'POST',
         body: {
           ...modalForm,
@@ -104,7 +104,7 @@ export function LeavesWorkspace() {
 
   const handleProcessRequest = async (requestId: string, status: 'APPROVED' | 'REJECTED') => {
     try {
-      await hrFetch(hrUrl(`leaves/requests/${requestId}/process`), {
+      await hrFetch(hrUrl(`leaves/requests/${requestId}/process`, { tenantId: tenant.id }), {
         method: 'PUT',
         body: { status },
       });

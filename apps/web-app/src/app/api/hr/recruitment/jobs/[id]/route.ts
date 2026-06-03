@@ -18,12 +18,13 @@ export async function DELETE(
 ) {
   const { id } = await params;
   try {
-    const url = `${API_BASE_URL}/api/hr/recruitment/jobs/${id}`;
+    const url = `${API_BASE_URL}/hr/recruitment/jobs/${id}`;
 
     const response = await fetch(url, {
       method: 'DELETE',
       headers: {
         'Authorization': request.headers.get('Authorization') || '',
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });
 

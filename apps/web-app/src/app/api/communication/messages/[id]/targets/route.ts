@@ -16,11 +16,12 @@ export async function POST(
   const { id } = await params;
   try {
     const body = await request.json();
-    const response = await fetch(`${API_BASE_URL}/api/communication/messages/${id}/targets`, {
+    const response = await fetch(`${API_BASE_URL}/communication/messages/${id}/targets`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': request.headers.get('Authorization') || '',
+        'Authorization': request.headers.get('Authorization') || ''
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
       body: JSON.stringify(body),
     });

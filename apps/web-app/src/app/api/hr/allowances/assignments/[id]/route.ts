@@ -16,11 +16,12 @@ export async function PUT(
   const { id } = await params;
   try {
     const body = await request.json();
-    const response = await fetch(`${API_BASE_URL}/api/hr/allowances/assignments/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/hr/allowances/assignments/${id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': request.headers.get('Authorization') || '',
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
       body: JSON.stringify(body),
     });
@@ -39,10 +40,11 @@ export async function DELETE(
 ) {
   const { id } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/hr/allowances/assignments/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/hr/allowances/assignments/${id}`, {
       method: 'DELETE',
       headers: {
         'Authorization': request.headers.get('Authorization') || '',
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });
 

@@ -19,13 +19,14 @@ export async function POST(
   const { id } = await params;
   try {
     const body = await request.json();
-    const url = `${API_BASE_URL}/api/hr/recruitment/talent-pool/${id}`;
+    const url = `${API_BASE_URL}/hr/recruitment/talent-pool/${id}`;
 
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': request.headers.get('Authorization') || '',
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
       body: JSON.stringify(body),
     });
@@ -44,12 +45,13 @@ export async function DELETE(
 ) {
   const { id } = await params;
   try {
-    const url = `${API_BASE_URL}/api/hr/recruitment/talent-pool/${id}`;
+    const url = `${API_BASE_URL}/hr/recruitment/talent-pool/${id}`;
 
     const response = await fetch(url, {
       method: 'DELETE',
       headers: {
         'Authorization': request.headers.get('Authorization') || '',
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });
 

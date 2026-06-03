@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const tenantId = searchParams.get('tenantId') || '';
 
-    const url = `${API_BASE_URL}/api/hr/ia/detect-fraud`;
+    const url = `${API_BASE_URL}/hr/ia/detect-fraud`;
 
     const response = await fetch(url, {
       method: 'GET',

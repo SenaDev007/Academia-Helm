@@ -16,11 +16,12 @@ export async function PUT(
   const { id } = await params;
   try {
     const body = await request.json();
-    const response = await fetch(`${API_BASE_URL}/api/hr/leaves/requests/${id}/process`, {
+    const response = await fetch(`${API_BASE_URL}/hr/leaves/requests/${id}/process`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': request.headers.get('Authorization') || '',
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
       body: JSON.stringify(body),
     });

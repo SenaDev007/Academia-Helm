@@ -19,13 +19,14 @@ export async function PUT(
   const { id } = await params;
   try {
     const body = await request.json();
-    const url = `${API_BASE_URL}/api/hr/recruitment/applications/${id}/status`;
+    const url = `${API_BASE_URL}/hr/recruitment/applications/${id}/status`;
 
     const response = await fetch(url, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': request.headers.get('Authorization') || '',
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
       body: JSON.stringify(body),
     });

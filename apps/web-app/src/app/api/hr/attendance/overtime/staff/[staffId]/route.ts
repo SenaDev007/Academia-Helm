@@ -17,11 +17,12 @@ export async function GET(
   try {
     const searchParams = request.nextUrl.searchParams;
     const queryString = searchParams.toString();
-    const url = `${API_BASE_URL}/api/hr/attendance/overtime/staff/${staffId}${queryString ? `?${queryString}` : ''}`;
+    const url = `${API_BASE_URL}/hr/attendance/overtime/staff/${staffId}${queryString ? `?${queryString}` : ''}`;
 
     const response = await fetch(url, {
       headers: {
         'Authorization': request.headers.get('Authorization') || '',
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });
 

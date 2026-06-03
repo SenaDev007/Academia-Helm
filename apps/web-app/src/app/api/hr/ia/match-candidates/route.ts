@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     const queryParams = new URLSearchParams();
     if (jobId) queryParams.set('jobId', jobId);
 
-    const url = `${API_BASE_URL}/api/hr/ia/match-candidates${queryParams.toString() ? `?${queryParams}` : ''}`;
+    const url = `${API_BASE_URL}/hr/ia/match-candidates${queryParams.toString() ? `?${queryParams}` : ''}`;
 
     const response = await fetch(url, {
       method: 'GET',

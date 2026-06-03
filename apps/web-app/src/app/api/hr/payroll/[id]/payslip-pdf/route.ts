@@ -17,11 +17,12 @@ export async function GET(
   try {
     const searchParams = request.nextUrl.searchParams;
     const queryString = searchParams.toString();
-    const url = `${API_BASE_URL}/api/hr/payroll/items/${id}/payslip-pdf${queryString ? `?${queryString}` : ''}`;
+    const url = `${API_BASE_URL}/hr/payroll/items/${id}/payslip-pdf${queryString ? `?${queryString}` : ''}`;
 
     const response = await fetch(url, {
       headers: {
         'Authorization': request.headers.get('Authorization') || '',
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });
 
@@ -40,11 +41,12 @@ export async function POST(
   const { id } = await params;
   try {
     const body = await request.json();
-    const response = await fetch(`${API_BASE_URL}/api/hr/payroll/items/${id}/payslip-pdf`, {
+    const response = await fetch(`${API_BASE_URL}/hr/payroll/items/${id}/payslip-pdf`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': request.headers.get('Authorization') || '',
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
       body: JSON.stringify(body),
     });

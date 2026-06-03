@@ -5,7 +5,7 @@ export async function POST(request: NextRequest) {
   const API_BASE_URL = getApiBaseUrlForRoutes();
   const path = API_BASE_URL.endsWith('/api')
     ? `${API_BASE_URL}/reviews`
-    : `${API_BASE_URL}/api/reviews`;
+    : `${API_BASE_URL}/reviews`;
   const apiUrl = normalizeApiUrl(path);
 
   try {

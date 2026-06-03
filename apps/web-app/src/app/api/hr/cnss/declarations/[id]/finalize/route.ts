@@ -4,8 +4,8 @@
  * ============================================================================
  * Proxies requests to the NestJS backend for finalizing CNSS declarations.
  * Translates the frontend status to the correct backend endpoint:
- *   - If body.status is 'GENERATED', proxies PUT to /api/hr/cnss/declarations/{id}/declare
- *   - If body.status is 'PAID', proxies PUT to /api/hr/cnss/declarations/{id}/mark-paid
+ *   - If body.status is 'GENERATED', proxies PUT to /hr/cnss/declarations/{id}/declare
+ *   - If body.status is 'PAID', proxies PUT to /hr/cnss/declarations/{id}/mark-paid
  * ============================================================================
  */
 
@@ -25,9 +25,9 @@ export async function PUT(
 
     let endpoint: string;
     if (status === 'GENERATED') {
-      endpoint = `/api/hr/cnss/declarations/${id}/declare`;
+      endpoint = `/hr/cnss/declarations/${id}/declare`;
     } else if (status === 'PAID') {
-      endpoint = `/api/hr/cnss/declarations/${id}/mark-paid`;
+      endpoint = `/hr/cnss/declarations/${id}/mark-paid`;
     } else {
       return NextResponse.json(
         { error: `Invalid status: "${status}". Must be "GENERATED" or "PAID".` },
@@ -42,6 +42,7 @@ export async function PUT(
       headers: {
         'Content-Type': 'application/json',
         'Authorization': request.headers.get('Authorization') || '',
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
       body: JSON.stringify(body),
     });

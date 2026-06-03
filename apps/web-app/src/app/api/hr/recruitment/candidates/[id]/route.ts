@@ -20,11 +20,12 @@ export async function GET(
   try {
     const searchParams = request.nextUrl.searchParams;
     const queryString = searchParams.toString();
-    const url = `${API_BASE_URL}/api/hr/recruitment/candidates/${id}${queryString ? `?${queryString}` : ''}`;
+    const url = `${API_BASE_URL}/hr/recruitment/candidates/${id}${queryString ? `?${queryString}` : ''}`;
 
     const response = await fetch(url, {
       headers: {
         'Authorization': request.headers.get('Authorization') || '',
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });
 
@@ -43,13 +44,14 @@ export async function PUT(
   const { id } = await params;
   try {
     const body = await request.json();
-    const url = `${API_BASE_URL}/api/hr/recruitment/candidates/${id}`;
+    const url = `${API_BASE_URL}/hr/recruitment/candidates/${id}`;
 
     const response = await fetch(url, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': request.headers.get('Authorization') || '',
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
       body: JSON.stringify(body),
     });
@@ -68,12 +70,13 @@ export async function DELETE(
 ) {
   const { id } = await params;
   try {
-    const url = `${API_BASE_URL}/api/hr/recruitment/candidates/${id}`;
+    const url = `${API_BASE_URL}/hr/recruitment/candidates/${id}`;
 
     const response = await fetch(url, {
       method: 'DELETE',
       headers: {
         'Authorization': request.headers.get('Authorization') || '',
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });
 

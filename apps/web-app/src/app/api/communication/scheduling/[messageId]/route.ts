@@ -16,11 +16,12 @@ export async function POST(
   const { messageId } = await params;
   try {
     const body = await request.json();
-    const response = await fetch(`${API_BASE_URL}/api/communication/scheduling/${messageId}`, {
+    const response = await fetch(`${API_BASE_URL}/communication/scheduling/${messageId}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': request.headers.get('Authorization') || '',
+        'Authorization': request.headers.get('Authorization') || ''
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
       body: JSON.stringify(body),
     });
@@ -39,10 +40,11 @@ export async function DELETE(
 ) {
   const { messageId } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/communication/scheduling/${messageId}`, {
+    const response = await fetch(`${API_BASE_URL}/communication/scheduling/${messageId}`, {
       method: 'DELETE',
       headers: {
-        'Authorization': request.headers.get('Authorization') || '',
+        'Authorization': request.headers.get('Authorization') || ''
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });
 

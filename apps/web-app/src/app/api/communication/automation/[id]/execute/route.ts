@@ -15,10 +15,11 @@ export async function POST(
 ) {
   const { id } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/communication/automation/${id}/execute`, {
+    const response = await fetch(`${API_BASE_URL}/communication/automation/${id}/execute`, {
       method: 'POST',
       headers: {
-        'Authorization': request.headers.get('Authorization') || '',
+        'Authorization': request.headers.get('Authorization') || ''
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });
 

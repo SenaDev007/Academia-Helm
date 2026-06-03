@@ -14,12 +14,13 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function GET(request: NextRequest) {
   try {
-    const url = `${API_BASE_URL}/api/hr/ia/status`;
+    const url = `${API_BASE_URL}/hr/ia/status`;
 
     const response = await fetch(url, {
       method: 'GET',
       headers: {
         'Authorization': request.headers.get('Authorization') || '',
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });
 

@@ -14,13 +14,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const searchParams = request.nextUrl.searchParams;
     const queryString = searchParams.toString();
-    const url = `${API_BASE_URL}/api/modules-complementaires/shop/sales${queryString ? `?${queryString}` : ''}`;
+    const url = `${API_BASE_URL}/modules-complementaires/shop/sales${queryString ? `?${queryString}` : ''}`;
 
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': request.headers.get('Authorization') || '',
+        'Authorization': request.headers.get('Authorization') || ''
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
       body: JSON.stringify(body),
     });

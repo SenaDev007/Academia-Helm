@@ -13,7 +13,7 @@ export async function GET(_request: NextRequest) {
     // Construire l'URL correctement (évalué à chaque requête : env Vercel / cold start)
     const apiUrl = API_BASE_URL.endsWith('/api') 
       ? `${API_BASE_URL}/public/schools/list`
-      : `${API_BASE_URL}/api/public/schools/list`;
+      : `${API_BASE_URL}/public/schools/list`;
     
     console.log('[School List API] Calling backend at:', apiUrl);
     

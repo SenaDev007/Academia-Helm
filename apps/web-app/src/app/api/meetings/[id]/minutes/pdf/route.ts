@@ -15,9 +15,10 @@ export async function GET(
 ) {
   const { id } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/meetings/${id}/minutes/pdf`, {
+    const response = await fetch(`${API_BASE_URL}/meetings/${id}/minutes/pdf`, {
       headers: {
-        'Authorization': request.headers.get('Authorization') || '',
+        'Authorization': request.headers.get('Authorization') || ''
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });
 
@@ -35,10 +36,11 @@ export async function POST(
 ) {
   const { id } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/meetings/${id}/minutes/generate-pdf`, {
+    const response = await fetch(`${API_BASE_URL}/meetings/${id}/minutes/generate-pdf`, {
       method: 'POST',
       headers: {
-        'Authorization': request.headers.get('Authorization') || '',
+        'Authorization': request.headers.get('Authorization') || ''
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });
 

@@ -11,9 +11,10 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function GET(request: NextRequest) {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/communication/channels`, {
+    const response = await fetch(`${API_BASE_URL}/communication/channels`, {
       headers: {
-        'Authorization': request.headers.get('Authorization') || '',
+        'Authorization': request.headers.get('Authorization') || ''
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });
 
@@ -28,11 +29,12 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const response = await fetch(`${API_BASE_URL}/api/communication/channels`, {
+    const response = await fetch(`${API_BASE_URL}/communication/channels`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': request.headers.get('Authorization') || '',
+        'Authorization': request.headers.get('Authorization') || ''
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
       body: JSON.stringify(body),
     });

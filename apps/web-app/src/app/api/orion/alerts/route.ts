@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const queryString = searchParams.toString();
-    const url = `${API_BASE_URL}/api/orion/alerts${queryString ? `?${queryString}` : ''}`;
+    const url = `${API_BASE_URL}/orion/alerts${queryString ? `?${queryString}` : ''}`;
 
     const headers: HeadersInit = {};
     const auth = request.headers.get('authorization') || request.headers.get('Authorization');
@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
     if (auth) headers['Authorization'] = auth;
     if (cookie) headers['cookie'] = cookie;
 
-    const response = await fetch(`${API_BASE_URL}/api/orion/alerts/generate`, {
+    const response = await fetch(`${API_BASE_URL}/orion/alerts/generate`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),

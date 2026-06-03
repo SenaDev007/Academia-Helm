@@ -15,9 +15,10 @@ export async function GET(
 ) {
   const { staffId } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/hr/contracts/staff/${staffId}/active`, {
+    const response = await fetch(`${API_BASE_URL}/hr/contracts/staff/${staffId}/active`, {
       headers: {
         'Authorization': request.headers.get('Authorization') || '',
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });
 

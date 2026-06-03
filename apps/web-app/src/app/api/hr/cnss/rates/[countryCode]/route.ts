@@ -15,9 +15,10 @@ export async function GET(
 ) {
   const { countryCode } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/hr/cnss/rates/active?countryCode=${encodeURIComponent(countryCode)}`, {
+    const response = await fetch(`${API_BASE_URL}/hr/cnss/rates/active?countryCode=${encodeURIComponent(countryCode)}`, {
       headers: {
         'Authorization': request.headers.get('Authorization') || '',
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });
 

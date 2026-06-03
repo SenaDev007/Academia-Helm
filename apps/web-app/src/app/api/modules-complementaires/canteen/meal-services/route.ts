@@ -12,13 +12,14 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const url = `${API_BASE_URL}/api/modules-complementaires/canteen/meal-services`;
+    const url = `${API_BASE_URL}/modules-complementaires/canteen/meal-services`;
 
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': request.headers.get('Authorization') || '',
+        'Authorization': request.headers.get('Authorization') || ''
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
       body: JSON.stringify(body),
     });

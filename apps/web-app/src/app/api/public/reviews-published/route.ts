@@ -6,7 +6,7 @@ export async function GET(request: NextRequest) {
   const search = request.nextUrl.search;
   const path = API_BASE_URL.endsWith('/api')
     ? `${API_BASE_URL}/reviews/published${search}`
-    : `${API_BASE_URL}/api/reviews/published${search}`;
+    : `${API_BASE_URL}/reviews/published${search}`;
   const apiUrl = normalizeApiUrl(path);
 
   try {

@@ -15,9 +15,10 @@ export async function GET(
 ) {
   const { id } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/hr/staff/${id}/documents`, {
+    const response = await fetch(`${API_BASE_URL}/hr/staff/${id}/documents`, {
       headers: {
         'Authorization': request.headers.get('Authorization') || '',
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });
 
@@ -36,11 +37,12 @@ export async function POST(
   const { id } = await params;
   try {
     const body = await request.json();
-    const response = await fetch(`${API_BASE_URL}/api/hr/staff/${id}/documents`, {
+    const response = await fetch(`${API_BASE_URL}/hr/staff/${id}/documents`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': request.headers.get('Authorization') || '',
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
       body: JSON.stringify(body),
     });

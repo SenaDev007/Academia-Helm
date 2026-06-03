@@ -15,10 +15,11 @@ export async function PUT(
 ) {
   const { messageId } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/communication/scheduling/${messageId}/cancel`, {
+    const response = await fetch(`${API_BASE_URL}/communication/scheduling/${messageId}/cancel`, {
       method: 'PUT',
       headers: {
-        'Authorization': request.headers.get('Authorization') || '',
+        'Authorization': request.headers.get('Authorization') || ''
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });
 

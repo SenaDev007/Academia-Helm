@@ -15,9 +15,10 @@ export async function GET(
 ) {
   const { type } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/communication/templates/type/${type}`, {
+    const response = await fetch(`${API_BASE_URL}/communication/templates/type/${type}`, {
       headers: {
-        'Authorization': request.headers.get('Authorization') || '',
+        'Authorization': request.headers.get('Authorization') || ''
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });
 

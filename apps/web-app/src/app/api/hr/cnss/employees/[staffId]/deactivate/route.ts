@@ -15,10 +15,11 @@ export async function PUT(
 ) {
   const { staffId } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/hr/cnss/employees/${staffId}/deactivate`, {
+    const response = await fetch(`${API_BASE_URL}/hr/cnss/employees/${staffId}/deactivate`, {
       method: 'PUT',
       headers: {
         'Authorization': request.headers.get('Authorization') || '',
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });
 

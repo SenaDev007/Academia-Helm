@@ -19,11 +19,12 @@ export async function GET(
 ) {
   const { type } = await params;
   try {
-    const url = `${API_BASE_URL}/api/hr/contracts/templates?type=${encodeURIComponent(type)}`;
+    const url = `${API_BASE_URL}/hr/contracts/templates?type=${encodeURIComponent(type)}`;
 
     const response = await fetch(url, {
       headers: {
         'Authorization': request.headers.get('Authorization') || '',
+        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });
 

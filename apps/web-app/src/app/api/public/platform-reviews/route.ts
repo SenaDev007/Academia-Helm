@@ -7,7 +7,7 @@ export async function GET() {
   try {
     const apiUrl = API_BASE_URL.endsWith('/api')
       ? `${API_BASE_URL}/public/platform-reviews`
-      : `${API_BASE_URL}/api/public/platform-reviews`;
+      : `${API_BASE_URL}/public/platform-reviews`;
 
     const response = await fetch(apiUrl, {
       method: 'GET',

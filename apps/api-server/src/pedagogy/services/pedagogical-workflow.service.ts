@@ -11,7 +11,7 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { PedagogicalAuditService } from './pedagogical-audit.service';
-import { prismaCreateDefaults, prismaUpdateDefaults } from '../../../common/utils/prisma-helpers';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 
 
 @Injectable()

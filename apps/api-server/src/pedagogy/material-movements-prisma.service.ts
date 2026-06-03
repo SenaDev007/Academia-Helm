@@ -13,7 +13,7 @@ import { PrismaService } from '../database/prisma.service';
 import { CreateMaterialMovementDto } from './dto/create-material-movement.dto';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { createPaginatedResponse } from '../common/helpers/pagination.helper';
-import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 
 @Injectable()
 export class MaterialMovementsPrismaService {

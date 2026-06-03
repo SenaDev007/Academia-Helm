@@ -13,7 +13,7 @@ import { PrismaService } from '../database/prisma.service';
 import { CreateAnnualTeacherSupplyDto } from './dto/create-annual-teacher-supply.dto';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { createPaginatedResponse } from '../common/helpers/pagination.helper';
-import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 
 @Injectable()
 export class AnnualTeacherSuppliesPrismaService {

@@ -14,7 +14,7 @@ import { CreateTeacherMaterialAssignmentDto } from './dto/create-teacher-materia
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { createPaginatedResponse } from '../common/helpers/pagination.helper';
 import { MaterialMovementsPrismaService } from './material-movements-prisma.service';
-import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 
 @Injectable()
 export class TeacherMaterialAssignmentsPrismaService {

@@ -10,7 +10,7 @@
 
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { prismaCreateDefaults } from '../../../common/utils/prisma-helpers';
+import { prismaCreateDefaults } from '../../common/utils/prisma-helpers';
 
 @Injectable()
 export class PedagogicalAuditService {

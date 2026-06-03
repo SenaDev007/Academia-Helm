@@ -15,18 +15,21 @@ export async function PUT(
 ) {
   const { id } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/hr/payroll/${id}/mark-paid`, {
+    const body = await request.json();
+    const response = await fetch(`${API_BASE_URL}/api/hr/payroll/batches/${id}/status`, {
       method: 'PUT',
       headers: {
+        'Content-Type': 'application/json',
         'Authorization': request.headers.get('Authorization') || '',
       },
+      body: JSON.stringify(body),
     });
 
     const data = await response.json();
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
-    console.error('Error marking payroll as paid:', error);
-    return NextResponse.json({ error: 'Failed to mark payroll as paid' }, { status: 500 });
+    console.error('Error updating payroll status:', error);
+    return NextResponse.json({ error: 'Failed to update payroll status' }, { status: 500 });
   }
 }
 

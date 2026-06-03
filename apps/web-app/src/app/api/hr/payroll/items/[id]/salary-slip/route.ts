@@ -16,7 +16,7 @@ export async function POST(
   const { id } = await params;
   try {
     const body = await request.json();
-    const response = await fetch(`${API_BASE_URL}/api/hr/payroll/items/${id}/salary-slip`, {
+    const response = await fetch(`${API_BASE_URL}/api/hr/payroll/items/${id}/payslip-pdf`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -136,7 +136,76 @@ export class RecruitmentPrismaService {
   }
 
   async updateApplicationStatus(id: string, status: string, review?: string) {
-    const updatedApp = await this.prisma.hrApplication.update({
+    if (status === 'EMBAUCHÉ') {
+      return this.prisma.$transaction(async (tx) => {
+        // Update application status
+        const updatedApp = await tx.hrApplication.update({
+          where: { id },
+          data: { 
+            status,
+            ...(review ? { matchDetail: review } : {})
+          },
+          include: {
+            candidate: true,
+            job: true,
+          }
+        });
+
+        // Check if employee already exists with this email
+        const existingStaff = await tx.staff.findFirst({
+          where: { email: updatedApp.candidate.email, tenantId: updatedApp.tenantId }
+        });
+
+        if (!existingStaff) {
+          // Find academic year if available
+          const currentYear = await tx.academicYear.findFirst({
+            where: { tenantId: updatedApp.tenantId, status: 'ACTIVE' }
+          });
+
+          // Determine roleType
+          const jobTitle = (updatedApp.job.title || '').toLowerCase();
+          const isTeacher = jobTitle.includes('enseignant') || jobTitle.includes('prof') || jobTitle.includes('teacher') || jobTitle.includes('instituteur');
+          const roleType = isTeacher ? 'TEACHER' : 'ADMIN';
+
+          // Parse salary (if it's a number like 400000)
+          let parsedSalary = null;
+          if (updatedApp.job.salary) {
+            const matched = updatedApp.job.salary.match(/\d+/);
+            if (matched) {
+              parsedSalary = parseFloat(matched[0]);
+            }
+          }
+
+          const staff = await tx.staff.create({
+            data: {
+              tenantId: updatedApp.tenantId,
+              academicYearId: currentYear?.id || null,
+              employeeNumber: `EMP-${Date.now().toString().slice(-6)}`,
+              firstName: updatedApp.candidate.firstName,
+              lastName: updatedApp.candidate.lastName,
+              gender: updatedApp.candidate.gender,
+              email: updatedApp.candidate.email,
+              phone: updatedApp.candidate.phone,
+              address: updatedApp.candidate.address,
+              position: updatedApp.job.title,
+              department: updatedApp.job.dept,
+              roleType,
+              hireDate: new Date(),
+              contractType: updatedApp.job.contractType || 'CDI',
+              status: 'ACTIVE',
+              salary: parsedSalary,
+            }
+          });
+
+          return { ...updatedApp, staff };
+        }
+
+        return updatedApp;
+      });
+    }
+
+    // Non-EMBAUCHÉ case - simple update
+    return this.prisma.hrApplication.update({
       where: { id },
       data: { 
         status,
@@ -147,57 +216,6 @@ export class RecruitmentPrismaService {
         job: true,
       }
     });
-
-    if (status === 'EMBAUCHÉ') {
-      // Check if employee already exists with this email
-      const existingStaff = await this.prisma.staff.findFirst({
-        where: { email: updatedApp.candidate.email, tenantId: updatedApp.tenantId }
-      });
-
-      if (!existingStaff) {
-        // Find academic year if available
-        const currentYear = await this.prisma.academicYear.findFirst({
-          where: { tenantId: updatedApp.tenantId, status: 'ACTIVE' }
-        });
-
-        // Determine roleType
-        const jobTitle = (updatedApp.job.title || '').toLowerCase();
-        const isTeacher = jobTitle.includes('enseignant') || jobTitle.includes('prof') || jobTitle.includes('teacher') || jobTitle.includes('instituteur');
-        const roleType = isTeacher ? 'TEACHER' : 'ADMIN';
-
-        // Parse salary (if it's a number like 400000)
-        let parsedSalary = null;
-        if (updatedApp.job.salary) {
-          const matched = updatedApp.job.salary.match(/\d+/);
-          if (matched) {
-            parsedSalary = parseFloat(matched[0]);
-          }
-        }
-
-        await this.prisma.staff.create({
-          data: {
-            tenantId: updatedApp.tenantId,
-            academicYearId: currentYear?.id || null,
-            employeeNumber: `EMP-${Date.now().toString().slice(-6)}`,
-            firstName: updatedApp.candidate.firstName,
-            lastName: updatedApp.candidate.lastName,
-            gender: updatedApp.candidate.gender,
-            email: updatedApp.candidate.email,
-            phone: updatedApp.candidate.phone,
-            address: updatedApp.candidate.address,
-            position: updatedApp.job.title,
-            department: updatedApp.job.dept,
-            roleType,
-            hireDate: new Date(),
-            contractType: updatedApp.job.contractType || 'CDI',
-            status: 'ACTIVE',
-            salary: parsedSalary,
-          }
-        });
-      }
-    }
-
-    return updatedApp;
   }
 
   async deleteApplication(id: string) {
@@ -340,19 +358,6 @@ export class RecruitmentPrismaService {
   async applyJob(body: any, files: any) {
     const tenantId = body.tenantId;
 
-    // 1. Create candidate
-    const candidate = await this.prisma.hrCandidate.create({
-      data: {
-        tenantId,
-        firstName: body.firstName,
-        lastName: body.lastName,
-        email: body.email,
-        phone: body.phone,
-        address: body.address || '',
-        gender: body.gender || 'M',
-      }
-    });
-
     // Parse structured data from request body
     let skills: string[] = [];
     let experiences: any[] = [];
@@ -368,22 +373,12 @@ export class RecruitmentPrismaService {
     const pitch = body.pitch || '';
     const pedagogicalExperience = JSON.stringify({ experiences, pitch, education, linkedinUrl: body.linkedinUrl || '' });
 
-    // Save to AcademicProfile
-    await this.prisma.academicProfile.create({
-      data: {
-        candidateId: candidate.id,
-        teachingLevel: education[0]?.degree || 'Non spécifié',
-        subjects: skills,
-        pedagogicalExperience,
-      }
-    });
-
-    // 2. Generate scores and detail reports based on files
+    // Generate scores and detail reports based on files
     const hasCV = files?.cv && files.cv.length > 0;
     const hasLetter = files?.coverLetter && files.coverLetter.length > 0;
 
     // Simulate AI scoring
-    const scoreCV = hasCV ? Math.floor(Math.random() * 15) + 80 : 75; // high score if LinkedIn profile completed
+    const scoreCV = hasCV ? Math.floor(Math.random() * 15) + 80 : 75;
     const scoreLetter = hasLetter ? Math.floor(Math.random() * 15) + 80 : 70;
     const scoreMatching = hasCV ? Math.floor(Math.random() * 20) + 75 : 80;
 
@@ -397,24 +392,49 @@ export class RecruitmentPrismaService {
     const risks = Math.random() > 0.9 ? 'Faible' : 'Aucun';
     const riskDetail = risks === 'Faible' ? 'Léger décalage de dates détecté dans l\'historique professionnel.' : null;
 
-    // 3. Create application
-    const application = await this.prisma.hrApplication.create({
-      data: {
-        tenantId,
-        jobId: body.jobId,
-        candidateId: candidate.id,
-        status: 'NOUVEAU',
-        score,
-        scoreCV,
-        scoreLetter,
-        scoreMatching,
-        risks,
-        riskDetail,
-        matchDetail,
-      }
-    });
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Create candidate
+      const candidate = await tx.hrCandidate.create({
+        data: {
+          tenantId,
+          firstName: body.firstName,
+          lastName: body.lastName,
+          email: body.email,
+          phone: body.phone,
+          address: body.address || '',
+          gender: body.gender || 'M',
+        }
+      });
 
-    return { candidate, application };
+      // 2. Save to AcademicProfile
+      await tx.academicProfile.create({
+        data: {
+          candidateId: candidate.id,
+          teachingLevel: education[0]?.degree || 'Non spécifié',
+          subjects: skills,
+          pedagogicalExperience,
+        }
+      });
+
+      // 3. Create application
+      const application = await tx.hrApplication.create({
+        data: {
+          tenantId,
+          jobId: body.jobId,
+          candidateId: candidate.id,
+          status: 'NOUVEAU',
+          score,
+          scoreCV,
+          scoreLetter,
+          scoreMatching,
+          risks,
+          riskDetail,
+          matchDetail,
+        }
+      });
+
+      return { candidate, application };
+    });
   }
 }
 

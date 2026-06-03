@@ -220,141 +220,153 @@ export class PayrollPrismaService {
       },
     });
 
-    const results = [];
+    return this.prisma.$transaction(async (tx) => {
+      const results = [];
 
-    for (const staff of staffWithContracts) {
-      // Skip si une ligne existe déjà pour ce staff dans ce lot
-      const existing = await this.prisma.payrollItem.findFirst({
-        where: { payrollId, staffId: staff.id, tenantId },
-      });
-      if (existing) {
-        results.push(existing);
-        continue;
-      }
+      for (const staff of staffWithContracts) {
+        // Skip si une ligne existe déjà pour ce staff dans ce lot
+        const existing = await tx.payrollItem.findFirst({
+          where: { payrollId, staffId: staff.id, tenantId },
+        });
+        if (existing) {
+          results.push(existing);
+          continue;
+        }
 
-      const contract = staff.contracts[0];
-      // Utiliser staff.salary ou contract.baseSalary comme base
-      const baseSalary =
-        staff.salary ?? contract?.baseSalary ?? new Prisma.Decimal(0);
+        const contract = staff.contracts[0];
+        // Utiliser staff.salary ou contract.baseSalary comme base
+        const baseSalary =
+          staff.salary ?? contract?.baseSalary ?? new Prisma.Decimal(0);
 
-      // Somme des indemnités actives
-      const totalAllowances = staff.staffAllowances.reduce(
-        (acc, sa) => acc.plus(sa.amount),
-        new Prisma.Decimal(0),
-      );
+        // Somme des indemnités actives
+        const totalAllowances = staff.staffAllowances.reduce(
+          (acc, sa) => acc.plus(sa.amount),
+          new Prisma.Decimal(0),
+        );
 
-      // Calculer les heures supplémentaires validées dans la période
-      const overtimeRecords = await this.prisma.overtimeRecord.findMany({
-        where: {
-          staffId: staff.id,
-          tenantId,
-          validated: true,
-          date: {
-            gte: payroll.startDate,
-            lte: payroll.endDate,
+        // Calculer les heures supplémentaires validées dans la période
+        const overtimeRecords = await this.prisma.overtimeRecord.findMany({
+          where: {
+            staffId: staff.id,
+            tenantId,
+            validated: true,
+            date: {
+              gte: payroll.startDate,
+              lte: payroll.endDate,
+            },
           },
-        },
-      });
-      const overtimeHours = overtimeRecords.reduce(
-        (acc, r) => acc.plus(r.hours),
-        new Prisma.Decimal(0),
-      );
+        });
+        const overtimeHours = overtimeRecords.reduce(
+          (acc, r) => acc.plus(r.hours),
+          new Prisma.Decimal(0),
+        );
 
-      // Calculer le taux horaire depuis PayrollRate si disponible, sinon baseSalary / 173.33
-      const payrollRate = await this.findActivePayrollRate(tenantId, countryCode, staff.roleType);
-      const hourlyRate = payrollRate
-        ? payrollRate.hourlyRate
-        : baseSalary.div(new Prisma.Decimal(173.33));
-      const overtimeMultiplier = payrollRate
-        ? payrollRate.overtimeMultiplier
-        : new Prisma.Decimal(1.5);
-      const overtimeAmount = hourlyRate.times(overtimeHours).times(overtimeMultiplier);
+        // Calculer le taux horaire depuis PayrollRate si disponible, sinon baseSalary / 173.33
+        const payrollRate = await this.findActivePayrollRate(tenantId, countryCode, staff.roleType);
+        const hourlyRate = payrollRate
+          ? payrollRate.hourlyRate
+          : baseSalary.div(new Prisma.Decimal(173.33));
+        const overtimeMultiplier = payrollRate
+          ? payrollRate.overtimeMultiplier
+          : new Prisma.Decimal(1.5);
+        const overtimeAmount = hourlyRate.times(overtimeHours).times(overtimeMultiplier);
 
-      // Calculer les primes ponctuelles approuvées non affectées
-      const bonuses = await this.calculateStaffBonuses(staff.id, tenantId);
+        // Calculer les primes ponctuelles approuvées non affectées
+        const bonuses = await this.calculateStaffBonuses(staff.id, tenantId);
 
-      // Calcul CNSS
-      let cnssEmployee = new Prisma.Decimal(0);
-      let cnssEmployer = new Prisma.Decimal(0);
+        // Calcul CNSS
+        let cnssEmployee = new Prisma.Decimal(0);
+        let cnssEmployer = new Prisma.Decimal(0);
 
-      if (cnssRate) {
-        const ceiling = cnssRate.salaryCeiling
-          ? Prisma.Decimal.min(baseSalary, cnssRate.salaryCeiling)
-          : baseSalary;
-        cnssEmployee = ceiling.times(cnssRate.employeeRate);
-        cnssEmployer = ceiling.times(cnssRate.employerRate);
-      }
+        if (cnssRate) {
+          const ceiling = cnssRate.salaryCeiling
+            ? Prisma.Decimal.min(baseSalary, cnssRate.salaryCeiling)
+            : baseSalary;
+          cnssEmployee = ceiling.times(cnssRate.employeeRate);
+          cnssEmployer = ceiling.times(cnssRate.employerRate);
+        }
 
-      // Salaire brut = base + indemnités + heures supp + primes
-      const grossSalary = baseSalary
-        .plus(totalAllowances)
-        .plus(overtimeAmount)
-        .plus(bonuses);
+        // Salaire brut = base + indemnités + heures supp + primes
+        const grossSalary = baseSalary
+          .plus(totalAllowances)
+          .plus(overtimeAmount)
+          .plus(bonuses);
 
-      // Montant imposable = brut - cotisation CNSS employé
-      const taxableAmount = grossSalary.minus(cnssEmployee);
+        // Montant imposable = brut - cotisation CNSS employé
+        const taxableAmount = grossSalary.minus(cnssEmployee);
 
-      // Calcul IRPP par tranches progressives
-      let irppAmount = new Prisma.Decimal(0);
-      if (taxRates.length > 0 && taxableAmount.greaterThan(0)) {
-        let remaining = taxableAmount;
+        // Calcul IRPP par tranches progressives
+        let irppAmount = new Prisma.Decimal(0);
+        if (taxRates.length > 0 && taxableAmount.greaterThan(0)) {
+          let remaining = taxableAmount;
 
-        for (const bracket of taxRates) {
-          if (remaining.lessThanOrEqualTo(0)) break;
+          for (const bracket of taxRates) {
+            if (remaining.lessThanOrEqualTo(0)) break;
 
-          const bracketWidth = bracket.bracketMax
-            ? Prisma.Decimal.min(remaining, bracket.bracketMax.minus(bracket.bracketMin))
-            : remaining;
+            const bracketWidth = bracket.bracketMax
+              ? Prisma.Decimal.min(remaining, bracket.bracketMax.minus(bracket.bracketMin))
+              : remaining;
 
-          const taxableInBracket = Prisma.Decimal.max(
-            new Prisma.Decimal(0),
-            Prisma.Decimal.min(remaining, bracketWidth),
-          );
+            const taxableInBracket = Prisma.Decimal.max(
+              new Prisma.Decimal(0),
+              Prisma.Decimal.min(remaining, bracketWidth),
+            );
 
-          irppAmount = irppAmount.plus(
-            taxableInBracket.times(bracket.ratePercentage).div(100),
-          );
+            irppAmount = irppAmount.plus(
+              taxableInBracket.times(bracket.ratePercentage).div(100),
+            );
 
-          if (bracket.bracketMax) {
-            remaining = remaining.minus(bracket.bracketMax.minus(bracket.bracketMin));
-          } else {
-            remaining = new Prisma.Decimal(0);
+            if (bracket.bracketMax) {
+              remaining = remaining.minus(bracket.bracketMax.minus(bracket.bracketMin));
+            } else {
+              remaining = new Prisma.Decimal(0);
+            }
           }
         }
+
+        const otherDeductions = new Prisma.Decimal(0);
+        const totalDeductions = cnssEmployee
+          .plus(irppAmount)
+          .plus(otherDeductions);
+        const netSalary = grossSalary.minus(totalDeductions);
+
+        const payrollItem = await tx.payrollItem.create({
+          data: {
+            tenantId,
+            academicYearId: academicYearId ?? payroll.academicYearId,
+            schoolLevelId: payroll.schoolLevelId,
+            payrollId,
+            staffId: staff.id,
+            baseSalary,
+            overtimeAmount,
+            bonuses,
+            grossSalary,
+            cnssEmployee,
+            cnssEmployer,
+            taxableAmount,
+            irppAmount,
+            otherDeductions,
+            totalDeductions,
+            netSalary,
+            status: 'PENDING',
+          },
+        });
+
+        results.push(payrollItem);
       }
 
-      const otherDeductions = new Prisma.Decimal(0);
-      const totalDeductions = cnssEmployee
-        .plus(irppAmount)
-        .plus(otherDeductions);
-      const netSalary = grossSalary.minus(totalDeductions);
-
-      const payrollItem = await this.prisma.payrollItem.create({
-        data: {
-          tenantId,
-          academicYearId: academicYearId ?? payroll.academicYearId,
-          schoolLevelId: payroll.schoolLevelId,
-          payrollId,
-          staffId: staff.id,
-          baseSalary,
-          overtimeAmount,
-          bonuses,
-          grossSalary,
-          cnssEmployee,
-          cnssEmployer,
-          taxableAmount,
-          irppAmount,
-          otherDeductions,
-          totalDeductions,
-          netSalary,
-          status: 'PENDING',
-        },
+      // Mettre à jour le totalAmount du batch
+      const totalAmount = results.reduce(
+        (sum, item) => sum.plus(item.netSalary),
+        new Prisma.Decimal(0),
+      );
+      await tx.payroll.update({
+        where: { id: payrollId },
+        data: { totalAmount },
       });
 
-      results.push(payrollItem);
-    }
-
-    return results;
+      return results;
+    });
   }
 
   /**
@@ -388,8 +400,9 @@ export class PayrollPrismaService {
    * Recalcule une ligne de paie individuelle
    * (gross, déductions CNSS/IRPP, net)
    */
-  async calculatePayrollItem(id: string, tenantId: string) {
-    const item = await this.prisma.payrollItem.findFirst({
+  async calculatePayrollItem(id: string, tenantId: string, client?: any) {
+    const db = client ?? this.prisma;
+    const item = await db.payrollItem.findFirst({
       where: { id, tenantId },
       include: {
         payroll: true,
@@ -512,7 +525,7 @@ export class PayrollPrismaService {
       .plus(otherDeductions);
     const netSalary = grossSalary.minus(totalDeductions);
 
-    return this.prisma.payrollItem.update({
+    return db.payrollItem.update({
       where: { id },
       data: {
         overtimeAmount,
@@ -543,34 +556,36 @@ export class PayrollPrismaService {
       throw new NotFoundException(`Lot de paie ${payrollId} introuvable.`);
     }
 
-    // Calculer chaque ligne
-    const calculatedItems = [];
-    for (const item of payroll.items) {
-      const calculated = await this.calculatePayrollItem(item.id, tenantId);
-      calculatedItems.push(calculated);
-    }
+    return this.prisma.$transaction(async (tx) => {
+      // Calculer chaque ligne
+      const calculatedItems = [];
+      for (const item of payroll.items) {
+        const calculated = await this.calculatePayrollItem(item.id, tenantId, tx);
+        calculatedItems.push(calculated);
+      }
 
-    // Mettre à jour le totalAmount du batch
-    const totalAmount = calculatedItems.reduce(
-      (sum, item) => sum.plus(item.netSalary),
-      new Prisma.Decimal(0),
-    );
+      // Mettre à jour le totalAmount du batch
+      const totalAmount = calculatedItems.reduce(
+        (sum, item) => sum.plus(item.netSalary),
+        new Prisma.Decimal(0),
+      );
 
-    await this.prisma.payroll.update({
-      where: { id: payrollId },
-      data: {
+      await tx.payroll.update({
+        where: { id: payrollId },
+        data: {
+          totalAmount,
+          status: 'CALCULATED',
+          processedAt: new Date(),
+        },
+      });
+
+      return {
+        payrollId,
         totalAmount,
-        status: 'CALCULATED',
-        processedAt: new Date(),
-      },
+        itemCount: calculatedItems.length,
+        items: calculatedItems,
+      };
     });
-
-    return {
-      payrollId,
-      totalAmount,
-      itemCount: calculatedItems.length,
-      items: calculatedItems,
-    };
   }
 
   // ============================================================================

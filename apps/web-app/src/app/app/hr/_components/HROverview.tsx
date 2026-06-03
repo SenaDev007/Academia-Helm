@@ -34,6 +34,7 @@ import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { apiFetch } from '@/lib/api/client';
+import { toast } from '@/components/ui/toast';
 
 const PRIMARY = '#1A2BA6';
 
@@ -88,6 +89,7 @@ export function HROverview() {
       setData(result);
     } catch (error) {
       console.error('Error fetching HR overview:', error);
+      toast({ variant: 'error', title: 'Erreur: chargement du tableau de bord RH' });
     } finally {
       setLoading(false);
       setIsFetching(false);

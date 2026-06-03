@@ -14,6 +14,7 @@ import { AttendancePrismaService } from './attendance-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
+import { RecordAttendanceDto, RecordOvertimeDto } from './dto/index';
 
 @Controller('hr/attendance')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -23,7 +24,7 @@ export class AttendancePrismaController {
   // ─── Staff Attendance ────────────────────────────────────────────────────────
 
   @Post()
-  async recordAttendance(@GetTenant() tenant: any, @Body() data: any) {
+  async recordAttendance(@GetTenant() tenant: any, @Body() data: RecordAttendanceDto) {
     return this.attendanceService.recordAttendance({
       ...data,
       tenantId: tenant.id,
@@ -70,7 +71,7 @@ export class AttendancePrismaController {
   // ─── Overtime Records ────────────────────────────────────────────────────────
 
   @Post('overtime')
-  async recordOvertime(@GetTenant() tenant: any, @Body() data: any) {
+  async recordOvertime(@GetTenant() tenant: any, @Body() data: RecordOvertimeDto) {
     return this.attendanceService.recordOvertime({
       ...data,
       tenantId: tenant.id,

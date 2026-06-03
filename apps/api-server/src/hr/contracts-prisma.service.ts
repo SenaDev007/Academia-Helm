@@ -32,32 +32,30 @@ export class ContractsPrismaService {
     terms?: any;
     templateId?: string;
   }) {
-    // Désactiver l'éventuel contrat actif existant
-    const activeContract = await this.prisma.contract.findFirst({
-      where: { staffId: data.staffId, status: 'ACTIVE' },
-    });
-    if (activeContract) {
-      await this.prisma.contract.update({
-        where: { id: activeContract.id },
+    return this.prisma.$transaction(async (tx) => {
+      // Désactiver l'éventuel contrat actif existant
+      await tx.contract.updateMany({
+        where: { staffId: data.staffId, tenantId: data.tenantId, status: 'ACTIVE' },
         data: { status: 'EXPIRED' },
       });
-    }
 
-    return this.prisma.contract.create({
-      data: {
-        tenantId: data.tenantId,
-        staffId: data.staffId,
-        contractType: data.contractType,
-        startDate: data.startDate ? new Date(data.startDate) : new Date(),
-        endDate: data.endDate ? new Date(data.endDate) : null,
-        baseSalary: new Prisma.Decimal(data.baseSalary ?? 0),
-        paymentMode: data.paymentMode ?? 'BANK',
-        status: data.status ?? 'ACTIVE',
-        terms: data.terms ?? null,
-        templateId: data.templateId ?? null,
-        academicYearId: data.academicYearId ?? null,
-      },
-      include: { staff: true },
+      // Créer le nouveau contrat
+      return tx.contract.create({
+        data: {
+          tenantId: data.tenantId,
+          staffId: data.staffId,
+          contractType: data.contractType,
+          startDate: data.startDate ? new Date(data.startDate) : new Date(),
+          endDate: data.endDate ? new Date(data.endDate) : null,
+          baseSalary: new Prisma.Decimal(data.baseSalary ?? 0),
+          paymentMode: data.paymentMode ?? 'BANK',
+          status: data.status ?? 'ACTIVE',
+          terms: data.terms ?? null,
+          templateId: data.templateId ?? null,
+          academicYearId: data.academicYearId ?? null,
+        },
+        include: { staff: true },
+      });
     });
   }
 

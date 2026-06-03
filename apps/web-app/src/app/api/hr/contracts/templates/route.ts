@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const queryString = searchParams.toString();
-    const url = `${API_BASE_URL}/api/hr/contracts/templates${queryString ? `?${queryString}` : ''}`;
+    const url = `${API_BASE_URL}/api/hr/contracts/templates/list${queryString ? `?${queryString}` : ''}`;
 
     const response = await fetch(url, {
       headers: {

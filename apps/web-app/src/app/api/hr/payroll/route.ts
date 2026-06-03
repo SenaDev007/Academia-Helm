@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const queryString = searchParams.toString();
-    const url = `${API_BASE_URL}/api/hr/payroll${queryString ? `?${queryString}` : ''}`;
+    const url = `${API_BASE_URL}/api/hr/payroll/batches${queryString ? `?${queryString}` : ''}`;
 
     const response = await fetch(url, {
       headers: {
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const response = await fetch(`${API_BASE_URL}/api/hr/payroll`, {
+    const response = await fetch(`${API_BASE_URL}/api/hr/payroll/batches`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

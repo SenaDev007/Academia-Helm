@@ -15,7 +15,7 @@ export async function GET(
 ) {
   const { countryCode } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/hr/cnss/rates/${countryCode}`, {
+    const response = await fetch(`${API_BASE_URL}/api/hr/cnss/rates/active?countryCode=${encodeURIComponent(countryCode)}`, {
       headers: {
         'Authorization': request.headers.get('Authorization') || '',
       },
@@ -24,8 +24,8 @@ export async function GET(
     const data = await response.json();
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
-    console.error('Error fetching CNSS rate:', error);
-    return NextResponse.json({ error: 'Failed to fetch CNSS rate' }, { status: 500 });
+    console.error('Error fetching active CNSS rate:', error);
+    return NextResponse.json({ error: 'Failed to fetch active CNSS rate' }, { status: 500 });
   }
 }
 

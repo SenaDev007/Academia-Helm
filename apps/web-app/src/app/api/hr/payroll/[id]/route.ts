@@ -15,7 +15,7 @@ export async function GET(
 ) {
   const { id } = await params;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/hr/payroll/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/api/hr/payroll/batches/${id}`, {
       headers: {
         'Authorization': request.headers.get('Authorization') || '',
       },

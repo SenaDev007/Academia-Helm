@@ -275,7 +275,7 @@ export function LeavesWorkspace() {
                       {request.status === 'PENDING' ? (
                         <div className="flex justify-end gap-1.5">
                           <button onClick={() => handleProcessRequest(request.id, 'APPROVED')} className="p-1.5 rounded-lg hover:bg-emerald-50 text-emerald-600 transition-colors" title="Approuver"><CheckCircle2 className="h-5 w-5" /></button>
-                          <button onClick={() => handleProcessRequest(request.id, 'REJECTED')} className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-500 transition-colors" title="Rejeter"><XCircle className="h-5 w-5" /></button>
+                          <button onClick={() => { if (confirm('Confirmer le rejet de cette demande de congé ?')) handleProcessRequest(request.id, 'REJECTED') }} className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-500 transition-colors" title="Rejeter"><XCircle className="h-5 w-5" /></button>
                         </div>
                       ) : (
                         <button className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"><FileText className="h-5 w-5" /></button>

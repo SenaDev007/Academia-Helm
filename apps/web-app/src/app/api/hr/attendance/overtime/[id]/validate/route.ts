@@ -16,7 +16,7 @@ export async function PUT(
   const { id } = await params;
   try {
     const body = await request.json();
-    const response = await fetch(`${API_BASE_URL}/api/hr/attendance/overtime/${id}/validate`, {
+    const response = await fetch(`${API_BASE_URL}/api/hr/attendance/overtime/${id}/process`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',

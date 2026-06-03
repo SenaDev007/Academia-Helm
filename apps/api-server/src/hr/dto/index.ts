@@ -10,6 +10,7 @@ import {
   IsString,
   IsOptional,
   IsNumber,
+  IsInt,
   IsBoolean,
   IsDateString,
   IsUUID,
@@ -276,4 +277,19 @@ export class SignContractDto {
   @IsString() signatureData: string; // base64 PNG
   @IsString() signerName: string;
   @IsOptional() @IsString() signerRole?: string;
+}
+
+// ─── Schedule DTOs ────────────────────────────────────────────────────────────
+
+export class CreateScheduleDto {
+  @IsString() staffId!: string;
+  @IsInt() @Min(0) @Max(6) dayOfWeek!: number;
+  @IsString() shiftType!: string;
+  @IsString() startTime!: string;
+  @IsString() endTime!: string;
+  @IsOptional() @IsString() role?: string;
+  @IsOptional() @IsString() location?: string;
+  @IsOptional() @IsString() notes?: string;
+  @IsString() academicYearId!: string;
+  @IsOptional() @IsString() schoolLevelId?: string;
 }

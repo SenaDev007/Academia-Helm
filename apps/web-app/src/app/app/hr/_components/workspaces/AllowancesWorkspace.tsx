@@ -6,6 +6,7 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 import { apiFetch } from '@/lib/api/client';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { toast } from '@/components/ui/toast';
 
 const PRIMARY = '#1A2BA6';
 
@@ -53,6 +54,7 @@ export function AllowancesWorkspace() {
         }
       } catch (err) {
         console.error('Error loading allowances data:', err);
+        toast({ variant: 'error', title: 'Erreur: chargement des données d\'indemnités' });
       } finally {
         setLoading(false);
       }
@@ -68,6 +70,7 @@ export function AllowancesWorkspace() {
         setStaffAllowances(list);
       } catch (err) {
         console.error('Error loading staff allowances:', err);
+        toast({ variant: 'error', title: 'Erreur: chargement des indemnités du collaborateur' });
       }
     }
     loadStaffAllowances();
@@ -97,8 +100,10 @@ export function AllowancesWorkspace() {
       setTypeCode('');
       setTypeDescription('');
       setTypeAmount('');
+      toast({ variant: 'success', title: 'Type d\'indemnité créé avec succès' });
     } catch (err) {
       console.error('Error creating allowance type:', err);
+      toast({ variant: 'error', title: 'Erreur: création du type d\'indemnité' });
     } finally {
       setSavingType(false);
     }
@@ -123,8 +128,10 @@ export function AllowancesWorkspace() {
       const list = await apiFetch<any[]>(`/hr/allowances/staff/${selectedStaff.id}`);
       setStaffAllowances(list);
       setIsAssignModalOpen(false);
+      toast({ variant: 'success', title: 'Indemnité assignée avec succès' });
     } catch (err) {
       console.error('Error assigning allowance:', err);
+      toast({ variant: 'error', title: 'Erreur: assignation de l\'indemnité' });
     } finally {
       setSavingAssign(false);
     }
@@ -137,8 +144,10 @@ export function AllowancesWorkspace() {
       // Refresh list
       const list = await apiFetch<any[]>(`/hr/allowances/staff/${selectedStaff.id}`);
       setStaffAllowances(list);
+      toast({ variant: 'success', title: 'Indemnité supprimée avec succès' });
     } catch (err) {
       console.error('Error removing assignment:', err);
+      toast({ variant: 'error', title: 'Erreur: suppression de l\'indemnité' });
     }
   }
 

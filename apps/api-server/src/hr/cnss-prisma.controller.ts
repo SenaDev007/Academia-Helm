@@ -16,6 +16,7 @@ import { CNSSPrismaService } from './cnss-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
+import { UpsertCNSSRateDto, CreateCNSSDeclarationDto } from './dto/index';
 
 @Controller('hr/cnss')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -32,7 +33,7 @@ export class CNSSPrismaController {
   }
 
   @Post('rates')
-  async upsertCNSSRate(@Body() body: any) {
+  async upsertCNSSRate(@Body() body: UpsertCNSSRateDto) {
     return this.cnssService.upsertCNSSRate({
       countryCode: body.countryCode,
       employeeRate: body.employeeRate,
@@ -67,7 +68,7 @@ export class CNSSPrismaController {
   // ──────────────────────────────────────────────────────────────────────────
 
   @Post('declarations')
-  async createDeclaration(@GetTenant() tenant: any, @Body() body: any) {
+  async createDeclaration(@GetTenant() tenant: any, @Body() body: CreateCNSSDeclarationDto) {
     return this.cnssService.createCNSSDeclaration({
       tenantId: tenant.id,
       academicYearId: body.academicYearId,

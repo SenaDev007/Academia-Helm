@@ -3,6 +3,7 @@ import { Logger, RequestMethod, ValidationPipe } from '@nestjs/common';
 import { json, urlencoded } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 
 /** Défaut Express ~100 ko — insuffisant pour identité + logos base64 (POST /settings/identity). */
 const BODY_LIMIT = process.env.JSON_BODY_LIMIT ?? '10mb';
@@ -47,11 +48,14 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID', 'x-tenant-id', 'Cookie'],
   });
 
+  app.useGlobalFilters(new PrismaExceptionFilter());
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true, // CDC §16.3.3 — rejeter les champs inconnus
       transform: true,
+      transformOptions: { enableImplicitConversion: true },
       disableErrorMessages: process.env.NODE_ENV === 'production',
     }),
   );

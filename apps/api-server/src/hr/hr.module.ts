@@ -32,6 +32,8 @@ import { CNSSPrismaController } from './cnss-prisma.controller';
 import { HrOverviewController } from './hr-overview.controller';
 import { RecruitmentPrismaService } from './recruitment.service';
 import { RecruitmentPrismaController } from './recruitment.controller';
+import { SchedulesPrismaService } from './schedules-prisma.service';
+import { SchedulesPrismaController } from './schedules-prisma.controller';
 import { OrionModule } from '../orion/orion.module';
 
 @Module({
@@ -53,6 +55,7 @@ import { OrionModule } from '../orion/orion.module';
     ContractPdfService,
     HrKpiService,
     RecruitmentPrismaService,
+    SchedulesPrismaService,
   ],
   controllers: [
     StaffPrismaController,
@@ -65,6 +68,7 @@ import { OrionModule } from '../orion/orion.module';
     CNSSPrismaController,
     HrOverviewController,
     RecruitmentPrismaController,
+    SchedulesPrismaController,
   ],
   exports: [
     StaffPrismaService,
@@ -82,6 +86,7 @@ import { OrionModule } from '../orion/orion.module';
     ContractPdfService,
     HrKpiService,
     RecruitmentPrismaService,
+    SchedulesPrismaService,
   ],
 })
 export class HRModule {}

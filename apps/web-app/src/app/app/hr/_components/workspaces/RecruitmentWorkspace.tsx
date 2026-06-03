@@ -60,6 +60,7 @@ interface Job {
 
 interface Candidate {
   id: string;
+  applicationId?: string;
   name: string;
   firstName: string;
   lastName: string;
@@ -196,6 +197,7 @@ export function RecruitmentWorkspace() {
       if (fetchedCandidates) {
         setCandidates(fetchedCandidates.map(c => ({
           id: c.id,
+          applicationId: c.applications?.[0]?.id || c.id,
           firstName: c.firstName,
           lastName: c.lastName,
           name: `${c.firstName} ${c.lastName}`,
@@ -314,9 +316,11 @@ export function RecruitmentWorkspace() {
     if (!confirm('Voulez-vous supprimer cette offre ?')) return;
     try {
       await apiFetch(`/hr/recruitment/jobs/${id}`, { method: 'DELETE' });
+      toast({ variant: 'success', title: 'Offre d\'emploi supprimée avec succès.' });
       loadData();
     } catch (err) {
       console.error('Failed to delete job:', err);
+      toast({ variant: 'error', title: 'Erreur lors de la suppression de l\'offre.' });
     }
   };
 
@@ -325,6 +329,7 @@ export function RecruitmentWorkspace() {
     if (!confirm('Voulez-vous supprimer ce candidat ?')) return;
     try {
       await apiFetch(`/hr/recruitment/candidates/${id}`, { method: 'DELETE' });
+      toast({ variant: 'success', title: 'Candidat supprimé avec succès.' });
       loadData();
     } catch (err) {
       console.error('Failed to delete candidate:', err);
@@ -453,9 +458,11 @@ export function RecruitmentWorkspace() {
     if (!confirm('Retirer cette fiche de la base de talents ?')) return;
     try {
       await apiFetch(`/hr/recruitment/talent-pool/${id}`, { method: 'DELETE' });
+      toast({ variant: 'success', title: 'Profil retiré de la base de talents.' });
       loadData();
     } catch (err) {
       console.error('Failed to remove from talent pool:', err);
+      toast({ variant: 'error', title: 'Erreur lors du retrait de la base de talents.' });
     }
   };
 
@@ -463,8 +470,9 @@ export function RecruitmentWorkspace() {
   const handleMoveCandidate = async (candidateId: string, toStatus: string) => {
     const candidate = candidates.find(c => c.id === candidateId);
     if (!candidate) return;
+    const applicationId = candidate.applicationId || candidate.id;
     try {
-      await apiFetch(`/hr/recruitment/applications/${candidateId}/status`, {
+      await apiFetch(`/hr/recruitment/applications/${applicationId}/status`, {
         method: 'PUT',
         body: JSON.stringify({ status: toStatus }),
       });

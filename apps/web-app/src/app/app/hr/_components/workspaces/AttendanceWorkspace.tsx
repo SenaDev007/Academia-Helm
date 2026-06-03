@@ -6,6 +6,7 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 import { apiFetch } from '@/lib/api/client';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { toast } from '@/components/ui/toast';
 
 const PRIMARY = '#1A2BA6';
 
@@ -45,6 +46,7 @@ export function AttendanceWorkspace() {
         }
       } catch (err) {
         console.error('Error loading initial data:', err);
+        toast({ variant: 'error', title: 'Erreur: chargement des données du personnel' });
       } finally {
         setLoading(false);
       }
@@ -69,6 +71,7 @@ export function AttendanceWorkspace() {
         setStats(statData);
       } catch (err) {
         console.error('Error loading staff details:', err);
+        toast({ variant: 'error', title: 'Erreur: chargement des détails du collaborateur' });
       }
     }
     loadStaffStatsAndHistory();
@@ -96,8 +99,10 @@ export function AttendanceWorkspace() {
       const statData = await apiFetch<any>(`/hr/attendance/statistics?academicYearId=${academicYear.id}&staffId=${selectedStaff.id}`);
       setStats(statData);
       setNotes('');
+      toast({ variant: 'success', title: 'Présence enregistrée avec succès' });
     } catch (err) {
       console.error('Error recording attendance:', err);
+      toast({ variant: 'error', title: 'Erreur: enregistrement de la présence' });
     } finally {
       setSavingAttendance(false);
     }
@@ -122,8 +127,10 @@ export function AttendanceWorkspace() {
       const otHistory = await apiFetch<any[]>(`/hr/attendance/overtime/staff/${selectedStaff.id}?academicYearId=${academicYear.id}`);
       setOvertimes(otHistory);
       setOvertimeReason('');
+      toast({ variant: 'success', title: 'Heures supplémentaires enregistrées avec succès' });
     } catch (err) {
       console.error('Error recording overtime:', err);
+      toast({ variant: 'error', title: 'Erreur: enregistrement des heures supplémentaires' });
     } finally {
       setSavingOvertime(false);
     }

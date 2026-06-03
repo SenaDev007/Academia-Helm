@@ -10,6 +10,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 import { SchoolLevelId } from '../common/decorators/school-level-id.decorator';
+import { CreateStaffDto, UpdateStaffDto, AddStaffDocumentDto } from './dto/index';
 
 @Controller('hr/staff')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -17,7 +18,7 @@ export class StaffPrismaController {
   constructor(private readonly staffService: StaffPrismaService) {}
 
   @Post()
-  async createStaff(@GetTenant() tenant: any, @Body() data: any) {
+  async createStaff(@GetTenant() tenant: any, @Body() data: CreateStaffDto) {
     return this.staffService.createStaff({
       ...data,
       tenantId: tenant.id,
@@ -46,7 +47,7 @@ export class StaffPrismaController {
   }
 
   @Put(':id')
-  async updateStaff(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: any) {
+  async updateStaff(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: UpdateStaffDto) {
     return this.staffService.updateStaff(id, tenant.id, data);
   }
 
@@ -57,7 +58,7 @@ export class StaffPrismaController {
 
   // Documents
   @Post(':id/documents')
-  async addStaffDocument(@GetTenant() tenant: any, @Param('id') staffId: string, @Body() data: any) {
+  async addStaffDocument(@GetTenant() tenant: any, @Param('id') staffId: string, @Body() data: AddStaffDocumentDto) {
     return this.staffService.addStaffDocument({
       ...data,
       tenantId: tenant.id,

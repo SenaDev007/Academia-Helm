@@ -21,6 +21,7 @@ import {
   UserCog,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toast } from '@/components/ui/toast';
 import { StaffWorkspace } from './StaffWorkspace';
 import { ContractsWorkspace } from './ContractsWorkspace';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -62,19 +63,19 @@ export function CollaboratorsWorkspace() {
         .then((data) => {
           setStaffList(data);
         })
-        .catch(() => {})
+        .catch((err) => { toast({ variant: 'error', title: 'Erreur de chargement des données' }); })
         .finally(() => setLoading(false));
     }
     if (activeTab === 'history') {
       apiFetch<any[]>(`/hr/contracts?tenantId=${tenant.id}`)
         .then(setContractsList)
-        .catch(() => {});
+        .catch((err) => { toast({ variant: 'error', title: 'Erreur de chargement des données' }); });
       apiFetch<any[]>(`/hr/evaluations?tenantId=${tenant.id}`)
         .then(setEvaluationsList)
-        .catch(() => {});
+        .catch((err) => { toast({ variant: 'error', title: 'Erreur de chargement des données' }); });
       apiFetch<any[]>(`/hr/evaluations/trainings?tenantId=${tenant.id}`)
         .then(setTrainingsList)
-        .catch(() => {});
+        .catch((err) => { toast({ variant: 'error', title: 'Erreur de chargement des données' }); });
     }
   }, [tenant?.id, activeTab]);
 

@@ -6,6 +6,7 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 import { apiFetch } from '@/lib/api/client';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { toast } from '@/components/ui/toast';
 
 const PRIMARY = '#1A2BA6';
 
@@ -36,6 +37,7 @@ export function CnssWorkspace() {
         setActiveRate(rate);
       } catch (err) {
         console.error('Error loading CNSS data:', err);
+        toast({ variant: 'error', title: 'Erreur: chargement des données CNSS' });
       } finally {
         setLoading(false);
       }
@@ -60,14 +62,17 @@ export function CnssWorkspace() {
       const decls = await apiFetch<any[]>('/hr/cnss/declarations');
       setDeclarations(decls);
       setIsCreateOpen(false);
+      toast({ variant: 'success', title: 'Déclaration créée avec succès' });
     } catch (err) {
       console.error('Error creating declaration:', err);
+      toast({ variant: 'error', title: 'Erreur: création de la déclaration' });
     } finally {
       setGenerating(false);
     }
   }
 
   async function handleUpdateStatus(id: string, status: 'GENERATED' | 'SUBMITTED' | 'PAID') {
+    if (!confirm('Confirmer cette action ? Elle est irréversible.')) return;
     try {
       await apiFetch(`/hr/cnss/declarations/${id}/finalize`, {
         method: 'PUT',
@@ -76,8 +81,10 @@ export function CnssWorkspace() {
       // Refresh
       const decls = await apiFetch<any[]>('/hr/cnss/declarations');
       setDeclarations(decls);
+      toast({ variant: 'success', title: 'Statut mis à jour avec succès' });
     } catch (err) {
       console.error('Error finalising declaration:', err);
+      toast({ variant: 'error', title: 'Erreur: mise à jour du statut' });
     }
   }
 

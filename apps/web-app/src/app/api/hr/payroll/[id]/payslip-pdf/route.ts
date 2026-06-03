@@ -17,7 +17,7 @@ export async function GET(
   try {
     const searchParams = request.nextUrl.searchParams;
     const queryString = searchParams.toString();
-    const url = `${API_BASE_URL}/api/hr/payroll/${id}/payslip-pdf${queryString ? `?${queryString}` : ''}`;
+    const url = `${API_BASE_URL}/api/hr/payroll/items/${id}/payslip-pdf${queryString ? `?${queryString}` : ''}`;
 
     const response = await fetch(url, {
       headers: {
@@ -40,7 +40,7 @@ export async function POST(
   const { id } = await params;
   try {
     const body = await request.json();
-    const response = await fetch(`${API_BASE_URL}/api/hr/payroll/${id}/payslip-pdf`, {
+    const response = await fetch(`${API_BASE_URL}/api/hr/payroll/items/${id}/payslip-pdf`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

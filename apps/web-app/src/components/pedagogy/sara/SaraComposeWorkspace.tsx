@@ -476,11 +476,11 @@ function GeneratedDocumentPreview({ doc }: { doc: GeneratedDocument }) {
       </div>
 
       {/* Barème */}
-      {doc.bareme && (
+      {doc.barème && (
         <div className="mt-12 pt-8 border-t border-slate-200">
           <h3 className="font-bold text-sm mb-4">Barème</h3>
           <div className="grid grid-cols-2 gap-2">
-            {doc.bareme.distribution?.map((item: any, i: number) => (
+            {doc.barème.distribution?.map((item: any, i: number) => (
               <div key={i} className="flex justify-between text-xs text-slate-600">
                 <span>Exercice {item.exercice}</span>
                 <span>{item.points} pts</span>
@@ -488,7 +488,7 @@ function GeneratedDocumentPreview({ doc }: { doc: GeneratedDocument }) {
             ))}
             <div className="flex justify-between text-xs font-bold text-slate-900 border-t pt-2 mt-2">
               <span>Total</span>
-              <span>{doc.bareme.total} pts</span>
+              <span>{doc.barème.total} pts</span>
             </div>
           </div>
         </div>

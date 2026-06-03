@@ -134,7 +134,7 @@ export default function TimetablesWorkspace() {
     setGenerating(true);
     try {
       // 1. Charger les matières et affectations de la classe
-      const classSubjects = await pedagogyFetch<any[]>(`/api/pedagogy/class-subjects/${selectedId}?academicYearId=${academicYear.id}`);
+      const classSubjects = await pedagogyFetch<any[]>(`/api/pedagogy/class-subjects?classId=${selectedId}&academicYearId=${academicYear.id}`);
       if (!classSubjects || classSubjects.length === 0) {
         throw new Error("Aucune matière configurée pour cette classe. Veuillez ajouter des matières au niveau ou à la classe d'abord.");
       }
@@ -164,7 +164,7 @@ export default function TimetablesWorkspace() {
       // Supprimer les cours existants pour cette classe pour régénérer proprement
       const currentClassEntries = entries.filter(e => e.class?.id === selectedId);
       const deletePromises = currentClassEntries.map(e =>
-        pedagogyFetch(`/api/pedagogy/timetables/entries/${e.id}`, { method: 'DELETE' })
+        pedagogyFetch(`/api/timetables/entries/${e.id}`, { method: 'DELETE' })
       );
       await Promise.all(deletePromises);
 
@@ -324,7 +324,7 @@ export default function TimetablesWorkspace() {
 
       // Enregistrer les entrées générées
       const savePromises = scheduledEntries.map(entry =>
-        pedagogyFetch(`/api/pedagogy/timetables/entries`, {
+        pedagogyFetch(`/api/timetables/${activeTimetableId}/entries`, {
           method: 'POST',
           body: entry,
         })
@@ -359,9 +359,9 @@ export default function TimetablesWorkspace() {
     setLoading(true);
     try {
       const [tts, cls, rms, tchs] = await Promise.all([
-        pedagogyFetch<Timetable[]>(`/api/pedagogy/timetables?academicYearId=${academicYear.id}`),
+        pedagogyFetch<Timetable[]>(`/api/timetables?academicYearId=${academicYear.id}`),
         pedagogyFetch<AcademicClass[]>(`/api/pedagogy/academic-structure/classes?academicYearId=${academicYear.id}`),
-        pedagogyFetch<Room[]>(`/api/pedagogy/rooms`),
+        pedagogyFetch<Room[]>(`/api/rooms`),
         pedagogyFetch<any[]>(`/api/pedagogy/teacher-profiles?academicYearId=${academicYear.id}`)
       ]);
       setClasses(cls);
@@ -372,7 +372,7 @@ export default function TimetablesWorkspace() {
         setActiveTimetableId(tts[0].id);
       } else {
         // Créer un emploi du temps par défaut si vide
-        const newTt = await pedagogyFetch<Timetable>('/api/pedagogy/timetables', {
+        const newTt = await pedagogyFetch<Timetable>('/api/timetables', {
           method: 'POST',
           body: {
             academicYearId: academicYear.id,
@@ -395,7 +395,7 @@ export default function TimetablesWorkspace() {
   const loadEntries = useCallback(async () => {
     if (!activeTimetableId) return;
     try {
-      const data = await pedagogyFetch<any>(`/api/pedagogy/timetables/${activeTimetableId}`);
+      const data = await pedagogyFetch<any>(`/api/timetables/${activeTimetableId}`);
       setEntries(data.entries);
     } catch (e: any) {
       console.error(e);
@@ -421,7 +421,7 @@ export default function TimetablesWorkspace() {
   const handleAddEntry = async (data: any) => {
     if (!activeTimetableId || !academicYear?.id) return;
     try {
-      await pedagogyFetch(`/api/pedagogy/timetables/entries`, {
+      await pedagogyFetch(`/api/timetables/${activeTimetableId}/entries`, {
         method: 'POST',
         body: {
           ...data,
@@ -443,7 +443,7 @@ export default function TimetablesWorkspace() {
 
   const handleDeleteEntry = async (id: string) => {
     try {
-      await pedagogyFetch(`/api/pedagogy/timetables/entries/${id}`, { method: 'DELETE' });
+      await pedagogyFetch(`/api/timetables/entries/${id}`, { method: 'DELETE' });
       loadEntries();
     } catch (e) {
       console.error(e);

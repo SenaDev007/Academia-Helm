@@ -3,11 +3,12 @@
  * 
  * Assistant IA (SARA) pour la pédagogie.
  * Support aux enseignants pour la planification des cours, conseils pédagogiques et analyse des résultats.
+ * Connecté au backend Sara Compose Engine via /api/pedagogy/ia/copilot
  */
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Sparkles, 
@@ -19,13 +20,16 @@ import {
   TrendingUp,
   BrainCircuit,
   BookOpen,
-  Lightbulb
+  Lightbulb,
+  Loader2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
+  isAiEnhanced?: boolean;
+  timestamp?: string;
 }
 
 export default function PedagogySaraAssistant() {
@@ -33,23 +37,54 @@ export default function PedagogySaraAssistant() {
   const [messages, setMessages] = useState<Message[]>([
     { 
       role: 'assistant', 
-      content: "Bonjour ! Je suis Sara, votre assistante pédagogique. J'ai remarqué que le chapitre sur les Probabilités semble poser des difficultés à 40% de vos élèves. Souhaitez-vous des ressources alternatives ou un plan de remédiation ?" 
+      content: "Bonjour ! Je suis Sara, votre assistante pédagogique. Je peux vous aider avec la génération d'épreuves, l'analyse de vos documents, le suivi des cahiers journal et bien plus. Que puis-je faire pour vous ?",
+      isAiEnhanced: false,
     }
   ]);
   const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const handleSend = () => {
-    if (!input.trim()) return;
-    setMessages(prev => [...prev, { role: 'user', content: input }]);
-    setInput('');
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const handleSend = async () => {
+    if (!input.trim() || isLoading) return;
     
-    // Simulation réponse Sara
-    setTimeout(() => {
+    const userMessage = input.trim();
+    setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+    setInput('');
+    setIsLoading(true);
+
+    try {
+      const res = await fetch('/api/pedagogy/ia/copilot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: userMessage,
+          conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
+        }),
+      });
+
+      const data = await res.json();
+      
       setMessages(prev => [...prev, { 
         role: 'assistant', 
-        content: "Excellente idée ! J'ai généré 3 exercices de renforcement basés sur les erreurs fréquentes. Je peux aussi les envoyer directement aux parents via le portail Federis. Voulez-vous valider l'envoi ?" 
+        content: data.reply || "Désolé, je n'ai pas pu traiter votre demande. Veuillez réessayer.",
+        isAiEnhanced: data.isAiEnhanced,
+        timestamp: data.timestamp,
       }]);
-    }, 1200);
+    } catch (error) {
+      console.error('Sara copilot error:', error);
+      setMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: "Une erreur est survenue lors de la communication avec le serveur. Veuillez vérifier que le backend est en cours d'exécution et réessayer.",
+        isAiEnhanced: false,
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -120,9 +155,26 @@ export default function PedagogySaraAssistant() {
                       : "bg-white text-slate-700 border border-slate-100 rounded-tl-none"
                   )}>
                     {msg.content}
+                    {msg.isAiEnhanced && msg.role === 'assistant' && (
+                      <div className="mt-2 flex items-center gap-1 text-[10px] text-indigo-400">
+                        <Sparkles className="w-3 h-3" />
+                        <span>Amélioré par IA</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
+              {isLoading && (
+                <div className="flex justify-start">
+                  <div className="bg-white text-slate-700 border border-slate-100 p-5 rounded-[1.5rem] rounded-tl-none shadow-sm">
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
+                      <span className="text-sm text-slate-500">Sara réfléchit...</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div ref={chatEndRef} />
             </div>
 
             {/* Premium Input Area */}
@@ -131,15 +183,17 @@ export default function PedagogySaraAssistant() {
                   <input 
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                    onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
                     placeholder="Une idée ou une question pédagogique ?"
-                    className="flex-1 bg-transparent border-none focus:ring-0 text-sm px-2 text-slate-900 placeholder:text-slate-400 font-medium"
+                    disabled={isLoading}
+                    className="flex-1 bg-transparent border-none focus:ring-0 text-sm px-2 text-slate-900 placeholder:text-slate-400 font-medium disabled:opacity-50"
                   />
                   <button 
                     onClick={handleSend}
-                    className="p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-900/10"
+                    disabled={isLoading || !input.trim()}
+                    className="p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-900/10 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <Send className="w-4 h-4" />
+                    {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                   </button>
                </div>
             </div>

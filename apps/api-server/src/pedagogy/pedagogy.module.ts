@@ -59,6 +59,9 @@ import { PedagogicalAuditService } from './services/pedagogical-audit.service';
 import { PedagogicalSignatureService } from './services/pedagogical-signature.service';
 import { GlobalLibraryPrismaService } from './global-library-prisma.service';
 import { GlobalLibraryPrismaController } from './global-library-prisma.controller';
+// Module 2 - IA Pédagogique (Sara Compose Engine)
+import { IaPrismaService } from './ia-prisma.service';
+import { IaPrismaController } from './ia-prisma.controller';
 
 
 
@@ -93,6 +96,8 @@ import { StorageService } from '../common/services/storage.service';
     PedagogyControlController,
     OrionPedagogyAdvancedController,
     GlobalLibraryPrismaController,
+    // Module 2 - IA Pédagogique (Sara Compose Engine)
+    IaPrismaController,
   ],
   providers: [
     StorageService,
@@ -126,6 +131,8 @@ import { StorageService } from '../common/services/storage.service';
     PedagogicalAuditService,
     PedagogicalSignatureService,
     GlobalLibraryPrismaService,
+    // Module 2 - IA Pédagogique (Sara Compose Engine)
+    IaPrismaService,
   ],
   exports: [
     StorageService,
@@ -159,7 +166,8 @@ import { StorageService } from '../common/services/storage.service';
     PedagogicalAuditService,
     PedagogicalSignatureService,
     GlobalLibraryPrismaService,
-
+    // Module 2 - IA Pédagogique (Sara Compose Engine)
+    IaPrismaService,
   ],
 })
 

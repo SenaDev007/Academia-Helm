@@ -25,9 +25,18 @@ export class AllowancesPrismaController {
 
   @Post('types')
   async createAllowanceType(@GetTenant() tenant: any, @Body() data: CreateAllowanceTypeDto) {
+    // Map defaultAmount → amount if amount not provided
+    const amount = data.amount ?? data.defaultAmount;
     return this.allowancesService.createAllowanceType({
-      ...data,
       tenantId: tenant.id,
+      name: data.name,
+      code: data.code,
+      description: data.description,
+      isTaxable: data.isTaxable,
+      isCnss: data.isCnss,
+      amount: amount ?? undefined,
+      isFixed: data.isFixed,
+      isActive: data.isActive,
     });
   }
 
@@ -56,9 +65,18 @@ export class AllowancesPrismaController {
 
   @Post('assignments')
   async assignAllowanceToStaff(@GetTenant() tenant: any, @Body() data: AssignAllowanceToStaffDto) {
+    // Map startDate → effectiveDate if effectiveDate not provided
+    const effectiveDate = data.effectiveDate || data.startDate || new Date().toISOString();
     return this.allowancesService.assignAllowanceToStaff({
-      ...data,
       tenantId: tenant.id,
+      academicYearId: data.academicYearId,
+      schoolLevelId: data.schoolLevelId,
+      staffId: data.staffId,
+      allowanceTypeId: data.allowanceTypeId,
+      amount: data.amount,
+      effectiveDate: new Date(effectiveDate),
+      endDate: data.endDate ? new Date(data.endDate) : undefined,
+      notes: data.notes,
     });
   }
 

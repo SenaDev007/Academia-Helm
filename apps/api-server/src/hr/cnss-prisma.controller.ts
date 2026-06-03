@@ -69,11 +69,13 @@ export class CNSSPrismaController {
 
   @Post('declarations')
   async createDeclaration(@GetTenant() tenant: any, @Body() body: CreateCNSSDeclarationDto) {
+    // Derive month from periodStart if not provided
+    const month = body.month || body.periodStart?.substring(0, 7) || new Date().toISOString().substring(0, 7);
     return this.cnssService.createCNSSDeclaration({
       tenantId: tenant.id,
       academicYearId: body.academicYearId,
-      month: body.month,
-      notes: body.notes,
+      month,
+      notes: (body as any).notes,
     });
   }
 
@@ -92,13 +94,15 @@ export class CNSSPrismaController {
     @GetTenant() tenant: any,
     @Param('id') id: string,
     @Body() body: {
-      status: 'SUBMITTED' | 'PAID';
+      status: 'SUBMITTED' | 'PAID' | 'GENERATED';
       paymentReference?: string;
       paymentProofPath?: string;
     },
   ) {
+    // Accept GENERATED status and map to appropriate action
+    const finalStatus = body.status === 'GENERATED' ? 'SUBMITTED' : body.status;
     return this.cnssService.finalizeDeclaration(
-      id, tenant.id, body.status,
+      id, tenant.id, finalStatus as 'SUBMITTED' | 'PAID',
       body.paymentReference, body.paymentProofPath,
     );
   }

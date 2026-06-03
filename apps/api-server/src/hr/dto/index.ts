@@ -3,6 +3,10 @@
  * HR DTOs - Data Transfer Objects with class-validator
  * ============================================================================
  * Replaces `@Body() data: any` in HR controllers with typed, validated DTOs.
+ *
+ * IMPORTANT: With `forbidNonWhitelisted: true` in the global ValidationPipe,
+ * any field NOT decorated here will cause a 400 error. All fields sent by the
+ * frontend MUST be declared as optional/required decorated properties.
  * ============================================================================
  */
 
@@ -37,6 +41,8 @@ export class CreateStaffDto {
   @IsOptional() @IsString() position?: string;
   @IsOptional() @IsString() department?: string;
   @IsOptional() @IsEnum(['TEACHER', 'ADMIN', 'SUPPORT', 'DIRECTOR', 'OTHER']) roleType?: string;
+  /** Frontend may send "category" as alias for roleType (e.g. "ADMIN", "PEDAGOGICAL") */
+  @IsOptional() @IsString() category?: string;
   @IsOptional() @IsDateString() hireDate?: string;
   @IsOptional() @IsString() contractType?: string;
   @IsOptional() @IsNumber() @Type(() => Number) salary?: number;
@@ -46,6 +52,10 @@ export class CreateStaffDto {
   @IsOptional() @IsString() notes?: string;
   @IsOptional() @IsUUID() academicYearId?: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
+  /** Frontend OnboardingWizardModal sends status: 'ACTIVE' */
+  @IsOptional() @IsString() status?: string;
+  /** Frontend may send tenantId — ignored (resolved server-side) */
+  @IsOptional() @IsString() tenantId?: string;
 }
 
 export class UpdateStaffDto {
@@ -59,11 +69,13 @@ export class UpdateStaffDto {
   @IsOptional() @IsString() position?: string;
   @IsOptional() @IsString() department?: string;
   @IsOptional() @IsEnum(['TEACHER', 'ADMIN', 'SUPPORT', 'DIRECTOR', 'OTHER']) roleType?: string;
+  @IsOptional() @IsString() category?: string;
   @IsOptional() @IsDateString() hireDate?: string;
   @IsOptional() @IsString() contractType?: string;
   @IsOptional() @IsNumber() @Type(() => Number) salary?: number;
   @IsOptional() @IsString() status?: string;
   @IsOptional() @IsString() notes?: string;
+  @IsOptional() @IsString() tenantId?: string;
 }
 
 // ─── Contract DTOs ───────────────────────────────────────────────────────────
@@ -79,6 +91,10 @@ export class CreateContractDto {
   @IsOptional() terms?: Record<string, any>;
   @IsOptional() @IsUUID() academicYearId?: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
+  /** Frontend ContractsWorkspace sends status: 'ACTIVE' */
+  @IsOptional() @IsString() status?: string;
+  /** Frontend may send tenantId — ignored (resolved server-side) */
+  @IsOptional() @IsString() tenantId?: string;
 }
 
 export class UpdateContractDto {
@@ -108,6 +124,8 @@ export class CreatePayrollDto {
   @IsOptional() @IsUUID() schoolLevelId?: string;
   @IsOptional() @IsUUID() payrollPeriodId?: string;
   @IsOptional() @IsString() notes?: string;
+  /** Frontend may send tenantId — ignored (resolved server-side) */
+  @IsOptional() @IsString() tenantId?: string;
 }
 
 export class UpdatePayrollStatusDto {
@@ -117,11 +135,14 @@ export class UpdatePayrollStatusDto {
 export class CreatePayrollPeriodDto {
   @IsUUID() academicYearId: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
-  @IsString() name: string;
+  /** Name is auto-generated from month/type if not provided */
+  @IsOptional() @IsString() name?: string;
   @IsOptional() @IsEnum(['MONTHLY', 'QUARTERLY', 'ANNUAL', 'OFF_CYCLE']) periodType?: string;
   @IsOptional() @IsString() month?: string;
   @IsDateString() startDate: string;
   @IsDateString() endDate: string;
+  /** Frontend PayrollWorkspace sends tenantId — ignored (resolved server-side) */
+  @IsOptional() @IsString() tenantId?: string;
 }
 
 export class UpsertPayrollRateDto {
@@ -154,6 +175,8 @@ export class CreateLeaveRequestDto {
   @IsDateString() startDate: string;
   @IsDateString() endDate: string;
   @IsOptional() @IsString() reason?: string;
+  /** Frontend LeavesWorkspace sends tenantId — ignored (resolved server-side) */
+  @IsOptional() @IsString() tenantId?: string;
 }
 
 export class ProcessLeaveRequestDto {
@@ -171,8 +194,14 @@ export class CreateAllowanceTypeDto {
   @IsOptional() @IsBoolean() isTaxable?: boolean;
   @IsOptional() @IsBoolean() isCnss?: boolean;
   @IsOptional() @IsNumber() @Type(() => Number) amount?: number;
+  /** Frontend AllowancesWorkspace sends defaultAmount — mapped to amount in service */
+  @IsOptional() @IsNumber() @Type(() => Number) defaultAmount?: number;
   @IsOptional() @IsBoolean() isFixed?: boolean;
   @IsOptional() @IsBoolean() isActive?: boolean;
+  /** Frontend AllowancesWorkspace sends category */
+  @IsOptional() @IsString() category?: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
 }
 
 export class AssignAllowanceToStaffDto {
@@ -181,9 +210,13 @@ export class AssignAllowanceToStaffDto {
   @IsUUID() staffId: string;
   @IsUUID() allowanceTypeId: string;
   @IsNumber() @Type(() => Number) amount: number;
-  @IsDateString() effectiveDate: string;
+  @IsOptional() @IsDateString() effectiveDate?: string;
   @IsOptional() @IsDateString() endDate?: string;
+  /** Frontend AllowancesWorkspace sends startDate — mapped to effectiveDate in service */
+  @IsOptional() @IsDateString() startDate?: string;
   @IsOptional() @IsString() notes?: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
 }
 
 // ─── CNSS DTOs ───────────────────────────────────────────────────────────────
@@ -199,7 +232,14 @@ export class UpsertCNSSRateDto {
 
 export class CreateCNSSDeclarationDto {
   @IsUUID() academicYearId: string;
-  @IsString() month: string;
+  /** Month in "YYYY-MM" format — auto-derived from periodStart if not provided */
+  @IsOptional() @IsString() month?: string;
+  /** Frontend CnssWorkspace sends periodStart — mapped to month in service */
+  @IsOptional() @IsString() periodStart?: string;
+  /** Frontend CnssWorkspace sends periodEnd */
+  @IsOptional() @IsString() periodEnd?: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
 }
 
 // ─── Attendance DTOs ─────────────────────────────────────────────────────────
@@ -214,6 +254,8 @@ export class RecordAttendanceDto {
   @IsOptional() @IsString() notes?: string;
   @IsUUID() academicYearId: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
 }
 
 export class RecordOvertimeDto {
@@ -221,8 +263,12 @@ export class RecordOvertimeDto {
   @IsDateString() date: string;
   @IsNumber() @Min(0) @Type(() => Number) hours: number;
   @IsOptional() @IsString() notes?: string;
+  /** Frontend AttendanceWorkspace sends reason — mapped to notes */
+  @IsOptional() @IsString() reason?: string;
   @IsUUID() academicYearId: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
 }
 
 // ─── Contract Template DTOs ──────────────────────────────────────────────────
@@ -292,4 +338,10 @@ export class CreateScheduleDto {
   @IsOptional() @IsString() notes?: string;
   @IsString() academicYearId!: string;
   @IsOptional() @IsString() schoolLevelId?: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+  /** Frontend PlanningWorkspace sends date — used to derive dayOfWeek if not set */
+  @IsOptional() @IsDateString() date?: string;
+  /** Frontend PlanningWorkspace sends shift — alias for shiftType */
+  @IsOptional() @IsString() shift?: string;
 }

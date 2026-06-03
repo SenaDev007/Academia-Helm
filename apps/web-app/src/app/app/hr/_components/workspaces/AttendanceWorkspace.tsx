@@ -87,7 +87,7 @@ export function AttendanceWorkspace() {
         body: {
           academicYearId: academicYear.id,
           staffId: selectedStaff.id,
-          date: new Date(attendanceDate),
+          date: new Date(attendanceDate).toISOString(),
           status: attendanceStatus,
           hoursWorked: parseFloat(hoursWorked),
           notes,
@@ -118,7 +118,7 @@ export function AttendanceWorkspace() {
         body: {
           academicYearId: academicYear.id,
           staffId: selectedStaff.id,
-          date: new Date(overtimeDate),
+          date: new Date(overtimeDate).toISOString(),
           hours: parseFloat(overtimeHours),
           reason: overtimeReason,
         },

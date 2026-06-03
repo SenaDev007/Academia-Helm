@@ -86,8 +86,9 @@ export function PayrollWorkspace() {
       await apiFetch('/hr/payroll/periods', {
         method: 'POST',
         body: JSON.stringify({
-          startDate: new Date(modalForm.startDate),
-          endDate: new Date(modalForm.endDate),
+          name: `${MONTHS.find(m => m.value === modalForm.month)?.label || ''} ${modalForm.year}`,
+          startDate: new Date(modalForm.startDate).toISOString(),
+          endDate: new Date(modalForm.endDate).toISOString(),
           academicYearId: academicYear?.id,
           tenantId: tenant?.id,
         }),

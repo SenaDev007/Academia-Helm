@@ -69,7 +69,19 @@ export class SchedulesPrismaController {
    */
   @Post()
   async create(@GetTenant() tenant: any, @Body() data: CreateScheduleDto) {
-    return this.schedulesService.create(data, tenant.id);
+    // Derive dayOfWeek from date if not provided
+    let dayOfWeek = data.dayOfWeek;
+    if (!dayOfWeek && data.date) {
+      dayOfWeek = new Date(data.date).getDay();
+    }
+    // Map shift → shiftType if shiftType not provided
+    const shiftType = data.shiftType || data.shift || 'MORNING';
+    return this.schedulesService.create({
+      ...data,
+      dayOfWeek,
+      shiftType,
+      tenantId: tenant.id,
+    }, tenant.id);
   }
 
   /**

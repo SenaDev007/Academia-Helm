@@ -87,7 +87,8 @@ export function AllowancesWorkspace() {
           name: typeName,
           code: typeCode,
           description: typeDescription,
-          defaultAmount: parseFloat(typeAmount),
+          amount: parseFloat(typeAmount) || undefined,
+          defaultAmount: parseFloat(typeAmount) || undefined,
           category: typeCategory,
         },
       });
@@ -120,8 +121,9 @@ export function AllowancesWorkspace() {
           staffId: selectedStaff.id,
           allowanceTypeId: assignType,
           amount: parseFloat(assignAmount),
-          startDate: new Date(assignStartDate),
-          endDate: assignEndDate ? new Date(assignEndDate) : undefined,
+          effectiveDate: assignStartDate ? new Date(assignStartDate).toISOString() : new Date().toISOString(),
+          startDate: assignStartDate ? new Date(assignStartDate).toISOString() : new Date().toISOString(),
+          endDate: assignEndDate ? new Date(assignEndDate).toISOString() : undefined,
         },
       });
       // Refresh staff allowances

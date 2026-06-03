@@ -81,8 +81,8 @@ export function ContractsWorkspace() {
         body: JSON.stringify({
           staffId: modalForm.staffId,
           contractType: modalForm.contractType,
-          startDate: new Date(modalForm.startDate),
-          endDate: modalForm.endDate ? new Date(modalForm.endDate) : null,
+          startDate: new Date(modalForm.startDate).toISOString(),
+          endDate: modalForm.endDate ? new Date(modalForm.endDate).toISOString() : null,
           baseSalary: parseFloat(modalForm.baseSalary),
           paymentMode: modalForm.paymentMode,
           status: 'ACTIVE',

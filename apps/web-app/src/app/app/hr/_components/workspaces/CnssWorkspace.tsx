@@ -54,6 +54,7 @@ export function CnssWorkspace() {
         method: 'POST',
         body: {
           academicYearId: academicYear.id,
+          month: periodStart?.substring(0, 7) || new Date().toISOString().substring(0, 7),
           periodStart,
           periodEnd,
         },

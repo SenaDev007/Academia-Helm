@@ -238,13 +238,21 @@ export class PayrollPrismaController {
 
   @Post('periods')
   async createPayrollPeriod(@GetTenant() tenant: any, @Body() body: CreatePayrollPeriodDto) {
+    // Auto-generate name if not provided
+    const name = body.name || (() => {
+      const start = new Date(body.startDate);
+      const monthNames = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+      return `${monthNames[start.getMonth()]} ${start.getFullYear()}`;
+    })();
+    // Auto-derive month if not provided
+    const month = body.month || new Date(body.startDate).toISOString().substring(0, 7);
     return this.payrollService.createPayrollPeriod({
       tenantId: tenant.id,
       academicYearId: body.academicYearId,
       schoolLevelId: body.schoolLevelId,
-      name: body.name,
+      name,
       periodType: body.periodType,
-      month: body.month,
+      month,
       startDate: new Date(body.startDate),
       endDate: new Date(body.endDate),
     });

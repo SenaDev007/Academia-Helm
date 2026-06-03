@@ -34,6 +34,8 @@ import { RecruitmentPrismaService } from './recruitment.service';
 import { RecruitmentPrismaController } from './recruitment.controller';
 import { SchedulesPrismaService } from './schedules-prisma.service';
 import { SchedulesPrismaController } from './schedules-prisma.controller';
+import { IaPrismaService } from './ia-prisma.service';
+import { IaPrismaController } from './ia-prisma.controller';
 import { OrionModule } from '../orion/orion.module';
 
 @Module({
@@ -56,6 +58,7 @@ import { OrionModule } from '../orion/orion.module';
     HrKpiService,
     RecruitmentPrismaService,
     SchedulesPrismaService,
+    IaPrismaService,
   ],
   controllers: [
     StaffPrismaController,
@@ -69,6 +72,7 @@ import { OrionModule } from '../orion/orion.module';
     HrOverviewController,
     RecruitmentPrismaController,
     SchedulesPrismaController,
+    IaPrismaController,
   ],
   exports: [
     StaffPrismaService,
@@ -87,6 +91,7 @@ import { OrionModule } from '../orion/orion.module';
     HrKpiService,
     RecruitmentPrismaService,
     SchedulesPrismaService,
+    IaPrismaService,
   ],
 })
 export class HRModule {}

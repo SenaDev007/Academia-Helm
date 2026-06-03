@@ -2,7 +2,7 @@
 
 import { useRef, useState, useEffect } from 'react';
 import { X, PenTool, Trash2, CheckCircle, Loader2, Shield } from 'lucide-react';
-import { apiFetch } from '@/lib/api/client';
+import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { toast } from '@/components/ui/toast';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -114,9 +114,9 @@ export function ContractSignModal({ isOpen, onClose, onSuccess, contract }: Cont
 
     try {
       setLoading(true);
-      await apiFetch(`/hr/contracts/${contract.id}/sign`, {
+      await hrFetch<any>(hrUrl(`contracts/${contract.id}/sign`), {
         method: 'POST',
-        body: JSON.stringify({ signatureData, signerName, signerRole: 'Employé' }),
+        body: { signatureData, signerName, signerRole: 'Employé' },
       });
       toast({ variant: 'success', title: 'Contrat signé avec succès !' });
       onSuccess();

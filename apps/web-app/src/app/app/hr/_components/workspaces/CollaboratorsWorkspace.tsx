@@ -25,7 +25,7 @@ import { toast } from '@/components/ui/toast';
 import { StaffWorkspace } from './StaffWorkspace';
 import { ContractsWorkspace } from './ContractsWorkspace';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { apiFetch } from '@/lib/api/client';
+import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import Link from 'next/link';
 
 const PRIMARY = '#1A2BA6';
@@ -59,7 +59,7 @@ export function CollaboratorsWorkspace() {
     if (!tenant?.id) return;
     if (activeTab === 'assignments' || activeTab === 'org_chart' || activeTab === 'history') {
       setLoading(true);
-      apiFetch<any[]>(`/hr/staff?tenantId=${tenant.id}`)
+      hrFetch<any[]>(hrUrl('staff', { tenantId: tenant.id }))
         .then((data) => {
           setStaffList(data);
         })
@@ -67,13 +67,13 @@ export function CollaboratorsWorkspace() {
         .finally(() => setLoading(false));
     }
     if (activeTab === 'history') {
-      apiFetch<any[]>(`/hr/contracts?tenantId=${tenant.id}`)
+      hrFetch<any[]>(hrUrl('contracts', { tenantId: tenant.id }))
         .then(setContractsList)
         .catch((err) => { toast({ variant: 'error', title: 'Erreur de chargement des données' }); });
-      apiFetch<any[]>(`/hr/evaluations?tenantId=${tenant.id}`)
+      hrFetch<any[]>(hrUrl('evaluations', { tenantId: tenant.id }))
         .then(setEvaluationsList)
         .catch((err) => { toast({ variant: 'error', title: 'Erreur de chargement des données' }); });
-      apiFetch<any[]>(`/hr/evaluations/trainings?tenantId=${tenant.id}`)
+      hrFetch<any[]>(hrUrl('evaluations/trainings', { tenantId: tenant.id }))
         .then(setTrainingsList)
         .catch((err) => { toast({ variant: 'error', title: 'Erreur de chargement des données' }); });
     }

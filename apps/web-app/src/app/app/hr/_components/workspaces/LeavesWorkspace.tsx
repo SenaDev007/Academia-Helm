@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Calendar, CheckCircle2, XCircle, FileText, Coffee, X, Loader2 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { apiFetch } from '@/lib/api/client';
+import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { toast } from '@/components/ui/toast';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -57,9 +57,9 @@ export function LeavesWorkspace() {
     if (!tenant?.id) return;
     try {
       setLoading(true);
-      let url = `/hr/leaves/requests?tenantId=${tenant.id}`;
-      if (filterStatus !== 'ALL') url += `&status=${filterStatus}`;
-      const result = await apiFetch<any[]>(url);
+      const queryParams: Record<string, string> = { tenantId: tenant.id };
+      if (filterStatus !== 'ALL') queryParams.status = filterStatus;
+      const result = await hrFetch<any[]>(hrUrl('leaves/requests', queryParams));
       setRequests(result);
     } catch (error) {
       console.error('Error fetching leaves:', error);
@@ -73,7 +73,7 @@ export function LeavesWorkspace() {
   // Fetch staff list when modal opens
   useEffect(() => {
     if (modalOpen && tenant?.id) {
-      apiFetch<any[]>(`/hr/staff?tenantId=${tenant.id}&status=ACTIVE`)
+      hrFetch<any[]>(hrUrl('staff', { tenantId: tenant.id, status: 'ACTIVE' }))
         .then(setStaffList)
         .catch(() => {});
     }
@@ -83,13 +83,13 @@ export function LeavesWorkspace() {
     e.preventDefault();
     try {
       setModalLoading(true);
-      await apiFetch('/hr/leaves/requests', {
+      await hrFetch(hrUrl('leaves/requests'), {
         method: 'POST',
-        body: JSON.stringify({
+        body: {
           ...modalForm,
           academicYearId: academicYear?.id,
           tenantId: tenant?.id,
-        }),
+        },
       });
       toast({ variant: 'success', title: 'Demande de congé soumise avec succès' });
       setModalOpen(false);
@@ -104,9 +104,9 @@ export function LeavesWorkspace() {
 
   const handleProcessRequest = async (requestId: string, status: 'APPROVED' | 'REJECTED') => {
     try {
-      await apiFetch(`/hr/leaves/requests/${requestId}/process`, {
+      await hrFetch(hrUrl(`leaves/requests/${requestId}/process`), {
         method: 'PUT',
-        body: JSON.stringify({ status }),
+        body: { status },
       });
       toast({ variant: 'success', title: status === 'APPROVED' ? 'Demande approuvée' : 'Demande rejetée' });
       fetchLeaves();

@@ -28,7 +28,7 @@ import {
   Award
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { apiFetch } from '@/lib/api/client';
+import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { toast } from '@/components/ui/toast';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -100,7 +100,7 @@ export default function StaffDetailPage() {
     if (!tenant?.id || !id) return;
     try {
       setLoading(true);
-      const result = await apiFetch<any>(`/hr/staff/${id}?tenantId=${tenant.id}`);
+      const result = await hrFetch<any>(hrUrl(`staff/${id}`, { tenantId: tenant.id }));
       setMember(result);
       setContracts(result.contracts || []);
       setEvaluations(result.evaluations || []);
@@ -108,7 +108,7 @@ export default function StaffDetailPage() {
 
       // Try to fetch trainings from dedicated endpoint
       try {
-        const trainingsData = await apiFetch<any[]>(`/hr/evaluations/trainings/staff/${id}?tenantId=${tenant.id}`);
+        const trainingsData = await hrFetch<any[]>(hrUrl(`evaluations/trainings/staff/${id}`, { tenantId: tenant.id }));
         if (trainingsData && trainingsData.length > 0) setTrainings(trainingsData);
       } catch {}
     } catch (error) {
@@ -156,9 +156,9 @@ export default function StaffDetailPage() {
           // Not valid JSON — leave as string for free-form input
         }
       }
-      await apiFetch(`/hr/staff/${id}?tenantId=${tenant.id}`, {
+      await hrFetch<any>(hrUrl(`staff/${id}`, { tenantId: tenant.id }), {
         method: 'PUT',
-        body: JSON.stringify(submitData),
+        body: submitData,
       });
       toast({ variant: 'success', title: 'Fiche collaborateur mise à jour' });
       setEditOpen(false);
@@ -174,9 +174,9 @@ export default function StaffDetailPage() {
     e.preventDefault();
     try {
       setDocLoading(true);
-      await apiFetch(`/hr/staff/${id}/documents`, {
+      await hrFetch<any>(hrUrl(`staff/${id}/documents`), {
         method: 'POST',
-        body: JSON.stringify(docForm),
+        body: docForm,
       });
       toast({ variant: 'success', title: 'Document ajouté avec succès' });
       setDocOpen(false);

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { CalendarDays, Clock, Search, User, Filter, AlertCircle, Plus, Sparkles, PlusCircle, ChevronLeft, ChevronRight, Loader2, Users } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { apiFetch } from '@/lib/api/client';
+import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { toast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 
@@ -58,7 +58,7 @@ export function PlanningWorkspace() {
     async function loadStaff() {
       if (!tenant?.id) return;
       try {
-        const data = await apiFetch<any[]>(`/hr/staff?tenantId=${tenant.id}`);
+        const data = await hrFetch<any[]>(hrUrl('staff', { tenantId: tenant.id }));
         setStaffList(data);
       } catch (err) {
         console.error('Error loading staff for planning:', err);
@@ -74,7 +74,7 @@ export function PlanningWorkspace() {
       setLoading(true);
       const startDate = formatDateKey(weekDates[0]);
       const endDate = formatDateKey(weekDates[5]);
-      const data = await apiFetch<any[]>(`/hr/schedules?tenantId=${tenant.id}&startDate=${startDate}&endDate=${endDate}`);
+      const data = await hrFetch<any[]>(hrUrl('schedules', { tenantId: tenant.id, startDate, endDate }));
 
       // Map API schedules to assignments grid
       const newAssignments: Record<string, AssignmentValue> = {};
@@ -136,9 +136,9 @@ export function PlanningWorkspace() {
     try {
       if (staffId && prev?.scheduleId) {
         // Update existing schedule
-        await apiFetch(`/hr/schedules/${prev.scheduleId}`, {
+        await hrFetch<any>(hrUrl(`schedules/${prev.scheduleId}`), {
           method: 'PUT',
-          body: JSON.stringify({
+          body: {
             staffId,
             dayOfWeek,
             shiftType,
@@ -149,14 +149,14 @@ export function PlanningWorkspace() {
             shift: shiftType,
             academicYearId: academicYear?.id,
             tenantId: tenant?.id,
-          }),
+          },
         });
         toast({ variant: 'success', title: 'Planning mis à jour' });
       } else if (staffId && !prev?.scheduleId) {
         // Create new schedule
-        const result = await apiFetch<any>('/hr/schedules', {
+        const result = await hrFetch<any>(hrUrl('schedules'), {
           method: 'POST',
-          body: JSON.stringify({
+          body: {
             staffId,
             dayOfWeek,
             shiftType,
@@ -167,7 +167,7 @@ export function PlanningWorkspace() {
             shift: shiftType,
             academicYearId: academicYear?.id,
             tenantId: tenant?.id,
-          }),
+          },
         });
         // Store the new schedule ID
         setAssignments((prev) => ({
@@ -177,7 +177,7 @@ export function PlanningWorkspace() {
         toast({ variant: 'success', title: 'Créneau ajouté au planning' });
       } else if (!staffId && prev?.scheduleId) {
         // Delete schedule
-        await apiFetch(`/hr/schedules/${prev.scheduleId}`, { method: 'DELETE' });
+        await hrFetch<any>(hrUrl(`schedules/${prev.scheduleId}`), { method: 'DELETE' });
         toast({ variant: 'success', title: 'Créneau supprimé' });
       }
     } catch (err) {

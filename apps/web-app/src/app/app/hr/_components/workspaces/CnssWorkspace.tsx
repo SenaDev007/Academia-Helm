@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Shield, Clock, FileText, CheckCircle2, ChevronRight, Settings, AlertCircle } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { apiFetch } from '@/lib/api/client';
+import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui/toast';
@@ -28,12 +28,12 @@ export function CnssWorkspace() {
       try {
         setLoading(true);
         // Load CNSS declarations
-        const decls = await apiFetch<any[]>('/hr/cnss/declarations');
+        const decls = await hrFetch<any[]>(hrUrl('cnss/declarations'));
         setDeclarations(decls);
 
         // Load active rate via BFF route (country-aware)
         const countryCode = (tenant as any)?.country?.code || 'BJ';
-        const rate = await apiFetch<any>(`/hr/cnss/rates/${countryCode}`);
+        const rate = await hrFetch<any>(hrUrl('cnss/rates/active', { countryCode }));
         setActiveRate(rate);
       } catch (err) {
         console.error('Error loading CNSS data:', err);
@@ -50,17 +50,15 @@ export function CnssWorkspace() {
     if (!tenant?.id || !academicYear?.id) return;
     try {
       setGenerating(true);
-      await apiFetch('/hr/cnss/declarations', {
+      await hrFetch<any>(hrUrl('cnss/declarations'), {
         method: 'POST',
         body: {
           academicYearId: academicYear.id,
           month: periodStart?.substring(0, 7) || new Date().toISOString().substring(0, 7),
-          periodStart,
-          periodEnd,
         },
       });
       // Refresh
-      const decls = await apiFetch<any[]>('/hr/cnss/declarations');
+      const decls = await hrFetch<any[]>(hrUrl('cnss/declarations'));
       setDeclarations(decls);
       setIsCreateOpen(false);
       toast({ variant: 'success', title: 'Déclaration créée avec succès' });
@@ -75,12 +73,12 @@ export function CnssWorkspace() {
   async function handleUpdateStatus(id: string, status: 'GENERATED' | 'SUBMITTED' | 'PAID') {
     if (!confirm('Confirmer cette action ? Elle est irréversible.')) return;
     try {
-      await apiFetch(`/hr/cnss/declarations/${id}/finalize`, {
+      await hrFetch<any>(hrUrl(`cnss/declarations/${id}/finalize`), {
         method: 'PUT',
         body: { status },
       });
       // Refresh
-      const decls = await apiFetch<any[]>('/hr/cnss/declarations');
+      const decls = await hrFetch<any[]>(hrUrl('cnss/declarations'));
       setDeclarations(decls);
       toast({ variant: 'success', title: 'Statut mis à jour avec succès' });
     } catch (err) {
@@ -157,7 +155,7 @@ export function CnssWorkspace() {
                   </div>
                   <div>
                     <p className="font-bold text-slate-900 text-sm">
-                      Déclaration du {new Date(decl.periodStart).toLocaleDateString('fr-FR')} au {new Date(decl.periodEnd).toLocaleDateString('fr-FR')}
+                      Déclaration du {(() => { const [y, m] = decl.month.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('fr-FR'); })()} au {(() => { const [y, m] = decl.month.split('-').map(Number); return new Date(y, m, 0).toLocaleDateString('fr-FR'); })()}
                     </p>
                     <p className="text-xs text-slate-500 mt-0.5">
                       Générée le {new Date(decl.createdAt).toLocaleDateString('fr-FR')} · {decl.lines?.length || 0} employé(s) inclus

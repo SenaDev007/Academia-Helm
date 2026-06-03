@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { BarChart3, TrendingUp, Users, DollarSign, PieChart, Loader2, ArrowUpRight, ArrowDownRight, Award } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { apiFetch } from '@/lib/api/client';
+import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 
 const PRIMARY = '#1A2BA6';
@@ -19,7 +19,7 @@ export function ReportingWorkspace() {
       if (!tenant?.id || !academicYear?.id) return;
       try {
         setLoading(true);
-        const res = await apiFetch<any>(`/hr/overview/analytics?tenantId=${tenant.id}&academicYearId=${academicYear.id}`);
+        const res = await hrFetch<any>(hrUrl('overview/analytics', { tenantId: tenant.id, academicYearId: academicYear.id }));
         setData(res);
       } catch (err) {
         console.error('Error loading analytics:', err);

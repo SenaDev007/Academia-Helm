@@ -19,7 +19,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { apiFetch } from '@/lib/api/client';
+import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { useModuleContext } from '@/hooks/useModuleContext';
 
 const PRIMARY = '#1A2BA6';
@@ -55,7 +55,7 @@ export function IaWorkspace() {
   useEffect(() => {
     async function loadIaStatus() {
       try {
-        const status = await apiFetch<any>('/hr/ia/status');
+        const status = await hrFetch<any>(hrUrl('ia/status'));
         setIaStatus(status);
       } catch (err) {
         console.error('Failed to load IA status:', err);
@@ -69,9 +69,9 @@ export function IaWorkspace() {
     async function loadData() {
       if (!tenant?.id) return;
       try {
-        const fetchedCandidates = await apiFetch<any[]>(`/hr/recruitment/candidates?tenantId=${tenant.id}`);
+        const fetchedCandidates = await hrFetch<any[]>(hrUrl('recruitment/candidates', { tenantId: tenant.id }));
         setCandidates(fetchedCandidates || []);
-        const fetchedJobs = await apiFetch<any[]>(`/hr/recruitment/jobs?tenantId=${tenant.id}`);
+        const fetchedJobs = await hrFetch<any[]>(hrUrl('recruitment/jobs', { tenantId: tenant.id }));
         setJobs(fetchedJobs || []);
       } catch (err) {
         console.error('Failed to load IA data from API:', err);
@@ -86,7 +86,7 @@ export function IaWorkspace() {
       if (activeTab !== 'matching' || !tenant?.id) return;
       setMatchingLoading(true);
       try {
-        const result = await apiFetch<any>(`/hr/ia/match-candidates?tenantId=${tenant.id}`);
+        const result = await hrFetch<any>(hrUrl('ia/match-candidates', { tenantId: tenant.id }));
         setMatchingData(result);
       } catch (err) {
         console.error('Failed to load matching data:', err);
@@ -105,7 +105,7 @@ export function IaWorkspace() {
       if (activeTab !== 'fraud' || !tenant?.id) return;
       setFraudLoading(true);
       try {
-        const result = await apiFetch<any>(`/hr/ia/detect-fraud?tenantId=${tenant.id}`);
+        const result = await hrFetch<any>(hrUrl('ia/detect-fraud', { tenantId: tenant.id }));
         setFraudData(result);
       } catch (err) {
         console.error('Failed to load fraud data:', err);
@@ -120,9 +120,9 @@ export function IaWorkspace() {
   const handleUpload = async () => {
     setParsing(true);
     try {
-      const result = await apiFetch<any>('/hr/ia/parse-cv', {
+      const result = await hrFetch<any>(hrUrl('ia/parse-cv'), {
         method: 'POST',
-        body: JSON.stringify({ tenantId: tenant?.id }),
+        body: { tenantId: tenant?.id },
       });
       setFileUploaded(true);
       setParsedData(result);
@@ -152,12 +152,12 @@ export function IaWorkspace() {
 
     try {
       // Use the backend copilot endpoint
-      const result = await apiFetch<any>('/hr/ia/copilot', {
+      const result = await hrFetch<any>(hrUrl('ia/copilot'), {
         method: 'POST',
-        body: JSON.stringify({
+        body: {
           tenantId: tenant?.id,
           message: textToSend,
-        }),
+        },
       });
 
       setMessages((prev) => [...prev, { sender: 'bot', text: result.reply || result.message || 'Je n\'ai pas pu traiter votre demande.' }]);

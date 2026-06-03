@@ -6,7 +6,7 @@ import {
   FileText, Plus, Trash2, Edit3, X, ArrowUp, ArrowDown,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { apiFetch } from '@/lib/api/client';
+import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { toast } from '@/components/ui/toast';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -103,7 +103,7 @@ export function SettingsWorkspace() {
   async function loadRates() {
     try {
       setLoading(true);
-      const data = await apiFetch<any>('/hr/payroll/rates/active');
+      const data = await hrFetch<any>(hrUrl('payroll/rates/active'));
       if (data) {
         setRates({
           cnssEmployeeRate: data.cnssEmployeeRate || 3.6,
@@ -124,7 +124,7 @@ export function SettingsWorkspace() {
   async function loadTemplates() {
     try {
       setTemplatesLoading(true);
-      const data = await apiFetch<any[]>('/hr/contracts/templates/list');
+      const data = await hrFetch<any[]>(hrUrl('contracts/templates/list'));
       setTemplates(data || []);
     } catch (err) {
       console.error('Error loading templates:', err);
@@ -135,7 +135,7 @@ export function SettingsWorkspace() {
 
   async function loadDefaultTemplate(type: string) {
     try {
-      const data = await apiFetch<any>(`/hr/contracts/templates/default/${type}`);
+      const data = await hrFetch<any>(hrUrl(`contracts/templates/default/${type}`));
       if (editingTemplate) {
         setEditingTemplate({ ...editingTemplate, template: data.template });
       } else {
@@ -163,7 +163,7 @@ export function SettingsWorkspace() {
     try {
       setSaving(true);
       setSuccess(false);
-      await apiFetch('/hr/payroll/rates', {
+      await hrFetch<any>(hrUrl('payroll/rates'), {
         method: 'POST',
         body: {
           cnssEmployeeRate: parseFloat(rates.cnssEmployeeRate),
@@ -187,20 +187,20 @@ export function SettingsWorkspace() {
       setSavingTemplate(true);
       const templatePayload = JSON.stringify(articles);
       if (editingTemplate) {
-        await apiFetch(`/hr/contracts/templates/${editingTemplate.id}`, {
+        await hrFetch<any>(hrUrl(`contracts/templates/${editingTemplate.id}`), {
           method: 'PUT',
-          body: JSON.stringify({ name: editingTemplate.name, template: templatePayload }),
+          body: { name: editingTemplate.name, template: templatePayload },
         });
         toast({ variant: 'success', title: 'Modèle mis à jour.' });
         setEditingTemplate(null);
       } else {
-        await apiFetch('/hr/contracts/templates', {
+        await hrFetch<any>(hrUrl('contracts/templates'), {
           method: 'POST',
-          body: JSON.stringify({
+          body: {
             name: newTemplate.name,
             contractType: newTemplate.contractType,
             template: templatePayload,
-          }),
+          },
         });
         toast({ variant: 'success', title: 'Modèle créé avec succès.' });
         setNewTemplate({ name: '', contractType: 'CDI', template: '' });
@@ -217,7 +217,7 @@ export function SettingsWorkspace() {
   async function handleDeleteTemplate(id: string) {
     if (!confirm('Supprimer ce modèle de contrat ?')) return;
     try {
-      await apiFetch(`/hr/contracts/templates/${id}`, { method: 'DELETE' });
+      await hrFetch<any>(hrUrl(`contracts/templates/${id}`), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Modèle supprimé.' });
       loadTemplates();
     } catch {

@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { ModuleHeader } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { apiFetch } from '@/lib/api/client';
+import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
@@ -39,7 +39,7 @@ export default function PayrollDetailPage() {
     if (!tenant?.id || !id) return;
     try {
       setLoading(true);
-      const result = await apiFetch<any>(`/hr/payroll/periods/${id}?tenantId=${tenant.id}`);
+      const result = await hrFetch<any>(hrUrl(`payroll/periods/${id}`, { tenantId: tenant.id }));
       setPeriod(result);
     } catch (error) {
       console.error('Error fetching payroll detail:', error);
@@ -55,9 +55,7 @@ export default function PayrollDetailPage() {
   const handleGeneratePayrolls = async () => {
     try {
       setProcessing(true);
-      await apiFetch(`/hr/payroll/periods/${id}/generate?tenantId=${tenant.id}&academicYearId=${academicYear?.id}`, {
-        method: 'POST'
-      });
+      await hrFetch<any>(hrUrl(`payroll/periods/${id}/generate`), { method: 'POST', body: { tenantId: tenant.id, academicYearId: academicYear?.id } });
       toast({ variant: 'success', title: 'Lignes de paie générées avec succès' });
       fetchPayroll();
     } catch (error) {
@@ -69,9 +67,7 @@ export default function PayrollDetailPage() {
 
   const handleCalculatePayrollLine = async (lineId: string) => {
     try {
-      await apiFetch(`/hr/payroll/${lineId}/calculate?tenantId=${tenant.id}&academicYearId=${academicYear?.id}`, {
-        method: 'POST'
-      });
+      await hrFetch<any>(hrUrl(`payroll/${lineId}/calculate`), { method: 'POST', body: { tenantId: tenant.id, academicYearId: academicYear?.id } });
       toast({ variant: 'success', title: 'Calcul fiscal effectué' });
       fetchPayroll();
     } catch (error) {
@@ -82,9 +78,7 @@ export default function PayrollDetailPage() {
   const handleCalculateAll = async () => {
     try {
       setProcessing(true);
-      await apiFetch(`/hr/payroll/periods/${id}/calculate?tenantId=${tenant.id}&academicYearId=${academicYear?.id}`, {
-        method: 'POST'
-      });
+      await hrFetch<any>(hrUrl(`payroll/periods/${id}/calculate`), { method: 'POST', body: { tenantId: tenant.id, academicYearId: academicYear?.id } });
       toast({ variant: 'success', title: 'Calcul global terminé' });
       fetchPayroll();
     } catch (error) {
@@ -97,9 +91,9 @@ export default function PayrollDetailPage() {
   const handleValidateAndPay = async () => {
     try {
       setProcessing(true);
-      await apiFetch(`/hr/payroll/periods/${id}?tenantId=${tenant.id}`, {
+      await hrFetch<any>(hrUrl(`payroll/periods/${id}`, { tenantId: tenant.id }), {
         method: 'PUT',
-        body: JSON.stringify({ status: 'PAID' }),
+        body: { status: 'PAID' },
       });
       toast({ variant: 'success', title: 'Paie validée et marquée comme payée' });
       fetchPayroll();
@@ -112,7 +106,7 @@ export default function PayrollDetailPage() {
 
   const handlePreviewPayslip = async (itemId: string) => {
     try {
-      const result = await apiFetch<any>(`/hr/payroll/${itemId}/payslip-pdf?tenantId=${tenant.id}`);
+      const result = await hrFetch<any>(hrUrl(`payroll/${itemId}/payslip-pdf`, { tenantId: tenant.id }));
       if (result?.url) {
         window.open(result.url, '_blank');
       } else if (result?.pdfBase64) {
@@ -135,7 +129,7 @@ export default function PayrollDetailPage() {
 
   const handleDownloadPayslip = async (itemId: string, staffName: string) => {
     try {
-      const result = await apiFetch<any>(`/hr/payroll/${itemId}/payslip-pdf?tenantId=${tenant.id}`);
+      const result = await hrFetch<any>(hrUrl(`payroll/${itemId}/payslip-pdf`, { tenantId: tenant.id }));
       if (result?.pdfBase64) {
         const byteCharacters = atob(result.pdfBase64);
         const byteNumbers = new Array(byteCharacters.length);

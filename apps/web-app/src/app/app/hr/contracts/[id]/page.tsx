@@ -8,7 +8,7 @@ import {
   RefreshCw, Shield, Hash, Briefcase, Building2, ExternalLink,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { apiFetch } from '@/lib/api/client';
+import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { toast } from '@/components/ui/toast';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
@@ -48,7 +48,7 @@ export default function ContractDetailPage() {
   async function fetchContract() {
     try {
       setLoading(true);
-      const data = await apiFetch<any>(`/hr/contracts/${contractId}`);
+      const data = await hrFetch<any>(hrUrl(`contracts/${contractId}`));
       setContract(data);
     } catch (err) {
       console.error(err);
@@ -62,7 +62,7 @@ export default function ContractDetailPage() {
     if (!contract) return;
     try {
       setGenerating(true);
-      await apiFetch(`/hr/contracts/${contractId}/generate-pdf`, { method: 'POST' });
+      await hrFetch<any>(hrUrl(`contracts/${contractId}/generate-pdf`), { method: 'POST' });
       toast({ variant: 'success', title: 'PDF généré avec succès !' });
       fetchContract();
     } catch (err) {

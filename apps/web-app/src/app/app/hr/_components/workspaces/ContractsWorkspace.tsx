@@ -6,7 +6,7 @@ import {
   FileCheck, Files, Download, PenTool, Loader2, X,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { apiFetch } from '@/lib/api/client';
+import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { toast } from '@/components/ui/toast';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
@@ -50,9 +50,9 @@ export function ContractsWorkspace() {
     if (!tenant?.id) return;
     try {
       setLoading(true);
-      let url = `/hr/contracts?tenantId=${tenant.id}`;
-      if (filterStatus !== 'ALL') url += `&status=${filterStatus}`;
-      const result = await apiFetch<any[]>(url);
+      const queryParams: Record<string, string> = { tenantId: tenant.id };
+      if (filterStatus !== 'ALL') queryParams.status = filterStatus;
+      const result = await hrFetch<any[]>(hrUrl('contracts', queryParams));
       setContracts(result);
     } catch (error) {
       console.error('Error fetching contracts:', error);
@@ -66,7 +66,7 @@ export function ContractsWorkspace() {
   // Fetch staff list when modal opens
   useEffect(() => {
     if (modalOpen && tenant?.id) {
-      apiFetch<any[]>(`/hr/staff?tenantId=${tenant.id}&status=ACTIVE`)
+      hrFetch<any[]>(hrUrl('staff', { tenantId: tenant.id, status: 'ACTIVE' }))
         .then(setStaffList)
         .catch(() => {});
     }
@@ -76,9 +76,9 @@ export function ContractsWorkspace() {
     e.preventDefault();
     try {
       setModalLoading(true);
-      await apiFetch('/hr/contracts', {
+      await hrFetch(hrUrl('contracts'), {
         method: 'POST',
-        body: JSON.stringify({
+        body: {
           staffId: modalForm.staffId,
           contractType: modalForm.contractType,
           startDate: new Date(modalForm.startDate).toISOString(),
@@ -86,7 +86,7 @@ export function ContractsWorkspace() {
           baseSalary: parseFloat(modalForm.baseSalary),
           paymentMode: modalForm.paymentMode,
           status: 'ACTIVE',
-        }),
+        },
       });
       toast({ variant: 'success', title: 'Contrat créé avec succès' });
       setModalOpen(false);
@@ -274,7 +274,7 @@ function ContractRow({ contract, index }: { contract: any; index: number }) {
   async function handleGeneratePdf() {
     try {
       setGenerating(true);
-      await apiFetch(`/hr/contracts/${contract.id}/generate-pdf`, { method: 'POST' });
+      await hrFetch(hrUrl(`contracts/${contract.id}/generate-pdf`), { method: 'POST' });
       toast({ variant: 'success', title: 'PDF généré avec succès !' });
     } catch {
       toast({ variant: 'error', title: 'Erreur lors de la génération PDF.' });

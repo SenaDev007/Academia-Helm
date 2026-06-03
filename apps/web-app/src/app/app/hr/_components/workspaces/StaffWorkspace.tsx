@@ -6,7 +6,7 @@ import {
   Users, Loader2,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { apiFetch } from '@/lib/api/client';
+import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import Link from 'next/link';
 import { OnboardingWizardModal } from '../modals/OnboardingWizardModal';
 import { motion } from 'framer-motion';
@@ -41,10 +41,10 @@ export function StaffWorkspace() {
     if (!tenant?.id) return;
     try {
       setLoading(true);
-      let url = `/hr/staff?tenantId=${tenant.id}`;
-      if (filterCategory !== 'ALL') url += `&category=${filterCategory}`;
-      if (filterStatus !== 'ALL') url += `&status=${filterStatus}`;
-      const result = await apiFetch<any[]>(url);
+      const query: Record<string, string> = { tenantId: tenant.id };
+      if (filterCategory !== 'ALL') query.category = filterCategory;
+      if (filterStatus !== 'ALL') query.status = filterStatus;
+      const result = await hrFetch<any[]>(hrUrl('staff', query));
       setStaff(result);
     } catch (error) {
       console.error('Error fetching staff:', error);

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { X, User, Mail, Phone, Briefcase, Calendar, Shield, Loader2, ArrowRight, ArrowLeft, FileText, CheckCircle, Upload, DollarSign, CreditCard } from 'lucide-react';
-import { apiFetch } from '@/lib/api/client';
+import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { toast } from '@/components/ui/toast';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -71,9 +71,9 @@ export function OnboardingWizardModal({ isOpen, onClose, onSuccess, tenantId }: 
     try {
       setLoading(true);
       // 1. Create Staff Profile
-      const staffResponse = await apiFetch<any>(`/hr/staff?tenantId=${tenantId}`, {
+      const staffResponse = await hrFetch<any>(hrUrl('staff', { tenantId }), {
         method: 'POST',
-        body: JSON.stringify({
+        body: {
           firstName: formData.firstName,
           lastName: formData.lastName,
           email: formData.email,
@@ -83,7 +83,7 @@ export function OnboardingWizardModal({ isOpen, onClose, onSuccess, tenantId }: 
           gender: formData.gender,
           birthDate: formData.birthDate,
           status: 'ACTIVE',
-        }),
+        },
       });
 
       const staffId = staffResponse.id;
@@ -92,40 +92,40 @@ export function OnboardingWizardModal({ isOpen, onClose, onSuccess, tenantId }: 
       const docPromises = [];
       if (formData.cvName) {
         docPromises.push(
-          apiFetch(`/hr/staff/${staffId}/documents`, {
+          hrFetch(hrUrl(`staff/${staffId}/documents`), {
             method: 'POST',
-            body: JSON.stringify({
+            body: {
               documentType: 'CV',
               fileName: formData.cvName,
               filePath: `/uploads/docs/${staffId}_cv.pdf`,
               mimeType: 'application/pdf',
-            }),
+            },
           })
         );
       }
       if (formData.cniName) {
         docPromises.push(
-          apiFetch(`/hr/staff/${staffId}/documents`, {
+          hrFetch(hrUrl(`staff/${staffId}/documents`), {
             method: 'POST',
-            body: JSON.stringify({
+            body: {
               documentType: 'CNI',
               fileName: formData.cniName,
               filePath: `/uploads/docs/${staffId}_cni.pdf`,
               mimeType: 'application/pdf',
-            }),
+            },
           })
         );
       }
       if (formData.birthCertName) {
         docPromises.push(
-          apiFetch(`/hr/staff/${staffId}/documents`, {
+          hrFetch(hrUrl(`staff/${staffId}/documents`), {
             method: 'POST',
-            body: JSON.stringify({
+            body: {
               documentType: 'BIRTH_CERTIFICATE',
               fileName: formData.birthCertName,
               filePath: `/uploads/docs/${staffId}_birth.pdf`,
               mimeType: 'application/pdf',
-            }),
+            },
           })
         );
       }
@@ -135,9 +135,9 @@ export function OnboardingWizardModal({ isOpen, onClose, onSuccess, tenantId }: 
       }
 
       // 3. Create Employment Contract
-      await apiFetch('/hr/contracts', {
+      await hrFetch(hrUrl('contracts'), {
         method: 'POST',
-        body: JSON.stringify({
+        body: {
           staffId,
           contractType: formData.contractType,
           startDate: new Date(formData.startDate),
@@ -145,7 +145,7 @@ export function OnboardingWizardModal({ isOpen, onClose, onSuccess, tenantId }: 
           baseSalary: parseFloat(formData.baseSalary),
           paymentMode: formData.paymentMode,
           status: 'ACTIVE',
-        }),
+        },
       });
 
       toast({ variant: 'success', title: 'Recrutement & Onboarding finalisés avec succès' });

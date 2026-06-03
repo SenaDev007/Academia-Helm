@@ -33,7 +33,7 @@ import {
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { apiFetch } from '@/lib/api/client';
+import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { toast } from '@/components/ui/toast';
 
 const PRIMARY = '#1A2BA6';
@@ -85,7 +85,7 @@ export function HROverview() {
     if (!tenant?.id || !academicYear?.id) { setLoading(false); return; }
     try {
       setIsFetching(true);
-      const result = await apiFetch<any>(`/hr/overview/dashboard?tenantId=${tenant.id}&academicYearId=${academicYear.id}`);
+      const result = await hrFetch<any>(hrUrl('overview/dashboard', { tenantId: tenant.id, academicYearId: academicYear.id }));
       setData(result);
     } catch (error) {
       console.error('Error fetching HR overview:', error);

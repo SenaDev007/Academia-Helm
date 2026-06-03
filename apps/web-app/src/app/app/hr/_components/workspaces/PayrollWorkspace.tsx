@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, DollarSign, Calendar, ChevronRight, Calculator, CreditCard, ShieldCheck, Clock, X, Loader2 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { apiFetch } from '@/lib/api/client';
+import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { toast } from '@/components/ui/toast';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
@@ -52,8 +52,8 @@ export function PayrollWorkspace() {
     try {
       setLoading(true);
       const [payrollData, statsData] = await Promise.all([
-        apiFetch<any[]>(`/hr/payroll/periods?tenantId=${tenant.id}`),
-        apiFetch<any>(`/hr/payroll/statistics?tenantId=${tenant.id}&academicYearId=${academicYear?.id}`),
+        hrFetch<any[]>(hrUrl('payroll/periods', { tenantId: tenant.id })),
+        hrFetch<any>(hrUrl('payroll/statistics', { tenantId: tenant.id, academicYearId: academicYear?.id })),
       ]);
       setPayrolls(payrollData);
       setStats(statsData);
@@ -83,15 +83,15 @@ export function PayrollWorkspace() {
     e.preventDefault();
     try {
       setModalLoading(true);
-      await apiFetch('/hr/payroll/periods', {
+      await hrFetch(hrUrl('payroll/periods'), {
         method: 'POST',
-        body: JSON.stringify({
+        body: {
           name: `${MONTHS.find(m => m.value === modalForm.month)?.label || ''} ${modalForm.year}`,
           startDate: new Date(modalForm.startDate).toISOString(),
           endDate: new Date(modalForm.endDate).toISOString(),
           academicYearId: academicYear?.id,
           tenantId: tenant?.id,
-        }),
+        },
       });
       toast({ variant: 'success', title: 'Période de paie créée avec succès' });
       setModalOpen(false);

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Search, Calendar, UserCheck, UserX, Clock, ChevronRight, Check, X, AlertCircle } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { apiFetch } from '@/lib/api/client';
+import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui/toast';
@@ -39,7 +39,7 @@ export function AttendanceWorkspace() {
       try {
         setLoading(true);
         // Load staff to choose from
-        const staffData = await apiFetch<any[]>(`/hr/staff?tenantId=${tenant.id}`);
+        const staffData = await hrFetch<any[]>(hrUrl('staff', { tenantId: tenant.id }));
         setStaffList(staffData);
         if (staffData.length > 0) {
           setSelectedStaff(staffData[0]);
@@ -59,15 +59,15 @@ export function AttendanceWorkspace() {
       if (!tenant?.id || !selectedStaff?.id || !academicYear?.id) return;
       try {
         // Load attendance history for selected staff
-        const attHistory = await apiFetch<any[]>(`/hr/attendance/staff/${selectedStaff.id}?academicYearId=${academicYear.id}`);
+        const attHistory = await hrFetch<any[]>(hrUrl(`attendance/staff/${selectedStaff.id}`, { academicYearId: academicYear.id }));
         setAttendances(attHistory);
 
         // Load overtime history for selected staff
-        const otHistory = await apiFetch<any[]>(`/hr/attendance/overtime/staff/${selectedStaff.id}?academicYearId=${academicYear.id}`);
+        const otHistory = await hrFetch<any[]>(hrUrl(`attendance/overtime/staff/${selectedStaff.id}`, { academicYearId: academicYear.id }));
         setOvertimes(otHistory);
 
         // Load stats
-        const statData = await apiFetch<any>(`/hr/attendance/statistics?academicYearId=${academicYear.id}&staffId=${selectedStaff.id}`);
+        const statData = await hrFetch<any>(hrUrl('attendance/statistics', { academicYearId: academicYear.id, staffId: selectedStaff.id }));
         setStats(statData);
       } catch (err) {
         console.error('Error loading staff details:', err);
@@ -82,7 +82,7 @@ export function AttendanceWorkspace() {
     if (!tenant?.id || !selectedStaff?.id || !academicYear?.id) return;
     try {
       setSavingAttendance(true);
-      await apiFetch('/hr/attendance', {
+      await hrFetch(hrUrl('attendance'), {
         method: 'POST',
         body: {
           academicYearId: academicYear.id,
@@ -94,9 +94,9 @@ export function AttendanceWorkspace() {
         },
       });
       // Refresh
-      const attHistory = await apiFetch<any[]>(`/hr/attendance/staff/${selectedStaff.id}?academicYearId=${academicYear.id}`);
+      const attHistory = await hrFetch<any[]>(hrUrl(`attendance/staff/${selectedStaff.id}`, { academicYearId: academicYear.id }));
       setAttendances(attHistory);
-      const statData = await apiFetch<any>(`/hr/attendance/statistics?academicYearId=${academicYear.id}&staffId=${selectedStaff.id}`);
+      const statData = await hrFetch<any>(hrUrl('attendance/statistics', { academicYearId: academicYear.id, staffId: selectedStaff.id }));
       setStats(statData);
       setNotes('');
       toast({ variant: 'success', title: 'Présence enregistrée avec succès' });
@@ -113,7 +113,7 @@ export function AttendanceWorkspace() {
     if (!tenant?.id || !selectedStaff?.id || !academicYear?.id) return;
     try {
       setSavingOvertime(true);
-      await apiFetch('/hr/attendance/overtime', {
+      await hrFetch(hrUrl('attendance/overtime'), {
         method: 'POST',
         body: {
           academicYearId: academicYear.id,
@@ -124,7 +124,7 @@ export function AttendanceWorkspace() {
         },
       });
       // Refresh
-      const otHistory = await apiFetch<any[]>(`/hr/attendance/overtime/staff/${selectedStaff.id}?academicYearId=${academicYear.id}`);
+      const otHistory = await hrFetch<any[]>(hrUrl(`attendance/overtime/staff/${selectedStaff.id}`, { academicYearId: academicYear.id }));
       setOvertimes(otHistory);
       setOvertimeReason('');
       toast({ variant: 'success', title: 'Heures supplémentaires enregistrées avec succès' });
@@ -241,7 +241,7 @@ export function AttendanceWorkspace() {
                   <div>
                     <p className="text-xs text-slate-500">Heures supp. approuvées</p>
                     <p className="text-lg font-bold text-slate-800">
-                      {overtimes.filter((o) => o.status === 'APPROVED').reduce((acc, curr) => acc + Number(curr.hours), 0)} hrs
+                      {overtimes.filter((o) => o.validated === true).reduce((acc, curr) => acc + Number(curr.hours), 0)} hrs
                     </p>
                   </div>
                 </div>

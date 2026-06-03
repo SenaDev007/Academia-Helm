@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Search, DollarSign, Edit, Trash2, Award, User, Layers, Check, X, AlertCircle } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { apiFetch } from '@/lib/api/client';
+import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui/toast';
@@ -43,11 +43,11 @@ export function AllowancesWorkspace() {
       try {
         setLoading(true);
         // Load allowance types
-        const types = await apiFetch<any[]>(`/hr/allowances/types?tenantId=${tenant.id}`);
+        const types = await hrFetch<any[]>(hrUrl('allowances/types', { tenantId: tenant.id }));
         setAllowanceTypes(types);
 
         // Load staff list
-        const staff = await apiFetch<any[]>(`/hr/staff?tenantId=${tenant.id}`);
+        const staff = await hrFetch<any[]>(hrUrl('staff', { tenantId: tenant.id }));
         setStaffList(staff);
         if (staff.length > 0) {
           setSelectedStaff(staff[0]);
@@ -66,7 +66,7 @@ export function AllowancesWorkspace() {
     async function loadStaffAllowances() {
       if (!tenant?.id || !selectedStaff?.id) return;
       try {
-        const list = await apiFetch<any[]>(`/hr/allowances/staff/${selectedStaff.id}`);
+        const list = await hrFetch<any[]>(hrUrl(`allowances/staff/${selectedStaff.id}`));
         setStaffAllowances(list);
       } catch (err) {
         console.error('Error loading staff allowances:', err);
@@ -81,7 +81,7 @@ export function AllowancesWorkspace() {
     if (!tenant?.id) return;
     try {
       setSavingType(true);
-      await apiFetch('/hr/allowances/types', {
+      await hrFetch(hrUrl('allowances/types'), {
         method: 'POST',
         body: {
           name: typeName,
@@ -93,7 +93,7 @@ export function AllowancesWorkspace() {
         },
       });
       // Refresh types
-      const types = await apiFetch<any[]>(`/hr/allowances/types?tenantId=${tenant.id}`);
+      const types = await hrFetch<any[]>(hrUrl('allowances/types', { tenantId: tenant.id }));
       setAllowanceTypes(types);
       setIsTypeModalOpen(false);
       // Reset form
@@ -115,7 +115,7 @@ export function AllowancesWorkspace() {
     if (!tenant?.id || !selectedStaff?.id) return;
     try {
       setSavingAssign(true);
-      await apiFetch('/hr/allowances/assignments', {
+      await hrFetch(hrUrl('allowances/assignments'), {
         method: 'POST',
         body: {
           staffId: selectedStaff.id,
@@ -127,7 +127,7 @@ export function AllowancesWorkspace() {
         },
       });
       // Refresh staff allowances
-      const list = await apiFetch<any[]>(`/hr/allowances/staff/${selectedStaff.id}`);
+      const list = await hrFetch<any[]>(hrUrl(`allowances/staff/${selectedStaff.id}`));
       setStaffAllowances(list);
       setIsAssignModalOpen(false);
       toast({ variant: 'success', title: 'Indemnité assignée avec succès' });
@@ -142,9 +142,9 @@ export function AllowancesWorkspace() {
   async function handleRemoveAssignment(id: string) {
     if (!confirm('Voulez-vous vraiment supprimer cette indemnité ?')) return;
     try {
-      await apiFetch(`/hr/allowances/assignments/${id}`, { method: 'DELETE' });
+      await hrFetch(hrUrl(`allowances/assignments/${id}`), { method: 'DELETE' });
       // Refresh list
-      const list = await apiFetch<any[]>(`/hr/allowances/staff/${selectedStaff.id}`);
+      const list = await hrFetch<any[]>(hrUrl(`allowances/staff/${selectedStaff.id}`));
       setStaffAllowances(list);
       toast({ variant: 'success', title: 'Indemnité supprimée avec succès' });
     } catch (err) {

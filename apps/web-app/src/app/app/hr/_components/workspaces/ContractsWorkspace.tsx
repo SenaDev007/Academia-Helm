@@ -252,7 +252,7 @@ export function ContractsWorkspace() {
       ) : (
         <div className="space-y-3">
           {filteredContracts.map((contract, idx) => (
-            <ContractRow key={contract.id} contract={contract} index={idx} />
+            <ContractRow key={contract.id} contract={contract} index={idx} tenantId={tenant.id} />
           ))}
         </div>
       )}
@@ -260,7 +260,7 @@ export function ContractsWorkspace() {
   );
 }
 
-function ContractRow({ contract, index }: { contract: any; index: number }) {
+function ContractRow({ contract, index, tenantId }: { contract: any; index: number; tenantId: string }) {
   const [generating, setGenerating] = useState(false);
 
   const isExpiringSoon = () => {
@@ -274,7 +274,7 @@ function ContractRow({ contract, index }: { contract: any; index: number }) {
   async function handleGeneratePdf() {
     try {
       setGenerating(true);
-      await hrFetch(hrUrl(`contracts/${contract.id}/generate-pdf`, { tenantId: tenant.id }), { method: 'POST' });
+      await hrFetch(hrUrl(`contracts/${contract.id}/generate-pdf`, { tenantId }), { method: 'POST' });
       toast({ variant: 'success', title: 'PDF généré avec succès !' });
     } catch {
       toast({ variant: 'error', title: 'Erreur lors de la génération PDF.' });

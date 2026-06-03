@@ -17,7 +17,7 @@ export async function GET(
   try {
     const response = await fetch(`${API_BASE_URL}/communication/templates/type/${type}`, {
       headers: {
-        'Authorization': request.headers.get('Authorization') || ''
+        'Authorization': request.headers.get('Authorization') || '',
         'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });

@@ -17,7 +17,7 @@ export async function GET(
   try {
     const response = await fetch(`${API_BASE_URL}/meetings/${id}/minutes/pdf`, {
       headers: {
-        'Authorization': request.headers.get('Authorization') || ''
+        'Authorization': request.headers.get('Authorization') || '',
         'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });
@@ -39,7 +39,7 @@ export async function POST(
     const response = await fetch(`${API_BASE_URL}/meetings/${id}/minutes/generate-pdf`, {
       method: 'POST',
       headers: {
-        'Authorization': request.headers.get('Authorization') || ''
+        'Authorization': request.headers.get('Authorization') || '',
         'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });

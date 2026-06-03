@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
 
     const response = await fetch(url, {
       headers: {
-        'Authorization': request.headers.get('Authorization') || ''
+        'Authorization': request.headers.get('Authorization') || '',
         'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });

@@ -18,7 +18,7 @@ export async function PUT(
     const response = await fetch(`${API_BASE_URL}/communication/messages/${id}/archive`, {
       method: 'PUT',
       headers: {
-        'Authorization': request.headers.get('Authorization') || ''
+        'Authorization': request.headers.get('Authorization') || '',
         'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });

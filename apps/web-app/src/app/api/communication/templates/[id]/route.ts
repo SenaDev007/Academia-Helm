@@ -17,7 +17,7 @@ export async function GET(
   try {
     const response = await fetch(`${API_BASE_URL}/communication/templates/${id}`, {
       headers: {
-        'Authorization': request.headers.get('Authorization') || ''
+        'Authorization': request.headers.get('Authorization') || '',
         'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });
@@ -41,7 +41,7 @@ export async function PUT(
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': request.headers.get('Authorization') || ''
+        'Authorization': request.headers.get('Authorization') || '',
         'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
       body: JSON.stringify(body),
@@ -64,7 +64,7 @@ export async function DELETE(
     const response = await fetch(`${API_BASE_URL}/communication/templates/${id}`, {
       method: 'DELETE',
       headers: {
-        'Authorization': request.headers.get('Authorization') || ''
+        'Authorization': request.headers.get('Authorization') || '',
         'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });

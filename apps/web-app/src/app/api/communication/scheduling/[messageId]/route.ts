@@ -20,7 +20,7 @@ export async function POST(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': request.headers.get('Authorization') || ''
+        'Authorization': request.headers.get('Authorization') || '',
         'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
       body: JSON.stringify(body),
@@ -43,7 +43,7 @@ export async function DELETE(
     const response = await fetch(`${API_BASE_URL}/communication/scheduling/${messageId}`, {
       method: 'DELETE',
       headers: {
-        'Authorization': request.headers.get('Authorization') || ''
+        'Authorization': request.headers.get('Authorization') || '',
         'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
       },
     });

@@ -25,6 +25,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { Prisma } from '@prisma/client';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 
 @Injectable()
 export class AllowancesPrismaService {
@@ -65,6 +66,7 @@ export class AllowancesPrismaService {
 
     return this.prisma.allowanceType.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         name: data.name,
         code: data.code,
@@ -116,7 +118,10 @@ export class AllowancesPrismaService {
 
     return this.prisma.allowanceType.update({
       where: { id },
-      data,
+      data: {
+        ...prismaUpdateDefaults(),
+        ...data,
+      },
     });
   }
 
@@ -187,6 +192,7 @@ export class AllowancesPrismaService {
 
     return this.prisma.staffAllowance.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId ?? null,
         schoolLevelId: data.schoolLevelId ?? null,
@@ -291,7 +297,10 @@ export class AllowancesPrismaService {
 
     return this.prisma.staffAllowance.update({
       where: { id },
-      data,
+      data: {
+        ...prismaUpdateDefaults(),
+        ...data,
+      },
     });
   }
 
@@ -312,7 +321,10 @@ export class AllowancesPrismaService {
 
     return this.prisma.staffAllowance.update({
       where: { id },
-      data: { status: 'INACTIVE' },
+      data: {
+        ...prismaUpdateDefaults(),
+        status: 'INACTIVE',
+      },
     });
   }
 }

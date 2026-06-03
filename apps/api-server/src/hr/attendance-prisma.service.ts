@@ -10,6 +10,7 @@
 
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 
 @Injectable()
 export class AttendancePrismaService {
@@ -50,6 +51,7 @@ export class AttendancePrismaService {
 
     return this.prisma.staffAttendance.create({
       data: {
+        ...prismaCreateDefaults(),
         ...data,
         status: data.status || 'PRESENT',
       },
@@ -70,7 +72,10 @@ export class AttendancePrismaService {
 
     return this.prisma.staffAttendance.update({
       where: { id },
-      data,
+      data: {
+        ...prismaUpdateDefaults(),
+        ...data,
+      },
     });
   }
 
@@ -171,6 +176,7 @@ export class AttendancePrismaService {
   }) {
     return this.prisma.overtimeRecord.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         schoolLevelId: data.schoolLevelId ?? null,
@@ -199,6 +205,7 @@ export class AttendancePrismaService {
     return this.prisma.overtimeRecord.update({
       where: { id },
       data: {
+        ...prismaUpdateDefaults(),
         validated: action === 'VALIDATE',
         validatedBy: validatedBy ?? null,
         validatedAt: new Date(),

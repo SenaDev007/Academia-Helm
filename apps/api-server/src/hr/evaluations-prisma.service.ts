@@ -11,6 +11,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { Prisma } from '@prisma/client';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 
 @Injectable()
 export class EvaluationsPrismaService {
@@ -34,6 +35,7 @@ export class EvaluationsPrismaService {
   }) {
     return this.prisma.staffEvaluation.create({
       data: {
+        ...prismaCreateDefaults(),
         ...data,
         score: data.score !== undefined && data.score !== null ? new Prisma.Decimal(data.score) : undefined,
       },
@@ -130,7 +132,10 @@ export class EvaluationsPrismaService {
 
     return this.prisma.staffEvaluation.update({
       where: { id },
-      data: updateData,
+      data: {
+        ...prismaUpdateDefaults(),
+        ...updateData,
+      },
     });
   }
 
@@ -192,7 +197,10 @@ export class EvaluationsPrismaService {
     certificatePath?: string;
   }) {
     return this.prisma.staffTraining.create({
-      data,
+      data: {
+        ...prismaCreateDefaults(),
+        ...data,
+      },
     });
   }
 
@@ -241,7 +249,10 @@ export class EvaluationsPrismaService {
 
     return this.prisma.staffTraining.update({
       where: { id },
-      data,
+      data: {
+        ...prismaUpdateDefaults(),
+        ...data,
+      },
     });
   }
 

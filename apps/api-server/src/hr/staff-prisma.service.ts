@@ -13,6 +13,7 @@
 
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 
 // Mapping catégorie UI → roleType Prisma
 const CATEGORY_TO_ROLE: Record<string, string> = {
@@ -85,6 +86,7 @@ export class StaffPrismaService {
 
     const created = await this.prisma.staff.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId:       data.tenantId,
         academicYearId: data.academicYearId || null,
         employeeNumber,
@@ -197,7 +199,7 @@ export class StaffPrismaService {
 
     return this.prisma.staff.update({
       where: { id },
-      data: updateData,
+      data: { ...prismaUpdateDefaults(), ...updateData },
     });
   }
 
@@ -208,7 +210,7 @@ export class StaffPrismaService {
     await this.findStaffById(id, tenantId);
     return this.prisma.staff.update({
       where: { id },
-      data: { status: 'INACTIVE' },
+      data: { ...prismaUpdateDefaults(), status: 'INACTIVE' },
     });
   }
 
@@ -230,6 +232,7 @@ export class StaffPrismaService {
   }) {
     return this.prisma.staffDocument.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId:     data.tenantId,
         staffId:      data.staffId,
         documentType: data.documentType,

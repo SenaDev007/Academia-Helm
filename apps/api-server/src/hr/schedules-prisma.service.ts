@@ -19,6 +19,7 @@
 
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 
 @Injectable()
 export class SchedulesPrismaService {
@@ -154,6 +155,7 @@ export class SchedulesPrismaService {
     try {
       return await this.prisma.staffSchedule.create({
         data: {
+          ...prismaCreateDefaults(),
           tenantId,
           academicYearId: data.academicYearId,
           schoolLevelId: data.schoolLevelId ?? null,
@@ -247,6 +249,7 @@ export class SchedulesPrismaService {
       return await this.prisma.staffSchedule.update({
         where: { id },
         data: {
+          ...prismaUpdateDefaults(),
           ...(data.staffId !== undefined && { staffId: data.staffId }),
           ...(data.dayOfWeek !== undefined && { dayOfWeek: data.dayOfWeek }),
           ...(data.shiftType !== undefined && { shiftType: data.shiftType }),

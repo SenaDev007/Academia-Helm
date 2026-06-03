@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 
 @Injectable()
 export class RecruitmentPrismaService {
@@ -17,6 +18,7 @@ export class RecruitmentPrismaService {
   async createJob(tenantId: string, data: any) {
     return this.prisma.hrJob.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         ref: data.ref || `OFF-${Date.now().toString().slice(-6)}-${Math.floor(10 + Math.random() * 90)}`,
         title: data.title,
@@ -38,7 +40,10 @@ export class RecruitmentPrismaService {
   async updateJob(id: string, data: any) {
     return this.prisma.hrJob.update({
       where: { id },
-      data,
+      data: {
+        ...prismaUpdateDefaults(),
+        ...data,
+      },
     });
   }
 
@@ -65,6 +70,7 @@ export class RecruitmentPrismaService {
   async createCandidate(tenantId: string, data: any) {
     return this.prisma.hrCandidate.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         firstName: data.firstName,
         lastName: data.lastName,
@@ -81,6 +87,7 @@ export class RecruitmentPrismaService {
     return this.prisma.hrCandidate.update({
       where: { id },
       data: {
+        ...prismaUpdateDefaults(),
         firstName: data.firstName,
         lastName: data.lastName,
         email: data.email,
@@ -120,6 +127,7 @@ export class RecruitmentPrismaService {
 
     return this.prisma.hrApplication.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         jobId: data.jobId,
         candidateId: data.candidateId,
@@ -142,6 +150,7 @@ export class RecruitmentPrismaService {
         const updatedApp = await tx.hrApplication.update({
           where: { id },
           data: { 
+            ...prismaUpdateDefaults(),
             status,
             ...(review ? { matchDetail: review } : {})
           },
@@ -178,6 +187,7 @@ export class RecruitmentPrismaService {
 
           const staff = await tx.staff.create({
             data: {
+              ...prismaCreateDefaults(),
               tenantId: updatedApp.tenantId,
               academicYearId: currentYear?.id || null,
               employeeNumber: `EMP-${Date.now().toString().slice(-6)}`,
@@ -208,6 +218,7 @@ export class RecruitmentPrismaService {
     return this.prisma.hrApplication.update({
       where: { id },
       data: { 
+        ...prismaUpdateDefaults(),
         status,
         ...(review ? { matchDetail: review } : {})
       },
@@ -236,6 +247,7 @@ export class RecruitmentPrismaService {
   async createInterview(tenantId: string, data: any) {
     return this.prisma.hrInterview.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         candidateId: data.candidateId,
         type: data.type || 'RH',
@@ -253,6 +265,7 @@ export class RecruitmentPrismaService {
     return this.prisma.hrInterview.update({
       where: { id },
       data: {
+        ...prismaUpdateDefaults(),
         type: data.type,
         date: new Date(data.date),
         time: data.time,
@@ -282,6 +295,7 @@ export class RecruitmentPrismaService {
   async createTest(tenantId: string, data: any) {
     return this.prisma.hrTest.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         name: data.name,
         type: data.type,
@@ -294,6 +308,7 @@ export class RecruitmentPrismaService {
     return this.prisma.hrTest.update({
       where: { id },
       data: {
+        ...prismaUpdateDefaults(),
         name: data.name,
         type: data.type,
         description: data.description,
@@ -311,6 +326,7 @@ export class RecruitmentPrismaService {
   async createTestResult(data: any) {
     return this.prisma.hrTestResult.create({
       data: {
+        ...prismaCreateDefaults(),
         testId: data.testId,
         candidateId: data.candidateId,
         score: parseInt(data.score),
@@ -338,11 +354,13 @@ export class RecruitmentPrismaService {
     return this.prisma.hrTalentPool.upsert({
       where: { candidateId },
       create: {
+        ...prismaCreateDefaults(),
         candidateId,
         category: data.category || 'Général',
         status: data.status || 'Disponible',
       },
       update: {
+        ...prismaUpdateDefaults(),
         category: data.category,
         status: data.status,
       },
@@ -396,6 +414,7 @@ export class RecruitmentPrismaService {
       // 1. Create candidate
       const candidate = await tx.hrCandidate.create({
         data: {
+          ...prismaCreateDefaults(),
           tenantId,
           firstName: body.firstName,
           lastName: body.lastName,
@@ -409,6 +428,7 @@ export class RecruitmentPrismaService {
       // 2. Save to AcademicProfile
       await tx.academicProfile.create({
         data: {
+          ...prismaCreateDefaults(),
           candidateId: candidate.id,
           teachingLevel: education[0]?.degree || 'Non spécifié',
           subjects: skills,
@@ -419,6 +439,7 @@ export class RecruitmentPrismaService {
       // 3. Create application
       const application = await tx.hrApplication.create({
         data: {
+          ...prismaCreateDefaults(),
           tenantId,
           jobId: body.jobId,
           candidateId: candidate.id,

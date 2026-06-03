@@ -22,6 +22,7 @@
 
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 
 @Injectable()
 export class LeavesPrismaService {
@@ -84,6 +85,7 @@ export class LeavesPrismaService {
 
     return this.prisma.leaveRequest.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         schoolLevelId: data.schoolLevelId ?? null,
@@ -159,7 +161,10 @@ export class LeavesPrismaService {
 
     return this.prisma.leaveRequest.update({
       where: { id },
-      data: updateData,
+      data: {
+        ...prismaUpdateDefaults(),
+        ...updateData,
+      },
       include: {
         staff: {
           select: {

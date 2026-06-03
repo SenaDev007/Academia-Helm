@@ -19,6 +19,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { Prisma } from '@prisma/client';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 
 @Injectable()
 export class CNSSPrismaService {
@@ -65,6 +66,7 @@ export class CNSSPrismaService {
       return this.prisma.cNSSRate.update({
         where: { id: existing.id },
         data: {
+          ...prismaUpdateDefaults(),
           employeeRate: data.employeeRate,
           employerRate: data.employerRate,
           salaryCeiling: data.salaryCeiling ?? null,
@@ -75,6 +77,7 @@ export class CNSSPrismaService {
 
     return this.prisma.cNSSRate.create({
       data: {
+        ...prismaCreateDefaults(),
         countryCode: data.countryCode,
         employeeRate: data.employeeRate,
         employerRate: data.employerRate,
@@ -105,6 +108,7 @@ export class CNSSPrismaService {
 
     return this.prisma.employeeCNSS.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         staffId,
         cnssNumber: cnssNumber ?? null,
@@ -238,6 +242,7 @@ export class CNSSPrismaService {
     const declaration = await this.prisma.$transaction(async (tx) => {
       const decl = await tx.cNSSDeclaration.create({
         data: {
+          ...prismaCreateDefaults(),
           tenantId: data.tenantId,
           academicYearId: data.academicYearId,
           month: data.month,
@@ -253,6 +258,7 @@ export class CNSSPrismaService {
       for (const line of linesToCreate) {
         await tx.cNSSDeclarationLine.create({
           data: {
+            ...prismaCreateDefaults(),
             cnssDeclarationId: decl.id,
             employeeCNSSId: line.employeeCNSSId,
             grossSalary: line.grossSalary,
@@ -385,7 +391,10 @@ export class CNSSPrismaService {
 
     return this.prisma.cNSSDeclaration.update({
       where: { id },
-      data,
+      data: {
+        ...prismaUpdateDefaults(),
+        ...data,
+      },
     });
   }
 }

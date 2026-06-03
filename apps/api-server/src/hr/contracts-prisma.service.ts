@@ -11,6 +11,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { Prisma } from '@prisma/client';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 
 @Injectable()
 export class ContractsPrismaService {
@@ -42,6 +43,7 @@ export class ContractsPrismaService {
       // Créer le nouveau contrat
       return tx.contract.create({
         data: {
+          ...prismaCreateDefaults(),
           tenantId: data.tenantId,
           staffId: data.staffId,
           contractType: data.contractType,
@@ -140,7 +142,10 @@ export class ContractsPrismaService {
 
     return this.prisma.contract.update({
       where: { id },
-      data,
+      data: {
+        ...prismaUpdateDefaults(),
+        ...data,
+      },
     });
   }
 
@@ -168,6 +173,7 @@ export class ContractsPrismaService {
 
     return this.prisma.contractAmendment.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         contractId: data.contractId,
         amendmentType: data.amendmentType,
@@ -193,6 +199,7 @@ export class ContractsPrismaService {
     return this.prisma.contract.update({
       where: { id },
       data: {
+        ...prismaUpdateDefaults(),
         status: 'TERMINATED',
         terminatedAt: new Date(),
         terminationReason: terminationReason ?? null,

@@ -21,6 +21,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { Prisma } from '@prisma/client';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 
 @Injectable()
 export class PayrollPrismaService {
@@ -58,6 +59,7 @@ export class PayrollPrismaService {
 
     return this.prisma.payroll.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         schoolLevelId: data.schoolLevelId ?? null,
@@ -163,7 +165,10 @@ export class PayrollPrismaService {
 
     return this.prisma.payroll.update({
       where: { id },
-      data,
+      data: {
+        ...prismaUpdateDefaults(),
+        ...data,
+      },
     });
   }
 
@@ -332,6 +337,7 @@ export class PayrollPrismaService {
 
         const payrollItem = await tx.payrollItem.create({
           data: {
+            ...prismaCreateDefaults(),
             tenantId,
             academicYearId: academicYearId ?? payroll.academicYearId,
             schoolLevelId: payroll.schoolLevelId,
@@ -362,7 +368,10 @@ export class PayrollPrismaService {
       );
       await tx.payroll.update({
         where: { id: payrollId },
-        data: { totalAmount },
+        data: {
+          ...prismaUpdateDefaults(),
+          totalAmount,
+        },
       });
 
       return results;
@@ -528,6 +537,7 @@ export class PayrollPrismaService {
     return db.payrollItem.update({
       where: { id },
       data: {
+        ...prismaUpdateDefaults(),
         overtimeAmount,
         bonuses,
         grossSalary,
@@ -573,6 +583,7 @@ export class PayrollPrismaService {
       await tx.payroll.update({
         where: { id: payrollId },
         data: {
+          ...prismaUpdateDefaults(),
           totalAmount,
           status: 'CALCULATED',
           processedAt: new Date(),
@@ -673,6 +684,7 @@ export class PayrollPrismaService {
   }) {
     return this.prisma.payrollPeriod.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         schoolLevelId: data.schoolLevelId ?? null,
@@ -733,6 +745,7 @@ export class PayrollPrismaService {
     return this.prisma.payrollPeriod.update({
       where: { id },
       data: {
+        ...prismaUpdateDefaults(),
         status: 'CLOSED',
         closedBy,
         closedAt: new Date(),
@@ -772,6 +785,7 @@ export class PayrollPrismaService {
       return this.prisma.payrollRate.update({
         where: { id: existing.id },
         data: {
+          ...prismaUpdateDefaults(),
           monthlyBaseSalary: data.monthlyBaseSalary,
           hourlyRate: data.hourlyRate,
           overtimeMultiplier: data.overtimeMultiplier ?? 1.5,
@@ -782,6 +796,7 @@ export class PayrollPrismaService {
 
     return this.prisma.payrollRate.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         countryCode: data.countryCode,
         roleType: data.roleType,
@@ -845,6 +860,7 @@ export class PayrollPrismaService {
   }) {
     return this.prisma.oneTimeBonus.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         schoolLevelId: data.schoolLevelId ?? null,
@@ -898,6 +914,7 @@ export class PayrollPrismaService {
     return this.prisma.oneTimeBonus.update({
       where: { id },
       data: {
+        ...prismaUpdateDefaults(),
         status: 'APPROVED',
         approvedBy,
         approvedAt: new Date(),
@@ -961,6 +978,7 @@ export class PayrollPrismaService {
       return this.prisma.cNSSRate.update({
         where: { id: existing.id },
         data: {
+          ...prismaUpdateDefaults(),
           employeeRate: data.employeeRate,
           employerRate: data.employerRate,
           salaryCeiling: data.salaryCeiling ?? null,
@@ -971,6 +989,7 @@ export class PayrollPrismaService {
 
     return this.prisma.cNSSRate.create({
       data: {
+        ...prismaCreateDefaults(),
         countryCode: data.countryCode,
         employeeRate: data.employeeRate,
         employerRate: data.employerRate,
@@ -1035,6 +1054,7 @@ export class PayrollPrismaService {
 
     return this.prisma.salarySlip.create({
       data: {
+        ...prismaCreateDefaults(),
         tenantId,
         payrollItemId,
         receiptNumber,

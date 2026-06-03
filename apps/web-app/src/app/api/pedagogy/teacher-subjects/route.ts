@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { nestDoublePrefixedControllerUrl } from '@/lib/utils/api-urls';
+import { nestControllerUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 export async function GET(request: NextRequest) {
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     }
 
     const url = new URL(
-      `${nestDoublePrefixedControllerUrl('pedagogy')}/teacher-subjects/${teacherId}`,
+      `${nestControllerUrl('pedagogy')}/teacher-subjects/${teacherId}`,
     );
     searchParams.forEach((value, key) => {
       if (key !== 'teacherId') {
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
 
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(
-      `${nestDoublePrefixedControllerUrl('pedagogy')}/teacher-subjects`,
+      `${nestControllerUrl('pedagogy')}/teacher-subjects`,
       {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },

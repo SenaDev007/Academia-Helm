@@ -16,11 +16,16 @@ import {
 } from '@nestjs/common';
 import { AcademicStructurePrismaService } from './academic-structure-prisma.service';
 import { DuplicateStructureDto } from './dto/duplicate-structure.dto';
+import { CreateAcademicLevelDto } from './dto/create-academic-level.dto';
+import { UpdateAcademicLevelDto } from './dto/update-academic-level.dto';
+import { CreateAcademicCycleDto } from './dto/create-academic-cycle.dto';
+import { CreateAcademicClassDto } from './dto/create-academic-class.dto';
+import { UpdateAcademicClassDto } from './dto/update-academic-class.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
-@Controller('api/pedagogy/academic-structure')
+@Controller('pedagogy/academic-structure')
 @UseGuards(JwtAuthGuard)
 export class AcademicStructurePrismaController {
   constructor(private readonly service: AcademicStructurePrismaService) {}
@@ -55,7 +60,7 @@ export class AcademicStructurePrismaController {
   @Post('levels')
   async createLevel(
     @TenantId() tenantId: string,
-    @Body() body: { academicYearId: string; name: string; orderIndex?: number },
+    @Body() body: CreateAcademicLevelDto,
   ) {
     return this.service.createLevel({ ...body, tenantId });
   }
@@ -64,7 +69,7 @@ export class AcademicStructurePrismaController {
   async updateLevel(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() body: { name?: string; orderIndex?: number; isActive?: boolean },
+    @Body() body: UpdateAcademicLevelDto,
   ) {
     return this.service.updateLevel(id, tenantId, body);
   }
@@ -88,14 +93,7 @@ export class AcademicStructurePrismaController {
   @Post('cycles')
   async createCycle(
     @TenantId() tenantId: string,
-    @Body()
-    body: {
-      academicYearId: string;
-      levelId: string;
-      name: string;
-      orderIndex?: number;
-      isActive?: boolean;
-    },
+    @Body() body: CreateAcademicCycleDto,
   ) {
     return this.service.createCycle({ ...body, tenantId });
   }
@@ -134,38 +132,18 @@ export class AcademicStructurePrismaController {
   @Post('classes')
   async createClass(
     @TenantId() tenantId: string,
-    @Body()
-    body: {
-      academicYearId: string;
-      levelId: string;
-      cycleId: string;
-      name: string;
-      code: string;
-      capacity?: number;
-      roomId?: string;
-      mainTeacherId?: string;
-      languageTrack?: string;
-    },
+    @Body() body: CreateAcademicClassDto,
   ) {
-    return this.service.createClass({ ...body, tenantId });
+    return this.service.createClass({ ...body, tenantId } as any);
   }
 
   @Put('classes/:id')
   async updateClass(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body()
-    body: {
-      name?: string;
-      code?: string;
-      capacity?: number;
-      roomId?: string | null;
-      mainTeacherId?: string | null;
-      languageTrack?: string | null;
-      isActive?: boolean;
-    },
+    @Body() body: UpdateAcademicClassDto,
   ) {
-    return this.service.updateClass(id, tenantId, body);
+    return this.service.updateClass(id, tenantId, body as any);
   }
 
   @Get('classes/:id')

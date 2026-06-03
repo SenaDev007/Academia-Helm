@@ -5,15 +5,13 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { nestControllerUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
-
-const API_URL = getApiBaseUrlForRoutes();
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const url = new URL(`${API_URL}/api/class-diaries`);
+    const url = new URL(nestControllerUrl('class-diaries'));
     searchParams.forEach((value, key) => {
       url.searchParams.append(key, value);
     });
@@ -43,7 +41,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(`${API_URL}/api/class-diaries`, {
+    const response = await fetch(nestControllerUrl('class-diaries'), {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
@@ -66,4 +64,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

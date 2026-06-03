@@ -16,7 +16,7 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 import { GetTenant } from '../../common/decorators/tenant.decorator';
 import { PedagogyOrionService } from '../services/pedagogy-orion.service';
 
-@Controller('api/pedagogy/orion')
+@Controller('pedagogy/orion')
 @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
 @Roles('DIRECTOR', 'ADMIN')
 export class PedagogyOrionController {

@@ -33,7 +33,7 @@ import { RequiredPermission } from '../common/decorators/required-permission.dec
 import { Module } from '../common/enums/module.enum';
 import { PermissionAction } from '../common/enums/permission-action.enum';
 
-@Controller('api/pedagogy/pedagogical-materials')
+@Controller('pedagogy/pedagogical-materials')
 @UseGuards(
   JwtAuthGuard,
   PortalAccessGuard, // Vérifie le portail autorisé

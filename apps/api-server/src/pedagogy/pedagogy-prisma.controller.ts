@@ -18,7 +18,7 @@ import { PedagogyPrismaService } from './pedagogy-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 
-@Controller('api/pedagogy')
+@Controller('pedagogy')
 @UseGuards(JwtAuthGuard)
 export class PedagogyPrismaController {
   constructor(private readonly pedagogyService: PedagogyPrismaService) {}

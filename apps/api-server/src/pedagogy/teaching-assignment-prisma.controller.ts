@@ -16,8 +16,10 @@ import {
 import { TeachingAssignmentPrismaService } from './teaching-assignment-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CreateTeachingAssignmentDto } from './dto/create-teaching-assignment.dto';
+import { UpdateTeachingAssignmentDto } from './dto/update-teaching-assignment.dto';
 
-@Controller('api/pedagogy/assignments')
+@Controller('pedagogy/assignments')
 @UseGuards(JwtAuthGuard)
 export class TeachingAssignmentPrismaController {
   constructor(private readonly service: TeachingAssignmentPrismaService) {}
@@ -53,35 +55,18 @@ export class TeachingAssignmentPrismaController {
   @Post()
   async create(
     @TenantId() tenantId: string,
-    @Body()
-    body: {
-      academicYearId: string;
-      profileId: string;
-      classId: string;
-      subjectId: string;
-      seriesId?: string | null;
-      weeklyHours: number;
-      startDate: string;
-      endDate?: string | null;
-    },
+    @Body() body: CreateTeachingAssignmentDto,
   ) {
-    return this.service.create({ ...body, tenantId });
+    return this.service.create({ ...body, tenantId } as any);
   }
 
   @Put(':id')
   async update(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body()
-    body: {
-      seriesId?: string | null;
-      weeklyHours?: number;
-      startDate?: string;
-      endDate?: string | null;
-      isActive?: boolean;
-    },
+    @Body() body: UpdateTeachingAssignmentDto,
   ) {
-    return this.service.update(id, tenantId, body);
+    return this.service.update(id, tenantId, body as any);
   }
 
   @Delete(':id')

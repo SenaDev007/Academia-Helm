@@ -27,14 +27,23 @@ export function getApiBaseUrlForRoutes(): string {
 }
 
 /**
- * URL vers un contrôleur Nest déclaré avec `@Controller('api/...')`.
- * Avec `setGlobalPrefix('api')`, la route effective est `/api/api/...`.
- * `getApiBaseUrl()` se termine déjà par `/api` — il faut donc un segment `/api` supplémentaire.
+ * URL vers un contrôleur Nest déclaré avec `@Controller('...')`.
+ * Avec `setGlobalPrefix('api')`, la route effective est `/api/...`.
+ * `getApiBaseUrl()` se termine déjà par `/api` — on ajoute simplement le chemin du contrôleur.
  */
-export function nestDoublePrefixedControllerUrl(path: string): string {
+export function nestControllerUrl(path: string): string {
   const base = getApiBaseUrlForRoutes().replace(/\/$/, '');
   const p = path.replace(/^\//, '');
-  return `${base}/api/${p}`;
+  return `${base}/${p}`;
+}
+
+/**
+ * @deprecated Use `nestControllerUrl` instead.
+ * Previously, NestJS controllers had `@Controller('api/...')`, creating a double `/api/api/...` prefix.
+ * Controllers now use `@Controller('...')` without the `api/` prefix, so use `nestControllerUrl`.
+ */
+export function nestDoublePrefixedControllerUrl(path: string): string {
+  return nestControllerUrl(path);
 }
 
 /**

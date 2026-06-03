@@ -5,22 +5,21 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
-
-const API_URL = getApiBaseUrlForRoutes();
+import { nestControllerUrl } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const url = new URL(`${API_URL}/api/honor-rolls`);
+    const url = new URL(nestControllerUrl('honor-rolls'));
     searchParams.forEach((value, key) => {
       url.searchParams.append(key, value);
     });
 
+    const headers = await getProxyAuthHeaders(request);
     const response = await fetch(url.toString(), {
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
+      cache: 'no-store',
     });
 
     if (!response.ok) {
@@ -40,4 +39,3 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-

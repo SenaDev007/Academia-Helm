@@ -26,7 +26,7 @@ import { MaterialStockGuard } from './guards/material-stock.guard';
 import { UseInterceptors } from '@nestjs/common';
 import { MaterialAuditInterceptor } from './interceptors/material-audit.interceptor';
 
-@Controller('api/pedagogy/teacher-material-assignments')
+@Controller('pedagogy/teacher-material-assignments')
 @UseGuards(JwtAuthGuard, MaterialContextGuard, MaterialRbacGuard, MaterialStockGuard)
 @UseInterceptors(MaterialAuditInterceptor)
 export class TeacherMaterialAssignmentsPrismaController {

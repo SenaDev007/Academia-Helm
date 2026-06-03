@@ -14,6 +14,7 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AcademicSeriesPrismaService } from './academic-series-prisma.service';
@@ -21,7 +22,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { StorageService } from '../common/services/storage.service';
 
-@Controller('api/pedagogy/academic-series')
+@Controller('pedagogy/academic-series')
 @UseGuards(JwtAuthGuard)
 export class AcademicSeriesPrismaController {
   constructor(
@@ -133,12 +134,4 @@ export class AcademicSeriesPrismaController {
     return this.service.createSubjectProgram({ ...body, tenantId });
   }
 
-  @Put('programs/:id/approve')
-  async approveProgram(
-    @Param('id') id: string,
-    @TenantId() tenantId: string,
-    @Body() body: { approvedById: string },
-  ) {
-    return this.service.approveSubjectProgram(id, tenantId, body.approvedById);
-  }
 }

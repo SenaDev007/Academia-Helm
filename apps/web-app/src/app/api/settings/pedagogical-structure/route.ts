@@ -5,31 +5,18 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
-import { cookies } from 'next/headers';
-
-const API_BASE_URL = getApiBaseUrlForRoutes();
-
-async function getAuthHeaders(request: NextRequest) {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get('session_token')?.value;
-  const authHeader = request.headers.get('Authorization');
-  
-  return {
-    'Authorization': authHeader || (sessionToken ? `Bearer ${sessionToken}` : ''),
-    'Content-Type': 'application/json',
-  };
-}
+import { nestControllerUrl } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 export async function GET(request: NextRequest) {
   try {
-    const headers = await getAuthHeaders(request);
+    const headers = await getProxyAuthHeaders(request);
     const tenantId = request.nextUrl?.searchParams?.get('tenant_id');
-    const url = new URL(`${API_BASE_URL}/settings/pedagogical-structure`);
+    const url = new URL(nestControllerUrl('settings/pedagogical-structure'));
     if (tenantId) url.searchParams.set('tenant_id', tenantId);
-    const response = await fetch(url.toString(), { headers });
+    const response = await fetch(url.toString(), { headers, cache: 'no-store' });
 
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error fetching pedagogical structure:', error);
@@ -40,17 +27,18 @@ export async function GET(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const headers = await getAuthHeaders(request);
+    const headers = await getProxyAuthHeaders(request);
     const tenantId = request.nextUrl?.searchParams?.get('tenant_id');
-    const url = new URL(`${API_BASE_URL}/settings/pedagogical-structure`);
+    const url = new URL(nestControllerUrl('settings/pedagogical-structure'));
     if (tenantId) url.searchParams.set('tenant_id', tenantId);
     const response = await fetch(url.toString(), {
       method: 'PUT',
       headers,
       body: JSON.stringify(body),
+      cache: 'no-store',
     });
 
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error updating pedagogical structure:', error);

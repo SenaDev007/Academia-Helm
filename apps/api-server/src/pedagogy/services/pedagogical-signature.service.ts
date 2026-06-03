@@ -38,8 +38,8 @@ export class PedagogicalSignatureService {
         tenantId: params.tenantId,
         entityType: params.entityType,
         entityId: params.entityId,
-        signerId: params.signedBy,
-        hashSignature: hash,
+        signedById: params.signedBy,
+        signatureHash: hash,
         signatureDate: new Date(),
         isValid: true,
       },
@@ -64,13 +64,13 @@ export class PedagogicalSignatureService {
       .update(currentContent)
       .digest('hex');
 
-    const isValid = currentHash === signature.hashSignature;
+    const isValid = currentHash === signature.signatureHash;
 
     return {
       isSigned: true,
       isValid,
       signedAt: signature.signatureDate,
-      signedBy: signature.signerId,
+      signedBy: signature.signedById,
     };
   }
 }

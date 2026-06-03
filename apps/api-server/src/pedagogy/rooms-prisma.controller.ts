@@ -19,7 +19,7 @@ import { RoomsPrismaService } from './rooms-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 
-@Controller('api/rooms')
+@Controller('rooms')
 @UseGuards(JwtAuthGuard)
 export class RoomsPrismaController {
   constructor(private readonly roomsService: RoomsPrismaService) {}
@@ -50,6 +50,21 @@ export class RoomsPrismaController {
       roomType,
       status,
       search,
+    });
+  }
+
+  @Get('statistics')
+  async getStatistics(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('roomType') roomType?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.roomsService.getRoomStatistics(tenantId, academicYearId, {
+      roomType,
+      startDate: startDate ? new Date(startDate) : undefined,
+      endDate: endDate ? new Date(endDate) : undefined,
     });
   }
 
@@ -168,21 +183,6 @@ export class RoomsPrismaController {
       ...createDto,
       tenantId,
       roomId,
-    });
-  }
-
-  @Get('statistics')
-  async getStatistics(
-    @TenantId() tenantId: string,
-    @Query('academicYearId') academicYearId: string,
-    @Query('roomType') roomType?: string,
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
-  ) {
-    return this.roomsService.getRoomStatistics(tenantId, academicYearId, {
-      roomType,
-      startDate: startDate ? new Date(startDate) : undefined,
-      endDate: endDate ? new Date(endDate) : undefined,
     });
   }
 

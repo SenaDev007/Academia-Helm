@@ -7,7 +7,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { PedagogyKpiService } from './pedagogy-kpi.service';
 
-@Controller('api/pedagogy/control')
+@Controller('pedagogy/control')
 @UseGuards(JwtAuthGuard)
 export class PedagogyControlController {
   constructor(private readonly kpiService: PedagogyKpiService) {}

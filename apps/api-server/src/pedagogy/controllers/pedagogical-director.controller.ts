@@ -31,7 +31,7 @@ import { PedagogicalWorkflowService } from '../services/pedagogical-workflow.ser
 import { PedagogicalNotificationService } from '../services/pedagogical-notification.service';
 import { WeeklySemainierService } from '../services/weekly-semainier.service';
 
-@Controller('api/pedagogy/director')
+@Controller('pedagogy/director')
 @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
 @Roles('DIRECTOR', 'ADMIN')
 export class PedagogicalDirectorController {

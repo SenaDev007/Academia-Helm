@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { nestControllerUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
-
-const API_URL = getApiBaseUrlForRoutes();
 
 export async function GET(
   request: NextRequest,
@@ -11,7 +9,7 @@ export async function GET(
   const { id } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(`${API_URL}/api/daily-logs/${id}`, { headers, cache: 'no-store' });
+    const response = await fetch(nestControllerUrl(`daily-logs/${id}`), { headers, cache: 'no-store' });
 
     if (!response.ok) {
       return NextResponse.json({ error: 'Failed to fetch daily log' }, { status: response.status });
@@ -32,7 +30,7 @@ export async function PUT(
   try {
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(`${API_URL}/api/daily-logs/${id}`, {
+    const response = await fetch(nestControllerUrl(`daily-logs/${id}`), {
       method: 'PUT',
       headers,
       body: JSON.stringify(body),
@@ -56,7 +54,7 @@ export async function DELETE(
   const { id } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(`${API_URL}/api/daily-logs/${id}`, { method: 'DELETE', headers });
+    const response = await fetch(nestControllerUrl(`daily-logs/${id}`), { method: 'DELETE', headers });
 
     if (!response.ok) {
       return NextResponse.json({ error: 'Failed to delete daily log' }, { status: response.status });

@@ -5,14 +5,14 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { nestDoublePrefixedControllerUrl } from '@/lib/utils/api-urls';
+import { nestControllerUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const queryString = searchParams.toString();
-    const url = `${nestDoublePrefixedControllerUrl('pedagogy/orion/kpis')}${queryString ? `?${queryString}` : ''}`;
+    const url = `${nestControllerUrl('pedagogy/orion/kpis')}${queryString ? `?${queryString}` : ''}`;
 
     const headers = await getProxyAuthHeaders(request);
 

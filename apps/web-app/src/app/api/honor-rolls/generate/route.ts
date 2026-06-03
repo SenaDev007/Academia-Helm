@@ -5,20 +5,19 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
-
-const API_URL = getApiBaseUrlForRoutes();
+import { nestControllerUrl } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    const response = await fetch(`${API_URL}/api/honor-rolls/generate`, {
+    const headers = await getProxyAuthHeaders(request);
+    const response = await fetch(nestControllerUrl('honor-rolls/generate'), {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(body),
+      cache: 'no-store',
     });
 
     if (!response.ok) {
@@ -38,4 +37,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

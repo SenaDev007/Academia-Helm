@@ -112,21 +112,21 @@ export class TimetablesPrismaService {
     };
 
     if (data.classId) {
-      const classConflict = await this.prisma.timetableSlot.findFirst({
+      const classConflict = await this.prisma.timetableEntry.findFirst({
         where: { ...conflictWhere, classId: data.classId },
       });
       if (classConflict) throw new BadRequestException('Conflit : La classe a déjà un cours sur ce créneau.');
     }
 
     if (data.teacherId) {
-      const teacherConflict = await this.prisma.timetableSlot.findFirst({
+      const teacherConflict = await this.prisma.timetableEntry.findFirst({
         where: { ...conflictWhere, teacherId: data.teacherId },
       });
       if (teacherConflict) throw new BadRequestException('Conflit : L\'enseignant est déjà occupé sur ce créneau.');
     }
 
     if (data.roomId) {
-      const roomConflict = await this.prisma.timetableSlot.findFirst({
+      const roomConflict = await this.prisma.timetableEntry.findFirst({
         where: { ...conflictWhere, roomId: data.roomId },
       });
       if (roomConflict) throw new BadRequestException('Conflit : La salle est déjà occupée sur ce créneau.');
@@ -144,7 +144,7 @@ export class TimetablesPrismaService {
       }
     }
 
-    const entry = await this.prisma.timetableSlot.create({
+    const entry = await this.prisma.timetableEntry.create({
       data,
       include: {
         class: true,
@@ -178,7 +178,7 @@ export class TimetablesPrismaService {
       include: {
         academicYear: true,
         schoolLevel: true,
-        slots: {
+        entries: {
           include: {
             class: true,
             subject: true,
@@ -268,7 +268,7 @@ export class TimetablesPrismaService {
    * Supprime une entrée d'emploi du temps
    */
   async deleteTimetableSlot(id: string, tenantId: string) {
-    const entry = await this.prisma.timetableSlot.findFirst({
+    const entry = await this.prisma.timetableEntry.findFirst({
       where: { id, tenantId },
     });
 
@@ -276,7 +276,7 @@ export class TimetablesPrismaService {
       throw new NotFoundException(`TimetableSlot with ID ${id} not found`);
     }
 
-    await this.prisma.timetableSlot.delete({
+    await this.prisma.timetableEntry.delete({
       where: { id },
     });
 

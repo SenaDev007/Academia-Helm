@@ -17,8 +17,10 @@ import {
 import { TeachersPrismaService } from './teachers-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CreateTeacherDto } from './dto/create-teacher.dto';
+import { UpdateTeacherDto } from './dto/update-teacher.dto';
 
-@Controller('api/teachers')
+@Controller('teachers')
 @UseGuards(JwtAuthGuard)
 export class TeachersPrismaController {
   constructor(private readonly teachersService: TeachersPrismaService) {}
@@ -26,12 +28,12 @@ export class TeachersPrismaController {
   @Post()
   async create(
     @TenantId() tenantId: string,
-    @Body() createDto: any,
+    @Body() createDto: CreateTeacherDto,
   ) {
     return this.teachersService.createTeacher({
       ...createDto,
       tenantId,
-    });
+    } as any);
   }
 
   @Get()
@@ -62,9 +64,9 @@ export class TeachersPrismaController {
   async update(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() updateDto: any,
+    @Body() updateDto: UpdateTeacherDto,
   ) {
-    return this.teachersService.updateTeacher(id, tenantId, updateDto);
+    return this.teachersService.updateTeacher(id, tenantId, updateDto as any);
   }
 
   @Post(':id/archive')
@@ -75,4 +77,3 @@ export class TeachersPrismaController {
     return this.teachersService.archiveTeacher(id, tenantId);
   }
 }
-

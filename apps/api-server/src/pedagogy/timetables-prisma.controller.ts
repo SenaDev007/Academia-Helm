@@ -18,8 +18,11 @@ import {
 import { TimetablesPrismaService } from './timetables-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CreateTimetableDto } from './dto/create-timetable.dto';
+import { UpdateTimetableDto } from './dto/update-timetable.dto';
+import { CreateTimetableEntryDto } from './dto/create-timetable-entry.dto';
 
-@Controller('api/timetables')
+@Controller('timetables')
 @UseGuards(JwtAuthGuard)
 export class TimetablesPrismaController {
   constructor(private readonly timetablesService: TimetablesPrismaService) {}
@@ -38,12 +41,12 @@ export class TimetablesPrismaController {
   @Post()
   async createTimetable(
     @TenantId() tenantId: string,
-    @Body() createDto: any,
+    @Body() createDto: CreateTimetableDto,
   ) {
     return this.timetablesService.createTimetable({
       ...createDto,
       tenantId,
-    });
+    } as any);
   }
 
   @Get()
@@ -72,16 +75,16 @@ export class TimetablesPrismaController {
   async update(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() updateDto: any,
+    @Body() updateDto: UpdateTimetableDto,
   ) {
-    return this.timetablesService.updateTimetable(id, tenantId, updateDto);
+    return this.timetablesService.updateTimetable(id, tenantId, updateDto as any);
   }
 
   @Post(':id/entries')
   async createEntry(
     @Param('id') timetableId: string,
     @TenantId() tenantId: string,
-    @Body() createDto: any,
+    @Body() createDto: CreateTimetableEntryDto,
   ) {
     return this.timetablesService.createTimetableEntry({
       ...createDto,
@@ -98,4 +101,3 @@ export class TimetablesPrismaController {
     return this.timetablesService.deleteTimetableEntry(id, tenantId);
   }
 }
-

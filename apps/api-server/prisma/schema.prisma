@@ -429,7 +429,8 @@ model Tenant {
   whatsappLogs                     WhatsappLog[]
   resourceUsages                   TenantResourceUsage[]             @relation("TenantResourceUsages")
   resourceAnnotations              TenantResourceAnnotation[]        @relation("TenantResourceAnnotations")
-
+  lessonPlanVersions               LessonPlanVersion[]
+  lessonPlanValidations            LessonPlanValidation[]
 
   @@index([subdomain])
   @@index([slug])
@@ -686,9 +687,9 @@ model AcademicYear {
   staffDocuments                   StaffDocument[]
   staffEvaluations                 StaffEvaluation[]
   staffTrainings                   StaffTraining[]
-  leaveRequests       LeaveRequest[]
-  staffAllowances     StaffAllowance[]
-  staffSchedules      StaffSchedule[]
+  leaveRequests                    LeaveRequest[]
+  staffAllowances                  StaffAllowance[]
+  staffSchedules                   StaffSchedule[]
   storePayments                    StorePayment[]
   studentAcademicRecords           StudentAcademicRecord[]           @relation("StudentAcademicRecordAcademicYear")
   studentAccounts                  StudentAccount[]
@@ -734,6 +735,8 @@ model AcademicYear {
   weeklySemainierDailyEntries      WeeklySemainierDailyEntry[]
   weeklySemainierIncidents         WeeklySemainierIncident[]
   weeklySemainiers                 WeeklySemainier[]
+  lessonPlanVersions               LessonPlanVersion[]
+  lessonPlanValidations            LessonPlanValidation[]
 
   @@unique([tenantId, name])
   @@unique([tenantId, label])
@@ -1615,6 +1618,8 @@ model SchoolLevel {
   weeklySemainierDailyEntries      WeeklySemainierDailyEntry[]
   weeklySemainierIncidents         WeeklySemainierIncident[]
   weeklySemainiers                 WeeklySemainier[]
+  lessonPlanVersions               LessonPlanVersion[]
+  lessonPlanValidations            LessonPlanValidation[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -1804,6 +1809,7 @@ model User {
   pedagogicalDocumentVersionCreators        PedagogicalDocumentVersion[]
   acknowledgedPedagogicalDocuments          PedagogicalDocument[]             @relation("PedagogicalDocumentAcknowledger")
   validatedPedagogicalDocuments             PedagogicalDocument[]             @relation("PedagogicalDocumentValidator")
+  validatedLessonPlans                      LessonPlan[]                      @relation("LessonPlanValidator")
   portalSessions                            PortalSession[]                   @relation("PortalSessionUser")
   qhsCorrectiveActionOwners                 QhsCorrectiveAction[]             @relation("QhsCorrectiveActionOwner")
   qhsDecisionLogs                           QhsDecisionLog[]                  @relation("QhsDecisionLogDecidedBy")
@@ -1856,10 +1862,10 @@ model User {
   weeklyDutyAssigners                       WeeklyDutyAssignment[]
   weeklySemainierIncidentReporters          WeeklySemainierIncident[]         @relation("WeeklySemainierIncidentReporter")
   weeklySemainierValidators                 WeeklySemainier[]                 @relation("WeeklySemainierValidator")
-  approvedLeaveRequests LeaveRequest[] @relation("LeaveRequestApprover")
-  closedPayrollPeriods  PayrollPeriod[] @relation("PayrollPeriodCloser")
-  authorizedOneTimeBonuses OneTimeBonus[] @relation("OneTimeBonusAuthorizer")
-  approvedOneTimeBonuses  OneTimeBonus[] @relation("OneTimeBonusApprover")
+  approvedLeaveRequests                     LeaveRequest[]                    @relation("LeaveRequestApprover")
+  closedPayrollPeriods                      PayrollPeriod[]                   @relation("PayrollPeriodCloser")
+  authorizedOneTimeBonuses                  OneTimeBonus[]                    @relation("OneTimeBonusAuthorizer")
+  approvedOneTimeBonuses                    OneTimeBonus[]                    @relation("OneTimeBonusApprover")
 
   @@index([tenantId, role])
   @@index([email])
@@ -2486,6 +2492,7 @@ model Teacher {
   tenant                     Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   timetableEntries           TimetableEntry[]
   weeklyDutyAssignments      WeeklyDutyAssignment[]
+  lessonPlans                LessonPlan[]
 
   @@map("teachers")
 }
@@ -4796,54 +4803,54 @@ model TreasuryMovement {
 }
 
 model Staff {
-  id                  String               @id @default(uuid())
-  tenantId            String
-  academicYearId      String?
-  schoolLevelId       String?
-  employeeNumber      String               @unique
-  firstName           String
-  lastName            String
-  gender              String?
-  dateOfBirth         DateTime?
-  birthDate           DateTime?            @db.Date
-  phone               String?
-  email               String?
-  address             String?
-  position            String?
-  department          String?
-  roleType            String               @default("TEACHER")
-  hireDate            DateTime?
-  contractType        String?
-  status              String               @default("ACTIVE")
-  salary              Decimal?             @db.Decimal(10, 2)
-  bankDetails         Json?
-  emergencyContact    Json?
-  qualifications      String?
-  notes               String?
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-  employeeCNSS        EmployeeCNSS?
-  contracts           Contract[]
-  libraryLoans        LibraryLoan[]
-  overtimeRecords     OvertimeRecord[]
-  payrollItems        PayrollItem[]
-  salaryPayments      SalaryPayment[]
-  leaveRequests       LeaveRequest[]
-  staffAllowances     StaffAllowance[]
-  staffSchedules      StaffSchedule[]
-  oneTimeBonuses      OneTimeBonus[]
-  academicYear        AcademicYear?        @relation(fields: [academicYearId], references: [id])
-  schoolLevel         SchoolLevel?         @relation(fields: [schoolLevelId], references: [id])
-  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  assignments         StaffAssignment[]
-  attendance          StaffAttendance[]
-  documents           StaffDocument[]
-  evaluations         StaffEvaluation[]
-  trainings           StaffTraining[]
-  taxWithholdings     TaxWithholding[]
-  transportAttendants TransportAttendant[]
-  transportDrivers    TransportDriver[]
-  globalResourceUsages TenantResourceUsage[] @relation("StaffResourceUsages")
+  id                        String                     @id @default(uuid())
+  tenantId                  String
+  academicYearId            String?
+  schoolLevelId             String?
+  employeeNumber            String                     @unique
+  firstName                 String
+  lastName                  String
+  gender                    String?
+  dateOfBirth               DateTime?
+  birthDate                 DateTime?                  @db.Date
+  phone                     String?
+  email                     String?
+  address                   String?
+  position                  String?
+  department                String?
+  roleType                  String                     @default("TEACHER")
+  hireDate                  DateTime?
+  contractType              String?
+  status                    String                     @default("ACTIVE")
+  salary                    Decimal?                   @db.Decimal(10, 2)
+  bankDetails               Json?
+  emergencyContact          Json?
+  qualifications            String?
+  notes                     String?
+  createdAt                 DateTime                   @default(now())
+  updatedAt                 DateTime                   @updatedAt
+  employeeCNSS              EmployeeCNSS?
+  contracts                 Contract[]
+  libraryLoans              LibraryLoan[]
+  overtimeRecords           OvertimeRecord[]
+  payrollItems              PayrollItem[]
+  salaryPayments            SalaryPayment[]
+  leaveRequests             LeaveRequest[]
+  staffAllowances           StaffAllowance[]
+  staffSchedules            StaffSchedule[]
+  oneTimeBonuses            OneTimeBonus[]
+  academicYear              AcademicYear?              @relation(fields: [academicYearId], references: [id])
+  schoolLevel               SchoolLevel?               @relation(fields: [schoolLevelId], references: [id])
+  tenant                    Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignments               StaffAssignment[]
+  attendance                StaffAttendance[]
+  documents                 StaffDocument[]
+  evaluations               StaffEvaluation[]
+  trainings                 StaffTraining[]
+  taxWithholdings           TaxWithholding[]
+  transportAttendants       TransportAttendant[]
+  transportDrivers          TransportDriver[]
+  globalResourceUsages      TenantResourceUsage[]      @relation("StaffResourceUsages")
   globalResourceAnnotations TenantResourceAnnotation[] @relation("StaffResourceAnnotations")
 
   @@index([tenantId])
@@ -4908,31 +4915,31 @@ model StaffAssignment {
 }
 
 model Contract {
-  id                String            @id @default(uuid())
+  id                String              @id @default(uuid())
   tenantId          String
   academicYearId    String?
   schoolLevelId     String?
   staffId           String
   templateId        String?
   contractType      String
-  startDate         DateTime          @db.Date
-  endDate           DateTime?         @db.Date
-  baseSalary        Decimal           @db.Decimal(10, 2)
-  paymentMode       String            @default("BANK")
-  status            String            @default("ACTIVE")
+  startDate         DateTime            @db.Date
+  endDate           DateTime?           @db.Date
+  baseSalary        Decimal             @db.Decimal(10, 2)
+  paymentMode       String              @default("BANK")
+  status            String              @default("ACTIVE")
   terms             Json?
   signedAt          DateTime?
   signedBy          String?
   terminatedAt      DateTime?
   terminationReason String?
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
-  academicYear      AcademicYear?     @relation(fields: [academicYearId], references: [id])
-  schoolLevel       SchoolLevel?      @relation(fields: [schoolLevelId], references: [id])
-  staff             Staff             @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  template          ContractTemplate? @relation(fields: [templateId], references: [id])
-  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  amendments       ContractAmendment[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  academicYear      AcademicYear?       @relation(fields: [academicYearId], references: [id])
+  schoolLevel       SchoolLevel?        @relation(fields: [schoolLevelId], references: [id])
+  staff             Staff               @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  template          ContractTemplate?   @relation(fields: [templateId], references: [id])
+  tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  amendments        ContractAmendment[]
 
   @@index([tenantId])
   @@index([staffId])
@@ -5033,27 +5040,27 @@ model TrainingSession {
 }
 
 model Payroll {
-  id             String        @id @default(uuid())
-  tenantId       String
-  academicYearId String
-  schoolLevelId  String?
-  month          String
-  startDate      DateTime
-  endDate        DateTime
-  status         String        @default("DRAFT")
-  totalAmount    Decimal       @db.Decimal(10, 2)
-  processedBy    String?
-  processedAt    DateTime?
-  paidAt         DateTime?
-  notes          String?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  id              String         @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  schoolLevelId   String?
+  month           String
+  startDate       DateTime
+  endDate         DateTime
+  status          String         @default("DRAFT")
+  totalAmount     Decimal        @db.Decimal(10, 2)
+  processedBy     String?
+  processedAt     DateTime?
+  paidAt          DateTime?
+  notes           String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
   payrollPeriodId String?
   items           PayrollItem[]
-  academicYear    AcademicYear    @relation(fields: [academicYearId], references: [id])
-  schoolLevel     SchoolLevel?    @relation(fields: [schoolLevelId], references: [id])
-  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  payrollPeriod   PayrollPeriod?  @relation(fields: [payrollPeriodId], references: [id])
+  academicYear    AcademicYear   @relation(fields: [academicYearId], references: [id])
+  schoolLevel     SchoolLevel?   @relation(fields: [schoolLevelId], references: [id])
+  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  payrollPeriod   PayrollPeriod? @relation(fields: [payrollPeriodId], references: [id])
 
   @@unique([tenantId, academicYearId, month])
   @@index([tenantId, academicYearId])
@@ -5346,7 +5353,7 @@ model LeaveRequest {
   academicYearId String
   schoolLevelId  String?
   staffId        String
-  type           String       // ANNUAL, SICK, MATERNITY, PATERNITY, UNPAID, EXCEPTIONAL
+  type           String // ANNUAL, SICK, MATERNITY, PATERNITY, UNPAID, EXCEPTIONAL
   startDate      DateTime     @db.Date
   endDate        DateTime     @db.Date
   reason         String?
@@ -5370,19 +5377,19 @@ model LeaveRequest {
 }
 
 model AllowanceType {
-  id          String   @id @default(uuid())
+  id          String           @id @default(uuid())
   tenantId    String
   name        String
-  code        String   @unique
+  code        String           @unique
   description String?
-  isTaxable   Boolean  @default(true)
-  isCnss      Boolean  @default(false)
-  amount      Decimal? @db.Decimal(10, 2)
-  isFixed     Boolean  @default(true)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  isTaxable   Boolean          @default(true)
+  isCnss      Boolean          @default(false)
+  amount      Decimal?         @db.Decimal(10, 2)
+  isFixed     Boolean          @default(true)
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   assignments StaffAllowance[]
 
   @@index([tenantId])
@@ -5419,19 +5426,19 @@ model StaffAllowance {
 }
 
 model ContractAmendment {
-  id              String   @id @default(uuid())
-  tenantId        String
-  contractId      String
-  amendmentType   String   // SALARY_CHANGE, POSITION_CHANGE, DURATION_EXTENSION, STATUS_CHANGE, OTHER
-  description     String
-  previousValue   String?
-  newValue        String?
-  effectiveDate   DateTime @db.Date
-  status          String   @default("DRAFT") // DRAFT, ACTIVE, CANCELLED
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  contract        Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
-  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id            String   @id @default(uuid())
+  tenantId      String
+  contractId    String
+  amendmentType String // SALARY_CHANGE, POSITION_CHANGE, DURATION_EXTENSION, STATUS_CHANGE, OTHER
+  description   String
+  previousValue String?
+  newValue      String?
+  effectiveDate DateTime @db.Date
+  status        String   @default("DRAFT") // DRAFT, ACTIVE, CANCELLED
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  contract      Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@index([contractId])
@@ -5445,11 +5452,11 @@ model StaffSchedule {
   academicYearId String
   schoolLevelId  String?
   staffId        String
-  dayOfWeek      Int          // 1=Monday, 7=Sunday
-  shiftType      String       // MORNING, AFTERNOON, FULL_DAY, NIGHT
-  startTime      String       // "08:00"
-  endTime        String       // "16:00"
-  role           String?      // SURVEILLANT, GARDE, PERMANENCE, etc.
+  dayOfWeek      Int // 1=Monday, 7=Sunday
+  shiftType      String // MORNING, AFTERNOON, FULL_DAY, NIGHT
+  startTime      String // "08:00"
+  endTime        String // "16:00"
+  role           String? // SURVEILLANT, GARDE, PERMANENCE, etc.
   location       String?
   notes          String?
   isActive       Boolean      @default(true)
@@ -5473,9 +5480,9 @@ model PayrollPeriod {
   tenantId       String
   academicYearId String
   schoolLevelId  String?
-  name           String       // e.g. "Janvier 2025", "Prime de fin d'année"
+  name           String // e.g. "Janvier 2025", "Prime de fin d'année"
   periodType     String       @default("MONTHLY") // MONTHLY, QUARTERLY, ANNUAL, OFF_CYCLE
-  month          String?      // "2025-01" for monthly periods
+  month          String? // "2025-01" for monthly periods
   startDate      DateTime     @db.Date
   endDate        DateTime     @db.Date
   status         String       @default("OPEN") // OPEN, CLOSED, LOCKED
@@ -5497,20 +5504,20 @@ model PayrollPeriod {
 }
 
 model PayrollRate {
-  id                String   @id @default(uuid())
-  tenantId          String
-  countryCode       String   @default("BJ") // BJ, CI, SN, TG, etc.
-  roleType          String   // TEACHER, ADMIN, SUPPORT, DIRECTOR, etc.
-  grade             String?  // Echelon/grade identifier
-  monthlyBaseSalary Decimal  @db.Decimal(10, 2)
-  hourlyRate        Decimal  @db.Decimal(10, 2)
-  overtimeMultiplier Decimal @default(1.5) @db.Decimal(5, 2)
-  effectiveFrom     DateTime @db.Date
-  effectiveTo       DateTime? @db.Date
-  isActive          Boolean  @default(true)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id                 String    @id @default(uuid())
+  tenantId           String
+  countryCode        String    @default("BJ") // BJ, CI, SN, TG, etc.
+  roleType           String // TEACHER, ADMIN, SUPPORT, DIRECTOR, etc.
+  grade              String? // Echelon/grade identifier
+  monthlyBaseSalary  Decimal   @db.Decimal(10, 2)
+  hourlyRate         Decimal   @db.Decimal(10, 2)
+  overtimeMultiplier Decimal   @default(1.5) @db.Decimal(5, 2)
+  effectiveFrom      DateTime  @db.Date
+  effectiveTo        DateTime? @db.Date
+  isActive           Boolean   @default(true)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  tenant             Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, countryCode, roleType, grade, effectiveFrom])
   @@index([tenantId, countryCode])
@@ -5526,7 +5533,7 @@ model OneTimeBonus {
   academicYearId String
   schoolLevelId  String?
   staffId        String
-  payrollItemId  String?      // Linked to payroll item once payroll is generated
+  payrollItemId  String? // Linked to payroll item once payroll is generated
   amount         Decimal      @db.Decimal(10, 2)
   reason         String
   bonusType      String       @default("OTHER") // PERFORMANCE, SIGNING, REFERRAL, END_OF_YEAR, OTHER
@@ -6726,28 +6733,87 @@ model LessonPlan {
   academicYearId  String
   schoolLevelId   String
   academicTrackId String?
+  teacherId       String?
   classId         String?
   subjectId       String?
   date            DateTime
   title           String
   content         String
   homework        String?
+  objectives      String?
+  methodology     String?
+  materials       String?
+  evaluation      String?
   attachments     String[]               @default([])
+  status          String                 @default("DRAFT")
+  version         Int                    @default(1)
   publishedAt     DateTime?
+  submittedAt     DateTime?
+  validatedAt     DateTime?
+  validatedBy     String?
+  rejectionReason String?
   createdAt       DateTime               @default(now())
   updatedAt       DateTime               @updatedAt
   homeworkEntries HomeworkEntry[]
   assignments     LessonPlanAssignment[]
+  versions        LessonPlanVersion[]
+  validations     LessonPlanValidation[]
   academicTrack   AcademicTrack?         @relation(fields: [academicTrackId], references: [id])
   academicYear    AcademicYear           @relation(fields: [academicYearId], references: [id])
   class           Class?                 @relation(fields: [classId], references: [id])
   schoolLevel     SchoolLevel            @relation(fields: [schoolLevelId], references: [id])
   subject         Subject?               @relation(fields: [subjectId], references: [id])
+  teacher         Teacher?               @relation(fields: [teacherId], references: [id])
   tenant          Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  validator       User?                  @relation("LessonPlanValidator", fields: [validatedBy], references: [id])
 
   @@index([tenantId, academicYearId, schoolLevelId])
   @@index([date])
+  @@index([status])
+  @@index([teacherId])
   @@map("lesson_plans")
+}
+
+model LessonPlanVersion {
+  id             String       @id @default(uuid())
+  tenantId       String
+  academicYearId String
+  schoolLevelId  String
+  lessonPlanId   String
+  versionNumber  Int
+  content        String
+  changes        String?
+  createdBy      String?
+  createdAt      DateTime     @default(now())
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  lessonPlan     LessonPlan   @relation(fields: [lessonPlanId], references: [id], onDelete: Cascade)
+  schoolLevel    SchoolLevel  @relation(fields: [schoolLevelId], references: [id])
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, academicYearId, schoolLevelId])
+  @@index([lessonPlanId])
+  @@map("lesson_plan_versions")
+}
+
+model LessonPlanValidation {
+  id             String       @id @default(uuid())
+  tenantId       String
+  academicYearId String
+  schoolLevelId  String
+  lessonPlanId   String
+  validatorId    String?
+  status         String
+  comments       String?
+  validatedAt    DateTime     @default(now())
+  createdAt      DateTime     @default(now())
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  lessonPlan     LessonPlan   @relation(fields: [lessonPlanId], references: [id], onDelete: Cascade)
+  schoolLevel    SchoolLevel  @relation(fields: [schoolLevelId], references: [id])
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, academicYearId, schoolLevelId])
+  @@index([lessonPlanId])
+  @@map("lesson_plan_validations")
 }
 
 model LessonPlanAssignment {
@@ -13174,20 +13240,20 @@ enum AcademicSettingsStatus {
 }
 
 model GlobalPedagogicalResource {
-  id               String                    @id @default(uuid())
-  title            String
-  description      String?
-  type             String
-  subjectArea      String
-  gradeLevel       String
-  tags             String[]
-  isPublished      Boolean                   @default(false)
-  authorId         String?
-  createdAt        DateTime                  @default(now())
-  updatedAt        DateTime                  @updatedAt
-  versions         GlobalResourceVersion[]
-  usages           TenantResourceUsage[]
-  annotations      TenantResourceAnnotation[]
+  id          String                     @id @default(uuid())
+  title       String
+  description String?
+  type        String
+  subjectArea String
+  gradeLevel  String
+  tags        String[]
+  isPublished Boolean                    @default(false)
+  authorId    String?
+  createdAt   DateTime                   @default(now())
+  updatedAt   DateTime                   @updatedAt
+  versions    GlobalResourceVersion[]
+  usages      TenantResourceUsage[]
+  annotations TenantResourceAnnotation[]
 
   @@index([subjectArea])
   @@index([gradeLevel])
@@ -13195,28 +13261,28 @@ model GlobalPedagogicalResource {
 }
 
 model GlobalResourceVersion {
-  id               String                    @id @default(uuid())
-  resourceId       String
-  version          Int
-  content          Json
-  changeLog        String?
-  createdAt        DateTime                  @default(now())
-  resource         GlobalPedagogicalResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  id         String                    @id @default(uuid())
+  resourceId String
+  version    Int
+  content    Json
+  changeLog  String?
+  createdAt  DateTime                  @default(now())
+  resource   GlobalPedagogicalResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
 
   @@index([resourceId])
   @@map("global_resource_versions")
 }
 
 model TenantResourceUsage {
-  id               String                    @id @default(uuid())
-  tenantId         String
-  resourceId       String
-  teacherId        String?
-  usedAt           DateTime                  @default(now())
-  context          String?
-  tenant           Tenant                    @relation("TenantResourceUsages", fields: [tenantId], references: [id], onDelete: Cascade)
-  resource         GlobalPedagogicalResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
-  teacher          Staff?                    @relation("StaffResourceUsages", fields: [teacherId], references: [id], onDelete: SetNull)
+  id         String                    @id @default(uuid())
+  tenantId   String
+  resourceId String
+  teacherId  String?
+  usedAt     DateTime                  @default(now())
+  context    String?
+  tenant     Tenant                    @relation("TenantResourceUsages", fields: [tenantId], references: [id], onDelete: Cascade)
+  resource   GlobalPedagogicalResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  teacher    Staff?                    @relation("StaffResourceUsages", fields: [teacherId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([resourceId])
@@ -13225,16 +13291,16 @@ model TenantResourceUsage {
 }
 
 model TenantResourceAnnotation {
-  id               String                    @id @default(uuid())
-  tenantId         String
-  resourceId       String
-  teacherId        String
-  content          String
-  createdAt        DateTime                  @default(now())
-  updatedAt        DateTime                  @updatedAt
-  tenant           Tenant                    @relation("TenantResourceAnnotations", fields: [tenantId], references: [id], onDelete: Cascade)
-  resource         GlobalPedagogicalResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
-  teacher          Staff                     @relation("StaffResourceAnnotations", fields: [teacherId], references: [id], onDelete: Cascade)
+  id         String                    @id @default(uuid())
+  tenantId   String
+  resourceId String
+  teacherId  String
+  content    String
+  createdAt  DateTime                  @default(now())
+  updatedAt  DateTime                  @updatedAt
+  tenant     Tenant                    @relation("TenantResourceAnnotations", fields: [tenantId], references: [id], onDelete: Cascade)
+  resource   GlobalPedagogicalResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  teacher    Staff                     @relation("StaffResourceAnnotations", fields: [teacherId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@index([resourceId])
@@ -13243,75 +13309,75 @@ model TenantResourceAnnotation {
 }
 
 model HrJob {
-  id              String          @id @default(uuid())
-  tenantId        String
-  ref             String          @unique
-  title           String
-  dept            String
-  loc             String
-  status          String          @default("BROUILLON")
-  description     String?
-  missions        String?
+  id               String          @id @default(uuid())
+  tenantId         String
+  ref              String          @unique
+  title            String
+  dept             String
+  loc              String
+  status           String          @default("BROUILLON")
+  description      String?
+  missions         String?
   responsibilities String?
-  academicLevel   String?
-  experience      String?
-  skillsRequired  String?
-  salary          String?
-  contractType    String?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  applications    HrApplication[]
-  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicLevel    String?
+  experience       String?
+  skillsRequired   String?
+  salary           String?
+  contractType     String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  applications     HrApplication[]
+  tenant           Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@map("hr_jobs")
 }
 
 model HrCandidate {
-  id                    String                 @id @default(uuid())
-  tenantId              String
-  firstName             String
-  lastName              String
-  email                 String
-  phone                 String
-  address               String?
-  gender                String?
-  dateOfBirth           DateTime?
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
-  applications          HrApplication[]
-  interviews            HrInterview[]
-  testResults           HrTestResult[]
-  aiReports             HrAiReport[]
-  talentPool            HrTalentPool?
-  academicProfile       AcademicProfile?
+  id                     String                  @id @default(uuid())
+  tenantId               String
+  firstName              String
+  lastName               String
+  email                  String
+  phone                  String
+  address                String?
+  gender                 String?
+  dateOfBirth            DateTime?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  applications           HrApplication[]
+  interviews             HrInterview[]
+  testResults            HrTestResult[]
+  aiReports              HrAiReport[]
+  talentPool             HrTalentPool?
+  academicProfile        AcademicProfile?
   teachingCertifications TeachingCertification[]
-  academicScores        AcademicScore?
-  tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicScores         AcademicScore?
+  tenant                 Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@map("hr_candidates")
 }
 
 model HrApplication {
-  id             String       @id @default(uuid())
-  tenantId       String
-  jobId          String
-  candidateId    String
-  status         String       @default("NOUVEAU")
-  score          Int          @default(0)
-  scoreCV        Int          @default(0)
-  scoreLetter    Int          @default(0)
-  scoreMatching  Int          @default(0)
-  risks          String       @default("Aucun")
-  riskDetail     String?
-  matchDetail    String?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  job            HrJob        @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  candidate      HrCandidate  @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  aiReports      HrAiReport[]
-  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id            String       @id @default(uuid())
+  tenantId      String
+  jobId         String
+  candidateId   String
+  status        String       @default("NOUVEAU")
+  score         Int          @default(0)
+  scoreCV       Int          @default(0)
+  scoreLetter   Int          @default(0)
+  scoreMatching Int          @default(0)
+  risks         String       @default("Aucun")
+  riskDetail    String?
+  matchDetail   String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  job           HrJob        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  candidate     HrCandidate  @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  aiReports     HrAiReport[]
+  tenant        Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@index([jobId])
@@ -13396,12 +13462,12 @@ model HrTalentPool {
 }
 
 model AcademicProfile {
-  id                   String      @id @default(uuid())
-  candidateId          String      @unique
-  teachingLevel        String
-  subjects             String[]
+  id                    String      @id @default(uuid())
+  candidateId           String      @unique
+  teachingLevel         String
+  subjects              String[]
   pedagogicalExperience String?
-  candidate            HrCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  candidate             HrCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
 
   @@map("hr_academic_profiles")
 }

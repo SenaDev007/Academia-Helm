@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { nestControllerUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
-
-const API_URL = getApiBaseUrlForRoutes();
 
 export async function DELETE(
   request: NextRequest,
@@ -11,7 +9,7 @@ export async function DELETE(
   const { entryId } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(`${API_URL}/api/timetables/entries/${entryId}`, {
+    const response = await fetch(nestControllerUrl(`timetables/entries/${entryId}`), {
       method: 'DELETE',
       headers,
     });

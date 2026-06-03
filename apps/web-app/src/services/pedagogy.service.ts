@@ -123,7 +123,7 @@ class PedagogyService {
       return LocalSearchService.search("subjects", { tenantId: getTenantId(), filters: { academicYearId } });
     }
     try {
-      return await apiFetch(`/api/subjects?academicYearId=${academicYearId}`);
+      return await apiFetch(`/subjects?academicYearId=${academicYearId}`);
     } catch (e) {
       return LocalSearchService.search("subjects", { tenantId: getTenantId(), filters: { academicYearId } });
     }
@@ -134,7 +134,7 @@ class PedagogyService {
     if (tenantId) {
       return createEntityOffline(tenantId, 'SUBJECT', data);
     }
-    return apiFetch('/api/subjects', { method: 'POST', body: data });
+    return apiFetch('/subjects', { method: 'POST', body: data });
   }
 
   async updateSubject(id: string, data: any): Promise<any> {
@@ -142,7 +142,7 @@ class PedagogyService {
     if (tenantId) {
       return updateEntityOffline(tenantId, 'SUBJECT', id, data);
     }
-    return apiFetch(`/api/subjects/${id}`, { method: 'PUT', body: data });
+    return apiFetch(`/subjects/${id}`, { method: 'PUT', body: data });
   }
 
   async deleteSubject(id: string): Promise<any> {
@@ -150,7 +150,7 @@ class PedagogyService {
     if (tenantId) {
       return deleteEntityOffline(tenantId, 'SUBJECT', id);
     }
-    return apiFetch(`/api/subjects/${id}`, { method: 'DELETE' });
+    return apiFetch(`/subjects/${id}`, { method: 'DELETE' });
   }
 
   // --- Series (Séries du Secondaire) ---
@@ -159,7 +159,7 @@ class PedagogyService {
       return LocalSearchService.search("academic_series", { tenantId: getTenantId(), filters: { academicYearId } });
     }
     try {
-      return await apiFetch(`/api/pedagogy/academic-series?academicYearId=${academicYearId}`);
+      return await apiFetch(`/pedagogy/academic-series?academicYearId=${academicYearId}`);
     } catch (e) {
       return LocalSearchService.search("academic_series", { tenantId: getTenantId(), filters: { academicYearId } });
     }
@@ -170,7 +170,7 @@ class PedagogyService {
     if (tenantId) {
       return createEntityOffline(tenantId, 'ACADEMIC_SERIES', data);
     }
-    return apiFetch('/api/pedagogy/academic-series', { method: 'POST', body: data });
+    return apiFetch('/pedagogy/academic-series', { method: 'POST', body: data });
   }
 
   async updateSeries(id: string, data: any): Promise<any> {
@@ -178,7 +178,7 @@ class PedagogyService {
     if (tenantId) {
       return updateEntityOffline(tenantId, 'ACADEMIC_SERIES', id, data);
     }
-    return apiFetch(`/api/pedagogy/academic-series/${id}`, { method: 'PUT', body: data });
+    return apiFetch(`/pedagogy/academic-series/${id}`, { method: 'PUT', body: data });
   }
 
   async addSubjectToSeries(data: any): Promise<any> {
@@ -186,7 +186,7 @@ class PedagogyService {
     if (tenantId) {
       return createEntityOffline(tenantId, 'SERIES_SUBJECT', data);
     }
-    return apiFetch('/api/pedagogy/academic-series/subjects', { method: 'POST', body: data });
+    return apiFetch('/pedagogy/academic-series/subjects', { method: 'POST', body: data });
   }
 
   async removeSubjectFromSeries(id: string): Promise<any> {
@@ -194,7 +194,7 @@ class PedagogyService {
     if (tenantId) {
       return deleteEntityOffline(tenantId, 'SERIES_SUBJECT', id);
     }
-    return apiFetch(`/api/pedagogy/academic-series/subjects/${id}`, { method: 'DELETE' });
+    return apiFetch(`/pedagogy/academic-series/subjects/${id}`, { method: 'DELETE' });
   }
 
   // --- Teachers (Corps Enseignant) ---
@@ -203,7 +203,7 @@ class PedagogyService {
       return LocalSearchService.search("teachers", { tenantId: getTenantId() });
     }
     try {
-      return await apiFetch('/api/teachers');
+      return await apiFetch('/teachers');
     } catch (e) {
       return LocalSearchService.search("teachers", { tenantId: getTenantId() });
     }
@@ -214,7 +214,7 @@ class PedagogyService {
     if (tenantId) {
       return createEntityOffline(tenantId, 'TEACHER', data);
     }
-    return apiFetch('/api/teachers', { method: 'POST', body: data });
+    return apiFetch('/teachers', { method: 'POST', body: data });
   }
 
   async updateTeacher(id: string, data: any): Promise<any> {
@@ -222,7 +222,7 @@ class PedagogyService {
     if (tenantId) {
       return updateEntityOffline(tenantId, 'TEACHER', id, data);
     }
-    return apiFetch(`/api/teachers/${id}`, { method: 'PUT', body: data });
+    return apiFetch(`/teachers/${id}`, { method: 'PUT', body: data });
   }
 
   // --- Teacher Profiles (Profils Académiques Enseignants) ---
@@ -231,7 +231,7 @@ class PedagogyService {
       return LocalSearchService.search("teacher_profiles", { tenantId: getTenantId(), filters: { academicYearId } });
     }
     try {
-      return await apiFetch(`/api/pedagogy/teacher-profiles?academicYearId=${academicYearId}`);
+      return await apiFetch(`/pedagogy/teacher-profiles?academicYearId=${academicYearId}`);
     } catch (e) {
       return LocalSearchService.search("teacher_profiles", { tenantId: getTenantId(), filters: { academicYearId } });
     }
@@ -242,7 +242,7 @@ class PedagogyService {
     if (tenantId) {
       return createEntityOffline(tenantId, 'TEACHER_PROFILE', data);
     }
-    return apiFetch('/api/pedagogy/teacher-profiles', { method: 'POST', body: data });
+    return apiFetch('/pedagogy/teacher-profiles', { method: 'POST', body: data });
   }
 
   async updateTeacherProfile(id: string, data: any): Promise<any> {
@@ -250,7 +250,7 @@ class PedagogyService {
     if (tenantId) {
       return updateEntityOffline(tenantId, 'TEACHER_PROFILE', id, data);
     }
-    return apiFetch(`/api/pedagogy/teacher-profiles/${id}`, { method: 'PUT', body: data });
+    return apiFetch(`/pedagogy/teacher-profiles/${id}`, { method: 'PUT', body: data });
   }
 
   // --- Assignments (Affectations & Classes) ---
@@ -259,7 +259,7 @@ class PedagogyService {
       return LocalSearchService.search("classes", { tenantId: getTenantId(), filters: { academicYearId } });
     }
     try {
-      return await apiFetch(`/api/pedagogy/academic-structure/classes?academicYearId=${academicYearId}`);
+      return await apiFetch(`/pedagogy/academic-structure/classes?academicYearId=${academicYearId}`);
     } catch (e) {
       return LocalSearchService.search("classes", { tenantId: getTenantId(), filters: { academicYearId } });
     }
@@ -270,14 +270,14 @@ class PedagogyService {
       return LocalSearchService.search("class_subjects", { tenantId: getTenantId(), filters: { classId, academicYearId } });
     }
     try {
-      return await apiFetch(`/api/pedagogy/class-subjects/${classId}?academicYearId=${academicYearId}`);
+      return await apiFetch(`/pedagogy/class-subjects/${classId}?academicYearId=${academicYearId}`);
     } catch (e) {
       return LocalSearchService.search("class_subjects", { tenantId: getTenantId(), filters: { classId, academicYearId } });
     }
   }
 
   async removeClassSubject(id: string): Promise<any> {
-    return apiFetch(`/api/pedagogy/class-subjects/${id}`, { method: 'DELETE' });
+    return apiFetch(`/pedagogy/class-subjects/${id}`, { method: 'DELETE' });
   }
 
   async createTeacherAssignment(data: any): Promise<any> {
@@ -285,7 +285,7 @@ class PedagogyService {
     if (tenantId) {
       return createEntityOffline(tenantId, 'TEACHER_CLASS_ASSIGNMENT', data);
     }
-    return apiFetch('/api/pedagogy/teacher-class-assignments', { method: 'POST', body: data });
+    return apiFetch('/pedagogy/teacher-class-assignments', { method: 'POST', body: data });
   }
 
   async deleteTeacherAssignment(id: string): Promise<any> {
@@ -293,7 +293,7 @@ class PedagogyService {
     if (tenantId) {
       return deleteEntityOffline(tenantId, 'TEACHER_CLASS_ASSIGNMENT', id);
     }
-    return apiFetch(`/api/pedagogy/teacher-class-assignments/${id}`, { method: 'DELETE' });
+    return apiFetch(`/pedagogy/teacher-class-assignments/${id}`, { method: 'DELETE' });
   }
 
   // --- Control & Analytics ---
@@ -312,7 +312,7 @@ class PedagogyService {
       return results[0] || null;
     }
     try {
-      return await apiFetch(`/api/pedagogy/teacher/semainier/current?academicYearId=${academicYearId}&schoolLevelId=${schoolLevelId}`);
+      return await apiFetch(`/pedagogy/teacher/semainier/current?academicYearId=${academicYearId}&schoolLevelId=${schoolLevelId}`);
     } catch (e) {
       const results = await LocalSearchService.search("weekly_semainier_daily_entries", { tenantId: getTenantId() });
       return results[0] || null;
@@ -324,7 +324,7 @@ class PedagogyService {
     if (tenantId) {
       return createEntityOffline(tenantId, 'WEEKLY_SEMAINIER', data);
     }
-    return apiFetch('/api/pedagogy/teacher/semainier', { method: 'POST', body: data });
+    return apiFetch('/pedagogy/teacher/semainier', { method: 'POST', body: data });
   }
 
   async addSemainierDailyEntry(semainierId: string, data: any): Promise<any> {
@@ -332,7 +332,7 @@ class PedagogyService {
     if (tenantId) {
       return createEntityOffline(tenantId, 'WEEKLY_SEMAINIER', { semainierId, action: 'ADD_ENTRY', ...data });
     }
-    return apiFetch(`/api/pedagogy/teacher/semainier/${semainierId}/daily-entries`, { method: 'POST', body: data });
+    return apiFetch(`/pedagogy/teacher/semainier/${semainierId}/daily-entries`, { method: 'POST', body: data });
   }
 
   async reportSemainierIncident(semainierId: string, data: any): Promise<any> {
@@ -340,7 +340,7 @@ class PedagogyService {
     if (tenantId) {
       return createEntityOffline(tenantId, 'WEEKLY_SEMAINIER', { semainierId, action: 'REPORT_INCIDENT', ...data });
     }
-    return apiFetch(`/api/pedagogy/teacher/semainier/${semainierId}/incidents`, { method: 'POST', body: data });
+    return apiFetch(`/pedagogy/teacher/semainier/${semainierId}/incidents`, { method: 'POST', body: data });
   }
 
   async submitSemainier(semainierId: string): Promise<any> {
@@ -348,7 +348,7 @@ class PedagogyService {
     if (tenantId) {
       return updateEntityOffline<any>(tenantId, 'WEEKLY_SEMAINIER', semainierId, { status: 'SOUMIS' });
     }
-    return apiFetch(`/api/pedagogy/teacher/semainier/${semainierId}/submit`, { method: 'POST' });
+    return apiFetch(`/pedagogy/teacher/semainier/${semainierId}/submit`, { method: 'POST' });
   }
 
   // --- Tests / Evaluations (Cahier de Test) ---
@@ -357,7 +357,7 @@ class PedagogyService {
       return LocalSearchService.search("exams", { tenantId: getTenantId(), filters: { classSubjectId } });
     }
     try {
-      return await apiFetch(`/api/institutional-exams/evaluations?classSubjectId=${classSubjectId}`);
+      return await apiFetch(`/institutional-exams/evaluations?classSubjectId=${classSubjectId}`);
     } catch (e) {
       return LocalSearchService.search("exams", { tenantId: getTenantId(), filters: { classSubjectId } });
     }
@@ -368,7 +368,7 @@ class PedagogyService {
     if (tenantId) {
       return createEntityOffline(tenantId, 'EXAM', data);
     }
-    return apiFetch('/api/institutional-exams/evaluations', { method: 'POST', body: data });
+    return apiFetch('/institutional-exams/evaluations', { method: 'POST', body: data });
   }
 
   async updateTest(id: string, data: any): Promise<any> {
@@ -376,7 +376,7 @@ class PedagogyService {
     if (tenantId) {
       return updateEntityOffline(tenantId, 'EXAM', id, data);
     }
-    return apiFetch(`/api/institutional-exams/evaluations/${id}`, { method: 'PUT', body: data });
+    return apiFetch(`/institutional-exams/evaluations/${id}`, { method: 'PUT', body: data });
   }
 
   async deleteTest(id: string): Promise<any> {
@@ -384,7 +384,7 @@ class PedagogyService {
     if (tenantId) {
       return deleteEntityOffline(tenantId, 'EXAM', id);
     }
-    return apiFetch(`/api/institutional-exams/evaluations/${id}`, { method: 'DELETE' });
+    return apiFetch(`/institutional-exams/evaluations/${id}`, { method: 'DELETE' });
   }
 
   // --- Pedagogical Materials ---
@@ -393,7 +393,7 @@ class PedagogyService {
       return LocalSearchService.search("pedagogical_materials", { tenantId: getTenantId() });
     }
     try {
-      return await apiFetch(`/api/pedagogy/pedagogical-materials?academicYearId=${academicYearId}`);
+      return await apiFetch(`/pedagogy/pedagogical-materials?academicYearId=${academicYearId}`);
     } catch (e) {
       return LocalSearchService.search("pedagogical_materials", { tenantId: getTenantId() });
     }
@@ -404,7 +404,7 @@ class PedagogyService {
     if (tenantId) {
       return createEntityOffline(tenantId, 'PEDAGOGICAL_MATERIAL', data);
     }
-    return apiFetch('/api/pedagogy/pedagogical-materials', { method: 'POST', body: data });
+    return apiFetch('/pedagogy/pedagogical-materials', { method: 'POST', body: data });
   }
 
   async updatePedagogicalMaterial(id: string, data: any): Promise<any> {
@@ -412,7 +412,7 @@ class PedagogyService {
     if (tenantId) {
       return updateEntityOffline(tenantId, 'PEDAGOGICAL_MATERIAL', id, data);
     }
-    return apiFetch(`/api/pedagogy/pedagogical-materials/${id}`, { method: 'PUT', body: data });
+    return apiFetch(`/pedagogy/pedagogical-materials/${id}`, { method: 'PUT', body: data });
   }
 
   async deletePedagogicalMaterial(id: string): Promise<any> {
@@ -420,7 +420,7 @@ class PedagogyService {
     if (tenantId) {
       return deleteEntityOffline(tenantId, 'PEDAGOGICAL_MATERIAL', id);
     }
-    return apiFetch(`/api/pedagogy/pedagogical-materials/${id}`, { method: 'DELETE' });
+    return apiFetch(`/pedagogy/pedagogical-materials/${id}`, { method: 'DELETE' });
   }
 
   async addMaterialStock(data: any): Promise<any> {
@@ -428,7 +428,7 @@ class PedagogyService {
     if (tenantId) {
       return createEntityOffline(tenantId, 'MATERIAL_STOCK', data);
     }
-    return apiFetch('/api/pedagogy/material-stocks', { method: 'POST', body: data });
+    return apiFetch('/pedagogy/material-stocks', { method: 'POST', body: data });
   }
 
   async createMaterialAssignment(data: any): Promise<any> {
@@ -436,7 +436,7 @@ class PedagogyService {
     if (tenantId) {
       return createEntityOffline(tenantId, 'TEACHER_MATERIAL_ASSIGNMENT', data);
     }
-    return apiFetch('/api/pedagogy/teacher-material-assignments', { method: 'POST', body: data });
+    return apiFetch('/pedagogy/teacher-material-assignments', { method: 'POST', body: data });
   }
 
   // --- Homework Entries (Devoirs & Exercices) ---
@@ -446,7 +446,7 @@ class PedagogyService {
       return LocalSearchService.search("homework_entries", { tenantId: getTenantId() });
     }
     try {
-      return await apiFetch(`/api/pedagogy/homework-entries${qs}`);
+      return await apiFetch(`/pedagogy/homework-entries${qs}`);
     } catch (e) {
       return LocalSearchService.search("homework_entries", { tenantId: getTenantId() });
     }
@@ -457,7 +457,7 @@ class PedagogyService {
     if (tenantId) {
       return createEntityOffline(tenantId, 'HOMEWORK_ENTRY', data);
     }
-    return apiFetch('/api/pedagogy/homework-entries', { method: 'POST', body: data });
+    return apiFetch('/pedagogy/homework-entries', { method: 'POST', body: data });
   }
 
   async updateHomeworkEntry(id: string, data: any): Promise<any> {
@@ -465,7 +465,7 @@ class PedagogyService {
     if (tenantId) {
       return updateEntityOffline(tenantId, 'HOMEWORK_ENTRY', id, data);
     }
-    return apiFetch(`/api/pedagogy/homework-entries/${id}`, { method: 'PUT', body: data });
+    return apiFetch(`/pedagogy/homework-entries/${id}`, { method: 'PUT', body: data });
   }
 
   async deleteHomeworkEntry(id: string): Promise<any> {
@@ -473,7 +473,7 @@ class PedagogyService {
     if (tenantId) {
       return deleteEntityOffline(tenantId, 'HOMEWORK_ENTRY', id);
     }
-    return apiFetch(`/api/pedagogy/homework-entries/${id}`, { method: 'DELETE' });
+    return apiFetch(`/pedagogy/homework-entries/${id}`, { method: 'DELETE' });
   }
 }
 

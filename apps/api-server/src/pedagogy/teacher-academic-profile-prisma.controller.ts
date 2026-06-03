@@ -16,8 +16,10 @@ import {
 import { TeacherAcademicProfilePrismaService } from './teacher-academic-profile-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CreateTeacherProfileDto } from './dto/create-teacher-profile.dto';
+import { UpdateTeacherProfileDto } from './dto/update-teacher-profile.dto';
 
-@Controller('api/pedagogy/teacher-profiles')
+@Controller('pedagogy/teacher-profiles')
 @UseGuards(JwtAuthGuard)
 export class TeacherAcademicProfilePrismaController {
   constructor(private readonly service: TeacherAcademicProfilePrismaService) {}
@@ -47,13 +49,7 @@ export class TeacherAcademicProfilePrismaController {
   @Post()
   async createProfile(
     @TenantId() tenantId: string,
-    @Body()
-    body: {
-      academicYearId: string;
-      teacherId: string;
-      maxWeeklyHours: any;
-      isSemainier?: boolean;
-    },
+    @Body() body: CreateTeacherProfileDto,
   ) {
     return this.service.createProfile({
       ...body,
@@ -66,7 +62,7 @@ export class TeacherAcademicProfilePrismaController {
   async updateProfile(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() body: { maxWeeklyHours?: any; isSemainier?: boolean; isActive?: boolean },
+    @Body() body: UpdateTeacherProfileDto,
   ) {
     const updateData: any = { ...body };
     if (body.maxWeeklyHours !== undefined) {

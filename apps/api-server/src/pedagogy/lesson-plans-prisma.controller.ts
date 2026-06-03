@@ -18,8 +18,10 @@ import {
 import { LessonPlansPrismaService } from './lesson-plans-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CreateLessonPlanDto } from './dto/create-lesson-plan.dto';
+import { UpdateLessonPlanDto } from './dto/update-lesson-plan.dto';
 
-@Controller('api/lesson-plans')
+@Controller('lesson-plans')
 @UseGuards(JwtAuthGuard)
 export class LessonPlansPrismaController {
   constructor(private readonly lessonPlansService: LessonPlansPrismaService) {}
@@ -27,12 +29,9 @@ export class LessonPlansPrismaController {
   @Post()
   async create(
     @TenantId() tenantId: string,
-    @Body() createDto: any,
+    @Body() createDto: CreateLessonPlanDto,
   ) {
-    return this.lessonPlansService.createLessonPlan({
-      ...createDto,
-      tenantId,
-    });
+    return this.lessonPlansService.createLessonPlan(tenantId, createDto as any);
   }
 
   @Get()
@@ -46,15 +45,7 @@ export class LessonPlansPrismaController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
-    return this.lessonPlansService.findAllLessonPlans(tenantId, {
-      academicYearId,
-      schoolLevelId,
-      classId,
-      subjectId,
-      teacherId,
-      startDate: startDate ? new Date(startDate) : undefined,
-      endDate: endDate ? new Date(endDate) : undefined,
-    });
+    return this.lessonPlansService.findAllLessonPlans(tenantId, academicYearId);
   }
 
   @Get(':id')
@@ -69,9 +60,9 @@ export class LessonPlansPrismaController {
   async update(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() updateDto: any,
+    @Body() updateDto: UpdateLessonPlanDto,
   ) {
-    return this.lessonPlansService.updateLessonPlan(id, tenantId, updateDto);
+    return this.lessonPlansService.updateLessonPlan(id, tenantId, updateDto as any);
   }
 
   @Post(':id/publish')
@@ -90,4 +81,3 @@ export class LessonPlansPrismaController {
     return this.lessonPlansService.deleteLessonPlan(id, tenantId);
   }
 }
-

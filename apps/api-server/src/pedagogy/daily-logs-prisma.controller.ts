@@ -18,8 +18,10 @@ import {
 import { DailyLogsPrismaService } from './daily-logs-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CreateDailyLogDto } from './dto/create-daily-log.dto';
+import { UpdateDailyLogDto } from './dto/update-daily-log.dto';
 
-@Controller('api/daily-logs')
+@Controller('daily-logs')
 @UseGuards(JwtAuthGuard)
 export class DailyLogsPrismaController {
   constructor(private readonly dailyLogsService: DailyLogsPrismaService) {}
@@ -27,12 +29,12 @@ export class DailyLogsPrismaController {
   @Post()
   async create(
     @TenantId() tenantId: string,
-    @Body() createDto: any,
+    @Body() createDto: CreateDailyLogDto,
   ) {
     return this.dailyLogsService.createDailyLog({
       ...createDto,
       tenantId,
-    });
+    } as any);
   }
 
   @Get()
@@ -69,9 +71,9 @@ export class DailyLogsPrismaController {
   async update(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() updateDto: any,
+    @Body() updateDto: UpdateDailyLogDto,
   ) {
-    return this.dailyLogsService.updateDailyLog(id, tenantId, updateDto);
+    return this.dailyLogsService.updateDailyLog(id, tenantId, updateDto as any);
   }
 
   @Post(':id/validate')
@@ -91,4 +93,3 @@ export class DailyLogsPrismaController {
     return this.dailyLogsService.deleteDailyLog(id, tenantId);
   }
 }
-

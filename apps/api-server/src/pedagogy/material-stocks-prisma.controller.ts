@@ -20,7 +20,7 @@ import { MaterialRbacGuard } from './guards/material-rbac.guard';
 import { UseInterceptors } from '@nestjs/common';
 import { MaterialAuditInterceptor } from './interceptors/material-audit.interceptor';
 
-@Controller('api/pedagogy/material-stocks')
+@Controller('pedagogy/material-stocks')
 @UseGuards(JwtAuthGuard, MaterialContextGuard, MaterialRbacGuard)
 @UseInterceptors(MaterialAuditInterceptor)
 export class MaterialStocksPrismaController {

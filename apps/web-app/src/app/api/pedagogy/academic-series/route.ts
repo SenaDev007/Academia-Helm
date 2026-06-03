@@ -3,12 +3,12 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { nestDoublePrefixedControllerUrl, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { nestControllerUrl, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 import { readProxyBodyText } from '@/lib/api/pedagogy-proxy-body';
 
 async function forward(request: NextRequest, method: string) {
-  const url = new URL(nestDoublePrefixedControllerUrl('pedagogy/academic-series'));
+  const url = new URL(nestControllerUrl('pedagogy/academic-series'));
   request.nextUrl.searchParams.forEach((value, key) => {
     url.searchParams.append(key, value);
   });

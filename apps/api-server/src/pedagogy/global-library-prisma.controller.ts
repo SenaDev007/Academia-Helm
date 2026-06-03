@@ -22,7 +22,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
-@Controller('api/pedagogy/global-library')
+@Controller('pedagogy/global-library')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class GlobalLibraryPrismaController {
   constructor(private readonly libraryService: GlobalLibraryPrismaService) {}
@@ -31,16 +31,16 @@ export class GlobalLibraryPrismaController {
    * Récupère toutes les ressources (Tous rôles authentifiés)
    */
   @Get()
-  async findAll(@Query() query: any) {
-    return this.libraryService.findAllResources(query);
+  async findAll(@TenantId() tenantId: string, @Query() query: any) {
+    return this.libraryService.findAllResources(tenantId, query);
   }
 
   /**
    * Récupère une ressource par ID
    */
   @Get(':id')
-  async findOne(@Param('id') id: string) {
-    return this.libraryService.findResourceById(id);
+  async findOne(@Param('id') id: string, @TenantId() tenantId: string) {
+    return this.libraryService.findResourceById(id, tenantId);
   }
 
   /**
@@ -48,9 +48,10 @@ export class GlobalLibraryPrismaController {
    */
   @Post()
   @Roles('PLATFORM_OWNER', 'PLATFORM_ADMIN')
-  async create(@Body() createDto: any, @CurrentUser() user: any) {
+  async create(@TenantId() tenantId: string, @Body() createDto: any, @CurrentUser() user: any) {
     return this.libraryService.createResource({
       ...createDto,
+      tenantId,
       createdBy: user.id,
     });
   }
@@ -60,8 +61,8 @@ export class GlobalLibraryPrismaController {
    */
   @Patch(':id')
   @Roles('PLATFORM_OWNER', 'PLATFORM_ADMIN')
-  async update(@Param('id') id: string, @Body() updateDto: any) {
-    return this.libraryService.updateResource(id, updateDto);
+  async update(@Param('id') id: string, @TenantId() tenantId: string, @Body() updateDto: any) {
+    return this.libraryService.updateResource(id, tenantId, updateDto);
   }
 
   /**
@@ -69,8 +70,8 @@ export class GlobalLibraryPrismaController {
    */
   @Delete(':id')
   @Roles('PLATFORM_OWNER', 'PLATFORM_ADMIN')
-  async remove(@Param('id') id: string) {
-    return this.libraryService.deleteResource(id);
+  async remove(@Param('id') id: string, @TenantId() tenantId: string) {
+    return this.libraryService.deleteResource(id, tenantId);
   }
 
   /**
@@ -123,7 +124,7 @@ export class GlobalLibraryPrismaController {
    */
   @Get('stats/most-used')
   @Roles('PLATFORM_OWNER', 'PLATFORM_ADMIN')
-  async getMostUsed() {
-    return this.libraryService.getMostUsedResources();
+  async getMostUsed(@TenantId() tenantId: string) {
+    return this.libraryService.getMostUsedResources(tenantId);
   }
 }

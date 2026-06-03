@@ -18,8 +18,10 @@ import {
 import { SubjectsPrismaService } from './subjects-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CreateSubjectDto } from './dto/create-subject.dto';
+import { UpdateSubjectDto } from './dto/update-subject.dto';
 
-@Controller('api/subjects')
+@Controller('subjects')
 @UseGuards(JwtAuthGuard)
 export class SubjectsPrismaController {
   constructor(private readonly subjectsService: SubjectsPrismaService) {}
@@ -27,19 +29,19 @@ export class SubjectsPrismaController {
   @Post()
   async create(
     @TenantId() tenantId: string,
-    @Body() createDto: any,
+    @Body() createDto: CreateSubjectDto,
   ) {
     const formattedData = { ...createDto };
     if (createDto.coefficient !== undefined) {
       formattedData.coefficient = Number(createDto.coefficient) || 1.0;
     }
     if (createDto.weeklyHours !== undefined) {
-      formattedData.weeklyHours = parseInt(createDto.weeklyHours, 10) || 0;
+      formattedData.weeklyHours = Number(createDto.weeklyHours) || 0;
     }
     return this.subjectsService.createSubject({
       ...formattedData,
       tenantId,
-    });
+    } as any);
   }
 
   @Get()
@@ -70,16 +72,16 @@ export class SubjectsPrismaController {
   async update(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() updateDto: any,
+    @Body() updateDto: UpdateSubjectDto,
   ) {
     const formattedData = { ...updateDto };
     if (updateDto.coefficient !== undefined) {
       formattedData.coefficient = Number(updateDto.coefficient) || 1.0;
     }
     if (updateDto.weeklyHours !== undefined) {
-      formattedData.weeklyHours = parseInt(updateDto.weeklyHours, 10) || 0;
+      formattedData.weeklyHours = Number(updateDto.weeklyHours) || 0;
     }
-    return this.subjectsService.updateSubject(id, tenantId, formattedData);
+    return this.subjectsService.updateSubject(id, tenantId, formattedData as any);
   }
 
   @Delete(':id')
@@ -90,4 +92,3 @@ export class SubjectsPrismaController {
     return this.subjectsService.deleteSubject(id, tenantId);
   }
 }
-

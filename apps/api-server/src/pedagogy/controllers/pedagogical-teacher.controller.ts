@@ -28,8 +28,10 @@ import { PedagogicalDocumentService } from '../services/pedagogical-document.ser
 import { PedagogicalWorkflowService } from '../services/pedagogical-workflow.service';
 import { PedagogicalNotificationService } from '../services/pedagogical-notification.service';
 import { WeeklySemainierService } from '../services/weekly-semainier.service';
+import { CreatePedagogicalDocumentDto } from '../dto/create-pedagogical-document.dto';
+import { UpdatePedagogicalDocumentDto } from '../dto/update-pedagogical-document.dto';
 
-@Controller('api/pedagogy/teacher')
+@Controller('pedagogy/teacher')
 @UseGuards(JwtAuthGuard, TenantGuard)
 export class PedagogicalTeacherController {
   constructor(
@@ -50,20 +52,7 @@ export class PedagogicalTeacherController {
   async createDocument(
     @GetTenant() tenant: any,
     @CurrentUser() user: any,
-    @Body() data: {
-      academicYearId: string;
-      schoolLevelId: string;
-      teacherId: string;
-      classId?: string;
-      subjectId?: string;
-      documentType: 'FICHE_PEDAGOGIQUE' | 'CAHIER_JOURNAL' | 'CAHIER_TEXTE' | 'SEMAINIER';
-      title: string;
-      description?: string;
-      content: string;
-      period?: string;
-      weekStartDate?: Date;
-      weekEndDate?: Date;
-    },
+    @Body() data: CreatePedagogicalDocumentDto,
   ) {
     // Vérifier que l'enseignant est bien l'utilisateur connecté
     if (data.teacherId !== user.teacherId && !user.roles?.includes('ADMIN')) {
@@ -75,7 +64,7 @@ export class PedagogicalTeacherController {
       data.academicYearId,
       data.schoolLevelId,
       data.teacherId,
-      data,
+      data as any,
     );
   }
 
@@ -131,20 +120,13 @@ export class PedagogicalTeacherController {
     @GetTenant() tenant: any,
     @CurrentUser() user: any,
     @Param('id') id: string,
-    @Body() data: {
-      title?: string;
-      description?: string;
-      content?: string;
-      period?: string;
-      weekStartDate?: Date;
-      weekEndDate?: Date;
-    },
+    @Body() data: UpdatePedagogicalDocumentDto,
   ) {
     if (!user.teacherId) {
       throw new BadRequestException('User is not associated with a teacher');
     }
 
-    return this.documentService.updateDocument(id, tenant.id, user.teacherId, data);
+    return this.documentService.updateDocument(id, tenant.id, user.teacherId, data as any);
   }
 
   /**

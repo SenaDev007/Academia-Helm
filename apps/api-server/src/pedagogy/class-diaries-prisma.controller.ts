@@ -18,8 +18,10 @@ import {
 import { ClassDiariesPrismaService } from './class-diaries-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CreateClassDiaryDto } from './dto/create-class-diary.dto';
+import { UpdateClassDiaryDto } from './dto/update-class-diary.dto';
 
-@Controller('api/class-diaries')
+@Controller('class-diaries')
 @UseGuards(JwtAuthGuard)
 export class ClassDiariesPrismaController {
   constructor(private readonly classDiariesService: ClassDiariesPrismaService) {}
@@ -27,12 +29,12 @@ export class ClassDiariesPrismaController {
   @Post()
   async create(
     @TenantId() tenantId: string,
-    @Body() createDto: any,
+    @Body() createDto: CreateClassDiaryDto,
   ) {
     return this.classDiariesService.createClassDiary({
       ...createDto,
       tenantId,
-    });
+    } as any);
   }
 
   @Get()
@@ -69,9 +71,9 @@ export class ClassDiariesPrismaController {
   async update(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() updateDto: any,
+    @Body() updateDto: UpdateClassDiaryDto,
   ) {
-    return this.classDiariesService.updateClassDiary(id, tenantId, updateDto);
+    return this.classDiariesService.updateClassDiary(id, tenantId, updateDto as any);
   }
 
   @Delete(':id')
@@ -82,4 +84,3 @@ export class ClassDiariesPrismaController {
     return this.classDiariesService.deleteClassDiary(id, tenantId);
   }
 }
-

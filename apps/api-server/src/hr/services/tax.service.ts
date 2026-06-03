@@ -162,7 +162,7 @@ export class TaxService {
   async recordTaxWithholding(
     tenantId: string,
     academicYearId: string,
-    payrollItemId: string | null,
+    payrollItemId: string,
     staffId: string,
     taxRateId: string | null,
     taxType: string,
@@ -193,8 +193,7 @@ export class TaxService {
       data: {
         tenantId,
         academicYearId,
-        // payrollItemId is optional in schema
-        ...(payrollItemId ? { payrollItemId } : {}),
+        payrollItemId,
         staffId,
         taxRateId,
         taxType,
@@ -222,7 +221,7 @@ export class TaxService {
             id: true,
             firstName: true,
             lastName: true,
-            staffCode: true,
+            employeeNumber: true,
           },
         },
       },

@@ -10,6 +10,7 @@
 
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class EvaluationsPrismaService {
@@ -32,7 +33,10 @@ export class EvaluationsPrismaService {
     comments?: string;
   }) {
     return this.prisma.staffEvaluation.create({
-      data,
+      data: {
+        ...data,
+        score: data.score !== undefined && data.score !== null ? new Prisma.Decimal(data.score) : undefined,
+      },
       include: {
         evaluator: {
           select: {
@@ -119,9 +123,14 @@ export class EvaluationsPrismaService {
   async updateEvaluation(id: string, tenantId: string, data: any) {
     const evaluation = await this.findEvaluationById(id, tenantId);
 
+    const updateData: any = { ...data };
+    if (updateData.score !== undefined && updateData.score !== null) {
+      updateData.score = new Prisma.Decimal(updateData.score);
+    }
+
     return this.prisma.staffEvaluation.update({
       where: { id },
-      data,
+      data: updateData,
     });
   }
 

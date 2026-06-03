@@ -22,7 +22,7 @@ export async function GET(
     });
 
     const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error fetching training:', error);
     return NextResponse.json({ error: 'Failed to fetch training' }, { status: 500 });
@@ -46,7 +46,7 @@ export async function PUT(
     });
 
     const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error updating training:', error);
     return NextResponse.json({ error: 'Failed to update training' }, { status: 500 });
@@ -67,7 +67,7 @@ export async function DELETE(
     });
 
     const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error deleting training:', error);
     return NextResponse.json({ error: 'Failed to delete training' }, { status: 500 });

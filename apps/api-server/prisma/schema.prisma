@@ -113,6 +113,11 @@ model Tenant {
   emailLogs                        EmailLog[]
   employeeCNSS                     EmployeeCNSS[]
   contracts                        Contract[]
+  contractAmendments               ContractAmendment[]
+  leaveRequests                    LeaveRequest[]
+  allowanceTypes                   AllowanceType[]
+  staffAllowances                  StaffAllowance[]
+  staffSchedules                   StaffSchedule[]
   examCandidateSchoolTenants       ExamCandidate[]                   @relation("ExamCandidateSchoolTenant")
   examCandidates                   ExamCandidate[]
   examCenters                      ExamCenter[]                      @relation("ExamCenterTenant")
@@ -245,6 +250,9 @@ model Tenant {
   payments                         Payment[]
   payrollItems                     PayrollItem[]
   payrolls                         Payroll[]
+  payrollPeriods                   PayrollPeriod[]
+  payrollRates                     PayrollRate[]
+  oneTimeBonuses                   OneTimeBonus[]
   pedagogicalDocumentComments      PedagogicalDocumentComment[]
   pedagogicalDocumentNotifications PedagogicalDocumentNotification[]
   pedagogicalDocumentReviews       PedagogicalDocumentReview[]
@@ -613,6 +621,8 @@ model AcademicYear {
   payments                         Payment[]
   payrollItems                     PayrollItem[]
   payrolls                         Payroll[]
+  payrollPeriods                   PayrollPeriod[]
+  oneTimeBonuses                   OneTimeBonus[]
   pedagogicalDocumentComments      PedagogicalDocumentComment[]
   pedagogicalDocumentNotifications PedagogicalDocumentNotification[]
   pedagogicalDocumentReviews       PedagogicalDocumentReview[]
@@ -676,6 +686,9 @@ model AcademicYear {
   staffDocuments                   StaffDocument[]
   staffEvaluations                 StaffEvaluation[]
   staffTrainings                   StaffTraining[]
+  leaveRequests       LeaveRequest[]
+  staffAllowances     StaffAllowance[]
+  staffSchedules      StaffSchedule[]
   storePayments                    StorePayment[]
   studentAcademicRecords           StudentAcademicRecord[]           @relation("StudentAcademicRecordAcademicYear")
   studentAccounts                  StudentAccount[]
@@ -1543,6 +1556,8 @@ model SchoolLevel {
   payments                         Payment[]
   payrollItems                     PayrollItem[]
   payrolls                         Payroll[]
+  payrollPeriods                   PayrollPeriod[]
+  oneTimeBonuses                   OneTimeBonus[]
   pedagogicalDocumentComments      PedagogicalDocumentComment[]
   pedagogicalDocumentNotifications PedagogicalDocumentNotification[]
   pedagogicalDocumentReviews       PedagogicalDocumentReview[]
@@ -1574,6 +1589,9 @@ model SchoolLevel {
   staffDocuments                   StaffDocument[]
   staffEvaluations                 StaffEvaluation[]
   staffTrainings                   StaffTraining[]
+  leaveRequests                    LeaveRequest[]
+  staffAllowances                  StaffAllowance[]
+  staffSchedules                   StaffSchedule[]
   storePayments                    StorePayment[]
   studentAcademicRecords           StudentAcademicRecord[]           @relation("StudentAcademicRecordSchoolLevel")
   studentDocuments                 StudentDocument[]
@@ -1838,6 +1856,10 @@ model User {
   weeklyDutyAssigners                       WeeklyDutyAssignment[]
   weeklySemainierIncidentReporters          WeeklySemainierIncident[]         @relation("WeeklySemainierIncidentReporter")
   weeklySemainierValidators                 WeeklySemainier[]                 @relation("WeeklySemainierValidator")
+  approvedLeaveRequests LeaveRequest[] @relation("LeaveRequestApprover")
+  closedPayrollPeriods  PayrollPeriod[] @relation("PayrollPeriodCloser")
+  authorizedOneTimeBonuses OneTimeBonus[] @relation("OneTimeBonusAuthorizer")
+  approvedOneTimeBonuses  OneTimeBonus[] @relation("OneTimeBonusApprover")
 
   @@index([tenantId, role])
   @@index([email])
@@ -4806,6 +4828,10 @@ model Staff {
   overtimeRecords     OvertimeRecord[]
   payrollItems        PayrollItem[]
   salaryPayments      SalaryPayment[]
+  leaveRequests       LeaveRequest[]
+  staffAllowances     StaffAllowance[]
+  staffSchedules      StaffSchedule[]
+  oneTimeBonuses      OneTimeBonus[]
   academicYear        AcademicYear?        @relation(fields: [academicYearId], references: [id])
   schoolLevel         SchoolLevel?         @relation(fields: [schoolLevelId], references: [id])
   tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -4906,6 +4932,7 @@ model Contract {
   staff             Staff             @relation(fields: [staffId], references: [id], onDelete: Cascade)
   template          ContractTemplate? @relation(fields: [templateId], references: [id])
   tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  amendments       ContractAmendment[]
 
   @@index([tenantId])
   @@index([staffId])
@@ -5021,14 +5048,17 @@ model Payroll {
   notes          String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
-  items          PayrollItem[]
-  academicYear   AcademicYear  @relation(fields: [academicYearId], references: [id])
-  schoolLevel    SchoolLevel?  @relation(fields: [schoolLevelId], references: [id])
-  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  payrollPeriodId String?
+  items           PayrollItem[]
+  academicYear    AcademicYear    @relation(fields: [academicYearId], references: [id])
+  schoolLevel     SchoolLevel?    @relation(fields: [schoolLevelId], references: [id])
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  payrollPeriod   PayrollPeriod?  @relation(fields: [payrollPeriodId], references: [id])
 
   @@unique([tenantId, academicYearId, month])
   @@index([tenantId, academicYearId])
   @@index([status])
+  @@index([payrollPeriodId])
   @@map("payrolls")
 }
 
@@ -5065,6 +5095,7 @@ model PayrollItem {
   payments        SalaryPayment[]
   salarySlip      SalarySlip?
   taxWithholdings TaxWithholding[]
+  oneTimeBonuses  OneTimeBonus[]
 
   @@index([tenantId, academicYearId])
   @@index([payrollId])
@@ -5307,6 +5338,218 @@ model TaxWithholding {
   @@index([taxType])
   @@index([taxRateId])
   @@map("tax_withholdings")
+}
+
+model LeaveRequest {
+  id             String       @id @default(uuid())
+  tenantId       String
+  academicYearId String
+  schoolLevelId  String?
+  staffId        String
+  type           String       // ANNUAL, SICK, MATERNITY, PATERNITY, UNPAID, EXCEPTIONAL
+  startDate      DateTime     @db.Date
+  endDate        DateTime     @db.Date
+  reason         String?
+  status         String       @default("PENDING") // PENDING, APPROVED, REJECTED, CANCELLED
+  approvedBy     String?
+  approvedAt     DateTime?
+  rejectedReason String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  schoolLevel    SchoolLevel? @relation(fields: [schoolLevelId], references: [id])
+  staff          Staff        @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  approver       User?        @relation("LeaveRequestApprover", fields: [approvedBy], references: [id])
+
+  @@index([tenantId, academicYearId])
+  @@index([staffId])
+  @@index([status])
+  @@index([startDate, endDate])
+  @@map("leave_requests")
+}
+
+model AllowanceType {
+  id          String   @id @default(uuid())
+  tenantId    String
+  name        String
+  code        String   @unique
+  description String?
+  isTaxable   Boolean  @default(true)
+  isCnss      Boolean  @default(false)
+  amount      Decimal? @db.Decimal(10, 2)
+  isFixed     Boolean  @default(true)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignments StaffAllowance[]
+
+  @@index([tenantId])
+  @@index([code])
+  @@index([isActive])
+  @@map("allowance_types")
+}
+
+model StaffAllowance {
+  id              String        @id @default(uuid())
+  tenantId        String
+  academicYearId  String?
+  schoolLevelId   String?
+  staffId         String
+  allowanceTypeId String
+  amount          Decimal       @db.Decimal(10, 2)
+  effectiveDate   DateTime      @db.Date
+  endDate         DateTime?     @db.Date
+  status          String        @default("ACTIVE") // ACTIVE, INACTIVE, CANCELLED
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  academicYear    AcademicYear? @relation(fields: [academicYearId], references: [id])
+  schoolLevel     SchoolLevel?  @relation(fields: [schoolLevelId], references: [id])
+  staff           Staff         @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  allowanceType   AllowanceType @relation(fields: [allowanceTypeId], references: [id], onDelete: Cascade)
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([staffId])
+  @@index([allowanceTypeId])
+  @@index([status])
+  @@map("staff_allowances")
+}
+
+model ContractAmendment {
+  id              String   @id @default(uuid())
+  tenantId        String
+  contractId      String
+  amendmentType   String   // SALARY_CHANGE, POSITION_CHANGE, DURATION_EXTENSION, STATUS_CHANGE, OTHER
+  description     String
+  previousValue   String?
+  newValue        String?
+  effectiveDate   DateTime @db.Date
+  status          String   @default("DRAFT") // DRAFT, ACTIVE, CANCELLED
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  contract        Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([contractId])
+  @@index([effectiveDate])
+  @@map("contract_amendments")
+}
+
+model StaffSchedule {
+  id             String       @id @default(uuid())
+  tenantId       String
+  academicYearId String
+  schoolLevelId  String?
+  staffId        String
+  dayOfWeek      Int          // 1=Monday, 7=Sunday
+  shiftType      String       // MORNING, AFTERNOON, FULL_DAY, NIGHT
+  startTime      String       // "08:00"
+  endTime        String       // "16:00"
+  role           String?      // SURVEILLANT, GARDE, PERMANENCE, etc.
+  location       String?
+  notes          String?
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  schoolLevel    SchoolLevel? @relation(fields: [schoolLevelId], references: [id])
+  staff          Staff        @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([staffId, dayOfWeek, shiftType, academicYearId])
+  @@index([tenantId, academicYearId])
+  @@index([staffId])
+  @@index([dayOfWeek])
+  @@index([isActive])
+  @@map("staff_schedules")
+}
+
+model PayrollPeriod {
+  id             String       @id @default(uuid())
+  tenantId       String
+  academicYearId String
+  schoolLevelId  String?
+  name           String       // e.g. "Janvier 2025", "Prime de fin d'année"
+  periodType     String       @default("MONTHLY") // MONTHLY, QUARTERLY, ANNUAL, OFF_CYCLE
+  month          String?      // "2025-01" for monthly periods
+  startDate      DateTime     @db.Date
+  endDate        DateTime     @db.Date
+  status         String       @default("OPEN") // OPEN, CLOSED, LOCKED
+  closedBy       String?
+  closedAt       DateTime?
+  payrolls       Payroll[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  schoolLevel    SchoolLevel? @relation(fields: [schoolLevelId], references: [id])
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  closer         User?        @relation("PayrollPeriodCloser", fields: [closedBy], references: [id])
+
+  @@unique([tenantId, academicYearId, month])
+  @@index([tenantId, academicYearId])
+  @@index([status])
+  @@index([startDate, endDate])
+  @@map("payroll_periods")
+}
+
+model PayrollRate {
+  id                String   @id @default(uuid())
+  tenantId          String
+  countryCode       String   @default("BJ") // BJ, CI, SN, TG, etc.
+  roleType          String   // TEACHER, ADMIN, SUPPORT, DIRECTOR, etc.
+  grade             String?  // Echelon/grade identifier
+  monthlyBaseSalary Decimal  @db.Decimal(10, 2)
+  hourlyRate        Decimal  @db.Decimal(10, 2)
+  overtimeMultiplier Decimal @default(1.5) @db.Decimal(5, 2)
+  effectiveFrom     DateTime @db.Date
+  effectiveTo       DateTime? @db.Date
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, countryCode, roleType, grade, effectiveFrom])
+  @@index([tenantId, countryCode])
+  @@index([roleType])
+  @@index([effectiveFrom, effectiveTo])
+  @@index([isActive])
+  @@map("payroll_rates")
+}
+
+model OneTimeBonus {
+  id             String       @id @default(uuid())
+  tenantId       String
+  academicYearId String
+  schoolLevelId  String?
+  staffId        String
+  payrollItemId  String?      // Linked to payroll item once payroll is generated
+  amount         Decimal      @db.Decimal(10, 2)
+  reason         String
+  bonusType      String       @default("OTHER") // PERFORMANCE, SIGNING, REFERRAL, END_OF_YEAR, OTHER
+  authorizedBy   String
+  status         String       @default("PENDING") // PENDING, APPROVED, PAID, CANCELLED
+  approvedBy     String?
+  approvedAt     DateTime?
+  paidAt         DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  schoolLevel    SchoolLevel? @relation(fields: [schoolLevelId], references: [id])
+  staff          Staff        @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  payrollItem    PayrollItem? @relation(fields: [payrollItemId], references: [id])
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  authorizer     User         @relation("OneTimeBonusAuthorizer", fields: [authorizedBy], references: [id])
+  approver       User?        @relation("OneTimeBonusApprover", fields: [approvedBy], references: [id])
+
+  @@index([tenantId, academicYearId])
+  @@index([staffId])
+  @@index([status])
+  @@index([bonusType])
+  @@map("one_time_bonuses")
 }
 
 model RoomReservation {
@@ -13184,4 +13427,3 @@ model AcademicScore {
 
   @@map("hr_academic_scores")
 }
-

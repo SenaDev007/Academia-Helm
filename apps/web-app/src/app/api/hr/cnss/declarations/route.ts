@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     });
 
     const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error fetching CNSS declarations:', error);
     return NextResponse.json({ error: 'Failed to fetch CNSS declarations' }, { status: 500 });
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     });
 
     const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error creating CNSS declaration:', error);
     return NextResponse.json({ error: 'Failed to create CNSS declaration' }, { status: 500 });

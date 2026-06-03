@@ -26,7 +26,7 @@ export async function PUT(
     });
 
     const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error terminating contract:', error);
     return NextResponse.json({ error: 'Failed to terminate contract' }, { status: 500 });

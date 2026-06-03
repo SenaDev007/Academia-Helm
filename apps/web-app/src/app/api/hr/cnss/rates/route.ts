@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     });
 
     const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error setting CNSS rate:', error);
     return NextResponse.json({ error: 'Failed to set CNSS rate' }, { status: 500 });

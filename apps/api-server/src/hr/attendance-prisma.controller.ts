@@ -1,6 +1,11 @@
 /**
  * ============================================================================
- * ATTENDANCE PRISMA CONTROLLER - MODULE 5
+ * ATTENDANCE PRISMA CONTROLLER - MODULE 5 (SCHEMA-ALIGNED v2)
+ * ============================================================================
+ *
+ * Controller aligné sur le service AttendancePrismaService.
+ * Les méthodes overtime utilisent `validated` (boolean) au lieu de `status` (string).
+ *
  * ============================================================================
  */
 
@@ -10,10 +15,12 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 
-@Controller('api/hr/attendance')
+@Controller('hr/attendance')
 @UseGuards(JwtAuthGuard, TenantGuard)
 export class AttendancePrismaController {
   constructor(private readonly attendanceService: AttendancePrismaService) {}
+
+  // ─── Staff Attendance ────────────────────────────────────────────────────────
 
   @Post()
   async recordAttendance(@GetTenant() tenant: any, @Body() data: any) {
@@ -60,7 +67,8 @@ export class AttendancePrismaController {
     });
   }
 
-  // Overtime
+  // ─── Overtime Records ────────────────────────────────────────────────────────
+
   @Post('overtime')
   async recordOvertime(@GetTenant() tenant: any, @Body() data: any) {
     return this.attendanceService.recordOvertime({
@@ -71,11 +79,13 @@ export class AttendancePrismaController {
 
   @Put('overtime/:id/process')
   async processOvertime(
-    @GetTenant() tenant: any, 
-    @Param('id') id: string, 
-    @Body() body: { status: 'APPROVED' | 'REJECTED', approvedBy?: string }
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Body() body: { action: 'VALIDATE' | 'REJECT', validatedBy?: string },
   ) {
-    return this.attendanceService.processOvertime(id, tenant.id, body.status, body.approvedBy);
+    return this.attendanceService.processOvertime(
+      id, tenant.id, body.action, body.validatedBy,
+    );
   }
 
   @Get('overtime/staff/:staffId')
@@ -85,14 +95,13 @@ export class AttendancePrismaController {
     @Query('academicYearId') academicYearId?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
-    @Query('status') status?: string,
+    @Query('validated') validated?: string,
   ) {
     return this.attendanceService.findStaffOvertime(staffId, tenant.id, {
       academicYearId,
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
-      status,
+      validated: validated !== undefined ? validated === 'true' : undefined,
     });
   }
 }
-

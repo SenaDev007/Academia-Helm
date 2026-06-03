@@ -22,7 +22,7 @@ export async function GET(
     });
 
     const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error fetching contract:', error);
     return NextResponse.json({ error: 'Failed to fetch contract' }, { status: 500 });
@@ -46,7 +46,7 @@ export async function PUT(
     });
 
     const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error updating contract:', error);
     return NextResponse.json({ error: 'Failed to update contract' }, { status: 500 });

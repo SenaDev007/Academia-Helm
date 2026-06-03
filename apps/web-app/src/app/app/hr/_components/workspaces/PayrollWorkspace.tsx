@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, DollarSign, Calendar, ChevronRight, Calculator, CreditCard, ShieldCheck, Clock } from 'lucide-react';
+import { Plus, DollarSign, Calendar, ChevronRight, Calculator, CreditCard, ShieldCheck, Clock, X, Loader2 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { apiFetch } from '@/lib/api/client';
+import { toast } from '@/components/ui/toast';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -17,36 +18,147 @@ const STATUS_CONFIG: Record<string, { label: string; className: string; icon: Re
   PAID:       { label: 'Payé',    className: 'bg-emerald-600 text-white border border-emerald-600',      icon: CreditCard },
 };
 
+const MONTHS = [
+  { value: 1, label: 'Janvier' }, { value: 2, label: 'Février' }, { value: 3, label: 'Mars' },
+  { value: 4, label: 'Avril' }, { value: 5, label: 'Mai' }, { value: 6, label: 'Juin' },
+  { value: 7, label: 'Juillet' }, { value: 8, label: 'Août' }, { value: 9, label: 'Septembre' },
+  { value: 10, label: 'Octobre' }, { value: 11, label: 'Novembre' }, { value: 12, label: 'Décembre' },
+];
+
+const inputClass =
+  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 ' +
+  'focus:outline-none focus:border-[#1A2BA6] focus:ring-2 focus:ring-[#1A2BA6]/10 transition';
+
+const labelClass = 'block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5';
+
 export function PayrollWorkspace() {
   const { tenant, academicYear } = useModuleContext();
   const [payrolls, setPayrolls] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
 
-  useEffect(() => {
-    async function fetchData() {
-      if (!tenant?.id) return;
-      try {
-        setLoading(true);
-        const [payrollData, statsData] = await Promise.all([
-          apiFetch<any[]>(`/hr/payroll/periods?tenantId=${tenant.id}`),
-          apiFetch<any>(`/hr/payroll/statistics?tenantId=${tenant.id}&academicYearId=${academicYear?.id}`),
-        ]);
-        setPayrolls(payrollData);
-        setStats(statsData);
-      } catch (error) {
-        console.error('Error fetching payroll data:', error);
-      } finally {
-        setLoading(false);
-      }
+  // New period modal
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalLoading, setModalLoading] = useState(false);
+  const [modalForm, setModalForm] = useState({
+    month: new Date().getMonth() + 1,
+    year: new Date().getFullYear(),
+    startDate: '',
+    endDate: '',
+  });
+
+  async function fetchData() {
+    if (!tenant?.id) return;
+    try {
+      setLoading(true);
+      const [payrollData, statsData] = await Promise.all([
+        apiFetch<any[]>(`/hr/payroll/periods?tenantId=${tenant.id}`),
+        apiFetch<any>(`/hr/payroll/statistics?tenantId=${tenant.id}&academicYearId=${academicYear?.id}`),
+      ]);
+      setPayrolls(payrollData);
+      setStats(statsData);
+    } catch (error) {
+      console.error('Error fetching payroll data:', error);
+    } finally {
+      setLoading(false);
     }
-    fetchData();
-  }, [tenant?.id, academicYear?.id]);
+  }
+
+  useEffect(() => { fetchData(); }, [tenant?.id, academicYear?.id]);
+
+  // Auto-compute start/end dates when month/year changes
+  useEffect(() => {
+    const y = modalForm.year;
+    const m = modalForm.month;
+    const start = new Date(y, m - 1, 1);
+    const end = new Date(y, m, 0);
+    setModalForm((prev) => ({
+      ...prev,
+      startDate: start.toISOString().split('T')[0],
+      endDate: end.toISOString().split('T')[0],
+    }));
+  }, [modalForm.month, modalForm.year]);
+
+  const handleCreatePeriod = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setModalLoading(true);
+      await apiFetch('/hr/payroll/periods', {
+        method: 'POST',
+        body: JSON.stringify({
+          startDate: new Date(modalForm.startDate),
+          endDate: new Date(modalForm.endDate),
+          academicYearId: academicYear?.id,
+          tenantId: tenant?.id,
+        }),
+      });
+      toast({ variant: 'success', title: 'Période de paie créée avec succès' });
+      setModalOpen(false);
+      fetchData();
+    } catch (err) {
+      toast({ variant: 'error', title: 'Erreur lors de la création de la période' });
+    } finally {
+      setModalLoading(false);
+    }
+  };
 
   const lastPayroll = payrolls[0];
 
   return (
     <div className="space-y-6 pb-12">
+      {/* New Period Modal */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between px-6 py-5 text-white" style={{ background: PRIMARY }}>
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-white/15 p-2"><Calendar className="h-5 w-5" /></div>
+                <div>
+                  <h3 className="text-base font-bold">Nouvelle Période de Paie</h3>
+                  <p className="text-xs text-white/70">Définissez le mois et les dates de la période</p>
+                </div>
+              </div>
+              <button onClick={() => setModalOpen(false)} className="rounded-lg p-1.5 hover:bg-white/15 transition-colors"><X className="h-5 w-5" /></button>
+            </div>
+            <form onSubmit={handleCreatePeriod} className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Mois</label>
+                  <select className={inputClass} value={modalForm.month} onChange={(e) => setModalForm({ ...modalForm, month: parseInt(e.target.value) })}>
+                    {MONTHS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>Année</label>
+                  <input type="number" className={inputClass} value={modalForm.year} onChange={(e) => setModalForm({ ...modalForm, year: parseInt(e.target.value) })} min={2020} max={2040} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Date de début</label>
+                  <input type="date" className={inputClass} value={modalForm.startDate} onChange={(e) => setModalForm({ ...modalForm, startDate: e.target.value })} required />
+                </div>
+                <div>
+                  <label className={labelClass}>Date de fin</label>
+                  <input type="date" className={inputClass} value={modalForm.endDate} onChange={(e) => setModalForm({ ...modalForm, endDate: e.target.value })} required />
+                </div>
+              </div>
+              {academicYear && (
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <p className="text-xs text-slate-500">Année académique : <span className="font-bold text-slate-700">{academicYear.name || academicYear.label || `ID: ${academicYear.id}`}</span></p>
+                </div>
+              )}
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                <button type="button" onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-50 transition">Annuler</button>
+                <button type="submit" disabled={modalLoading} className="flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-sm font-bold shadow-sm hover:opacity-90 disabled:opacity-50 transition" style={{ backgroundColor: PRIMARY }}>
+                  {modalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Créer la période
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* KPI strip */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {[
@@ -66,7 +178,7 @@ export function PayrollWorkspace() {
         <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
           <DollarSign className="h-5 w-5" style={{ color: PRIMARY }} /> Historique des Paies
         </h3>
-        <button className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition" style={{ backgroundColor: PRIMARY }}>
+        <button onClick={() => setModalOpen(true)} className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition" style={{ backgroundColor: PRIMARY }}>
           <Plus className="h-4 w-4" /> Nouvelle Période
         </button>
       </div>

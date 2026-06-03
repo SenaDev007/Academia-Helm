@@ -1,24 +1,39 @@
-import { Controller, Get, Post, Put, Body, Query, Param, Delete, UseInterceptors, UploadedFiles } from '@nestjs/common';
+/**
+ * ============================================================================
+ * RECRUITMENT PRISMA CONTROLLER - MODULE 5 (SCHEMA-ALIGNED v2)
+ * ============================================================================
+ *
+ * Controller pour la gestion du recrutement.
+ * Utilise @GetTenant() pour la résolution du tenant (sauf endpoints @Public).
+ * Les endpoints @Public() utilisent @Query('tenantId') car il n'y a pas de contexte auth.
+ *
+ * ============================================================================
+ */
+
+import { Controller, Get, Post, Put, Body, Query, Param, Delete, UseGuards, UseInterceptors, UploadedFiles } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { RecruitmentPrismaService } from './recruitment.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { TenantGuard } from '../common/guards/tenant.guard';
+import { GetTenant } from '../common/decorators/tenant.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 
-
-
 @Controller('hr/recruitment')
+@UseGuards(JwtAuthGuard, TenantGuard)
 export class RecruitmentPrismaController {
   constructor(private service: RecruitmentPrismaService) {}
 
-  // Job Offers
+  // ─── Job Offers ────────────────────────────────────────────────────────────
+
   @Public()
   @Get('jobs')
-  async getJobs(@Query('tenantId') tenantId: string) {
-    return this.service.getJobs(tenantId);
+  async getJobs(@GetTenant() tenant: any, @Query('tenantId') tenantIdFallback?: string) {
+    return this.service.getJobs(tenant?.id ?? tenantIdFallback);
   }
 
   @Post('jobs')
-  async createJob(@Query('tenantId') tenantId: string, @Body() body: any) {
-    return this.service.createJob(tenantId, body);
+  async createJob(@GetTenant() tenant: any, @Body() body: any) {
+    return this.service.createJob(tenant.id, body);
   }
 
   @Put('jobs/:id')
@@ -31,15 +46,16 @@ export class RecruitmentPrismaController {
     return this.service.deleteJob(id);
   }
 
-  // Candidates CRUD
+  // ─── Candidates CRUD ────────────────────────────────────────────────────────
+
   @Get('candidates')
-  async getCandidates(@Query('tenantId') tenantId: string) {
-    return this.service.getCandidates(tenantId);
+  async getCandidates(@GetTenant() tenant: any) {
+    return this.service.getCandidates(tenant.id);
   }
 
   @Post('candidates')
-  async createCandidate(@Query('tenantId') tenantId: string, @Body() body: any) {
-    return this.service.createCandidate(tenantId, body);
+  async createCandidate(@GetTenant() tenant: any, @Body() body: any) {
+    return this.service.createCandidate(tenant.id, body);
   }
 
   @Put('candidates/:id')
@@ -52,15 +68,16 @@ export class RecruitmentPrismaController {
     return this.service.deleteCandidate(id);
   }
 
-  // Applications
+  // ─── Applications ────────────────────────────────────────────────────────────
+
   @Get('applications')
-  async getApplications(@Query('tenantId') tenantId: string) {
-    return this.service.getApplications(tenantId);
+  async getApplications(@GetTenant() tenant: any) {
+    return this.service.getApplications(tenant.id);
   }
 
   @Post('applications')
-  async createApplication(@Query('tenantId') tenantId: string, @Body() body: any) {
-    return this.service.createApplication(tenantId, body);
+  async createApplication(@GetTenant() tenant: any, @Body() body: any) {
+    return this.service.createApplication(tenant.id, body);
   }
 
   @Put('applications/:id/status')
@@ -73,15 +90,16 @@ export class RecruitmentPrismaController {
     return this.service.deleteApplication(id);
   }
 
-  // Interviews
+  // ─── Interviews ──────────────────────────────────────────────────────────────
+
   @Get('interviews')
-  async getInterviews(@Query('tenantId') tenantId: string) {
-    return this.service.getInterviews(tenantId);
+  async getInterviews(@GetTenant() tenant: any) {
+    return this.service.getInterviews(tenant.id);
   }
 
   @Post('interviews')
-  async createInterview(@Query('tenantId') tenantId: string, @Body() body: any) {
-    return this.service.createInterview(tenantId, body);
+  async createInterview(@GetTenant() tenant: any, @Body() body: any) {
+    return this.service.createInterview(tenant.id, body);
   }
 
   @Put('interviews/:id')
@@ -94,15 +112,16 @@ export class RecruitmentPrismaController {
     return this.service.deleteInterview(id);
   }
 
-  // Tests
+  // ─── Tests ────────────────────────────────────────────────────────────────────
+
   @Get('tests')
-  async getTests(@Query('tenantId') tenantId: string) {
-    return this.service.getTests(tenantId);
+  async getTests(@GetTenant() tenant: any) {
+    return this.service.getTests(tenant.id);
   }
 
   @Post('tests')
-  async createTest(@Query('tenantId') tenantId: string, @Body() body: any) {
-    return this.service.createTest(tenantId, body);
+  async createTest(@GetTenant() tenant: any, @Body() body: any) {
+    return this.service.createTest(tenant.id, body);
   }
 
   @Put('tests/:id')
@@ -115,7 +134,8 @@ export class RecruitmentPrismaController {
     return this.service.deleteTest(id);
   }
 
-  // Test Results
+  // ─── Test Results ─────────────────────────────────────────────────────────────
+
   @Post('test-results')
   async createTestResult(@Body() body: any) {
     return this.service.createTestResult(body);
@@ -126,10 +146,11 @@ export class RecruitmentPrismaController {
     return this.service.deleteTestResult(id);
   }
 
-  // Talent Pool
+  // ─── Talent Pool ──────────────────────────────────────────────────────────────
+
   @Get('talent-pool')
-  async getTalentPool(@Query('tenantId') tenantId: string) {
-    return this.service.getTalentPool(tenantId);
+  async getTalentPool(@GetTenant() tenant: any) {
+    return this.service.getTalentPool(tenant.id);
   }
 
   @Post('talent-pool/:candidateId')
@@ -142,7 +163,8 @@ export class RecruitmentPrismaController {
     return this.service.removeFromTalentPool(id);
   }
 
-  // Public/Job apply endpoint
+  // ─── Public Job Apply ──────────────────────────────────────────────────────
+
   @Public()
   @Post('apply')
   @UseInterceptors(FileFieldsInterceptor([
@@ -157,5 +179,3 @@ export class RecruitmentPrismaController {
     return this.service.applyJob(body, files);
   }
 }
-
-

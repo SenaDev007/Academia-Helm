@@ -10,6 +10,7 @@
 
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class ContractsPrismaService {
@@ -49,7 +50,7 @@ export class ContractsPrismaService {
         contractType: data.contractType,
         startDate: data.startDate ? new Date(data.startDate) : new Date(),
         endDate: data.endDate ? new Date(data.endDate) : null,
-        baseSalary: data.baseSalary ?? 0,
+        baseSalary: new Prisma.Decimal(data.baseSalary ?? 0),
         paymentMode: data.paymentMode ?? 'BANK',
         status: data.status ?? 'ACTIVE',
         terms: data.terms ?? null,
@@ -81,9 +82,9 @@ export class ContractsPrismaService {
             id: true,
             firstName: true,
             lastName: true,
-            staffCode: true,
+            employeeNumber: true,
             position: true,
-            category: true,
+            roleType: true,
           },
         },
         template: { select: { id: true, name: true } },
@@ -99,12 +100,19 @@ export class ContractsPrismaService {
     const contract = await this.prisma.contract.findFirst({
       where: { id, tenantId },
       include: {
-        staff: true,
+        staff: {
+          select: {
+            id: true,
+            employeeNumber: true,
+            firstName: true,
+            lastName: true,
+            position: true,
+            roleType: true,
+          },
+        },
+        template: { select: { id: true, name: true } },
         amendments: {
           orderBy: { effectiveDate: 'desc' },
-        },
-        documents: {
-          orderBy: { createdAt: 'desc' },
         },
       },
     });
@@ -140,21 +148,46 @@ export class ContractsPrismaService {
     newValue?: string;
     effectiveDate: Date;
   }) {
+    // Verify contract exists within tenant
+    const contract = await this.prisma.contract.findFirst({
+      where: { id: data.contractId, tenantId: data.tenantId },
+    });
+    if (!contract) {
+      throw new NotFoundException(
+        `Contract ${data.contractId} not found in tenant`,
+      );
+    }
+
     return this.prisma.contractAmendment.create({
-      data,
+      data: {
+        tenantId: data.tenantId,
+        contractId: data.contractId,
+        amendmentType: data.amendmentType,
+        description: data.description,
+        previousValue: data.previousValue ?? null,
+        newValue: data.newValue ?? null,
+        effectiveDate: data.effectiveDate,
+        status: 'DRAFT',
+      },
     });
   }
 
   /**
    * Termine un contrat
    */
-  async terminateContract(id: string, tenantId: string) {
+  async terminateContract(
+    id: string,
+    tenantId: string,
+    terminationReason?: string,
+  ) {
     const contract = await this.findContractById(id, tenantId);
 
     return this.prisma.contract.update({
       where: { id },
       data: {
         status: 'TERMINATED',
+        terminatedAt: new Date(),
+        terminationReason: terminationReason ?? null,
       },
     });
   }
@@ -163,16 +196,30 @@ export class ContractsPrismaService {
    * Récupère le contrat actif d'un membre du personnel
    */
   async findActiveContract(staffId: string, tenantId: string) {
-    return this.prisma.contract.findFirst({
+    const contract = await this.prisma.contract.findFirst({
       where: {
         staffId,
         tenantId,
         status: 'ACTIVE',
       },
       include: {
-        amendments: true,
+        staff: {
+          select: {
+            id: true,
+            employeeNumber: true,
+            firstName: true,
+            lastName: true,
+            position: true,
+            roleType: true,
+          },
+        },
+        template: { select: { id: true, name: true } },
+        amendments: {
+          orderBy: { effectiveDate: 'desc' },
+        },
       },
     });
+
+    return contract;
   }
 }
-

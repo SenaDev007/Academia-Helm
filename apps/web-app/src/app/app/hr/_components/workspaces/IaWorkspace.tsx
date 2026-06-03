@@ -9,15 +9,12 @@ import {
   ShieldAlert,
   MessageSquare,
   Upload,
-  ArrowRight,
-  TrendingUp,
   AlertTriangle,
   Send,
   User,
   Bot,
   Info,
-  CheckCircle,
-  HelpCircle,
+  Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { apiFetch } from '@/lib/api/client';
@@ -36,13 +33,14 @@ export function IaWorkspace() {
     { sender: 'bot', text: 'Bonjour ! Je suis Sara, votre Copilote RH augmenté d\'Academia Helm. Je peux analyser des CV, comparer les candidats ou générer des questions d\'entretien.' },
   ]);
   const [inputText, setInputText] = useState('');
+  const [copilotLoading, setCopilotLoading] = useState(false);
 
   // CV Parsing States
   const [fileUploaded, setFileUploaded] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [parsedData, setParsedData] = useState<any>(null);
 
-  // Load live data from Neon
+  // Load live data from API
   useEffect(() => {
     async function loadData() {
       if (!tenant?.id) return;
@@ -58,52 +56,92 @@ export function IaWorkspace() {
     loadData();
   }, [tenant?.id, activeTab]);
 
-  const handleUpload = () => {
+  const handleUpload = async () => {
     setParsing(true);
-    setTimeout(() => {
-      setFileUploaded(true);
-      setParsing(false);
-      setParsedData({
-        name: 'Mariama Diallo',
-        skills: ['Mathématiques avancées', 'Algorithmes', 'Pédagogie active', 'Statistiques', 'LaTeX'],
-        experience: '8 ans d\'enseignement en lycée d\'excellence',
-        education: 'Master en Sciences Mathématiques (Université d\'Abomey-Calavi)',
-        strengths: 'Forte expertise pédagogique, Maîtrise des outils numériques d\'apprentissage',
-        weaknesses: 'Expérience limitée en enseignement primaire',
+    try {
+      // Try to call the AI parsing endpoint
+      const result = await apiFetch<any>('/hr/ia/parse-cv', {
+        method: 'POST',
+        body: JSON.stringify({ tenantId: tenant?.id }),
       });
-    }, 1200);
+      setFileUploaded(true);
+      setParsedData(result);
+    } catch (err) {
+      // AI endpoint not available yet
+      setFileUploaded(true);
+      setParsedData({
+        name: '— (IA non configurée)',
+        skills: ['Analyse sémantique non disponible'],
+        experience: 'L\'intégration IA nécessite la configuration d\'une clé API Claude.',
+        education: 'Connectez votre clé API pour activer l\'analyse de CV automatisée.',
+        strengths: 'Le module HDIE est prêt à être activé avec une clé API',
+        weaknesses: 'Clé API Claude requise pour l\'analyse sémantique avancée',
+        isPlaceholder: true,
+      });
+    } finally {
+      setParsing(false);
+    }
   };
 
-  const handleSendMessage = (textToSend: string) => {
+  const handleSendMessage = async (textToSend: string) => {
     if (!textToSend.trim()) return;
 
     setMessages((prev) => [...prev, { sender: 'user', text: textToSend }]);
     setInputText('');
+    setCopilotLoading(true);
 
-    setTimeout(() => {
-      let reply = "Je traite votre demande avec l'analyseur sémantique d'Academia Helm. ";
-      if (textToSend.toLowerCase().includes('candidat')) {
+    try {
+      // Try to use the dashboard/overview API for data-backed responses
+      const dashboardData = await apiFetch<any>(`/hr/overview/dashboard?tenantId=${tenant?.id}`);
+
+      let reply = '';
+      const textLower = textToSend.toLowerCase();
+
+      if (textLower.includes('candidat') || textLower.includes('meilleur')) {
         const best = [...candidates].sort((a, b) => (b.applications?.[0]?.score || 0) - (a.applications?.[0]?.score || 0));
         if (best.length > 0) {
           const top = best[0];
-          reply = `Le meilleur candidat actuellement dans la base de données est **${top.firstName} ${top.lastName}** avec un score global de **${top.applications?.[0]?.score || 0}%** pour le poste de ${top.applications?.[0]?.job?.title || 'Professeur'}.`;
+          reply = `Le meilleur candidat actuellement est **${top.firstName} ${top.lastName}** avec un score de **${top.applications?.[0]?.score || 0}%** pour le poste de ${top.applications?.[0]?.job?.title || 'Professeur'}. Nous avons ${candidates.length} candidat(s) en base.`;
         } else {
-          reply = "Aucun candidat n'est actuellement enregistré dans la base de données Neon.";
+          reply = "Aucun candidat n'est actuellement enregistré dans la base de données.";
         }
-      } else if (textToSend.toLowerCase().includes('entretien')) {
+      } else if (textLower.includes('effectif') || textLower.includes('personnel') || textLower.includes('staff')) {
+        const totalStaff = dashboardData?.totalStaff || dashboardData?.kpis?.totalStaff || '—';
+        const activeContracts = dashboardData?.activeContracts || '—';
+        reply = `Selon les données du tableau de bord RH :\n- Effectif total : **${totalStaff}** collaborateurs\n- Contrats actifs : **${activeContracts}**\n- Candidats en cours : **${candidates.length}**`;
+      } else if (textLower.includes('entretien')) {
         reply = "Voici une suggestion de questions d'entretien technique pour un Professeur de Mathématiques :\n1. Comment abordez-vous l'enseignement des probabilités auprès d'élèves en difficulté ?\n2. Quelle est votre méthodologie pour intégrer des logiciels de géométrie dynamique (GeoGebra) dans vos cours ?";
-      } else if (textToSend.toLowerCase().includes('cv')) {
+      } else if (textLower.includes('cv')) {
         if (candidates.length > 0) {
           const first = candidates[0];
-          reply = `Le CV de ${first.firstName} ${first.lastName} présente un score de matching de ${first.applications?.[0]?.score || 0}%. J'ai extrait ses compétences clés et analysé la cohérence de son parcours. Aucun risque critique détecté.`;
+          reply = `Le CV de ${first.firstName} ${first.lastName} présente un score de matching de ${first.applications?.[0]?.score || 0}%. J'ai analysé la cohérence de son parcours. Pour une analyse sémantique approfondie, activez le module IA avec une clé API Claude.`;
         } else {
-          reply = "Le CV analysé présente un score conforme aux exigences du poste. Aucun risque de fraude détecté.";
+          reply = "Aucun CV disponible dans la base de données. Utilisez l'onglet 'Analyse CV' pour téléverser et analyser un document.";
         }
+      } else if (textLower.includes('paie') || textLower.includes('salaire')) {
+        const totalPayroll = dashboardData?.totalPayroll || dashboardData?.kpis?.totalPayroll || '—';
+        reply = `Données de paie enregistrées :\n- Masse salariale : **${totalPayroll}**\nPour plus de détails, consultez le module Paie.`;
       } else {
-        reply = "Entendu ! J'analyse les profils de vos collaborateurs et vos besoins de recrutement pour vous fournir la meilleure recommandation.";
+        reply = "Entendu ! J'analyse les données RH disponibles. Pour des réponses plus pertinentes, essayez de demander :\n- \"Quels sont les meilleurs candidats ?\"\n- \"Quel est l'effectif actuel ?\"\n- \"Prépare un entretien pour ce poste.\"\n\n💡 *L'intégration IA complète nécessite une clé API Claude.*";
+      }
+
+      setMessages((prev) => [...prev, { sender: 'bot', text: reply }]);
+    } catch (err) {
+      // Fallback if dashboard API fails
+      let reply = '';
+      const textLower = textToSend.toLowerCase();
+      if (textLower.includes('candidat')) {
+        const best = [...candidates].sort((a, b) => (b.applications?.[0]?.score || 0) - (a.applications?.[0]?.score || 0));
+        reply = best.length > 0
+          ? `Le meilleur candidat est **${best[0].firstName} ${best[0].lastName}** avec un score de **${best[0].applications?.[0]?.score || 0}%**.`
+          : "Aucun candidat dans la base.";
+      } else {
+        reply = "Je traite votre demande. 💡 *Pour des réponses IA enrichies, une clé API Claude est requise.*\n\nEn attendant, je peux vous fournir les données brutes du système RH.";
       }
       setMessages((prev) => [...prev, { sender: 'bot', text: reply }]);
-    }, 800);
+    } finally {
+      setCopilotLoading(false);
+    }
   };
 
   return (
@@ -137,6 +175,15 @@ export function IaWorkspace() {
       <AnimatePresence mode="wait">
         {activeTab === 'parse' && (
           <motion.div key="parse" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+            {/* AI Configuration notice */}
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3 text-xs">
+              <Info className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-amber-900">Intégration IA requise</p>
+                <p className="text-amber-700 mt-0.5">L&apos;analyse sémantique de CV par intelligence artificielle nécessite la configuration d&apos;une clé API Claude. Le moteur HDIE est prêt à être activé dès que la clé sera fournie.</p>
+              </div>
+            </div>
+
             <div className="bg-white border border-slate-200 rounded-xl p-8 text-center max-w-xl mx-auto">
               <Upload className="h-10 w-10 text-slate-300 mx-auto mb-4" />
               <h4 className="font-bold text-slate-900 text-sm">Déposer un CV ou une Lettre de motivation</h4>
@@ -148,7 +195,7 @@ export function IaWorkspace() {
                 className="mt-6 inline-flex items-center gap-2 rounded-xl px-6 py-3 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
                 style={{ backgroundColor: PRIMARY }}
               >
-                {parsing ? 'Analyse par l\'IA en cours...' : 'Téléverser et Analyser'}
+                {parsing ? <><Loader2 className="h-4 w-4 animate-spin" /> Analyse par l&apos;IA en cours...</> : <><Upload className="h-4 w-4" /> Téléverser et Analyser</>}
               </button>
             </div>
 
@@ -159,11 +206,13 @@ export function IaWorkspace() {
                     <h3 className="font-bold text-slate-900 text-sm">Résultats du Parsing Sémantique</h3>
                     <p className="text-xs text-slate-400">Candidat identifié : {parsedData.name}</p>
                   </div>
-                  <span className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded font-bold">Confiance OCR : 98%</span>
+                  <span className={`text-xs px-2 py-0.5 rounded font-bold ${parsedData.isPlaceholder ? 'bg-amber-50 text-amber-700 border border-amber-100' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'}`}>
+                    {parsedData.isPlaceholder ? 'IA Non Configurée' : 'Confiance OCR : 98%'}
+                  </span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
                   <div className="space-y-2">
-                    <p className="font-bold text-slate-700">Compétences extraites (Normalisation active) :</p>
+                    <p className="font-bold text-slate-700">Compétences extraites :</p>
                     <div className="flex flex-wrap gap-1.5">
                       {parsedData.skills.map((skill: string) => (
                         <span key={skill} className="px-2 py-1 bg-slate-100 rounded text-slate-700 font-semibold">{skill}</span>
@@ -179,7 +228,7 @@ export function IaWorkspace() {
                     <p className="text-slate-600 mt-1">{parsedData.strengths}</p>
                   </div>
                   <div>
-                    <p className="font-bold text-slate-700 text-amber-700">Axe d'amélioration :</p>
+                    <p className="font-bold text-slate-700 text-amber-700">Axe d&apos;amélioration :</p>
                     <p className="text-slate-600 mt-1">{parsedData.weaknesses}</p>
                   </div>
                 </div>
@@ -194,18 +243,34 @@ export function IaWorkspace() {
               <h3 className="font-bold text-slate-900 text-sm mb-2">Explication du Score de Matching (Explainable AI - XAI)</h3>
               <p className="text-xs text-slate-500 mb-6">Pondérations appliquées : Compétences (40%), Expérience (25%), Formation (15%), Certifications (10%), Lettre (10%)</p>
               
+              {jobs.length > 0 && (
+                <div className="mb-6 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <p className="text-xs font-bold text-slate-700">Postes ouverts :</p>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {jobs.map((j: any) => (
+                      <span key={j.id} className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700">
+                        {j.title} ({j.applications?.length || 0} candidats)
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-4">
                 {candidates.length === 0 ? (
-                  <div className="text-center py-8 text-xs text-slate-400 font-semibold">Aucun candidat dans la base de données.</div>
+                  <div className="text-center py-8 text-xs text-slate-400 font-semibold">Aucun candidat dans la base de données. Les candidats proviennent du module Recrutement.</div>
                 ) : (
                   candidates.map((c, idx) => {
                     const app = c.applications?.[0] || {};
                     const score = app.score || 0;
                     return (
-                      <div key={idx} className="p-4 border border-slate-100 rounded-xl space-y-3">
+                      <div key={c.id || idx} className="p-4 border border-slate-100 rounded-xl space-y-3">
                         <div className="flex justify-between items-center">
                           <p className="font-bold text-slate-900 text-xs">{c.firstName} {c.lastName}</p>
-                          <span className="text-xs font-bold text-[#1A2BA6] bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded">{score}%</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-[#1A2BA6] bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded">{score}%</span>
+                            {app.job?.title && <span className="text-[10px] text-slate-400 font-medium">→ {app.job.title}</span>}
+                          </div>
                         </div>
                         <div className="grid grid-cols-5 gap-2 text-center text-[10px] bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                           <div>
@@ -222,11 +287,11 @@ export function IaWorkspace() {
                           </div>
                           <div>
                             <p className="text-slate-400 font-semibold">Certifications (10%)</p>
-                            <p className="font-bold text-slate-900 mt-1">8/10</p>
+                            <p className="font-bold text-slate-900 mt-1">{Math.round(score * 0.1)}/10</p>
                           </div>
                           <div>
                             <p className="text-slate-400 font-semibold">Lettre (10%)</p>
-                            <p className="font-bold text-slate-900 mt-1">9/10</p>
+                            <p className="font-bold text-slate-900 mt-1">{Math.round(score * 0.1)}/10</p>
                           </div>
                         </div>
                       </div>
@@ -242,15 +307,15 @@ export function IaWorkspace() {
           <motion.div key="fraud" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
             <h3 className="text-base font-bold text-slate-900">Module de Détection Fraude & Anomaly</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {candidates.filter(c => c.applications?.[0]?.risks !== 'Aucun').length === 0 ? (
-                <div className="col-span-2 text-center bg-white border border-slate-200 rounded-xl p-8 text-xs text-slate-400 font-semibold">Aucun risque de fraude détecté dans la base Neon.</div>
+              {candidates.filter(c => c.applications?.[0]?.risks && c.applications[0].risks !== 'Aucun').length === 0 ? (
+                <div className="col-span-2 text-center bg-white border border-slate-200 rounded-xl p-8 text-xs text-slate-400 font-semibold">Aucun risque de fraude détecté dans la base de données.</div>
               ) : (
                 candidates
-                  .filter(c => c.applications?.[0]?.risks !== 'Aucun')
+                  .filter(c => c.applications?.[0]?.risks && c.applications[0].risks !== 'Aucun')
                   .map((c, idx) => {
                     const app = c.applications?.[0] || {};
                     return (
-                      <div key={idx} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex gap-4">
+                      <div key={c.id || idx} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex gap-4">
                         <div className="shrink-0 mt-1">
                           <AlertTriangle className="h-5 w-5 text-amber-500" />
                         </div>
@@ -286,7 +351,7 @@ export function IaWorkspace() {
                 <div>
                   <h4 className="font-bold text-white text-xs leading-none">Sara — Assistant RH</h4>
                   <p className="text-[9px] text-emerald-400 mt-1 font-semibold flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> IA active
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> {copilotLoading ? 'Analyse en cours…' : 'IA active'}
                   </p>
                 </div>
               </div>
@@ -310,13 +375,24 @@ export function IaWorkspace() {
                   </div>
                 </div>
               ))}
+              {copilotLoading && (
+                <div className="flex gap-3 mr-auto max-w-[80%]">
+                  <div className="w-7 h-7 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-white">
+                    <Bot className="h-4 w-4" />
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-900 text-slate-400 border border-slate-800 text-xs">
+                    <Loader2 className="h-4 w-4 animate-spin inline" /> Analyse en cours…
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Presets / Suggestions */}
             <div className="p-2.5 bg-slate-900 border-t border-slate-850 flex gap-2 overflow-x-auto text-[10px]">
-              <button onClick={() => handleSendMessage("Quels sont les meilleurs candidats ?")} className="bg-slate-850 border border-slate-800 text-slate-300 rounded px-2 py-1 font-semibold hover:bg-slate-800">Quels sont les meilleurs candidats ?</button>
-              <button onClick={() => handleSendMessage("Prépare un entretien pour ce poste.")} className="bg-slate-850 border border-slate-800 text-slate-300 rounded px-2 py-1 font-semibold hover:bg-slate-800">Prépare un entretien</button>
-              <button onClick={() => handleSendMessage("Analyse ce CV.")} className="bg-slate-850 border border-slate-800 text-slate-300 rounded px-2 py-1 font-semibold hover:bg-slate-800">Analyse ce CV</button>
+              <button onClick={() => handleSendMessage("Quels sont les meilleurs candidats ?")} disabled={copilotLoading} className="bg-slate-850 border border-slate-800 text-slate-300 rounded px-2 py-1 font-semibold hover:bg-slate-800 disabled:opacity-50">Quels sont les meilleurs candidats ?</button>
+              <button onClick={() => handleSendMessage("Quel est l'effectif actuel ?")} disabled={copilotLoading} className="bg-slate-850 border border-slate-800 text-slate-300 rounded px-2 py-1 font-semibold hover:bg-slate-800 disabled:opacity-50">Effectif actuel</button>
+              <button onClick={() => handleSendMessage("Prépare un entretien pour ce poste.")} disabled={copilotLoading} className="bg-slate-850 border border-slate-800 text-slate-300 rounded px-2 py-1 font-semibold hover:bg-slate-800 disabled:opacity-50">Prépare un entretien</button>
+              <button onClick={() => handleSendMessage("Analyse ce CV.")} disabled={copilotLoading} className="bg-slate-850 border border-slate-800 text-slate-300 rounded px-2 py-1 font-semibold hover:bg-slate-800 disabled:opacity-50">Analyse ce CV</button>
             </div>
 
             {/* Input Form */}
@@ -325,12 +401,14 @@ export function IaWorkspace() {
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                placeholder="Posez une question à Sara (ex: 'Quels sont les meilleurs candidats ?')..."
-                className="flex-grow bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-[#1A2BA6] transition"
+                placeholder="Posez une question à Sara..."
+                disabled={copilotLoading}
+                className="flex-grow bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-[#1A2BA6] transition disabled:opacity-50"
               />
               <button
                 type="submit"
-                className="p-2.5 rounded-xl text-white transition hover:opacity-90 flex items-center justify-center shrink-0"
+                disabled={copilotLoading || !inputText.trim()}
+                className="p-2.5 rounded-xl text-white transition hover:opacity-90 flex items-center justify-center shrink-0 disabled:opacity-50"
                 style={{ backgroundColor: PRIMARY }}
               >
                 <Send className="h-4 w-4" />

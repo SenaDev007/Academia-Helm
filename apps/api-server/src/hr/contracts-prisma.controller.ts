@@ -17,8 +17,9 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 import type { Response, Request } from 'express';
+import { CreateContractDto, UpdateContractDto, CreateAmendmentDto, SignContractDto, CreateContractTemplateDto } from './dto';
 
-@Controller('api/hr/contracts')
+@Controller('hr/contracts')
 @UseGuards(JwtAuthGuard, TenantGuard)
 export class ContractsPrismaController {
   constructor(
@@ -29,7 +30,7 @@ export class ContractsPrismaController {
   // ─── Contracts CRUD ─────────────────────────────────────────────────────────
 
   @Post()
-  async createContract(@GetTenant() tenant: any, @Body() data: any) {
+  async createContract(@GetTenant() tenant: any, @Body() data: CreateContractDto) {
     return this.contractsService.createContract({
       ...data,
       tenantId: tenant.id,
@@ -57,7 +58,7 @@ export class ContractsPrismaController {
   }
 
   @Put(':id')
-  async updateContract(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: any) {
+  async updateContract(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: UpdateContractDto) {
     return this.contractsService.updateContract(id, tenant.id, data);
   }
 
@@ -70,7 +71,7 @@ export class ContractsPrismaController {
   async createAmendment(
     @GetTenant() tenant: any,
     @Param('id') contractId: string,
-    @Body() data: any,
+    @Body() data: CreateAmendmentDto,
   ) {
     return this.contractsService.createAmendment({
       ...data,
@@ -125,7 +126,7 @@ export class ContractsPrismaController {
   async signContract(
     @GetTenant() tenant: any,
     @Param('id') id: string,
-    @Body() body: { signatureData: string; signerName: string; signerRole?: string },
+    @Body() body: SignContractDto,
     @Req() req: Request,
   ) {
     return this.contractPdfService.signContract(id, tenant.id, {
@@ -142,7 +143,7 @@ export class ContractsPrismaController {
   }
 
   @Post('templates')
-  async createTemplate(@GetTenant() tenant: any, @Body() data: any) {
+  async createTemplate(@GetTenant() tenant: any, @Body() data: CreateContractTemplateDto) {
     return this.contractPdfService.createTemplate(tenant.id, data);
   }
 

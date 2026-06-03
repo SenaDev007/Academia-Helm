@@ -26,7 +26,7 @@ export async function PUT(
     });
 
     const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error marking declaration as paid:', error);
     return NextResponse.json({ error: 'Failed to mark declaration as paid' }, { status: 500 });

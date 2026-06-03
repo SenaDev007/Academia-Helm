@@ -9,6 +9,8 @@ import {
   LayoutDashboard,
   Briefcase,
   Users,
+  UserCircle,
+  FileCheck,
   Brain,
   Clock,
   CalendarDays,
@@ -33,6 +35,18 @@ export const HR_SUBMODULE_TABS = [
     label: 'Recrutement',
     path: '/app/hr/recruitment',
     icon: Briefcase,
+  },
+  {
+    id: 'staff',
+    label: 'Personnel',
+    path: '/app/hr/staff',
+    icon: UserCircle,
+  },
+  {
+    id: 'contracts',
+    label: 'Contrats',
+    path: '/app/hr/contracts',
+    icon: FileCheck,
   },
   {
     id: 'collaborators',

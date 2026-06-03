@@ -9,14 +9,15 @@ import { EvaluationsPrismaService } from './evaluations-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
+import { CreateEvaluationDto, UpdateEvaluationDto } from './dto/index';
 
-@Controller('api/hr/evaluations')
+@Controller('hr/evaluations')
 @UseGuards(JwtAuthGuard, TenantGuard)
 export class EvaluationsPrismaController {
   constructor(private readonly evaluationsService: EvaluationsPrismaService) {}
 
   @Post()
-  async createEvaluation(@GetTenant() tenant: any, @Body() data: any) {
+  async createEvaluation(@GetTenant() tenant: any, @Body() data: CreateEvaluationDto) {
     return this.evaluationsService.createEvaluation({
       ...data,
       tenantId: tenant.id,
@@ -51,7 +52,7 @@ export class EvaluationsPrismaController {
   }
 
   @Put(':id')
-  async updateEvaluation(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: any) {
+  async updateEvaluation(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: UpdateEvaluationDto) {
     return this.evaluationsService.updateEvaluation(id, tenant.id, data);
   }
 

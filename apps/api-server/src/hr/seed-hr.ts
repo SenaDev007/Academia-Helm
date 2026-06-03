@@ -26,57 +26,41 @@ async function main() {
 
   console.log(`Seeding HR for Tenant: ${tenant.name} (${tenant.id})`);
 
-  // 2. Create Leave Types
-  const leaveTypes = [
-    { name: 'Congés Payés', isPaid: true },
-    { name: 'Congé Maladie', isPaid: true },
-    { name: 'Congé Maternité', isPaid: true },
-    { name: 'Sans Solde', isPaid: false },
-  ];
-
-  for (const lt of leaveTypes) {
-    await prisma.leaveType.upsert({
-      where: { tenantId_name: { tenantId: tenant.id, name: lt.name } },
-      update: {},
-      create: {
-        tenantId: tenant.id,
-        name: lt.name,
-        isPaid: lt.isPaid,
-      }
-    });
-  }
-  const defaultLeaveType = await prisma.leaveType.findFirst({ where: { tenantId: tenant.id } });
-
-  // 3. Create Allowance Types
+  // 2. Create Allowance Types
   const allowanceTypes = [
-    { name: 'Indemnité de Logement', taxable: true },
-    { name: 'Indemnité de Transport', taxable: false },
-    { name: 'Prime de Responsabilité', taxable: true },
+    { name: 'Indemnité de Logement', code: 'LOG', isTaxable: true, isCnss: false, amount: 25000, isFixed: true },
+    { name: 'Indemnité de Transport', code: 'TRN', isTaxable: false, isCnss: false, amount: 15000, isFixed: true },
+    { name: 'Prime de Responsabilité', code: 'REP', isTaxable: true, isCnss: false, amount: 50000, isFixed: true },
   ];
 
   for (const at of allowanceTypes) {
     await prisma.allowanceType.upsert({
-      where: { tenantId_name: { tenantId: tenant.id, name: at.name } },
+      where: { code: at.code },
       update: {},
       create: {
         tenantId: tenant.id,
         name: at.name,
-        taxable: at.taxable,
+        code: at.code,
+        isTaxable: at.isTaxable,
+        isCnss: at.isCnss,
+        amount: at.amount,
+        isFixed: at.isFixed,
+        isActive: true,
       }
     });
   }
-  const housingAllowance = await prisma.allowanceType.findFirst({ where: { tenantId: tenant.id, name: 'Indemnité de Logement' } });
+  const housingAllowance = await prisma.allowanceType.findFirst({ where: { tenantId: tenant.id, code: 'LOG' } });
 
-  // 4. Define Staff Data
+  // 3. Define Staff Data
   const staffData = [
-    { firstName: 'Koffi', lastName: 'Mensah', category: 'ADMIN', position: 'Directeur Primaire', gender: 'MALE', email: 'k.mensah@school.com', baseSalary: 450000, level: 'PRIMAIRE' },
-    { firstName: 'Afi', lastName: 'Aziawonou', category: 'ADMIN', position: 'Comptable', gender: 'FEMALE', email: 'a.afia@school.com', baseSalary: 300000, level: 'ADMIN' },
-    { firstName: 'Amévi', lastName: 'Gle', category: 'ADMIN', position: 'Secrétaire Maternelle', gender: 'FEMALE', email: 'a.gle@school.com', baseSalary: 180000, level: 'MATERNELLE' },
-    { firstName: 'Kodjo', lastName: 'Atavi', category: 'PEDAGOGICAL', position: 'Professeur Maths', gender: 'MALE', email: 'k.atavi@school.com', baseSalary: 350000, level: 'SECONDAIRE' },
-    { firstName: 'Akua', lastName: 'Sika', category: 'PEDAGOGICAL', position: 'Institutrice CM2', gender: 'FEMALE', email: 'a.sika@school.com', baseSalary: 250000, level: 'PRIMAIRE' },
-    { firstName: 'Yawo', lastName: 'Dovi', category: 'PEDAGOGICAL', position: 'Maître Maternelle', gender: 'MALE', email: 'y.dovi@school.com', baseSalary: 200000, level: 'MATERNELLE' },
-    { firstName: 'Komi', lastName: 'Tossou', category: 'SUPPORT', position: 'Agent de Sécurité', gender: 'MALE', email: 'k.tossou@school.com', baseSalary: 120000, level: 'SUPPORT' },
-    { firstName: 'Adjowa', lastName: 'Bessi', category: 'SUPPORT', position: 'Technicienne de surface', gender: 'FEMALE', email: 'a.bessi@school.com', baseSalary: 95000, level: 'SUPPORT' },
+    { firstName: 'Koffi', lastName: 'Mensah', roleType: 'ADMIN', position: 'Directeur Primaire', gender: 'MALE', email: 'k.mensah@school.com', baseSalary: 450000 },
+    { firstName: 'Afi', lastName: 'Aziawonou', roleType: 'ADMIN', position: 'Comptable', gender: 'FEMALE', email: 'a.afia@school.com', baseSalary: 300000 },
+    { firstName: 'Amévi', lastName: 'Gle', roleType: 'ADMIN', position: 'Secrétaire Maternelle', gender: 'FEMALE', email: 'a.gle@school.com', baseSalary: 180000 },
+    { firstName: 'Kodjo', lastName: 'Atavi', roleType: 'TEACHER', position: 'Professeur Maths', gender: 'MALE', email: 'k.atavi@school.com', baseSalary: 350000 },
+    { firstName: 'Akua', lastName: 'Sika', roleType: 'TEACHER', position: 'Institutrice CM2', gender: 'FEMALE', email: 'a.sika@school.com', baseSalary: 250000 },
+    { firstName: 'Yawo', lastName: 'Dovi', roleType: 'TEACHER', position: 'Maître Maternelle', gender: 'MALE', email: 'y.dovi@school.com', baseSalary: 200000 },
+    { firstName: 'Komi', lastName: 'Tossou', roleType: 'SUPPORT', position: 'Agent de Sécurité', gender: 'MALE', email: 'k.tossou@school.com', baseSalary: 120000 },
+    { firstName: 'Adjowa', lastName: 'Bessi', roleType: 'SUPPORT', position: 'Technicienne de surface', gender: 'FEMALE', email: 'a.bessi@school.com', baseSalary: 95000 },
   ];
 
   for (const data of staffData) {
@@ -86,13 +70,13 @@ async function main() {
         academicYearId: academicYear.id,
         firstName: data.firstName,
         lastName: data.lastName,
-        category: data.category,
+        roleType: data.roleType,
         position: data.position,
         gender: data.gender,
         email: data.email,
         status: 'ACTIVE',
-        levelAssigned: data.level,
-        staffCode: `STF-${Math.floor(Math.random() * 9000) + 1000}`,
+        salary: new Prisma.Decimal(data.baseSalary),
+        employeeNumber: `STF-${Math.floor(Math.random() * 9000) + 1000}`,
       }
     });
 
@@ -100,30 +84,25 @@ async function main() {
       data: {
         tenantId: tenant.id,
         staffId: staff.id,
-        academicYearId: academicYear.id,
-        type: 'CDI',
+        contractType: 'CDI',
         status: 'ACTIVE',
         startDate: new Date('2026-01-01'),
         baseSalary: new Prisma.Decimal(data.baseSalary),
-        hourlyRate: new Prisma.Decimal(data.baseSalary / 160),
       }
     });
 
-    if (defaultLeaveType) {
-      await prisma.leaveRequest.create({
-        data: {
-          tenantId: tenant.id,
-          academicYearId: academicYear.id,
-          staffId: staff.id,
-          leaveTypeId: defaultLeaveType.id,
-          startDate: new Date('2026-04-10'),
-          endDate: new Date('2026-04-12'),
-          totalDays: 2,
-          status: 'APPROVED',
-          justification: 'Repos médical',
-        }
-      });
-    }
+    await prisma.leaveRequest.create({
+      data: {
+        tenantId: tenant.id,
+        academicYearId: academicYear.id,
+        staffId: staff.id,
+        type: 'CONGE_PAYE',
+        startDate: new Date('2026-04-10'),
+        endDate: new Date('2026-04-12'),
+        status: 'APPROVED',
+        reason: 'Repos médical',
+      }
+    });
 
     if (housingAllowance) {
       await prisma.staffAllowance.create({
@@ -132,19 +111,22 @@ async function main() {
           staffId: staff.id,
           allowanceTypeId: housingAllowance.id,
           amount: new Prisma.Decimal(25000),
-          startDate: new Date('2026-01-01'),
-          isActive: true,
+          effectiveDate: new Date('2026-01-01'),
+          status: 'ACTIVE',
         }
       });
     }
   }
 
-  await prisma.payrollPeriod.create({
+  await prisma.payroll.create({
     data: {
       tenantId: tenant.id,
+      academicYearId: academicYear.id,
+      month: '2026-05',
       startDate: new Date('2026-05-01'),
       endDate: new Date('2026-05-31'),
-      status: 'OPEN',
+      status: 'DRAFT',
+      totalAmount: new Prisma.Decimal(0),
     }
   });
 

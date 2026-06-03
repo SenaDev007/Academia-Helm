@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     });
 
     const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error fetching attendance statistics:', error);
     return NextResponse.json({ error: 'Failed to fetch attendance statistics' }, { status: 500 });

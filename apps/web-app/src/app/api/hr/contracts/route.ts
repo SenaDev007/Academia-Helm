@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     });
 
     const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error fetching contracts:', error);
     return NextResponse.json({ error: 'Failed to fetch contracts' }, { status: 500 });
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     });
 
     const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error creating contract:', error);
     return NextResponse.json({ error: 'Failed to create contract' }, { status: 500 });

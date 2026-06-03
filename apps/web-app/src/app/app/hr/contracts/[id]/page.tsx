@@ -21,6 +21,7 @@ const CONTRACT_TYPE_LABELS: Record<string, string> = {
   CDD: 'Contrat à Durée Déterminée',
   VACATAIRE: 'Contrat de Vacation',
   STAGE: 'Convention de Stage',
+  CONSULTANT: 'Contrat de Consultation',
 };
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; border: string; icon: any }> = {
@@ -75,28 +76,37 @@ export default function ContractDetailPage() {
     if (!contract) return;
     try {
       setGenerating(true);
-      // Get API base URL
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') || '';
-      const tenantId = tenant?.id || '';
-      const url = `${apiBase}/api/hr/contracts/${contractId}/pdf`;
-
-      const response = await fetch(url, {
+      // Use BFF route to download PDF instead of calling NestJS directly
+      const response = await fetch(`/api/hr/contracts/${contractId}/generate-pdf`, {
+        method: 'POST',
         headers: {
-          Authorization: `Bearer ${token}`,
-          'x-tenant-id': tenantId,
           'Content-Type': 'application/json',
         },
       });
 
       if (!response.ok) throw new Error('Erreur téléchargement');
-      const blob = await response.blob();
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      const staffName = `${contract.staff?.lastName}_${contract.staff?.firstName}`.replace(/\s+/g, '_');
-      link.download = `Contrat_${staffName}_${contract.contractType}.pdf`;
-      link.click();
-      URL.revokeObjectURL(link.href);
+
+      // Try to get as blob (binary PDF) first
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/pdf') || contentType.includes('octet-stream')) {
+        const blob = await response.blob();
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        const staffName = `${contract.staff?.lastName}_${contract.staff?.firstName}`.replace(/\s+/g, '_');
+        link.download = `Contrat_${staffName}_${contract.contractType}.pdf`;
+        link.click();
+        URL.revokeObjectURL(link.href);
+      } else {
+        // If the response is JSON (e.g., contains a pdfUrl), use it
+        const data = await response.json();
+        if (data.pdfUrl) {
+          const link = document.createElement('a');
+          link.href = data.pdfUrl;
+          const staffName = `${contract.staff?.lastName}_${contract.staff?.firstName}`.replace(/\s+/g, '_');
+          link.download = `Contrat_${staffName}_${contract.contractType}.pdf`;
+          link.click();
+        }
+      }
       toast({ variant: 'success', title: 'Téléchargement du PDF lancé.' });
     } catch (err) {
       toast({ variant: 'error', title: 'Erreur lors du téléchargement PDF.' });

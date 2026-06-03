@@ -1,16 +1,16 @@
 /**
  * ============================================================================
- * PAYROLL TAX SERVICE - MODULE 5 (SCHEMA-ALIGNED)
+ * PAYROLL TAX SERVICE - MODULE 5 (SCHEMA-ALIGNED v2)
  * ============================================================================
  *
  * Service d'intégration fiscale (IRPP + CNSS) dans le calcul de la paie.
  *
  * Processus :
- *  1. Récupérer le taux CNSS du tenant (PayrollRate)
- *  2. Calculer les parts CNSS employé/employeur
+ *  1. Récupérer le taux CNSS du pays (CNSSRate)
+ *  2. Calculer les parts CNSS employé/employeur sur le PayrollItem
  *  3. Calculer le net imposable (brut - CNSS employé)
  *  4. Calculer l'IRPP via les barèmes progressifs (TaxRate countryCode='BJ')
- *  5. Mettre à jour la ligne Payroll avec tous les montants
+ *  5. Mettre à jour le PayrollItem avec tous les montants
  *  6. Enregistrer la TaxWithholding pour l'audit
  *
  * ============================================================================
@@ -30,57 +30,60 @@ export class PayrollTaxService {
   ) {}
 
   /**
-   * Calcule les retenues sociales et fiscales pour une ligne de paie,
+   * Calcule les retenues sociales et fiscales pour un PayrollItem,
    * adaptable à n'importe quel pays de la zone UEMOA/CEDEAO.
    */
   async calculatePayroll(
     tenantId: string,
     academicYearId: string,
-    payrollId: string,
+    payrollItemId: string,
+    countryCode: string = 'BJ',
   ) {
-    // 1. Récupérer la paie et le pays du tenant
-    const payroll = await this.prisma.payroll.findFirst({
-      where: { id: payrollId, tenantId },
+    // 1. Récupérer le PayrollItem avec le staff
+    const payrollItem = await this.prisma.payrollItem.findFirst({
+      where: { id: payrollItemId, tenantId },
       include: {
-        staff: true,
-        payrollPeriod: true,
-        tenant: {
-          select: {
-            countryId: true,
-          }
-        }
+        staff: {
+          include: {
+            employeeCNSS: true,
+          },
+        },
+        payroll: {
+          include: {
+            tenant: {
+              include: { country: true },
+            },
+          },
+        },
       },
     });
 
-    if (!payroll) {
-      throw new NotFoundException(`Ligne de paie ${payrollId} introuvable.`);
+    if (!payrollItem) {
+      throw new NotFoundException(`Ligne de paie ${payrollItemId} introuvable.`);
     }
 
     // Récupérer le code pays (ex: 'BJ', 'SN', 'TG')
-    let countryCode = 'BJ'; // Valeur par défaut
-    if (payroll.tenant?.countryId) {
-      const country = await this.prisma.country.findUnique({
-        where: { id: payroll.tenant.countryId }
-      });
-      if (country) countryCode = country.code;
+    if (payrollItem.payroll?.tenant?.country?.code) {
+      countryCode = payrollItem.payroll.tenant.country.code;
     }
 
     // 2. Brut
-    const grossSalary = Number(payroll.grossSalary);
+    const grossSalary = Number(payrollItem.grossSalary);
 
     // 3. Retenues Sociales (CNSS/IPRES/CNPS selon pays)
-    // Le taux est configuré par tenant (PayrollRate) pour flexibilité maximale
     let socialEmployeeShare = 0;
     let socialEmployerShare = 0;
 
-    if (payroll.staff.cnssNumber) {
-      const rate = await this.payrollService.findActivePayrollRate(
-        tenantId,
-        payroll.payrollPeriod.startDate,
-      );
+    if (payrollItem.staff.employeeCNSS?.isActive && payrollItem.staff.employeeCNSS?.cnssNumber) {
+      const rate = await this.payrollService.findActiveCNSSRate(countryCode);
       if (rate) {
-        socialEmployeeShare = grossSalary * Number(rate.cnssEmployeeRate);
-        socialEmployerShare = grossSalary * Number(rate.cnssEmployerRate);
+        let salaryBase = grossSalary;
+        // Appliquer le plafond si défini
+        if (rate.salaryCeiling && grossSalary > Number(rate.salaryCeiling)) {
+          salaryBase = Number(rate.salaryCeiling);
+        }
+        socialEmployeeShare = salaryBase * Number(rate.employeeRate);
+        socialEmployerShare = salaryBase * Number(rate.employerRate);
       }
     }
 
@@ -88,7 +91,6 @@ export class PayrollTaxService {
     const taxableAmount = grossSalary - socialEmployeeShare;
 
     // 5. Impôt sur le Revenu (IRPP/ITS/etc.)
-    // Utilise les barèmes configurés pour le pays spécifique
     let incomeTaxAmount = 0;
     let taxRateId: string | undefined;
     let breakdown: any[] = [];
@@ -97,7 +99,7 @@ export class PayrollTaxService {
       const taxResult = await this.taxService.calculateIRPP(
         countryCode,
         taxableAmount,
-        payroll.payrollPeriod.startDate,
+        payrollItem.payroll?.startDate,
       );
       incomeTaxAmount = taxResult.amount;
       taxRateId = taxResult.taxRateId;
@@ -107,33 +109,39 @@ export class PayrollTaxService {
     }
 
     // 6. Déductions manuelles
-    const otherDeductions = Number(payroll.deductions || 0);
+    const otherDeductions = Number(payrollItem.otherDeductions || 0);
 
-    // 7. Net à payer
-    const netSalary = grossSalary - socialEmployeeShare - incomeTaxAmount - otherDeductions;
+    // 7. Total déductions
+    const totalDeductions = socialEmployeeShare + incomeTaxAmount + otherDeductions;
 
-    // 8. Mise à jour de la ligne
-    const updated = await this.prisma.payroll.update({
-      where: { id: payrollId },
+    // 8. Net à payer
+    const netSalary = grossSalary - totalDeductions;
+
+    // 9. Mise à jour du PayrollItem
+    const updated = await this.prisma.payrollItem.update({
+      where: { id: payrollItemId },
       data: {
-        grossSalary,
-        employeeCNSS: socialEmployeeShare,
-        employerCNSS: socialEmployerShare,
-        taxWithheld: incomeTaxAmount,
+        cnssEmployee: socialEmployeeShare,
+        cnssEmployer: socialEmployerShare,
+        taxableAmount,
+        irppAmount: incomeTaxAmount,
+        otherDeductions,
+        totalDeductions,
         netSalary,
         status: 'VALIDATED',
+        validatedAt: new Date(),
       },
     });
 
-    // 9. Enregistrement audit TaxWithholding
+    // 10. Enregistrement audit TaxWithholding
     if (taxableAmount > 0) {
       await this.taxService.recordTaxWithholding(
         tenantId,
         academicYearId,
-        payrollId,
-        payroll.staffId,
+        payrollItemId,
+        payrollItem.staffId,
         taxRateId ?? null,
-        'INCOME_TAX', // Label générique pour IRPP/ITS
+        'IRPP',
         taxableAmount,
         incomeTaxAmount,
         { breakdown, method: `PROGRESSIVE_${countryCode}` },
@@ -144,32 +152,32 @@ export class PayrollTaxService {
   }
 
   /**
-   * Calcule toutes les lignes d'une période
+   * Calcule tous les PayrollItems d'un lot de paie
    */
   async calculatePeriod(
-    periodId: string,
+    payrollId: string,
     tenantId: string,
     academicYearId: string,
   ) {
-    const period = await this.prisma.payrollPeriod.findFirst({
-      where: { id: periodId, tenantId },
-      include: { payrolls: true },
+    const payroll = await this.prisma.payroll.findFirst({
+      where: { id: payrollId, tenantId },
+      include: { items: true },
     });
 
-    if (!period) throw new NotFoundException('Période introuvable.');
+    if (!payroll) throw new NotFoundException('Lot de paie introuvable.');
 
     const results = [];
-    for (const p of period.payrolls) {
-      const result = await this.calculatePayroll(tenantId, academicYearId, p.id);
+    for (const item of payroll.items) {
+      const result = await this.calculatePayroll(tenantId, academicYearId, item.id);
       results.push(result);
     }
 
-    // Marquer la période comme calculée
-    await this.prisma.payrollPeriod.update({
-      where: { id: periodId },
+    // Marquer le lot comme calculé
+    await this.prisma.payroll.update({
+      where: { id: payrollId },
       data: { status: 'CALCULATED' },
     });
 
-    return { calculated: results.length, periodId };
+    return { calculated: results.length, payrollId };
   }
 }

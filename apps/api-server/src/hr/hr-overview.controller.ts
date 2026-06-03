@@ -12,7 +12,8 @@ import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { HrKpiService } from './hr-kpi.service';
 import { HROrionService } from './services/hr-orion.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { TenantGuard } from '../auth/guards/tenant.guard';
+import { TenantGuard } from '../common/guards/tenant.guard';
+import { GetTenant } from '../common/decorators/tenant.decorator';
 
 @Controller('hr/overview')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -27,12 +28,12 @@ export class HrOverviewController {
    */
   @Get('dashboard')
   async getDashboardData(
-    @Query('tenantId') tenantId: string,
+    @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId: string,
   ) {
-    const snapshot = await this.hrKpiService.generateSnapshot(tenantId, academicYearId);
-    const evolution = await this.hrKpiService.getPayrollEvolution(tenantId, academicYearId);
-    const orionData = await this.hrOrionService.getPayrollAndTaxKPIs(tenantId, academicYearId);
+    const snapshot = await this.hrKpiService.generateSnapshot(tenant.id, academicYearId);
+    const evolution = await this.hrKpiService.getPayrollEvolution(tenant.id, academicYearId);
+    const orionData = await this.hrOrionService.getPayrollAndTaxKPIs(tenant.id, academicYearId);
 
     return {
       snapshot,
@@ -46,13 +47,13 @@ export class HrOverviewController {
    */
   @Get('analytics')
   async getAnalytics(
-    @Query('tenantId') tenantId: string,
+    @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId: string,
   ) {
     const [evolution, distribution, snapshot] = await Promise.all([
-      this.hrKpiService.getPayrollEvolution(tenantId, academicYearId),
-      this.hrKpiService.getStaffDistribution(tenantId),
-      this.hrKpiService.generateSnapshot(tenantId, academicYearId),
+      this.hrKpiService.getPayrollEvolution(tenant.id, academicYearId),
+      this.hrKpiService.getStaffDistribution(tenant.id),
+      this.hrKpiService.generateSnapshot(tenant.id, academicYearId),
     ]);
 
     return {
@@ -67,9 +68,9 @@ export class HrOverviewController {
    */
   @Get('refresh-snapshot')
   async refreshSnapshot(
-    @Query('tenantId') tenantId: string,
+    @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId: string,
   ) {
-    return this.hrKpiService.generateSnapshot(tenantId, academicYearId);
+    return this.hrKpiService.generateSnapshot(tenant.id, academicYearId);
   }
 }

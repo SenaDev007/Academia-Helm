@@ -139,7 +139,7 @@ export class ContractPdfService {
     const contract = await this.prisma.contract.findFirst({
       where: { id: contractId, tenantId },
       include: {
-        staff: true,
+        staff: { include: { employeeCNSS: true } },
         tenant: { include: { country: true } },
         academicYear: true,
         template: true,
@@ -192,7 +192,7 @@ export class ContractPdfService {
     const templateVars = {
       // École / Employeur
       schoolName: contract.tenant?.name || 'L\'École',
-      schoolAddress: contract.tenant?.address || '',
+      schoolAddress: contract.tenant?.slug || '',
       schoolCountry: contract.tenant?.country?.name || '',
       // Employé
       civilite: contract.staff?.gender === 'FEMALE' ? 'Madame' : 'Monsieur',
@@ -200,13 +200,14 @@ export class ContractPdfService {
       staffLastName: contract.staff?.lastName || '',
       staffFullName: `${contract.staff?.firstName} ${contract.staff?.lastName}`,
       staffPosition: contract.staff?.position || 'Personnel',
-      staffCode: contract.staff?.staffCode || '',
+      employeeNumber: contract.staff?.employeeNumber || '',
+      staffRoleType: contract.staff?.roleType || '',
       staffEmail: contract.staff?.email || '',
       staffPhone: contract.staff?.phone || '',
       staffBirthDate: contract.staff?.birthDate
         ? new Date(contract.staff.birthDate).toLocaleDateString('fr-FR')
         : '',
-      cnssNumber: contract.staff?.cnssNumber || 'Non encore attribué',
+      cnssNumber: contract.staff?.employeeCNSS?.cnssNumber || 'Non encore attribué',
       // Contrat
       contractId: contract.id,
       contractType: contract.contractType,
@@ -299,7 +300,7 @@ export class ContractPdfService {
           signatureMethod: 'ELECTRONIC_CANVAS',
         },
       },
-      include: { staff: true },
+      include: { staff: { include: { employeeCNSS: true } } },
     });
 
     // Re-générer le PDF avec la signature
@@ -577,7 +578,8 @@ export class ContractPdfService {
         <p style="font-size:9pt;font-weight:bold;color:#1A2BA6;margin-bottom:6px;">L'EMPLOYÉ(E)</p>
         <div class="info-row"><span class="info-label">Civilité :</span><span class="info-value">{{civilite}}</span></div>
         <div class="info-row"><span class="info-label">Nom complet :</span><span class="info-value">{{staffFullName}}</span></div>
-        <div class="info-row"><span class="info-label">Matricule :</span><span class="info-value">{{staffCode}}</span></div>
+        <div class="info-row"><span class="info-label">Matricule :</span><span class="info-value">{{employeeNumber}}</span></div>
+        {{#if staffRoleType}}<div class="info-row"><span class="info-label">Catégorie :</span><span class="info-value">{{staffRoleType}}</span></div>{{/if}}
         <div class="info-row"><span class="info-label">N° CNSS :</span><span class="info-value">{{cnssNumber}}</span></div>
         {{#if staffEmail}}<div class="info-row"><span class="info-label">Email :</span><span class="info-value">{{staffEmail}}</span></div>{{/if}}
         {{#if staffPhone}}<div class="info-row"><span class="info-label">Téléphone :</span><span class="info-value">{{staffPhone}}</span></div>{{/if}}

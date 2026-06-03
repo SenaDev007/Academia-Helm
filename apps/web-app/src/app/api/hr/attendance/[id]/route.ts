@@ -26,7 +26,7 @@ export async function PUT(
     });
 
     const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error updating attendance:', error);
     return NextResponse.json({ error: 'Failed to update attendance' }, { status: 500 });

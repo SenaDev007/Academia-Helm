@@ -94,6 +94,76 @@ export default function PayrollDetailPage() {
     }
   };
 
+  const handleValidateAndPay = async () => {
+    try {
+      setProcessing(true);
+      await apiFetch(`/hr/payroll/periods/${id}?tenantId=${tenant.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ status: 'PAID' }),
+      });
+      toast({ variant: 'success', title: 'Paie validée et marquée comme payée' });
+      fetchPayroll();
+    } catch (error) {
+      toast({ variant: 'error', title: 'Erreur lors de la validation' });
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handlePreviewPayslip = async (itemId: string) => {
+    try {
+      const result = await apiFetch<any>(`/hr/payroll/${itemId}/payslip-pdf?tenantId=${tenant.id}`);
+      if (result?.url) {
+        window.open(result.url, '_blank');
+      } else if (result?.pdfBase64) {
+        const byteCharacters = atob(result.pdfBase64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+      } else {
+        toast({ variant: 'info', title: 'Aperçu du bulletin', description: 'Le PDF sera généré par le serveur.' });
+      }
+    } catch (error) {
+      toast({ variant: 'error', title: 'Erreur lors de la génération de l\'aperçu' });
+    }
+  };
+
+  const handleDownloadPayslip = async (itemId: string, staffName: string) => {
+    try {
+      const result = await apiFetch<any>(`/hr/payroll/${itemId}/payslip-pdf?tenantId=${tenant.id}`);
+      if (result?.pdfBase64) {
+        const byteCharacters = atob(result.pdfBase64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `bulletin_${staffName.replace(/\s+/g, '_')}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else if (result?.url) {
+        const a = document.createElement('a');
+        a.href = result.url;
+        a.download = `bulletin_${staffName.replace(/\s+/g, '_')}.pdf`;
+        a.target = '_blank';
+        a.click();
+      } else {
+        toast({ variant: 'info', title: 'Téléchargement', description: 'Le PDF sera généré par le serveur.' });
+      }
+    } catch (error) {
+      toast({ variant: 'error', title: 'Erreur lors du téléchargement' });
+    }
+  };
+
   if (loading) return <div className="p-8 text-center animate-pulse">Chargement de la période de paie...</div>;
   if (!period) return <div className="p-8 text-center text-red-500">Période introuvable.</div>;
 
@@ -149,7 +219,7 @@ export default function PayrollDetailPage() {
               </>
             )}
             {period.status === 'CALCULATED' && (
-              <button className="flex items-center gap-2 px-6 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 shadow-lg transition-all font-bold text-sm">
+              <button onClick={handleValidateAndPay} disabled={processing} className="flex items-center gap-2 px-6 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 shadow-lg transition-all font-bold text-sm disabled:opacity-50">
                 <ShieldCheck size={18} />
                 Valider & Payer
               </button>
@@ -217,10 +287,10 @@ export default function PayrollDetailPage() {
                           <Calculator size={18} />
                         </button>
                       )}
-                      <button className="p-2 text-gray-400 hover:text-emerald-600 transition-colors" title="Aperçu Bulletin">
+                      <button onClick={() => handlePreviewPayslip(payroll.id)} className="p-2 text-gray-400 hover:text-emerald-600 transition-colors" title="Aperçu Bulletin">
                         <FileText size={18} />
                       </button>
-                      <button className="p-2 text-gray-400 hover:text-gray-900 transition-colors" title="Télécharger PDF">
+                      <button onClick={() => handleDownloadPayslip(payroll.id, `${payroll.staff?.firstName} ${payroll.staff?.lastName}`)} className="p-2 text-gray-400 hover:text-gray-900 transition-colors" title="Télécharger PDF">
                         <Download size={18} />
                       </button>
                     </div>

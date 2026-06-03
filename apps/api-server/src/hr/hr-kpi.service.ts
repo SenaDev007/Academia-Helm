@@ -1,10 +1,17 @@
 /**
  * ============================================================================
- * HR KPI SERVICE - MODULE 5 (v2)
+ * HR KPI SERVICE - MODULE 5 (v2 — SCHEMA-ALIGNED)
  * ============================================================================
- * 
- * Service pour la gestion des snapshots et KPIs RH (Analytics)
- * 
+ *
+ * Service pour la gestion des KPIs RH (Analytics)
+ * Aligné sur les modèles Prisma réels.
+ *
+ * Modèles utilisés:
+ *  - Staff (roleType, pas category)
+ *  - Payroll (batch mensuel avec totalAmount)
+ *  - PayrollItem (lignes individuelles)
+ *  - LeaveRequest (congés, pas leave)
+ *
  * ============================================================================
  */
 
@@ -16,7 +23,7 @@ export class HrKpiService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Calcule et enregistre un snapshot KPI RH
+   * Calcule un snapshot KPI RH
    */
   async generateSnapshot(tenantId: string, academicYearId: string) {
     // 1. Effectifs
@@ -25,10 +32,10 @@ export class HrKpiService {
     });
 
     const totalStaff = staff.length;
-    const totalTeachers = staff.filter(s => s.category === 'PEDAGOGICAL').length;
-    const totalAdmin = staff.filter(s => s.category === 'ADMIN').length;
+    const totalTeachers = staff.filter(s => s.roleType === 'TEACHER').length;
+    const totalAdmin = staff.filter(s => s.roleType === 'ADMIN').length;
 
-    // 2. Masse salariale (dernier mois validé ou payé)
+    // 2. Masse salariale (dernier lot validé ou payé)
     const latestPayroll = await this.prisma.payroll.findFirst({
       where: { tenantId, academicYearId, status: { in: ['VALIDATED', 'PAID'] } },
       orderBy: { endDate: 'desc' },
@@ -39,15 +46,19 @@ export class HrKpiService {
 
     if (latestPayroll) {
       monthlyPayroll = Number(latestPayroll.totalAmount);
+
       // Récupérer la CNSS via les items
       const items = await this.prisma.payrollItem.findMany({
-        where: { payrollId: latestPayroll.id }
+        where: { payrollId: latestPayroll.id },
       });
-      cnssCharges = items.reduce((sum, item) => sum + Number(item.cnssEmployer || 0) + Number(item.cnssEmployee || 0), 0);
+      cnssCharges = items.reduce(
+        (sum, item) => sum + Number(item.cnssEmployer || 0) + Number(item.cnssEmployee || 0),
+        0,
+      );
     }
 
-    // 3. Congés actifs
-    const leaveCount = await this.prisma.leave.count({
+    // 3. Congés actifs (LeaveRequest)
+    const leaveCount = await this.prisma.leaveRequest.count({
       where: {
         tenantId,
         academicYearId,
@@ -57,8 +68,6 @@ export class HrKpiService {
       },
     });
 
-    // 4. Enregistrement du snapshot (HROverviewSnapshot ou HRKpiSnapshot selon le schéma)
-    // On va utiliser un retour direct pour le moment si le modèle n'existe pas encore sous ce nom exact
     return {
       totalStaff,
       totalTeachers,
@@ -87,17 +96,17 @@ export class HrKpiService {
   }
 
   /**
-   * Récupère la répartition par catégorie
+   * Récupère la répartition par roleType (pas category)
    */
   async getStaffDistribution(tenantId: string) {
     const groups = await this.prisma.staff.groupBy({
-      by: ['category'],
+      by: ['roleType'],
       where: { tenantId, status: 'ACTIVE' },
       _count: true,
     });
 
     return groups.map(g => ({
-      category: g.category,
+      roleType: g.roleType,
       count: g._count,
     }));
   }

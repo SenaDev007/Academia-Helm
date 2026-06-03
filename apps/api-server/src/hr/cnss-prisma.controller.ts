@@ -1,6 +1,11 @@
 /**
  * ============================================================================
- * CNSS PRISMA CONTROLLER - MODULE 5 (SCHEMA-ALIGNED)
+ * CNSS PRISMA CONTROLLER - MODULE 5 (SCHEMA-ALIGNED v2)
+ * ============================================================================
+ *
+ * Controller aligné sur le service CNSSPrismaService réécrit.
+ * Utilise CNSSRate, EmployeeCNSS, CNSSDeclaration, CNSSDeclarationLine.
+ *
  * ============================================================================
  */
 
@@ -12,10 +17,50 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 
-@Controller('api/hr/cnss')
+@Controller('hr/cnss')
 @UseGuards(JwtAuthGuard, TenantGuard)
 export class CNSSPrismaController {
   constructor(private readonly cnssService: CNSSPrismaService) {}
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // TAUX CNSS
+  // ──────────────────────────────────────────────────────────────────────────
+
+  @Get('rates/active')
+  async getActiveCNSSRate(@Query('countryCode') countryCode: string = 'BJ') {
+    return this.cnssService.findActiveCNSSRate(countryCode);
+  }
+
+  @Post('rates')
+  async upsertCNSSRate(@Body() body: any) {
+    return this.cnssService.upsertCNSSRate({
+      countryCode: body.countryCode,
+      employeeRate: body.employeeRate,
+      employerRate: body.employerRate,
+      salaryCeiling: body.salaryCeiling,
+      effectiveFrom: new Date(body.effectiveFrom),
+      effectiveTo: body.effectiveTo ? new Date(body.effectiveTo) : undefined,
+    });
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // AFFILIATIONS EMPLOYÉS CNSS
+  // ──────────────────────────────────────────────────────────────────────────
+
+  @Get('employees')
+  async findAllEmployeeCNSS(@GetTenant() tenant: any) {
+    return this.cnssService.findAllEmployeeCNSS(tenant.id);
+  }
+
+  @Post('employees')
+  async findOrCreateEmployeeCNSS(
+    @GetTenant() tenant: any,
+    @Body() body: { staffId: string; cnssNumber?: string },
+  ) {
+    return this.cnssService.findOrCreateEmployeeCNSS(
+      body.staffId, tenant.id, body.cnssNumber,
+    );
+  }
 
   // ──────────────────────────────────────────────────────────────────────────
   // DÉCLARATIONS
@@ -26,8 +71,8 @@ export class CNSSPrismaController {
     return this.cnssService.createCNSSDeclaration({
       tenantId: tenant.id,
       academicYearId: body.academicYearId,
-      periodStart: new Date(body.periodStart),
-      periodEnd: new Date(body.periodEnd),
+      month: body.month,
+      notes: body.notes,
     });
   }
 
@@ -45,17 +90,15 @@ export class CNSSPrismaController {
   async finalizeDeclaration(
     @GetTenant() tenant: any,
     @Param('id') id: string,
-    @Body() body: { status: 'GENERATED' | 'SUBMITTED' | 'PAID' },
+    @Body() body: {
+      status: 'SUBMITTED' | 'PAID';
+      paymentReference?: string;
+      paymentProofPath?: string;
+    },
   ) {
-    return this.cnssService.finalizeDeclaration(id, tenant.id, body.status);
-  }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // TAUX CNSS ACTIF (lecture seule — édition via /hr/payroll/rates)
-  // ──────────────────────────────────────────────────────────────────────────
-
-  @Get('rates/active')
-  async getActiveCNSSRate(@GetTenant() tenant: any) {
-    return this.cnssService.findActiveCNSSRate(tenant.id);
+    return this.cnssService.finalizeDeclaration(
+      id, tenant.id, body.status,
+      body.paymentReference, body.paymentProofPath,
+    );
   }
 }

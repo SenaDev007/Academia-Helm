@@ -1,6 +1,12 @@
 /**
  * ============================================================================
- * LEAVES PRISMA CONTROLLER - MODULE 5
+ * LEAVES PRISMA CONTROLLER - MODULE 5 (SCHEMA-ALIGNED v2)
+ * ============================================================================
+ *
+ * Controller aligné sur le service LeavesPrismaService réécrit.
+ * Utilise le modèle LeaveRequest.
+ * Les endpoints d'absence ont été retirés (le modèle Absence concerne les étudiants).
+ *
  * ============================================================================
  */
 
@@ -9,14 +15,15 @@ import { LeavesPrismaService } from './leaves-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
+import { CreateLeaveRequestDto, ProcessLeaveRequestDto } from './dto';
 
-@Controller('api/hr/leaves')
+@Controller('hr/leaves')
 @UseGuards(JwtAuthGuard, TenantGuard)
 export class LeavesPrismaController {
   constructor(private readonly leavesService: LeavesPrismaService) {}
 
   @Post('requests')
-  async createLeaveRequest(@GetTenant() tenant: any, @Body() data: any) {
+  async createLeaveRequest(@GetTenant() tenant: any, @Body() data: CreateLeaveRequestDto) {
     return this.leavesService.createLeaveRequest({
       ...data,
       tenantId: tenant.id,
@@ -39,21 +46,20 @@ export class LeavesPrismaController {
     });
   }
 
+  @Get('requests/:id')
+  async findLeaveRequestById(@GetTenant() tenant: any, @Param('id') id: string) {
+    return this.leavesService.findLeaveRequestById(id, tenant.id);
+  }
+
   @Put('requests/:id/process')
   async processLeaveRequest(
     @GetTenant() tenant: any,
     @Param('id') id: string,
-    @Body() body: { status: 'APPROVED' | 'REJECTED', approvedBy?: string },
+    @Body() body: ProcessLeaveRequestDto,
   ) {
-    return this.leavesService.processLeaveRequest(id, tenant.id, body.status, body.approvedBy);
-  }
-
-  @Post('absences')
-  async recordAbsence(@GetTenant() tenant: any, @Body() data: any) {
-    return this.leavesService.recordAbsence({
-      ...data,
-      tenantId: tenant.id,
-    });
+    return this.leavesService.processLeaveRequest(
+      id, tenant.id, body.status, body.approvedBy, body.rejectedReason,
+    );
   }
 
   @Get('staff/:staffId/balance')

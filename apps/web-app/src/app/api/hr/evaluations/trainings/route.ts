@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     });
 
     const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error creating training:', error);
     return NextResponse.json({ error: 'Failed to create training' }, { status: 500 });

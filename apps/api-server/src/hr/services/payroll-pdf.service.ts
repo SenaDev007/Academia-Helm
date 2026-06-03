@@ -1,10 +1,11 @@
 /**
  * ============================================================================
- * PAYROLL PDF SERVICE - MODULE 5 (SCHEMA-ALIGNED)
+ * PAYROLL PDF SERVICE - MODULE 5 (SCHEMA-ALIGNED v2)
  * ============================================================================
- * 
- * Service pour la génération de bulletins de paie PDF officiels, aligné sur le schéma v2.
- * 
+ *
+ * Service pour la génération de bulletins de paie PDF officiels,
+ * aligné sur les modèles PayrollItem + SalarySlip.
+ *
  * ============================================================================
  */
 
@@ -36,67 +37,68 @@ export class PayrollPdfService {
   }
 
   /**
-   * Génère un bulletin de paie PDF officiel (Payslip)
+   * Génère un bulletin de paie PDF officiel (SalarySlip)
    */
-  async generatePaySlipPdf(payrollId: string, tenantId: string, userId: string) {
-    const payroll = await this.prisma.payroll.findFirst({
-      where: { id: payrollId, tenantId },
+  async generatePaySlipPdf(payrollItemId: string, tenantId: string, userId: string) {
+    const payrollItem = await this.prisma.payrollItem.findFirst({
+      where: { id: payrollItemId, tenantId },
       include: {
-        staff: true,
-        payrollPeriod: true,
-        tenant: {
+        staff: {
           include: {
-            country: true
-          }
+            employeeCNSS: true,
+          },
         },
-        academicYear: true,
-        payslips: true,
+        payroll: {
+          include: {
+            tenant: {
+              include: { country: true },
+            },
+            academicYear: true,
+          },
+        },
+        salarySlip: true,
       },
     });
 
-    if (!payroll) {
-      throw new NotFoundException(`Payroll entry with ID ${payrollId} not found`);
+    if (!payrollItem) {
+      throw new NotFoundException(`Payroll item with ID ${payrollItemId} not found`);
     }
 
+    const payroll = payrollItem.payroll;
+    const tenant = payroll?.tenant;
+    const country = tenant?.country;
+
     // Détection du pays et configuration des labels régionaux
-    const countryCode = payroll.tenant?.country?.code || 'BJ';
-    const currency = payroll.tenant?.country?.currencyCode || 'XOF';
-    
+    const countryCode = country?.code || 'BJ';
+    const currency = country?.currencyCode || 'XOF';
+
     // Labels sociaux par pays
     const socialLabels: Record<string, string> = {
-      'BJ': 'CNSS',
-      'TG': 'CNSS',
-      'SN': 'IPRES/CSS',
-      'CI': 'CNPS',
-      'ML': 'INPS',
-      'BF': 'CNSS',
+      'BJ': 'CNSS', 'TG': 'CNSS', 'SN': 'IPRES/CSS',
+      'CI': 'CNPS', 'ML': 'INPS', 'BF': 'CNSS',
     };
-    
+
     // Labels fiscaux par pays
     const taxLabels: Record<string, string> = {
-      'BJ': 'IRPP',
-      'TG': 'IRPP',
-      'SN': 'ITS',
-      'CI': 'IS',
-      'ML': 'ITS',
-      'BF': 'IUTS',
+      'BJ': 'IRPP', 'TG': 'IRPP', 'SN': 'ITS',
+      'CI': 'IS', 'ML': 'ITS', 'BF': 'IUTS',
     };
 
     const labels = {
       social: socialLabels[countryCode] || 'Cotisations Sociales',
       tax: taxLabels[countryCode] || 'Impôt sur le Revenu',
-      currency
+      currency,
     };
 
     // Vérifier que la paie est validée
-    if (payroll.status === 'DRAFT') {
+    if (payrollItem.status === 'PENDING') {
       throw new BadRequestException(
-        `Cannot generate pay slip for payroll with status DRAFT. Please calculate/validate first.`,
+        'Cannot generate pay slip for payroll item with status PENDING. Please calculate/validate first.',
       );
     }
 
     // 1. Générer le HTML du bulletin
-    const html = this.generatePaySlipHtml(payroll, labels);
+    const html = this.generatePaySlipHtml(payrollItem, labels);
 
     // 2. Convertir en PDF
     if (!this.puppeteer) {
@@ -107,27 +109,46 @@ export class PayrollPdfService {
 
     const pdfBuffer = await this.renderPdfFromHtml(html);
 
-    // 3. Sauvegarder le PDF et obtenir l'URL
+    // 3. Sauvegarder le PDF
     const pdfUrl = await this.savePdf(
       tenantId,
-      payroll.payrollPeriod.id,
-      payroll.staffId,
+      payroll?.id ?? 'unknown',
+      payrollItem.staffId,
       pdfBuffer,
     );
 
-    // 4. Créer ou mettre à jour l'entrée Payslip
-    const payslip = await this.prisma.payslip.create({
-      data: {
-        tenantId,
-        payrollId,
-        pdfUrl,
-        issuedBy: userId || null,
-        generatedAt: new Date(),
-      },
-    });
+    // 4. Créer ou mettre à jour le SalarySlip
+    const existingSlip = payrollItem.salarySlip;
+    let salarySlip;
+
+    if (existingSlip) {
+      salarySlip = await this.prisma.salarySlip.update({
+        where: { id: existingSlip.id },
+        data: {
+          filePath: pdfUrl,
+          pdfGenerated: true,
+          pdfGeneratedAt: new Date(),
+          issuedBy: userId || null,
+        },
+      });
+    } else {
+      const receiptNumber = `SLP-${Date.now()}-${payrollItemId.substring(0, 8)}`;
+      salarySlip = await this.prisma.salarySlip.create({
+        data: {
+          tenantId,
+          payrollItemId,
+          receiptNumber,
+          period: payroll?.month ?? '',
+          filePath: pdfUrl,
+          pdfGenerated: true,
+          pdfGeneratedAt: new Date(),
+          issuedBy: userId || null,
+        },
+      });
+    }
 
     return {
-      ...payslip,
+      ...salarySlip,
       pdfBuffer,
     };
   }
@@ -135,8 +156,10 @@ export class PayrollPdfService {
   /**
    * Génère le HTML du bulletin de paie avec labels régionaux
    */
-  private generatePaySlipHtml(payroll: any, labels: any): string {
-    const { staff, payrollPeriod, tenant, academicYear } = payroll;
+  private generatePaySlipHtml(payrollItem: any, labels: any): string {
+    const { staff, payroll } = payrollItem;
+    const tenant = payroll?.tenant;
+    const academicYear = payroll?.academicYear;
 
     // Format de date
     const formatDate = (date: Date | string) => {
@@ -144,7 +167,11 @@ export class PayrollPdfService {
       return d.toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' });
     };
 
-    const periodName = new Date(payrollPeriod.startDate).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+    const periodName = payroll?.startDate
+      ? new Date(payroll.startDate).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+      : payroll?.month || 'N/A';
+
+    const cnssNumber = staff.employeeCNSS?.cnssNumber || 'N/A';
 
     return `
 <!DOCTYPE html>
@@ -174,10 +201,9 @@ export class PayrollPdfService {
 <body>
   <div class="header">
     <div class="company-info">
-      <h1>${tenant.name}</h1>
-      <p>${tenant.address || ''}</p>
+      <h1>${tenant?.name || 'N/A'}</h1>
       <p>Année Scolaire: ${academicYear?.name || 'N/A'}</p>
-      <p>Pays: ${tenant.country?.name || 'N/A'}</p>
+      <p>Pays: ${tenant?.country?.name || 'N/A'}</p>
     </div>
     <div class="period-info">
       <p><strong>Période:</strong> ${periodName}</p>
@@ -192,15 +218,16 @@ export class PayrollPdfService {
   <div class="info-grid">
     <div class="info-box">
       <h3>Employeur</h3>
-      <p><strong>${tenant.name}</strong></p>
-      <p>ID: ${tenant.id.substring(0, 8)}</p>
+      <p><strong>${tenant?.name || 'N/A'}</strong></p>
+      <p>ID: ${(tenant?.id || 'N/A').substring(0, 8)}</p>
     </div>
     <div class="info-box">
       <h3>Salarié</h3>
       <p><strong>${staff.firstName} ${staff.lastName}</strong></p>
-      <p>Matricule: ${staff.staffCode}</p>
+      <p>Matricule: ${staff.employeeNumber || 'N/A'}</p>
+      <p>Catégorie: ${staff.roleType || 'N/A'}</p>
       <p>Fonction: ${staff.position || 'Personnel'}</p>
-      <p>N° ${labels.social}: ${staff.cnssNumber || 'N/A'}</p>
+      <p>N° ${labels.social}: ${cnssNumber}</p>
     </div>
   </div>
 
@@ -216,44 +243,62 @@ export class PayrollPdfService {
     <tbody>
       <tr>
         <td>Salaire de Base</td>
-        <td class="amount">${Number(payroll.baseSalary).toLocaleString()}</td>
+        <td class="amount">${Number(payrollItem.baseSalary).toLocaleString()}</td>
         <td class="amount"></td>
-        <td class="amount">${Number(payroll.baseSalary).toLocaleString()}</td>
+        <td class="amount">${Number(payrollItem.baseSalary).toLocaleString()}</td>
+      </tr>
+      <tr>
+        <td>Heures Supplémentaires</td>
+        <td class="amount"></td>
+        <td class="amount"></td>
+        <td class="amount">${Number(payrollItem.overtimeAmount).toLocaleString()}</td>
       </tr>
       <tr>
         <td>Indemnités et Primes</td>
         <td class="amount"></td>
         <td class="amount"></td>
-        <td class="amount">${(Number(payroll.allowances) + Number(payroll.bonuses)).toLocaleString()}</td>
+        <td class="amount">${Number(payrollItem.bonuses).toLocaleString()}</td>
       </tr>
       <tr class="total-row">
         <td>SALAIRE BRUT</td>
         <td class="amount"></td>
         <td class="amount"></td>
-        <td class="amount">${Number(payroll.grossSalary).toLocaleString()}</td>
+        <td class="amount">${Number(payrollItem.grossSalary).toLocaleString()}</td>
       </tr>
       <tr>
         <td>Cotisation ${labels.social} (Salarié)</td>
         <td class="amount"></td>
-        <td class="amount">${Number(payroll.employeeCNSS).toLocaleString()}</td>
+        <td class="amount">${Number(payrollItem.cnssEmployee).toLocaleString()}</td>
+        <td class="amount"></td>
+      </tr>
+      <tr>
+        <td>Cotisation ${labels.social} (Employeur)</td>
+        <td class="amount"></td>
+        <td class="amount">${Number(payrollItem.cnssEmployer).toLocaleString()}</td>
         <td class="amount"></td>
       </tr>
       <tr>
         <td>${labels.tax}</td>
         <td class="amount"></td>
-        <td class="amount">${Number(payroll.taxWithheld).toLocaleString()}</td>
+        <td class="amount">${Number(payrollItem.irppAmount).toLocaleString()}</td>
         <td class="amount"></td>
       </tr>
-      ${Number(payroll.deductions) > 0 ? `
+      ${Number(payrollItem.otherDeductions) > 0 ? `
       <tr>
         <td>Autres Déductions</td>
         <td class="amount"></td>
-        <td class="amount">${Number(payroll.deductions).toLocaleString()}</td>
+        <td class="amount">${Number(payrollItem.otherDeductions).toLocaleString()}</td>
         <td class="amount"></td>
       </tr>` : ''}
+      <tr class="total-row">
+        <td>TOTAL DÉDUCTIONS</td>
+        <td class="amount"></td>
+        <td class="amount">${Number(payrollItem.totalDeductions).toLocaleString()}</td>
+        <td class="amount"></td>
+      </tr>
       <tr class="total-row net-pay">
         <td colspan="3">NET À PAYER (${labels.currency})</td>
-        <td class="amount">${Number(payroll.netSalary).toLocaleString()}</td>
+        <td class="amount">${Number(payrollItem.netSalary).toLocaleString()}</td>
       </tr>
     </tbody>
   </table>
@@ -265,7 +310,7 @@ export class PayrollPdfService {
 
   <div class="footer">
     <p>Ce bulletin de paie est généré par Academia Hub. Pour votre sécurité, conservez-le précieusement.</p>
-    <p>ID Bulletin: ${payroll.id}</p>
+    <p>ID Bulletin: ${payrollItem.id}</p>
   </div>
 </body>
 </html>
@@ -298,12 +343,12 @@ export class PayrollPdfService {
    */
   private async savePdf(
     tenantId: string,
-    periodId: string,
+    payrollId: string,
     staffId: string,
     pdfBuffer: Buffer,
   ): Promise<string> {
-    const uploadsDir = path.join(process.cwd(), 'uploads', 'pay-slips', tenantId, periodId);
-    
+    const uploadsDir = path.join(process.cwd(), 'uploads', 'pay-slips', tenantId, payrollId);
+
     if (!fs.existsSync(uploadsDir)) {
       fs.mkdirSync(uploadsDir, { recursive: true });
     }
@@ -314,21 +359,20 @@ export class PayrollPdfService {
     fs.writeFileSync(filePath, pdfBuffer);
 
     // Retourner le chemin relatif ou l'URL
-    return `/uploads/pay-slips/${tenantId}/${periodId}/${fileName}`;
+    return `/uploads/pay-slips/${tenantId}/${payrollId}/${fileName}`;
   }
 
   /**
-   * Récupère le PDF d'un bulletin de paie
+   * Récupère le PDF d'un bulletin de paie via le SalarySlip
    */
-  async getPaySlipPdf(payrollId: string, tenantId: string): Promise<Buffer | null> {
-    const payslip = await this.prisma.payslip.findFirst({
-      where: { payrollId, tenantId },
-      orderBy: { generatedAt: 'desc' },
+  async getPaySlipPdf(payrollItemId: string, tenantId: string): Promise<Buffer | null> {
+    const salarySlip = await this.prisma.salarySlip.findUnique({
+      where: { payrollItemId },
     });
 
-    if (!payslip || !payslip.pdfUrl) return null;
+    if (!salarySlip || !salarySlip.filePath) return null;
 
-    const absolutePath = path.join(process.cwd(), payslip.pdfUrl);
+    const absolutePath = path.join(process.cwd(), salarySlip.filePath);
     if (!fs.existsSync(absolutePath)) {
       throw new NotFoundException('PDF file not found on filesystem');
     }

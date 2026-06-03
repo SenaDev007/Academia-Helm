@@ -1,10 +1,22 @@
 /**
  * ============================================================================
- * LEAVES PRISMA SERVICE - MODULE 5
+ * LEAVES PRISMA SERVICE - HR MODULE (SCHEMA-ALIGNED v3)
  * ============================================================================
- * 
- * Service pour la gestion des congés et absences
- * 
+ *
+ * Service for managing staff leave requests, aligned with the LeaveRequest
+ * Prisma model.
+ *
+ * Key model: LeaveRequest
+ *   - Fields: id, tenantId, academicYearId, schoolLevelId?, staffId, type,
+ *     startDate, endDate, reason?, status, approvedBy?, approvedAt?,
+ *     rejectedReason?, createdAt, updatedAt
+ *   - Status values: PENDING → APPROVED | REJECTED | CANCELLED
+ *   - Relations: staff → Staff, tenant → Tenant, academicYear → AcademicYear,
+ *     schoolLevel → SchoolLevel?, approver → User? (@relation "LeaveRequestApprover")
+ *
+ * NOTE: Absence model is for STUDENTS only. Staff leave tracking uses
+ *       LeaveRequest exclusively.
+ *
  * ============================================================================
  */
 
@@ -20,34 +32,106 @@ export class LeavesPrismaService {
   // ============================================================================
 
   /**
-   * Crée une demande de congé
+   * Creates a new leave request for a staff member.
+   *
+   * Validates:
+   *  - Staff member exists within the tenant
+   *  - Start date is before end date
+   *  - No overlapping approved leave exists for the same period
+   *
+   * @param data - Leave request creation payload
+   * @returns The created LeaveRequest record
    */
   async createLeaveRequest(data: {
     tenantId: string;
     academicYearId: string;
+    schoolLevelId?: string;
     staffId: string;
     type: string;
     startDate: Date;
     endDate: Date;
     reason?: string;
   }) {
-    // Vérifier les dates
+    // Validate date ordering
     if (data.startDate > data.endDate) {
       throw new BadRequestException('Start date must be before end date');
     }
 
+    // Verify staff member exists within tenant
+    const staff = await this.prisma.staff.findFirst({
+      where: { id: data.staffId, tenantId: data.tenantId },
+    });
+    if (!staff) {
+      throw new NotFoundException(`Staff member ${data.staffId} not found`);
+    }
+
+    // Check for overlapping approved leave requests
+    const overlapping = await this.prisma.leaveRequest.findFirst({
+      where: {
+        staffId: data.staffId,
+        tenantId: data.tenantId,
+        status: 'APPROVED',
+        startDate: { lte: data.endDate },
+        endDate: { gte: data.startDate },
+      },
+    });
+
+    if (overlapping) {
+      throw new BadRequestException(
+        'An approved leave request already exists for this period',
+      );
+    }
+
     return this.prisma.leaveRequest.create({
       data: {
-        ...data,
+        tenantId: data.tenantId,
+        academicYearId: data.academicYearId,
+        schoolLevelId: data.schoolLevelId ?? null,
+        staffId: data.staffId,
+        type: data.type,
+        startDate: data.startDate,
+        endDate: data.endDate,
+        reason: data.reason ?? null,
         status: 'PENDING',
+      },
+      include: {
+        staff: {
+          select: {
+            id: true,
+            employeeNumber: true,
+            firstName: true,
+            lastName: true,
+            position: true,
+            roleType: true,
+          },
+        },
       },
     });
   }
 
   /**
-   * Approuve ou rejette une demande de congé
+   * Processes a leave request by updating its status.
+   *
+   * - APPROVED: sets approvedBy and approvedAt
+   * - REJECTED: sets rejectedReason if provided
+   * - CANCELLED: allows cancellation of a pending request
+   *
+   * Only PENDING requests can be processed.
+   *
+   * @param id - Leave request ID
+   * @param tenantId - Tenant ID for scoping
+   * @param status - Target status (APPROVED, REJECTED, CANCELLED)
+   * @param approvedBy - User ID of the approver (required for APPROVED)
+   * @param rejectedReason - Reason for rejection (optional for REJECTED)
+   * @returns The updated LeaveRequest record
    */
-  async processLeaveRequest(id: string, tenantId: string, status: 'APPROVED' | 'REJECTED', approvedBy?: string) {
+  async processLeaveRequest(
+    id: string,
+    tenantId: string,
+    status: 'APPROVED' | 'REJECTED' | 'CANCELLED',
+    approvedBy?: string,
+    rejectedReason?: string,
+  ) {
     const request = await this.prisma.leaveRequest.findFirst({
       where: { id, tenantId },
     });
@@ -56,28 +140,67 @@ export class LeavesPrismaService {
       throw new NotFoundException(`Leave request with ID ${id} not found`);
     }
 
+    if (request.status !== 'PENDING') {
+      throw new BadRequestException(
+        `Leave request is already ${request.status} and cannot be processed`,
+      );
+    }
+
+    const updateData: Record<string, unknown> = { status };
+
+    if (status === 'APPROVED') {
+      updateData.approvedBy = approvedBy ?? null;
+      updateData.approvedAt = new Date();
+    }
+
+    if (status === 'REJECTED' && rejectedReason) {
+      updateData.rejectedReason = rejectedReason;
+    }
+
     return this.prisma.leaveRequest.update({
       where: { id },
-      data: {
-        status,
-        approvedBy,
-        approvedAt: status === 'APPROVED' ? new Date() : null,
+      data: updateData,
+      include: {
+        staff: {
+          select: {
+            id: true,
+            employeeNumber: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+        approver: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
       },
     });
   }
 
   /**
-   * Récupère toutes les demandes de congé
+   * Retrieves all leave requests for a tenant, with optional filters.
+   *
+   * @param tenantId - Tenant ID for scoping
+   * @param filters - Optional filter criteria
+   * @returns Array of LeaveRequest records with staff details
    */
-  async findAllLeaveRequests(tenantId: string, filters?: {
-    academicYearId?: string;
-    staffId?: string;
-    status?: string;
-    type?: string;
-  }) {
-    const where: any = { tenantId };
-    
+  async findAllLeaveRequests(
+    tenantId: string,
+    filters?: {
+      academicYearId?: string;
+      schoolLevelId?: string;
+      staffId?: string;
+      status?: string;
+      type?: string;
+    },
+  ) {
+    const where: Record<string, unknown> = { tenantId };
+
     if (filters?.academicYearId) where.academicYearId = filters.academicYearId;
+    if (filters?.schoolLevelId) where.schoolLevelId = filters.schoolLevelId;
     if (filters?.staffId) where.staffId = filters.staffId;
     if (filters?.status) where.status = filters.status;
     if (filters?.type) where.type = filters.type;
@@ -88,9 +211,11 @@ export class LeavesPrismaService {
         staff: {
           select: {
             id: true,
+            employeeNumber: true,
             firstName: true,
             lastName: true,
-            staffCode: true,
+            position: true,
+            roleType: true,
           },
         },
       },
@@ -98,80 +223,108 @@ export class LeavesPrismaService {
     });
   }
 
-  // ============================================================================
-  // ABSENCES
-  // ============================================================================
-
   /**
-   * Enregistre une absence
+   * Retrieves a single leave request by ID.
+   *
+   * @param id - Leave request ID
+   * @param tenantId - Tenant ID for scoping
+   * @returns The LeaveRequest record with staff and approver details
    */
-  async recordAbsence(data: {
-    tenantId: string;
-    academicYearId: string;
-    staffId: string;
-    date: Date;
-    reason?: string;
-    isJustified?: boolean;
-    penaltyAmount?: number;
-  }) {
-    return this.prisma.absence.create({
-      data,
-    });
-  }
-
-  /**
-   * Récupère les absences d'un membre du personnel
-   */
-  async findStaffAbsences(staffId: string, tenantId: string, filters?: {
-    academicYearId?: string;
-    startDate?: Date;
-    endDate?: Date;
-  }) {
-    const where: any = { staffId, tenantId };
-    
-    if (filters?.academicYearId) where.academicYearId = filters.academicYearId;
-    if (filters?.startDate || filters?.endDate) {
-      where.date = {};
-      if (filters.startDate) where.date.gte = filters.startDate;
-      if (filters.endDate) where.date.lte = filters.endDate;
-    }
-
-    return this.prisma.absence.findMany({
-      where,
-      orderBy: { date: 'desc' },
-    });
-  }
-
-  /**
-   * Calcule le solde de congés (Logique métier simplifiée)
-   * En général : 2.5 jours par mois travaillé
-   */
-  async calculateLeaveBalance(staffId: string, tenantId: string) {
-    const staff = await this.prisma.staff.findFirst({
-      where: { id: staffId, tenantId },
+  async findLeaveRequestById(id: string, tenantId: string) {
+    const request = await this.prisma.leaveRequest.findFirst({
+      where: { id, tenantId },
       include: {
-        leaveRequests: {
-          where: { status: 'APPROVED' },
+        staff: {
+          select: {
+            id: true,
+            employeeNumber: true,
+            firstName: true,
+            lastName: true,
+            position: true,
+            roleType: true,
+          },
+        },
+        approver: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
         },
       },
     });
 
-    if (!staff) throw new NotFoundException('Staff not found');
+    if (!request) {
+      throw new NotFoundException(`Leave request ${id} not found`);
+    }
 
-    const hireDate = staff.hireDate || new Date();
+    return request;
+  }
+
+  /**
+   * Calculates the leave balance for a staff member.
+   *
+   * Business logic (simplified):
+   *  - Earned: 2.5 days per month worked since hire date
+   *  - Taken: total days from APPROVED leave requests
+   *  - Pending: total days from PENDING leave requests
+   *  - Balance: earned - taken
+   *
+   * @param staffId - Staff member ID
+   * @param tenantId - Tenant ID for scoping
+   * @returns Object with earned, taken, pending, and balance figures
+   */
+  async calculateLeaveBalance(staffId: string, tenantId: string) {
+    const staff = await this.prisma.staff.findFirst({
+      where: { id: staffId, tenantId },
+    });
+
+    if (!staff) {
+      throw new NotFoundException(`Staff member ${staffId} not found`);
+    }
+
+    // Calculate days from approved leave requests
+    const approvedLeaves = await this.prisma.leaveRequest.findMany({
+      where: {
+        staffId,
+        tenantId,
+        status: 'APPROVED',
+      },
+    });
+
+    const hireDate = staff.hireDate ?? new Date();
     const now = new Date();
-    const monthsWorked = (now.getFullYear() - hireDate.getFullYear()) * 12 + (now.getMonth() - hireDate.getMonth());
-    
+    const monthsWorked =
+      (now.getFullYear() - hireDate.getFullYear()) * 12 +
+      (now.getMonth() - hireDate.getMonth());
+
     const totalEarned = monthsWorked * 2.5;
-    const totalTaken = staff.leaveRequests.reduce((acc, req) => {
-      const diffTime = Math.abs(req.endDate.getTime() - req.startDate.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+    const totalTaken = approvedLeaves.reduce((acc, req) => {
+      const diffMs = Math.abs(req.endDate.getTime() - req.startDate.getTime());
+      const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24)) + 1;
+      return acc + diffDays;
+    }, 0);
+
+    // Calculate days from pending leave requests
+    const pendingLeaves = await this.prisma.leaveRequest.findMany({
+      where: {
+        staffId,
+        tenantId,
+        status: 'PENDING',
+      },
+    });
+
+    const totalPending = pendingLeaves.reduce((acc, req) => {
+      const diffMs = Math.abs(req.endDate.getTime() - req.startDate.getTime());
+      const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24)) + 1;
       return acc + diffDays;
     }, 0);
 
     return {
       earned: totalEarned,
       taken: totalTaken,
+      pending: totalPending,
       balance: totalEarned - totalTaken,
     };
   }

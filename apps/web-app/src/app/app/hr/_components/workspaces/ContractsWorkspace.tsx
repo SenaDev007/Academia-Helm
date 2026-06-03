@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import {
   Plus, Search, FileText, Calendar, DollarSign, AlertCircle,
-  FileCheck, Files, Download, PenTool, Loader2,
+  FileCheck, Files, Download, PenTool, Loader2, X,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { apiFetch } from '@/lib/api/client';
@@ -20,6 +20,12 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   TERMINATED: { label: 'Résilié',     className: 'bg-rose-50 text-rose-600 border border-rose-200' },
 };
 
+const inputClass =
+  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 ' +
+  'focus:outline-none focus:border-[#1A2BA6] focus:ring-2 focus:ring-[#1A2BA6]/10 transition';
+
+const labelClass = 'block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5';
+
 export function ContractsWorkspace() {
   const { tenant } = useModuleContext();
   const [contracts, setContracts] = useState<any[]>([]);
@@ -27,23 +33,71 @@ export function ContractsWorkspace() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('ACTIVE');
 
-  useEffect(() => {
-    async function fetchContracts() {
-      if (!tenant?.id) return;
-      try {
-        setLoading(true);
-        let url = `/hr/contracts?tenantId=${tenant.id}`;
-        if (filterStatus !== 'ALL') url += `&status=${filterStatus}`;
-        const result = await apiFetch<any[]>(url);
-        setContracts(result);
-      } catch (error) {
-        console.error('Error fetching contracts:', error);
-      } finally {
-        setLoading(false);
-      }
+  // New contract modal
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalLoading, setModalLoading] = useState(false);
+  const [staffList, setStaffList] = useState<any[]>([]);
+  const [modalForm, setModalForm] = useState({
+    staffId: '',
+    contractType: 'CDD',
+    startDate: new Date().toISOString().split('T')[0],
+    endDate: '',
+    baseSalary: '150000',
+    paymentMode: 'BANK',
+  });
+
+  async function fetchContracts() {
+    if (!tenant?.id) return;
+    try {
+      setLoading(true);
+      let url = `/hr/contracts?tenantId=${tenant.id}`;
+      if (filterStatus !== 'ALL') url += `&status=${filterStatus}`;
+      const result = await apiFetch<any[]>(url);
+      setContracts(result);
+    } catch (error) {
+      console.error('Error fetching contracts:', error);
+    } finally {
+      setLoading(false);
     }
-    fetchContracts();
-  }, [tenant?.id, filterStatus]);
+  }
+
+  useEffect(() => { fetchContracts(); }, [tenant?.id, filterStatus]);
+
+  // Fetch staff list when modal opens
+  useEffect(() => {
+    if (modalOpen && tenant?.id) {
+      apiFetch<any[]>(`/hr/staff?tenantId=${tenant.id}&status=ACTIVE`)
+        .then(setStaffList)
+        .catch(() => {});
+    }
+  }, [modalOpen, tenant?.id]);
+
+  const handleCreateContract = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setModalLoading(true);
+      await apiFetch('/hr/contracts', {
+        method: 'POST',
+        body: JSON.stringify({
+          staffId: modalForm.staffId,
+          contractType: modalForm.contractType,
+          startDate: new Date(modalForm.startDate),
+          endDate: modalForm.endDate ? new Date(modalForm.endDate) : null,
+          baseSalary: parseFloat(modalForm.baseSalary),
+          paymentMode: modalForm.paymentMode,
+          status: 'ACTIVE',
+        }),
+      });
+      toast({ variant: 'success', title: 'Contrat créé avec succès' });
+      setModalOpen(false);
+      setModalForm({ staffId: '', contractType: 'CDD', startDate: new Date().toISOString().split('T')[0], endDate: '', baseSalary: '150000', paymentMode: 'BANK' });
+      fetchContracts();
+    } catch (err) {
+      toast({ variant: 'error', title: 'Erreur lors de la création du contrat' });
+    } finally {
+      setModalLoading(false);
+    }
+  };
 
   const expiringSoon = contracts.filter((c) => {
     if (!c.endDate || c.status !== 'ACTIVE') return false;
@@ -57,12 +111,84 @@ export function ContractsWorkspace() {
       (c.staff?.staffCode && c.staff.staffCode.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
-  const inputClass =
+  const selectClass =
     'rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 ' +
     'focus:outline-none focus:border-[#1A2BA6] focus:ring-2 focus:ring-[#1A2BA6]/10 transition shadow-sm';
 
   return (
     <div className="space-y-6 pb-12">
+      {/* New Contract Modal */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between px-6 py-5 text-white" style={{ background: PRIMARY }}>
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-white/15 p-2"><FileText className="h-5 w-5" /></div>
+                <div>
+                  <h3 className="text-base font-bold">Nouveau Contrat / Avenant</h3>
+                  <p className="text-xs text-white/70">Renseignez les informations du contrat</p>
+                </div>
+              </div>
+              <button onClick={() => setModalOpen(false)} className="rounded-lg p-1.5 hover:bg-white/15 transition-colors"><X className="h-5 w-5" /></button>
+            </div>
+            <form onSubmit={handleCreateContract} className="p-6 space-y-4">
+              <div>
+                <label className={labelClass}>Collaborateur</label>
+                <select className={inputClass} value={modalForm.staffId} onChange={(e) => setModalForm({ ...modalForm, staffId: e.target.value })} required>
+                  <option value="">Sélectionner un collaborateur…</option>
+                  {staffList.map((s) => (
+                    <option key={s.id} value={s.id}>{s.firstName} {s.lastName} ({s.staffCode || s.position})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Type de contrat</label>
+                  <select className={inputClass} value={modalForm.contractType} onChange={(e) => setModalForm({ ...modalForm, contractType: e.target.value })}>
+                    <option value="CDD">CDD</option>
+                    <option value="CDI">CDI</option>
+                    <option value="VACATAIRE">Vacataire</option>
+                    <option value="STAGE">Stage</option>
+                    <option value="CONSULTANT">Consultant</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>Mode de paiement</label>
+                  <select className={inputClass} value={modalForm.paymentMode} onChange={(e) => setModalForm({ ...modalForm, paymentMode: e.target.value })}>
+                    <option value="BANK">Virement Bancaire</option>
+                    <option value="CASH">Espèces</option>
+                    <option value="MOBILE_MONEY">Mobile Money</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Date de début</label>
+                  <input type="date" className={inputClass} value={modalForm.startDate} onChange={(e) => setModalForm({ ...modalForm, startDate: e.target.value })} required />
+                </div>
+                <div>
+                  <label className={labelClass}>Date de fin{modalForm.contractType === 'CDI' ? ' (optionnel)' : ''}</label>
+                  <input type="date" className={inputClass} value={modalForm.endDate} onChange={(e) => setModalForm({ ...modalForm, endDate: e.target.value })} required={modalForm.contractType !== 'CDI'} />
+                </div>
+              </div>
+              <div>
+                <label className={labelClass}>Salaire de base (Mensuel)</label>
+                <div className="relative">
+                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <input type="number" className={inputClass + ' pl-9'} value={modalForm.baseSalary} onChange={(e) => setModalForm({ ...modalForm, baseSalary: e.target.value })} required min={0} />
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                <button type="button" onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-50 transition">Annuler</button>
+                <button type="submit" disabled={modalLoading || !modalForm.staffId} className="flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-sm font-bold shadow-sm hover:opacity-90 disabled:opacity-50 transition" style={{ backgroundColor: PRIMARY }}>
+                  {modalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Créer le contrat
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* KPI strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
@@ -86,12 +212,12 @@ export function ContractsWorkspace() {
             <input
               type="text"
               placeholder="Rechercher par nom ou matricule…"
-              className={inputClass + ' pl-9 w-full'}
+              className={selectClass + ' pl-9 w-full'}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <select className={inputClass} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+          <select className={selectClass} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
             <option value="ACTIVE">Contrats Actifs</option>
             <option value="ALL">Historique Complet</option>
             <option value="EXPIRED">Expirés</option>
@@ -99,6 +225,7 @@ export function ContractsWorkspace() {
           </select>
         </div>
         <button
+          onClick={() => setModalOpen(true)}
           className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition whitespace-nowrap"
           style={{ backgroundColor: PRIMARY }}
         >

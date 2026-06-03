@@ -30,8 +30,9 @@ export function CnssWorkspace() {
         const decls = await apiFetch<any[]>('/hr/cnss/declarations');
         setDeclarations(decls);
 
-        // Load active rate
-        const rate = await apiFetch<any>('/hr/cnss/rates/active');
+        // Load active rate via BFF route (country-aware)
+        const countryCode = (tenant as any)?.country?.code || 'BJ';
+        const rate = await apiFetch<any>(`/hr/cnss/rates/${countryCode}`);
         setActiveRate(rate);
       } catch (err) {
         console.error('Error loading CNSS data:', err);

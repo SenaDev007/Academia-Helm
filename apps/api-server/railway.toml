@@ -1,0 +1,9 @@
+[deploy]
+  [deploy.healthcheck]
+    type = "http"
+    port = 3000
+    path = "/health"
+    grace_period = 120
+
+[env]
+  NODE_OPTIONS = "--max-old-space-size=1536"

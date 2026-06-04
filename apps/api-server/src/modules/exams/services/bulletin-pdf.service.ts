@@ -10,7 +10,7 @@
  */
 
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
-import * as puppeteer from 'puppeteer';
+// Puppeteer loaded dynamically to avoid OOM at startup (lazy import)
 import * as handlebars from 'handlebars';
 import * as QRCode from 'qrcode';
 import * as fs from 'fs';
@@ -38,6 +38,7 @@ export class BulletinPdfService {
       });
 
       // 4. Lancer Puppeteer pour générer le PDF
+      const puppeteer = await import('puppeteer');
       const browser = await puppeteer.launch({
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
         headless: true,

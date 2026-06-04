@@ -16,7 +16,7 @@ import { AdministrativeSealsService } from '../settings/services/administrative-
 import { ElectronicSignaturesService } from '../settings/services/electronic-signatures.service';
 import { Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
-import * as puppeteer from 'puppeteer';
+// Puppeteer loaded dynamically to avoid OOM at startup (lazy import)
 import * as path from 'path';
 import * as fs from 'fs/promises';
 
@@ -209,6 +209,7 @@ export class ReceiptGenerationService {
     // Générer le PDF
     const pdfPath = path.join(yearDir, `receipt-${receipt.receiptNumber}.pdf`);
 
+    const puppeteer = await import('puppeteer');
     const browser = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],

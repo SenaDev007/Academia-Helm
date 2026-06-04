@@ -18,7 +18,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/database/prisma.service';
 import { Prisma } from '@prisma/client';
-import * as puppeteer from 'puppeteer';
+// Puppeteer loaded dynamically to avoid OOM at startup (lazy import)
 import * as path from 'path';
 import * as fs from 'fs/promises';
 // import * as sharp from 'sharp'; // Optionnel : pour optimisation d'image
@@ -299,6 +299,7 @@ Merci pour votre confiance.
     // Générer l'image PNG
     const imagePath = path.join(yearDir, `receipt-${receipt.receiptNumber}.png`);
 
+    const puppeteer = await import('puppeteer');
     const browser = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],

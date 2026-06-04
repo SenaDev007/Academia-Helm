@@ -44,4 +44,4 @@ COPY --from=build /app/prisma ./prisma
 
 EXPOSE 3000
 
-CMD [ "node", "dist/main.js" ]
+CMD [ "node", "--max-old-space-size=1536", "dist/main.js" ]

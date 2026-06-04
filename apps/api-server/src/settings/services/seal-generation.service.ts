@@ -15,7 +15,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import * as puppeteer from 'puppeteer';
+// Puppeteer loaded dynamically to avoid OOM at startup (lazy import)
 
 @Injectable()
 export class SealGenerationService {
@@ -302,6 +302,7 @@ export class SealGenerationService {
    * Convertit SVG en PNG via Puppeteer
    */
   async convertSVGToPNG(svgContent: string, outputPath: string): Promise<string> {
+    const puppeteer = await import('puppeteer');
     const browser = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
@@ -328,6 +329,7 @@ export class SealGenerationService {
    * Convertit SVG en PDF via Puppeteer
    */
   async convertSVGToPDF(svgContent: string, outputPath: string): Promise<string> {
+    const puppeteer = await import('puppeteer');
     const browser = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],

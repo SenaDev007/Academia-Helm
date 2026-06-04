@@ -14,7 +14,7 @@ import { existsSync } from 'fs';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import * as puppeteer from 'puppeteer';
+// Puppeteer loaded dynamically to avoid OOM at startup (lazy import)
 import { PrismaService } from '../../database/prisma.service';
 import { IdentityProfileService } from './identity-profile.service';
 
@@ -602,6 +602,7 @@ export class StampsSignaturesService {
       process.env.PUPPETEER_EXECUTABLE_PATH?.trim() ||
       StampsSignaturesService.FALLBACK_CHROME_PATHS.find((p) => existsSync(p));
     const userDataDir = path.join(os.tmpdir(), 'academia-puppeteer-stamps');
+    const puppeteer = await import('puppeteer');
     const launchOptions: Parameters<typeof puppeteer.launch>[0] = {
       headless: true,
       timeout: 60000,

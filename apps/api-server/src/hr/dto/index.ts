@@ -393,7 +393,7 @@ export class CreateJobDto {
   @IsString() dept: string;
   @IsString() loc: string;
   @IsOptional() @IsString() ref?: string;
-  @IsOptional() @IsIn(['BROUILLON', 'PUBLIÉ', 'FERMÉ', 'ARCHIVÉ']) status?: string;
+  @IsOptional() @IsIn(['BROUILLON', 'PUBLIÉE', 'FERMÉE', 'ARCHIVÉE']) status?: string;
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsString() missions?: string;
   @IsOptional() @IsString() responsibilities?: string;
@@ -411,7 +411,7 @@ export class UpdateJobDto {
   @IsOptional() @IsString() dept?: string;
   @IsOptional() @IsString() loc?: string;
   @IsOptional() @IsString() ref?: string;
-  @IsOptional() @IsIn(['BROUILLON', 'PUBLIÉ', 'FERMÉ', 'ARCHIVÉ']) status?: string;
+  @IsOptional() @IsIn(['BROUILLON', 'PUBLIÉE', 'FERMÉE', 'ARCHIVÉE']) status?: string;
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsString() missions?: string;
   @IsOptional() @IsString() responsibilities?: string;

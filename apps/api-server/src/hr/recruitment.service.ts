@@ -24,7 +24,7 @@ export class RecruitmentPrismaService {
         title: data.title,
         dept: data.dept,
         loc: data.loc,
-        status: data.status || 'BROUILLON',
+        status: data.status || 'BROUILLON', // PUBLIÉE, FERMÉE, ARCHIVÉE
         description: data.description,
         missions: data.missions,
         responsibilities: data.responsibilities,

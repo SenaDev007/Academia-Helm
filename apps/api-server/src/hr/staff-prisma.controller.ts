@@ -91,6 +91,28 @@ export class StaffPrismaController {
     const allStaff = await this.prisma.staff.findMany({ take: 3 });
     const filteredStaff = await this.prisma.staff.findMany({ where: { tenantId: tenantIdFromHeader } });
     
+    // Test StaffPrismaService.findAllStaff (same method used by the authenticated endpoint)
+    let serviceResult: any = null;
+    let serviceError: any = null;
+    try {
+      serviceResult = await this.staffService.findAllStaff(tenantIdFromHeader || '59b8c348-ae5f-4d67-8fbd-af6aefa1f394');
+    } catch (e: any) {
+      serviceError = { message: e.message, code: e.code, meta: e.meta, stack: e.stack?.substring(0, 500) };
+    }
+    
+    // Test StaffPrismaService.createStaff (same method used by the authenticated endpoint)
+    let serviceCreateResult: any = null;
+    let serviceCreateError: any = null;
+    try {
+      serviceCreateResult = await this.staffService.createStaff({
+        tenantId: tenantIdFromHeader || '59b8c348-ae5f-4d67-8fbd-af6aefa1f394',
+        firstName: 'ServiceTest',
+        lastName: 'Debug',
+      });
+    } catch (e: any) {
+      serviceCreateError = { message: e.message, code: e.code, meta: e.meta, stack: e.stack?.substring(0, 500) };
+    }
+    
     // Try create with raw Prisma
     let createResult: any = null;
     let createError: any = null;
@@ -119,8 +141,10 @@ export class StaffPrismaController {
       resolvedTenant,
       allStaffCount: allStaff.length,
       filteredStaffCount: filteredStaff.length,
-      allStaffSample: allStaff.map((s: any) => ({ id: s.id, firstName: s.firstName, tenantId: s.tenantId })),
-      filteredStaffSample: filteredStaff.map((s: any) => ({ id: s.id, firstName: s.firstName, tenantId: s.tenantId })),
+      serviceFindAllResult: serviceResult?.length ?? null,
+      serviceFindAllError: serviceError,
+      serviceCreateResult: serviceCreateResult ? { id: serviceCreateResult.id, employeeNumber: serviceCreateResult.employeeNumber } : null,
+      serviceCreateError,
       createResult: createResult ? { id: createResult.id, employeeNumber: createResult.employeeNumber } : null,
       createError,
     };

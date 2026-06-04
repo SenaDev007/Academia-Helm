@@ -181,3 +181,41 @@ Stage Summary:
 - TimetablesWorkspace BFF route mismatches fixed
 - All pedagogy BFF routes now exist and map correctly to NestJS controllers
 - Neon DB schema is synchronized (no migration needed)
+
+---
+Task ID: 9
+Agent: Main Agent
+Task: Test HR API CRUD operations and fix remaining issues
+
+Work Log:
+- Tested API login: successfully obtained JWT token via POST /auth/login
+- Selected CSPEB tenant via POST /auth/select-tenant
+- GET endpoints ALL work: staff, contracts, leaves, allowances, CNSS, payroll, schedules, attendance
+- POST endpoints ALL fail with Prisma P2003 (FK violation) on the deployed Railway backend
+- Investigated root cause: the deployed backend on Railway does NOT have SSL config in PrismaService
+  - The pg Pool is created without ssl: { rejectUnauthorized: false }
+  - Neon DB requires SSL for connections
+  - GET works because pg can reuse existing pooled connections for reads
+  - POST (write operations) fail because the PrismaPg adapter can't establish new SSL connections
+- Tested locally with Prisma + PrismaPg adapter (with SSL config): ALL CRUD operations SUCCEEDED
+  - Staff: CREATE, READ, UPDATE ✅
+  - Contract: CREATE, UPDATE ✅
+  - LeaveRequest: CREATE ✅
+  - AllowanceType: CREATE ✅
+  - StaffSchedule: CREATE ✅
+  - CNSSRate: CREATE ✅
+  - All DELETE (cleanup) ✅
+- Also discovered @prisma/adapter-pg version mismatch: was 7.3.0, client was 7.8.0
+  - ECONNREFUSED with wrong version, works with matched version
+- Fixed PrismaService to add SSL config for Neon/production
+- Upgraded @prisma/adapter-pg from 7.3.0 to 7.8.0
+- Improved P2003 error message to include FK constraint details
+
+Stage Summary:
+- ALL CRUD operations work locally with corrected PrismaService
+- The deployed Railway backend needs to be redeployed with:
+  1. SSL config in PrismaService pool
+  2. @prisma/adapter-pg@7.8.0
+  3. DTO fixes (@IsIn instead of @IsEnum + complete Update DTOs)
+- Railway CLI cannot be used non-interactively - user must redeploy from Railway dashboard
+- 3 commits pushed: f196d99, 180621f, 4273de1

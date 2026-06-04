@@ -16,6 +16,7 @@ RUN apt-get update -qq && \
 
 COPY package-lock.json package.json ./
 COPY prisma ./prisma/
+COPY prisma.config.ts ./
 RUN test -f prisma/schema.prisma
 
 ENV PUPPETEER_SKIP_DOWNLOAD=true

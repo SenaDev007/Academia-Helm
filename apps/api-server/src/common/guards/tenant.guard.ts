@@ -10,16 +10,22 @@ import { IS_PUBLIC_KEY } from '../../auth/decorators/public.decorator';
 
 /**
  * Guard to extract and validate tenant_id from request
- * 
- * Resolves tenant from:
- * 1. Subdomain (e.g., school-a.academiahub.com)
- * 2. X-Tenant-ID header
- * 3. JWT token payload (after authentication)
- * 
+ *
+ * Resolves tenant from (ordre de priorité) :
+ * 1. X-Tenant-ID header (explicite, priorité maximale)
+ * 2. JWT token payload (tenant sélectionné via /auth/select-tenant)
+ * 3. Subdomain (e.g., cspeb.academiahelm.com) — dernier recours
+ *
  * ⚠️ IMPORTANT: Ce guard ne doit JAMAIS être appliqué sur les routes d'authentification
  */
 @Injectable()
 export class TenantGuard implements CanActivate {
+  /** Sous-domaines réservés qui ne sont PAS des slugs de tenant */
+  private static readonly RESERVED_SUBDOMAINS = new Set([
+    'api', 'www', 'app', 'admin', 'mail', 'smtp', 'ftp', 'cdn',
+    'staging', 'dev', 'test', 'localhost', 'portal', 'docs',
+  ]);
+
   constructor(private reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
@@ -70,29 +76,32 @@ export class TenantGuard implements CanActivate {
   }
 
   private extractTenantId(request: Request): string | undefined {
-    // Option 1: From subdomain (e.g., school-a.academiahub.com)
-    const host = request.headers.host;
-    if (host && host.includes('.')) {
-      const parts = host.split('.');
-      if (parts.length > 2 && parts[0] !== 'www') {
-        // First part is the tenant slug/id
-        // TODO: Resolve slug to tenant_id via database lookup
-        return parts[0];
-      }
-    }
-
-    // Option 2: From X-Tenant-ID header
+    // Option 1: From X-Tenant-ID header (PRIORITÉ — explicite, pas ambigu)
     const tenantIdHeader = request.headers['x-tenant-id'];
     if (tenantIdHeader && typeof tenantIdHeader === 'string') {
       return tenantIdHeader;
     }
 
-    // Option 3: From JWT payload (after authentication)
-    // This is typically handled by an AuthGuard that decodes the JWT
-    // and attaches user/tenant info to the request
+    // Option 2: From JWT payload (tenant sélectionné via /auth/select-tenant)
     const user = request['user'] as any;
     if (user && user.tenantId) {
       return user.tenantId;
+    }
+
+    // Option 3: From subdomain (e.g., cspeb.academiahelm.com)
+    // ⚠️ DERNIER recours — les sous-domaines réservés (api, www, app…) sont ignorés
+    const host = request.headers.host;
+    if (host && host.includes('.')) {
+      const parts = host.split('.');
+      if (
+        parts.length > 2 &&
+        parts[0] !== 'www' &&
+        !TenantGuard.RESERVED_SUBDOMAINS.has(parts[0].toLowerCase())
+      ) {
+        // First part is the tenant slug/id
+        // TODO: Resolve slug to tenant_id via database lookup
+        return parts[0];
+      }
     }
 
     return undefined;

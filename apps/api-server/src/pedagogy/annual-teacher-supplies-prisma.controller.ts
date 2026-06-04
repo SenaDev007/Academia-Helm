@@ -34,8 +34,7 @@ export class AnnualTeacherSuppliesPrismaController {
   @Post()
   async create(
     @TenantId() tenantId: string,
-    @Body()
-    createDto: CreateAnnualTeacherSupplyDto & { academicYearId: string },
+    @Body() createDto: CreateAnnualTeacherSupplyDto,
   ) {
     return this.annualTeacherSuppliesService.create({
       ...createDto,

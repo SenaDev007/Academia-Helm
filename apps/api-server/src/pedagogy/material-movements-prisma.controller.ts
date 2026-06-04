@@ -35,12 +35,7 @@ export class MaterialMovementsPrismaController {
   @Post()
   async create(
     @TenantId() tenantId: string,
-    @Body()
-    createDto: CreateMaterialMovementDto & {
-      academicYearId: string;
-      schoolLevelId?: string;
-      classId?: string;
-    },
+    @Body() createDto: CreateMaterialMovementDto,
     @CurrentUser() user: any,
   ) {
     return this.materialMovementsService.create({

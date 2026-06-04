@@ -754,7 +754,7 @@ export class AcademicStructurePrismaService {
     tenantId: string;
     academicYearId: string;
     levelId: string;
-    cycleId: string;
+    cycleId?: string;
     name: string;
     code: string;
     capacity?: number;
@@ -762,6 +762,30 @@ export class AcademicStructurePrismaService {
     mainTeacherId?: string;
     languageTrack?: string;
   }) {
+    // If no cycleId provided, find or create the default cycle for this level
+    let cycleId = data.cycleId;
+    if (!cycleId) {
+      const defaultCycle = await this.prisma.academicCycle.findFirst({
+        where: { tenantId: data.tenantId, academicYearId: data.academicYearId, levelId: data.levelId },
+        orderBy: { orderIndex: 'asc' },
+      });
+      if (defaultCycle) {
+        cycleId = defaultCycle.id;
+      } else {
+        // Auto-create a default cycle
+        const newCycle = await this.prisma.academicCycle.create({
+          data: {
+            ...prismaCreateDefaults(),
+            tenantId: data.tenantId,
+            academicYearId: data.academicYearId,
+            levelId: data.levelId,
+            name: `Cycle ${data.name}`,
+            orderIndex: 0,
+          },
+        });
+        cycleId = newCycle.id;
+      }
+    }
     const code = data.code.trim().toUpperCase().replace(/\s/g, '');
     const existing = await this.prisma.academicClass.findFirst({
       where: { tenantId: data.tenantId, academicYearId: data.academicYearId, code },
@@ -776,7 +800,7 @@ export class AcademicStructurePrismaService {
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         levelId: data.levelId,
-        cycleId: data.cycleId,
+        cycleId,
         name: data.name,
         code,
         capacity: data.capacity,

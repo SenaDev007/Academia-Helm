@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsNumber, IsDateString } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsNumber, IsUUID } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateTimetableEntryDto {
@@ -38,4 +38,19 @@ export class CreateTimetableEntryDto {
   @IsOptional()
   @Type(() => Number)
   duration?: number;
+
+  /** Required by Prisma schema */
+  @IsUUID()
+  @IsNotEmpty()
+  academicYearId: string;
+
+  /** Required by Prisma schema */
+  @IsUUID()
+  @IsNotEmpty()
+  schoolLevelId: string;
+
+  /** Frontend may send timeSlotId */
+  @IsUUID()
+  @IsOptional()
+  timeSlotId?: string;
 }

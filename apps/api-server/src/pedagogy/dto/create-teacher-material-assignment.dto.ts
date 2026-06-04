@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsInt, Min, IsEnum, IsBoolean } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsInt, Min, IsEnum, IsBoolean, IsUUID } from 'class-validator';
 
 export enum MaterialCondition {
   NEW = 'NEW',
@@ -38,4 +38,9 @@ export class CreateTeacherMaterialAssignmentDto {
   @IsBoolean()
   @IsOptional()
   signed?: boolean;
+
+  /** Required by Prisma schema — was previously only in controller inline type */
+  @IsUUID()
+  @IsNotEmpty()
+  academicYearId: string;
 }

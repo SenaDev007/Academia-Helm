@@ -135,7 +135,9 @@ export class AcademicStructurePrismaController {
     @TenantId() tenantId: string,
     @Body() body: CreateAcademicClassDto,
   ) {
-    return this.service.createClass({ ...body, tenantId } as any);
+    // Auto-generate code if not provided (Prisma requires it)
+    const code = body.code || `${body.name.replace(/\s/g, '').toUpperCase().substring(0, 8)}-${Date.now().toString(36).toUpperCase()}`;
+    return this.service.createClass({ ...body, code, tenantId } as any);
   }
 
   @Put('classes/:id')

@@ -31,8 +31,13 @@ export class ClassDiariesPrismaController {
     @TenantId() tenantId: string,
     @Body() createDto: CreateClassDiaryDto,
   ) {
+    // Map legacy field names to Prisma field names
+    const { content, teacherNotes, ...prismaFields } = createDto;
+    const notes = prismaFields.notes || teacherNotes || content;
+
     return this.classDiariesService.createClassDiary({
-      ...createDto,
+      ...prismaFields,
+      ...(notes && { notes }),
       tenantId,
     } as any);
   }
@@ -73,7 +78,20 @@ export class ClassDiariesPrismaController {
     @TenantId() tenantId: string,
     @Body() updateDto: UpdateClassDiaryDto,
   ) {
-    return this.classDiariesService.updateClassDiary(id, tenantId, updateDto as any);
+    // Map legacy field names to Prisma field names
+    const { content, teacherNotes, ...prismaFields } = updateDto;
+    const mappedData: any = { ...prismaFields };
+    if (teacherNotes !== undefined) {
+      mappedData.notes = teacherNotes;
+    }
+    if (content !== undefined && !prismaFields.notes && !teacherNotes) {
+      mappedData.notes = content;
+    }
+    if (prismaFields.notes !== undefined) {
+      mappedData.notes = prismaFields.notes;
+    }
+
+    return this.classDiariesService.updateClassDiary(id, tenantId, mappedData);
   }
 
   @Delete(':id')

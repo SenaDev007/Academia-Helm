@@ -31,8 +31,15 @@ export class DailyLogsPrismaController {
     @TenantId() tenantId: string,
     @Body() createDto: CreateDailyLogDto,
   ) {
+    // Map legacy field names to Prisma field names
+    const { content, status, subjectId, homework, ...prismaFields } = createDto;
+    const summary = prismaFields.summary || content || '';
+    const validated = prismaFields.validated ?? (status === 'VALIDATED' ? true : undefined);
+
     return this.dailyLogsService.createDailyLog({
-      ...createDto,
+      ...prismaFields,
+      summary,
+      ...(validated !== undefined && { validated }),
       tenantId,
     } as any);
   }
@@ -73,7 +80,20 @@ export class DailyLogsPrismaController {
     @TenantId() tenantId: string,
     @Body() updateDto: UpdateDailyLogDto,
   ) {
-    return this.dailyLogsService.updateDailyLog(id, tenantId, updateDto as any);
+    // Map legacy field names to Prisma field names
+    const { content, status, subjectId, homework, ...prismaFields } = updateDto;
+    const mappedData: any = { ...prismaFields };
+    if (content !== undefined) {
+      mappedData.summary = content;
+    }
+    if (prismaFields.summary !== undefined) {
+      mappedData.summary = prismaFields.summary;
+    }
+    if (status === 'VALIDATED') {
+      mappedData.validated = true;
+    }
+
+    return this.dailyLogsService.updateDailyLog(id, tenantId, mappedData);
   }
 
   @Post(':id/validate')

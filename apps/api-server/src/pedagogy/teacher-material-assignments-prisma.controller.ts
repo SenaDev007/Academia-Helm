@@ -37,8 +37,7 @@ export class TeacherMaterialAssignmentsPrismaController {
   @Post()
   async create(
     @TenantId() tenantId: string,
-    @Body()
-    createDto: CreateTeacherMaterialAssignmentDto & { academicYearId: string },
+    @Body() createDto: CreateTeacherMaterialAssignmentDto,
     @CurrentUser() user: any,
   ) {
     return this.teacherMaterialAssignmentsService.create({

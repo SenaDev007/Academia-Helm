@@ -89,16 +89,27 @@ export class CreateRoomScheduleDto {
 }
 
 // ─── Time Slot DTO ──────────────────────────────────────────────────────────
+// Prisma TimeSlot model: dayOfWeek (Int), startTime (String), endTime (String)
 
 export class CreateTimeSlotDto {
-  @IsString() name: string;
-  @IsInt() @Min(0) @Max(23) @Type(() => Number) startHour: number;
-  @IsInt() @Min(0) @Max(59) @Type(() => Number) startMinute?: number;
-  @IsInt() @Min(0) @Max(23) @Type(() => Number) endHour: number;
-  @IsInt() @Min(0) @Max(59) @Type(() => Number) endMinute?: number;
+  /** Prisma field: dayOfWeek Int */
+  @IsInt() @Min(0) @Max(6) @Type(() => Number) dayOfWeek: number;
+  /** Prisma field: startTime String (e.g. "08:00") */
+  @IsString() startTime: string;
+  /** Prisma field: endTime String (e.g. "10:00") */
+  @IsString() endTime: string;
+  /** Frontend may send name — not in Prisma model but accepted for display */
+  @IsOptional() @IsString() name?: string;
+  /** Frontend may send type — not in Prisma model but accepted for display */
   @IsOptional() @IsString() type?: string;
+  /** Frontend may send isActive — not in Prisma model but accepted */
   @IsOptional() @IsBoolean() isActive?: boolean;
-  /** Frontend may send tenantId — ignored */
+  /** Frontend may send startHour/startMinute/endHour/endMinute — accepted, mapped to startTime/endTime in service */
+  @IsOptional() @IsInt() @Min(0) @Max(23) @Type(() => Number) startHour?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(59) @Type(() => Number) startMinute?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(23) @Type(() => Number) endHour?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(59) @Type(() => Number) endMinute?: number;
+  /** Frontend may send tenantId — ignored (resolved server-side) */
   @IsOptional() @IsString() tenantId?: string;
 }
 
@@ -107,9 +118,10 @@ export class CreateTimeSlotDto {
 export class CreateTeacherSubjectDto {
   @IsUUID() teacherId: string;
   @IsUUID() subjectId: string;
-  @IsOptional() @IsUUID() academicYearId?: string;
+  @IsUUID() academicYearId: string;
+  /** Frontend may send weeklyHours — not in Prisma TeacherSubject model, accepted but ignored */
   @IsOptional() @IsNumber() @Type(() => Number) weeklyHours?: number;
-  /** Frontend may send tenantId — ignored */
+  /** Frontend may send tenantId — ignored (resolved server-side) */
   @IsOptional() @IsString() tenantId?: string;
 }
 

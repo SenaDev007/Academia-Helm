@@ -1,7 +1,7 @@
-import { IsString, IsNotEmpty, IsOptional, IsDateString } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsDateString, IsUUID } from 'class-validator';
 
 export class CreateClassDiaryDto {
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
   classSubjectId: string;
 
@@ -9,14 +9,32 @@ export class CreateClassDiaryDto {
   @IsNotEmpty()
   date: string;
 
-  @IsString()
-  @IsNotEmpty()
-  content: string;
-
+  /** Prisma field: homework String? */
   @IsString()
   @IsOptional()
   homework?: string;
 
+  /** Prisma field: notes String? (was incorrectly named teacherNotes) */
+  @IsString()
+  @IsOptional()
+  notes?: string;
+
+  /** Required by Prisma schema */
+  @IsUUID()
+  @IsNotEmpty()
+  academicYearId: string;
+
+  /** Required by Prisma schema */
+  @IsUUID()
+  @IsNotEmpty()
+  schoolLevelId: string;
+
+  /** Frontend may send content (legacy) — can be mapped to notes in service */
+  @IsString()
+  @IsOptional()
+  content?: string;
+
+  /** Frontend may send teacherNotes (legacy) — mapped to notes in service */
   @IsString()
   @IsOptional()
   teacherNotes?: string;

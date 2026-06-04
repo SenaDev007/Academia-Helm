@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsInt, Min } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsInt, Min, IsUUID } from 'class-validator';
 
 export class CreateAnnualTeacherSupplyDto {
   @IsString()
@@ -20,4 +20,9 @@ export class CreateAnnualTeacherSupplyDto {
   @IsInt()
   @Min(1)
   quantity: number;
+
+  /** Required by Prisma schema — was previously only in controller inline type */
+  @IsUUID()
+  @IsNotEmpty()
+  academicYearId: string;
 }

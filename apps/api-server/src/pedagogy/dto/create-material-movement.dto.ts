@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsInt, Min, IsEnum } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsInt, Min, IsEnum, IsUUID } from 'class-validator';
 
 export enum MaterialMovementType {
   PURCHASE = 'PURCHASE',
@@ -28,4 +28,19 @@ export class CreateMaterialMovementDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  /** Required by Prisma schema — was previously only in controller inline type */
+  @IsUUID()
+  @IsNotEmpty()
+  academicYearId: string;
+
+  /** Frontend may send schoolLevelId */
+  @IsUUID()
+  @IsOptional()
+  schoolLevelId?: string;
+
+  /** Frontend may send classId */
+  @IsUUID()
+  @IsOptional()
+  classId?: string;
 }

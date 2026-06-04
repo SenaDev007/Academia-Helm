@@ -8,6 +8,7 @@ import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
 import { KPICalculationService } from './services/kpi-calculation.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
+import { GetTenant } from '../common/decorators/tenant.decorator';
 import { UpsertKpiDefinitionDto, CalculateKpiDto } from './dto/kpi.dto';
 
 @Controller('orion/kpi')

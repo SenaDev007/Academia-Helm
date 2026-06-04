@@ -63,8 +63,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       return;
     }
     try {
+      // Use a lightweight query to warm up the connection pool instead of $connect()
+      // $connect() may not work well with PrismaPg adapter in Prisma 7
       const start = Date.now();
-      await this.$connect();
+      await this.$queryRaw`SELECT 1`;
       const elapsed = Date.now() - start;
       this.logger.log(`✅ Prisma connected in ${elapsed}ms`);
     } catch (error) {

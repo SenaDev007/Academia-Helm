@@ -41,16 +41,15 @@ export class AnnualTeacherSuppliesPrismaService {
       }
     }
 
-    // Vérifier l'unicité
-    const existing = await this.prisma.annualTeacherSupply.findUnique({
+    // Vérifier l'unicité — use findFirst instead of findUnique because the
+    // @@unique constraint may not exist in the actual database
+    const existing = await this.prisma.annualTeacherSupply.findFirst({
       where: {
-        tenantId_academicYearId_teacherId_materialId_classId: {
-          tenantId: data.tenantId,
-          academicYearId: data.academicYearId,
-          teacherId: data.teacherId,
-          materialId: data.materialId,
-          classId: validatedClassId,
-        },
+        tenantId: data.tenantId,
+        academicYearId: data.academicYearId,
+        teacherId: data.teacherId,
+        materialId: data.materialId,
+        classId: validatedClassId,
       },
     });
 

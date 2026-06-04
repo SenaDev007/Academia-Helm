@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsIn, IsUUID } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsIn, IsUUID, IsBoolean } from 'class-validator';
 
 export enum MaterialCategory {
   BOOK = 'BOOK',

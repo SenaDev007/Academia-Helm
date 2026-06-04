@@ -11,7 +11,7 @@
 
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/database/prisma.service';
-import { PuppeteerPoolService } from '@/common/services/puppeteer-pool.service';
+import { PuppeteerPoolService } from '../common/services/puppeteer-pool.service';
 import { ReceiptNotificationService } from './receipt-notification.service';
 import { AdministrativeSealsService } from '../settings/services/administrative-seals.service';
 import { ElectronicSignaturesService } from '../settings/services/electronic-signatures.service';

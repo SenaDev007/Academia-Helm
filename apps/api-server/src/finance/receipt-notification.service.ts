@@ -17,7 +17,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/database/prisma.service';
-import { PuppeteerPoolService } from '@/common/services/puppeteer-pool.service';
+import { PuppeteerPoolService } from '../common/services/puppeteer-pool.service';
 import { Prisma } from '@prisma/client';
 // Puppeteer loaded dynamically to avoid OOM at startup (lazy import)
 import * as path from 'path';

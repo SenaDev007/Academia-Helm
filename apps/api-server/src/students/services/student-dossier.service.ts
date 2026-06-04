@@ -11,7 +11,7 @@
 
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/database/prisma.service';
-import { PuppeteerPoolService } from '@/common/services/puppeteer-pool.service';
+import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.service';
 
 @Injectable()
 export class StudentDossierService {

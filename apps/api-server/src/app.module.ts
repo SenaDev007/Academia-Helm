@@ -113,6 +113,9 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     // Database
     DatabaseModule,
 
+    // CommonModule — MUST be imported BEFORE feature modules that need PuppeteerPoolService
+    CommonModule,
+
     // Feature modules
     AuthModule,
     UsersModule,
@@ -217,9 +220,6 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     
     // Tenant Context module (Bootstrap du contexte tenant pour dashboards)
     TenantContextModule,
-    
-    // Common module (Permissions, services communs)
-    CommonModule,
     
     // Security module (PLATFORM_OWNER, dev only)
     SecurityModule,

@@ -33,6 +33,8 @@ import { Type } from 'class-transformer';
 export class CreateStaffDto {
   @IsString() firstName: string;
   @IsString() lastName: string;
+  /** Auto-generated if not provided (format: STF-YY-XXXXX) */
+  @IsOptional() @IsString() employeeNumber?: string;
   @IsOptional() @IsString() gender?: string;
   @IsOptional() @IsDateString() dateOfBirth?: string;
   @IsOptional() @IsDateString() birthDate?: string;
@@ -62,6 +64,7 @@ export class CreateStaffDto {
 export class UpdateStaffDto {
   @IsOptional() @IsString() firstName?: string;
   @IsOptional() @IsString() lastName?: string;
+  @IsOptional() @IsString() employeeNumber?: string;
   @IsOptional() @IsString() gender?: string;
   @IsOptional() @IsDateString() dateOfBirth?: string;
   @IsOptional() @IsDateString() birthDate?: string;
@@ -229,6 +232,30 @@ export class AssignAllowanceToStaffDto {
   @IsOptional() @IsDateString() startDate?: string;
   @IsOptional() @IsString() notes?: string;
   /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+export class UpdateAllowanceTypeDto {
+  @IsOptional() @IsString() name?: string;
+  @IsOptional() @IsString() code?: string;
+  @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsBoolean() isTaxable?: boolean;
+  @IsOptional() @IsBoolean() isCnss?: boolean;
+  @IsOptional() @IsNumber() @Type(() => Number) amount?: number;
+  @IsOptional() @IsNumber() @Type(() => Number) defaultAmount?: number;
+  @IsOptional() @IsBoolean() isFixed?: boolean;
+  @IsOptional() @IsBoolean() isActive?: boolean;
+  @IsOptional() @IsString() category?: string;
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+export class UpdateStaffAllowanceDto {
+  @IsOptional() @IsNumber() @Type(() => Number) amount?: number;
+  @IsOptional() @IsDateString() effectiveDate?: string;
+  @IsOptional() @IsDateString() endDate?: string;
+  @IsOptional() @IsDateString() startDate?: string;
+  @IsOptional() @IsString() notes?: string;
+  @IsOptional() @IsString() status?: string;
   @IsOptional() @IsString() tenantId?: string;
 }
 

@@ -18,6 +18,13 @@ import {
 import { RoomsPrismaService } from './rooms-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import {
+  CreateRoomDto,
+  UpdateRoomDto,
+  CreateRoomAllocationDto,
+  CreateRoomMaintenanceDto,
+  CreateRoomScheduleDto,
+} from './dto/supplementary-dtos';
 
 @Controller('rooms')
 @UseGuards(JwtAuthGuard)
@@ -27,7 +34,7 @@ export class RoomsPrismaController {
   @Post()
   async create(
     @TenantId() tenantId: string,
-    @Body() createDto: any,
+    @Body() createDto: CreateRoomDto,
   ) {
     return this.roomsService.createRoom({
       ...createDto,
@@ -80,7 +87,7 @@ export class RoomsPrismaController {
   async update(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() updateDto: any,
+    @Body() updateDto: UpdateRoomDto,
   ) {
     return this.roomsService.updateRoom(id, tenantId, updateDto);
   }
@@ -110,7 +117,7 @@ export class RoomsPrismaController {
   @Post('maintenances')
   async createMaintenance(
     @TenantId() tenantId: string,
-    @Body() body: { roomId: string; startDate: string; endDate?: string; reason: string },
+    @Body() body: CreateRoomMaintenanceDto,
   ) {
     return this.roomsService.createRoomMaintenance({
       tenantId,
@@ -134,15 +141,7 @@ export class RoomsPrismaController {
   @Post('schedules')
   async createSchedule(
     @TenantId() tenantId: string,
-    @Body()
-    body: {
-      academicYearId: string;
-      roomId: string;
-      dayOfWeek: number;
-      startTime: string;
-      endTime: string;
-      classId?: string;
-    },
+    @Body() body: CreateRoomScheduleDto,
   ) {
     return this.roomsService.createRoomSchedule({ ...body, tenantId });
   }
@@ -177,7 +176,7 @@ export class RoomsPrismaController {
   async createAllocation(
     @Param('id') roomId: string,
     @TenantId() tenantId: string,
-    @Body() createDto: any,
+    @Body() createDto: CreateRoomAllocationDto,
   ) {
     return this.roomsService.createRoomAllocation({
       ...createDto,
@@ -194,4 +193,3 @@ export class RoomsPrismaController {
     return this.roomsService.deleteRoom(id, tenantId);
   }
 }
-

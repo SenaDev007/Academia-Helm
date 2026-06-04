@@ -19,6 +19,7 @@ import { DuplicateStructureDto } from './dto/duplicate-structure.dto';
 import { CreateAcademicLevelDto } from './dto/create-academic-level.dto';
 import { UpdateAcademicLevelDto } from './dto/update-academic-level.dto';
 import { CreateAcademicCycleDto } from './dto/create-academic-cycle.dto';
+import { UpdateAcademicCycleDto } from './dto/supplementary-dtos';
 import { CreateAcademicClassDto } from './dto/create-academic-class.dto';
 import { UpdateAcademicClassDto } from './dto/update-academic-class.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -102,7 +103,7 @@ export class AcademicStructurePrismaController {
   async updateCycle(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() body: { name?: string; orderIndex?: number; isActive?: boolean },
+    @Body() body: UpdateAcademicCycleDto,
   ) {
     return this.service.updateCycle(id, tenantId, body);
   }

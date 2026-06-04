@@ -18,6 +18,12 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CreateTeacherProfileDto } from './dto/create-teacher-profile.dto';
 import { UpdateTeacherProfileDto } from './dto/update-teacher-profile.dto';
+import {
+  AddQualificationDto,
+  AddLevelAuthorizationDto,
+  CreateAvailabilityDto,
+  UpdateAvailabilityDto,
+} from './dto/supplementary-dtos';
 
 @Controller('pedagogy/teacher-profiles')
 @UseGuards(JwtAuthGuard)
@@ -76,7 +82,7 @@ export class TeacherAcademicProfilePrismaController {
   async addSubjectQualification(
     @Param('profileId') profileId: string,
     @TenantId() tenantId: string,
-    @Body() body: { academicYearId: string; subjectId: string; certified?: boolean },
+    @Body() body: AddQualificationDto,
   ) {
     return this.service.addSubjectQualification({ ...body, profileId, tenantId });
   }
@@ -95,7 +101,7 @@ export class TeacherAcademicProfilePrismaController {
   async addLevelAuthorization(
     @Param('profileId') profileId: string,
     @TenantId() tenantId: string,
-    @Body() body: { academicYearId: string; levelId: string },
+    @Body() body: AddLevelAuthorizationDto,
   ) {
     return this.service.addLevelAuthorization({ ...body, profileId, tenantId });
   }
@@ -122,8 +128,7 @@ export class TeacherAcademicProfilePrismaController {
   async createAvailability(
     @Param('profileId') profileId: string,
     @TenantId() tenantId: string,
-    @Body()
-    body: { academicYearId: string; dayOfWeek: any; startTime: string; endTime: string },
+    @Body() body: CreateAvailabilityDto,
   ) {
     return this.service.createAvailability({
       ...body,
@@ -137,7 +142,7 @@ export class TeacherAcademicProfilePrismaController {
   async updateAvailability(
     @Param('availabilityId') availabilityId: string,
     @TenantId() tenantId: string,
-    @Body() body: { dayOfWeek?: any; startTime?: string; endTime?: string },
+    @Body() body: UpdateAvailabilityDto,
   ) {
     const updateData: any = { ...body };
     if (body.dayOfWeek !== undefined) {

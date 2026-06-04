@@ -17,6 +17,12 @@ import {
 import { PedagogyPrismaService } from './pedagogy-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import {
+  CreateTeacherSubjectDto,
+  CreateClassSubjectBulkDto,
+  CreateClassSubjectDto,
+  CreateTeacherClassAssignmentDto,
+} from './dto/supplementary-dtos';
 
 @Controller('pedagogy')
 @UseGuards(JwtAuthGuard)
@@ -26,7 +32,7 @@ export class PedagogyPrismaController {
   @Post('teacher-subjects')
   async createTeacherSubject(
     @TenantId() tenantId: string,
-    @Body() createDto: any,
+    @Body() createDto: CreateTeacherSubjectDto,
   ) {
     return this.pedagogyService.createTeacherSubject({
       ...createDto,
@@ -54,7 +60,7 @@ export class PedagogyPrismaController {
   @Post('class-subjects/bulk')
   async createBulkClassSubjects(
     @TenantId() tenantId: string,
-    @Body() body: any,
+    @Body() body: CreateClassSubjectBulkDto,
   ) {
     return this.pedagogyService.createBulkClassSubjects(
       tenantId,
@@ -66,9 +72,8 @@ export class PedagogyPrismaController {
   @Post('class-subjects')
   async createClassSubject(
     @TenantId() tenantId: string,
-    @Body() createDto: any,
+    @Body() createDto: CreateClassSubjectDto,
   ) {
-    // Note: Re-implemented to use createBulkClassSubjects logic or kept for simple cases
     return this.pedagogyService.createBulkClassSubjects(tenantId, createDto.academicYearId, {
       classIds: [createDto.classId],
       subjectIds: [createDto.subjectId],
@@ -76,8 +81,6 @@ export class PedagogyPrismaController {
       coefficient: createDto.coefficient,
     });
   }
-
-
 
   @Get('class-subjects/:classId')
   async getClassSubjects(
@@ -99,7 +102,7 @@ export class PedagogyPrismaController {
   @Post('teacher-class-assignments')
   async createTeacherClassAssignment(
     @TenantId() tenantId: string,
-    @Body() createDto: any,
+    @Body() createDto: CreateTeacherClassAssignmentDto,
   ) {
     return this.pedagogyService.createTeacherClassAssignment({
       ...createDto,
@@ -115,4 +118,3 @@ export class PedagogyPrismaController {
     return this.pedagogyService.removeTeacherClassAssignment(id, tenantId);
   }
 }
-

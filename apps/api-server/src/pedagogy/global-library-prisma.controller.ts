@@ -21,6 +21,11 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import {
+  CreateGlobalLibraryResourceDto,
+  UpdateGlobalLibraryResourceDto,
+  UpsertAnnotationDto,
+} from './dto/supplementary-dtos';
 
 @Controller('pedagogy/global-library')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -48,12 +53,12 @@ export class GlobalLibraryPrismaController {
    */
   @Post()
   @Roles('PLATFORM_OWNER', 'PLATFORM_ADMIN')
-  async create(@TenantId() tenantId: string, @Body() createDto: any, @CurrentUser() user: any) {
+  async create(@TenantId() tenantId: string, @Body() createDto: CreateGlobalLibraryResourceDto, @CurrentUser() user: any) {
     return this.libraryService.createResource({
       ...createDto,
       tenantId,
       createdBy: user.id,
-    });
+    } as any);
   }
 
   /**
@@ -61,8 +66,8 @@ export class GlobalLibraryPrismaController {
    */
   @Patch(':id')
   @Roles('PLATFORM_OWNER', 'PLATFORM_ADMIN')
-  async update(@Param('id') id: string, @TenantId() tenantId: string, @Body() updateDto: any) {
-    return this.libraryService.updateResource(id, tenantId, updateDto);
+  async update(@Param('id') id: string, @TenantId() tenantId: string, @Body() updateDto: UpdateGlobalLibraryResourceDto) {
+    return this.libraryService.updateResource(id, tenantId, updateDto as any);
   }
 
   /**
@@ -97,7 +102,7 @@ export class GlobalLibraryPrismaController {
   async upsertAnnotation(
     @Param('id') resourceId: string,
     @TenantId() tenantId: string,
-    @Body() body: { staffId: string; note: string },
+    @Body() body: UpsertAnnotationDto,
   ) {
     return this.libraryService.upsertAnnotation({
       tenantId,

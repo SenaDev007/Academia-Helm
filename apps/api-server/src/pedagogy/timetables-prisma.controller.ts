@@ -21,6 +21,7 @@ import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CreateTimetableDto } from './dto/create-timetable.dto';
 import { UpdateTimetableDto } from './dto/update-timetable.dto';
 import { CreateTimetableEntryDto } from './dto/create-timetable-entry.dto';
+import { CreateTimeSlotDto } from './dto/supplementary-dtos';
 
 @Controller('timetables')
 @UseGuards(JwtAuthGuard)
@@ -30,7 +31,7 @@ export class TimetablesPrismaController {
   @Post('time-slots')
   async createTimeSlot(
     @TenantId() tenantId: string,
-    @Body() createDto: any,
+    @Body() createDto: CreateTimeSlotDto,
   ) {
     return this.timetablesService.createTimeSlot({
       ...createDto,

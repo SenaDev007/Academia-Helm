@@ -14,7 +14,7 @@ import { AllowancesPrismaService } from './allowances-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
-import { CreateAllowanceTypeDto, AssignAllowanceToStaffDto } from './dto';
+import { CreateAllowanceTypeDto, AssignAllowanceToStaffDto, UpdateAllowanceTypeDto, UpdateStaffAllowanceDto } from './dto';
 
 @Controller('hr/allowances')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -57,8 +57,8 @@ export class AllowancesPrismaController {
   }
 
   @Put('types/:id')
-  async updateAllowanceType(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: any) {
-    return this.allowancesService.updateAllowanceType(id, tenant.id, data);
+  async updateAllowanceType(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: UpdateAllowanceTypeDto) {
+    return this.allowancesService.updateAllowanceType(id, tenant.id, data as any);
   }
 
   // ─── Staff Allowance Assignments ────────────────────────────────────────────
@@ -106,8 +106,8 @@ export class AllowancesPrismaController {
   }
 
   @Put('assignments/:id')
-  async updateStaffAllowance(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: any) {
-    return this.allowancesService.updateStaffAllowance(id, tenant.id, data);
+  async updateStaffAllowance(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: UpdateStaffAllowanceDto) {
+    return this.allowancesService.updateStaffAllowance(id, tenant.id, data as any);
   }
 
   @Delete('assignments/:id')

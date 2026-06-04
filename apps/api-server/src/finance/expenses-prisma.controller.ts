@@ -20,7 +20,7 @@ import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { SchoolLevelId } from '../common/decorators/school-level-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
-@Controller('api/finance/expenses')
+@Controller('finance/expenses')
 @UseGuards(JwtAuthGuard)
 export class ExpensesPrismaController {
   constructor(private readonly expensesService: ExpensesPrismaService) {}

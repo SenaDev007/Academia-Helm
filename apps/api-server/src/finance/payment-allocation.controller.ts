@@ -24,7 +24,7 @@ import { PaymentAllocationService } from './payment-allocation.service';
 import { PrismaService } from '../database/prisma.service';
 import { NotFoundException, ForbiddenException } from '@nestjs/common';
 
-@Controller('api/payments/allocation')
+@Controller('payments/allocation')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class PaymentAllocationController {
   constructor(

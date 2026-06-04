@@ -20,7 +20,7 @@ import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { SchoolLevelId } from '../common/decorators/school-level-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
-@Controller('api/finance/payments')
+@Controller('finance/payments')
 @UseGuards(JwtAuthGuard)
 export class PaymentsPrismaController {
   constructor(private readonly paymentsService: PaymentsPrismaService) {}

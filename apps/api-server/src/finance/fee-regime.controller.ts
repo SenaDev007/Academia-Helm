@@ -10,7 +10,7 @@ import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { User } from '@prisma/client';
 
-@Controller('api/finance/fee-regimes')
+@Controller('finance/fee-regimes')
 @UseGuards(JwtAuthGuard)
 export class FeeRegimeController {
   constructor(private readonly regimeService: FeeRegimeService) {}

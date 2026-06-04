@@ -8,7 +8,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
-@Controller('api/finance/expenses-v2')
+@Controller('finance/expenses-v2')
 @UseGuards(JwtAuthGuard)
 export class FinanceExpenseController {
   constructor(

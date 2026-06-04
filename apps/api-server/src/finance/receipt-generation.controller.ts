@@ -27,7 +27,7 @@ import { Response } from 'express';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
-@Controller('api/receipts')
+@Controller('receipts')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ReceiptGenerationController {
   constructor(

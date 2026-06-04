@@ -14,7 +14,7 @@ import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { User } from '@prisma/client';
 
-@Controller('api/finance/orion')
+@Controller('finance/orion')
 @UseGuards(JwtAuthGuard)
 export class FinanceOrionController {
   constructor(private readonly orionService: FinanceOrionService) {}

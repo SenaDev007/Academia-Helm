@@ -7,7 +7,7 @@ import { RecoveryReminderService } from './recovery-reminder.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 
-@Controller('api/finance/recovery-reminders')
+@Controller('finance/recovery-reminders')
 @UseGuards(JwtAuthGuard)
 export class RecoveryReminderController {
   constructor(private readonly service: RecoveryReminderService) {}

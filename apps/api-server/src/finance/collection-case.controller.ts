@@ -23,7 +23,7 @@ import { RolesGuard } from '@/auth/guards/roles.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
 import { CollectionCaseService } from './collection-case.service';
 
-@Controller('api/collection')
+@Controller('collection')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class CollectionCaseController {
   constructor(private readonly collectionService: CollectionCaseService) {}

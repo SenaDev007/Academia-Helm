@@ -21,7 +21,7 @@ import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { SchoolLevelId } from '../common/decorators/school-level-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
-@Controller('api/finance/fees')
+@Controller('finance/fees')
 @UseGuards(JwtAuthGuard)
 export class FeesPrismaController {
   constructor(private readonly feesService: FeesPrismaService) {}

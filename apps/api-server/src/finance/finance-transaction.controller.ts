@@ -7,7 +7,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
-@Controller('api/finance/transactions')
+@Controller('finance/transactions')
 @UseGuards(JwtAuthGuard)
 export class FinanceTransactionController {
   constructor(private readonly service: FinanceTransactionService) {}

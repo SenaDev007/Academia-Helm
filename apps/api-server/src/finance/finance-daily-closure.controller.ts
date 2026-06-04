@@ -7,7 +7,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
-@Controller('api/finance/daily-closures')
+@Controller('finance/daily-closures')
 @UseGuards(JwtAuthGuard)
 export class FinanceDailyClosureController {
   constructor(private readonly service: FinanceDailyClosureService) {}

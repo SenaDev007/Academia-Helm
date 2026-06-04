@@ -13,7 +13,7 @@ import { Controller, Get, Param } from '@nestjs/common';
 import { Public } from '@/auth/decorators/public.decorator';
 import { ReceiptGenerationService } from './receipt-generation.service';
 
-@Controller('api/public/receipts')
+@Controller('public/receipts')
 export class PublicReceiptController {
   constructor(private readonly receiptService: ReceiptGenerationService) {}
 

@@ -24,7 +24,7 @@ import { RolesGuard } from '@/auth/guards/roles.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
 import { FeeInstallmentService } from './fee-installment.service';
 
-@Controller('api/fees/installments')
+@Controller('fees/installments')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class FeeInstallmentController {
   constructor(private readonly installmentService: FeeInstallmentService) {}

@@ -14,7 +14,7 @@ import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { User } from '@prisma/client';
 
-@Controller('api/receipts/notifications')
+@Controller('receipts/notifications')
 @UseGuards(JwtAuthGuard)
 export class ReceiptNotificationController {
   constructor(

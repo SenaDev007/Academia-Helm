@@ -6,7 +6,7 @@ import { PrismaService } from '../database/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 
-@Controller('api/finance')
+@Controller('finance')
 @UseGuards(JwtAuthGuard)
 export class FinanceAuditController {
   constructor(private readonly prisma: PrismaService) {}

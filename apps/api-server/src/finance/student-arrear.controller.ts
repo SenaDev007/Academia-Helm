@@ -10,7 +10,7 @@ import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { User } from '@prisma/client';
 
-@Controller('api/finance/student-arrears')
+@Controller('finance/student-arrears')
 @UseGuards(JwtAuthGuard)
 export class StudentArrearController {
   constructor(private readonly arrearService: StudentArrearService) {}

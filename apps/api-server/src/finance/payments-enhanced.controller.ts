@@ -22,7 +22,7 @@ import { RolesGuard } from '@/auth/guards/roles.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
 import { PaymentsPrismaEnhancedService } from './payments-prisma-enhanced.service';
 
-@Controller('api/payments/enhanced')
+@Controller('payments/enhanced')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class PaymentsEnhancedController {
   constructor(private readonly paymentsService: PaymentsPrismaEnhancedService) {}

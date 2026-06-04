@@ -29,22 +29,18 @@ export class RolesGuard implements CanActivate {
       return false;
     }
 
-    // Vérifier si l'utilisateur est Super Admin
-    if (requiredRoles.includes('SUPER_ADMIN')) {
-      const dbUser = await this.prisma.user.findUnique({
-        where: { id: user.id },
-        select: { isSuperAdmin: true, role: true },
-      });
-
-      return dbUser?.isSuperAdmin === true || dbUser?.role === 'SUPER_ADMIN';
-    }
-
-    // Vérifier les autres rôles
+    // Récupérer le rôle et le statut super admin de l'utilisateur
     const dbUser = await this.prisma.user.findUnique({
       where: { id: user.id },
-      select: { role: true },
+      select: { isSuperAdmin: true, role: true },
     });
 
+    // Super Admin a toujours accès
+    if (dbUser?.isSuperAdmin === true || dbUser?.role === 'SUPER_ADMIN') {
+      return true;
+    }
+
+    // Vérifier si le rôle de l'utilisateur correspond à l'un des rôles requis
     return requiredRoles.includes(dbUser?.role || '');
   }
 }

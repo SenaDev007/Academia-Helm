@@ -4,55 +4,47 @@
  * ============================================================================
  */
 
-import { Controller, Get, Query, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RequireTenant } from '../common/decorators/require-tenant.decorator';
-import { TenantRequiredGuard } from '../common/guards/tenant-required.guard';
+import { TenantGuard } from '../common/guards/tenant.guard';
+import { GetTenant } from '../common/decorators/tenant.decorator';
 import { DashboardService } from './dashboard.service';
 
 @Controller('dashboard')
+@UseGuards(JwtAuthGuard, TenantGuard)
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
   /**
    * KPIs pour le dashboard Promoteur
    */
-  @RequireTenant()
-  @UseGuards(JwtAuthGuard, TenantRequiredGuard)
   @Get('promoter/kpis')
   async getPromoterKpis(
-    @Req() req: any,
+    @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId?: string,
   ) {
-    const tenantId = req.user.tenantId || req['tenantId'];
-    return this.dashboardService.getPromoterKpis(tenantId, academicYearId);
+    return this.dashboardService.getPromoterKpis(tenant.id, academicYearId);
   }
 
   /**
    * KPIs pour le dashboard Directeur
    */
-  @RequireTenant()
-  @UseGuards(JwtAuthGuard, TenantRequiredGuard)
   @Get('director/kpis')
   async getDirectorKpis(
-    @Req() req: any,
+    @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId?: string,
   ) {
-    const tenantId = req.user.tenantId || req['tenantId'];
-    return this.dashboardService.getDirectorKpis(tenantId, academicYearId);
+    return this.dashboardService.getDirectorKpis(tenant.id, academicYearId);
   }
 
   /**
    * KPIs pour le dashboard Comptable
    */
-  @RequireTenant()
-  @UseGuards(JwtAuthGuard, TenantRequiredGuard)
   @Get('accountant/kpis')
   async getAccountantKpis(
-    @Req() req: any,
+    @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId?: string,
   ) {
-    const tenantId = req.user.tenantId || req['tenantId'];
-    return this.dashboardService.getAccountantKpis(tenantId, academicYearId);
+    return this.dashboardService.getAccountantKpis(tenant.id, academicYearId);
   }
 }

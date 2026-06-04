@@ -27,7 +27,7 @@ import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { SchoolLevelId } from '../../common/decorators/school-level-id.decorator';
 import { Permissions } from '../../auth/decorators/permissions.decorator';
 
-@Controller('api/synthesis')
+@Controller('synthesis')
 @UseGuards(
   JwtAuthGuard,
   ContextValidationGuard,

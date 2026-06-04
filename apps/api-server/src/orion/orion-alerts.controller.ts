@@ -10,7 +10,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 
-@Controller('api/orion/alerts')
+@Controller('orion/alerts')
 @UseGuards(JwtAuthGuard, TenantGuard)
 export class OrionAlertsController {
   constructor(private readonly orionAlertsService: OrionAlertsService) {}

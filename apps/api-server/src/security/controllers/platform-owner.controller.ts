@@ -15,7 +15,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { PlatformOwnerGuard } from '../guards/platform-owner.guard';
 import { PlatformOwnerService } from '../platform-owner.service';
 
-@Controller('api/dev/platform-owner')
+@Controller('dev/platform-owner')
 @UseGuards(JwtAuthGuard, PlatformOwnerGuard)
 export class PlatformOwnerController {
   constructor(private readonly platformOwnerService: PlatformOwnerService) {}

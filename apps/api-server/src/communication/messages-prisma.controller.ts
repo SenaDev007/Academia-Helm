@@ -4,22 +4,22 @@
  * ============================================================================
  */
 
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
 import { MessagesPrismaService } from './messages-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 
-@Controller('api/communication/messages')
+@Controller('communication/messages')
 @UseGuards(JwtAuthGuard, TenantGuard)
 export class MessagesPrismaController {
   constructor(private readonly messagesService: MessagesPrismaService) {}
 
   @Post()
-  async createMessage(@GetTenant() tenant: any, @Body() data: any) {
+  async createMessage(@GetTenant() tenant: any, @Req() req: any, @Body() data: any) {
     return this.messagesService.createMessage(tenant.id, {
       ...data,
-      senderUserId: data.senderUserId || tenant.userId, // À adapter selon l'auth
+      senderUserId: data.senderUserId || req.user?.id,
     });
   }
 

@@ -14,7 +14,7 @@ import { PortalAccessGuard } from '../guards/portal-access.guard';
 import { PermissionsService } from '../services/permissions.service';
 import { UserRole } from '../enums/user-role.enum';
 
-@Controller('api/permissions')
+@Controller('permissions')
 @UseGuards(JwtAuthGuard, PortalAccessGuard)
 export class PermissionsController {
   constructor(private readonly permissionsService: PermissionsService) {}

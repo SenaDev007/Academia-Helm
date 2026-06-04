@@ -10,7 +10,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 
-@Controller('api/communication/scheduling')
+@Controller('communication/scheduling')
 @UseGuards(JwtAuthGuard, TenantGuard)
 export class SchedulingPrismaController {
   constructor(private readonly schedulingService: SchedulingPrismaService) {}

@@ -11,6 +11,7 @@
  */
 
 import { Controller, Get, Post, Put, Body, Query, Param, Delete, UseGuards, UseInterceptors, UploadedFiles } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { RecruitmentPrismaService } from './recruitment.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -182,6 +183,7 @@ export class RecruitmentPrismaController {
 
   @Public()
   @Post('apply')
+  @SkipThrottle()
   @UseInterceptors(FileFieldsInterceptor([
     { name: 'cv', maxCount: 1 },
     { name: 'coverLetter', maxCount: 1 },

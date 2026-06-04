@@ -11,7 +11,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
  * - Logging des requêtes lentes en développement
  */
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleDestroy {
+export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
   private readonly skipDbCheck = process.env.SKIP_DB_CHECK === 'true';
 
@@ -24,11 +24,16 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
       throw new Error('DATABASE_URL is required');
     }
 
-    // Créer un pool PostgreSQL
+    // Créer un pool PostgreSQL avec timeouts configurés
     // Neon DB et autres cloud providers exigent SSL — on l'active si le paramètre
     // sslmode est présent dans l'URL ou si NODE_ENV=production.
     const needsSsl = databaseUrl.includes('sslmode=') || process.env.NODE_ENV === 'production';
-    const poolConfig: any = { connectionString: databaseUrl };
+    const poolConfig: any = {
+      connectionString: databaseUrl,
+      max: 10,                        // Max 10 connections in pool
+      idleTimeoutMillis: 30000,       // Close idle connections after 30s
+      connectionTimeoutMillis: 10000, // Fail fast if DB unreachable (10s)
+    };
     if (needsSsl) {
       poolConfig.ssl = { rejectUnauthorized: false };
     }
@@ -49,9 +54,23 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
     // Le logging des requêtes lentes est géré via les options de log de Prisma
     // Si besoin de logging personnalisé, utiliser des Client Extensions (voir documentation Prisma 7)
 
-    // ✅ En mode SKIP_DB_CHECK, on ne fait RIEN au démarrage (vraiment lazy)
-    // Prisma se connectera automatiquement à la première requête
-    // Pas de log, pas d'initialisation, rien du tout
+    // ✅ Connection will be warmed up in onModuleInit()
+  }
+
+  async onModuleInit() {
+    if (this.skipDbCheck) {
+      this.logger.log('⏭️  SKIP_DB_CHECK=true — skipping Prisma connection warmup');
+      return;
+    }
+    try {
+      const start = Date.now();
+      await this.$connect();
+      const elapsed = Date.now() - start;
+      this.logger.log(`✅ Prisma connected in ${elapsed}ms`);
+    } catch (error) {
+      this.logger.error('❌ Prisma connection failed on init:', error?.message || error);
+      // Don't crash — let requests fail individually with proper error messages
+    }
   }
 
   async onModuleDestroy() {

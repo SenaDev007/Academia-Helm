@@ -975,6 +975,7 @@ model SeriesSubject {
   coefficient    Int
   weeklyHours    Int
   createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
   academicYear   AcademicYear   @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   series         AcademicSeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
   subject        Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
@@ -998,6 +999,7 @@ model SubjectProgram {
   approvedById   String?
   approvedAt     DateTime?
   createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   subject        Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   tenant         Tenant       @relation("TenantSubjectPrograms", fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1041,6 +1043,7 @@ model TeacherSubjectQualification {
   subjectId      String
   certified      Boolean                @default(false)
   createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
   academicYear   AcademicYear           @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   profile        TeacherAcademicProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
   subject        Subject                @relation(fields: [subjectId], references: [id], onDelete: Cascade)
@@ -1059,6 +1062,7 @@ model TeacherLevelAuthorization {
   profileId      String
   levelId        String
   createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
   academicYear   AcademicYear           @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   level          AcademicLevel          @relation(fields: [levelId], references: [id], onDelete: Cascade)
   profile        TeacherAcademicProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
@@ -1079,6 +1083,7 @@ model TeacherAvailability {
   startTime      String
   endTime        String
   createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
   academicYear   AcademicYear           @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   profile        TeacherAcademicProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
   tenant         Tenant                 @relation("TenantTeacherAvailabilities", fields: [tenantId], references: [id], onDelete: Cascade)
@@ -2808,6 +2813,7 @@ model RoomMaintenance {
   reason    String
   isActive  Boolean   @default(true)
   createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   room      Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
   tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -2827,6 +2833,7 @@ model RoomSchedule {
   endTime        String
   classId        String?
   createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   room           Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
   tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -11374,6 +11381,7 @@ model MaterialMovement {
   notes          String?
   performedById  String
   createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
   academicYear   AcademicYear        @relation(fields: [academicYearId], references: [id])
   material       PedagogicalMaterial @relation(fields: [materialId], references: [id])
   performedBy    User                @relation("MaterialMovementPerformedBy", fields: [performedById], references: [id])

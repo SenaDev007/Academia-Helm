@@ -17,6 +17,7 @@ import {
 import { GuardiansPrismaService } from './guardians-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CreateGuardianDto, UpdateGuardianDto, UpdateGuardianRelationDto } from './dto';
 
 @Controller('students/:studentId/guardians')
 @UseGuards(JwtAuthGuard)
@@ -27,7 +28,7 @@ export class GuardiansPrismaController {
   async create(
     @Param('studentId') studentId: string,
     @TenantId() tenantId: string,
-    @Body() createDto: any,
+    @Body() createDto: CreateGuardianDto,
   ) {
     return this.guardiansService.createGuardianForStudent({
       ...createDto,
@@ -48,7 +49,7 @@ export class GuardiansPrismaController {
   async update(
     @Param('guardianId') guardianId: string,
     @TenantId() tenantId: string,
-    @Body() updateDto: any,
+    @Body() updateDto: UpdateGuardianDto,
   ) {
     return this.guardiansService.updateGuardian(guardianId, tenantId, updateDto);
   }
@@ -57,7 +58,7 @@ export class GuardiansPrismaController {
   async updateRelation(
     @Param('studentGuardianId') studentGuardianId: string,
     @TenantId() tenantId: string,
-    @Body() updateDto: any,
+    @Body() updateDto: UpdateGuardianRelationDto,
   ) {
     return this.guardiansService.updateStudentGuardian(
       studentGuardianId,
@@ -74,4 +75,3 @@ export class GuardiansPrismaController {
     return this.guardiansService.removeStudentGuardian(studentGuardianId, tenantId);
   }
 }
-

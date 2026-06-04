@@ -1,18 +1,13 @@
 import { PartialType } from '@nestjs/mapped-types';
 import { CreateAdmissionDto } from './create-admission.dto';
-import { IsEnum, IsOptional, IsString } from 'class-validator';
-import { AdmissionStatus } from '@prisma/client';
+import { IsIn, IsOptional, IsString } from 'class-validator';
 
 export class UpdateAdmissionDto extends PartialType(CreateAdmissionDto) {
   @IsOptional()
-  @IsEnum(['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'MISSING_DOCUMENTS', 'INTERVIEW_REQUIRED', 'TEST_REQUIRED', 'ACCEPTED', 'REJECTED', 'WAITLISTED', 'CONVERTED', 'CANCELLED'])
-  status?: AdmissionStatus;
+  @IsIn(['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'MISSING_DOCUMENTS', 'INTERVIEW_REQUIRED', 'TEST_REQUIRED', 'ACCEPTED', 'REJECTED', 'WAITLISTED', 'CONVERTED', 'CANCELLED'])
+  status?: string;
 
   @IsOptional()
   @IsString()
-  reviewComment?: string;
-
-  @IsOptional()
-  @IsString()
-  decisionComment?: string;
+  decisionBy?: string;
 }

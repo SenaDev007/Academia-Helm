@@ -1,9 +1,11 @@
-import { IsString, IsOptional, IsEnum, IsDateString, IsBoolean } from 'class-validator';
-import { Gender } from '@prisma/client';
+import { IsString, IsOptional, IsIn, IsDateString } from 'class-validator';
 
 export class CreateAdmissionDto {
   @IsString()
   academicYearId: string;
+
+  @IsString()
+  schoolLevelId: string;
 
   @IsString()
   firstName: string;
@@ -12,54 +14,14 @@ export class CreateAdmissionDto {
   lastName: string;
 
   @IsOptional()
-  @IsEnum(['M', 'F'])
-  gender?: Gender;
+  @IsIn(['M', 'F'])
+  gender?: string;
 
   @IsOptional()
   @IsDateString()
-  birthDate?: string;
+  dateOfBirth?: string;
 
   @IsOptional()
   @IsString()
-  birthPlace?: string;
-
-  @IsOptional()
-  @IsString()
-  nationality?: string;
-
-  @IsOptional()
-  @IsString()
-  address?: string;
-
-  @IsOptional()
-  @IsString()
-  requestedLevelId?: string;
-
-  @IsOptional()
-  @IsString()
-  requestedClassId?: string;
-
-  @IsOptional()
-  @IsString()
-  requestedSeriesId?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  wantsBilingual?: boolean;
-
-  @IsOptional()
-  @IsString()
-  previousSchool?: string;
-
-  @IsOptional()
-  @IsString()
-  mainGuardianName?: string;
-
-  @IsOptional()
-  @IsString()
-  mainGuardianPhone?: string;
-
-  @IsOptional()
-  @IsString()
-  mainGuardianEmail?: string;
+  notes?: string;
 }

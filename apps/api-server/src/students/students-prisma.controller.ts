@@ -22,17 +22,19 @@ import {
 } from '@nestjs/common';
 import { StudentsPrismaService } from './students-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { TenantGuard } from '../common/guards/tenant.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CreateStudentPrismaDto, UpdateStudentPrismaDto, EnrollStudentDto, ArchiveStudentDto } from './dto';
 
 @Controller('students')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, TenantGuard)
 export class StudentsPrismaController {
   constructor(private readonly studentsService: StudentsPrismaService) {}
 
   @Post()
   async create(
     @TenantId() tenantId: string,
-    @Body() createDto: any,
+    @Body() createDto: CreateStudentPrismaDto,
   ) {
     return this.studentsService.createStudent({
       ...createDto,
@@ -87,7 +89,7 @@ export class StudentsPrismaController {
   async update(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() updateDto: any,
+    @Body() updateDto: UpdateStudentPrismaDto,
   ) {
     return this.studentsService.updateStudent(id, tenantId, updateDto);
   }
@@ -96,7 +98,7 @@ export class StudentsPrismaController {
   async archive(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() body: { reason?: string },
+    @Body() body: ArchiveStudentDto,
   ) {
     return this.studentsService.archiveStudent(id, tenantId, body.reason);
   }
@@ -105,7 +107,7 @@ export class StudentsPrismaController {
   async enroll(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() enrollDto: any,
+    @Body() enrollDto: EnrollStudentDto,
   ) {
     return this.studentsService.enrollStudent({
       ...enrollDto,
@@ -114,4 +116,3 @@ export class StudentsPrismaController {
     });
   }
 }
-

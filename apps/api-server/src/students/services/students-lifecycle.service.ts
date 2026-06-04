@@ -67,29 +67,22 @@ export class StudentsLifecycleService {
     performedBy?: string,
   ) {
     try {
-      await this.prisma.studentHistory.create({
+      await this.prisma.studentAuditLog.create({
         data: {
           tenantId,
           studentId,
-          academicYearId,
-          classId,
+          userId: performedBy ?? null,
           action,
-          comment,
-          performedBy,
-        },
-      });
-      
-      // Horodatage inviolable dans le Ledger (Gouvernance)
-      await this.prisma.timestampLedger.create({
-        data: {
-          tenantId,
-          entityType: 'STUDENT_HISTORY',
-          entityId: studentId,
-          hash: Buffer.from(`${studentId}-${action}-${new Date().toISOString()}`).toString('hex'), // SimplifiÃ© pour l'exemple
+          beforeData: null,
+          afterData: {
+            academicYearId,
+            classId,
+            comment,
+          },
         },
       });
     } catch (e) {
-      this.logger.error(`Erreur logHistory: ${e.message}`);
+      this.logger.error(`Erreur logHistory: ${(e as Error).message}`);
     }
   }
 
@@ -653,12 +646,17 @@ export class StudentsLifecycleService {
     await this.publicVerificationService.deactivateTokensForStudent(data.studentId).catch(() => {});
 
     // Journalisation institutionnelle du transfert (Sous-module C/A)
-    await this.prisma.transferHistory.create({
+    await this.prisma.studentAuditLog.create({
       data: {
         tenantId,
         studentId: data.studentId,
-        reason: data.exitReason || 'Transfert',
-        status: 'COMPLETED',
+        userId: userId ?? null,
+        action: 'TRANSFER_HISTORY',
+        beforeData: null,
+        afterData: {
+          reason: data.exitReason || 'Transfert',
+          status: 'COMPLETED',
+        },
       },
     });
 

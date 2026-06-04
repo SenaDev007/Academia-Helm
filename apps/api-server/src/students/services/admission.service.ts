@@ -1,6 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { AdmissionStatus, Gender } from '@prisma/client';
 import { StudentsLifecycleService } from './students-lifecycle.service';
 
 @Injectable()
@@ -13,48 +12,50 @@ export class AdmissionService {
   ) {}
 
   async create(tenantId: string, data: any, userId?: string) {
-    return this.prisma.studentAdmission.create({
+    return this.prisma.admission.create({
       data: {
-        ...data,
         tenantId,
-        createdById: userId,
-        status: 'DRAFT' as AdmissionStatus,
+        academicYearId: data.academicYearId,
+        schoolLevelId: data.schoolLevelId,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        dateOfBirth: data.dateOfBirth ?? null,
+        gender: data.gender ?? null,
+        status: 'PENDING',
+        applicationDate: new Date(),
       },
     });
   }
 
   async findAll(tenantId: string, filters: any) {
     const { academicYearId, status, search } = filters;
-    return this.prisma.studentAdmission.findMany({
+    return this.prisma.admission.findMany({
       where: {
         tenantId,
         ...(academicYearId && { academicYearId }),
-        ...(status && { status: status as AdmissionStatus }),
+        ...(status && { status }),
         ...(search && {
           OR: [
             { firstName: { contains: search, mode: 'insensitive' } },
             { lastName: { contains: search, mode: 'insensitive' } },
-            { admissionNumber: { contains: search, mode: 'insensitive' } },
           ],
         }),
       },
       include: {
-        requestedLevel: true,
-        requestedClass: true,
+        schoolLevel: true,
+        academicYear: true,
       },
       orderBy: { createdAt: 'desc' },
     });
   }
 
   async findOne(id: string, tenantId: string) {
-    const admission = await this.prisma.studentAdmission.findFirst({
+    const admission = await this.prisma.admission.findFirst({
       where: { id, tenantId },
       include: {
-        documents: true,
-        interviews: true,
-        requestedLevel: true,
-        requestedClass: true,
-        requestedSeries: true,
+        schoolLevel: true,
+        academicYear: true,
+        tenant: true,
       },
     });
     if (!admission) throw new NotFoundException('Admission non trouvée');
@@ -62,25 +63,36 @@ export class AdmissionService {
   }
 
   async update(id: string, tenantId: string, data: any, userId?: string) {
-    return this.prisma.studentAdmission.update({
+    // Only include fields that exist in the Prisma Admission model
+    const updateData: any = {};
+    if (data.firstName !== undefined) updateData.firstName = data.firstName;
+    if (data.lastName !== undefined) updateData.lastName = data.lastName;
+    if (data.dateOfBirth !== undefined) updateData.dateOfBirth = data.dateOfBirth;
+    if (data.gender !== undefined) updateData.gender = data.gender;
+    if (data.status !== undefined) updateData.status = data.status;
+    if (data.schoolLevelId !== undefined) updateData.schoolLevelId = data.schoolLevelId;
+    if (data.academicYearId !== undefined) updateData.academicYearId = data.academicYearId;
+    if (data.notes !== undefined) updateData.notes = data.notes;
+    if (data.applicationDate !== undefined) updateData.applicationDate = data.applicationDate;
+    if (data.decisionDate !== undefined) updateData.decisionDate = data.decisionDate;
+    if (data.decisionBy !== undefined) updateData.decisionBy = data.decisionBy;
+
+    return this.prisma.admission.update({
       where: { id },
-      data: {
-        ...data,
-        updatedById: userId,
-      },
+      data: updateData,
     });
   }
 
   async submit(id: string, tenantId: string) {
-    return this.update(id, tenantId, { status: 'SUBMITTED' as AdmissionStatus });
+    return this.update(id, tenantId, { status: 'SUBMITTED' });
   }
 
   async decide(id: string, tenantId: string, decision: 'ACCEPTED' | 'REJECTED', comment: string, userId: string) {
     return this.update(id, tenantId, {
-      status: decision as AdmissionStatus,
-      decisionComment: comment,
-      decisionById: userId,
-      decisionAt: new Date(),
+      status: decision,
+      notes: comment,
+      decisionBy: userId,
+      decisionDate: new Date(),
     });
   }
 
@@ -89,37 +101,28 @@ export class AdmissionService {
    */
   async convertToStudent(id: string, tenantId: string, userId: string) {
     const admission = await this.findOne(id, tenantId);
-    
+
     if (admission.status !== 'ACCEPTED') {
       throw new BadRequestException('L\'admission doit être ACCEPTÉE pour être convertie');
     }
-    
-    if (admission.convertedStudentId) {
-      throw new BadRequestException('Cette admission a déjà été convertie');
-    }
 
-    // Workflow de conversion via le service cycle de vie existant
-    // Note: On utilise preRegister pour créer le dossier élève initial
+    // Create student directly via the lifecycle service
     const student = await this.lifecycleService.preRegister(tenantId, {
       academicYearId: admission.academicYearId,
-      schoolLevelId: admission.requestedLevelId || '',
+      schoolLevelId: admission.schoolLevelId,
       firstName: admission.firstName,
       lastName: admission.lastName,
-      dateOfBirth: admission.birthDate || undefined,
-      gender: admission.gender || undefined,
-      nationality: admission.nationality || undefined,
-      placeOfBirth: admission.birthPlace || undefined,
-      classId: admission.requestedClassId || undefined,
-      photoUrl: admission.photoUrl || undefined,
+      dateOfBirth: admission.dateOfBirth ?? undefined,
+      gender: admission.gender ?? undefined,
     }, userId);
 
-    // Mettre à jour l'admission pour marquer la conversion
-    await this.prisma.studentAdmission.update({
+    // Update the admission status to CONVERTED
+    await this.prisma.admission.update({
       where: { id },
       data: {
-        status: 'CONVERTED' as AdmissionStatus,
-        convertedStudentId: student.id,
-        convertedAt: new Date(),
+        status: 'CONVERTED',
+        decisionBy: userId,
+        decisionDate: new Date(),
       },
     });
 

@@ -46,7 +46,7 @@ import { ModuleTypeRequired, ModuleTypeParam } from '../common/decorators/module
 import { ModuleType } from '../modules/entities/module.entity';
 import { PaginationDto } from '../common/dto/pagination.dto';
 
-@Controller('students')
+@Controller('students-legacy')
 @UseGuards(
   JwtAuthGuard,
   PortalAccessGuard, // Vérifie le portail autorisé

@@ -16,6 +16,7 @@ import {
 import { AttendancePrismaService } from './attendance-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { RecordAttendanceDto, RecordClassAttendanceDto } from './dto';
 
 @Controller('attendance')
 @UseGuards(JwtAuthGuard)
@@ -25,7 +26,7 @@ export class AttendancePrismaController {
   @Post()
   async record(
     @TenantId() tenantId: string,
-    @Body() recordDto: any,
+    @Body() recordDto: RecordAttendanceDto,
   ) {
     return this.attendanceService.recordAttendance({
       ...recordDto,
@@ -36,7 +37,7 @@ export class AttendancePrismaController {
   @Post('class')
   async recordClass(
     @TenantId() tenantId: string,
-    @Body() recordDto: any,
+    @Body() recordDto: RecordClassAttendanceDto,
   ) {
     return this.attendanceService.recordClassAttendance({
       ...recordDto,
@@ -93,4 +94,3 @@ export class AttendancePrismaController {
     );
   }
 }
-

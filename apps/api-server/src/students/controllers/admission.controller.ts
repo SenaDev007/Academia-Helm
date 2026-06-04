@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Patch, Param, Query, UseGuards } from '@ne
 import { AdmissionService } from '../services/admission.service';
 import { CreateAdmissionDto } from '../dto/create-admission.dto';
 import { UpdateAdmissionDto } from '../dto/update-admission.dto';
+import { DecideAdmissionDto } from '../dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -46,10 +47,9 @@ export class AdmissionController {
     @TenantId() tenantId: string,
     @Param('id') id: string,
     @CurrentUser() user: any,
-    @Body('decision') decision: 'ACCEPTED' | 'REJECTED',
-    @Body('comment') comment: string,
+    @Body() decideDto: DecideAdmissionDto,
   ) {
-    return this.admissionService.decide(id, tenantId, decision, comment, user?.id);
+    return this.admissionService.decide(id, tenantId, decideDto.decision as 'ACCEPTED' | 'REJECTED', decideDto.comment ?? '', user?.id);
   }
 
   @Post(':id/convert')

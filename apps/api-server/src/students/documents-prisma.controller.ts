@@ -17,6 +17,7 @@ import {
 import { DocumentsPrismaService } from './documents-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CreateStudentDocumentDto } from './dto';
 
 @Controller('students/:studentId/documents')
 @UseGuards(JwtAuthGuard)
@@ -27,7 +28,7 @@ export class DocumentsPrismaController {
   async create(
     @Param('studentId') studentId: string,
     @TenantId() tenantId: string,
-    @Body() createDto: any,
+    @Body() createDto: CreateStudentDocumentDto,
   ) {
     return this.documentsService.createStudentDocument({
       ...createDto,
@@ -88,4 +89,3 @@ export class GeneratedDocumentsController {
     });
   }
 }
-

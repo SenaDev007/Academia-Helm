@@ -16,6 +16,7 @@ import {
 import { TransfersPrismaService } from './transfers-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CreateTransferRequestDto } from './dto';
 
 @Controller('transfers')
 @UseGuards(JwtAuthGuard)
@@ -25,7 +26,7 @@ export class TransfersPrismaController {
   @Post()
   async create(
     @TenantId() tenantId: string,
-    @Body() createDto: any,
+    @Body() createDto: CreateTransferRequestDto,
   ) {
     return this.transfersService.createTransferRequest({
       ...createDto,
@@ -73,4 +74,3 @@ export class TransfersPrismaController {
     return this.transfersService.rejectTransfer(id, tenantId, body.reason);
   }
 }
-

@@ -17,6 +17,7 @@ import {
 import { DisciplinePrismaService } from './discipline-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CreateDisciplineDto, UpdateDisciplineDto } from './dto';
 
 @Controller('discipline')
 @UseGuards(JwtAuthGuard)
@@ -26,7 +27,7 @@ export class DisciplinePrismaController {
   @Post()
   async create(
     @TenantId() tenantId: string,
-    @Body() createDto: any,
+    @Body() createDto: CreateDisciplineDto,
   ) {
     return this.disciplineService.createDisciplinaryAction({
       ...createDto,
@@ -73,7 +74,7 @@ export class DisciplinePrismaController {
   async update(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() updateDto: any,
+    @Body() updateDto: UpdateDisciplineDto,
   ) {
     return this.disciplineService.updateDisciplinaryAction(id, tenantId, updateDto);
   }
@@ -91,4 +92,3 @@ export class DisciplinePrismaController {
     );
   }
 }
-

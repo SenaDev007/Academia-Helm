@@ -41,7 +41,7 @@ export class StudentDossierController {
    * Récupère le dossier scolaire complet d'un élève
    */
   @Get(':studentId/dossier')
-  @Roles('DIRECTOR', 'ADMIN', 'TEACHER', 'PARENT', 'STUDENT')
+  @Roles('DIRECTEUR', 'DIRECTOR', 'ADMIN', 'TEACHER', 'PARENT', 'STUDENT')
   async getDossier(
     @Param('studentId') studentId: string,
     @Query('academicYearId') academicYearId?: string,
@@ -63,7 +63,7 @@ export class StudentDossierController {
    * Génère le dossier académique consolidé en PDF.
    */
   @Get(':studentId/academic-dossier')
-  @Roles('DIRECTOR', 'ADMIN')
+  @Roles('DIRECTEUR', 'DIRECTOR', 'ADMIN')
   async getAcademicDossierPdf(
     @Param('studentId') studentId: string,
     @Query('academicYearId') academicYearId: string | undefined,
@@ -90,7 +90,7 @@ export class StudentDossierController {
    * Crée ou met à jour un enregistrement académique
    */
   @Post(':studentId/dossier/academic-record')
-  @Roles('DIRECTOR', 'ADMIN')
+  @Roles('DIRECTEUR', 'DIRECTOR', 'ADMIN')
   async upsertAcademicRecord(
     @Param('studentId') studentId: string,
     @Body() data: any,
@@ -116,7 +116,7 @@ export class StudentDossierController {
    * Crée ou met à jour un résumé disciplinaire
    */
   @Post(':studentId/dossier/disciplinary-summary')
-  @Roles('DIRECTOR', 'ADMIN')
+  @Roles('DIRECTEUR', 'DIRECTOR', 'ADMIN')
   async upsertDisciplinarySummary(
     @Param('studentId') studentId: string,
     @Body() data: any,
@@ -142,7 +142,7 @@ export class StudentDossierController {
    * Synchronise automatiquement le résumé disciplinaire
    */
   @Post(':studentId/dossier/sync-disciplinary')
-  @Roles('DIRECTOR', 'ADMIN')
+  @Roles('DIRECTEUR', 'DIRECTOR', 'ADMIN')
   async syncDisciplinarySummary(
     @Param('studentId') studentId: string,
     @Body() body: { academicYearId: string },
@@ -161,7 +161,7 @@ export class StudentDossierController {
    * Retourne l'URL publique et l'image QR pour la carte scolaire (dossier / impression)
    */
   @Get(':studentId/verification-qr')
-  @Roles('DIRECTOR', 'ADMIN', 'TEACHER', 'PARENT', 'STUDENT')
+  @Roles('DIRECTEUR', 'DIRECTOR', 'ADMIN', 'TEACHER', 'PARENT', 'STUDENT')
   async getVerificationQR(
     @Param('studentId') studentId: string,
     @Query('academicYearId') academicYearId: string,
@@ -177,7 +177,7 @@ export class StudentDossierController {
    * Génère un token de vérification publique pour un élève
    */
   @Post(':studentId/verification-token/generate')
-  @Roles('DIRECTOR', 'ADMIN')
+  @Roles('DIRECTEUR', 'DIRECTOR', 'ADMIN')
   async generateVerificationToken(
     @Param('studentId') studentId: string,
     @Body() body: { academicYearId: string },
@@ -196,7 +196,7 @@ export class StudentDossierController {
    * Régénère le token (révocable, anti-abus : 1 fois / 5 min). Rôle directeur uniquement.
    */
   @Post(':studentId/verification-token/regenerate')
-  @Roles('DIRECTOR', 'ADMIN')
+  @Roles('DIRECTEUR', 'DIRECTOR', 'ADMIN')
   async regenerateVerificationToken(
     @Param('studentId') studentId: string,
     @Body() body: { academicYearId: string },
@@ -215,7 +215,7 @@ export class StudentDossierController {
    * Récupère les statistiques de vérification
    */
   @Get('verification/stats')
-  @Roles('DIRECTOR', 'ADMIN')
+  @Roles('DIRECTEUR', 'DIRECTOR', 'ADMIN')
   async getVerificationStats(
     @Query('academicYearId') academicYearId?: string,
     @Request() req?: any,

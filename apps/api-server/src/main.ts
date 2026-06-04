@@ -5,8 +5,10 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 
-/** Défaut Express ~100 ko — insuffisant pour identité + logos base64 (POST /settings/identity). */
-const BODY_LIMIT = process.env.JSON_BODY_LIMIT ?? '10mb';
+/** Défaut Express ~100 ko — insuffisant pour identité + logos base64 (POST /settings/identity).
+ *  Réduit de 10mb à 5mb pour limiter la consommation mémoire par requête.
+ */
+const BODY_LIMIT = process.env.JSON_BODY_LIMIT ?? '5mb';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -70,7 +72,11 @@ async function bootstrap() {
 
   const port = Number(process.env.PORT ?? process.env.API_PORT ?? 3000);
   await app.listen(port, '0.0.0.0');
+
+  // Log memory info on startup
+  const memUsage = process.memoryUsage();
   logger.log(`Academia Helm API listening on http://0.0.0.0:${port} (PORT=${process.env.PORT ?? 'unset'})`);
+  logger.log(`Memory: heapUsed=${Math.round(memUsage.heapUsed / 1024 / 1024)}MB, rss=${Math.round(memUsage.rss / 1024 / 1024)}MB`);
 }
 bootstrap();
 

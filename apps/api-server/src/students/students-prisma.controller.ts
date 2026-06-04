@@ -53,6 +53,8 @@ export class StudentsPrismaController {
     @Query('search') search?: string,
     @Query('regimeType') regimeType?: string,
     @Query('hasArrears') hasArrears?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     return this.studentsService.findAllStudents(tenantId, {
       academicYearId,
@@ -62,6 +64,8 @@ export class StudentsPrismaController {
       search,
       regimeType: regimeType || undefined,
       hasArrears: hasArrears === 'true' ? true : hasArrears === 'false' ? false : undefined,
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
     });
   }
 

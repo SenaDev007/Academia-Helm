@@ -11,27 +11,16 @@
 
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/database/prisma.service';
+import { PuppeteerPoolService } from '@/common/services/puppeteer-pool.service';
 
 @Injectable()
 export class StudentDossierService {
   private readonly logger = new Logger(StudentDossierService.name);
-  private puppeteer: any = null;
 
-  constructor(private readonly prisma: PrismaService) {}
-
-  private async loadPuppeteer() {
-    if (this.puppeteer !== null) return;
-    try {
-      this.puppeteer = await import('puppeteer');
-      this.logger.log('Puppeteer loaded successfully for academic dossier PDF generation');
-    } catch (error) {
-      this.logger.warn(
-        'Puppeteer not available. Academic dossier PDF generation will be limited. ' +
-        'Install with: npm install puppeteer',
-      );
-      this.puppeteer = null;
-    }
-  }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly puppeteerPool: PuppeteerPoolService,
+  ) {}
 
   /**
    * Récupère le dossier scolaire complet d'un élève
@@ -242,15 +231,6 @@ export class StudentDossierService {
     studentId: string,
     academicYearId?: string,
   ): Promise<Buffer> {
-    await this.loadPuppeteer();
-
-    if (!this.puppeteer) {
-      throw new BadRequestException(
-        'La génération de PDF n’est pas disponible (Puppeteer non installé). ' +
-        'Veuillez installer puppeteer côté serveur.',
-      );
-    }
-
     const dossier = await this.getStudentDossier(tenantId, studentId, academicYearId);
 
     const title = 'Dossier académique consolidé';
@@ -358,13 +338,14 @@ export class StudentDossierService {
 </html>
     `;
 
-    const browser = await this.puppeteer.launch({ headless: 'new' as any });
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true });
-    await browser.close();
-
-    return pdfBuffer;
+    const { page } = await this.puppeteerPool.acquirePage();
+    try {
+      await page.setContent(html, { waitUntil: 'networkidle0' });
+      const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true });
+      return pdfBuffer;
+    } finally {
+      await this.puppeteerPool.releasePage(page);
+    }
   }
 
   /**

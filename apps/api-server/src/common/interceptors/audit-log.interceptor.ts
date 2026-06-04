@@ -27,21 +27,8 @@ import { Repository } from 'typeorm';
 import { AuditLog } from '../../audit-logs/entities/audit-log.entity';
 import { Request } from 'express';
 
-// Actions sensibles à logger
+// Actions sensibles à logger (seulement les écritures — pas les GET pour réduire le volume de logs)
 const SENSITIVE_ACTIONS = ['POST', 'PATCH', 'PUT', 'DELETE'];
-const SENSITIVE_RESOURCES = [
-  'students',
-  'teachers',
-  'users',
-  'roles',
-  'permissions',
-  'payments',
-  'expenses',
-  'grades',
-  'exams',
-  'fee-configurations',
-  'tenants',
-];
 
 @Injectable()
 export class AuditLogInterceptor implements NestInterceptor {
@@ -107,14 +94,9 @@ export class AuditLogInterceptor implements NestInterceptor {
   }
 
   private shouldLogAction(method: string, url: string): boolean {
-    // Logger toutes les actions sensibles
+    // Logger uniquement les actions d'écriture (pas les GET)
+    // Réduit drastiquement le volume de logs (les GET représentaient ~80% des entrées)
     if (SENSITIVE_ACTIONS.includes(method)) {
-      return true;
-    }
-
-    // Logger l'accès aux ressources sensibles
-    const resource = this.extractResource(url);
-    if (SENSITIVE_RESOURCES.includes(resource)) {
       return true;
     }
 
@@ -145,18 +127,29 @@ export class AuditLogInterceptor implements NestInterceptor {
 
   private extractChanges(method: string, body: any, query: any): Record<string, any> | null {
     if (method === 'GET') {
-      // Pour les GET, logger les filtres/paramètres de recherche
-      return query && Object.keys(query).length > 0 ? query : null;
+      return null;
     }
 
-    // Pour POST/PATCH/PUT, logger les changements
+    // Pour POST/PATCH/PUT, logger les changements (tronqués si trop volumineux)
     if (body && typeof body === 'object') {
       // Exclure les champs sensibles (mots de passe, etc.)
       const sanitized = { ...body };
       delete sanitized.password;
       delete sanitized.passwordHash;
       delete sanitized.passwordConfirmation;
-      return Object.keys(sanitized).length > 0 ? sanitized : null;
+
+      // Tronquer les champs base64 (images, fichiers) pour ne pas surcharger la DB et les logs
+      const MAX_FIELD_LENGTH = 200;
+      const truncated: Record<string, any> = {};
+      for (const [key, value] of Object.entries(sanitized)) {
+        if (typeof value === 'string' && value.length > MAX_FIELD_LENGTH) {
+          truncated[key] = value.substring(0, MAX_FIELD_LENGTH) + `... (${value.length} chars truncated)`;
+        } else {
+          truncated[key] = value;
+        }
+      }
+
+      return Object.keys(truncated).length > 0 ? truncated : null;
     }
 
     return null;

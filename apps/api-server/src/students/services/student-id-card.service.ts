@@ -12,6 +12,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { StudentIdentifierService } from './student-identifier.service';
+import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.service';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -19,27 +20,12 @@ import * as crypto from 'crypto';
 @Injectable()
 export class StudentIdCardService {
   private readonly logger = new Logger(StudentIdCardService.name);
-  private puppeteer: any = null;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly identifierService: StudentIdentifierService,
-  ) {
-    this.loadPuppeteer();
-  }
-
-  private async loadPuppeteer() {
-    try {
-      this.puppeteer = await import('puppeteer');
-      this.logger.log('Puppeteer loaded successfully for ID card generation');
-    } catch (error) {
-      this.logger.warn(
-        'Puppeteer not available. PDF generation will be limited. ' +
-        'Install with: npm install puppeteer',
-      );
-      this.puppeteer = null;
-    }
-  }
+    private readonly puppeteerPool: PuppeteerPoolService,
+  ) {}
 
   /**
    * Génère une carte d'identité scolaire officielle pour un élève
@@ -138,14 +124,14 @@ export class StudentIdCardService {
     let frontImagePath: string | null = null;
     let backImagePath: string | null = null;
 
-    if (this.puppeteer) {
+    try {
       const pdfBuffer = await this.renderPdfFromHtml(cardHtml);
       pdfPath = await this.savePdf(tenantId, academicYearId, cardNumber, pdfBuffer);
 
       // Extraire les images (face avant et arrière) depuis le PDF si nécessaire
       // Pour l'instant, on sauvegarde juste le PDF complet
-    } else {
-      this.logger.warn('Puppeteer not available. PDF generation skipped.');
+    } catch (error) {
+      this.logger.warn('PDF generation failed, skipping: ' + (error as Error).message);
     }
 
     // Date de validité (fin de l'année scolaire)
@@ -744,17 +730,8 @@ export class StudentIdCardService {
    * Convertit le HTML en PDF
    */
   private async renderPdfFromHtml(html: string): Promise<Buffer> {
-    if (!this.puppeteer) {
-      throw new BadRequestException('Puppeteer is not available');
-    }
-
-    const browser = await this.puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
-
+    const { page } = await this.puppeteerPool.acquirePage();
     try {
-      const page = await browser.newPage();
       await page.setContent(html, { waitUntil: 'networkidle0' });
 
       const pdf = await page.pdf({
@@ -770,7 +747,7 @@ export class StudentIdCardService {
 
       return Buffer.from(pdf);
     } finally {
-      await browser.close();
+      await this.puppeteerPool.releasePage(page);
     }
   }
 

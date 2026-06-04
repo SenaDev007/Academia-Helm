@@ -10,12 +10,10 @@ import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/p
  */
 
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import { existsSync } from 'fs';
 import * as fs from 'fs/promises';
-import * as os from 'os';
 import * as path from 'path';
-// Puppeteer loaded dynamically to avoid OOM at startup (lazy import)
 import { PrismaService } from '../../database/prisma.service';
+import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.service';
 import { IdentityProfileService } from './identity-profile.service';
 
 const STAMPS_DIR = 'uploads/tenant-stamps';
@@ -49,6 +47,7 @@ export class StampsSignaturesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly identityProfile: IdentityProfileService,
+    private readonly puppeteerPool: PuppeteerPoolService,
   ) {}
 
   /**
@@ -581,14 +580,6 @@ export class StampsSignaturesService {
       .replace(/'/g, '&apos;');
   }
 
-  /** Chemins Windows courants pour Chrome/Edge si PUPPETEER_EXECUTABLE_PATH non défini ou invalide */
-  private static readonly FALLBACK_CHROME_PATHS = [
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-  ];
-
   private async svgToPng(
     svgContent: string,
     outputPath: string,
@@ -598,35 +589,8 @@ export class StampsSignaturesService {
   ): Promise<void> {
     const bg = transparent ? 'transparent' : '#ffffff';
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>html,body{margin:0;padding:0;width:100%;height:100%;background:${bg};}</style></head><body>${svgContent}</body></html>`;
-    const executablePath =
-      process.env.PUPPETEER_EXECUTABLE_PATH?.trim() ||
-      StampsSignaturesService.FALLBACK_CHROME_PATHS.find((p) => existsSync(p));
-    const userDataDir = path.join(os.tmpdir(), 'academia-puppeteer-stamps');
-    const puppeteer = await import('puppeteer');
-    const launchOptions: Parameters<typeof puppeteer.launch>[0] = {
-      headless: true,
-      timeout: 60000,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--no-first-run',
-        '--no-default-browser-check',
-        '--disable-extensions',
-        '--disable-background-networking',
-        '--disable-sync',
-        '--metrics-recording-only',
-        '--mute-audio',
-        `--user-data-dir=${userDataDir}`,
-      ],
-    };
-    if (executablePath) {
-      launchOptions.executablePath = executablePath;
-    }
-    const browser = await puppeteer.launch(launchOptions);
+    const { page } = await this.puppeteerPool.acquirePage();
     try {
-      const page = await browser.newPage();
       await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'light' }]);
       await page.setViewport({ width, height, deviceScaleFactor: 2 });
       await page.setContent(html, { waitUntil: 'networkidle0' });
@@ -636,7 +600,7 @@ export class StampsSignaturesService {
         omitBackground: transparent,
       });
     } finally {
-      await browser.close();
+      await this.puppeteerPool.releasePage(page);
     }
   }
 }

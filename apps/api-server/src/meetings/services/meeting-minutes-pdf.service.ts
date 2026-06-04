@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -17,29 +18,11 @@ import * as path from 'path';
 @Injectable()
 export class MeetingMinutesPdfService {
   private readonly logger = new Logger(MeetingMinutesPdfService.name);
-  private puppeteer: any = null;
 
-  constructor(private readonly prisma: PrismaService) {
-    // Charger Puppeteer de manière conditionnelle
-    this.loadPuppeteer();
-  }
-
-  /**
-   * Charge Puppeteer de manière conditionnelle
-   */
-  private async loadPuppeteer() {
-    try {
-      // Essayer de charger puppeteer
-      this.puppeteer = await import('puppeteer');
-      this.logger.log('Puppeteer loaded successfully');
-    } catch (error) {
-      this.logger.warn(
-        'Puppeteer not available. PDF generation will be limited. ' +
-        'Install with: npm install puppeteer',
-      );
-      this.puppeteer = null;
-    }
-  }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly puppeteerPool: PuppeteerPoolService,
+  ) {}
 
   /**
    * Génère un PDF officiel depuis un compte rendu
@@ -297,21 +280,9 @@ export class MeetingMinutesPdfService {
    * Rend le PDF depuis le HTML en utilisant Puppeteer
    */
   private async renderPdfFromHtml(htmlContent: string): Promise<Buffer> {
-    if (!this.puppeteer) {
-      throw new Error(
-        'Puppeteer is not installed. Please install it with: npm install puppeteer',
-      );
-    }
-
+    const { page } = await this.puppeteerPool.acquirePage();
     try {
-      const browser = await this.puppeteer.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      });
-
-      const page = await browser.newPage();
       await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
-
       const pdfBuffer = await page.pdf({
         format: 'A4',
         printBackground: true,
@@ -322,13 +293,12 @@ export class MeetingMinutesPdfService {
           left: '15mm',
         },
       });
-
-      await browser.close();
-
       return Buffer.from(pdfBuffer);
     } catch (error) {
       this.logger.error('Error generating PDF with Puppeteer:', error);
       throw new Error(`PDF generation failed: ${error.message}`);
+    } finally {
+      await this.puppeteerPool.releasePage(page);
     }
   }
 

@@ -6,7 +6,6 @@
 
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { ScheduleModule } from '@nestjs/schedule';
 import { FeesPrismaService } from './fees-prisma.service';
 import { PaymentsPrismaService } from './payments-prisma.service';
 import { ExpensesPrismaService } from './expenses-prisma.service';
@@ -64,7 +63,7 @@ import { FinanceReportsController } from './finance-reports.controller';
 import { FinanceAuditController } from './finance-audit.controller';
 
 @Module({
-  imports: [ConfigModule, ScheduleModule.forRoot(), DatabaseModule, SettingsModule],
+  imports: [ConfigModule, DatabaseModule, SettingsModule],
   controllers: [
     FeeStructureController,
     StudentAccountController,

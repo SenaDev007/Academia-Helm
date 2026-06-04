@@ -12,6 +12,7 @@
 
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.service';
 import * as Handlebars from 'handlebars';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -58,20 +59,16 @@ Handlebars.registerHelper('or', (a: any, b: any) => a || b);
 @Injectable()
 export class ContractPdfService {
   private readonly logger = new Logger(ContractPdfService.name);
-  private puppeteer: any = null;
   private qrcode: any = null;
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly puppeteerPool: PuppeteerPoolService,
+  ) {
     this.loadDependencies();
   }
 
   private async loadDependencies() {
-    try {
-      this.puppeteer = await import('puppeteer');
-      this.logger.log('Puppeteer loaded for contract generation');
-    } catch {
-      this.logger.warn('Puppeteer not available for contract generation');
-    }
     try {
       this.qrcode = await import('qrcode');
       this.logger.log('QRCode loaded for contract verification');
@@ -240,10 +237,8 @@ export class ContractPdfService {
     // 5. Compiler le template Handlebars → HTML
     const compiledHtml = Handlebars.compile(templateSource)(templateVars);
 
-    // 6. Générer le PDF via Puppeteer
-    if (!this.puppeteer) {
-      throw new BadRequestException('Le service de génération PDF (Puppeteer) n\'est pas disponible.');
-    }
+    // 6. Générer le PDF via Puppeteer Pool
+    // (PuppeteerPoolService handles browser availability)
 
     const pdfBuffer = await this.renderPdf(compiledHtml);
 
@@ -313,12 +308,8 @@ export class ContractPdfService {
   // ─── Private helpers ────────────────────────────────────────────────────────
 
   private async renderPdf(html: string): Promise<Buffer> {
-    const browser = await this.puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-    });
+    const { page } = await this.puppeteerPool.acquirePage();
     try {
-      const page = await browser.newPage();
       await page.setContent(html, { waitUntil: 'networkidle0' });
       const pdf = await page.pdf({
         format: 'A4',
@@ -327,7 +318,7 @@ export class ContractPdfService {
       });
       return Buffer.from(pdf);
     } finally {
-      await browser.close();
+      await this.puppeteerPool.releasePage(page);
     }
   }
 

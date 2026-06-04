@@ -11,6 +11,7 @@
 
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/database/prisma.service';
+import { PuppeteerPoolService } from '@/common/services/puppeteer-pool.service';
 import { ReceiptNotificationService } from './receipt-notification.service';
 import { AdministrativeSealsService } from '../settings/services/administrative-seals.service';
 import { ElectronicSignaturesService } from '../settings/services/electronic-signatures.service';
@@ -30,6 +31,7 @@ export class ReceiptGenerationService {
     private readonly notificationService: ReceiptNotificationService,
     private readonly sealsService: AdministrativeSealsService,
     private readonly signaturesService: ElectronicSignaturesService,
+    private readonly puppeteerPool: PuppeteerPoolService,
   ) {
     // Créer le dossier de stockage s'il n'existe pas
     this.ensureReceiptsDirectory();
@@ -209,14 +211,8 @@ export class ReceiptGenerationService {
     // Générer le PDF
     const pdfPath = path.join(yearDir, `receipt-${receipt.receiptNumber}.pdf`);
 
-    const puppeteer = await import('puppeteer');
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
-
+    const { page } = await this.puppeteerPool.acquirePage();
     try {
-      const page = await browser.newPage();
       await page.setContent(html, { waitUntil: 'networkidle0' });
       await page.pdf({
         path: pdfPath,
@@ -224,7 +220,7 @@ export class ReceiptGenerationService {
         printBackground: true,
       });
     } finally {
-      await browser.close();
+      await this.puppeteerPool.releasePage(page);
     }
 
     return pdfPath;

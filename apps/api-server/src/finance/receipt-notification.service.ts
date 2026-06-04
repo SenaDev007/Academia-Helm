@@ -17,6 +17,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/database/prisma.service';
+import { PuppeteerPoolService } from '@/common/services/puppeteer-pool.service';
 import { Prisma } from '@prisma/client';
 // Puppeteer loaded dynamically to avoid OOM at startup (lazy import)
 import * as path from 'path';
@@ -29,7 +30,10 @@ export class ReceiptNotificationService {
   private readonly receiptsDir = path.join(process.cwd(), 'uploads', 'receipts');
   private readonly imagesDir = path.join(process.cwd(), 'uploads', 'receipts', 'images');
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly puppeteerPool: PuppeteerPoolService,
+  ) {
     this.ensureDirectories();
   }
 
@@ -299,31 +303,17 @@ Merci pour votre confiance.
     // Générer l'image PNG
     const imagePath = path.join(yearDir, `receipt-${receipt.receiptNumber}.png`);
 
-    const puppeteer = await import('puppeteer');
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
-
+    const { page } = await this.puppeteerPool.acquirePage();
     try {
-      const page = await browser.newPage();
       await page.setViewport({ width: 800, height: 1200 }); // Format portrait mobile
       await page.setContent(html, { waitUntil: 'networkidle0' });
-      
-      // Capturer l'image directement en PNG
       await page.screenshot({
         path: imagePath,
         type: 'png',
         fullPage: true,
       });
-
-      // TODO: Optionnel - Optimiser l'image avec Sharp si installé
-      // await sharp(screenshot)
-      //   .resize(800, null, { withoutEnlargement: true })
-      //   .png({ quality: 90, compressionLevel: 9 })
-      //   .toFile(imagePath);
     } finally {
-      await browser.close();
+      await this.puppeteerPool.releasePage(page);
     }
 
     return imagePath;

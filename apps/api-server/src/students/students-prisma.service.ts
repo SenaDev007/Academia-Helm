@@ -89,6 +89,8 @@ export class StudentsPrismaService {
       search?: string;
       regimeType?: string;
       hasArrears?: boolean;
+      page?: number;
+      limit?: number;
     }
   ) {
     const where: any = {
@@ -134,6 +136,11 @@ export class StudentsPrismaService {
       ];
     }
 
+    // Pagination: défaut 50, max 200 pour éviter OOM
+    const pageSize = Math.min(filters?.limit || 50, 200);
+    const pageNumber = Math.max(filters?.page || 1, 1);
+    const skip = (pageNumber - 1) * pageSize;
+
     return this.prisma.student.findMany({
       where,
       include: {
@@ -156,6 +163,8 @@ export class StudentsPrismaService {
         { lastName: 'asc' },
         { firstName: 'asc' },
       ],
+      skip,
+      take: pageSize,
     });
   }
 

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { InstitutionalExamsModule } from './modules/exams/exams.module';
 import { FederisModule } from './federis/federis.module';
 import { AtlasModule } from './atlas/atlas.module';
@@ -86,6 +87,9 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
       isGlobal: true,
       envFilePath: '.env',
     }),
+
+    // ScheduleModule — MUST be registered ONCE at root level (fixes triple-registration OOM)
+    ScheduleModule.forRoot(),
 
     // Rate Limiting
     ThrottlerModule.forRoot([

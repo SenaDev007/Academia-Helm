@@ -10,6 +10,7 @@
  */
 
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { PuppeteerPoolService } from '../../../common/services/puppeteer-pool.service';
 // Puppeteer loaded dynamically to avoid OOM at startup (lazy import)
 import * as handlebars from 'handlebars';
 import * as QRCode from 'qrcode';
@@ -18,6 +19,7 @@ import * as path from 'path';
 
 @Injectable()
 export class BulletinPdfService {
+  constructor(private readonly puppeteerPool: PuppeteerPoolService) {}
   
   async generateBulletin(data: any): Promise<Buffer> {
     try {
@@ -37,24 +39,19 @@ export class BulletinPdfService {
         dateNow: new Date().toLocaleDateString('fr-FR'),
       });
 
-      // 4. Lancer Puppeteer pour générer le PDF
-      const puppeteer = await import('puppeteer');
-      const browser = await puppeteer.launch({
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-        headless: true,
-      });
-      
-      const page = await browser.newPage();
-      await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
-      
-      const pdfBuffer = await page.pdf({
-        format: 'A4',
-        printBackground: true,
-        margin: { top: '0', right: '0', bottom: '0', left: '0' },
-      });
-
-      await browser.close();
-      return Buffer.from(pdfBuffer);
+      // 4. Utiliser le pool de navigateurs partagé (au lieu de lancer un Chromium par requête)
+      const { page } = await this.puppeteerPool.acquirePage();
+      try {
+        await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+        const pdfBuffer = await page.pdf({
+          format: 'A4',
+          printBackground: true,
+          margin: { top: '0', right: '0', bottom: '0', left: '0' },
+        });
+        return Buffer.from(pdfBuffer);
+      } finally {
+        await this.puppeteerPool.releasePage(page);
+      }
       
     } catch (error) {
       console.error('Error generating PDF:', error);

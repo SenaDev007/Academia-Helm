@@ -15,11 +15,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-// Puppeteer loaded dynamically to avoid OOM at startup (lazy import)
+import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.service';
 
 @Injectable()
 export class SealGenerationService {
   private readonly logger = new Logger(SealGenerationService.name);
+
+  constructor(
+    private readonly puppeteerPool: PuppeteerPoolService,
+  ) {}
 
   /**
    * Génère un cachet au format SVG
@@ -302,16 +306,10 @@ export class SealGenerationService {
    * Convertit SVG en PNG via Puppeteer
    */
   async convertSVGToPNG(svgContent: string, outputPath: string): Promise<string> {
-    const puppeteer = await import('puppeteer');
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
-
+    const { page } = await this.puppeteerPool.acquirePage();
     try {
-      const page = await browser.newPage();
       await page.setContent(svgContent, { waitUntil: 'networkidle0' });
-      
+
       // Capturer la page en PNG
       await page.screenshot({
         path: outputPath,
@@ -321,7 +319,7 @@ export class SealGenerationService {
 
       return outputPath;
     } finally {
-      await browser.close();
+      await this.puppeteerPool.releasePage(page);
     }
   }
 
@@ -329,16 +327,10 @@ export class SealGenerationService {
    * Convertit SVG en PDF via Puppeteer
    */
   async convertSVGToPDF(svgContent: string, outputPath: string): Promise<string> {
-    const puppeteer = await import('puppeteer');
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
-
+    const { page } = await this.puppeteerPool.acquirePage();
     try {
-      const page = await browser.newPage();
       await page.setContent(svgContent, { waitUntil: 'networkidle0' });
-      
+
       // Générer le PDF
       await page.pdf({
         path: outputPath,
@@ -348,7 +340,7 @@ export class SealGenerationService {
 
       return outputPath;
     } finally {
-      await browser.close();
+      await this.puppeteerPool.releasePage(page);
     }
   }
 

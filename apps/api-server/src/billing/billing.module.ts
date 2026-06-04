@@ -1,5 +1,4 @@
 import { Module, forwardRef } from '@nestjs/common';
-import { ScheduleModule } from '@nestjs/schedule';
 import { BillingController } from './billing.controller';
 import { PricingController } from './controllers/pricing.controller';
 import { PricingAdminController } from './controllers/pricing-admin.controller';
@@ -18,7 +17,6 @@ import { OrionModule } from '../orion/orion.module';
 
 @Module({
   imports: [
-    ScheduleModule.forRoot(),
     CommunicationModule, // Pour EmailService et WhatsAppService
     AuthModule, // Pour SmsService
     OrionModule, // Pour OrionAlertsService (intégration ORION)

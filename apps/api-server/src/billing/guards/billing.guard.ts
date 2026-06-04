@@ -45,11 +45,16 @@ export class BillingGuard implements CanActivate {
   private readonly logger = new Logger(BillingGuard.name);
   private readonly subscriptionCache = new Map<string, SubscriptionCache>();
   private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+  private readonly MAX_CACHE_SIZE = 100; // Maximum 100 tenants en cache (évite OOM)
+  private cacheCleanupInterval: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly reflector: Reflector,
-  ) {}
+  ) {
+    // Cleanup automatique du cache toutes les 10 minutes
+    this.cacheCleanupInterval = setInterval(() => this.cleanupCache(), 10 * 60 * 1000);
+  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
@@ -298,6 +303,10 @@ export class BillingGuard implements CanActivate {
     });
 
     if (subscription) {
+      // LRU eviction si le cache dépasse la taille max
+      if (this.subscriptionCache.size >= this.MAX_CACHE_SIZE) {
+        this.evictOldestCacheEntry();
+      }
       this.subscriptionCache.set(tenantId, {
         subscription,
         cachedAt: Date.now(),
@@ -357,5 +366,40 @@ export class BillingGuard implements CanActivate {
       // Ne pas bloquer si ORION échoue
       this.logger.error('Failed to emit ORION block event:', error);
     }
+  }
+
+  /**
+   * Nettoie les entrées expirées du cache subscription
+   */
+  private cleanupCache(): void {
+    const now = Date.now();
+    let cleaned = 0;
+    for (const [key, value] of this.subscriptionCache.entries()) {
+      if (now - value.cachedAt > this.CACHE_TTL) {
+        this.subscriptionCache.delete(key);
+        cleaned++;
+      }
+    }
+    if (cleaned > 0) {
+      this.logger.debug(`BillingGuard cache: cleaned ${cleaned} stale entries (${this.subscriptionCache.size} remaining)`);
+    }
+  }
+
+  /**
+   * Limite la taille du cache (LRU eviction)
+   */
+  private evictOldestCacheEntry(): void {
+    const firstKey = this.subscriptionCache.keys().next().value;
+    if (firstKey !== undefined) {
+      this.subscriptionCache.delete(firstKey);
+    }
+  }
+
+  onModuleDestroy(): void {
+    if (this.cacheCleanupInterval) {
+      clearInterval(this.cacheCleanupInterval);
+      this.cacheCleanupInterval = null;
+    }
+    this.subscriptionCache.clear();
   }
 }

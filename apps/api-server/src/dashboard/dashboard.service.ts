@@ -241,26 +241,25 @@ export class DashboardService {
         where.academicYearId = academicYearId;
       }
 
-      // Utiliser StudentEnrollment pour avoir les relations avec les classes et niveaux
-      const enrollments = await this.prisma.studentEnrollment.findMany({
+      // Utiliser groupBy au lieu de findMany + reduce (évite de charger toutes les données en mémoire)
+      const enrollmentCounts = await this.prisma.studentEnrollment.groupBy({
+        by: ['schoolLevelId'],
         where,
-        include: {
-          schoolLevel: {
-            select: {
-              name: true,
-            },
-          },
-        },
+        _count: { id: true },
       });
 
-      // Grouper par niveau scolaire
-      const byLevel: Record<string, number> = {};
-      enrollments.forEach((enrollment) => {
-        const level = enrollment.schoolLevel?.name || 'Non assigné';
-        byLevel[level] = (byLevel[level] || 0) + 1;
-      });
+      // Résoudre les noms des niveaux scolaires
+      const levelIds = enrollmentCounts.map(e => e.schoolLevelId).filter(Boolean);
+      const levels = levelIds.length > 0 ? await this.prisma.schoolLevel.findMany({
+        where: { id: { in: levelIds } },
+        select: { id: true, name: true },
+      }) : [];
+      const levelMap = new Map(levels.map(l => [l.id, l.name]));
 
-      return Object.entries(byLevel).map(([name, count]) => ({ name, count }));
+      return enrollmentCounts.map(e => ({
+        name: levelMap.get(e.schoolLevelId) || 'Non assigné',
+        count: e._count.id,
+      }));
     } catch (error) {
       this.logger.warn(`Error getting enrollment by level: ${error.message}`);
       return [];

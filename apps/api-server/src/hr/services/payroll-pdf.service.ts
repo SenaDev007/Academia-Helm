@@ -11,30 +11,18 @@
 
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
 @Injectable()
 export class PayrollPdfService {
   private readonly logger = new Logger(PayrollPdfService.name);
-  private puppeteer: any = null;
 
-  constructor(private readonly prisma: PrismaService) {
-    this.loadPuppeteer();
-  }
-
-  private async loadPuppeteer() {
-    try {
-      this.puppeteer = await import('puppeteer');
-      this.logger.log('Puppeteer loaded successfully for payroll PDF generation');
-    } catch (error) {
-      this.logger.warn(
-        'Puppeteer not available. PDF generation will be limited. ' +
-        'Install with: npm install puppeteer',
-      );
-      this.puppeteer = null;
-    }
-  }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly puppeteerPool: PuppeteerPoolService,
+  ) {}
 
   /**
    * Génère un bulletin de paie PDF officiel (SalarySlip)
@@ -100,13 +88,7 @@ export class PayrollPdfService {
     // 1. Générer le HTML du bulletin
     const html = this.generatePaySlipHtml(payrollItem, labels);
 
-    // 2. Convertir en PDF
-    if (!this.puppeteer) {
-      throw new BadRequestException(
-        'PDF generation is not available. Please install Puppeteer: npm install puppeteer',
-      );
-    }
-
+    // 2. Convertir en PDF (PuppeteerPoolService handles browser availability)
     const pdfBuffer = await this.renderPdfFromHtml(html);
 
     // 3. Sauvegarder le PDF
@@ -321,20 +303,13 @@ export class PayrollPdfService {
    * Convertit le HTML en PDF
    */
   private async renderPdfFromHtml(html: string): Promise<Buffer> {
-    if (!this.puppeteer) throw new BadRequestException('Puppeteer is not available');
-
-    const browser = await this.puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
-
+    const { page } = await this.puppeteerPool.acquirePage();
     try {
-      const page = await browser.newPage();
       await page.setContent(html, { waitUntil: 'networkidle0' });
       const pdf = await page.pdf({ format: 'A4', printBackground: true });
       return Buffer.from(pdf);
     } finally {
-      await browser.close();
+      await this.puppeteerPool.releasePage(page);
     }
   }
 

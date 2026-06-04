@@ -17,7 +17,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 import type { Response, Request } from 'express';
-import { CreateContractDto, UpdateContractDto, CreateAmendmentDto, SignContractDto, CreateContractTemplateDto } from './dto';
+import { CreateContractDto, UpdateContractDto, CreateAmendmentDto, SignContractDto, CreateContractTemplateDto, UpdateContractTemplateDto } from './dto';
 
 @Controller('hr/contracts')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -75,7 +75,7 @@ export class ContractsPrismaController {
   async updateTemplate(
     @GetTenant() tenant: any,
     @Param('id') id: string,
-    @Body() data: any,
+    @Body() data: UpdateContractTemplateDto,
   ) {
     return this.contractPdfService.updateTemplate(id, tenant.id, data);
   }

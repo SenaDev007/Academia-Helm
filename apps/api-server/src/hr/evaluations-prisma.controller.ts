@@ -9,7 +9,7 @@ import { EvaluationsPrismaService } from './evaluations-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
-import { CreateEvaluationDto, UpdateEvaluationDto, CreateTrainingDto } from './dto/index';
+import { CreateEvaluationDto, UpdateEvaluationDto, CreateTrainingDto, UpdateTrainingDto } from './dto/index';
 
 @Controller('hr/evaluations')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -76,7 +76,7 @@ export class EvaluationsPrismaController {
   }
 
   @Put('trainings/:id')
-  async updateTraining(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: any) {
+  async updateTraining(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: UpdateTrainingDto) {
     return this.evaluationsService.updateTraining(id, tenant.id, data);
   }
 

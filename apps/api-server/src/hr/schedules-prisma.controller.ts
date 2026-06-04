@@ -30,7 +30,7 @@ import { SchedulesPrismaService } from './schedules-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
-import { CreateScheduleDto } from './dto';
+import { CreateScheduleDto, UpdateScheduleDto } from './dto';
 
 @Controller('hr/schedules')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -92,7 +92,7 @@ export class SchedulesPrismaController {
   async update(
     @GetTenant() tenant: any,
     @Param('id') id: string,
-    @Body() data: any,
+    @Body() data: UpdateScheduleDto,
   ) {
     return this.schedulesService.update(id, data, tenant.id);
   }

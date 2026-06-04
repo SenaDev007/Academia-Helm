@@ -8,19 +8,21 @@ export enum MaterialCondition {
 }
 
 export class CreateTeacherMaterialAssignmentDto {
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
   teacherId: string;
 
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
   materialId: string;
 
-  @IsString()
-  @IsNotEmpty()
-  schoolLevelId: string;
+  /** Optional — falls back to the material's schoolLevelId if not provided */
+  @IsUUID()
+  @IsOptional()
+  schoolLevelId?: string;
 
-  @IsString()
+  /** Optional — validated in service, omitted if Class doesn't exist */
+  @IsUUID()
   @IsOptional()
   classId?: string;
 

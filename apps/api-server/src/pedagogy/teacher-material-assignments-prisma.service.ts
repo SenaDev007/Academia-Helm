@@ -40,10 +40,29 @@ export class TeacherMaterialAssignmentsPrismaService {
         tenantId: data.tenantId,
         isActive: true,
       },
+      include: { schoolLevel: true },
     });
 
     if (!material) {
       throw new NotFoundException(`Material with ID ${data.materialId} not found or inactive`);
+    }
+
+    // Resolve schoolLevelId: explicit > material's schoolLevelId > error
+    const schoolLevelId = data.schoolLevelId || material.schoolLevelId;
+    if (!schoolLevelId) {
+      throw new BadRequestException(
+        `Cannot determine schoolLevelId: neither provided nor found on material ${data.materialId}`,
+      );
+    }
+
+    // Validate schoolLevelId FK — verify the SchoolLevel exists
+    const schoolLevel = await this.prisma.schoolLevel.findFirst({
+      where: { id: schoolLevelId, tenantId: data.tenantId },
+    });
+    if (!schoolLevel) {
+      throw new BadRequestException(
+        `SchoolLevel with ID ${schoolLevelId} not found for tenant ${data.tenantId}`,
+      );
     }
 
     // Vérifier que l'enseignant existe
@@ -51,29 +70,12 @@ export class TeacherMaterialAssignmentsPrismaService {
       where: {
         id: data.teacherId,
         tenantId: data.tenantId,
-        schoolLevelId: data.schoolLevelId,
       },
     });
 
     if (!teacher) {
       throw new NotFoundException(
-        `Teacher with ID ${data.teacherId} not found or not in the specified school level`,
-      );
-    }
-
-    // R2: Vérifier que l'enseignant enseigne dans ce niveau
-    const teacherLevel = await this.prisma.teacher.findFirst({
-      where: {
-        id: data.teacherId,
-        tenantId: data.tenantId,
-        schoolLevelId: data.schoolLevelId,
-        status: 'active',
-      },
-    });
-
-    if (!teacherLevel) {
-      throw new BadRequestException(
-        `Teacher ${data.teacherId} does not teach in school level ${data.schoolLevelId}`,
+        `Teacher with ID ${data.teacherId} not found`,
       );
     }
 
@@ -97,7 +99,7 @@ export class TeacherMaterialAssignmentsPrismaService {
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         materialId: data.materialId,
-        schoolLevelId: data.schoolLevelId,
+        schoolLevelId,
         classId: validatedClassId,
       },
     });
@@ -109,7 +111,7 @@ export class TeacherMaterialAssignmentsPrismaService {
           tenantId: data.tenantId,
           academicYearId: data.academicYearId,
           materialId: data.materialId,
-          schoolLevelId: data.schoolLevelId,
+          schoolLevelId,
           classId: null,
         },
       });
@@ -135,7 +137,7 @@ export class TeacherMaterialAssignmentsPrismaService {
         academicYearId: data.academicYearId,
         teacherId: data.teacherId,
         materialId: data.materialId,
-        schoolLevelId: data.schoolLevelId,
+        schoolLevelId,
         ...(validatedClassId ? { classId: validatedClassId } : {}),
         quantity: data.quantity,
         conditionAtIssue: data.conditionAtIssue,
@@ -175,7 +177,7 @@ export class TeacherMaterialAssignmentsPrismaService {
         reference: `ASSIGN-${assignment.id}`,
         notes: `Assignment to teacher ${teacher.firstName} ${teacher.lastName}`,
         performedById: data.performedById,
-        schoolLevelId: data.schoolLevelId,
+        schoolLevelId,
         classId: validatedClassId || undefined,
       });
     }

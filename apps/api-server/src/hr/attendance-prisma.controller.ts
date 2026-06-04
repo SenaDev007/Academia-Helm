@@ -14,7 +14,7 @@ import { AttendancePrismaService } from './attendance-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
-import { RecordAttendanceDto, RecordOvertimeDto } from './dto/index';
+import { RecordAttendanceDto, RecordOvertimeDto, UpdateAttendanceDto } from './dto/index';
 
 @Controller('hr/attendance')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -32,7 +32,7 @@ export class AttendancePrismaController {
   }
 
   @Put(':id')
-  async updateAttendance(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: any) {
+  async updateAttendance(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: UpdateAttendanceDto) {
     return this.attendanceService.updateAttendance(id, tenant.id, data);
   }
 

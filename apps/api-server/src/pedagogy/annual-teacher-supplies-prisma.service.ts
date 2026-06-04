@@ -8,7 +8,7 @@
  * ============================================================================
  */
 
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { CreateAnnualTeacherSupplyDto } from './dto/create-annual-teacher-supply.dto';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
@@ -28,6 +28,33 @@ export class AnnualTeacherSuppliesPrismaService {
       academicYearId: string;
     },
   ) {
+    // Validate materialId FK — verify the material exists
+    const material = await this.prisma.pedagogicalMaterial.findFirst({
+      where: { id: data.materialId, tenantId: data.tenantId },
+      include: { schoolLevel: true },
+    });
+    if (!material) {
+      throw new NotFoundException(`Material with ID ${data.materialId} not found for tenant ${data.tenantId}`);
+    }
+
+    // Resolve schoolLevelId: explicit > material's schoolLevelId > error
+    const schoolLevelId = data.schoolLevelId || material.schoolLevelId;
+    if (!schoolLevelId) {
+      throw new BadRequestException(
+        `Cannot determine schoolLevelId: neither provided nor found on material ${data.materialId}`,
+      );
+    }
+
+    // Validate schoolLevelId FK — verify the SchoolLevel exists
+    const schoolLevel = await this.prisma.schoolLevel.findFirst({
+      where: { id: schoolLevelId, tenantId: data.tenantId },
+    });
+    if (!schoolLevel) {
+      throw new BadRequestException(
+        `SchoolLevel with ID ${schoolLevelId} not found for tenant ${data.tenantId}`,
+      );
+    }
+
     // Validate classId FK: only include if it references an existing Class row
     let validatedClassId: string | null = null;
     if (data.classId) {
@@ -87,7 +114,7 @@ export class AnnualTeacherSuppliesPrismaService {
         academicYearId: data.academicYearId,
         teacherId: data.teacherId,
         materialId: data.materialId,
-        schoolLevelId: data.schoolLevelId,
+        schoolLevelId,
         ...(validatedClassId ? { classId: validatedClassId } : {}),
         quantity: data.quantity,
       },

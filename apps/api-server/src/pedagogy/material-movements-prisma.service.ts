@@ -111,6 +111,21 @@ export class MaterialMovementsPrismaService {
     }
 
     const schoolLevelId = data.schoolLevelId || material.schoolLevelId;
+    if (!schoolLevelId) {
+      throw new BadRequestException(
+        `Cannot determine schoolLevelId for material stock: neither provided nor found on material ${data.materialId}`,
+      );
+    }
+
+    // Validate schoolLevelId FK — verify the SchoolLevel exists
+    const schoolLevel = await this.prisma.schoolLevel.findFirst({
+      where: { id: schoolLevelId, tenantId: data.tenantId },
+    });
+    if (!schoolLevel) {
+      throw new BadRequestException(
+        `SchoolLevel with ID ${schoolLevelId} not found for tenant ${data.tenantId}`,
+      );
+    }
 
     // R3: Trouver ou créer le stock (jamais modifié directement)
     // Validate classId FK: only include if it references an existing Class row

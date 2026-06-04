@@ -255,11 +255,10 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
       if (recoFile) formData.append('recommendationLetter', recoFile);
 
       const API_URL = getApiBaseUrl();
-      const res = await axios.post(`${API_URL}/hr/recruitment/apply`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
+      // NOTE: Do NOT set Content-Type header manually — axios/browser must auto-set
+      // "multipart/form-data; boundary=..." so the server can parse the body.
+      // Setting "Content-Type: multipart/form-data" without boundary causes 400 "Boundary not found".
+      const res = await axios.post(`${API_URL}/hr/recruitment/apply`, formData);
 
       if (res.data) {
         setSubmitResult({
@@ -267,11 +266,14 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
           message: 'Candidature Easy Apply transmise ! Notre IA procède à l\'extraction sémantique et à la validation des diplômes/certifications.'
         });
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Submission failed:', err);
+      const serverMsg = err?.response?.data?.message || err?.message || '';
       setSubmitResult({
         success: false,
-        message: 'Une erreur est survenue. Veuillez vérifier votre connexion et soumettre à nouveau.'
+        message: serverMsg
+          ? `Erreur : ${serverMsg}`
+          : 'Une erreur est survenue. Veuillez vérifier votre connexion et soumettre à nouveau.'
       });
     } finally {
       setSubmitting(false);

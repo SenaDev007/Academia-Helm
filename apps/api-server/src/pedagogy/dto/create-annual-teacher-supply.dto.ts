@@ -1,19 +1,21 @@
 import { IsString, IsNotEmpty, IsOptional, IsInt, Min, IsUUID } from 'class-validator';
 
 export class CreateAnnualTeacherSupplyDto {
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
   teacherId: string;
 
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
   materialId: string;
 
-  @IsString()
-  @IsNotEmpty()
-  schoolLevelId: string;
+  /** Optional — falls back to the material's schoolLevelId if not provided */
+  @IsUUID()
+  @IsOptional()
+  schoolLevelId?: string;
 
-  @IsString()
+  /** Optional — validated in service, omitted if Class doesn't exist */
+  @IsUUID()
   @IsOptional()
   classId?: string;
 

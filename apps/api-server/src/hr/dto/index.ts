@@ -535,3 +535,54 @@ export class ApplyJobDto {
   @IsOptional() @IsString() pitch?: string;
   @IsOptional() @IsString() linkedinUrl?: string;
 }
+
+// ─── Missing Update DTOs (for controllers still using @Body() body: any) ─────
+
+export class UpdateContractTemplateDto {
+  @IsOptional() @IsString() name?: string;
+  @IsOptional() @IsString() template?: string;
+  @IsOptional() variables?: Record<string, any>;
+  @IsOptional() @IsBoolean() isActive?: boolean;
+}
+
+export class UpdateScheduleDto {
+  @IsOptional() @IsUUID() staffId?: string;
+  @IsOptional() @IsInt() @Min(0) @Max(6) @Type(() => Number) dayOfWeek?: number;
+  @IsOptional() @IsString() shiftType?: string;
+  @IsOptional() @IsString() startTime?: string;
+  @IsOptional() @IsString() endTime?: string;
+  @IsOptional() @IsString() role?: string;
+  @IsOptional() @IsString() location?: string;
+  @IsOptional() @IsString() notes?: string;
+  @IsOptional() @IsUUID() academicYearId?: string;
+  @IsOptional() @IsUUID() schoolLevelId?: string;
+  @IsOptional() @IsBoolean() isActive?: boolean;
+  /** Frontend PlanningWorkspace may send date — used to derive dayOfWeek */
+  @IsOptional() @IsDateString() date?: string;
+  /** Frontend PlanningWorkspace sends shift — alias for shiftType */
+  @IsOptional() @IsString() shift?: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+export class UpdateAttendanceDto {
+  @IsOptional() @IsDateString() checkIn?: string;
+  @IsOptional() @IsDateString() checkOut?: string;
+  @IsOptional() @IsIn(['PRESENT', 'ABSENT', 'LATE', 'HALF_DAY', 'MISSION']) status?: string;
+  @IsOptional() @IsNumber() @Type(() => Number) hoursWorked?: number;
+  @IsOptional() @IsString() notes?: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+export class UpdateTrainingDto {
+  @IsOptional() @IsString() title?: string;
+  @IsOptional() @IsString() provider?: string;
+  @IsOptional() @IsDateString() dateCompleted?: string;
+  @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsString() certificatePath?: string;
+  @IsOptional() @IsUUID() academicYearId?: string;
+  @IsOptional() @IsUUID() schoolLevelId?: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+}

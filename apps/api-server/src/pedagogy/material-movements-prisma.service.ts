@@ -105,6 +105,9 @@ export class MaterialMovementsPrismaService {
     const schoolLevelId = data.schoolLevelId || material.schoolLevelId;
 
     // R3: Trouver ou créer le stock (jamais modifié directement)
+    // Only include classId if it's a valid UUID that references the Class model
+    const stockWhereClassId = data.classId || null;
+    
     const stock = await this.prisma.materialStock.upsert({
       where: {
         tenantId_academicYearId_materialId_schoolLevelId_classId: {
@@ -112,7 +115,7 @@ export class MaterialMovementsPrismaService {
           academicYearId: data.academicYearId,
           materialId: data.materialId,
           schoolLevelId,
-          classId: data.classId || null,
+          classId: stockWhereClassId,
         },
       },
       create: {
@@ -121,7 +124,7 @@ export class MaterialMovementsPrismaService {
         academicYearId: data.academicYearId,
         materialId: data.materialId,
         schoolLevelId,
-        classId: data.classId || null,
+        classId: stockWhereClassId,
         quantityTotal: 0,
         quantityAvailable: 0,
       },

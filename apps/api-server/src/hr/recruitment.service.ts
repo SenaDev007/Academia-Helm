@@ -307,7 +307,7 @@ export class RecruitmentPrismaService {
   async createTest(tenantId: string, data: any) {
     return this.prisma.hrTest.create({
       data: {
-        ...prismaCreateDefaults(),
+        id: crypto.randomUUID(),
         tenantId,
         name: data.name,
         type: data.type,
@@ -320,7 +320,6 @@ export class RecruitmentPrismaService {
     return this.prisma.hrTest.update({
       where: { id },
       data: {
-        ...prismaUpdateDefaults(),
         name: data.name,
         type: data.type,
         description: data.description,
@@ -338,7 +337,7 @@ export class RecruitmentPrismaService {
   async createTestResult(data: any) {
     return this.prisma.hrTestResult.create({
       data: {
-        ...prismaCreateDefaults(),
+        id: crypto.randomUUID(),
         testId: data.testId,
         candidateId: data.candidateId,
         score: parseInt(data.score),
@@ -366,13 +365,12 @@ export class RecruitmentPrismaService {
     return this.prisma.hrTalentPool.upsert({
       where: { candidateId },
       create: {
-        ...prismaCreateDefaults(),
+        id: crypto.randomUUID(),
         candidateId,
         category: data.category || 'Général',
         status: data.status || 'Disponible',
       },
       update: {
-        ...prismaUpdateDefaults(),
         category: data.category,
         status: data.status,
       },
@@ -440,7 +438,7 @@ export class RecruitmentPrismaService {
       // 2. Save to AcademicProfile
       await tx.academicProfile.create({
         data: {
-          ...prismaCreateDefaults(),
+          id: crypto.randomUUID(),
           candidateId: candidate.id,
           teachingLevel: education[0]?.degree || 'Non spécifié',
           subjects: skills,

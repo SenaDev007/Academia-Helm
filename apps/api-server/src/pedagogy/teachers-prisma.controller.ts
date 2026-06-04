@@ -33,7 +33,7 @@ export class TeachersPrismaController {
     return this.teachersService.createTeacher({
       ...createDto,
       tenantId,
-    } as any);
+    });
   }
 
   @Get()
@@ -66,7 +66,7 @@ export class TeachersPrismaController {
     @TenantId() tenantId: string,
     @Body() updateDto: UpdateTeacherDto,
   ) {
-    return this.teachersService.updateTeacher(id, tenantId, updateDto as any);
+    return this.teachersService.updateTeacher(id, tenantId, updateDto);
   }
 
   @Post(':id/archive')

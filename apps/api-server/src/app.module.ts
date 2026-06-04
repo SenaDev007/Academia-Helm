@@ -18,10 +18,10 @@ import { AcademicYearsModule } from './academic-years/academic-years.module';
 import { QuartersModule } from './quarters/quarters.module';
 import { SchoolsModule } from './schools/schools.module';
 import { ClassesModule } from './classes/classes.module';
-import { SubjectsModule } from './subjects/subjects.module';
-import { TeachersModule } from './teachers/teachers.module';
+// SubjectsModule removed — replaced by SubjectsPrismaController in PedagogyModule
+// TeachersModule removed — replaced by TeachersPrismaController in PedagogyModule
 import { DepartmentsModule } from './departments/departments.module';
-import { RoomsModule } from './rooms/rooms.module';
+// RoomsModule removed — replaced by RoomsPrismaController in PedagogyModule
 import { AbsencesModule } from './absences/absences.module';
 import { DisciplineModule } from './discipline/discipline.module';
 import { ExamsModule } from './exams/exams.module';
@@ -122,10 +122,10 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     
     // Pedagogical modules
     ClassesModule,
-    SubjectsModule,
-    TeachersModule,
+    // SubjectsModule removed — collides with SubjectsPrismaController (PedagogyModule)
+    // TeachersModule removed — collides with TeachersPrismaController (PedagogyModule)
     DepartmentsModule,
-    RoomsModule,
+    // RoomsModule removed — collides with RoomsPrismaController (PedagogyModule)
     PedagogyModule,
     
     // Exams & Grades module (Module 3)

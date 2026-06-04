@@ -42,26 +42,64 @@ export class TeachersPrismaService {
     schoolLevelId: string;
     firstName: string;
     lastName: string;
+    matricule?: string;
     gender?: string;
-    dateOfBirth?: Date;
+    dateOfBirth?: string | Date;
     address?: string;
     phone?: string;
     email?: string;
     departmentId?: string;
     position?: string;
     specialization?: string;
-    hireDate?: Date;
+    subjectId?: string;
+    academicYearId?: string;
+    hireDate?: string | Date;
     contractType?: string;
     status?: string;
+    workingHours?: number;
+    salary?: number;
+    bankDetails?: string;
+    emergencyContact?: string;
+    qualifications?: string;
+    notes?: string;
   }) {
-    const matricule = await this.generateMatricule(data.tenantId);
+    // Auto-generate matricule if not provided
+    const matricule = data.matricule || await this.generateMatricule(data.tenantId);
+
+    // Convert date strings to Date objects
+    const dateOfBirth = data.dateOfBirth ? new Date(data.dateOfBirth) : undefined;
+    const hireDate = data.hireDate ? new Date(data.hireDate) : undefined;
+
+    // Convert salary to proper Decimal format
+    const salary = data.salary !== undefined ? data.salary : undefined;
 
     return this.prisma.teacher.create({
       data: {
         ...prismaCreateDefaults(),
-        ...data,
+        tenantId: data.tenantId,
+        schoolLevelId: data.schoolLevelId,
+        firstName: data.firstName,
+        lastName: data.lastName,
         matricule,
+        gender: data.gender,
+        dateOfBirth,
+        address: data.address,
+        phone: data.phone,
+        email: data.email,
+        departmentId: data.departmentId,
+        position: data.position,
+        specialization: data.specialization,
+        subjectId: data.subjectId,
+        academicYearId: data.academicYearId,
+        hireDate,
+        contractType: data.contractType,
         status: data.status || 'active',
+        workingHours: data.workingHours,
+        salary,
+        bankDetails: data.bankDetails,
+        emergencyContact: data.emergencyContact,
+        qualifications: data.qualifications,
+        notes: data.notes,
       },
       include: {
         schoolLevel: true,
@@ -170,21 +208,58 @@ export class TeachersPrismaService {
       firstName?: string;
       lastName?: string;
       gender?: string;
-      dateOfBirth?: Date;
+      dateOfBirth?: string | Date;
       address?: string;
       phone?: string;
       email?: string;
       departmentId?: string;
       position?: string;
       specialization?: string;
+      subjectId?: string;
+      academicYearId?: string;
+      hireDate?: string | Date;
+      contractType?: string;
       status?: string;
+      workingHours?: number;
+      salary?: number;
+      bankDetails?: string;
+      emergencyContact?: string;
+      qualifications?: string;
+      notes?: string;
+      schoolLevelId?: string;
     }
   ) {
     await this.findTeacherById(id, tenantId);
 
+    // Convert date strings to Date objects
+    const updateData: any = { ...prismaUpdateDefaults() };
+    
+    if (data.firstName !== undefined) updateData.firstName = data.firstName;
+    if (data.lastName !== undefined) updateData.lastName = data.lastName;
+    if (data.gender !== undefined) updateData.gender = data.gender;
+    if (data.dateOfBirth !== undefined) updateData.dateOfBirth = new Date(data.dateOfBirth);
+    if (data.address !== undefined) updateData.address = data.address;
+    if (data.phone !== undefined) updateData.phone = data.phone;
+    if (data.email !== undefined) updateData.email = data.email;
+    if (data.departmentId !== undefined) updateData.departmentId = data.departmentId;
+    if (data.position !== undefined) updateData.position = data.position;
+    if (data.specialization !== undefined) updateData.specialization = data.specialization;
+    if (data.subjectId !== undefined) updateData.subjectId = data.subjectId;
+    if (data.academicYearId !== undefined) updateData.academicYearId = data.academicYearId;
+    if (data.hireDate !== undefined) updateData.hireDate = new Date(data.hireDate);
+    if (data.contractType !== undefined) updateData.contractType = data.contractType;
+    if (data.status !== undefined) updateData.status = data.status;
+    if (data.workingHours !== undefined) updateData.workingHours = data.workingHours;
+    if (data.salary !== undefined) updateData.salary = data.salary;
+    if (data.bankDetails !== undefined) updateData.bankDetails = data.bankDetails;
+    if (data.emergencyContact !== undefined) updateData.emergencyContact = data.emergencyContact;
+    if (data.qualifications !== undefined) updateData.qualifications = data.qualifications;
+    if (data.notes !== undefined) updateData.notes = data.notes;
+    if (data.schoolLevelId !== undefined) updateData.schoolLevelId = data.schoolLevelId;
+
     return this.prisma.teacher.update({
       where: { id },
-      data: { ...prismaUpdateDefaults(), ...data },
+      data: updateData,
       include: {
         schoolLevel: true,
         department: true,
@@ -196,7 +271,7 @@ export class TeachersPrismaService {
    * Archive un enseignant
    */
   async archiveTeacher(id: string, tenantId: string) {
-    const teacher = await this.findTeacherById(id, tenantId);
+    await this.findTeacherById(id, tenantId);
 
     return this.prisma.teacher.update({
       where: { id },
@@ -207,4 +282,3 @@ export class TeachersPrismaService {
     });
   }
 }
-

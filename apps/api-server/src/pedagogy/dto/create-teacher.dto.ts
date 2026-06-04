@@ -1,31 +1,11 @@
-import { IsString, IsNotEmpty, IsOptional, IsNumber, IsEnum, IsDateString } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsInt, IsIn, IsDateString, IsUUID, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
-export enum Gender {
-  MALE = 'MALE',
-  FEMALE = 'FEMALE',
-  OTHER = 'OTHER',
-}
-
-export enum ContractType {
-  CDI = 'CDI',
-  CDD = 'CDD',
-  INTERIM = 'INTERIM',
-  VACATAIRE = 'VACATAIRE',
-  STAGIAIRE = 'STAGIAIRE',
-}
-
-export enum TeacherStatus {
-  ACTIVE = 'active',
-  INACTIVE = 'inactive',
-  ON_LEAVE = 'on_leave',
-  ARCHIVED = 'archived',
-}
-
 export class CreateTeacherDto {
+  /** Optional — service auto-generates TCH-{YEAR}-{0001} if omitted */
   @IsString()
-  @IsNotEmpty()
-  matricule: string;
+  @IsOptional()
+  matricule?: string;
 
   @IsString()
   @IsNotEmpty()
@@ -35,9 +15,10 @@ export class CreateTeacherDto {
   @IsNotEmpty()
   lastName: string;
 
-  @IsEnum(Gender)
+  /** Prisma stores plain String, use @IsIn for validation */
+  @IsIn(['MALE', 'FEMALE', 'OTHER'])
   @IsOptional()
-  gender?: Gender;
+  gender?: string;
 
   @IsDateString()
   @IsOptional()
@@ -79,16 +60,19 @@ export class CreateTeacherDto {
   @IsOptional()
   hireDate?: string;
 
-  @IsEnum(ContractType)
+  /** Prisma stores plain String, use @IsIn for validation */
+  @IsIn(['CDI', 'CDD', 'INTERIM', 'VACATAIRE', 'STAGIAIRE'])
   @IsOptional()
-  contractType?: ContractType;
+  contractType?: string;
 
-  @IsNumber()
+  /** Prisma schema: Int? — must use @IsInt, not @IsNumber */
+  @IsInt()
+  @Min(0)
   @IsOptional()
   @Type(() => Number)
   workingHours?: number;
 
-  @IsNumber()
+  /** Prisma schema: Decimal? — number sent as string or float */
   @IsOptional()
   @Type(() => Number)
   salary?: number;
@@ -109,11 +93,13 @@ export class CreateTeacherDto {
   @IsOptional()
   notes?: string;
 
-  @IsString()
+  /** Required by Prisma schema (NOT NULL) */
+  @IsUUID()
   @IsNotEmpty()
   schoolLevelId: string;
 
-  @IsEnum(TeacherStatus)
+  /** Prisma stores plain String, use @IsIn for validation */
+  @IsIn(['active', 'inactive', 'on_leave', 'archived'])
   @IsOptional()
-  status?: TeacherStatus;
+  status?: string;
 }

@@ -127,28 +127,32 @@ export class MaterialMovementsPrismaService {
       }
     }
     
-    const stock = await this.prisma.materialStock.upsert({
+    // Use findFirst + create/update instead of upsert because the unique constraint
+    // on material_stocks may not exist in the actual database
+    let stock = await this.prisma.materialStock.findFirst({
       where: {
-        tenantId_academicYearId_materialId_schoolLevelId_classId: {
-          tenantId: data.tenantId,
-          academicYearId: data.academicYearId,
-          materialId: data.materialId,
-          schoolLevelId,
-          classId: validatedClassId,
-        },
-      },
-      create: {
-        ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         materialId: data.materialId,
         schoolLevelId,
-        ...(validatedClassId ? { classId: validatedClassId } : {}),
-        quantityTotal: 0,
-        quantityAvailable: 0,
+        classId: validatedClassId,
       },
-      update: {},
     });
+
+    if (!stock) {
+      stock = await this.prisma.materialStock.create({
+        data: {
+          ...prismaCreateDefaults(),
+          tenantId: data.tenantId,
+          academicYearId: data.academicYearId,
+          materialId: data.materialId,
+          schoolLevelId,
+          ...(validatedClassId ? { classId: validatedClassId } : {}),
+          quantityTotal: 0,
+          quantityAvailable: 0,
+        },
+      });
+    }
 
     // Calculer les nouvelles quantités
     let newTotal = stock.quantityTotal;

@@ -33,7 +33,8 @@ export class MaterialContextGuard implements CanActivate {
     const query = request.query;
 
     // R1: Vérifier tenant_id
-    const tenantId = body?.tenantId || query?.tenantId || user?.tenantId;
+    // Also check request.tenantId which is set by TenantGuard from X-Tenant-ID header
+    const tenantId = body?.tenantId || query?.tenantId || request?.tenantId || user?.tenantId;
     if (!tenantId) {
       throw new BadRequestException('tenant_id is required');
     }

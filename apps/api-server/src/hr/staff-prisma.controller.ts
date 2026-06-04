@@ -4,24 +4,29 @@
  * ============================================================================
  */
 
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
 import { StaffPrismaService } from './staff-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 import { SchoolLevelId } from '../common/decorators/school-level-id.decorator';
 import { CreateStaffDto, UpdateStaffDto, AddStaffDocumentDto } from './dto/index';
+import { Public } from '../auth/decorators/public.decorator';
+import { PrismaService } from '../database/prisma.service';
 
 @Controller('hr/staff')
 @UseGuards(JwtAuthGuard, TenantGuard)
 export class StaffPrismaController {
-  constructor(private readonly staffService: StaffPrismaService) {}
+  private readonly logger = new (require('@nestjs/common').Logger)('StaffController');
+
+  constructor(private readonly staffService: StaffPrismaService, private readonly prisma: PrismaService) {}
 
   @Post()
   async createStaff(@GetTenant() tenant: any, @Body() data: CreateStaffDto) {
+    this.logger.warn(`[DEBUG] createStaff tenant=${JSON.stringify(tenant)} dataKeys=${Object.keys(data).join(',')}`);
     return this.staffService.createStaff({
       ...data,
-      tenantId: tenant.id,
+      tenantId: tenant?.id,
     });
   }
 
@@ -33,7 +38,8 @@ export class StaffPrismaController {
     @Query('status') status?: string,
     @Query('levelAssigned') levelAssigned?: string,
   ) {
-    return this.staffService.findAllStaff(tenant.id, {
+    this.logger.warn(`[DEBUG] findAllStaff tenant=${JSON.stringify(tenant)}`);
+    return this.staffService.findAllStaff(tenant?.id, {
       academicYearId,
       category,
       status,
@@ -69,6 +75,55 @@ export class StaffPrismaController {
   @Get(':id/documents')
   async findStaffDocuments(@GetTenant() tenant: any, @Param('id') staffId: string) {
     return this.staffService.findStaffDocuments(staffId, tenant.id);
+  }
+
+  /**
+   * DEBUG — Diagnostic temporaire (à retirer après débogage)
+   */
+  @Public()
+  @Get('debug/test-db')
+  async debugTestDb(@Req() req: any) {
+    const tenantIdFromHeader = req.headers['x-tenant-id'];
+    const tenantIdFromJwt = req.user?.tenantId;
+    const resolvedTenant = req.tenantId;
+    
+    // Direct Prisma queries
+    const allStaff = await this.prisma.staff.findMany({ take: 3 });
+    const filteredStaff = await this.prisma.staff.findMany({ where: { tenantId: tenantIdFromHeader } });
+    
+    // Try create with raw Prisma
+    let createResult: any = null;
+    let createError: any = null;
+    try {
+      const { randomUUID } = require('crypto');
+      createResult = await this.prisma.staff.create({
+        data: {
+          id: randomUUID(),
+          tenantId: tenantIdFromHeader || '59b8c348-ae5f-4d67-8fbd-af6aefa1f394',
+          employeeNumber: 'DEBUG-' + Date.now(),
+          firstName: 'DebugTest',
+          lastName: 'User',
+          roleType: 'TEACHER',
+          status: 'ACTIVE',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }
+      });
+    } catch (e: any) {
+      createError = { message: e.message, code: e.code, meta: e.meta };
+    }
+    
+    return {
+      tenantIdFromHeader,
+      tenantIdFromJwt,
+      resolvedTenant,
+      allStaffCount: allStaff.length,
+      filteredStaffCount: filteredStaff.length,
+      allStaffSample: allStaff.map((s: any) => ({ id: s.id, firstName: s.firstName, tenantId: s.tenantId })),
+      filteredStaffSample: filteredStaff.map((s: any) => ({ id: s.id, firstName: s.firstName, tenantId: s.tenantId })),
+      createResult: createResult ? { id: createResult.id, employeeNumber: createResult.employeeNumber } : null,
+      createError,
+    };
   }
 }
 

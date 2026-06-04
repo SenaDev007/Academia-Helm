@@ -1,26 +1,28 @@
-import { IsString, IsDateString, IsNumber, IsOptional, Min, IsUUID } from 'class-validator';
+import { IsString, IsDateString, IsNumber, IsOptional, Min, IsUUID, IsIn, IsNotEmpty } from 'class-validator';
 
 export class CreateExamDto {
   @IsString()
+  @IsNotEmpty()
   name: string;
 
   @IsString()
+  @IsIn(['DEVOIR', 'COMPOSITION', 'ORAL', 'PRATIQUE', 'INTERROGATION'])
   @IsOptional()
   examType?: string;
 
-  @IsString()
+  @IsUUID()
   @IsOptional()
   subjectId?: string;
 
-  @IsString()
+  @IsUUID()
   @IsOptional()
   classId?: string;
 
-  @IsString()
+  @IsUUID()
   @IsOptional()
   academicYearId?: string;
 
-  @IsString()
+  @IsUUID()
   @IsOptional()
   quarterId?: string;
 
@@ -37,4 +39,3 @@ export class CreateExamDto {
   @IsOptional()
   academicTrackId?: string;
 }
-

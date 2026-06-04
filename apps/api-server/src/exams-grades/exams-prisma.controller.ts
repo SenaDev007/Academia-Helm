@@ -19,17 +19,26 @@ import { ExamsPrismaService } from './exams-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import {
+  CreateExamPrismaDto,
+  UpdateExamPrismaDto,
+  SaveGradingSheetDto,
+  CalculateAveragesDto,
+  GenerateReportCardsDto,
+  PublishBulletinsDto,
+} from './dto';
 
-@Controller('api/exams')
+@Controller('exams')
 @UseGuards(JwtAuthGuard)
 export class ExamsPrismaController {
   constructor(private readonly examsService: ExamsPrismaService) {}
 
   @Post()
-  async create(@TenantId() tenantId: string, @Body() createDto: any) {
+  async create(@TenantId() tenantId: string, @Body() createDto: CreateExamPrismaDto) {
     return this.examsService.createExam({
       ...createDto,
       tenantId,
+      examDate: new Date(createDto.examDate),
     });
   }
 
@@ -46,54 +55,6 @@ export class ExamsPrismaController {
       };
     }
     return this.examsService.getDashboard(tenantId, academicYearId);
-  }
-
-  @Get()
-  async findAll(
-    @TenantId() tenantId: string,
-    @Query('academicYearId') academicYearId?: string,
-    @Query('schoolLevelId') schoolLevelId?: string,
-    @Query('academicTrackId') academicTrackId?: string,
-    @Query('quarterId') quarterId?: string,
-    @Query('classId') classId?: string,
-    @Query('subjectId') subjectId?: string,
-    @Query('examType') examType?: string,
-    @Query('search') search?: string,
-  ) {
-    return this.examsService.findAllExams(tenantId, {
-      academicYearId,
-      schoolLevelId,
-      academicTrackId: academicTrackId || undefined,
-      quarterId,
-      classId,
-      subjectId,
-      examType,
-      search,
-    });
-  }
-
-  @Get(':id')
-  async findOne(@Param('id') id: string, @TenantId() tenantId: string) {
-    return this.examsService.findExamById(id, tenantId);
-  }
-
-  @Get(':id/statistics')
-  async getStatistics(@Param('id') id: string, @TenantId() tenantId: string) {
-    return this.examsService.getExamStatistics(id, tenantId);
-  }
-
-  @Put(':id')
-  async update(
-    @Param('id') id: string,
-    @TenantId() tenantId: string,
-    @Body() updateDto: any,
-  ) {
-    return this.examsService.updateExam(id, tenantId, updateDto);
-  }
-
-  @Delete(':id')
-  async delete(@Param('id') id: string, @TenantId() tenantId: string) {
-    return this.examsService.deleteExam(id, tenantId);
   }
 
   @Get('evaluations')
@@ -130,7 +91,7 @@ export class ExamsPrismaController {
     @Param('id') id: string,
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
-    @Body() body: any,
+    @Body() body: SaveGradingSheetDto,
   ) {
     return this.examsService.saveGradingSheet(id, tenantId, user?.id, body);
   }
@@ -145,19 +106,6 @@ export class ExamsPrismaController {
     return this.examsService.getAverages(tenantId, classId, periodId, academicYearId);
   }
 
-  @Post('calculate-averages')
-  async calculateAverages(
-    @TenantId() tenantId: string,
-    @Body() body: { classId: string; periodId: string; academicYearId: string },
-  ) {
-    return this.examsService.calculateAverages(
-      tenantId,
-      body.classId,
-      body.periodId,
-      body.academicYearId,
-    );
-  }
-
   @Get('bulletins')
   async getBulletins(
     @TenantId() tenantId: string,
@@ -168,10 +116,23 @@ export class ExamsPrismaController {
     return this.examsService.getBulletinsForClass(tenantId, classId, periodId, academicYearId);
   }
 
+  @Post('calculate-averages')
+  async calculateAverages(
+    @TenantId() tenantId: string,
+    @Body() body: CalculateAveragesDto,
+  ) {
+    return this.examsService.calculateAverages(
+      tenantId,
+      body.classId,
+      body.periodId,
+      body.academicYearId,
+    );
+  }
+
   @Post('generate-report-cards')
   async generateReportCards(
     @TenantId() tenantId: string,
-    @Body() body: { classId: string; periodId: string; academicYearId: string },
+    @Body() body: GenerateReportCardsDto,
   ) {
     return this.examsService.generateReportCardsForClass(
       tenantId,
@@ -184,7 +145,7 @@ export class ExamsPrismaController {
   @Post('bulletins/publish')
   async publishBulletins(
     @TenantId() tenantId: string,
-    @Body() body: { classId: string; periodId: string; academicYearId: string },
+    @Body() body: PublishBulletinsDto,
   ) {
     return this.examsService.publishBulletinsForClass(
       tenantId,
@@ -193,5 +154,32 @@ export class ExamsPrismaController {
       body.academicYearId,
     );
   }
-}
 
+  @Get(':id')
+  async findOne(@Param('id') id: string, @TenantId() tenantId: string) {
+    return this.examsService.findExamById(id, tenantId);
+  }
+
+  @Get(':id/statistics')
+  async getStatistics(@Param('id') id: string, @TenantId() tenantId: string) {
+    return this.examsService.getExamStatistics(id, tenantId);
+  }
+
+  @Put(':id')
+  async update(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() updateDto: UpdateExamPrismaDto,
+  ) {
+    const data: any = { ...updateDto };
+    if (updateDto.examDate) {
+      data.examDate = new Date(updateDto.examDate);
+    }
+    return this.examsService.updateExam(id, tenantId, data);
+  }
+
+  @Delete(':id')
+  async delete(@Param('id') id: string, @TenantId() tenantId: string) {
+    return this.examsService.deleteExam(id, tenantId);
+  }
+}

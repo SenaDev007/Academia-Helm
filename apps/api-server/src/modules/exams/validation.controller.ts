@@ -10,7 +10,7 @@ import { Permissions } from '../../auth/decorators/permissions.decorator';
 
 import { PermissionsGuard } from '../../auth/guards/permissions.guard';
 
-@Controller('api/institutional-exams/validation')
+@Controller('institutional-exams/validation')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 export class ValidationController {
   constructor(private readonly validationService: ValidationService) {}

@@ -7,7 +7,7 @@ import { Permissions } from '../../auth/decorators/permissions.decorator';
 
 import { PermissionsGuard } from '../../auth/guards/permissions.guard';
 
-@Controller('api/institutional-exams/audit')
+@Controller('institutional-exams/audit')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 export class AcademicAuditController {
   constructor(private readonly auditService: AcademicAuditService) {}

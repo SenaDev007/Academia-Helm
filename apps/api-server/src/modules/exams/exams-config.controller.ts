@@ -7,7 +7,7 @@ import { Permissions } from '../../auth/decorators/permissions.decorator';
 
 import { PermissionsGuard } from '../../auth/guards/permissions.guard';
 
-@Controller('api/institutional-exams/config')
+@Controller('institutional-exams/config')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 export class ExamsConfigController {
   constructor(private readonly configService: ExamsConfigService) {}

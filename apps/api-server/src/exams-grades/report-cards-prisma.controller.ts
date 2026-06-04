@@ -8,7 +8,6 @@ import {
   Controller,
   Get,
   Post,
-  Put,
   Body,
   Param,
   Query,
@@ -18,14 +17,15 @@ import { ReportCardsPrismaService } from './report-cards-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { GenerateReportCardDto, PublishReportCardDto } from './dto';
 
-@Controller('api/report-cards')
+@Controller('report-cards')
 @UseGuards(JwtAuthGuard)
 export class ReportCardsPrismaController {
   constructor(private readonly reportCardsService: ReportCardsPrismaService) {}
 
   @Post('generate')
-  async generate(@TenantId() tenantId: string, @Body() generateDto: any) {
+  async generate(@TenantId() tenantId: string, @Body() generateDto: GenerateReportCardDto) {
     return this.reportCardsService.generateReportCard({
       ...generateDto,
       tenantId,
@@ -45,7 +45,7 @@ export class ReportCardsPrismaController {
   async publish(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() body: { filePath: string },
+    @Body() body: PublishReportCardDto,
   ) {
     return this.reportCardsService.publishReportCard(id, tenantId, body.filePath);
   }
@@ -69,4 +69,3 @@ export class ReportCardsPrismaController {
     });
   }
 }
-

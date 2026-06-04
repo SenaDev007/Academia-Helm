@@ -8,7 +8,7 @@ import { Permissions } from '../../auth/decorators/permissions.decorator';
 
 import { PermissionsGuard } from '../../auth/guards/permissions.guard';
 
-@Controller('api/institutional-exams/grades')
+@Controller('institutional-exams/grades')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 export class GradesController {
   constructor(private readonly gradesService: GradesService) {}

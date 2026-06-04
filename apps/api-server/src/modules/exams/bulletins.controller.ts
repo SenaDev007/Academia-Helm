@@ -22,7 +22,7 @@ import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { AcademicYearId } from '../../common/decorators/academic-year-id.decorator';
 import { UserId } from '../../auth/decorators/user-id.decorator';
 
-@Controller('api/institutional-exams/bulletins')
+@Controller('institutional-exams/bulletins')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 export class BulletinsController {
   constructor(

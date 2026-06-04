@@ -18,14 +18,15 @@ import {
 import { CouncilDecisionsPrismaService } from './council-decisions-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CreateCouncilDecisionDto, UpdateCouncilDecisionDto } from './dto';
 
-@Controller('api/council-decisions')
+@Controller('council-decisions')
 @UseGuards(JwtAuthGuard)
 export class CouncilDecisionsPrismaController {
   constructor(private readonly decisionsService: CouncilDecisionsPrismaService) {}
 
   @Post()
-  async create(@TenantId() tenantId: string, @Body() createDto: any) {
+  async create(@TenantId() tenantId: string, @Body() createDto: CreateCouncilDecisionDto) {
     return this.decisionsService.createDecision({
       ...createDto,
       tenantId,
@@ -77,7 +78,7 @@ export class CouncilDecisionsPrismaController {
   async update(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() updateDto: any,
+    @Body() updateDto: UpdateCouncilDecisionDto,
   ) {
     return this.decisionsService.updateDecision(id, tenantId, updateDto);
   }
@@ -87,4 +88,3 @@ export class CouncilDecisionsPrismaController {
     return this.decisionsService.deleteDecision(id, tenantId);
   }
 }
-

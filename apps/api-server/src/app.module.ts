@@ -24,7 +24,7 @@ import { DepartmentsModule } from './departments/departments.module';
 // RoomsModule removed — replaced by RoomsPrismaController in PedagogyModule
 import { AbsencesModule } from './absences/absences.module';
 import { DisciplineModule } from './discipline/discipline.module';
-import { ExamsModule } from './exams/exams.module';
+// ExamsModule removed — collides with ExamsPrismaController (ExamsGradesModule)
 import { GradesModule } from './grades/grades.module';
 import { FeeConfigurationsModule } from './fee-configurations/fee-configurations.module';
 import { PaymentsModule } from './payments/payments.module';
@@ -148,7 +148,7 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     DisciplineModule,
     
     // Evaluation modules
-    ExamsModule,
+    // ExamsModule removed — collides with ExamsPrismaController (ExamsGradesModule)
     GradesModule,
     
     // Finance modules

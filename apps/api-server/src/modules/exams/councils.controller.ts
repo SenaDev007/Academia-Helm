@@ -9,7 +9,7 @@ import { Permissions } from '../../auth/decorators/permissions.decorator';
 
 import { PermissionsGuard } from '../../auth/guards/permissions.guard';
 
-@Controller('api/institutional-exams/councils')
+@Controller('institutional-exams/councils')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 export class CouncilsController {
   constructor(private readonly councilsService: CouncilsService) {}

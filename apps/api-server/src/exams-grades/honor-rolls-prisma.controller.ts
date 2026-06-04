@@ -16,14 +16,15 @@ import {
 import { HonorRollsPrismaService } from './honor-rolls-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { GenerateHonorRollDto } from './dto';
 
-@Controller('api/honor-rolls')
+@Controller('honor-rolls')
 @UseGuards(JwtAuthGuard)
 export class HonorRollsPrismaController {
   constructor(private readonly honorRollsService: HonorRollsPrismaService) {}
 
   @Post('generate')
-  async generate(@TenantId() tenantId: string, @Body() generateDto: any) {
+  async generate(@TenantId() tenantId: string, @Body() generateDto: GenerateHonorRollDto) {
     return this.honorRollsService.generateHonorRoll({
       ...generateDto,
       tenantId,

@@ -21,7 +21,7 @@ import { SchoolLevelId } from '../../common/decorators/school-level-id.decorator
 import { AcademicYearId } from '../../common/decorators/academic-year-id.decorator';
 import { Permissions } from '../../auth/decorators/permissions.decorator';
 
-@Controller('api/institutional-exams/dashboard')
+@Controller('institutional-exams/dashboard')
 @UseGuards(
   JwtAuthGuard,
   ContextValidationGuard,

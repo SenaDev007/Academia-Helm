@@ -8,7 +8,6 @@ import {
   Controller,
   Get,
   Post,
-  Put,
   Delete,
   Body,
   Param,
@@ -19,8 +18,9 @@ import { ExamScoresPrismaService } from './exam-scores-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { CreateExamScoreDto, ValidateScoresDto } from './dto';
 
-@Controller('api/exam-scores')
+@Controller('exam-scores')
 @UseGuards(JwtAuthGuard)
 export class ExamScoresPrismaController {
   constructor(private readonly scoresService: ExamScoresPrismaService) {}
@@ -29,13 +29,22 @@ export class ExamScoresPrismaController {
   async createOrUpdate(
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
-    @Body() createDto: any,
+    @Body() createDto: CreateExamScoreDto,
   ) {
     return this.scoresService.createOrUpdateScore({
       ...createDto,
       tenantId,
       recordedBy: user?.id,
     });
+  }
+
+  @Post('validate')
+  async validateScores(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() body: ValidateScoresDto,
+  ) {
+    return this.scoresService.validateScores(body.scoreIds, tenantId, user?.id);
   }
 
   @Get('exam/:examId')
@@ -70,18 +79,8 @@ export class ExamScoresPrismaController {
     });
   }
 
-  @Post('validate')
-  async validateScores(
-    @TenantId() tenantId: string,
-    @CurrentUser() user: any,
-    @Body() body: { scoreIds: string[] },
-  ) {
-    return this.scoresService.validateScores(body.scoreIds, tenantId, user?.id);
-  }
-
   @Delete(':id')
   async delete(@Param('id') id: string, @TenantId() tenantId: string) {
     return this.scoresService.deleteScore(id, tenantId);
   }
 }
-

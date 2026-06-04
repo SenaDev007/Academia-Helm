@@ -25,7 +25,14 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
     }
 
     // Créer un pool PostgreSQL
-    const pool = new Pool({ connectionString: databaseUrl });
+    // Neon DB et autres cloud providers exigent SSL — on l'active si le paramètre
+    // sslmode est présent dans l'URL ou si NODE_ENV=production.
+    const needsSsl = databaseUrl.includes('sslmode=') || process.env.NODE_ENV === 'production';
+    const poolConfig: any = { connectionString: databaseUrl };
+    if (needsSsl) {
+      poolConfig.ssl = { rejectUnauthorized: false };
+    }
+    const pool = new Pool(poolConfig);
     const adapter = new PrismaPg(pool);
 
     const prismaOptions: any = {

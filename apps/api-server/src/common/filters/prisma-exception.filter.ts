@@ -23,7 +23,8 @@ export class PrismaExceptionFilter implements ExceptionFilter {
         break;
       case 'P2003':
         status = HttpStatus.BAD_REQUEST;
-        message = 'Référence invalide : l\'entité liée n\'existe pas';
+        const fkDetail = (exception.meta as any)?.field_name || (exception.meta as any)?.constraint || '';
+        message = `Référence invalide : l'entité liée n'existe pas${fkDetail ? ` (${fkDetail})` : ''}`;
         break;
       case 'P2014':
         status = HttpStatus.BAD_REQUEST;

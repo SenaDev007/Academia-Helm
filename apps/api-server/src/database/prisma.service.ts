@@ -62,17 +62,19 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       this.logger.log('⏭️  SKIP_DB_CHECK=true — skipping Prisma connection warmup');
       return;
     }
-    try {
-      // Use a lightweight query to warm up the connection pool instead of $connect()
-      // $connect() may not work well with PrismaPg adapter in Prisma 7
-      const start = Date.now();
-      await this.$queryRaw`SELECT 1`;
-      const elapsed = Date.now() - start;
-      this.logger.log(`✅ Prisma connected in ${elapsed}ms`);
-    } catch (error) {
-      this.logger.error('❌ Prisma connection failed on init:', error?.message || error);
-      // Don't crash — let requests fail individually with proper error messages
-    }
+    // Fire-and-forget: warm up the connection pool in the background
+    // Do NOT await — otherwise Neon cold start (30-60s) would block the entire NestJS bootstrap
+    // and cause Railway health check to fail (502)
+    const start = Date.now();
+    this.$queryRaw`SELECT 1`
+      .then(() => {
+        const elapsed = Date.now() - start;
+        this.logger.log(`✅ Prisma connected in ${elapsed}ms`);
+      })
+      .catch((error) => {
+        this.logger.error('❌ Prisma connection warmup failed:', error?.message || error);
+        // Non-blocking — requests will retry and establish connections on demand
+      });
   }
 
   async onModuleDestroy() {

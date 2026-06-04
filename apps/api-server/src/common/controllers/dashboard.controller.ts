@@ -10,7 +10,7 @@ import { PortalAccessGuard } from '../guards/portal-access.guard';
 import { DashboardService } from '../services/dashboard.service';
 import { UserRole } from '../enums/user-role.enum';
 
-@Controller('dashboard')
+@Controller('common/dashboard')
 @UseGuards(JwtAuthGuard, PortalAccessGuard)
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}

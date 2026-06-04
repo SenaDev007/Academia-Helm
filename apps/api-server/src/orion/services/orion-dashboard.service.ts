@@ -78,7 +78,7 @@ export class OrionDashboardService {
       this.prisma.class.count({ where }),
       this.prisma.incident.count({ where: { ...where, status: { in: ['OPEN', 'IN_PROGRESS'] } } }),
       this.prisma.payment.aggregate({
-        where: { tenantId, ...(academicYearId && { academicYearId }), status: 'COMPLETED' },
+        where: { tenantId, ...(academicYearId && { academicYearId }), status: 'completed' },
         _sum: { amount: true },
       }),
       this.prisma.expense.aggregate({

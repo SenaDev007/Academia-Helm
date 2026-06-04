@@ -19,8 +19,8 @@ export class CreateAutomationDto {
   @IsString()
   schoolLevelId?: string;
 
-  @IsString()
-  triggerType: string;
+  @IsEnum(TriggerType)
+  triggerType: TriggerType;
 
   @IsString()
   channelId: string;

@@ -4,11 +4,11 @@
  * ============================================================================
  */
 
-import { Controller, Get, Post, Put, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
 import { KPICalculationService } from './services/kpi-calculation.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
-import { GetTenant } from '../common/decorators/tenant.decorator';
+import { UpsertKpiDefinitionDto, CalculateKpiDto } from './dto/kpi.dto';
 
 @Controller('orion/kpi')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -21,7 +21,7 @@ export class OrionKPIController {
   }
 
   @Post('definitions')
-  async upsertDefinition(@GetTenant() tenant: any, @Body() data: any) {
+  async upsertDefinition(@GetTenant() tenant: any, @Body() data: UpsertKpiDefinitionDto) {
     return this.kpiService.upsertKpiDefinition(tenant.id, data);
   }
 
@@ -48,7 +48,7 @@ export class OrionKPIController {
   @Post('calculate')
   async calculateKPIs(
     @GetTenant() tenant: any,
-    @Body() body: { academicYearId?: string; schoolLevelId?: string },
+    @Body() body: CalculateKpiDto,
   ) {
     const kpis = await this.kpiService.calculateSystemKPIs(
       tenant.id,

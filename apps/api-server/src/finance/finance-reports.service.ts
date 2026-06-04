@@ -29,7 +29,7 @@ export class FinanceReportsService {
     const paid = Number(totalPaid._sum.totalPaid ?? 0);
     const encaissement = Number(transactionsSum._sum.amount ?? 0);
     const depenses = Number(expensesSum._sum.amount ?? 0);
-    const tauxRecouvrement = due > 0 ? Math.round((paid / due) ? (paid / due) * 100 : 0) : 0;
+    const tauxRecouvrement = due > 0 ? Math.round((paid / due) * 100) : 0;
     return {
       totalDue: due,
       totalPaid: paid,

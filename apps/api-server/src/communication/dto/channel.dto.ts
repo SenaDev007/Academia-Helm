@@ -9,8 +9,8 @@ export enum ChannelCode {
 }
 
 export class CreateChannelDto {
-  @IsString()
-  code: string;
+  @IsEnum(ChannelCode)
+  code: ChannelCode;
 
   @IsString()
   name: string;

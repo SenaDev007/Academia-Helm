@@ -18,11 +18,11 @@ export class CreateMeetingDto {
   @IsString()
   academicYearId: string;
 
-  @IsString()
-  meetingType: string;
+  @IsEnum(MeetingType)
+  meetingType: MeetingType;
 
-  @IsString()
-  scopeType: string;
+  @IsEnum(ScopeType)
+  scopeType: ScopeType;
 
   @IsOptional()
   @IsString()

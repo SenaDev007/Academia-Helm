@@ -1,15 +1,59 @@
-import { IsString, IsOptional, IsNumber, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsDateString, IsEnum, IsArray } from 'class-validator';
+
+export enum ParticipantType {
+  TEACHER = 'TEACHER',
+  STAFF = 'STAFF',
+  PARENT = 'PARENT',
+  EXTERNAL = 'EXTERNAL',
+}
+
+export enum AttendanceStatus {
+  INVITED = 'INVITED',
+  CONFIRMED = 'CONFIRMED',
+  DECLINED = 'DECLINED',
+  PRESENT = 'PRESENT',
+  ABSENT = 'ABSENT',
+  EXCUSED = 'EXCUSED',
+}
+
+export enum MeetingStatus {
+  SCHEDULED = 'SCHEDULED',
+  IN_PROGRESS = 'IN_PROGRESS',
+  HELD = 'HELD',
+  CANCELLED = 'CANCELLED',
+  POSTPONED = 'POSTPONED',
+}
+
+export enum AgendaItemStatus {
+  PENDING = 'PENDING',
+  IN_PROGRESS = 'IN_PROGRESS',
+  COMPLETED = 'COMPLETED',
+  SKIPPED = 'SKIPPED',
+}
+
+export enum DecisionStatus {
+  PENDING = 'PENDING',
+  IN_PROGRESS = 'IN_PROGRESS',
+  COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED',
+}
+
+export enum SignatureType {
+  VALIDATION = 'VALIDATION',
+  APPROVAL = 'APPROVAL',
+  ACKNOWLEDGMENT = 'ACKNOWLEDGMENT',
+}
 
 export class AddParticipantDto {
-  @IsString()
-  participantType: string;
+  @IsEnum(ParticipantType)
+  participantType: ParticipantType;
 
   @IsString()
   participantId: string;
 
   @IsOptional()
-  @IsString()
-  attendanceStatus?: string;
+  @IsEnum(AttendanceStatus)
+  attendanceStatus?: AttendanceStatus;
 
   @IsOptional()
   @IsString()
@@ -17,8 +61,8 @@ export class AddParticipantDto {
 }
 
 export class UpdateAttendanceDto {
-  @IsString()
-  attendanceStatus: string;
+  @IsEnum(AttendanceStatus)
+  attendanceStatus: AttendanceStatus;
 
   @IsOptional()
   @IsString()
@@ -60,8 +104,8 @@ export class UpdateAgendaItemDto {
   durationMinutes?: number;
 
   @IsOptional()
-  @IsString()
-  status?: string;
+  @IsEnum(AgendaItemStatus)
+  status?: AgendaItemStatus;
 
   @IsOptional()
   @IsString()
@@ -108,8 +152,8 @@ export class UpdateDecisionDto {
   dueDate?: string;
 
   @IsOptional()
-  @IsString()
-  status?: string;
+  @IsEnum(DecisionStatus)
+  status?: DecisionStatus;
 
   @IsOptional()
   @IsString()
@@ -118,10 +162,34 @@ export class UpdateDecisionDto {
 
 export class SignMinutesDto {
   @IsOptional()
-  @IsString()
-  signatureType?: string;
+  @IsEnum(SignatureType)
+  signatureType?: SignatureType;
 
   @IsOptional()
   @IsString()
   signatureData?: string;
+}
+
+// ─── Inline body DTOs (replacing { reason: string } etc.) ──────────────────
+
+export class CancelMeetingDto {
+  @IsString()
+  reason: string;
+}
+
+export class ReorderAgendasDto {
+  @IsArray()
+  @IsString({ each: true })
+  agendaItemIds: string[];
+}
+
+export class GenerateMinutesDto {
+  @IsOptional()
+  @IsString()
+  templateId?: string;
+}
+
+export class CreateMinutesVersionDto {
+  @IsString()
+  changes: string;
 }

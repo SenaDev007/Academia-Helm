@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   Request,
+  NotFoundException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
@@ -21,7 +22,7 @@ import { MeetingDecisionsService } from './services/meeting-decisions.service';
 import { MeetingOrionIntegrationService } from './services/meeting-orion-integration.service';
 import { CreateMeetingDto, UpdateMeetingDto } from './dto/meeting.dto';
 import { CreateMeetingTemplateDto, UpdateMeetingTemplateDto } from './dto/meeting-template.dto';
-import { AddParticipantDto, UpdateAttendanceDto, AddAgendaItemDto, UpdateAgendaItemDto, CreateMinutesDto, CreateDecisionDto, UpdateDecisionDto, SignMinutesDto } from './dto/meeting-parts.dto';
+import { AddParticipantDto, UpdateAttendanceDto, AddAgendaItemDto, UpdateAgendaItemDto, CreateMinutesDto, CreateDecisionDto, UpdateDecisionDto, SignMinutesDto, CancelMeetingDto, ReorderAgendasDto, GenerateMinutesDto, CreateMinutesVersionDto } from './dto/meeting-parts.dto';
 import { MeetingMinutesTemplateService } from './services/meeting-minutes-template.service';
 import { MeetingMinutesGenerationService } from './services/meeting-minutes-generation.service';
 import { MeetingMinutesPdfService } from './services/meeting-minutes-pdf.service';
@@ -276,7 +277,7 @@ export class MeetingsController {
     @Param('id') id: string,
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
-    @Body() body: { reason: string },
+    @Body() body: CancelMeetingDto,
   ) {
     return this.meetingsService.cancel(id, tenantId, body.reason, user.id);
   }
@@ -370,7 +371,7 @@ export class MeetingsController {
   async reorderAgendas(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() body: { agendaItemIds: string[] },
+    @Body() body: ReorderAgendasDto,
   ) {
     return this.agendasService.reorderAgendaItems(id, tenantId, body.agendaItemIds);
   }
@@ -417,7 +418,7 @@ export class MeetingsController {
     @Param('id') id: string,
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
-    @Body() body: { templateId?: string },
+    @Body() body: GenerateMinutesDto,
   ) {
     return this.generationService.generateFromTemplate(id, tenantId, body.templateId, user.id);
   }
@@ -429,7 +430,7 @@ export class MeetingsController {
   ) {
     const minutes = await this.minutesService.findByMeeting(id, tenantId);
     if (!minutes || !minutes.id) {
-      throw new Error('Minutes not found');
+      throw new NotFoundException('Minutes not found');
     }
     return this.pdfService.getPdf(minutes.id, tenantId);
   }
@@ -441,7 +442,7 @@ export class MeetingsController {
   ) {
     const minutes = await this.minutesService.findByMeeting(id, tenantId);
     if (!minutes || !minutes.id) {
-      throw new Error('Minutes not found');
+      throw new NotFoundException('Minutes not found');
     }
     return this.pdfService.generatePdf(minutes.id, tenantId);
   }
@@ -453,7 +454,7 @@ export class MeetingsController {
   ) {
     const minutes = await this.minutesService.findByMeeting(id, tenantId);
     if (!minutes || !minutes.id) {
-      throw new Error('Minutes not found');
+      throw new NotFoundException('Minutes not found');
     }
     return this.generationService.getVersionHistory(minutes.id, tenantId);
   }
@@ -463,11 +464,11 @@ export class MeetingsController {
     @Param('id') id: string,
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
-    @Body() body: { changes: string },
+    @Body() body: CreateMinutesVersionDto,
   ) {
     const minutes = await this.minutesService.findByMeeting(id, tenantId);
     if (!minutes || !minutes.id) {
-      throw new Error('Minutes not found');
+      throw new NotFoundException('Minutes not found');
     }
     return this.generationService.createVersion(minutes.id, tenantId, body.changes, user.id);
   }
@@ -529,7 +530,7 @@ export class MeetingsController {
   ) {
     const minutes = await this.minutesService.findByMeeting(id, tenantId);
     if (!minutes || !minutes.id) {
-      throw new Error('Minutes not found');
+      throw new NotFoundException('Minutes not found');
     }
 
     const ipAddress = req.ip || req.connection?.remoteAddress;
@@ -550,7 +551,7 @@ export class MeetingsController {
   async getSignatures(@Param('id') id: string, @TenantId() tenantId: string) {
     const minutes = await this.minutesService.findByMeeting(id, tenantId);
     if (!minutes || !minutes.id) {
-      throw new Error('Minutes not found');
+      throw new NotFoundException('Minutes not found');
     }
     return this.signatureService.getSignatures(minutes.id, tenantId);
   }
@@ -563,7 +564,7 @@ export class MeetingsController {
   async extractEntities(@Param('id') id: string, @TenantId() tenantId: string) {
     const minutes = await this.minutesService.findByMeeting(id, tenantId);
     if (!minutes || !minutes.id) {
-      throw new Error('Minutes not found');
+      throw new NotFoundException('Minutes not found');
     }
     return this.nlpService.extractEntities(minutes.id, tenantId);
   }
@@ -572,7 +573,7 @@ export class MeetingsController {
   async analyzeSentiment(@Param('id') id: string, @TenantId() tenantId: string) {
     const minutes = await this.minutesService.findByMeeting(id, tenantId);
     if (!minutes || !minutes.id) {
-      throw new Error('Minutes not found');
+      throw new NotFoundException('Minutes not found');
     }
     return this.nlpService.analyzeSentiment(minutes.id, tenantId);
   }

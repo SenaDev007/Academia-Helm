@@ -110,7 +110,7 @@ export class KPICalculationService {
         where: {
           tenantId,
           academicYearId,
-          status: 'COMPLETED',
+          status: 'completed',
         },
         _sum: { amount: true },
       });

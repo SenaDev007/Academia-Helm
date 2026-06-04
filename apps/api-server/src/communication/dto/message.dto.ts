@@ -56,8 +56,8 @@ export class CreateMessageDto {
   contentEn?: string;
 
   @IsOptional()
-  @IsString()
-  messageType?: string;
+  @IsEnum(MessageType)
+  messageType?: MessageType;
 
   @IsOptional()
   @IsBoolean()
@@ -92,18 +92,36 @@ export class UpdateMessageDto {
   contentEn?: string;
 
   @IsOptional()
+  @IsEnum(MessageStatus)
+  status?: MessageStatus;
+}
+
+export class RecipientItemDto {
   @IsString()
-  status?: string;
+  recipientId: string;
+
+  @IsString()
+  recipientType: string;
 }
 
 export class AddRecipientsDto {
   @IsArray()
   @ValidateNested({ each: true })
-  recipients: Array<{ recipientId: string; recipientType: string }>;
+  @Type(() => RecipientItemDto)
+  recipients: RecipientItemDto[];
+}
+
+export class TargetItemDto {
+  @IsString()
+  targetType: string;
+
+  @IsString()
+  targetId: string;
 }
 
 export class AddTargetsDto {
   @IsArray()
   @ValidateNested({ each: true })
-  targets: Array<{ targetType: string; targetId: string }>;
+  @Type(() => TargetItemDto)
+  targets: TargetItemDto[];
 }

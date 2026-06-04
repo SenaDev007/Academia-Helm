@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsEnum } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsIn, IsUUID } from 'class-validator';
 
 export enum MaterialCategory {
   BOOK = 'BOOK',
@@ -18,8 +18,8 @@ export class CreatePedagogicalMaterialDto {
   @IsNotEmpty()
   name: string;
 
-  @IsEnum(MaterialCategory)
-  category: MaterialCategory;
+  @IsIn(['BOOK', 'TEACHER_GUIDE', 'OFFICIAL_DOCUMENT', 'DIDACTIC_SUPPORT', 'LAB_MATERIAL', 'OTHER'])
+  category: string;
 
   @IsString()
   @IsOptional()
@@ -36,4 +36,9 @@ export class CreatePedagogicalMaterialDto {
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
+
+  /** Required by MaterialContextGuard for write operations */
+  @IsUUID()
+  @IsOptional()
+  academicYearId?: string;
 }

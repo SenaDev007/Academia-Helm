@@ -100,7 +100,7 @@ export class BulletinsService {
     // Récupérer le niveau scolaire de la classe pour appliquer la bonne logique
     const classInfo = await this.prisma.class.findUnique({
       where: { id: classId },
-      include: { level: true }
+      include: { schoolLevel: true }
     });
 
     const subjectsMap = new Map();
@@ -112,7 +112,7 @@ export class BulletinsService {
           subject: g.subject,
           scores: [],
           qualitativeCodes: [],
-          coefficient: classInfo?.level?.stage === 'PRIMAIRE' ? 1 : Number(g.subject.coefficient || 1),
+          coefficient: classInfo?.schoolLevel?.code === 'PRIMAIRE' ? 1 : Number(g.subject.coefficient || 1),
         });
       }
       if (g.score !== null) subjectsMap.get(g.subjectId).scores.push(Number(g.score));
@@ -127,7 +127,7 @@ export class BulletinsService {
       let average = 0;
       let appreciation = '';
 
-      if (classInfo?.level?.stage === 'MATERNELLE') {
+      if (classInfo?.schoolLevel?.code === 'MATERNELLE') {
         // Synthèse qualitative : Code majoritaire
         const counts = data.qualitativeCodes.reduce((acc: any, code: string) => {
           acc[code] = (acc[code] || 0) + 1;
@@ -224,15 +224,15 @@ export class BulletinsService {
     const student = await this.prisma.student.findUnique({ 
       where: { id: studentId },
       include: { 
-        enrollments: { 
+        studentEnrollments: { 
           where: { academicYearId, tenantId },
-          include: { class: { include: { level: true } } }
+          include: { class: { include: { schoolLevel: true } } }
         }
       }
     });
 
     if (!student) throw new NotFoundException('Élève non trouvé');
-    const enrollment = student.enrollments[0];
+    const enrollment = student.studentEnrollments[0];
     const classId = enrollment.classId;
 
     // 3. Moyenne Générale & Rang
@@ -264,12 +264,12 @@ export class BulletinsService {
       academicYear: academicYear?.name || '2025-2026',
       periodName: periodId === 'T1' ? '1er Trimestre' : periodId === 'T2' ? '2ème Trimestre' : '3ème Trimestre',
       studentName: `${student.lastName} ${student.firstName}`,
-      studentBirthDate: student.birthDate ? new Date(student.birthDate).toLocaleDateString('fr-FR') : 'N/A',
+      studentBirthDate: student.dateOfBirth ? new Date(student.dateOfBirth).toLocaleDateString('fr-FR') : 'N/A',
       studentSex: student.gender === 'MALE' ? 'Masculin' : 'Féminin',
-      studentId: student.code || student.id.substring(0, 8),
+      studentId: student.studentCode || student.id.substring(0, 8),
       className: enrollment.class.name,
       classSize,
-      isRepeater: enrollment.isRepeater ? 'Oui' : 'Non',
+      isRepeater: enrollment.enrollmentType === 'REPEATER' ? 'Oui' : 'Non',
       totalCoefficient: periodAverage?.totalCoefficient || 0,
       totalWeighted: periodAverage?.totalWeighted || 0,
       generalAverage: periodAverage?.generalAverage || '0.00',

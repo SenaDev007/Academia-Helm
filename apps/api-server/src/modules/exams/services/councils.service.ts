@@ -18,7 +18,7 @@ export class CouncilsService {
   async getCouncils(tenantId: string, academicYearId: string, periodId: string) {
     return this.prisma.classCouncil.findMany({
       where: { tenantId, academicYearId, periodId },
-      orderBy: { scheduledAt: 'asc' },
+      orderBy: { councilDate: 'asc' },
     });
   }
 

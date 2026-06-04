@@ -431,6 +431,17 @@ model Tenant {
   resourceAnnotations              TenantResourceAnnotation[]        @relation("TenantResourceAnnotations")
   lessonPlanVersions               LessonPlanVersion[]
   lessonPlanValidations            LessonPlanValidation[]
+  evaluations                     Evaluation[]
+  evaluationTypes                  EvaluationType[]
+  gradeScales                     GradeScale[]
+  examCalculationRules             ExamCalculationRule[]
+  gradeValidationBatches           GradeValidationBatch[]
+  gradeLocks                       GradeLock[]
+  studentPeriodAverages            StudentPeriodAverage[]
+  studentSubjectAverages           StudentSubjectAverage[]
+  studentCouncilDecisions          StudentCouncilDecision[]
+  academicAuditLogs                AcademicAuditLog[]
+  gradeCorrectionRequests          GradeCorrectionRequest[]
 
   @@index([subdomain])
   @@index([slug])
@@ -737,6 +748,12 @@ model AcademicYear {
   weeklySemainiers                 WeeklySemainier[]
   lessonPlanVersions               LessonPlanVersion[]
   lessonPlanValidations            LessonPlanValidation[]
+  evaluations                     Evaluation[]
+  gradeValidationBatches           GradeValidationBatch[]
+  gradeLocks                       GradeLock[]
+  studentPeriodAverages            StudentPeriodAverage[]
+  studentSubjectAverages           StudentSubjectAverage[]
+  academicAuditLogs                AcademicAuditLog[]
 
   @@unique([tenantId, name])
   @@unique([tenantId, label])
@@ -1871,6 +1888,11 @@ model User {
   closedPayrollPeriods                      PayrollPeriod[]                   @relation("PayrollPeriodCloser")
   authorizedOneTimeBonuses                  OneTimeBonus[]                    @relation("OneTimeBonusAuthorizer")
   approvedOneTimeBonuses                    OneTimeBonus[]                    @relation("OneTimeBonusApprover")
+  createdEvaluations                        Evaluation[]                     @relation("EvaluationCreator")
+  validatedEvaluations                      Evaluation[]                     @relation("EvaluationValidator")
+  gradeLocks                                GradeLock[]
+  studentCouncilDecisions                   StudentCouncilDecision[]
+  academicAuditLogs                         AcademicAuditLog[]
 
   @@index([tenantId, role])
   @@index([email])
@@ -2197,6 +2219,9 @@ model Student {
   transportAssignments         TransportAssignment[]
   transportIncidents           TransportIncident[]
   tuitionPayments              TuitionPayment[]
+  studentPeriodAverages        StudentPeriodAverage[]
+  studentSubjectAverages       StudentSubjectAverage[]
+  studentCouncilDecisions      StudentCouncilDecision[]
 
   @@unique([tenantId, studentCode])
   @@unique([tenantId, matricule], where: raw("(matricule IS NOT NULL)"))
@@ -2303,6 +2328,12 @@ model Class {
   subjectAssignments         SubjectAssignment[]
   teacherMaterialAssignments TeacherMaterialAssignment[] @relation("TeacherMaterialAssignmentClass")
   timetableEntries           TimetableEntry[]
+  evaluations              Evaluation[]
+  gradeValidationBatches   GradeValidationBatch[]
+  gradeLocks               GradeLock[]
+  studentPeriodAverages    StudentPeriodAverage[]
+  studentSubjectAverages   StudentSubjectAverage[]
+  institutionalGrades      Grade[]
 
   @@unique([tenantId, academicYearId, code])
   @@index([tenantId, academicYearId, schoolLevelId])
@@ -2350,6 +2381,10 @@ model Subject {
   teacherSubjects              TeacherSubject[]              @relation("TeacherSubjectSubject")
   teachers                     Teacher[]
   timetableEntries             TimetableEntry[]
+  evaluations                 Evaluation[]
+  gradeValidationBatches      GradeValidationBatch[]
+  gradeLocks                  GradeLock[]
+  studentSubjectAverages      StudentSubjectAverage[]
 
   @@unique([tenantId, academicYearId, schoolLevelId, code])
   @@index([tenantId, academicYearId, schoolLevelId])
@@ -2395,31 +2430,44 @@ model Exam {
 }
 
 model Grade {
-  id              String         @id @default(uuid())
-  tenantId        String
-  academicYearId  String
-  schoolLevelId   String
-  academicTrackId String?
-  language        String?
-  studentId       String
-  subjectId       String
-  examId          String?
-  score           Float
-  maxScore        Float          @default(20.0)
-  coefficient     Float          @default(1.0)
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  academicTrack   AcademicTrack? @relation(fields: [academicTrackId], references: [id])
-  academicYear    AcademicYear   @relation(fields: [academicYearId], references: [id])
-  exam            Exam?          @relation(fields: [examId], references: [id])
-  schoolLevel     SchoolLevel    @relation(fields: [schoolLevelId], references: [id])
-  student         Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  subject         Subject        @relation(fields: [subjectId], references: [id])
-  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id               String                    @id @default(uuid())
+  tenantId         String
+  academicYearId   String
+  schoolLevelId    String?
+  academicTrackId  String?
+  language         String?
+  studentId        String
+  subjectId        String
+  examId           String?
+  evaluationId     String?
+  classId          String?
+  periodId         String?
+  score            Float?
+  maxScore         Float                     @default(20.0)
+  coefficient      Float                     @default(1.0)
+  qualitativeCode  String?
+  isAbsent         Boolean                   @default(false)
+  comment          String?
+  status           String                    @default("DRAFT")
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+  academicTrack    AcademicTrack?            @relation(fields: [academicTrackId], references: [id])
+  academicYear     AcademicYear              @relation(fields: [academicYearId], references: [id])
+  class            Class?                    @relation(fields: [classId], references: [id])
+  evaluation       Evaluation?               @relation(fields: [evaluationId], references: [id])
+  exam             Exam?                     @relation(fields: [examId], references: [id])
+  quarter          Quarter?                  @relation(fields: [periodId], references: [id])
+  schoolLevel      SchoolLevel?              @relation(fields: [schoolLevelId], references: [id])
+  student          Student                   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subject          Subject                   @relation(fields: [subjectId], references: [id])
+  tenant           Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  correctionRequests GradeCorrectionRequest[]
 
+  @@unique([tenantId, evaluationId, studentId], name: "tenantId_evaluationId_studentId")
   @@index([tenantId, academicYearId, schoolLevelId])
   @@index([studentId])
   @@index([subjectId])
+  @@index([evaluationId])
   @@map("grades")
 }
 
@@ -2443,8 +2491,14 @@ model Quarter {
   academicYear      AcademicYear       @relation(fields: [academicYearId], references: [id])
   creator           User?              @relation(fields: [createdBy], references: [id])
   tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  rankings          Ranking[]
-  reportCards       ReportCard[]
+  rankings                  Ranking[]
+  reportCards               ReportCard[]
+  evaluations               Evaluation[]
+  gradeValidationBatches    GradeValidationBatch[]
+  gradeLocks                GradeLock[]
+  studentPeriodAverages     StudentPeriodAverage[]
+  studentSubjectAverages    StudentSubjectAverage[]
+  institutionalGrades       Grade[]
 
   @@map("quarters")
 }
@@ -7314,8 +7368,9 @@ model ClassCouncil {
   quarter         Quarter?          @relation(fields: [quarterId], references: [id])
   schoolLevel     SchoolLevel       @relation(fields: [schoolLevelId], references: [id])
   tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  decisions       CouncilDecision[]
-  minutes         CouncilMinute[]
+  decisions               CouncilDecision[]
+  studentCouncilDecisions  StudentCouncilDecision[]
+  minutes                  CouncilMinute[]
 
   @@index([tenantId, academicYearId, schoolLevelId])
   @@index([classId])
@@ -13247,6 +13302,29 @@ enum AcademicSettingsStatus {
   ARCHIVED
 }
 
+enum EvaluationStatus {
+  PLANNED
+  OPEN_FOR_GRADING
+  SUBMITTED
+  VALIDATED
+}
+
+enum GradeInstitutionalStatus {
+  DRAFT
+  VALIDATED
+}
+
+enum ValidationBatchStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum GradeLockType {
+  PERIOD_FINAL
+  EVALUATION_FINAL
+}
+
 model GlobalPedagogicalResource {
   id          String                     @id @default(uuid())
   title       String
@@ -13500,4 +13578,254 @@ model AcademicScore {
   candidate        HrCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
 
   @@map("hr_academic_scores")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Institutional Exams Module (Layer 3) — Evaluation & Grade Management
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Evaluation {
+  id               String           @id @default(uuid())
+  tenantId         String
+  academicYearId   String
+  classId          String
+  subjectId        String
+  periodId         String
+  evaluationTypeId String
+  title            String?
+  evaluationDate   DateTime         @default(now())
+  maxScore         Float            @default(20.0)
+  coefficient      Float            @default(1.0)
+  status           EvaluationStatus @default(PLANNED)
+  createdBy        String?
+  validatedById    String?
+  validatedAt      DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  academicYear     AcademicYear     @relation(fields: [academicYearId], references: [id])
+  class            Class            @relation(fields: [classId], references: [id])
+  evaluationType   EvaluationType   @relation(fields: [evaluationTypeId], references: [id])
+  period           Quarter          @relation(fields: [periodId], references: [id])
+  subject          Subject          @relation(fields: [subjectId], references: [id])
+  tenant           Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  grades           Grade[]
+  validationBatch  GradeValidationBatch?
+  creator          User?            @relation("EvaluationCreator", fields: [createdBy], references: [id])
+  validator        User?            @relation("EvaluationValidator", fields: [validatedById], references: [id])
+
+  @@index([tenantId, academicYearId])
+  @@index([classId])
+  @@index([subjectId])
+  @@index([periodId])
+  @@index([status])
+  @@map("evaluations")
+}
+
+model EvaluationType {
+  id                  String     @id @default(uuid())
+  tenantId            String
+  name                String
+  defaultMaxScore     Float      @default(20.0)
+  defaultCoefficient  Float      @default(1.0)
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  tenant              Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  evaluations         Evaluation[]
+
+  @@unique([tenantId, name])
+  @@map("evaluation_types")
+}
+
+model GradeScale {
+  id        String   @id @default(uuid())
+  tenantId  String
+  minGrade  Float
+  maxGrade  Float?
+  mention   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("grade_scales")
+}
+
+model ExamCalculationRule {
+  id          String   @id @default(uuid())
+  tenantId    String
+  name        String
+  description String?
+  ruleType    String
+  config      Json
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("exam_calculation_rules")
+}
+
+model GradeValidationBatch {
+  id              String                 @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  periodId        String
+  evaluationId    String                 @unique
+  classId         String
+  subjectId       String?
+  status          ValidationBatchStatus  @default(PENDING)
+  submittedById   String
+  submittedAt     DateTime               @default(now())
+  reviewedById    String?
+  reviewedAt      DateTime?
+  reviewComment   String?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  academicYear    AcademicYear           @relation(fields: [academicYearId], references: [id])
+  class           Class                  @relation(fields: [classId], references: [id])
+  evaluation      Evaluation             @relation(fields: [evaluationId], references: [id])
+  period          Quarter                @relation(fields: [periodId], references: [id])
+  tenant          Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subject         Subject?               @relation(fields: [subjectId], references: [id])
+
+  @@index([tenantId, academicYearId])
+  @@index([status])
+  @@map("grade_validation_batches")
+}
+
+model GradeLock {
+  id             String        @id @default(uuid())
+  tenantId       String
+  academicYearId String
+  periodId       String
+  classId        String
+  subjectId      String?
+  lockType       GradeLockType
+  lockedById     String
+  reason         String
+  createdAt      DateTime      @default(now())
+  academicYear   AcademicYear  @relation(fields: [academicYearId], references: [id])
+  class          Class         @relation(fields: [classId], references: [id])
+  period         Quarter       @relation(fields: [periodId], references: [id])
+  subject        Subject?      @relation(fields: [subjectId], references: [id])
+  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lockedBy       User          @relation(fields: [lockedById], references: [id])
+
+  @@unique([tenantId, academicYearId, periodId, classId, subjectId, lockType], name: "tenantId_period_class_subject_lockType")
+  @@index([tenantId, academicYearId])
+  @@map("grade_locks")
+}
+
+model StudentPeriodAverage {
+  id              String    @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  periodId        String
+  studentId       String
+  classId         String
+  totalWeighted   Float     @default(0)
+  totalCoefficient Float    @default(0)
+  generalAverage  Float     @default(0)
+  classRank       Int       @default(0)
+  isPublished     Boolean   @default(false)
+  calculatedAt    DateTime  @default(now())
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id])
+  class           Class     @relation(fields: [classId], references: [id])
+  period          Quarter   @relation(fields: [periodId], references: [id])
+  student         Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, academicYearId, periodId, studentId], name: "tenantId_academicYearId_periodId_studentId")
+  @@index([tenantId, academicYearId])
+  @@index([classId])
+  @@map("student_period_averages")
+}
+
+model StudentSubjectAverage {
+  id              String    @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  periodId        String
+  studentId       String
+  subjectId       String
+  classId         String
+  average         Float     @default(0)
+  coefficient     Float     @default(1.0)
+  weightedAverage Float     @default(0)
+  appreciation    String?
+  calculatedAt    DateTime  @default(now())
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id])
+  class           Class     @relation(fields: [classId], references: [id])
+  period          Quarter   @relation(fields: [periodId], references: [id])
+  student         Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subject         Subject   @relation(fields: [subjectId], references: [id])
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, academicYearId, periodId, studentId, subjectId], name: "tenantId_academicYearId_periodId_studentId_subjectId")
+  @@index([tenantId, academicYearId])
+  @@index([classId])
+  @@map("student_subject_averages")
+}
+
+model StudentCouncilDecision {
+  id            String     @id @default(uuid())
+  tenantId      String
+  councilId     String
+  studentId     String
+  decision      String
+  appreciation  String?
+  recommendation String?
+  sanctions     String?
+  decidedById   String
+  decidedAt     DateTime   @default(now())
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  council       ClassCouncil @relation(fields: [councilId], references: [id], onDelete: Cascade)
+  student       Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  tenant        Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  decidedBy     User       @relation(fields: [decidedById], references: [id])
+
+  @@unique([tenantId, councilId, studentId], name: "tenantId_councilId_studentId")
+  @@index([councilId])
+  @@index([studentId])
+  @@map("student_council_decisions")
+}
+
+model AcademicAuditLog {
+  id             String    @id @default(uuid())
+  tenantId       String
+  academicYearId String?
+  entityType      String
+  entityId       String?
+  action         String
+  oldValue       Json?
+  newValue       Json?
+  performedById  String?
+  createdAt      DateTime  @default(now())
+  academicYear   AcademicYear? @relation(fields: [academicYearId], references: [id])
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  performedBy    User?     @relation(fields: [performedById], references: [id])
+
+  @@index([tenantId, academicYearId])
+  @@index([entityType])
+  @@map("academic_audit_logs")
+}
+
+model GradeCorrectionRequest {
+  id        String   @id @default(uuid())
+  tenantId  String
+  gradeId   String
+  reason    String
+  status    String   @default("PENDING")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  grade     Grade    @relation(fields: [gradeId], references: [id], onDelete: Cascade)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([gradeId])
+  @@index([status])
+  @@map("grade_correction_requests")
 }

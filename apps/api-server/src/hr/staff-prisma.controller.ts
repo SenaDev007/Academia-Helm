@@ -87,15 +87,23 @@ export class StaffPrismaController {
     const tenantIdFromJwt = req.user?.tenantId;
     const resolvedTenant = req.tenantId;
     
+    // Resolve using the same logic as @GetTenant
+    const { resolveRequestTenantId } = require('../common/utils/resolve-request-tenant-id');
+    const tenantFromResolver = resolveRequestTenantId(req);
+    
     // Direct Prisma queries
     const allStaff = await this.prisma.staff.findMany({ take: 3 });
-    const filteredStaff = await this.prisma.staff.findMany({ where: { tenantId: tenantIdFromHeader } });
+    
+    // Test with resolved tenant
+    const filteredByResolver = tenantFromResolver 
+      ? await this.prisma.staff.findMany({ where: { tenantId: tenantFromResolver } })
+      : 'NO_TENANT_RESOLVED';
     
     // Test StaffPrismaService.findAllStaff (same method used by the authenticated endpoint)
     let serviceResult: any = null;
     let serviceError: any = null;
     try {
-      serviceResult = await this.staffService.findAllStaff(tenantIdFromHeader || '59b8c348-ae5f-4d67-8fbd-af6aefa1f394');
+      serviceResult = await this.staffService.findAllStaff(tenantFromResolver || '59b8c348-ae5f-4d67-8fbd-af6aefa1f394');
     } catch (e: any) {
       serviceError = { message: e.message, code: e.code, meta: e.meta, stack: e.stack?.substring(0, 500) };
     }
@@ -105,7 +113,7 @@ export class StaffPrismaController {
     let serviceCreateError: any = null;
     try {
       serviceCreateResult = await this.staffService.createStaff({
-        tenantId: tenantIdFromHeader || '59b8c348-ae5f-4d67-8fbd-af6aefa1f394',
+        tenantId: tenantFromResolver || '59b8c348-ae5f-4d67-8fbd-af6aefa1f394',
         firstName: 'ServiceTest',
         lastName: 'Debug',
       });
@@ -113,40 +121,34 @@ export class StaffPrismaController {
       serviceCreateError = { message: e.message, code: e.code, meta: e.meta, stack: e.stack?.substring(0, 500) };
     }
     
-    // Try create with raw Prisma
-    let createResult: any = null;
-    let createError: any = null;
-    try {
-      const { randomUUID } = require('crypto');
-      createResult = await this.prisma.staff.create({
-        data: {
-          id: randomUUID(),
-          tenantId: tenantIdFromHeader || '59b8c348-ae5f-4d67-8fbd-af6aefa1f394',
-          employeeNumber: 'DEBUG-' + Date.now(),
-          firstName: 'DebugTest',
-          lastName: 'User',
-          roleType: 'TEACHER',
-          status: 'ACTIVE',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        }
-      });
-    } catch (e: any) {
-      createError = { message: e.message, code: e.code, meta: e.meta };
-    }
-    
     return {
       tenantIdFromHeader,
       tenantIdFromJwt,
       resolvedTenant,
+      tenantFromResolver,
+      tenantFromResolverType: typeof tenantFromResolver,
       allStaffCount: allStaff.length,
-      filteredStaffCount: filteredStaff.length,
+      filteredByResolverCount: typeof filteredByResolver === 'string' ? filteredByResolver : filteredByResolver.length,
       serviceFindAllResult: serviceResult?.length ?? null,
       serviceFindAllError: serviceError,
       serviceCreateResult: serviceCreateResult ? { id: serviceCreateResult.id, employeeNumber: serviceCreateResult.employeeNumber } : null,
       serviceCreateError,
-      createResult: createResult ? { id: createResult.id, employeeNumber: createResult.employeeNumber } : null,
-      createError,
+    };
+  }
+  
+  /**
+   * DEBUG V2 — Test with auth guards to see what @GetTenant resolves
+   */
+  @Get('debug/test-auth')
+  async debugTestAuth(@GetTenant() tenant: any, @Req() req: any) {
+    return {
+      tenantFromDecorator: tenant,
+      tenantFromDecoratorType: typeof tenant,
+      tenantIdFromDecorator: tenant?.id,
+      tenantIdFromDecoratorType: typeof tenant?.id,
+      reqTenantId: req.tenantId,
+      reqTenant: req.tenant,
+      reqUserTenantId: req.user?.tenantId,
     };
   }
 }

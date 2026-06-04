@@ -48,16 +48,40 @@ export class MaterialStockGuard implements CanActivate {
       throw new BadRequestException('Context validation required before stock check');
     }
 
+    // Validate classId FK: only use if it references an existing Class row
+    let validatedClassId: string | null = null;
+    if (classId) {
+      const classExists = await this.prisma.class.findFirst({
+        where: { id: classId, tenantId },
+      });
+      if (classExists) {
+        validatedClassId = classId;
+      }
+    }
+
     // R4: Vérifier le stock disponible
-    const stock = await this.prisma.materialStock.findFirst({
+    let stock = await this.prisma.materialStock.findFirst({
       where: {
         tenantId,
         academicYearId,
         materialId,
         schoolLevelId: schoolLevelId || undefined,
-        classId: classId || null,
+        classId: validatedClassId,
       },
     });
+
+    // Fallback: try without classId if not found
+    if (!stock && validatedClassId) {
+      stock = await this.prisma.materialStock.findFirst({
+        where: {
+          tenantId,
+          academicYearId,
+          materialId,
+          schoolLevelId: schoolLevelId || undefined,
+          classId: null,
+        },
+      });
+    }
 
     if (!stock) {
       throw new ConflictException(

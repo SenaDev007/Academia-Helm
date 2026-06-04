@@ -42,7 +42,19 @@ export class RecruitmentPrismaService {
       where: { id },
       data: {
         ...prismaUpdateDefaults(),
-        ...data,
+        ...(data.title !== undefined && { title: data.title }),
+        ...(data.dept !== undefined && { dept: data.dept }),
+        ...(data.loc !== undefined && { loc: data.loc }),
+        ...(data.ref !== undefined && { ref: data.ref }),
+        ...(data.status !== undefined && { status: data.status }),
+        ...(data.description !== undefined && { description: data.description }),
+        ...(data.missions !== undefined && { missions: data.missions }),
+        ...(data.responsibilities !== undefined && { responsibilities: data.responsibilities }),
+        ...(data.academicLevel !== undefined && { academicLevel: data.academicLevel }),
+        ...(data.experience !== undefined && { experience: data.experience }),
+        ...(data.skillsRequired !== undefined && { skillsRequired: data.skillsRequired }),
+        ...(data.salary !== undefined && { salary: data.salary }),
+        ...(data.contractType !== undefined && { contractType: data.contractType }),
       },
     });
   }

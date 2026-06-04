@@ -78,19 +78,46 @@ export class TeacherMaterialAssignmentsPrismaService {
     }
 
     // R4: Vérifier le stock disponible (validation stricte)
-    const stock = await this.prisma.materialStock.findFirst({
+    // Validate classId FK: only use if it references an existing Class row
+    let validatedClassId: string | null = null;
+    if (data.classId) {
+      const classExists = await this.prisma.class.findFirst({
+        where: { id: data.classId, tenantId: data.tenantId },
+      });
+      if (classExists) {
+        validatedClassId = data.classId;
+      } else {
+        console.warn(`Class with ID ${data.classId} not found for tenant ${data.tenantId}, searching stock without classId`);
+      }
+    }
+
+    // Try to find stock with classId first, then without
+    let stock = await this.prisma.materialStock.findFirst({
       where: {
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         materialId: data.materialId,
         schoolLevelId: data.schoolLevelId,
-        classId: data.classId || null,
+        classId: validatedClassId,
       },
     });
 
+    // Fallback: try finding stock without classId
+    if (!stock && validatedClassId) {
+      stock = await this.prisma.materialStock.findFirst({
+        where: {
+          tenantId: data.tenantId,
+          academicYearId: data.academicYearId,
+          materialId: data.materialId,
+          schoolLevelId: data.schoolLevelId,
+          classId: null,
+        },
+      });
+    }
+
     if (!stock) {
       throw new BadRequestException(
-        `No stock available for material ${data.materialId} in the specified context`,
+        `No stock available for material ${data.materialId} in the specified context. Please create a PURCHASE movement first to populate stock.`,
       );
     }
 
@@ -109,7 +136,7 @@ export class TeacherMaterialAssignmentsPrismaService {
         teacherId: data.teacherId,
         materialId: data.materialId,
         schoolLevelId: data.schoolLevelId,
-        classId: data.classId,
+        ...(validatedClassId ? { classId: validatedClassId } : {}),
         quantity: data.quantity,
         conditionAtIssue: data.conditionAtIssue,
         notes: data.notes,
@@ -149,7 +176,7 @@ export class TeacherMaterialAssignmentsPrismaService {
         notes: `Assignment to teacher ${teacher.firstName} ${teacher.lastName}`,
         performedById: data.performedById,
         schoolLevelId: data.schoolLevelId,
-        classId: data.classId,
+        classId: validatedClassId || undefined,
       });
     }
 

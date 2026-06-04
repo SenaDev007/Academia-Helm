@@ -43,6 +43,14 @@ export class MaterialMovementsPrismaService {
       throw new NotFoundException(`Material with ID ${data.materialId} not found`);
     }
 
+    // Validate performedById FK — verify User exists
+    const performer = await this.prisma.user.findFirst({
+      where: { id: data.performedById },
+    });
+    if (!performer) {
+      throw new BadRequestException(`User with ID ${data.performedById} not found — cannot record movement`);
+    }
+
     // Créer le mouvement
     const movement = await this.prisma.materialMovement.create({
       data: {
@@ -105,8 +113,19 @@ export class MaterialMovementsPrismaService {
     const schoolLevelId = data.schoolLevelId || material.schoolLevelId;
 
     // R3: Trouver ou créer le stock (jamais modifié directement)
-    // Only include classId if it's a valid UUID that references the Class model
-    const stockWhereClassId = data.classId || null;
+    // Validate classId FK: only include if it references an existing Class row
+    let validatedClassId: string | null = null;
+    if (data.classId) {
+      const classExists = await this.prisma.class.findFirst({
+        where: { id: data.classId, tenantId: data.tenantId },
+      });
+      if (classExists) {
+        validatedClassId = data.classId;
+      } else {
+        // If classId doesn't exist, don't fail — just omit it (stock without class)
+        console.warn(`Class with ID ${data.classId} not found for tenant ${data.tenantId}, creating stock without classId`);
+      }
+    }
     
     const stock = await this.prisma.materialStock.upsert({
       where: {
@@ -115,7 +134,7 @@ export class MaterialMovementsPrismaService {
           academicYearId: data.academicYearId,
           materialId: data.materialId,
           schoolLevelId,
-          classId: stockWhereClassId,
+          classId: validatedClassId,
         },
       },
       create: {
@@ -124,7 +143,7 @@ export class MaterialMovementsPrismaService {
         academicYearId: data.academicYearId,
         materialId: data.materialId,
         schoolLevelId,
-        classId: stockWhereClassId,
+        ...(validatedClassId ? { classId: validatedClassId } : {}),
         quantityTotal: 0,
         quantityAvailable: 0,
       },

@@ -28,6 +28,19 @@ export class AnnualTeacherSuppliesPrismaService {
       academicYearId: string;
     },
   ) {
+    // Validate classId FK: only include if it references an existing Class row
+    let validatedClassId: string | null = null;
+    if (data.classId) {
+      const classExists = await this.prisma.class.findFirst({
+        where: { id: data.classId, tenantId: data.tenantId },
+      });
+      if (classExists) {
+        validatedClassId = data.classId;
+      } else {
+        console.warn(`Class with ID ${data.classId} not found for tenant ${data.tenantId}, creating supply without classId`);
+      }
+    }
+
     // Vérifier l'unicité
     const existing = await this.prisma.annualTeacherSupply.findUnique({
       where: {
@@ -36,7 +49,7 @@ export class AnnualTeacherSuppliesPrismaService {
           academicYearId: data.academicYearId,
           teacherId: data.teacherId,
           materialId: data.materialId,
-          classId: data.classId || null,
+          classId: validatedClassId,
         },
       },
     });
@@ -76,7 +89,7 @@ export class AnnualTeacherSuppliesPrismaService {
         teacherId: data.teacherId,
         materialId: data.materialId,
         schoolLevelId: data.schoolLevelId,
-        classId: data.classId,
+        ...(validatedClassId ? { classId: validatedClassId } : {}),
         quantity: data.quantity,
       },
       include: {

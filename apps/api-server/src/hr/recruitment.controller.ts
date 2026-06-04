@@ -17,6 +17,21 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 import { Public } from '../auth/decorators/public.decorator';
+import {
+  CreateJobDto,
+  UpdateJobDto,
+  CreateCandidateDto,
+  UpdateCandidateDto,
+  CreateApplicationDto,
+  UpdateApplicationStatusDto,
+  CreateInterviewDto,
+  UpdateInterviewDto,
+  CreateTestDto,
+  UpdateTestDto,
+  CreateTestResultDto,
+  AddToTalentPoolDto,
+  ApplyJobDto,
+} from './dto';
 
 @Controller('hr/recruitment')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -32,12 +47,12 @@ export class RecruitmentPrismaController {
   }
 
   @Post('jobs')
-  async createJob(@GetTenant() tenant: any, @Body() body: any) {
+  async createJob(@GetTenant() tenant: any, @Body() body: CreateJobDto) {
     return this.service.createJob(tenant.id, body);
   }
 
   @Put('jobs/:id')
-  async updateJob(@Param('id') id: string, @Body() body: any) {
+  async updateJob(@Param('id') id: string, @Body() body: UpdateJobDto) {
     return this.service.updateJob(id, body);
   }
 
@@ -54,12 +69,12 @@ export class RecruitmentPrismaController {
   }
 
   @Post('candidates')
-  async createCandidate(@GetTenant() tenant: any, @Body() body: any) {
+  async createCandidate(@GetTenant() tenant: any, @Body() body: CreateCandidateDto) {
     return this.service.createCandidate(tenant.id, body);
   }
 
   @Put('candidates/:id')
-  async updateCandidate(@Param('id') id: string, @Body() body: any) {
+  async updateCandidate(@Param('id') id: string, @Body() body: UpdateCandidateDto) {
     return this.service.updateCandidate(id, body);
   }
 
@@ -76,12 +91,12 @@ export class RecruitmentPrismaController {
   }
 
   @Post('applications')
-  async createApplication(@GetTenant() tenant: any, @Body() body: any) {
+  async createApplication(@GetTenant() tenant: any, @Body() body: CreateApplicationDto) {
     return this.service.createApplication(tenant.id, body);
   }
 
   @Put('applications/:id/status')
-  async updateApplicationStatus(@Param('id') id: string, @Body() body: { status: string; review?: string }) {
+  async updateApplicationStatus(@Param('id') id: string, @Body() body: UpdateApplicationStatusDto) {
     return this.service.updateApplicationStatus(id, body.status, body.review);
   }
 
@@ -98,12 +113,12 @@ export class RecruitmentPrismaController {
   }
 
   @Post('interviews')
-  async createInterview(@GetTenant() tenant: any, @Body() body: any) {
+  async createInterview(@GetTenant() tenant: any, @Body() body: CreateInterviewDto) {
     return this.service.createInterview(tenant.id, body);
   }
 
   @Put('interviews/:id')
-  async updateInterview(@Param('id') id: string, @Body() body: any) {
+  async updateInterview(@Param('id') id: string, @Body() body: UpdateInterviewDto) {
     return this.service.updateInterview(id, body);
   }
 
@@ -120,12 +135,12 @@ export class RecruitmentPrismaController {
   }
 
   @Post('tests')
-  async createTest(@GetTenant() tenant: any, @Body() body: any) {
+  async createTest(@GetTenant() tenant: any, @Body() body: CreateTestDto) {
     return this.service.createTest(tenant.id, body);
   }
 
   @Put('tests/:id')
-  async updateTest(@Param('id') id: string, @Body() body: any) {
+  async updateTest(@Param('id') id: string, @Body() body: UpdateTestDto) {
     return this.service.updateTest(id, body);
   }
 
@@ -137,7 +152,7 @@ export class RecruitmentPrismaController {
   // ─── Test Results ─────────────────────────────────────────────────────────────
 
   @Post('test-results')
-  async createTestResult(@Body() body: any) {
+  async createTestResult(@Body() body: CreateTestResultDto) {
     return this.service.createTestResult(body);
   }
 
@@ -154,7 +169,7 @@ export class RecruitmentPrismaController {
   }
 
   @Post('talent-pool/:candidateId')
-  async addToTalentPool(@Param('candidateId') candidateId: string, @Body() body: any) {
+  async addToTalentPool(@Param('candidateId') candidateId: string, @Body() body: AddToTalentPoolDto) {
     return this.service.addToTalentPool(candidateId, body);
   }
 
@@ -173,7 +188,7 @@ export class RecruitmentPrismaController {
     { name: 'recommendationLetter', maxCount: 1 }
   ]))
   async applyJob(
-    @Body() body: any,
+    @Body() body: ApplyJobDto,
     @UploadedFiles() files: { cv?: Express.Multer.File[], coverLetter?: Express.Multer.File[], recommendationLetter?: Express.Multer.File[] }
   ) {
     return this.service.applyJob(body, files);

@@ -385,3 +385,153 @@ export class CreateScheduleDto {
   /** Frontend PlanningWorkspace sends shift — alias for shiftType */
   @IsOptional() @IsString() shift?: string;
 }
+
+// ─── Recruitment DTOs ────────────────────────────────────────────────────────
+
+export class CreateJobDto {
+  @IsString() title: string;
+  @IsString() dept: string;
+  @IsString() loc: string;
+  @IsOptional() @IsString() ref?: string;
+  @IsOptional() @IsIn(['BROUILLON', 'PUBLIÉ', 'FERMÉ', 'ARCHIVÉ']) status?: string;
+  @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsString() missions?: string;
+  @IsOptional() @IsString() responsibilities?: string;
+  @IsOptional() @IsString() academicLevel?: string;
+  @IsOptional() @IsString() experience?: string;
+  @IsOptional() @IsString() skillsRequired?: string;
+  @IsOptional() @IsString() salary?: string;
+  @IsOptional() @IsString() contractType?: string;
+  /** Frontend may send tenantId — ignored (resolved server-side) */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+export class UpdateJobDto {
+  @IsOptional() @IsString() title?: string;
+  @IsOptional() @IsString() dept?: string;
+  @IsOptional() @IsString() loc?: string;
+  @IsOptional() @IsString() ref?: string;
+  @IsOptional() @IsIn(['BROUILLON', 'PUBLIÉ', 'FERMÉ', 'ARCHIVÉ']) status?: string;
+  @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsString() missions?: string;
+  @IsOptional() @IsString() responsibilities?: string;
+  @IsOptional() @IsString() academicLevel?: string;
+  @IsOptional() @IsString() experience?: string;
+  @IsOptional() @IsString() skillsRequired?: string;
+  @IsOptional() @IsString() salary?: string;
+  @IsOptional() @IsString() contractType?: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+export class CreateCandidateDto {
+  @IsString() firstName: string;
+  @IsString() lastName: string;
+  @IsString() email: string;
+  @IsString() phone: string;
+  @IsOptional() @IsString() address?: string;
+  @IsOptional() @IsString() gender?: string;
+  @IsOptional() @IsDateString() dateOfBirth?: string;
+  /** Frontend may send tenantId — ignored (resolved server-side) */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+export class UpdateCandidateDto {
+  @IsOptional() @IsString() firstName?: string;
+  @IsOptional() @IsString() lastName?: string;
+  @IsOptional() @IsString() email?: string;
+  @IsOptional() @IsString() phone?: string;
+  @IsOptional() @IsString() address?: string;
+  @IsOptional() @IsString() gender?: string;
+  @IsOptional() @IsDateString() dateOfBirth?: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+export class CreateApplicationDto {
+  @IsUUID() jobId: string;
+  @IsUUID() candidateId: string;
+  @IsOptional() @IsIn(['NOUVEAU', 'EN_COURS', 'ENTRETIEN', 'TEST', 'EMBAUCHÉ', 'REJETÉ']) status?: string;
+  /** Frontend may send tenantId — ignored (resolved server-side) */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+export class UpdateApplicationStatusDto {
+  @IsIn(['NOUVEAU', 'EN_COURS', 'ENTRETIEN', 'TEST', 'EMBAUCHÉ', 'REJETÉ']) status: string;
+  @IsOptional() @IsString() review?: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+export class CreateInterviewDto {
+  @IsUUID() candidateId: string;
+  @IsOptional() @IsIn(['RH', 'TECHNIQUE', 'DIRECTION', 'PEDAGOGIQUE']) type?: string;
+  @IsDateString() date: string;
+  @IsString() time: string;
+  @IsOptional() @IsString() format?: string;
+  @IsString() evaluator: string;
+  @IsOptional() @IsInt() @Type(() => Number) score?: number;
+  @IsOptional() @IsString() comments?: string;
+  /** Frontend may send tenantId — ignored (resolved server-side) */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+export class UpdateInterviewDto {
+  @IsOptional() @IsIn(['RH', 'TECHNIQUE', 'DIRECTION', 'PEDAGOGIQUE']) type?: string;
+  @IsOptional() @IsDateString() date?: string;
+  @IsOptional() @IsString() time?: string;
+  @IsOptional() @IsString() format?: string;
+  @IsOptional() @IsString() evaluator?: string;
+  @IsOptional() @IsInt() @Type(() => Number) score?: number;
+  @IsOptional() @IsString() comments?: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+export class CreateTestDto {
+  @IsString() name: string;
+  @IsString() type: string;
+  @IsOptional() @IsString() description?: string;
+  /** Frontend may send tenantId — ignored (resolved server-side) */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+export class UpdateTestDto {
+  @IsOptional() @IsString() name?: string;
+  @IsOptional() @IsString() type?: string;
+  @IsOptional() @IsString() description?: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+export class CreateTestResultDto {
+  @IsUUID() testId: string;
+  @IsUUID() candidateId: string;
+  @IsInt() @Type(() => Number) score: number;
+  @IsOptional() @IsIn(['RÉUSSI', 'ÉCHOUÉ', 'EN_ATTENTE']) result?: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+export class AddToTalentPoolDto {
+  @IsOptional() @IsString() category?: string;
+  @IsOptional() @IsString() status?: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+export class ApplyJobDto {
+  @IsUUID() jobId: string;
+  @IsString() firstName: string;
+  @IsString() lastName: string;
+  @IsString() email: string;
+  @IsString() phone: string;
+  @IsOptional() @IsString() address?: string;
+  @IsOptional() @IsString() gender?: string;
+  @IsUUID() tenantId: string;
+  @IsOptional() @IsString() skills?: string;
+  @IsOptional() @IsString() experiences?: string;
+  @IsOptional() @IsString() education?: string;
+  @IsOptional() @IsString() pitch?: string;
+  @IsOptional() @IsString() linkedinUrl?: string;
+}

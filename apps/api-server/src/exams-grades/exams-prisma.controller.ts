@@ -33,6 +33,30 @@ import {
 export class ExamsPrismaController {
   constructor(private readonly examsService: ExamsPrismaService) {}
 
+  @Get()
+  async findAll(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId?: string,
+    @Query('schoolLevelId') schoolLevelId?: string,
+    @Query('academicTrackId') academicTrackId?: string,
+    @Query('quarterId') quarterId?: string,
+    @Query('classId') classId?: string,
+    @Query('subjectId') subjectId?: string,
+    @Query('examType') examType?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.examsService.findAllExams(tenantId, {
+      academicYearId,
+      schoolLevelId,
+      academicTrackId: academicTrackId || undefined,
+      quarterId,
+      classId,
+      subjectId,
+      examType,
+      search,
+    });
+  }
+
   @Post()
   async create(@TenantId() tenantId: string, @Body() createDto: CreateExamPrismaDto) {
     return this.examsService.createExam({

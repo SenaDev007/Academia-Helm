@@ -21,70 +21,70 @@ export class CommunicationV2Controller {
 
   // DASHBOARD
   @Get('dashboard/stats')
-  @Roles('SUPER_DIRECTOR', 'DIRECTOR', 'ADMIN')
+  @Roles('SUPER_ADMIN', 'DIRECTEUR', 'PROMOTEUR')
   getDashboardStats(@TenantId() tenantId: string, @Query() query: any) {
     return this.dashboardService.getDashboardStats(tenantId, query);
   }
 
   // ANNOUNCEMENTS
   @Post('announcements')
-  @Roles('SUPER_DIRECTOR', 'DIRECTOR', 'ADMIN')
+  @Roles('SUPER_ADMIN', 'DIRECTEUR', 'PROMOTEUR')
   createAnnouncement(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() data: any) {
     return this.announcementsService.create(tenantId, user.id, data);
   }
 
   @Get('announcements')
-  @Roles('SUPER_DIRECTOR', 'DIRECTOR', 'ADMIN', 'TEACHER', 'STUDENT', 'PARENT')
+  @Roles('SUPER_ADMIN', 'DIRECTEUR', 'PROMOTEUR', 'SECRETAIRE', 'CENSEUR', 'SURVEILLANT', 'ENSEIGNANT', 'ELEVE', 'PARENT')
   getAnnouncements(@TenantId() tenantId: string, @Query() filters: any) {
     return this.announcementsService.findAll(tenantId, filters);
   }
 
   @Get('announcements/:id')
-  @Roles('SUPER_DIRECTOR', 'DIRECTOR', 'ADMIN', 'TEACHER', 'STUDENT', 'PARENT')
+  @Roles('SUPER_ADMIN', 'DIRECTEUR', 'PROMOTEUR', 'SECRETAIRE', 'CENSEUR', 'SURVEILLANT', 'ENSEIGNANT', 'ELEVE', 'PARENT')
   getAnnouncement(@TenantId() tenantId: string, @Param('id') id: string) {
     return this.announcementsService.findOne(tenantId, id);
   }
 
   @Patch('announcements/:id/publish')
-  @Roles('SUPER_DIRECTOR', 'DIRECTOR', 'ADMIN')
+  @Roles('SUPER_ADMIN', 'DIRECTEUR', 'PROMOTEUR')
   publishAnnouncement(@TenantId() tenantId: string, @Param('id') id: string) {
     return this.announcementsService.publish(tenantId, id);
   }
 
   // MESSAGING
   @Post('conversations')
-  @Roles('SUPER_DIRECTOR', 'DIRECTOR', 'ADMIN', 'TEACHER', 'STUDENT', 'PARENT')
+  @Roles('SUPER_ADMIN', 'DIRECTEUR', 'PROMOTEUR', 'SECRETAIRE', 'CENSEUR', 'SURVEILLANT', 'ENSEIGNANT', 'ELEVE', 'PARENT')
   createConversation(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() data: any) {
     return this.messagingService.createConversation(tenantId, user.id, data);
   }
 
   @Get('conversations')
-  @Roles('SUPER_DIRECTOR', 'DIRECTOR', 'ADMIN', 'TEACHER', 'STUDENT', 'PARENT')
+  @Roles('SUPER_ADMIN', 'DIRECTEUR', 'PROMOTEUR', 'SECRETAIRE', 'CENSEUR', 'SURVEILLANT', 'ENSEIGNANT', 'ELEVE', 'PARENT')
   getConversations(@TenantId() tenantId: string, @CurrentUser() user: any) {
     return this.messagingService.getConversations(tenantId, user.id);
   }
 
   @Get('conversations/:id/messages')
-  @Roles('SUPER_DIRECTOR', 'DIRECTOR', 'ADMIN', 'TEACHER', 'STUDENT', 'PARENT')
+  @Roles('SUPER_ADMIN', 'DIRECTEUR', 'PROMOTEUR', 'SECRETAIRE', 'CENSEUR', 'SURVEILLANT', 'ENSEIGNANT', 'ELEVE', 'PARENT')
   getMessages(@TenantId() tenantId: string, @CurrentUser() user: any, @Param('id') id: string) {
     return this.messagingService.getMessages(tenantId, user.id, id);
   }
 
   @Post('messages')
-  @Roles('SUPER_DIRECTOR', 'DIRECTOR', 'ADMIN', 'TEACHER', 'STUDENT', 'PARENT')
+  @Roles('SUPER_ADMIN', 'DIRECTEUR', 'PROMOTEUR', 'SECRETAIRE', 'CENSEUR', 'SURVEILLANT', 'ENSEIGNANT', 'ELEVE', 'PARENT')
   sendMessage(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() data: any) {
     return this.messagingService.sendMessage(tenantId, user.id, data);
   }
 
   // TEMPLATES
   @Get('templates')
-  @Roles('SUPER_DIRECTOR', 'DIRECTOR', 'ADMIN')
+  @Roles('SUPER_ADMIN', 'DIRECTEUR', 'PROMOTEUR')
   getTemplates(@TenantId() tenantId: string, @Query() filters: any) {
     return this.templateService.findAll(tenantId, filters);
   }
 
   @Post('templates')
-  @Roles('SUPER_DIRECTOR', 'DIRECTOR', 'ADMIN')
+  @Roles('SUPER_ADMIN', 'DIRECTEUR', 'PROMOTEUR')
   createTemplate(@TenantId() tenantId: string, @Body() data: any) {
     return this.templateService.create(tenantId, data);
   }

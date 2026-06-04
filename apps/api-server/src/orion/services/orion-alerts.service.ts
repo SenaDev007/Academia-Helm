@@ -1054,7 +1054,8 @@ export class OrionAlertsService {
   }
 
   async generateAllAlerts(tenantId: string, academicYearId?: string): Promise<any[]> {
-    const [qhsAlerts, riskAlerts, kpiAlerts, examAlerts, financialAlerts, hrAlerts, communicationAlerts] = await Promise.all([
+    // Use Promise.allSettled so that one failing alert category doesn't crash the whole dashboard
+    const results = await Promise.allSettled([
       this.generateQhsAlerts(tenantId, academicYearId),
       this.generateRiskAlerts(tenantId, academicYearId),
       this.generateKpiAlerts(tenantId, academicYearId),
@@ -1064,11 +1065,21 @@ export class OrionAlertsService {
       this.generateCommunicationAlerts(tenantId, academicYearId),
     ]);
 
-    const allAlerts = [...qhsAlerts, ...riskAlerts, ...kpiAlerts, ...examAlerts, ...financialAlerts, ...hrAlerts, ...communicationAlerts];
+    // Log any failures but don't crash
+    const allAlerts: any[] = [];
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      if (result.status === 'fulfilled') {
+        allAlerts.push(...result.value);
+      } else {
+        const categories = ['QHS', 'Risk', 'KPI', 'Exam', 'Financial', 'HR', 'Communication'];
+        console.error(`[ORION] Alert generation failed for ${categories[i]}: ${result.reason?.message || result.reason}`);
+      }
+    }
 
     // Sauvegarder les alertes dans la table orion_alerts
     if (allAlerts.length > 0) {
-      await Promise.all(
+      await Promise.allSettled(
         allAlerts.map((alert) =>
           this.prisma.orionAlert.create({
             data: {
@@ -1083,6 +1094,9 @@ export class OrionAlertsService {
               acknowledged: false,
               metadata: alert.metadata,
             },
+          }).catch(err => {
+            // Ignore duplicate or constraint errors — alerts are ephemeral
+            console.error(`[ORION] Failed to save alert: ${err?.message || err}`);
           }),
         ),
       );

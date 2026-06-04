@@ -21,10 +21,28 @@ import { TemplateService } from './services/template.service';
 import { CommunicationOrionService } from './services/communication-orion.service';
 import { CommunicationSaraService } from './services/communication-sara.service';
 import { CommunicationV2Controller } from './communication-v2.controller';
+import { CommunicationPrismaController } from './communication-prisma.controller';
+import { CommunicationPrismaService } from './communication-prisma.service';
+import { MessagesPrismaController } from './messages-prisma.controller';
+import { MessagesPrismaService } from './messages-prisma.service';
+import { SchedulingPrismaController } from './scheduling-prisma.controller';
+import { SchedulingPrismaService } from './scheduling-prisma.service';
+import { AutomationPrismaController } from './automation-prisma.controller';
+import { AutomationPrismaService } from './automation-prisma.service';
+import { TemplatesPrismaController } from './templates-prisma.controller';
+import { TemplatesPrismaService } from './templates-prisma.service';
+import { DatabaseModule } from '../database/database.module';
 
 @Module({
-  imports: [ConfigModule],
-  controllers: [CommunicationV2Controller],
+  imports: [ConfigModule, DatabaseModule],
+  controllers: [
+    CommunicationV2Controller,
+    CommunicationPrismaController,
+    MessagesPrismaController,
+    SchedulingPrismaController,
+    AutomationPrismaController,
+    TemplatesPrismaController,
+  ],
   providers: [
     EmailService, 
     WhatsAppService, 
@@ -35,7 +53,13 @@ import { CommunicationV2Controller } from './communication-v2.controller';
     AnnouncementsServiceV2,
     TemplateService,
     CommunicationOrionService,
-    CommunicationSaraService
+    CommunicationSaraService,
+    // Prisma CRUD services
+    CommunicationPrismaService,
+    MessagesPrismaService,
+    SchedulingPrismaService,
+    AutomationPrismaService,
+    TemplatesPrismaService,
   ],
   exports: [
     EmailService, 
@@ -47,7 +71,12 @@ import { CommunicationV2Controller } from './communication-v2.controller';
     AnnouncementsServiceV2,
     TemplateService,
     CommunicationOrionService,
-    CommunicationSaraService
+    CommunicationSaraService,
+    CommunicationPrismaService,
+    MessagesPrismaService,
+    SchedulingPrismaService,
+    AutomationPrismaService,
+    TemplatesPrismaService,
   ],
 })
 export class CommunicationModule {}

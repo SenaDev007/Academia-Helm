@@ -27,6 +27,11 @@ import { MeetingMinutesNlpService } from './services/meeting-minutes-nlp.service
 
 /**
  * Controller pour le Module Réunions
+ *
+ * ⚠️ IMPORTANT: Route order matters in NestJS. Static routes MUST be defined
+ * BEFORE parameterized routes (e.g., @Get(':id')) to avoid route conflicts.
+ * All specific paths like /templates, /orion/*, /decisions/*, /signatures/*,
+ * /nlp/* must come before @Get(':id') which would otherwise catch them.
  */
 @Controller('meetings')
 @UseGuards(JwtAuthGuard)
@@ -46,7 +51,7 @@ export class MeetingsController {
   ) {}
 
   // ============================================================================
-  // RÉUNIONS
+  // RÉUNIONS — Static list routes (MUST be before :id)
   // ============================================================================
 
   @Get()
@@ -86,6 +91,153 @@ export class MeetingsController {
   ) {
     return this.meetingsService.getHistory(tenantId, academicYearId);
   }
+
+  // ============================================================================
+  // INTÉGRATION ORION — Static routes (MUST be before :id)
+  // ============================================================================
+
+  @Get('orion/kpis')
+  async getOrionKPIs(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    return this.orionIntegrationService.getMeetingKPIs(tenantId, academicYearId);
+  }
+
+  @Get('orion/alerts')
+  async getOrionAlerts(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    return this.orionIntegrationService.generateOrionAlerts(tenantId, academicYearId);
+  }
+
+  // ============================================================================
+  // DÉCISIONS — Static routes (MUST be before :id)
+  // ============================================================================
+
+  @Get('decisions/overdue')
+  async getOverdueDecisions(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId?: string,
+  ) {
+    return this.decisionsService.getOverdueDecisions(tenantId, academicYearId);
+  }
+
+  @Get('decisions/stats')
+  async getDecisionStats(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId?: string,
+  ) {
+    return this.decisionsService.getDecisionStats(tenantId, academicYearId);
+  }
+
+  // ============================================================================
+  // TEMPLATES DE COMPTES RENDUS — Static routes (MUST be before :id)
+  // ============================================================================
+
+  @Get('templates')
+  async getTemplates(
+    @TenantId() tenantId: string,
+    @Query('meetingType') meetingType?: string,
+    @Query('includeSystem') includeSystem?: string,
+  ) {
+    return this.templateService.findAll(
+      tenantId,
+      meetingType,
+      includeSystem !== 'false',
+    );
+  }
+
+  @Get('templates/system/:meetingType')
+  async getSystemTemplate(
+    @TenantId() tenantId: string,
+    @Param('meetingType') meetingType: string,
+  ) {
+    return this.templateService.getSystemTemplate(meetingType);
+  }
+
+  @Get('templates/:id')
+  async getTemplate(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.templateService.findOne(id, tenantId);
+  }
+
+  @Post('templates')
+  async createTemplate(
+    @TenantId() tenantId: string,
+    @Body() data: any,
+  ) {
+    return this.templateService.create(tenantId, data);
+  }
+
+  @Put('templates/:id')
+  async updateTemplate(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() data: any,
+  ) {
+    return this.templateService.update(id, tenantId, data);
+  }
+
+  @Delete('templates/:id')
+  async deleteTemplate(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.templateService.delete(id, tenantId);
+  }
+
+  @Post('templates/initialize')
+  async initializeTemplates(@TenantId() tenantId: string) {
+    return this.templateService.initializeSystemTemplates(tenantId);
+  }
+
+  // ============================================================================
+  // SIGNATURES ÉLECTRONIQUES — Static routes (MUST be before :id)
+  // ============================================================================
+
+  @Get('signatures/stats')
+  async getSignatureStats(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId?: string,
+  ) {
+    return this.signatureService.getSignatureStats(tenantId, academicYearId);
+  }
+
+  @Post('signatures/:signatureId/verify')
+  async verifySignature(
+    @Param('signatureId') signatureId: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.signatureService.verifySignature(signatureId, tenantId);
+  }
+
+  // ============================================================================
+  // NLP & EXTRACTION DE DONNÉES — Static routes (MUST be before :id)
+  // ============================================================================
+
+  @Get('nlp/recurring-themes')
+  async getRecurringThemes(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    return this.nlpService.detectRecurringThemes(tenantId, academicYearId);
+  }
+
+  @Get('nlp/orion-insights')
+  async getOrionInsights(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    return this.nlpService.generateOrionInsights(tenantId, academicYearId);
+  }
+
+  // ============================================================================
+  // RÉUNIONS — Parameterized routes (:id) — MUST be AFTER all static routes
+  // ============================================================================
 
   @Get(':id')
   async findOne(@Param('id') id: string, @TenantId() tenantId: string) {
@@ -312,7 +464,7 @@ export class MeetingsController {
   }
 
   // ============================================================================
-  // DÉCISIONS
+  // DÉCISIONS (per-meeting)
   // ============================================================================
 
   @Get(':id/decisions')
@@ -348,107 +500,8 @@ export class MeetingsController {
     return this.decisionsService.delete(decisionId, id, tenantId);
   }
 
-  @Get('decisions/overdue')
-  async getOverdueDecisions(
-    @TenantId() tenantId: string,
-    @Query('academicYearId') academicYearId?: string,
-  ) {
-    return this.decisionsService.getOverdueDecisions(tenantId, academicYearId);
-  }
-
-  @Get('decisions/stats')
-  async getDecisionStats(
-    @TenantId() tenantId: string,
-    @Query('academicYearId') academicYearId?: string,
-  ) {
-    return this.decisionsService.getDecisionStats(tenantId, academicYearId);
-  }
-
   // ============================================================================
-  // INTÉGRATION ORION
-  // ============================================================================
-
-  @Get('orion/kpis')
-  async getOrionKPIs(
-    @TenantId() tenantId: string,
-    @Query('academicYearId') academicYearId: string,
-  ) {
-    return this.orionIntegrationService.getMeetingKPIs(tenantId, academicYearId);
-  }
-
-  @Get('orion/alerts')
-  async getOrionAlerts(
-    @TenantId() tenantId: string,
-    @Query('academicYearId') academicYearId: string,
-  ) {
-    return this.orionIntegrationService.generateOrionAlerts(tenantId, academicYearId);
-  }
-
-  // ============================================================================
-  // TEMPLATES DE COMPTES RENDUS
-  // ============================================================================
-
-  @Get('templates')
-  async getTemplates(
-    @TenantId() tenantId: string,
-    @Query('meetingType') meetingType?: string,
-    @Query('includeSystem') includeSystem?: string,
-  ) {
-    return this.templateService.findAll(
-      tenantId,
-      meetingType,
-      includeSystem !== 'false',
-    );
-  }
-
-  @Get('templates/system/:meetingType')
-  async getSystemTemplate(
-    @TenantId() tenantId: string,
-    @Param('meetingType') meetingType: string,
-  ) {
-    return this.templateService.getSystemTemplate(meetingType);
-  }
-
-  @Get('templates/:id')
-  async getTemplate(
-    @Param('id') id: string,
-    @TenantId() tenantId: string,
-  ) {
-    return this.templateService.findOne(id, tenantId);
-  }
-
-  @Post('templates')
-  async createTemplate(
-    @TenantId() tenantId: string,
-    @Body() data: any,
-  ) {
-    return this.templateService.create(tenantId, data);
-  }
-
-  @Put('templates/:id')
-  async updateTemplate(
-    @Param('id') id: string,
-    @TenantId() tenantId: string,
-    @Body() data: any,
-  ) {
-    return this.templateService.update(id, tenantId, data);
-  }
-
-  @Delete('templates/:id')
-  async deleteTemplate(
-    @Param('id') id: string,
-    @TenantId() tenantId: string,
-  ) {
-    return this.templateService.delete(id, tenantId);
-  }
-
-  @Post('templates/initialize')
-  async initializeTemplates(@TenantId() tenantId: string) {
-    return this.templateService.initializeSystemTemplates(tenantId);
-  }
-
-  // ============================================================================
-  // SIGNATURES ÉLECTRONIQUES
+  // SIGNATURES ÉLECTRONIQUES (per-meeting)
   // ============================================================================
 
   @Post(':id/minutes/sign')
@@ -487,24 +540,8 @@ export class MeetingsController {
     return this.signatureService.getSignatures(minutes.id, tenantId);
   }
 
-  @Get('signatures/stats')
-  async getSignatureStats(
-    @TenantId() tenantId: string,
-    @Query('academicYearId') academicYearId?: string,
-  ) {
-    return this.signatureService.getSignatureStats(tenantId, academicYearId);
-  }
-
-  @Post('signatures/:signatureId/verify')
-  async verifySignature(
-    @Param('signatureId') signatureId: string,
-    @TenantId() tenantId: string,
-  ) {
-    return this.signatureService.verifySignature(signatureId, tenantId);
-  }
-
   // ============================================================================
-  // NLP & EXTRACTION DE DONNÉES
+  // NLP & EXTRACTION DE DONNÉES (per-meeting)
   // ============================================================================
 
   @Get(':id/minutes/nlp/entities')
@@ -524,21 +561,4 @@ export class MeetingsController {
     }
     return this.nlpService.analyzeSentiment(minutes.id, tenantId);
   }
-
-  @Get('nlp/recurring-themes')
-  async getRecurringThemes(
-    @TenantId() tenantId: string,
-    @Query('academicYearId') academicYearId: string,
-  ) {
-    return this.nlpService.detectRecurringThemes(tenantId, academicYearId);
-  }
-
-  @Get('nlp/orion-insights')
-  async getOrionInsights(
-    @TenantId() tenantId: string,
-    @Query('academicYearId') academicYearId: string,
-  ) {
-    return this.nlpService.generateOrionInsights(tenantId, academicYearId);
-  }
 }
-

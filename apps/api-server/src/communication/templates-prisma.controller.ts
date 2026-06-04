@@ -9,6 +9,7 @@ import { TemplatesPrismaService } from './templates-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
+import { CreateTemplateDto, UpdateTemplateDto } from './dto/template.dto';
 
 @Controller('communication/templates')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -16,7 +17,7 @@ export class TemplatesPrismaController {
   constructor(private readonly templatesService: TemplatesPrismaService) {}
 
   @Post()
-  async createTemplate(@GetTenant() tenant: any, @Body() data: any) {
+  async createTemplate(@GetTenant() tenant: any, @Body() data: CreateTemplateDto) {
     return this.templatesService.createTemplate(tenant.id, data);
   }
 
@@ -45,7 +46,7 @@ export class TemplatesPrismaController {
   }
 
   @Put(':id')
-  async updateTemplate(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: any) {
+  async updateTemplate(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: UpdateTemplateDto) {
     return this.templatesService.updateTemplate(tenant.id, id, data);
   }
 
@@ -59,4 +60,3 @@ export class TemplatesPrismaController {
     return this.templatesService.deleteTemplate(tenant.id, id);
   }
 }
-

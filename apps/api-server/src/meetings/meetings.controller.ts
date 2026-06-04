@@ -19,6 +19,9 @@ import { MeetingAgendasService } from './services/meeting-agendas.service';
 import { MeetingMinutesService } from './services/meeting-minutes.service';
 import { MeetingDecisionsService } from './services/meeting-decisions.service';
 import { MeetingOrionIntegrationService } from './services/meeting-orion-integration.service';
+import { CreateMeetingDto, UpdateMeetingDto } from './dto/meeting.dto';
+import { CreateMeetingTemplateDto, UpdateMeetingTemplateDto } from './dto/meeting-template.dto';
+import { AddParticipantDto, UpdateAttendanceDto, AddAgendaItemDto, UpdateAgendaItemDto, CreateMinutesDto, CreateDecisionDto, UpdateDecisionDto, SignMinutesDto } from './dto/meeting-parts.dto';
 import { MeetingMinutesTemplateService } from './services/meeting-minutes-template.service';
 import { MeetingMinutesGenerationService } from './services/meeting-minutes-generation.service';
 import { MeetingMinutesPdfService } from './services/meeting-minutes-pdf.service';
@@ -168,7 +171,7 @@ export class MeetingsController {
   @Post('templates')
   async createTemplate(
     @TenantId() tenantId: string,
-    @Body() data: any,
+    @Body() data: CreateMeetingTemplateDto,
   ) {
     return this.templateService.create(tenantId, data);
   }
@@ -177,7 +180,7 @@ export class MeetingsController {
   async updateTemplate(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() data: any,
+    @Body() data: UpdateMeetingTemplateDto,
   ) {
     return this.templateService.update(id, tenantId, data);
   }
@@ -248,18 +251,24 @@ export class MeetingsController {
   async create(
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
-    @Body() data: any,
+    @Body() data: CreateMeetingDto,
   ) {
-    return this.meetingsService.create(tenantId, data, user.id);
+    return this.meetingsService.create(tenantId, {
+      ...data,
+      meetingDate: new Date(data.meetingDate),
+    }, user.id);
   }
 
   @Put(':id')
   async update(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() data: any,
+    @Body() data: UpdateMeetingDto,
   ) {
-    return this.meetingsService.update(id, tenantId, data);
+    return this.meetingsService.update(id, tenantId, {
+      ...data,
+      meetingDate: data.meetingDate ? new Date(data.meetingDate) : undefined,
+    });
   }
 
   @Post(':id/cancel')
@@ -291,7 +300,7 @@ export class MeetingsController {
     @Param('id') id: string,
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
-    @Body() data: any,
+    @Body() data: AddParticipantDto,
   ) {
     return this.participantsService.addParticipant(id, tenantId, data, user.id);
   }
@@ -310,7 +319,7 @@ export class MeetingsController {
     @Param('id') id: string,
     @Param('participantId') participantId: string,
     @TenantId() tenantId: string,
-    @Body() data: any,
+    @Body() data: UpdateAttendanceDto,
   ) {
     return this.participantsService.updateAttendance(id, participantId, tenantId, data);
   }
@@ -333,7 +342,7 @@ export class MeetingsController {
   async addAgendaItem(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() data: any,
+    @Body() data: AddAgendaItemDto,
   ) {
     return this.agendasService.addAgendaItem(id, tenantId, data);
   }
@@ -343,7 +352,7 @@ export class MeetingsController {
     @Param('id') id: string,
     @Param('agendaId') agendaId: string,
     @TenantId() tenantId: string,
-    @Body() data: any,
+    @Body() data: UpdateAgendaItemDto,
   ) {
     return this.agendasService.updateAgendaItem(agendaId, id, tenantId, data);
   }
@@ -380,7 +389,7 @@ export class MeetingsController {
     @Param('id') id: string,
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
-    @Body() data: any,
+    @Body() data: CreateMinutesDto,
   ) {
     return this.minutesService.createOrUpdate(id, tenantId, data, user.id);
   }
@@ -476,9 +485,12 @@ export class MeetingsController {
   async createDecision(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() data: any,
+    @Body() data: CreateDecisionDto,
   ) {
-    return this.decisionsService.create(id, tenantId, data);
+    return this.decisionsService.create(id, tenantId, {
+      ...data,
+      dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
+    });
   }
 
   @Put(':id/decisions/:decisionId')
@@ -486,9 +498,12 @@ export class MeetingsController {
     @Param('id') id: string,
     @Param('decisionId') decisionId: string,
     @TenantId() tenantId: string,
-    @Body() data: any,
+    @Body() data: UpdateDecisionDto,
   ) {
-    return this.decisionsService.update(decisionId, id, tenantId, data);
+    return this.decisionsService.update(decisionId, id, tenantId, {
+      ...data,
+      dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
+    });
   }
 
   @Delete(':id/decisions/:decisionId')
@@ -509,7 +524,7 @@ export class MeetingsController {
     @Param('id') id: string,
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
-    @Body() body: { signatureType?: string; signatureData?: string },
+    @Body() body: SignMinutesDto,
     @Request() req: any,
   ) {
     const minutes = await this.minutesService.findByMeeting(id, tenantId);

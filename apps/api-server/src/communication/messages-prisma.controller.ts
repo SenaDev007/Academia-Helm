@@ -9,6 +9,7 @@ import { MessagesPrismaService } from './messages-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
+import { CreateMessageDto, UpdateMessageDto, AddRecipientsDto, AddTargetsDto } from './dto/message.dto';
 
 @Controller('communication/messages')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -16,10 +17,20 @@ export class MessagesPrismaController {
   constructor(private readonly messagesService: MessagesPrismaService) {}
 
   @Post()
-  async createMessage(@GetTenant() tenant: any, @Req() req: any, @Body() data: any) {
+  async createMessage(@GetTenant() tenant: any, @Req() req: any, @Body() data: CreateMessageDto) {
     return this.messagesService.createMessage(tenant.id, {
-      ...data,
+      academicYearId: data.academicYearId,
+      schoolLevelId: data.schoolLevelId,
+      channelId: data.channelId,
       senderUserId: data.senderUserId || req.user?.id,
+      subject: data.subject,
+      content: data.content,
+      contentFr: data.contentFr,
+      contentEn: data.contentEn,
+      messageType: data.messageType || 'INFO',
+      isScheduled: data.isScheduled,
+      scheduledAt: data.scheduledAt ? new Date(data.scheduledAt) : undefined,
+      targets: data.targets,
     });
   }
 
@@ -47,7 +58,7 @@ export class MessagesPrismaController {
   }
 
   @Put(':id')
-  async updateMessage(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: any) {
+  async updateMessage(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: UpdateMessageDto) {
     return this.messagesService.updateMessage(tenant.id, id, data);
   }
 
@@ -57,12 +68,12 @@ export class MessagesPrismaController {
   }
 
   @Post(':id/recipients')
-  async addRecipients(@GetTenant() tenant: any, @Param('id') id: string, @Body() body: { recipients: Array<{ recipientId: string; recipientType: string }> }) {
+  async addRecipients(@GetTenant() tenant: any, @Param('id') id: string, @Body() body: AddRecipientsDto) {
     return this.messagesService.addRecipients(tenant.id, id, body.recipients);
   }
 
   @Post(':id/targets')
-  async addTargets(@GetTenant() tenant: any, @Param('id') id: string, @Body() body: { targets: Array<{ targetType: string; targetId: string }> }) {
+  async addTargets(@GetTenant() tenant: any, @Param('id') id: string, @Body() body: AddTargetsDto) {
     return this.messagesService.addTargets(id, body.targets);
   }
 
@@ -76,4 +87,3 @@ export class MessagesPrismaController {
     return this.messagesService.deleteMessage(tenant.id, id);
   }
 }
-

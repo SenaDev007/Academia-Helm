@@ -9,6 +9,7 @@ import { AutomationPrismaService } from './automation-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
+import { CreateAutomationDto, UpdateAutomationDto } from './dto/automation.dto';
 
 @Controller('communication/automation')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -16,7 +17,7 @@ export class AutomationPrismaController {
   constructor(private readonly automationService: AutomationPrismaService) {}
 
   @Post()
-  async createTrigger(@GetTenant() tenant: any, @Body() data: any) {
+  async createTrigger(@GetTenant() tenant: any, @Body() data: CreateAutomationDto) {
     return this.automationService.createTrigger(tenant.id, data);
   }
 
@@ -47,7 +48,7 @@ export class AutomationPrismaController {
   }
 
   @Put(':id')
-  async updateTrigger(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: any) {
+  async updateTrigger(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: UpdateAutomationDto) {
     return this.automationService.updateTrigger(tenant.id, id, data);
   }
 
@@ -66,4 +67,3 @@ export class AutomationPrismaController {
     return this.automationService.deleteTrigger(tenant.id, id);
   }
 }
-

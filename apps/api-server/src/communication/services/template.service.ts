@@ -8,44 +8,77 @@ export class TemplateService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(tenantId: string, data: any) {
-    return this.prisma.communicationTemplate.create({
+    return this.prisma.messageTemplate.create({
       data: {
-        ...data,
         tenantId,
+        name: data.name,
+        type: data.type,
+        channelId: data.channelId || null,
+        subject: data.subject || null,
+        content: data.content,
+        contentFr: data.contentFr || null,
+        contentEn: data.contentEn || null,
+        variables: data.variables || null,
+        isActive: data.isActive !== undefined ? data.isActive : true,
       }
     });
   }
 
   async update(tenantId: string, id: string, data: any) {
-    return this.prisma.communicationTemplate.update({
+    // Verify template belongs to tenant
+    const template = await this.prisma.messageTemplate.findFirst({
+      where: { id, tenantId }
+    });
+    if (!template) throw new NotFoundException('Template not found');
+
+    return this.prisma.messageTemplate.update({
       where: { id },
-      data
+      data: {
+        name: data.name,
+        subject: data.subject,
+        content: data.content,
+        contentFr: data.contentFr,
+        contentEn: data.contentEn,
+        variables: data.variables,
+        isActive: data.isActive,
+      }
     });
   }
 
   async findAll(tenantId: string, filters: any) {
-    const { category, channel, isActive } = filters;
+    const { type, channel, isActive } = filters;
     const where: any = { tenantId };
-    if (category) where.category = category;
-    if (channel) where.channel = channel;
+    if (type) where.type = type;
+    if (channel) where.channelId = channel;
     if (isActive !== undefined) where.isActive = isActive;
 
-    return this.prisma.communicationTemplate.findMany({
+    return this.prisma.messageTemplate.findMany({
       where,
+      include: {
+        channel: true,
+        _count: { select: { triggers: true } }
+      },
       orderBy: { name: 'asc' }
     });
   }
 
   async findByCode(tenantId: string, code: string) {
-    const template = await this.prisma.communicationTemplate.findUnique({
-      where: { tenantId_code: { tenantId, code } }
+    // messageTemplate doesn't have a code field; search by name instead
+    const template = await this.prisma.messageTemplate.findFirst({
+      where: { tenantId, name: code, isActive: true }
     });
     if (!template) throw new NotFoundException('Template not found');
     return template;
   }
 
   async delete(tenantId: string, id: string) {
-    return this.prisma.communicationTemplate.update({
+    // Verify template belongs to tenant
+    const template = await this.prisma.messageTemplate.findFirst({
+      where: { id, tenantId }
+    });
+    if (!template) throw new NotFoundException('Template not found');
+
+    return this.prisma.messageTemplate.update({
       where: { id },
       data: { isActive: false }
     });

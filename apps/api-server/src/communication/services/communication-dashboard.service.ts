@@ -21,25 +21,26 @@ export class CommunicationDashboardService {
 
       const where: any = { tenantId };
       if (Object.keys(dateFilter).length > 0) where.createdAt = dateFilter;
+      if (academicYearId) where.academicYearId = academicYearId;
 
-      // 1. Overview KPIs
-      const totalMessages = await this.prisma.communicationMessage.count({ where });
-      
+      // 1. Overview KPIs — using existing Prisma model `message`
+      const totalMessages = await this.prisma.message.count({ where });
+
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      const sentToday = await this.prisma.communicationMessage.count({
+      const sentToday = await this.prisma.message.count({
         where: { tenantId, sentAt: { gte: today } }
       });
 
-      const failedMessages = await this.prisma.communicationRecipient.count({
-        where: { tenantId, deliveryStatus: 'FAILED', createdAt: dateFilter }
+      const failedMessages = await this.prisma.messageRecipient.count({
+        where: { tenantId, status: 'FAILED', createdAt: dateFilter }
       });
-      const totalRecipients = await this.prisma.communicationRecipient.count({
+      const totalRecipients = await this.prisma.messageRecipient.count({
         where: { tenantId, createdAt: dateFilter }
       });
       const failureRate = totalRecipients > 0 ? (failedMessages / totalRecipients) * 100 : 0;
 
-      const readMessages = await this.prisma.communicationRecipient.count({
+      const readMessages = await this.prisma.messageRecipient.count({
         where: { tenantId, readAt: { not: null }, createdAt: dateFilter }
       });
       const readRate = totalRecipients > 0 ? (readMessages / totalRecipients) * 100 : 0;
@@ -71,18 +72,23 @@ export class CommunicationDashboardService {
   }
 
   private async getChannelStats(tenantId: string, dateFilter: any) {
-    const channels = ['PORTAL', 'EMAIL', 'SMS', 'WHATSAPP', 'PUSH', 'WEBHOOK'];
-    const stats = await Promise.all(channels.map(async (channel) => {
-      const total = await this.prisma.communicationRecipient.count({
-        where: { tenantId, channel: channel as any, createdAt: dateFilter }
+    // Use existing CommunicationChannel model for channel stats
+    const channels = await this.prisma.communicationChannel.findMany({
+      where: { tenantId, isActive: true },
+    });
+
+    const stats = await Promise.all(channels.map(async (ch) => {
+      const total = await this.prisma.messageRecipient.count({
+        where: { tenantId, createdAt: dateFilter }
       });
-      const failed = await this.prisma.communicationRecipient.count({
-        where: { tenantId, channel: channel as any, deliveryStatus: 'FAILED', createdAt: dateFilter }
+      const failed = await this.prisma.messageRecipient.count({
+        where: { tenantId, status: 'FAILED', createdAt: dateFilter }
       });
       const successRate = total > 0 ? ((total - failed) / total) * 100 : 100;
-      
+
       return {
-        channel,
+        channel: ch.code,
+        name: ch.name,
         total,
         successRate: `${successRate.toFixed(1)}%`,
         status: successRate > 95 ? 'HEALTHY' : successRate > 80 ? 'WARNING' : 'CRITICAL'
@@ -93,37 +99,37 @@ export class CommunicationDashboardService {
 
   private async getCriticalAlerts(tenantId: string) {
     const orionAlerts = await this.orionService.generateAlerts(tenantId);
-    
-    // Fallback if ORION finds nothing, show failed campaigns
-    if (orionAlerts.length === 0) {
-      const failedCampaigns = await this.prisma.communicationCampaign.findMany({
-        where: { tenantId, status: 'FAILED' },
-        take: 5,
-        orderBy: { updatedAt: 'desc' }
-      });
 
-      return failedCampaigns.map(c => ({
-        id: c.id,
-        type: 'CAMPAIGN_FAILURE',
-        title: `Échec de campagne : ${c.name}`,
-        message: `La campagne "${c.name}" a échoué.`,
-        severity: 'HIGH',
-        timestamp: c.updatedAt
+    if (orionAlerts.length > 0) {
+      return orionAlerts.map(a => ({
+        id: a.category,
+        type: a.category,
+        title: a.title,
+        message: a.description,
+        severity: a.severity,
+        timestamp: a.timestamp
       }));
     }
 
-    return orionAlerts.map(a => ({
-      id: a.category,
-      type: a.category,
-      title: a.title,
-      message: a.description,
-      severity: a.severity,
-      timestamp: a.timestamp
+    // Fallback: no communicationCampaign model exists, so check for failed messages
+    const failedMessages = await this.prisma.message.findMany({
+      where: { tenantId, status: 'FAILED' },
+      take: 5,
+      orderBy: { updatedAt: 'desc' }
+    });
+
+    return failedMessages.map(m => ({
+      id: m.id,
+      type: 'MESSAGE_FAILURE',
+      title: `Échec d'envoi : ${m.subject || 'Sans sujet'}`,
+      message: `Le message "${m.subject || 'Sans sujet'}" a échoué.`,
+      severity: 'HIGH',
+      timestamp: m.updatedAt
     }));
   }
 
   private async getRecentActivity(tenantId: string) {
-    const recentMessages = await this.prisma.communicationMessage.findMany({
+    const recentMessages = await this.prisma.message.findMany({
       where: { tenantId },
       include: { sender: { select: { firstName: true, lastName: true } } },
       take: 10,
@@ -133,9 +139,9 @@ export class CommunicationDashboardService {
     return recentMessages.map(m => ({
       id: m.id,
       title: m.subject || 'Sans sujet',
-      body: m.body.substring(0, 50) + '...',
+      body: (m.content || '').substring(0, 50) + '...',
       sender: m.sender ? `${m.sender.firstName} ${m.sender.lastName}` : 'Système',
-      type: m.type,
+      type: m.messageType,
       status: m.status,
       timestamp: m.createdAt
     }));

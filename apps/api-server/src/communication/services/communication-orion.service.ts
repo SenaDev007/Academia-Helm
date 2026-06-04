@@ -33,11 +33,7 @@ export class CommunicationOrionService {
     const lowDeliveryAlerts = await this.detectLowDeliveryRates(tenantId, twentyFourHoursAgo);
     alerts.push(...lowDeliveryAlerts);
 
-    // 3. Campaign Performance Anomalies (MEDIUM)
-    const campaignAlerts = await this.detectCampaignAnomalies(tenantId);
-    alerts.push(...campaignAlerts);
-
-    // 4. Low Engagement for Critical Notifications (MEDIUM)
+    // 3. Low Engagement for Critical Notifications (MEDIUM)
     const engagementAlerts = await this.detectLowEngagement(tenantId);
     alerts.push(...engagementAlerts);
 
@@ -49,41 +45,40 @@ export class CommunicationOrionService {
 
   private async detectChannelFailures(tenantId: string, since: Date): Promise<OrionCommunicationAlert[]> {
     const alerts: OrionCommunicationAlert[] = [];
-    const channels = ['EMAIL', 'SMS', 'WHATSAPP'];
 
-    for (const channel of channels) {
-      const failed = await this.prisma.communicationRecipient.count({
-        where: { tenantId, channel: channel as any, deliveryStatus: 'FAILED', createdAt: { gte: since } }
-      });
-      const total = await this.prisma.communicationRecipient.count({
-        where: { tenantId, channel: channel as any, createdAt: { gte: since } }
-      });
+    // Check for failed recipients via messageRecipient (using status field, not channel+deliveryStatus)
+    const failedRecipients = await this.prisma.messageRecipient.count({
+      where: { tenantId, status: 'FAILED', createdAt: { gte: since } }
+    });
+    const totalRecipients = await this.prisma.messageRecipient.count({
+      where: { tenantId, createdAt: { gte: since } }
+    });
 
-      if (total > 10 && (failed / total) > 0.3) {
-        alerts.push({
-          severity: 'CRITICAL',
-          category: `CHANNEL_DOWN_${channel}`,
-          title: `Panne critique détectée : ${channel}`,
-          description: `Le canal ${channel} présente un taux d'échec de ${(failed / total * 100).toFixed(1)}% sur les dernières 24h.`,
-          recommendation: `Vérifiez la configuration du fournisseur et le solde de crédit. Envisagez de basculer vers un canal de secours.`,
-          count: failed,
-          timestamp: new Date()
-        });
-      }
+    if (totalRecipients > 10 && failedRecipients / totalRecipients > 0.3) {
+      alerts.push({
+        severity: 'CRITICAL',
+        category: 'HIGH_FAILURE_RATE',
+        title: 'Taux d\'échec élevé détecté',
+        description: `Le taux d'échec est de ${(failedRecipients / totalRecipients * 100).toFixed(1)}% sur les dernières 24h (${failedRecipients}/${totalRecipients}).`,
+        recommendation: 'Vérifiez la configuration des canaux et le solde de crédit. Envisagez de basculer vers un canal de secours.',
+        count: failedRecipients,
+        timestamp: new Date()
+      });
     }
+
     return alerts;
   }
 
   private async detectLowDeliveryRates(tenantId: string, since: Date): Promise<OrionCommunicationAlert[]> {
     const alerts: OrionCommunicationAlert[] = [];
-    const totalSent = await this.prisma.communicationRecipient.count({
+    const totalSent = await this.prisma.messageRecipient.count({
       where: { tenantId, createdAt: { gte: since } }
     });
-    const totalDelivered = await this.prisma.communicationRecipient.count({
-      where: { tenantId, deliveryStatus: 'DELIVERED', createdAt: { gte: since } }
+    const totalDelivered = await this.prisma.messageRecipient.count({
+      where: { tenantId, status: 'DELIVERED', createdAt: { gte: since } }
     });
 
-    if (totalSent > 50 && (totalDelivered / totalSent) < 0.85) {
+    if (totalSent > 50 && totalDelivered / totalSent < 0.85) {
       alerts.push({
         severity: 'HIGH',
         category: 'LOW_DELIVERY_RATE',
@@ -97,37 +92,16 @@ export class CommunicationOrionService {
     return alerts;
   }
 
-  private async detectCampaignAnomalies(tenantId: string): Promise<OrionCommunicationAlert[]> {
-    const alerts: OrionCommunicationAlert[] = [];
-    const failedCampaigns = await this.prisma.communicationCampaign.findMany({
-      where: { tenantId, status: 'FAILED' },
-      take: 3,
-      orderBy: { updatedAt: 'desc' }
-    });
-
-    for (const campaign of failedCampaigns) {
-      alerts.push({
-        severity: 'MEDIUM',
-        category: 'CAMPAIGN_FAILED',
-        title: `Échec de campagne : ${campaign.name}`,
-        description: `La campagne "${campaign.name}" s'est arrêtée prématurément.`,
-        recommendation: 'Analysez les journaux d\'erreurs de la campagne et relancez les destinataires restants.',
-        timestamp: campaign.updatedAt
-      });
-    }
-    return alerts;
-  }
-
   private async detectLowEngagement(tenantId: string): Promise<OrionCommunicationAlert[]> {
     const alerts: OrionCommunicationAlert[] = [];
-    // Example: Critical notifications not read after 12h
+    // Check for unread messages older than 12 hours
     const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
-    const unreadCritical = await this.prisma.communicationRecipient.count({
+
+    const unreadCritical = await this.prisma.messageRecipient.count({
       where: {
         tenantId,
-        message: { priority: 'CRITICAL' },
         readAt: null,
-        deliveryStatus: 'DELIVERED',
+        status: 'DELIVERED',
         createdAt: { lt: twelveHoursAgo, gte: new Date(Date.now() - 48 * 60 * 60 * 1000) }
       }
     });
@@ -135,9 +109,9 @@ export class CommunicationOrionService {
     if (unreadCritical > 5) {
       alerts.push({
         severity: 'MEDIUM',
-        category: 'LOW_CRITICAL_ENGAGEMENT',
-        title: 'Alertes critiques non consultées',
-        description: `${unreadCritical} notifications critiques n'ont pas encore été lues après 12h.`,
+        category: 'LOW_ENGAGEMENT',
+        title: 'Messages non consultés',
+        description: `${unreadCritical} messages n'ont pas encore été lus après 12h.`,
         recommendation: 'Utilisez le rappel par SMS ou appel vocal pour les informations urgentes.',
         count: unreadCritical,
         timestamp: new Date()

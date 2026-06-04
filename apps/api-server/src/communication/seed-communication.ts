@@ -74,7 +74,7 @@ export async function seedCommunication(prisma: PrismaClient, tenantId: string) 
   ];
 
   for (const t of templates) {
-    await prisma.communicationTemplate.upsert({
+    await prisma.messageTemplate.upsert({
       where: { 
         tenantId_code: { tenantId, code: t.code } 
       },
@@ -99,10 +99,13 @@ export async function seedCommunication(prisma: PrismaClient, tenantId: string) 
   });
 
   if (defaultAdmin) {
+    // Get a school level for the announcement
+    const schoolLevels = await prisma.schoolLevel.findMany({ where: { tenantId }, take: 1 });
+    
     const announcementExists = await prisma.announcement.findFirst({
       where: { 
         tenantId,
-        titleFr: 'Bienvenue sur Academia Helm v2'
+        title: 'Bienvenue sur Academia Helm v2'
       }
     });
 
@@ -110,16 +113,14 @@ export async function seedCommunication(prisma: PrismaClient, tenantId: string) 
       await prisma.announcement.create({
         data: {
           tenantId,
-          titleFr: 'Bienvenue sur Academia Helm v2',
-          titleEn: 'Welcome to Academia Helm v2',
-          bodyFr: 'Nous sommes ravis de vous présenter notre nouveau module de communication multicanal.',
-          bodyEn: 'We are excited to present our new multi-channel communication module.',
-          category: 'GENERAL',
+          title: 'Bienvenue sur Academia Helm v2',
+          content: 'Nous sommes ravis de vous présenter notre nouveau module de communication multicanal.',
+          type: 'GENERAL',
           status: 'PUBLISHED',
-          priority: 'NORMAL',
+          target: 'ALL',
+          schoolLevelId: schoolLevels[0]?.id || '',
           publishedAt: new Date(),
-          audience: { all: true },
-          createdById: defaultAdmin.id
+          createdBy: defaultAdmin.id
         }
       });
     }

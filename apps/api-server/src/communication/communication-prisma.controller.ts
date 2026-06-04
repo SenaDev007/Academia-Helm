@@ -9,6 +9,7 @@ import { CommunicationPrismaService } from './communication-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
+import { CreateChannelDto, UpdateChannelDto } from './dto/channel.dto';
 
 @Controller('communication/channels')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -16,7 +17,7 @@ export class CommunicationPrismaController {
   constructor(private readonly communicationService: CommunicationPrismaService) {}
 
   @Post()
-  async createChannel(@GetTenant() tenant: any, @Body() data: any) {
+  async createChannel(@GetTenant() tenant: any, @Body() data: CreateChannelDto) {
     return this.communicationService.createChannel(tenant.id, data);
   }
 
@@ -31,7 +32,7 @@ export class CommunicationPrismaController {
   }
 
   @Put(':id')
-  async updateChannel(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: any) {
+  async updateChannel(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: UpdateChannelDto) {
     return this.communicationService.updateChannel(tenant.id, id, data);
   }
 
@@ -45,4 +46,3 @@ export class CommunicationPrismaController {
     return this.communicationService.deleteChannel(tenant.id, id);
   }
 }
-

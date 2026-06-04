@@ -8,74 +8,64 @@ export class AnnouncementsServiceV2 {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(tenantId: string, creatorId: string, data: any) {
-    const { attachments, ...rest } = data;
-    
+    // Announcement model stores attachments as Json?, not a separate relation
     return this.prisma.announcement.create({
       data: {
-        ...rest,
         tenantId,
-        createdById: creatorId,
-        attachments: attachments ? {
-          create: attachments.map((a: any) => ({
-            tenantId,
-            fileName: a.fileName,
-            fileUrl: a.fileUrl,
-            fileType: a.fileType,
-            fileSize: a.fileSize,
-            uploadedById: creatorId,
-          }))
-        } : undefined
-      },
-      include: {
-        attachments: true,
+        title: data.title,
+        content: data.content,
+        type: data.type || 'GENERAL',
+        target: data.target || 'ALL',
+        schoolLevelId: data.schoolLevelId,
+        classId: data.classId || null,
+        isPinned: data.isPinned || false,
+        requiresAcknowledgment: data.requiresAcknowledgment || false,
+        attachments: data.attachments || null,
+        metadata: data.metadata || null,
+        status: data.status || 'DRAFT',
+        createdBy: creatorId,
       }
     });
   }
 
   async update(tenantId: string, id: string, updaterId: string, data: any) {
-    const { attachments, ...rest } = data;
-    
-    // Simple implementation: replace attachments if provided
-    if (attachments) {
-      await this.prisma.announcementAttachment.deleteMany({
-        where: { announcementId: id }
-      });
-    }
+    // Verify announcement belongs to tenant
+    const announcement = await this.prisma.announcement.findFirst({
+      where: { id, tenantId }
+    });
+    if (!announcement) throw new NotFoundException('Announcement not found');
 
     return this.prisma.announcement.update({
       where: { id },
       data: {
-        ...rest,
-        updatedById: updaterId,
-        attachments: attachments ? {
-          create: attachments.map((a: any) => ({
-            tenantId,
-            fileName: a.fileName,
-            fileUrl: a.fileUrl,
-            fileType: a.fileType,
-            fileSize: a.fileSize,
-            uploadedById: updaterId,
-          }))
-        } : undefined
+        title: data.title,
+        content: data.content,
+        type: data.type,
+        target: data.target,
+        schoolLevelId: data.schoolLevelId,
+        classId: data.classId,
+        isPinned: data.isPinned,
+        requiresAcknowledgment: data.requiresAcknowledgment,
+        attachments: data.attachments,
+        metadata: data.metadata,
+        status: data.status,
       }
     });
   }
 
   async findAll(tenantId: string, filters: any) {
-    const { category, status, priority, isPublished } = filters;
+    const { category, status, priority, isPublished, type, target } = filters;
     const where: any = { tenantId };
-    
-    if (category) where.category = category;
+
+    if (type) where.type = type;
+    if (category) where.type = category; // category maps to type
     if (status) where.status = status;
-    if (priority) where.priority = priority;
+    if (target) where.target = target;
+    if (priority) where.type = priority; // priority maps to type for now
     if (isPublished) where.status = 'PUBLISHED';
 
     return this.prisma.announcement.findMany({
       where,
-      include: {
-        attachments: true,
-        _count: { select: { readReceipts: true } }
-      },
       orderBy: { createdAt: 'desc' }
     });
   }
@@ -84,9 +74,9 @@ export class AnnouncementsServiceV2 {
     const announcement = await this.prisma.announcement.findUnique({
       where: { id },
       include: {
-        attachments: true,
         creator: { select: { firstName: true, lastName: true } },
-        _count: { select: { readReceipts: true } }
+        schoolLevel: { select: { code: true, label: true } },
+        class: { select: { name: true } },
       }
     });
 
@@ -97,6 +87,11 @@ export class AnnouncementsServiceV2 {
   }
 
   async publish(tenantId: string, id: string) {
+    const announcement = await this.prisma.announcement.findFirst({
+      where: { id, tenantId }
+    });
+    if (!announcement) throw new NotFoundException('Announcement not found');
+
     return this.prisma.announcement.update({
       where: { id },
       data: {
@@ -107,27 +102,22 @@ export class AnnouncementsServiceV2 {
   }
 
   async acknowledge(tenantId: string, id: string, userId: string) {
-    return this.prisma.announcementReadReceipt.upsert({
-      where: {
-        announcementId_recipientType_recipientId: {
-          announcementId: id,
-          recipientType: 'USER',
-          recipientId: userId
-        }
-      },
-      update: {
-        acknowledgedAt: new Date(),
-        readAt: new Date()
-      },
-      create: {
-        tenantId,
-        announcementId: id,
-        recipientType: 'USER',
-        recipientId: userId,
-        userId,
-        acknowledgedAt: new Date(),
-        readAt: new Date()
-      }
+    // No AnnouncementReadReceipt model exists; update metadata as acknowledgment tracker
+    const announcement = await this.prisma.announcement.findFirst({
+      where: { id, tenantId }
+    });
+    if (!announcement) throw new NotFoundException('Announcement not found');
+
+    const metadata = (announcement.metadata as any) || {};
+    const acknowledgments = metadata.acknowledgments || [];
+    if (!acknowledgments.find((a: any) => a.userId === userId)) {
+      acknowledgments.push({ userId, acknowledgedAt: new Date().toISOString() });
+    }
+    metadata.acknowledgments = acknowledgments;
+
+    return this.prisma.announcement.update({
+      where: { id },
+      data: { metadata }
     });
   }
 }

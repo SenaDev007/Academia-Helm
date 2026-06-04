@@ -18,25 +18,26 @@ export class InternalMessagingService {
    * Créer une conversation (stockée comme message de type GROUP avec métadonnées)
    */
   async createConversation(tenantId: string, creatorId: string, data: any) {
-    const { title, participants, subject } = data;
+    const { participantIds, subject } = data;
+    const resolvedIds = (participantIds || []).map((p: any) => (typeof p === 'object' ? p.userId || p : p));
 
     // Create a GROUP message to represent the conversation
     const conversation = await this.prisma.message.create({
       data: {
         tenantId,
         senderUserId: creatorId,
-        subject: title || subject || 'Nouvelle conversation',
+        subject: subject || 'Nouvelle conversation',
         content: '', // Empty content for conversation header
         messageType: 'GROUP',
         status: 'DRAFT',
         metadata: {
           type: 'CONVERSATION',
-          participantIds: (participants || []).map((p: any) => p.userId || p),
+          participantIds: resolvedIds,
         },
         recipients: {
-          create: (participants || []).map((p: any) => ({
+          create: resolvedIds.map((pId: string) => ({
             tenantId,
-            recipientId: p.userId || p,
+            recipientId: pId,
             recipientType: 'USER',
             status: 'PENDING',
           }))
@@ -59,7 +60,7 @@ export class InternalMessagingService {
    * Envoyer un message dans une conversation
    */
   async sendMessage(tenantId: string, senderId: string, data: any) {
-    const { conversationId, body, subject, priority } = data;
+    const { conversationId, content, subject, priority } = data;
 
     // Verify conversation exists
     const conversation = await this.prisma.message.findFirst({
@@ -76,7 +77,7 @@ export class InternalMessagingService {
         tenantId,
         senderUserId: senderId,
         subject: subject || `Re: ${conversation.subject}`,
-        content: body,
+        content: content,
         messageType: 'DIRECT',
         status: 'SENT',
         sentAt: new Date(),

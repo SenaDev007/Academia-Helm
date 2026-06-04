@@ -12,6 +12,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { TenantGuard } from '../auth/guards/tenant.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { MeetingsService } from './services/meetings.service';
@@ -38,7 +39,7 @@ import { MeetingMinutesNlpService } from './services/meeting-minutes-nlp.service
  * /nlp/* must come before @Get(':id') which would otherwise catch them.
  */
 @Controller('meetings')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, TenantGuard)
 export class MeetingsController {
   constructor(
     private readonly meetingsService: MeetingsService,
@@ -420,7 +421,7 @@ export class MeetingsController {
     @CurrentUser() user: any,
     @Body() body: GenerateMinutesDto,
   ) {
-    return this.generationService.generateFromTemplate(id, tenantId, body.templateId, user.id);
+    return this.generationService.generateFromTemplate(id, tenantId, user.id, body.templateId);
   }
 
   @Get(':id/minutes/pdf')

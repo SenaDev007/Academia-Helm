@@ -14,10 +14,11 @@ export enum AttendanceStatus {
   PRESENT = 'PRESENT',
   ABSENT = 'ABSENT',
   EXCUSED = 'EXCUSED',
+  NOT_ATTENDED = 'NOT_ATTENDED',
 }
 
 export enum MeetingStatus {
-  SCHEDULED = 'SCHEDULED',
+  PLANNED = 'PLANNED',
   IN_PROGRESS = 'IN_PROGRESS',
   HELD = 'HELD',
   CANCELLED = 'CANCELLED',
@@ -25,16 +26,16 @@ export enum MeetingStatus {
 }
 
 export enum AgendaItemStatus {
-  PENDING = 'PENDING',
+  PLANNED = 'PLANNED',
   IN_PROGRESS = 'IN_PROGRESS',
-  COMPLETED = 'COMPLETED',
+  COVERED = 'COVERED',
   SKIPPED = 'SKIPPED',
 }
 
 export enum DecisionStatus {
   PENDING = 'PENDING',
   IN_PROGRESS = 'IN_PROGRESS',
-  COMPLETED = 'COMPLETED',
+  DONE = 'DONE',
   CANCELLED = 'CANCELLED',
 }
 

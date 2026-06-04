@@ -1,13 +1,14 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
 import { BilingualAnalysisService } from './services/bilingual-analysis.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { TenantGuard } from '../auth/guards/tenant.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 // UserRole n'existe plus, utiliser le type string directement
 import { RolesGuard } from '../auth/guards/roles.guard';
 
 @Controller('orion/bilingual')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
 export class OrionBilingualController {
   constructor(private readonly bilingualAnalysisService: BilingualAnalysisService) {}
 

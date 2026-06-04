@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, IsObject } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsObject } from 'class-validator';
 
 export class UpsertKpiDefinitionDto {
   @IsString()
@@ -18,16 +18,16 @@ export class UpsertKpiDefinitionDto {
   unit: string;
 
   @IsOptional()
-  @IsNumber()
-  targetValue?: number;
+  @IsString()
+  formula?: string;
 
   @IsOptional()
-  @IsNumber()
-  warningThreshold?: number;
+  @IsBoolean()
+  isSystem?: boolean;
 
   @IsOptional()
-  @IsNumber()
-  criticalThreshold?: number;
+  @IsBoolean()
+  isActive?: boolean;
 
   @IsOptional()
   @IsString()
@@ -35,7 +35,7 @@ export class UpsertKpiDefinitionDto {
 
   @IsOptional()
   @IsObject()
-  calculationConfig?: Record<string, any>;
+  metadata?: Record<string, any>;
 }
 
 export class CalculateKpiDto {

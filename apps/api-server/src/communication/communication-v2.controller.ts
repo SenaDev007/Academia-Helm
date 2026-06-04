@@ -4,6 +4,7 @@ import { InternalMessagingService } from './services/internal-messaging.service'
 import { AnnouncementsServiceV2 } from './services/announcements.service';
 import { TemplateService } from './services/template.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { TenantGuard } from '../auth/guards/tenant.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
@@ -17,7 +18,7 @@ import {
 } from './dto/v2.dto';
 
 @Controller('communication/v2')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
 export class CommunicationV2Controller {
   constructor(
     private readonly dashboardService: CommunicationDashboardService,

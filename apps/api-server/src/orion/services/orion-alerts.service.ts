@@ -122,7 +122,7 @@ export class OrionAlertsService {
   async generateRiskAlerts(tenantId: string, academicYearId?: string): Promise<any[]> {
     const where: any = {
       tenantId,
-      level: { in: ['ELEVE', 'CRITIQUE'] },
+      level: { gte: 4 }, // QhsRiskRegister.level is Int (risk score ≥ 4 = high/critical)
       status: { in: ['ACTIF', 'EN_SURVEILLANCE'] },
     };
 
@@ -480,11 +480,15 @@ export class OrionAlertsService {
     }
 
     // 2. Alertes pour promesses de paiement non tenues
+    // PaymentPromise has no tenantId, filter through feeArrear relation
     const brokenPromises = await this.prisma.paymentPromise.findMany({
       where: {
-        ...where,
         status: 'BROKEN',
         promisedDate: { lt: new Date() },
+        feeArrear: {
+          tenantId,
+          ...(academicYearId && { academicYearId }),
+        },
       },
       include: {
         feeArrear: {

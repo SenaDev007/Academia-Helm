@@ -57,8 +57,20 @@ import { FinanceModule } from '../finance/finance.module';
     FinanceModule, // Comptes élèves : création auto StudentAccount à l'admission/réinscription
   ],
   controllers: [
+    // Specific route controllers MUST be registered BEFORE StudentsPrismaController
+    // because NestJS matches routes in controller registration order.
+    // StudentsPrismaController has @Get(':id') which would intercept
+    // /students/admissions, /students/orion, etc. otherwise.
     StudentsController,
     StudentsLifecycleController,
+    AdmissionController,
+    StudentTransferController,
+    StudentIdentifierController,
+    StudentIdCardController,
+    StudentsOrionController,
+    PublicVerificationController,
+    StudentDossierController,
+    // StudentsPrismaController LAST — its :id catch-all must not shadow specific routes
     StudentsPrismaController,
     GuardiansPrismaController,
     AttendancePrismaController,
@@ -66,15 +78,6 @@ import { FinanceModule } from '../finance/finance.module';
     DocumentsPrismaController,
     GeneratedDocumentsController,
     TransfersPrismaController,
-    // Module 1 - Matricule Global & Cartes Scolaires
-    StudentIdentifierController,
-    StudentIdCardController,
-    StudentsOrionController,
-    // Module 1 - Vérification Publique & Dossier Scolaire
-    PublicVerificationController,
-    StudentDossierController,
-    AdmissionController,
-    StudentTransferController,
   ],
   providers: [
     StudentsService,

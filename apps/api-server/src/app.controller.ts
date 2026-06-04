@@ -57,38 +57,4 @@ export class AppController {
     }
   }
 
-  /**
-   * DEBUG — Diagnostic DB temporaire (à retirer après débogage)
-   */
-  @Public()
-  @Get('debug/db-check')
-  async debugDbCheck() {
-    try {
-      const staffCount = await this.prisma.staff.count();
-      const staffSample = await this.prisma.staff.findMany({ take: 3 });
-      const tenantCount = await this.prisma.tenant.count();
-      const tenants = await this.prisma.tenant.findMany({ select: { id: true, name: true, slug: true } });
-      const yearCount = await this.prisma.academicYear.count();
-      const rawStaff: any = await this.prisma.$queryRaw`SELECT count(*)::int as count FROM staff`;
-      const dbName: any = await this.prisma.$queryRaw`SELECT current_database() as db`;
-
-      return {
-        staffCount,
-        staffSample: staffSample.map((s: any) => ({ id: s.id, firstName: s.firstName, lastName: s.lastName, tenantId: s.tenantId })),
-        tenantCount,
-        tenants,
-        yearCount,
-        rawStaffCount: rawStaff,
-        currentDatabase: dbName,
-        nodeEnv: process.env.NODE_ENV,
-        databaseUrl: process.env.DATABASE_URL ? process.env.DATABASE_URL.substring(0, 50) + '...' : 'NOT SET',
-      };
-    } catch (error: any) {
-      return {
-        error: error.message,
-        code: error.code,
-        meta: error.meta,
-      };
-    }
-  }
 }

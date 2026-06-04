@@ -6,6 +6,7 @@ import { FinanceDailyClosureService } from './finance-daily-closure.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { CreateDailyClosureDto } from './dto';
 
 @Controller('finance/daily-closures')
 @UseGuards(JwtAuthGuard)
@@ -27,7 +28,7 @@ export class FinanceDailyClosureController {
   async create(
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
-    @Body() body: { academicYearId: string; date: string; physicalAmount?: number; validate?: boolean },
+    @Body() body: CreateDailyClosureDto,
   ) {
     const date = new Date(body.date);
     const validate = body.validate === true;

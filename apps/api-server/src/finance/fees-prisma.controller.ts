@@ -20,6 +20,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { SchoolLevelId } from '../common/decorators/school-level-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { CreateFeeCategoryDto, CreateFeeDefinitionDto, UpdateFeeDefinitionDto, CreateStudentFeeDto } from './dto';
 
 @Controller('finance/fees')
 @UseGuards(JwtAuthGuard)
@@ -28,7 +29,7 @@ export class FeesPrismaController {
 
   // Fee Categories
   @Post('categories')
-  async createCategory(@TenantId() tenantId: string, @Body() createDto: any) {
+  async createCategory(@TenantId() tenantId: string, @Body() createDto: CreateFeeCategoryDto) {
     return this.feesService.createFeeCategory({
       ...createDto,
       tenantId,
@@ -49,12 +50,19 @@ export class FeesPrismaController {
   @Post('definitions')
   async createDefinition(
     @TenantId() tenantId: string,
+    @SchoolLevelId() schoolLevelId: string,
     @CurrentUser() user: any,
-    @Body() createDto: any
+    @Body() createDto: CreateFeeDefinitionDto
   ) {
     return this.feesService.createFeeDefinition({
-      ...createDto,
       tenantId,
+      academicYearId: createDto.academicYearId || '',
+      schoolLevelId: createDto.schoolLevelId || schoolLevelId,
+      feeCategoryId: createDto.feeCategoryId,
+      label: createDto.name,
+      amount: createDto.amount,
+      classId: createDto.classId,
+      description: createDto.description,
       createdBy: user?.id,
     });
   }
@@ -86,9 +94,14 @@ export class FeesPrismaController {
   async updateDefinition(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() updateDto: any,
+    @Body() updateDto: UpdateFeeDefinitionDto,
   ) {
-    return this.feesService.updateFeeDefinition(id, tenantId, updateDto);
+    const data: any = {};
+    if (updateDto.name !== undefined) data.label = updateDto.name;
+    if (updateDto.amount !== undefined) data.amount = updateDto.amount;
+    if (updateDto.classId !== undefined) data.classId = updateDto.classId;
+    if (updateDto.description !== undefined) data.description = updateDto.description;
+    return this.feesService.updateFeeDefinition(id, tenantId, data);
   }
 
   @Delete('definitions/:id')
@@ -98,10 +111,22 @@ export class FeesPrismaController {
 
   // Student Fees
   @Post('student-fees')
-  async createStudentFee(@TenantId() tenantId: string, @Body() createDto: any) {
-    return this.feesService.createStudentFee({
-      ...createDto,
+  async createStudentFee(
+    @TenantId() tenantId: string,
+    @Body() createDto: CreateStudentFeeDto,
+  ) {
+    // Look up the fee definition to get the amount and academicYearId if not provided
+    const feeDefinition = await this.feesService.findFeeDefinitionById(
+      createDto.feeDefinitionId,
       tenantId,
+    );
+
+    return this.feesService.createStudentFee({
+      tenantId,
+      studentId: createDto.studentId,
+      feeDefinitionId: createDto.feeDefinitionId,
+      academicYearId: createDto.academicYearId || feeDefinition.academicYearId || '',
+      totalAmount: Number(feeDefinition.amount),
     });
   }
 

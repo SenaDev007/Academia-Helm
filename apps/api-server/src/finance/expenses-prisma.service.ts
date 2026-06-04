@@ -175,6 +175,7 @@ export class ExpensesPrismaService {
     tenantId: string;
     academicYearId?: string;
     schoolLevelId: string;
+    categoryId?: string;
     category: string;
     description: string;
     amount: number;
@@ -185,15 +186,16 @@ export class ExpensesPrismaService {
     createdBy?: string;
   }) {
     // Vérifier que la catégorie existe
+    const categoryLookupId = data.categoryId || data.category;
     const category = await this.prisma.expenseCategory.findFirst({
       where: {
-        id: data.category,
+        id: categoryLookupId,
         tenantId: data.tenantId,
       },
     });
 
     if (!category) {
-      throw new NotFoundException(`Expense category with ID ${data.category} not found`);
+      throw new NotFoundException(`Expense category with ID ${categoryLookupId} not found`);
     }
 
     return this.prisma.expense.create({

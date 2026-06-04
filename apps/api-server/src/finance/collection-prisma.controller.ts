@@ -18,6 +18,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { SchoolLevelId } from '../common/decorators/school-level-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { CreateCollectionReminderDto, CreatePaymentPromiseDto, CreateCollectionActionDto } from './dto';
 
 @Controller('finance/collection')
 @UseGuards(JwtAuthGuard)
@@ -51,17 +52,29 @@ export class CollectionPrismaController {
   }
 
   @Post('reminders')
-  async createReminder(@Body() createDto: any) {
-    return this.collectionService.createReminder(createDto);
+  async createReminder(
+    @TenantId() tenantId: string,
+    @Body() createDto: CreateCollectionReminderDto,
+  ) {
+    // tenantId available for tenant-scoped validation
+    return this.collectionService.createReminder({
+      feeArrearId: createDto.arrearId,
+      channel: createDto.channel,
+      reminderStage: createDto.level,
+      message: createDto.message,
+    });
   }
 
   @Post('promises')
   async createPaymentPromise(
     @CurrentUser() user: any,
-    @Body() createDto: any,
+    @Body() createDto: CreatePaymentPromiseDto,
   ) {
     return this.collectionService.createPaymentPromise({
-      ...createDto,
+      feeArrearId: createDto.arrearId,
+      promisedAmount: createDto.promisedAmount,
+      promisedDate: new Date(createDto.promiseDate),
+      notes: createDto.notes,
       createdBy: user?.id,
     });
   }
@@ -69,10 +82,12 @@ export class CollectionPrismaController {
   @Post('actions')
   async createCollectionAction(
     @CurrentUser() user: any,
-    @Body() createDto: any,
+    @Body() createDto: CreateCollectionActionDto,
   ) {
     return this.collectionService.createCollectionAction({
-      ...createDto,
+      feeArrearId: createDto.arrearId,
+      actionType: createDto.actionType,
+      notes: createDto.description,
       performedBy: user?.id,
     });
   }

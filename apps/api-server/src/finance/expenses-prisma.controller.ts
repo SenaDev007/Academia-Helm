@@ -19,6 +19,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { SchoolLevelId } from '../common/decorators/school-level-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { CreateExpenseCategoryDto, UpdateExpenseCategoryDto, CreateExpenseDto, UpdateExpenseDto } from './dto';
 
 @Controller('finance/expenses')
 @UseGuards(JwtAuthGuard)
@@ -27,7 +28,7 @@ export class ExpensesPrismaController {
 
   // Expense Categories
   @Post('categories')
-  async createCategory(@TenantId() tenantId: string, @Body() createDto: any) {
+  async createCategory(@TenantId() tenantId: string, @Body() createDto: CreateExpenseCategoryDto) {
     return this.expensesService.createExpenseCategory({
       ...createDto,
       tenantId,
@@ -59,7 +60,7 @@ export class ExpensesPrismaController {
   async updateCategory(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() updateDto: any,
+    @Body() updateDto: UpdateExpenseCategoryDto,
   ) {
     return this.expensesService.updateExpenseCategory(id, tenantId, updateDto);
   }
@@ -69,12 +70,23 @@ export class ExpensesPrismaController {
   async createExpense(
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
-    @Body() createDto: any,
+    @Body() createDto: CreateExpenseDto,
   ) {
+    // CRITICAL FIX: Look up the ExpenseCategory to populate the `category` string field
+    // The Expense model requires both `categoryId` (FK) and `category` (string name/code)
+    const expenseCategory = await this.expensesService.findExpenseCategoryById(
+      createDto.categoryId,
+      tenantId,
+    );
+    const category = expenseCategory?.code || expenseCategory?.name || createDto.categoryId;
+
     return this.expensesService.createExpense({
       ...createDto,
       tenantId,
       createdBy: user?.id,
+      category,
+      categoryId: createDto.categoryId,
+      expenseDate: createDto.expenseDate ? new Date(createDto.expenseDate) : new Date(),
     });
   }
 
@@ -109,9 +121,13 @@ export class ExpensesPrismaController {
   async updateExpense(
     @Param('id') id: string,
     @TenantId() tenantId: string,
-    @Body() updateDto: any,
+    @Body() updateDto: UpdateExpenseDto,
   ) {
-    return this.expensesService.updateExpense(id, tenantId, updateDto);
+    const data: any = { ...updateDto };
+    if (updateDto.expenseDate) {
+      data.expenseDate = new Date(updateDto.expenseDate);
+    }
+    return this.expensesService.updateExpense(id, tenantId, data);
   }
 
   @Put(':id/approve')

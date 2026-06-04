@@ -19,6 +19,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { SchoolLevelId } from '../common/decorators/school-level-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { CreateTreasuryClosureDto } from './dto';
 
 @Controller('finance/treasury')
 @UseGuards(JwtAuthGuard)
@@ -29,11 +30,14 @@ export class TreasuryPrismaController {
   async createDailyClosure(
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
-    @Body() createDto: any,
+    @Body() createDto: CreateTreasuryClosureDto,
   ) {
     return this.treasuryService.createDailyClosure({
       ...createDto,
       tenantId,
+      date: new Date(createDto.date),
+      totalCollected: createDto.totalCollected ?? 0,
+      totalSpent: createDto.totalSpent ?? 0,
       createdBy: user?.id,
     });
   }

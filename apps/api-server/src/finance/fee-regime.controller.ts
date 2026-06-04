@@ -9,6 +9,7 @@ import { FeeRegimeService } from './fee-regime.service';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { User } from '@prisma/client';
+import { CreateFeeRegimeDto, UpdateFeeRegimeDto, CreateFeeRegimeRuleDto } from './dto';
 
 @Controller('finance/fee-regimes')
 @UseGuards(JwtAuthGuard)
@@ -17,7 +18,7 @@ export class FeeRegimeController {
 
   @Post()
   async createRegime(
-    @Body() data: any,
+    @Body() data: CreateFeeRegimeDto,
     @CurrentUser() user: User,
   ) {
     return this.regimeService.createRegime({
@@ -47,7 +48,7 @@ export class FeeRegimeController {
   @Put(':id')
   async updateRegime(
     @Param('id') id: string,
-    @Body() data: any,
+    @Body() data: UpdateFeeRegimeDto,
   ) {
     return this.regimeService.updateRegime(id, data);
   }
@@ -60,9 +61,26 @@ export class FeeRegimeController {
   @Post(':id/rules')
   async addRule(
     @Param('id') id: string,
-    @Body() data: any,
+    @Body() data: CreateFeeRegimeRuleDto,
   ) {
-    return this.regimeService.addRule(id, data);
+    // Map DTO fields to service-expected format
+    let discountType: string;
+    let discountValue: number;
+    if (data.reductionPercentage !== undefined) {
+      discountType = 'PERCENT';
+      discountValue = data.reductionPercentage;
+    } else if (data.fixedAmount !== undefined) {
+      discountType = 'FIXED';
+      discountValue = data.fixedAmount;
+    } else {
+      discountType = 'PERCENT';
+      discountValue = 0;
+    }
+    return this.regimeService.addRule(id, {
+      feeType: data.feeType,
+      discountType,
+      discountValue,
+    });
   }
 }
 

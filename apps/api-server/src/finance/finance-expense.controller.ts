@@ -7,6 +7,7 @@ import { FinancialSettingsService } from './financial-settings.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { CreateFinanceExpenseDto } from './dto';
 
 @Controller('finance/expenses-v2')
 @UseGuards(JwtAuthGuard)
@@ -20,7 +21,7 @@ export class FinanceExpenseController {
   async create(
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
-    @Body() body: { academicYearId: string; categoryId: string; amount: number; description: string; receiptUrl?: string },
+    @Body() body: CreateFinanceExpenseDto,
   ) {
     const settings = await this.settingsService.getForTenant(tenantId);
     const threshold = settings?.expenseReceiptThreshold != null ? Number(settings.expenseReceiptThreshold) : null;

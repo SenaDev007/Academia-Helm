@@ -6,6 +6,7 @@ import { FinancialSettingsService } from './financial-settings.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { UpdateFinancialSettingsDto } from './dto';
 
 @Controller('finance/settings')
 @UseGuards(JwtAuthGuard)
@@ -22,22 +23,7 @@ export class FinancialSettingsController {
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
     @Body()
-    body: {
-      blockingThreshold?: number;
-      allowPartialPayment?: boolean;
-      minimumInstallmentAmount?: number | null;
-      autoClosureEnabled?: boolean;
-      autoClosureTime?: string;
-      reminderWarningDays?: number;
-      reminderUrgentDays?: number;
-      reminderFinalDays?: number;
-      cancellationDelayHours?: number;
-      budgetAlertThreshold?: number;
-      expenseReceiptThreshold?: number | null;
-      fedapayEnabled?: boolean;
-      fedapayPublicKey?: string | null;
-      fedapaySecretKey?: string | null;
-    },
+    body: UpdateFinancialSettingsDto,
   ) {
     return this.service.update(tenantId, body, user?.id);
   }

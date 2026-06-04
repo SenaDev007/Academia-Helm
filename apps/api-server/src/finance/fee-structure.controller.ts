@@ -15,6 +15,7 @@ import { FeeStructureService } from './fee-structure.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { CreateFeeStructureDto, UpdateFeeStructureDto } from './dto';
 
 @Controller('finance/fee-structures')
 @UseGuards(JwtAuthGuard)
@@ -25,7 +26,7 @@ export class FeeStructureController {
   async create(
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
-    @Body() body: any,
+    @Body() body: CreateFeeStructureDto,
   ) {
     const installments = body.installments?.map((i: any) => ({
       ...i,
@@ -112,7 +113,7 @@ export class FeeStructureController {
     @Param('id') id: string,
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
-    @Body() body: any,
+    @Body() body: UpdateFeeStructureDto,
   ) {
     const data: any = {};
     if (body.name !== undefined) data.name = body.name;

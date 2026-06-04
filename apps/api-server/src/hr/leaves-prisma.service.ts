@@ -49,12 +49,16 @@ export class LeavesPrismaService {
     schoolLevelId?: string;
     staffId: string;
     type: string;
-    startDate: Date;
-    endDate: Date;
+    startDate: string | Date;
+    endDate: string | Date;
     reason?: string;
   }) {
+    // Convert date strings to Date objects (DTO sends strings via @IsDateString)
+    const startDate = data.startDate instanceof Date ? data.startDate : new Date(data.startDate);
+    const endDate = data.endDate instanceof Date ? data.endDate : new Date(data.endDate);
+
     // Validate date ordering
-    if (data.startDate > data.endDate) {
+    if (startDate > endDate) {
       throw new BadRequestException('Start date must be before end date');
     }
 
@@ -72,8 +76,8 @@ export class LeavesPrismaService {
         staffId: data.staffId,
         tenantId: data.tenantId,
         status: 'APPROVED',
-        startDate: { lte: data.endDate },
-        endDate: { gte: data.startDate },
+        startDate: { lte: endDate },
+        endDate: { gte: startDate },
       },
     });
 
@@ -91,8 +95,8 @@ export class LeavesPrismaService {
         schoolLevelId: data.schoolLevelId ?? null,
         staffId: data.staffId,
         type: data.type,
-        startDate: data.startDate,
-        endDate: data.endDate,
+        startDate,
+        endDate,
         reason: data.reason ?? null,
         status: 'PENDING',
       },

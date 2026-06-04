@@ -10,6 +10,7 @@
 
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { Prisma } from '@prisma/client';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 
 @Injectable()
@@ -28,19 +29,24 @@ export class AttendancePrismaService {
     academicYearId: string;
     schoolLevelId?: string;
     staffId: string;
-    date: Date;
-    checkIn?: Date;
-    checkOut?: Date;
+    date: string | Date;
+    checkIn?: string | Date;
+    checkOut?: string | Date;
     status: string;
     hoursWorked?: number;
     notes?: string;
   }) {
+    // Convert date strings to Date objects (DTO sends strings via @IsDateString)
+    const date = data.date instanceof Date ? data.date : new Date(data.date);
+    const checkIn = data.checkIn ? (data.checkIn instanceof Date ? data.checkIn : new Date(data.checkIn)) : null;
+    const checkOut = data.checkOut ? (data.checkOut instanceof Date ? data.checkOut : new Date(data.checkOut)) : null;
+
     // Vérifier qu'il n'y a pas déjà une présence pour cette date
     const existing = await this.prisma.staffAttendance.findUnique({
       where: {
         staffId_date: {
           staffId: data.staffId,
-          date: data.date,
+          date,
         },
       },
     });
@@ -52,8 +58,16 @@ export class AttendancePrismaService {
     return this.prisma.staffAttendance.create({
       data: {
         ...prismaCreateDefaults(),
-        ...data,
+        tenantId: data.tenantId,
+        academicYearId: data.academicYearId,
+        schoolLevelId: data.schoolLevelId ?? null,
+        staffId: data.staffId,
+        date,
+        checkIn,
+        checkOut,
         status: data.status || 'PRESENT',
+        hoursWorked: data.hoursWorked ?? null,
+        notes: data.notes ?? null,
       },
     });
   }
@@ -170,10 +184,14 @@ export class AttendancePrismaService {
     academicYearId: string;
     schoolLevelId?: string;
     staffId: string;
-    date: Date;
+    date: string | Date;
     hours: number;
     reason?: string;
+    notes?: string;
   }) {
+    // Convert date string to Date object (DTO sends strings via @IsDateString)
+    const date = data.date instanceof Date ? data.date : new Date(data.date);
+
     return this.prisma.overtimeRecord.create({
       data: {
         ...prismaCreateDefaults(),
@@ -181,10 +199,10 @@ export class AttendancePrismaService {
         academicYearId: data.academicYearId,
         schoolLevelId: data.schoolLevelId ?? null,
         staffId: data.staffId,
-        date: data.date,
-        hours: data.hours,
+        date,
+        hours: new Prisma.Decimal(data.hours),
         validated: false,
-        notes: data.reason ?? null,
+        notes: data.reason ?? data.notes ?? null,
       },
     });
   }

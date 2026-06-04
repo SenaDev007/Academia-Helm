@@ -19,6 +19,7 @@ import {
   Param,
   Query,
   UseGuards,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { StudentsPrismaService } from './students-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -79,7 +80,7 @@ export class StudentsPrismaController {
 
   @Get(':id')
   async findOne(
-    @Param('id') id: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @TenantId() tenantId: string,
   ) {
     return this.studentsService.findStudentById(id, tenantId);
@@ -87,7 +88,7 @@ export class StudentsPrismaController {
 
   @Put(':id')
   async update(
-    @Param('id') id: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @TenantId() tenantId: string,
     @Body() updateDto: UpdateStudentPrismaDto,
   ) {
@@ -96,7 +97,7 @@ export class StudentsPrismaController {
 
   @Post(':id/archive')
   async archive(
-    @Param('id') id: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @TenantId() tenantId: string,
     @Body() body: ArchiveStudentDto,
   ) {
@@ -105,7 +106,7 @@ export class StudentsPrismaController {
 
   @Post(':id/enroll')
   async enroll(
-    @Param('id') id: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @TenantId() tenantId: string,
     @Body() enrollDto: EnrollStudentDto,
   ) {

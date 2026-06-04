@@ -18,10 +18,10 @@ import {
 import { PedagogicalMaterialsPrismaService } from './pedagogical-materials-prisma.service';
 import { CreatePedagogicalMaterialDto } from './dto/create-pedagogical-material.dto';
 import { UpdatePedagogicalMaterialDto } from './dto/update-pedagogical-material.dto';
+import { PedagogicalMaterialsQueryDto } from './dto/query-dtos';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { SchoolLevelId } from '../common/decorators/school-level-id.decorator';
-import { PaginationDto } from '../common/dto/pagination.dto';
 import { MaterialContextGuard } from './guards/material-context.guard';
 import { MaterialRbacGuard } from './guards/material-rbac.guard';
 import { UseInterceptors } from '@nestjs/common';
@@ -64,19 +64,14 @@ export class PedagogicalMaterialsPrismaController {
   @RequiredPermission(PermissionAction.READ)
   async findAll(
     @TenantId() tenantId: string,
-    @Query() pagination: PaginationDto,
-    @Query('schoolLevelId') schoolLevelId?: string,
-    @Query('subjectId') subjectId?: string,
-    @Query('category') category?: string,
-    @Query('isActive') isActive?: string,
-    @Query('search') search?: string,
+    @Query() query: PedagogicalMaterialsQueryDto,
   ) {
-    return this.pedagogicalMaterialsService.findAll(tenantId, pagination, {
-      schoolLevelId,
-      subjectId,
-      category,
-      isActive: isActive === 'true' ? true : isActive === 'false' ? false : undefined,
-      search,
+    return this.pedagogicalMaterialsService.findAll(tenantId, query, {
+      schoolLevelId: query.schoolLevelId,
+      subjectId: query.subjectId,
+      category: query.category,
+      isActive: query.isActive === 'true' ? true : query.isActive === 'false' ? false : undefined,
+      search: query.search,
     });
   }
 

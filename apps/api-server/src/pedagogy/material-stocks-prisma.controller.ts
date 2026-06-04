@@ -12,9 +12,9 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { MaterialStocksPrismaService } from './material-stocks-prisma.service';
+import { MaterialStocksQueryDto } from './dto/query-dtos';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
-import { PaginationDto } from '../common/dto/pagination.dto';
 import { MaterialContextGuard } from './guards/material-context.guard';
 import { MaterialRbacGuard } from './guards/material-rbac.guard';
 import { UseInterceptors } from '@nestjs/common';
@@ -29,20 +29,16 @@ export class MaterialStocksPrismaController {
   @Get()
   async findAll(
     @TenantId() tenantId: string,
-    @Query('academicYearId') academicYearId: string,
-    @Query() pagination: PaginationDto,
-    @Query('materialId') materialId?: string,
-    @Query('schoolLevelId') schoolLevelId?: string,
-    @Query('classId') classId?: string,
+    @Query() query: MaterialStocksQueryDto,
   ) {
     return this.materialStocksService.findAll(
       tenantId,
-      academicYearId,
-      pagination,
+      query.academicYearId,
+      query,
       {
-        materialId,
-        schoolLevelId,
-        classId,
+        materialId: query.materialId,
+        schoolLevelId: query.schoolLevelId,
+        classId: query.classId,
       },
     );
   }

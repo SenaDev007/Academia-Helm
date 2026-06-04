@@ -15,9 +15,9 @@ import {
 } from '@nestjs/common';
 import { AnnualTeacherSuppliesPrismaService } from './annual-teacher-supplies-prisma.service';
 import { CreateAnnualTeacherSupplyDto } from './dto/create-annual-teacher-supply.dto';
+import { AnnualTeacherSuppliesQueryDto } from './dto/query-dtos';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
-import { PaginationDto } from '../common/dto/pagination.dto';
 import { MaterialContextGuard } from './guards/material-context.guard';
 import { MaterialRbacGuard } from './guards/material-rbac.guard';
 import { UseInterceptors } from '@nestjs/common';
@@ -45,22 +45,17 @@ export class AnnualTeacherSuppliesPrismaController {
   @Get()
   async findAll(
     @TenantId() tenantId: string,
-    @Query('academicYearId') academicYearId: string,
-    @Query() pagination: PaginationDto,
-    @Query('teacherId') teacherId?: string,
-    @Query('materialId') materialId?: string,
-    @Query('schoolLevelId') schoolLevelId?: string,
-    @Query('classId') classId?: string,
+    @Query() query: AnnualTeacherSuppliesQueryDto,
   ) {
     return this.annualTeacherSuppliesService.findAll(
       tenantId,
-      academicYearId,
-      pagination,
+      query.academicYearId,
+      query,
       {
-        teacherId,
-        materialId,
-        schoolLevelId,
-        classId,
+        teacherId: query.teacherId,
+        materialId: query.materialId,
+        schoolLevelId: query.schoolLevelId,
+        classId: query.classId,
       },
     );
   }

@@ -15,10 +15,10 @@ import {
 } from '@nestjs/common';
 import { MaterialMovementsPrismaService } from './material-movements-prisma.service';
 import { CreateMaterialMovementDto } from './dto/create-material-movement.dto';
+import { MaterialMovementsQueryDto } from './dto/query-dtos';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { PaginationDto } from '../common/dto/pagination.dto';
 import { MaterialContextGuard } from './guards/material-context.guard';
 import { MaterialRbacGuard } from './guards/material-rbac.guard';
 import { UseInterceptors } from '@nestjs/common';
@@ -48,20 +48,16 @@ export class MaterialMovementsPrismaController {
   @Get()
   async findAll(
     @TenantId() tenantId: string,
-    @Query('academicYearId') academicYearId: string,
-    @Query() pagination: PaginationDto,
-    @Query('materialId') materialId?: string,
-    @Query('movementType') movementType?: string,
-    @Query('performedById') performedById?: string,
+    @Query() query: MaterialMovementsQueryDto,
   ) {
     return this.materialMovementsService.findAll(
       tenantId,
-      academicYearId,
-      pagination,
+      query.academicYearId,
+      query,
       {
-        materialId,
-        movementType,
-        performedById,
+        materialId: query.materialId,
+        movementType: query.movementType,
+        performedById: query.performedById,
       },
     );
   }

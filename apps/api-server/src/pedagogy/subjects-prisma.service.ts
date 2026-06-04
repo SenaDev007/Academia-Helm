@@ -26,6 +26,7 @@ export class SubjectsPrismaService {
     academicTrackId?: string;
     language?: string;
     name: string;
+    abbreviation?: string;
     code: string;
     coefficient?: number;
     weeklyHours?: number;
@@ -102,7 +103,7 @@ export class SubjectsPrismaService {
         schoolLevel: true,
         academicYear: true,
         academicTrack: true,
-        programs: true,
+        subjectPrograms: true,
       },
       orderBy: [
         { code: 'asc' },
@@ -121,9 +122,10 @@ export class SubjectsPrismaService {
         schoolLevel: true,
         academicYear: true,
         academicTrack: true,
-        teachers: {
-          // TeacherSubject a une relation teacher, mais elle est déjà accessible via la relation
-          // Pas besoin d'include supplémentaire
+        teacherSubjects: {
+          include: {
+            teacher: true,
+          },
         },
         classSubjects: {
           include: {

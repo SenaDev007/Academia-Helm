@@ -6867,7 +6867,7 @@ model TeacherSubject {
 model ClassSubject {
   id              String                   @id @default(uuid())
   tenantId        String
-  classId         String
+  classId         String?
   subjectId       String
   academicYearId  String
   weeklyHours     Int                      @default(0)
@@ -6878,13 +6878,13 @@ model ClassSubject {
   classDiaries    ClassDiary[]             @relation("ClassDiaryClassSubject")
   academicClass   AcademicClass?           @relation("AcademicClassSubject", fields: [academicClassId], references: [id], onDelete: Cascade)
   academicYear    AcademicYear             @relation("ClassSubjectAcademicYear", fields: [academicYearId], references: [id])
-  class           Class                    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  class           Class?                   @relation(fields: [classId], references: [id], onDelete: Cascade)
   subject         Subject                  @relation("ClassSubjectSubject", fields: [subjectId], references: [id], onDelete: Cascade)
   tenant          Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   exams           Exam[]
   assignments     TeacherClassAssignment[]
 
-  @@unique([classId, subjectId, academicYearId])
+  @@unique([academicClassId, subjectId, academicYearId])
   @@index([tenantId, academicYearId])
   @@index([classId])
   @@index([subjectId])

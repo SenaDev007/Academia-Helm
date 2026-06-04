@@ -131,7 +131,6 @@ export class PedagogyPrismaService {
               tenantId,
               academicYearId,
               academicClassId: classId,
-              classId: 'legacy-placeholder', // Requis par le schéma actuel si non null
               subjectId,
               weeklyHours: hours,
               coefficient: coeff,

@@ -81,7 +81,7 @@ export class TimetablesPrismaService {
   /**
    * Ajoute une entrée à l'emploi du temps
    */
-  async createTimetableSlot(data: {
+  async createTimetableEntry(data: {
     tenantId: string;
     academicYearId: string;
     schoolLevelId: string;

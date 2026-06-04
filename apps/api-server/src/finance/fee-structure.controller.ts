@@ -16,7 +16,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
-@Controller('finance/fees')
+@Controller('finance/fee-structures')
 @UseGuards(JwtAuthGuard)
 export class FeeStructureController {
   constructor(private readonly service: FeeStructureService) {}

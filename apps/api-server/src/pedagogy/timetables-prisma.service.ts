@@ -163,15 +163,19 @@ export class TimetablesPrismaService {
       },
     });
 
-    // Log action
-    await this.audit.log({
-      tenantId: data.tenantId,
-      entityType: 'TIMETABLE_SLOT',
-      entityId: entry.id,
-      action: 'CREATE',
-      performedBy: 'SYSTEM',
-      newData: entry,
-    });
+    // Log action (non-blocking, don't fail if audit fails)
+    try {
+      await this.audit.log({
+        tenantId: data.tenantId,
+        entityType: 'TIMETABLE_SLOT',
+        entityId: entry.id,
+        action: 'CREATE',
+        performedBy: 'SYSTEM',
+        newData: JSON.parse(JSON.stringify(entry)),
+      });
+    } catch (auditError) {
+      // Audit logging failure should not block the operation
+    }
 
     return entry;
 
@@ -288,15 +292,19 @@ export class TimetablesPrismaService {
       where: { id },
     });
 
-    // Log action
-    await this.audit.log({
-      tenantId,
-      entityType: 'TIMETABLE_SLOT',
-      entityId: id,
-      action: 'DELETE',
-      performedBy: 'SYSTEM',
-      oldData: entry,
-    });
+    // Log action (non-blocking)
+    try {
+      await this.audit.log({
+        tenantId,
+        entityType: 'TIMETABLE_SLOT',
+        entityId: id,
+        action: 'DELETE',
+        performedBy: 'SYSTEM',
+        oldData: JSON.parse(JSON.stringify(entry)),
+      });
+    } catch (auditError) {
+      // Audit logging failure should not block the operation
+    }
 
     return { success: true };
   }

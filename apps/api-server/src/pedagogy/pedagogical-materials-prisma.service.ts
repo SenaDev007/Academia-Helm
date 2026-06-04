@@ -36,10 +36,13 @@ export class PedagogicalMaterialsPrismaService {
       throw new BadRequestException(`Material with code ${data.code} already exists`);
     }
 
+    // academicYearId is required by MaterialContextGuard but not in Prisma model
+    const { academicYearId, ...prismaData } = data;
+
     return this.prisma.pedagogicalMaterial.create({
       data: {
         ...prismaCreateDefaults(),
-        ...data,
+        ...prismaData,
         isActive: data.isActive ?? true,
       },
       include: {

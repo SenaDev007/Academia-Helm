@@ -11,6 +11,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   CreditCard,
   Search,
@@ -33,6 +34,7 @@ interface MatriculeStats {
 }
 
 export default function StudentMatriculesSection() {
+  const confirmDialog = useConfirmDialog();
   const [stats, setStats] = useState<MatriculeStats | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [searchMatricule, setSearchMatricule] = useState('');
@@ -71,7 +73,8 @@ export default function StudentMatriculesSection() {
   };
 
   const handleGenerateBulk = async () => {
-    if (!confirm('Générer les matricules pour tous les élèves sans matricule ?')) {
+    const ok = await confirmDialog.info('Des matricules seront générés pour tous les élèves sans matricule. Voulez-vous continuer ?', 'Générer les matricules');
+    if (!ok) {
       return;
     }
 
@@ -116,6 +119,8 @@ export default function StudentMatriculesSection() {
   };
 
   return (
+    <>
+    {confirmDialog.dialog}
     <div className="space-y-6">
       {/* Statistiques */}
       {stats && (
@@ -236,6 +241,7 @@ export default function StudentMatriculesSection() {
         </div>
       )}
     </div>
+    </>
   );
 }
 

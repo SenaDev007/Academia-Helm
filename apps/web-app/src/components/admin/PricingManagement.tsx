@@ -10,6 +10,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   getActivePricingConfig,
   getAllPricingConfigs,
@@ -40,6 +41,7 @@ import {
 type Tab = 'config' | 'tiers' | 'overrides' | 'history';
 
 export default function PricingManagement() {
+  const confirmDialog = useConfirmDialog();
   const [activeTab, setActiveTab] = useState<Tab>('config');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -145,7 +147,8 @@ export default function PricingManagement() {
   };
 
   const handleDeactivateOverride = async (id: string) => {
-    if (!confirm('Êtes-vous sûr de vouloir désactiver cet override ?')) return;
+    const ok = await confirmDialog.warning('Cet override sera désactivé. Les tarifs associés ne s\'appliqueront plus. Voulez-vous continuer ?', 'Désactiver l\'override');
+    if (!ok) return;
     setIsLoading(true);
     setError(null);
     try {
@@ -161,6 +164,8 @@ export default function PricingManagement() {
   };
 
   return (
+    <>
+    {confirmDialog.dialog}
     <div className="space-y-6">
       {/* Header */}
       <div>
@@ -778,5 +783,6 @@ export default function PricingManagement() {
         </>
       )}
     </div>
+    </>
   );
 }

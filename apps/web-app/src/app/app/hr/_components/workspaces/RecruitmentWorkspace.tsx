@@ -36,6 +36,7 @@ import { cn } from '@/lib/utils';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { toast } from '@/components/ui/toast';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 
 const PRIMARY = '#1A2BA6';
 
@@ -124,6 +125,7 @@ interface TalentPool {
 
 export function RecruitmentWorkspace() {
   const { tenant } = useModuleContext();
+  const confirmDialog = useConfirmDialog();
   const [activeTab, setActiveTab] = useState<'jobs' | 'candidates' | 'interviews' | 'tests' | 'embauches' | 'talent_pool'>('jobs');
   const [loading, setLoading] = useState(false);
 
@@ -195,29 +197,34 @@ export function RecruitmentWorkspace() {
       // Fetch Candidates
       const fetchedCandidates = await hrFetch<any[]>(hrUrl('recruitment/candidates', { tenantId: tenant.id }));
       if (fetchedCandidates) {
-        setCandidates(fetchedCandidates.map(c => ({
-          id: c.id,
-          applicationId: c.applications?.[0]?.id || c.id,
-          firstName: c.firstName,
-          lastName: c.lastName,
-          name: `${c.firstName} ${c.lastName}`,
-          email: c.email,
-          phone: c.phone || '',
-          address: c.address || '',
-          job: c.applications?.[0]?.job?.title || 'Aucun poste',
-          score: c.applications?.[0]?.score || 0,
-          scoreCV: c.applications?.[0]?.scoreCV || 0,
-          scoreLetter: c.applications?.[0]?.scoreLetter || 0,
-          scoreMatching: c.applications?.[0]?.scoreMatching || 0,
-          category: c.applications?.[0]?.score >= 90 ? 'Excellent' : 'Bon',
-          matchDetail: c.applications?.[0]?.matchDetail || '',
-          risks: c.applications?.[0]?.risks || 'Aucun',
-          riskDetail: c.applications?.[0]?.riskDetail || '',
-          date: c.createdAt ? c.createdAt.split('T')[0] : new Date().toISOString().split('T')[0],
-          status: c.applications?.[0]?.status || 'NOUVEAU',
-          history: c.applications?.[0]?.history || [{ action: 'Profil créé', date: new Date().toISOString().replace('T', ' ').slice(0, 16), user: 'Système' }],
-          academicProfile: c.academicProfile || null,
-        })));
+        setCandidates(fetchedCandidates.map(c => {
+          // Find the primary (first) application with its job data
+          const primaryApp = c.applications?.[0] || c.application;
+          const jobTitle = primaryApp?.job?.title || primaryApp?.jobTitle || c.jobTitle || '';
+          return {
+            id: c.id,
+            applicationId: primaryApp?.id || c.id,
+            firstName: c.firstName,
+            lastName: c.lastName,
+            name: `${c.firstName} ${c.lastName}`,
+            email: c.email,
+            phone: c.phone || '',
+            address: c.address || '',
+            job: jobTitle || 'Aucun poste',
+            score: primaryApp?.score || 0,
+            scoreCV: primaryApp?.scoreCV || 0,
+            scoreLetter: primaryApp?.scoreLetter || 0,
+            scoreMatching: primaryApp?.scoreMatching || 0,
+            category: primaryApp?.score >= 90 ? 'Excellent' : 'Bon',
+            matchDetail: primaryApp?.matchDetail || '',
+            risks: primaryApp?.risks || 'Aucun',
+            riskDetail: primaryApp?.riskDetail || '',
+            date: c.createdAt ? c.createdAt.split('T')[0] : new Date().toISOString().split('T')[0],
+            status: primaryApp?.status || 'NOUVEAU',
+            history: primaryApp?.history || [{ action: 'Profil créé', date: new Date().toISOString().replace('T', ' ').slice(0, 16), user: 'Système' }],
+            academicProfile: c.academicProfile || null,
+          };
+        }));
       }
 
       // Fetch Interviews
@@ -313,27 +320,37 @@ export function RecruitmentWorkspace() {
 
   // Delete Job Offer
   const handleDeleteJob = async (id: string) => {
-    if (!confirm('Voulez-vous supprimer cette offre ?')) return;
+    const ok = await confirmDialog.danger(
+      'Cette offre et toutes ses candidatures seront définitivement supprimées.',
+      'Supprimer cette offre ?',
+      'Les candidats associés ne seront pas supprimés, mais leurs candidatures le seront.'
+    );
+    if (!ok) return;
     try {
       await hrFetch(hrUrl(`recruitment/jobs/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
-      toast({ variant: 'success', title: 'Offre d\'emploi supprimée avec succès.' });
+      toast({ variant: 'success', title: 'Offre supprimée', description: 'L\'offre d\'emploi et ses candidatures ont été supprimées.' });
       loadData();
     } catch (err) {
       console.error('Failed to delete job:', err);
-      toast({ variant: 'error', title: 'Erreur lors de la suppression de l\'offre.' });
+      toast({ variant: 'error', title: 'Erreur de suppression', description: 'Impossible de supprimer cette offre. Veuillez réessayer.' });
     }
   };
 
   // Delete Candidate
   const handleDeleteCandidate = async (id: string) => {
-    if (!confirm('Voulez-vous supprimer ce candidat ?')) return;
+    const ok = await confirmDialog.danger(
+      'Ce candidat, ses candidatures, entretiens et résultats de tests seront définitivement supprimés.',
+      'Supprimer ce candidat ?',
+      'Cette action est irréversible et ne peut pas être annulée.'
+    );
+    if (!ok) return;
     try {
       await hrFetch(hrUrl(`recruitment/candidates/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
-      toast({ variant: 'success', title: 'Candidat supprimé avec succès.' });
+      toast({ variant: 'success', title: 'Candidat supprimé', description: 'Le candidat et toutes ses données associées ont été supprimés.' });
       loadData();
     } catch (err) {
       console.error('Failed to delete candidate:', err);
-      toast({ variant: 'error', title: 'Erreur lors de la suppression du candidat.' });
+      toast({ variant: 'error', title: 'Erreur de suppression', description: 'Impossible de supprimer ce candidat. Veuillez réessayer.' });
     }
   };
 
@@ -358,14 +375,18 @@ export function RecruitmentWorkspace() {
 
   // Delete Interview
   const handleDeleteInterview = async (id: string) => {
-    if (!confirm('Annuler cet entretien ?')) return;
+    const ok = await confirmDialog.warning(
+      'Cet entretien sera définitivement annulé et supprimé.',
+      'Annuler cet entretien ?'
+    );
+    if (!ok) return;
     try {
       await hrFetch(hrUrl(`recruitment/interviews/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
-      toast({ variant: 'success', title: 'Entretien annulé avec succès.' });
+      toast({ variant: 'success', title: 'Entretien annulé', description: 'L\'entretien a été supprimé du calendrier.' });
       loadData();
     } catch (err) {
       console.error('Failed to delete interview:', err);
-      toast({ variant: 'error', title: 'Erreur lors de l\'annulation de l\'entretien.' });
+      toast({ variant: 'error', title: 'Erreur d\'annulation', description: 'Impossible d\'annuler cet entretien. Veuillez réessayer.' });
     }
   };
 
@@ -390,14 +411,18 @@ export function RecruitmentWorkspace() {
 
   // Delete Test
   const handleDeleteTest = async (id: string) => {
-    if (!confirm('Supprimer ce test ?')) return;
+    const ok = await confirmDialog.danger(
+      'Ce test et tous ses résultats seront définitivement supprimés.',
+      'Supprimer ce test ?'
+    );
+    if (!ok) return;
     try {
       await hrFetch(hrUrl(`recruitment/tests/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
-      toast({ variant: 'success', title: 'Test supprimé.' });
+      toast({ variant: 'success', title: 'Test supprimé', description: 'Le test et ses résultats ont été supprimés.' });
       loadData();
     } catch (err) {
       console.error('Failed to delete test:', err);
-      toast({ variant: 'error', title: 'Erreur lors de la suppression du test.' });
+      toast({ variant: 'error', title: 'Erreur de suppression', description: 'Impossible de supprimer ce test. Veuillez réessayer.' });
     }
   };
 
@@ -421,14 +446,18 @@ export function RecruitmentWorkspace() {
 
   // Remove Test Result
   const handleDeleteTestResult = async (id: string) => {
-    if (!confirm('Supprimer ce résultat de test ?')) return;
+    const ok = await confirmDialog.danger(
+      'Ce résultat de test sera définitivement supprimé.',
+      'Supprimer ce résultat ?'
+    );
+    if (!ok) return;
     try {
       await hrFetch(hrUrl(`recruitment/test-results/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
-      toast({ variant: 'success', title: 'Résultat supprimé.' });
+      toast({ variant: 'success', title: 'Résultat supprimé', description: 'Le résultat du test a été supprimé.' });
       loadData();
     } catch (err) {
       console.error('Failed to delete test result:', err);
-      toast({ variant: 'error', title: 'Erreur lors de la suppression du résultat.' });
+      toast({ variant: 'error', title: 'Erreur de suppression', description: 'Impossible de supprimer ce résultat. Veuillez réessayer.' });
     }
   };
 
@@ -455,14 +484,18 @@ export function RecruitmentWorkspace() {
 
   // Remove candidate from Talent Pool
   const handleRemoveFromTalent = async (id: string) => {
-    if (!confirm('Retirer cette fiche de la base de talents ?')) return;
+    const ok = await confirmDialog.warning(
+      'Ce profil sera retiré de la base de talents, mais le candidat ne sera pas supprimé.',
+      'Retirer de la base de talents ?'
+    );
+    if (!ok) return;
     try {
       await hrFetch(hrUrl(`recruitment/talent-pool/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
-      toast({ variant: 'success', title: 'Profil retiré de la base de talents.' });
+      toast({ variant: 'success', title: 'Profil retiré', description: 'Le profil a été retiré de la base de talents.' });
       loadData();
     } catch (err) {
       console.error('Failed to remove from talent pool:', err);
-      toast({ variant: 'error', title: 'Erreur lors du retrait de la base de talents.' });
+      toast({ variant: 'error', title: 'Erreur de retrait', description: 'Impossible de retirer ce profil. Veuillez réessayer.' });
     }
   };
 
@@ -496,6 +529,7 @@ export function RecruitmentWorkspace() {
   const totalHired = candidates.filter(c => c.status === 'EMBAUCHÉ').length;
 
   return (
+    <>
     <div className="space-y-6 pb-12">
       {/* Cockpit Analytics HTIP (Tome 2 & 3) */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -1500,5 +1534,7 @@ export function RecruitmentWorkspace() {
         </AnimatePresence>
       )}
     </div>
+    {confirmDialog.dialog}
+    </>
   );
 }

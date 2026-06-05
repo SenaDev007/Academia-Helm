@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Plus, Calendar, CheckCircle2, XCircle, FileText, Coffee, X, Loader2 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -36,6 +37,7 @@ const inputClass =
 const labelClass = 'block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5';
 
 export function LeavesWorkspace() {
+  const confirmDialog = useConfirmDialog();
   const { tenant, academicYear } = useModuleContext();
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -126,6 +128,8 @@ export function LeavesWorkspace() {
   }).length;
 
   return (
+    <>
+    {confirmDialog.dialog}
     <div className="space-y-6 pb-12">
       {/* New Leave Request Modal */}
       {modalOpen && (
@@ -276,7 +280,7 @@ export function LeavesWorkspace() {
                       {request.status === 'PENDING' ? (
                         <div className="flex justify-end gap-1.5">
                           <button onClick={() => handleProcessRequest(request.id, 'APPROVED')} className="p-1.5 rounded-lg hover:bg-emerald-50 text-emerald-600 transition-colors" title="Approuver"><CheckCircle2 className="h-5 w-5" /></button>
-                          <button onClick={() => { if (confirm('Confirmer le rejet de cette demande de congé ?')) handleProcessRequest(request.id, 'REJECTED') }} className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-500 transition-colors" title="Rejeter"><XCircle className="h-5 w-5" /></button>
+                          <button onClick={async () => { const ok = await confirmDialog.danger('Cette demande de congé sera rejetée définitivement.', 'Rejeter la demande'); if (ok) handleProcessRequest(request.id, 'REJECTED') }} className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-500 transition-colors" title="Rejeter"><XCircle className="h-5 w-5" /></button>
                         </div>
                       ) : (
                         <button className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"><FileText className="h-5 w-5" /></button>
@@ -291,5 +295,6 @@ export function LeavesWorkspace() {
         </motion.div>
       )}
     </div>
+    </>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Save, Settings, ShieldAlert, CheckCircle2, Loader2,
   FileText, Plus, Trash2, Edit3, X, ArrowUp, ArrowDown,
@@ -20,6 +21,7 @@ const CONTRACT_TYPES = [
 ];
 
 export function SettingsWorkspace() {
+  const confirmDialog = useConfirmDialog();
   const { tenant } = useModuleContext();
   const [activeTab, setActiveTab] = useState<'payroll' | 'templates'>('payroll');
 
@@ -215,7 +217,8 @@ export function SettingsWorkspace() {
   }
 
   async function handleDeleteTemplate(id: string) {
-    if (!confirm('Supprimer ce modèle de contrat ?')) return;
+    const ok = await confirmDialog.danger('Ce modèle de contrat sera définitivement supprimé.', 'Supprimer le modèle');
+    if (!ok) return;
     try {
       await hrFetch<any>(hrUrl(`contracts/templates/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Modèle supprimé.' });
@@ -238,6 +241,8 @@ export function SettingsWorkspace() {
   }
 
   return (
+    <>
+    {confirmDialog.dialog}
     <div className="max-w-3xl mx-auto space-y-6 pb-12">
       {/* Tab switcher */}
       <div className="flex gap-1 bg-slate-100 rounded-xl p-1">
@@ -631,5 +636,6 @@ export function SettingsWorkspace() {
         )}
       </AnimatePresence>
     </div>
+    </>
   );
 }

@@ -60,8 +60,26 @@ export class RecruitmentPrismaService {
   }
 
   async deleteJob(id: string) {
-    return this.prisma.hrJob.delete({
-      where: { id },
+    // Use a transaction to delete related records explicitly
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Get all applications for this job
+      const applications = await tx.hrApplication.findMany({
+        where: { jobId: id },
+        select: { id: true },
+      });
+
+      // 2. Delete AI reports linked to those applications
+      if (applications.length > 0) {
+        await tx.hrAiReport.deleteMany({
+          where: { applicationId: { in: applications.map((a) => a.id) } },
+        });
+      }
+
+      // 3. Delete the applications themselves
+      await tx.hrApplication.deleteMany({ where: { jobId: id } });
+
+      // 4. Finally, delete the job
+      return tx.hrJob.delete({ where: { id } });
     });
   }
 
@@ -118,8 +136,46 @@ export class RecruitmentPrismaService {
   }
 
   async deleteCandidate(id: string) {
-    return this.prisma.hrCandidate.delete({
-      where: { id },
+    // Use a transaction to delete related records explicitly,
+    // in case the DB foreign keys don't have ON DELETE CASCADE yet.
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Delete AI reports linked to candidate's applications
+      const applications = await tx.hrApplication.findMany({
+        where: { candidateId: id },
+        select: { id: true },
+      });
+      if (applications.length > 0) {
+        await tx.hrAiReport.deleteMany({
+          where: { applicationId: { in: applications.map((a) => a.id) } },
+        });
+      }
+
+      // 2. Delete AI reports linked directly to candidate
+      await tx.hrAiReport.deleteMany({ where: { candidateId: id } });
+
+      // 3. Delete test results
+      await tx.hrTestResult.deleteMany({ where: { candidateId: id } });
+
+      // 4. Delete interviews
+      await tx.hrInterview.deleteMany({ where: { candidateId: id } });
+
+      // 5. Delete talent pool entry
+      await tx.hrTalentPool.deleteMany({ where: { candidateId: id } });
+
+      // 6. Delete academic profile
+      await tx.academicProfile.deleteMany({ where: { candidateId: id } });
+
+      // 7. Delete teaching certifications
+      await tx.teachingCertification.deleteMany({ where: { candidateId: id } });
+
+      // 8. Delete academic scores
+      await tx.academicScore.deleteMany({ where: { candidateId: id } });
+
+      // 9. Delete applications
+      await tx.hrApplication.deleteMany({ where: { candidateId: id } });
+
+      // 10. Finally, delete the candidate
+      return tx.hrCandidate.delete({ where: { id } });
     });
   }
 
@@ -248,8 +304,10 @@ export class RecruitmentPrismaService {
   }
 
   async deleteApplication(id: string) {
-    return this.prisma.hrApplication.delete({
-      where: { id },
+    // Use a transaction to delete AI reports first
+    return this.prisma.$transaction(async (tx) => {
+      await tx.hrAiReport.deleteMany({ where: { applicationId: id } });
+      return tx.hrApplication.delete({ where: { id } });
     });
   }
 
@@ -334,8 +392,10 @@ export class RecruitmentPrismaService {
   }
 
   async deleteTest(id: string) {
-    return this.prisma.hrTest.delete({
-      where: { id },
+    // Use a transaction to delete test results first
+    return this.prisma.$transaction(async (tx) => {
+      await tx.hrTestResult.deleteMany({ where: { testId: id } });
+      return tx.hrTest.delete({ where: { id } });
     });
   }
 

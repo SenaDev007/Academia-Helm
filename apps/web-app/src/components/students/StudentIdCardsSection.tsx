@@ -11,6 +11,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   CreditCard,
   CheckCircle,
@@ -63,6 +64,7 @@ interface IdCardStats {
 }
 
 export default function StudentIdCardsSection() {
+  const confirmDialog = useConfirmDialog();
   const [stats, setStats] = useState<IdCardStats | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedCard, setSelectedCard] = useState<IdCard | null>(null);
@@ -88,7 +90,8 @@ export default function StudentIdCardsSection() {
   };
 
   const handleGenerateBulk = async () => {
-    if (!confirm('Générer les cartes pour tous les élèves sans carte ?')) {
+    const ok = await confirmDialog.info('Des cartes d'identité seront générées pour tous les élèves sans carte. Voulez-vous continuer ?', 'Générer les cartes');
+    if (!ok) {
       return;
     }
 
@@ -136,6 +139,8 @@ export default function StudentIdCardsSection() {
   };
 
   return (
+    <>
+    {confirmDialog.dialog}
     <div className="space-y-6">
       {/* Statistiques */}
       {stats && (
@@ -252,6 +257,7 @@ export default function StudentIdCardsSection() {
         </div>
       )}
     </div>
+    </>
   );
 }
 

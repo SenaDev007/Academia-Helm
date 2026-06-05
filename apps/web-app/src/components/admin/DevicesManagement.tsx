@@ -7,6 +7,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { 
   Smartphone, 
   Monitor, 
@@ -61,6 +62,7 @@ interface DeviceStats {
 }
 
 export default function DevicesManagement() {
+  const confirmDialog = useConfirmDialog();
   const [devices, setDevices] = useState<Device[]>([]);
   const [stats, setStats] = useState<DeviceStats | null>(null);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
@@ -106,7 +108,8 @@ export default function DevicesManagement() {
   };
 
   const revokeDevice = async (deviceId: string) => {
-    if (!confirm('Êtes-vous sûr de vouloir révoquer cet appareil ?')) {
+    const ok = await confirmDialog.warning('Les sessions et la synchronisation offline de cet appareil seront invalidées. Voulez-vous continuer ?', 'Révoquer l\'appareil');
+    if (!ok) {
       return;
     }
 
@@ -149,6 +152,8 @@ export default function DevicesManagement() {
   });
 
   return (
+    <>
+    {confirmDialog.dialog}
     <div className="space-y-6">
       {/* Header */}
       <div>
@@ -332,6 +337,7 @@ export default function DevicesManagement() {
         />
       )}
     </div>
+    </>
   );
 }
 

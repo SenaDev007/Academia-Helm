@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard,
@@ -46,6 +47,7 @@ const TABS = [
 ];
 
 export default function TeacherTasksWorkspace() {
+  const confirmDialog = useConfirmDialog();
   const [activeTab, setActiveTab] = useState('dashboard');
   const { academicYear, schoolLevel } = useModuleContext();
   const { user } = useAuth();
@@ -138,7 +140,8 @@ export default function TeacherTasksWorkspace() {
   };
 
   const handleDeleteHomework = async (id: string) => {
-    if (!confirm("Voulez-vous vraiment supprimer ce devoir ?")) return;
+    const ok = await confirmDialog.danger('Ce devoir sera définitivement supprimé.', 'Supprimer le devoir');
+    if (!ok) return;
     try {
       await pedagogyService.deleteHomeworkEntry(id);
       toast({
@@ -156,6 +159,8 @@ export default function TeacherTasksWorkspace() {
   };
 
   return (
+    <>
+    {confirmDialog.dialog}
     <div className="flex flex-col h-full bg-slate-50/30">
       {/* Top Header & Navigation */}
       <div className="bg-white border-b border-slate-200">
@@ -296,6 +301,7 @@ export default function TeacherTasksWorkspace() {
         ]}
       />
     </div>
+    </>
   );
 }
 

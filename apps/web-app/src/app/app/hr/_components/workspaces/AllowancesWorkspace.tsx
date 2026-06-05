@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Plus, Search, DollarSign, Edit, Trash2, Award, User, Layers, Check, X, AlertCircle } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -11,6 +12,7 @@ import { toast } from '@/components/ui/toast';
 const PRIMARY = '#1A2BA6';
 
 export function AllowancesWorkspace() {
+  const confirmDialog = useConfirmDialog();
   const { tenant } = useModuleContext();
   const [allowanceTypes, setAllowanceTypes] = useState<any[]>([]);
   const [staffList, setStaffList] = useState<any[]>([]);
@@ -140,7 +142,8 @@ export function AllowancesWorkspace() {
   }
 
   async function handleRemoveAssignment(id: string) {
-    if (!confirm('Voulez-vous vraiment supprimer cette indemnité ?')) return;
+    const ok = await confirmDialog.danger('Cette indemnité sera définitivement supprimée du collaborateur.', 'Supprimer l\'indemnité');
+    if (!ok) return;
     try {
       await hrFetch(hrUrl(`allowances/assignments/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       // Refresh list
@@ -154,6 +157,8 @@ export function AllowancesWorkspace() {
   }
 
   return (
+    <>
+    {confirmDialog.dialog}
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-12">
       {/* Sidebar - Staff List */}
       <div className="lg:col-span-4 space-y-4">
@@ -360,5 +365,6 @@ export function AllowancesWorkspace() {
         </div>
       )}
     </div>
+    </>
   );
 }

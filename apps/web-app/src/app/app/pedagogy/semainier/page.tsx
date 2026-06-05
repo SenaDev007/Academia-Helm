@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { CalendarDays, Plus, AlertTriangle, Send, CheckCircle, Loader2, AlertCircle } from 'lucide-react';
 import { ModuleContainer, FormModal } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -58,6 +59,7 @@ const SEVERITY_LEVELS = [
 ];
 
 export default function SemainierPage() {
+  const confirmDialog = useConfirmDialog();
   const { academicYear, schoolLevel } = useModuleContext();
   const [assignment, setAssignment] = useState<CurrentAssignment | null | undefined>(undefined);
   const [loading, setLoading] = useState(false);
@@ -161,7 +163,8 @@ export default function SemainierPage() {
 
   const handleSubmit = async () => {
     if (!assignment?.semainier) return;
-    if (!confirm('Soumettre ce semainier à la direction ?')) return;
+    const ok = await confirmDialog.info('Le semainier sera soumis à la direction et ne pourra plus être modifié. Voulez-vous continuer ?', 'Soumettre le semainier');
+    if (!ok) return;
     setSubmitBusy(true);
     try {
       await pedagogyFetch(`/api/pedagogy/teacher/semainier/${assignment.semainier.id}/submit`, { method: 'POST' });
@@ -189,6 +192,7 @@ export default function SemainierPage() {
 
   return (
     <>
+    {confirmDialog.dialog}
       <ModuleContainer
         header={{
           title: 'Cahier du semainier',

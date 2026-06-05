@@ -9,6 +9,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useQueryClient } from '@tanstack/react-query';
 import { settingsKeys } from '@/lib/query/settings-keys';
 import { academicYearsKeys } from '@/lib/query/academic-years-keys';
@@ -83,6 +84,7 @@ interface Toast {
 }
 
 export default function SettingsPage() {
+  const confirmDialog = useConfirmDialog();
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
@@ -561,7 +563,8 @@ export default function SettingsPage() {
   };
 
   const handleRestoreVersion = async (versionId: string, versionNum: number) => {
-    if (!confirm(`Voulez-vous restaurer la version ${versionNum} ? Une nouvelle version sera créée.`)) return;
+    const ok = await confirmDialog.info(`Une nouvelle version sera créée à partir de la version ${versionNum}. Voulez-vous continuer ?`, `Restaurer la version ${versionNum}`);
+    if (!ok) return;
     try {
       setSaving(true);
       const restored = await settingsService.activateIdentityVersion(versionId, `Restauration de la version ${versionNum}`, effectiveTenantId ?? undefined);
@@ -1321,7 +1324,8 @@ export default function SettingsPage() {
   };
 
   const handleDeleteRole = async (roleId: string) => {
-    if (!confirm('Êtes-vous sûr de vouloir supprimer ce rôle ?')) return;
+    const ok = await confirmDialog.danger('Ce rôle sera définitivement supprimé et ne pourra plus être assigné.', 'Supprimer le rôle');
+    if (!ok) return;
     try {
       setSaving(true);
       const tid = effectiveTenantId ?? undefined;
@@ -1371,7 +1375,8 @@ export default function SettingsPage() {
   };
 
   const handleRevokeRole = async (userId: string, roleId: string) => {
-    if (!confirm('Révoquer ce rôle pour cet utilisateur ?')) return;
+    const ok = await confirmDialog.warning('Ce rôle sera retiré de cet utilisateur. Voulez-vous continuer ?', 'Révoquer le rôle');
+    if (!ok) return;
     try {
       setSaving(true);
       const tid = effectiveTenantId ?? undefined;
@@ -1405,7 +1410,8 @@ export default function SettingsPage() {
   };
 
   const handleChangePlan = async (planCode: string) => {
-    if (!confirm('Êtes-vous sûr de vouloir changer de plan ?')) return;
+    const ok = await confirmDialog.warning('Le plan de votre abonnement sera modifié. Les changements prendront effet à la prochaine facturation.', 'Changer de plan');
+    if (!ok) return;
     try {
       setSaving(true);
       const tid = effectiveTenantId ?? undefined;
@@ -4071,7 +4077,8 @@ export default function SettingsPage() {
                             <button
                               type="button"
                               onClick={async () => {
-                                if (!confirm('Révoquer cet appareil ? Les sessions et la sync offline seront invalidées.')) return;
+                                const ok = await confirmDialog.warning('Les sessions et la sync offline de cet appareil seront invalidées. Voulez-vous continuer ?', 'Révoquer l\'appareil');
+                                if (!ok) return;
                                 try {
                                   const res = await fetch(`/api/auth/devices/${d.id}`, { method: 'DELETE', credentials: 'include' });
                                   const data = await res.json().catch(() => ({}));
@@ -4139,6 +4146,8 @@ export default function SettingsPage() {
   };
 
   return (
+    <>
+    {confirmDialog.dialog}
     <div className="space-y-6 overflow-x-hidden">
       <ModuleHeader
         title="Paramètres de l'application"
@@ -4195,5 +4204,6 @@ export default function SettingsPage() {
         )}
       </div>
     </div>
+    </>
   );
 }

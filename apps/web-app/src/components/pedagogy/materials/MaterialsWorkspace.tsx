@@ -13,6 +13,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { 
   Package, 
   Search, 
@@ -76,6 +77,7 @@ const CATEGORIES = [
 ];
 
 export default function MaterialsWorkspace() {
+  const confirmDialog = useConfirmDialog();
   const { academicYear, schoolLevel } = useModuleContext();
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
@@ -178,7 +180,8 @@ export default function MaterialsWorkspace() {
   };
 
   const handleDeleteMaterial = async (id: string) => {
-    if (!confirm("Voulez-vous vraiment supprimer cette ressource ?")) return;
+    const ok = await confirmDialog.danger('Cette ressource sera définitivement supprimée du catalogue.', 'Supprimer la ressource');
+    if (!ok) return;
     try {
       await pedagogyService.deletePedagogicalMaterial(id);
       toast({
@@ -260,6 +263,8 @@ export default function MaterialsWorkspace() {
   });
 
   return (
+    <>
+    {confirmDialog.dialog}
     <div className="flex h-[calc(100vh-12rem)] gap-6 overflow-hidden">
       {/* Catalogue & Filtres (Gauche) */}
       <div className="w-1/3 bg-white rounded-3xl border border-gray-100 flex flex-col shadow-sm">
@@ -596,5 +601,6 @@ export default function MaterialsWorkspace() {
         ]}
       />
     </div>
+    </>
   );
 }

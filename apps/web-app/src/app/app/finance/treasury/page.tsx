@@ -5,6 +5,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { CheckCircle, Eye } from 'lucide-react';
 import { ModuleHeader, SubModuleNavigation, ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -19,6 +20,7 @@ const formatXOF = (n: number) =>
   new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', maximumFractionDigits: 0 }).format(n);
 
 export default function TreasuryPage() {
+  const confirmDialog = useConfirmDialog();
   const { academicYear } = useModuleContext();
   const [closures, setClosures] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,6 +83,8 @@ export default function TreasuryPage() {
   const totalNet = closures.reduce((s, c) => s + Number(c.netBalance ?? 0), 0);
 
   return (
+    <>
+    {confirmDialog.dialog}
     <div className="space-y-6">
       <ModuleHeader
         title="Clôture & Trésorerie"
@@ -171,7 +175,7 @@ export default function TreasuryPage() {
                   <TableCell className="text-right">
                     <Button variant="ghost" size="icon" onClick={() => setDetailClosure(c)}><Eye className="h-4 w-4" /></Button>
                     {!c.validatedById && (
-                      <Button variant="ghost" size="icon" onClick={() => { if (window.confirm(`Valider la clôture du ${new Date(c.date).toLocaleDateString('fr-FR')} ?`)) handleValidate(c.id); }}><CheckCircle className="h-4 w-4 text-green-600" /></Button>
+                      <Button variant="ghost" size="icon" onClick={async () => { const ok = await confirmDialog.warning(`La clôture du ${new Date(c.date).toLocaleDateString('fr-FR')} sera validée définitivement.`, 'Valider la clôture'); if (ok) handleValidate(c.id); }}><CheckCircle className="h-4 w-4 text-green-600" /></Button>
                     )}
                   </TableCell>
                 </TableRow>
@@ -181,5 +185,6 @@ export default function TreasuryPage() {
         </Table>
       </ModuleContentArea>
     </div>
+    </>
   );
 }

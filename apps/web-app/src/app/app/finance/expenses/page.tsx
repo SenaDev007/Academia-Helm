@@ -4,6 +4,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Eye, CheckCircle, XCircle, Wallet } from 'lucide-react';
 import {
   ModuleHeader,
@@ -23,6 +24,7 @@ const formatXOF = (n: number) =>
   new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', maximumFractionDigits: 0 }).format(n);
 
 export default function ExpensesPage() {
+  const confirmDialog = useConfirmDialog();
   const { academicYear } = useModuleContext();
   const [expenses, setExpenses] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
@@ -131,6 +133,8 @@ export default function ExpensesPage() {
   const approvedSum = expenses.filter((e) => e.status === 'APPROVED').reduce((s, e) => s + Number(e.amount), 0);
 
   return (
+    <>
+    {confirmDialog.dialog}
     <div className="space-y-6">
       <ModuleHeader
         title="Dépenses & Budget"
@@ -246,8 +250,8 @@ export default function ExpensesPage() {
                       <Button variant="ghost" size="icon" onClick={() => setDetailExpense(expense)}><Eye className="h-4 w-4" /></Button>
                       {expense.status === 'PENDING' && (
                         <>
-                          <Button variant="ghost" size="icon" onClick={() => { if (window.confirm('Approuver cette dépense ?')) handleApprove(expense.id); }}><CheckCircle className="h-4 w-4 text-green-600" /></Button>
-                          <Button variant="ghost" size="icon" onClick={() => { if (window.confirm('Rejeter cette dépense ?')) handleReject(expense.id); }}><XCircle className="h-4 w-4 text-red-600" /></Button>
+                          <Button variant="ghost" size="icon" onClick={async () => { const ok = await confirmDialog.warning('Cette dépense sera approuvée et ne pourra plus être modifiée.', 'Approuver la dépense'); if (ok) handleApprove(expense.id); }}><CheckCircle className="h-4 w-4 text-green-600" /></Button>
+                          <Button variant="ghost" size="icon" onClick={async () => { const ok = await confirmDialog.danger('Cette dépense sera rejetée définitivement.', 'Rejeter la dépense'); if (ok) handleReject(expense.id); }}><XCircle className="h-4 w-4 text-red-600" /></Button>
                         </>
                       )}
                     </TableCell>
@@ -292,5 +296,6 @@ export default function ExpensesPage() {
         </ModuleContentArea>
       )}
     </div>
+    </>
   );
 }

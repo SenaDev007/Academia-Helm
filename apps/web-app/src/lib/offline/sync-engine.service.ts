@@ -285,6 +285,23 @@ export async function runSync(tenantId: string, deviceId?: string): Promise<{
       const ev = pendingById.get(eventId);
       if (r.status === 'SUCCESS') {
         await outboxService.markAsSynced(eventId);
+        // Clear the _isDirty flag on the synced entity in IndexedDB
+        if (ev) {
+          try {
+            const storeName = ENTITY_TO_TABLE[ev.entityType] || `${ev.entityType.toLowerCase()}s`;
+            const entities = await localDb.query<{ id: string; _isDirty?: boolean; _lastSync?: string }>(storeName);
+            const entity = entities.find((e) => e.id === ev.entityId);
+            if (entity && entity._isDirty) {
+              await localDb.execute(storeName, 'put', {
+                ...entity,
+                _isDirty: false,
+                _lastSync: new Date().toISOString(),
+              });
+            }
+          } catch {
+            // Store may not exist — not an error
+          }
+        }
       } else if (r.status === 'CONFLICT') {
         await outboxService.markAsConflict(eventId, r.conflict_reason || 'Conflit');
         try {
@@ -346,6 +363,13 @@ export async function runSync(tenantId: string, deviceId?: string): Promise<{
   }
 
   result.success = result.errors === 0 && result.conflicts === 0;
+
+  // Clean up stale outbox events (ACKNOWLEDGED, old SENT/FAILED) after each sync
+  try {
+    await outboxService.clearStaleEvents(tenantId);
+  } catch {
+    // Non-critical — stale events will be cleaned up next time
+  }
 
   // Ne PAS dispatcher sync-end ici — c'est la responsabilité de offline-sync.service.ts
   // qui gère l'orchestration globale et évite les doubles dispatchs

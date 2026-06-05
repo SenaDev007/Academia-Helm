@@ -7,11 +7,13 @@ import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui/toast';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 
 const PRIMARY = '#1A2BA6';
 
 export function CnssWorkspace() {
   const { tenant, academicYear } = useModuleContext();
+  const confirmDialog = useConfirmDialog();
   const [declarations, setDeclarations] = useState<any[]>([]);
   const [activeRate, setActiveRate] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -71,7 +73,8 @@ export function CnssWorkspace() {
   }
 
   async function handleUpdateStatus(id: string, status: 'GENERATED' | 'SUBMITTED' | 'PAID') {
-    if (!confirm('Confirmer cette action ? Elle est irréversible.')) return;
+    const ok = await confirmDialog.warning('Cette action est irréversible. Le statut sera définitivement modifié.', 'Confirmer cette action ?');
+    if (!ok) return;
     try {
       await hrFetch<any>(hrUrl(`cnss/declarations/${id}/finalize`, { tenantId: tenant.id }), {
         method: 'PUT',
@@ -95,6 +98,8 @@ export function CnssWorkspace() {
   };
 
   return (
+    <>
+    {confirmDialog.dialog}
     <div className="space-y-6 pb-12">
       {/* Rate Strip */}
       {activeRate && (
@@ -238,5 +243,6 @@ export function CnssWorkspace() {
         </div>
       )}
     </div>
+    </>
   );
 }

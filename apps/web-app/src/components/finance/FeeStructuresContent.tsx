@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Plus, Copy, UserCog, Pencil, Trash2 } from 'lucide-react';
 import {
   ModuleHeader,
@@ -31,6 +32,7 @@ const FEE_TYPES = [
 ];
 
 export default function FeeStructuresContent() {
+  const confirmDialog = useConfirmDialog();
   const { academicYear, tenantId } = useModuleContext();
   const syncStatuses = useEntitySyncStatusBatch('FEE_STRUCTURE', tenantId ?? undefined);
   const { toast } = useToast();
@@ -106,7 +108,8 @@ export default function FeeStructuresContent() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Supprimer ce frais ? Cette action est irréversible.')) return;
+    const ok = await confirmDialog.danger('Ce frais sera définitivement supprimé. Cette action est irréversible.', 'Supprimer le frais');
+    if (!ok) return;
     try {
       await financeService.deleteFeeStructure(id);
       toast({ title: 'Succès', description: 'Frais supprimé avec succès.' });
@@ -141,6 +144,8 @@ export default function FeeStructuresContent() {
   const feeTypeLabel = (t: string) => FEE_TYPES.find((f) => f.value === t)?.label ?? t;
 
   return (
+    <>
+    {confirmDialog.dialog}
     <div className="space-y-6">
       <ModuleHeader
         title="Configuration des frais"
@@ -299,5 +304,6 @@ export default function FeeStructuresContent() {
         </div>
       )}
     </div>
+    </>
   );
 }

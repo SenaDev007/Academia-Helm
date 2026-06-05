@@ -15,6 +15,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   PenTool,
   Plus,
@@ -40,6 +41,7 @@ interface ElectronicSignature {
 }
 
 export default function ElectronicSignaturesManagement() {
+  const confirmDialog = useConfirmDialog();
   const [signatures, setSignatures] = useState<ElectronicSignature[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -81,7 +83,8 @@ export default function ElectronicSignaturesManagement() {
   };
 
   const handleRevoke = async (signature: ElectronicSignature) => {
-    if (!confirm('Êtes-vous sûr de vouloir révoquer cette signature ?')) {
+    const ok = await confirmDialog.warning('Êtes-vous sûr de vouloir révoquer cette signature ? Cette action est irréversible.', 'Révoquer la signature');
+    if (!ok) {
       return;
     }
 
@@ -137,6 +140,8 @@ export default function ElectronicSignaturesManagement() {
   }
 
   return (
+    <>
+    {confirmDialog.dialog}
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -273,6 +278,7 @@ export default function ElectronicSignaturesManagement() {
         />
       )}
     </div>
+    </>
   );
 }
 

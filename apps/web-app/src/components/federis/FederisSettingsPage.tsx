@@ -7,6 +7,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import AppIcon from '@/components/ui/AppIcon';
 import { cn } from '@/lib/utils';
 import type { User } from '@/types';
@@ -16,6 +17,7 @@ import * as settingsService from '@/services/settings.service';
 type Tab = 'info' | 'academic-year' | 'users' | 'subscription' | 'audit';
 
 export default function FederisSettingsPage({ tenantId, user }: { tenantId: string; user: User }) {
+  const confirmDialog = useConfirmDialog();
   const [activeTab, setActiveTab] = useState<Tab>('info');
 
   const tabs: Array<{ id: Tab; label: string; icon: string }> = [
@@ -65,7 +67,8 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
   };
 
   const handleActivateAcademicYear = async (id: string) => {
-    if (!confirm("Voulez-vous vraiment activer cette année scolaire ?")) return;
+    const ok = await confirmDialog.info('Cette année scolaire deviendra l\'année active. Voulez-vous continuer ?', 'Activer l\'année scolaire');
+    if (!ok) return;
     try {
       setAcademicYearBusy(true);
       await settingsService.activateAcademicYear(id, tenantId);
@@ -79,7 +82,8 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
   };
 
   const handleCloseAcademicYear = async (id: string) => {
-    if (!confirm("Voulez-vous vraiment clôturer cette année scolaire ? Elle passera en lecture seule.")) return;
+    const ok = await confirmDialog.warning('Cette année scolaire passera en lecture seule. Cette action est irréversible. Voulez-vous continuer ?', 'Clôturer l\'année scolaire');
+    if (!ok) return;
     try {
       setAcademicYearBusy(true);
       await settingsService.closeAcademicYear(id, tenantId);
@@ -93,6 +97,8 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
   };
 
   return (
+    <>
+    {confirmDialog.dialog}
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Paramètres</h1>
@@ -377,6 +383,7 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
         )}
       </div>
     </div>
+    </>
   );
 }
 

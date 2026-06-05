@@ -8,12 +8,14 @@
 'use client';
 
 import { useState } from 'react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useFeature, FeatureCode } from '@/hooks/useFeature';
 import { enableFeature, disableFeature, getPricingImpact } from '@/lib/features/tenant-features.service';
 import AppIcon from '@/components/ui/AppIcon';
 import { cn } from '@/lib/utils';
 
 export default function PedagogicalOptionsSettings() {
+  const confirmDialog = useConfirmDialog();
   const { isEnabled: isBilingualEnabled, loading, refresh } = useFeature(FeatureCode.BILINGUAL_TRACK);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -27,7 +29,8 @@ export default function PedagogicalOptionsSettings() {
       setShowConfirmModal(true);
     } else {
       // Désactiver avec confirmation
-      if (confirm('Êtes-vous sûr de vouloir désactiver l\'option bilingue ?\n\nLes données EN existantes seront conservées mais masquées.')) {
+      const ok = await confirmDialog.warning("Les données EN existantes seront conservées mais masquées. Voulez-vous continuer ?", "Désactiver l'option bilingue");
+      if (ok) {
         await handleDisable();
       }
     }
@@ -79,6 +82,8 @@ export default function PedagogicalOptionsSettings() {
   };
 
   return (
+    <>
+    {confirmDialog.dialog}
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-gray-900 mb-2">Options pédagogiques</h2>
@@ -196,6 +201,7 @@ export default function PedagogicalOptionsSettings() {
         </div>
       )}
     </div>
+    </>
   );
 }
 

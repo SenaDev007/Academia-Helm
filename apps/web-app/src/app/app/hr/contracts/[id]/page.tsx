@@ -76,12 +76,9 @@ export default function ContractDetailPage() {
     if (!contract) return;
     try {
       setGenerating(true);
-      // Use BFF route to download PDF instead of calling NestJS directly
-      const response = await fetch(`/api/hr/contracts/${contractId}/generate-pdf`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+      // Download existing PDF via GET (not POST — avoid regenerating)
+      const response = await fetch(`/api/hr/contracts/${contractId}/generate-pdf?tenantId=${tenant.id}`, {
+        method: 'GET',
       });
 
       if (!response.ok) throw new Error('Erreur téléchargement');

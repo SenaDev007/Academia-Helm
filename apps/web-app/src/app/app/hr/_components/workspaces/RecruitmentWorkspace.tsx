@@ -518,7 +518,7 @@ export function RecruitmentWorkspace() {
   };
 
   // Filter Hired Candidates for "Embauches"
-  const hiredCandidates = candidates.filter(c => c.status === 'EMBAUCHÉ' || c.status === 'VALIDATION' || c.status === 'OFFRE');
+  const hiredCandidates = candidates.filter(c => c.status === 'EMBAUCHÉ');
 
   // KPI calculations for dashboard cards (Tome 2 & 3)
   const totalJobs = jobs.filter(j => j.status === 'PUBLIÉE').length;
@@ -760,13 +760,9 @@ export function RecruitmentWorkspace() {
                               className="bg-slate-50 border border-slate-200 text-[10px] font-bold rounded-lg px-2 py-1 uppercase"
                             >
                               <option value="NOUVEAU">Nouveau</option>
-                              <option value="ANALYSE IA">Analyse IA</option>
-                              <option value="PRÉSÉLECTIONNÉ">Présélectionné</option>
-                              <option value="ENTRETIEN RH">Entretien RH</option>
-                              <option value="ENTRETIEN TECHNIQUE">Entretien Technique</option>
+                              <option value="EN_COURS">En cours</option>
+                              <option value="ENTRETIEN">Entretien</option>
                               <option value="TEST">Test</option>
-                              <option value="VALIDATION">Validation</option>
-                              <option value="OFFRE">Offre</option>
                               <option value="EMBAUCHÉ">Embauché</option>
                               <option value="REJETÉ">Rejeté</option>
                             </select>

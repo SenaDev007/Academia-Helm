@@ -55,3 +55,26 @@ Stage Summary:
 - Complete storage API: upload, download, delete, presigned URLs, URL resolution
 - User needs to: (1) Create R2 bucket in Cloudflare, (2) Create API token, (3) Set env vars on Railway
 - Railway will auto-redeploy with the new code — then needs R2 env vars configured
+---
+Task ID: 1
+Agent: main
+Task: Fix recruitment candidate deletion bug + R2 storage support
+
+Work Log:
+- Analyzed uploaded screenshot showing "Erreur de suppression" toast when deleting a candidate
+- Traced the full stack: Frontend (RecruitmentWorkspace.tsx handleDeleteCandidate) → BFF proxy → Backend (recruitment.controller.ts deleteCandidate) → Service (recruitment.service.ts deleteCandidate with cascade transaction)
+- Discovered root cause: Missing database migrations for recruitment tables (hr_jobs, hr_candidates, hr_applications, etc.) — no migration files existed for these tables
+- Created comprehensive idempotent migration (20260606160000_recruitment_tables_complete) with CREATE TABLE IF NOT EXISTS for ALL 11 recruitment tables
+- Rewrote StorageService with full Cloudflare R2 support (custom endpoint, forcePathStyle, downloadFile, deleteFile, getPresignedUrl, resolveFileUrl)
+- Updated deleteCandidate() to: fetch documents before transaction, add NotFoundException, clean up storage files after DB deletion
+- Updated downloadCandidateDocument() to use new StorageService methods for R2/S3
+- Added auto-migration execution on server startup (main.ts runs prisma migrate deploy before listening)
+- Installed @aws-sdk/s3-request-presigner dependency
+- Updated .env.example with R2 configuration
+- Pushed all changes to GitHub (2 commits)
+
+Stage Summary:
+- Fixed candidate deletion bug by ensuring all DB tables exist via migration
+- Added R2 storage support for file operations
+- Added auto-migration on server startup for Railway deployments
+- Files changed: storage.service.ts, recruitment.service.ts, main.ts, .env.example, new migration

@@ -2,12 +2,14 @@
  * usePostLoginFlow Hook
  * 
  * Hook pour orchestrer le flow post-login complet
- * avec gestion d'état et callbacks
+ * avec gestion d'état et callbacks.
+ * 
+ * IMPORTANT: N'exécute le flow qu'une seule fois par session navigateur.
  */
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   executePostLoginFlow,
@@ -15,6 +17,8 @@ import {
   type PostLoginFlowProgress,
 } from '@/lib/loading/post-login-flow.service';
 import { getLoadingMessage, type LoadingStep } from '@/lib/loading/loading-messages';
+
+const SESSION_KEY = 'academia_post_login_done';
 
 export interface UsePostLoginFlowReturn {
   isLoading: boolean;
@@ -46,8 +50,32 @@ export function usePostLoginFlow(): UsePostLoginFlowReturn {
   const [progress, setProgress] = useState<PostLoginFlowProgress | null>(null);
   const [result, setResult] = useState<PostLoginFlowResult | null>(null);
   const [error, setError] = useState<PostLoginFlowResult['error'] | null>(null);
+  const hasExecutedRef = useRef(false);
 
   const execute = useCallback(async () => {
+    // Ne pas ré-exécuter si déjà fait dans cette session
+    if (hasExecutedRef.current) return;
+    hasExecutedRef.current = true;
+
+    // Vérifier si le flow a déjà été complété dans cette session navigateur
+    if (typeof window !== 'undefined') {
+      try {
+        if (sessionStorage.getItem(SESSION_KEY) === '1') {
+          // Flow déjà fait — simuler un résultat réussi sans appeler le service
+          setResult({
+            success: true,
+            user: null as any,
+            tenant: null as any,
+            academicYear: null,
+            permissions: [],
+            offlineStatus: { isOnline: true, pendingOperations: 0, syncRequired: false },
+            orionAlerts: [],
+          });
+          return;
+        }
+      } catch {}
+    }
+
     setIsLoading(true);
     setProgress(null);
     setResult(null);

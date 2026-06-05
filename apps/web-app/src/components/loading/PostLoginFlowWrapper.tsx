@@ -1,21 +1,19 @@
 /**
  * PostLoginFlowWrapper Component
  * 
- * Wrapper client pour gérer le flow post-login
- * S'affiche automatiquement après l'authentification
+ * Wrapper client pour gérer le flow post-login.
+ * S'affiche automatiquement après l'authentification.
+ * 
+ * IMPORTANT: Le flow ne s'exécute qu'une seule fois par session navigateur.
+ * Les navigations ultérieures entre modules/onglets n'affichent PAS le loading.
  */
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { motion } from 'framer-motion';
 import { PostLoginLoading } from './PostLoginLoading';
-import { LoadingScreen } from './LoadingScreen';
-import { getLoadingMessage } from '@/lib/loading/loading-messages';
 import type { PostLoginFlowResult } from '@/lib/loading/post-login-flow.service';
-import { getPageSlideMotion } from '@/lib/motion/presets';
-import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 
 export interface PostLoginFlowWrapperProps {
   children: React.ReactNode;
@@ -23,11 +21,41 @@ export interface PostLoginFlowWrapperProps {
   tenant: any;
 }
 
+const SESSION_KEY = 'academia_post_login_done';
+
+/**
+ * Vérifie si le flow post-login a déjà été complété dans cette session.
+ */
+function wasFlowCompletedThisSession(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return sessionStorage.getItem(SESSION_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Marque le flow post-login comme complété pour cette session.
+ */
+function markFlowCompleted(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.setItem(SESSION_KEY, '1');
+  } catch {
+    // sessionStorage indisponible (mode privé, quota, etc.)
+  }
+}
+
+// Variable module-level comme fallback si sessionStorage est indisponible
+let moduleLevelFlowDone = false;
+
 /**
  * Wrapper pour gérer le flow post-login
  * 
- * Affiche le loading screen pendant l'initialisation
- * puis affiche le contenu une fois le flow terminé
+ * Affiche le loading screen pendant l'initialisation,
+ * puis affiche le contenu une fois le flow terminé.
+ * Le flow ne s'exécute qu'une seule fois par session navigateur.
  */
 export function PostLoginFlowWrapper({
   children,
@@ -35,21 +63,29 @@ export function PostLoginFlowWrapper({
   tenant,
 }: PostLoginFlowWrapperProps) {
   const router = useRouter();
-  const [isInitialized, setIsInitialized] = useState(false);
-  const [flowResult, setFlowResult] = useState<PostLoginFlowResult | null>(null);
-  const [error, setError] = useState<any>(null);
-  const { shouldReduceMotion } = useMotionBudget();
-  const pageMotion = getPageSlideMotion(shouldReduceMotion);
 
+  // Vérifier immédiatement si le flow a déjà été fait (pas de loading flash)
+  const alreadyDone = wasFlowCompletedThisSession() || moduleLevelFlowDone;
+
+  const [flowResult, setFlowResult] = useState<PostLoginFlowResult | null>(
+    alreadyDone ? { success: true, user, tenant, academicYear: null, permissions: [], offlineStatus: { isOnline: true, pendingOperations: 0, syncRequired: false }, orionAlerts: [] } : null
+  );
+  const [error, setError] = useState<any>(null);
+  const hasRunRef = useRef(false);
+
+  // Réinitialiser le flag module-level lors du logout
   useEffect(() => {
-    // Le flow sera exécuté par PostLoginLoading
-    // On attend juste que le composant soit monté
-    setIsInitialized(true);
+    const handleReset = () => {
+      moduleLevelFlowDone = false;
+    };
+    window.addEventListener('user-context-reset', handleReset);
+    return () => window.removeEventListener('user-context-reset', handleReset);
   }, []);
 
   const handleComplete = (result: PostLoginFlowResult) => {
     setFlowResult(result);
-    setIsInitialized(true);
+    markFlowCompleted();
+    moduleLevelFlowDone = true;
 
     // Stocker les résultats dans le contexte global si nécessaire
     if (typeof window !== 'undefined') {
@@ -75,24 +111,31 @@ export function PostLoginFlowWrapper({
     }
 
     // Pour les autres erreurs, continuer quand même
-    setIsInitialized(true);
+    markFlowCompleted();
+    moduleLevelFlowDone = true;
+    setFlowResult({
+      success: false,
+      user,
+      tenant,
+      academicYear: null,
+      permissions: [],
+      offlineStatus: { isOnline: true, pendingOperations: 0, syncRequired: false },
+      orionAlerts: [],
+      error: { step: err.step || 'INIT_SECURE_CONTEXT', message: err.message || 'Erreur', code: err.code || 'UNKNOWN_ERROR' },
+    });
   };
 
-  // Afficher le loading pendant l'initialisation
-  if (!isInitialized || !flowResult) {
-    return (
-      <PostLoginLoading onComplete={handleComplete} onError={handleError} />
-    );
+  // Si le flow a déjà été complété dans cette session, afficher directement le contenu
+  if (flowResult) {
+    return <>{children}</>;
   }
 
-  // Afficher le contenu une fois initialisé
+  // Sinon, exécuter le flow post-login (une seule fois)
+  if (!hasRunRef.current) {
+    hasRunRef.current = true;
+  }
+
   return (
-    <motion.div
-      initial={pageMotion.initial}
-      animate={pageMotion.animate}
-      transition={pageMotion.transition}
-    >
-      {children}
-    </motion.div>
+    <PostLoginLoading onComplete={handleComplete} onError={handleError} />
   );
 }

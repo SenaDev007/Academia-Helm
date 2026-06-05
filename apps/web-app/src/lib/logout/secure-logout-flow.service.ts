@@ -115,6 +115,11 @@ export async function executeSecureLogoutFlow(
         }
       });
 
+      // Supprimer le flag post-login pour qu'il s'exécute à la prochaine connexion
+      try {
+        sessionStorage.removeItem('academia_post_login_done');
+      } catch {}
+
       // Réinitialisation ORION
       // Dispatch événement pour réinitialiser ORION
       window.dispatchEvent(new CustomEvent('orion-reset'));

@@ -156,8 +156,7 @@ export async function executePostLoginFlow(
       };
     }
 
-    // Attendre la durée minimale
-    await waitMinimum(step1Message.duration || 300);
+    // Pas de délai artificiel — le flow doit être le plus rapide possible
 
     // Étape 2 : Vérification année scolaire
     const step2Message = getLoadingMessage('VERIFY_ACADEMIC_YEAR');
@@ -205,7 +204,7 @@ export async function executePostLoginFlow(
       console.error('Failed to load academic year:', error);
     }
 
-    await waitMinimum(step2Message.duration || 200);
+    // Pas de délai artificiel
 
     // Étape 3 : Chargement rôles & permissions
     const step3Message = getLoadingMessage('LOAD_ROLES_PERMISSIONS');
@@ -219,7 +218,7 @@ export async function executePostLoginFlow(
     // Déterminer les permissions basées sur le rôle
     permissions = getPermissionsForRole(user.role);
 
-    await waitMinimum(step3Message.duration || 200);
+    // Pas de délai artificiel
 
     // Étape 4 : Vérification offline-first
     const step4Message = getLoadingMessage('CHECK_OFFLINE_STATUS');
@@ -256,7 +255,7 @@ export async function executePostLoginFlow(
       }
     }
 
-    await waitMinimum(step4Message.duration || 300);
+    // Pas de délai artificiel
 
     // Étape 5 : Initialisation ORION (direction uniquement)
     const step5Message = getLoadingMessage('INIT_ORION');
@@ -283,7 +282,7 @@ export async function executePostLoginFlow(
       }
     }
 
-    await waitMinimum(step5Message.duration || 500);
+    // Pas de délai artificiel
 
     // Étape 6 : Préchargement UI
     const step6Message = getLoadingMessage('PRELOAD_UI');
@@ -301,7 +300,7 @@ export async function executePostLoginFlow(
       import('@/components/pilotage/PilotageSidebar'),
     ]);
 
-    await waitMinimum(step6Message.duration || 200);
+    // Pas de délai artificiel
 
     // Finalisation
     onProgress?.({
@@ -391,11 +390,4 @@ function getPermissionsForRole(role: string): string[] {
   };
 
   return rolePermissions[role] || [];
-}
-
-/**
- * Attend un délai minimum
- */
-function waitMinimum(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

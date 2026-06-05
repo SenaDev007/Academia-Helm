@@ -1,19 +1,16 @@
 /**
- * Loading Component
+ * Loading Component - Root Level
  * 
- * Affiché pendant le chargement des pages
+ * Affiché pendant le chargement initial des pages racine.
+ * Design subtil pour éviter les flashs blancs plein écran.
  */
 
 export default function Loading() {
   return (
-    <div className="min-h-screen bg-white flex items-center justify-center">
+    <div className="flex items-center justify-center min-h-[50vh]">
       <div className="text-center">
-        <img 
-          src="/images/logo-Academia Hub.png" 
-          alt="Academia Helm" 
-          className="h-16 w-16 object-contain animate-pulse mx-auto mb-4"
-        />
-        <p className="text-slate-600">Chargement...</p>
+        <div className="inline-block w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mb-3" />
+        <p className="text-sm text-slate-500">Chargement…</p>
       </div>
     </div>
   );

@@ -490,7 +490,7 @@ export default function ContractDetailPage() {
             </div>
             <div className="p-5 space-y-1.5">
               <p className="font-semibold text-slate-800 text-sm">{contract.tenant?.name}</p>
-              <p className="text-xs text-slate-500">{contract.tenant?.address || 'Adresse non renseignée'}</p>
+              <p className="text-xs text-slate-500">{contract.tenant?.schools?.address || contract.tenant?.slug || 'Adresse non renseignée'}</p>
               {contract.academicYear && (
                 <p className="text-xs text-slate-400">Année scolaire : {contract.academicYear.name}</p>
               )}

@@ -55,6 +55,7 @@ export class ContractsPrismaService {
           terms: data.terms ?? null,
           templateId: data.templateId ?? null,
           academicYearId: data.academicYearId ?? null,
+          schoolLevelId: data.schoolLevelId ?? null,
         },
         include: { staff: true },
       });
@@ -123,7 +124,7 @@ export class ContractsPrismaService {
             id: true,
             name: true,
             slug: true,
-            address: true,
+            schools: { select: { address: true } },
             country: { select: { name: true, currencyCode: true } },
           },
         },
@@ -152,14 +153,28 @@ export class ContractsPrismaService {
    * Met à jour un contrat
    */
   async updateContract(id: string, tenantId: string, data: any) {
-    const contract = await this.findContractById(id, tenantId);
+    await this.findContractById(id, tenantId);
+
+    const updateData: any = {};
+    const allowedFields = [
+      'contractType', 'startDate', 'endDate', 'baseSalary', 'paymentMode',
+      'status', 'terms', 'templateId', 'academicYearId', 'schoolLevelId',
+    ];
+
+    for (const field of allowedFields) {
+      if (data[field] !== undefined) {
+        updateData[field] = data[field];
+      }
+    }
+
+    // Convert date fields
+    if (updateData.startDate) updateData.startDate = new Date(updateData.startDate);
+    if (updateData.endDate) updateData.endDate = new Date(updateData.endDate);
+    if (updateData.baseSalary !== undefined) updateData.baseSalary = new Prisma.Decimal(updateData.baseSalary);
 
     return this.prisma.contract.update({
       where: { id },
-      data: {
-        ...prismaUpdateDefaults(),
-        ...data,
-      },
+      data: { ...prismaUpdateDefaults(), ...updateData },
     });
   }
 

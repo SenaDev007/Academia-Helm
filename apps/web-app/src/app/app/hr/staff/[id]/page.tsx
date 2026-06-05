@@ -282,14 +282,30 @@ export default function StaffDetailPage() {
     e.preventDefault();
     try {
       setEditLoading(true);
-      const submitData = { ...editForm };
+      const submitData: any = { ...editForm };
+
+      // Clean up empty date strings → send null instead (backend converts to null)
+      for (const dateField of ['birthDate', 'dateOfBirth', 'hireDate']) {
+        if (submitData[dateField] === '') {
+          submitData[dateField] = null;
+        }
+      }
+
+      // Handle emergencyContact — try to parse as JSON, else wrap as object
       if (typeof submitData.emergencyContact === 'string' && submitData.emergencyContact.trim()) {
         try {
           submitData.emergencyContact = JSON.parse(submitData.emergencyContact);
         } catch {
-          // Not valid JSON — leave as string for free-form input
+          // Wrap free-form text as structured object for backend compatibility
+          submitData.emergencyContact = { note: submitData.emergencyContact };
         }
+      } else if (!submitData.emergencyContact || (typeof submitData.emergencyContact === 'string' && !submitData.emergencyContact.trim())) {
+        submitData.emergencyContact = null;
       }
+
+      // Remove category from direct submission — it's mapped to roleType server-side
+      // (keep it in the payload so the backend can map it)
+
       await hrFetch<any>(hrUrl(`staff/${id}`, { tenantId: tenant.id }), {
         method: 'PUT',
         body: submitData,

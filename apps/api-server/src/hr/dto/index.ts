@@ -36,8 +36,10 @@ export class CreateStaffDto {
   /** Auto-generated if not provided (format: STF-YY-XXXXX) */
   @IsOptional() @IsString() employeeNumber?: string;
   @IsOptional() @IsString() gender?: string;
-  @IsOptional() @IsDateString() dateOfBirth?: string;
-  @IsOptional() @IsDateString() birthDate?: string;
+  /** Accept ISO date string or null. Empty strings are treated as null. */
+  @IsOptional() dateOfBirth?: string | null;
+  /** Accept ISO date string or null. Empty strings are treated as null. */
+  @IsOptional() birthDate?: string | null;
   @IsOptional() @IsString() phone?: string;
   @IsOptional() @IsString() email?: string;
   @IsOptional() @IsString() address?: string;
@@ -46,13 +48,21 @@ export class CreateStaffDto {
   @IsOptional() @IsIn(['TEACHER', 'ADMIN', 'SUPPORT', 'DIRECTOR', 'OTHER']) roleType?: string;
   /** Frontend may send "category" as alias for roleType (e.g. "ADMIN", "PEDAGOGICAL") */
   @IsOptional() @IsString() category?: string;
-  @IsOptional() @IsDateString() hireDate?: string;
+  /** Accept ISO date string or null. Empty strings are treated as null. */
+  @IsOptional() hireDate?: string | null;
   @IsOptional() @IsString() contractType?: string;
   @IsOptional() @IsNumber() @Type(() => Number) salary?: number;
   @IsOptional() bankDetails?: Record<string, any>;
-  @IsOptional() emergencyContact?: Record<string, any>;
+  /** Accept object (structured) or string (free-form). */
+  @IsOptional() emergencyContact?: Record<string, any> | string;
   @IsOptional() @IsString() qualifications?: string;
   @IsOptional() @IsString() notes?: string;
+  @IsOptional() @IsString() nationality?: string;
+  @IsOptional() @IsString() maritalStatus?: string;
+  @IsOptional() @IsNumber() @Type(() => Number) numberOfChildren?: number;
+  @IsOptional() @IsString() nationalId?: string;
+  @IsOptional() @IsString() cnssNumber?: string;
+  @IsOptional() @IsString() ifuNumber?: string;
   @IsOptional() @IsUUID() academicYearId?: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
   /** Frontend OnboardingWizardModal sends status: 'ACTIVE' */
@@ -66,8 +76,10 @@ export class UpdateStaffDto {
   @IsOptional() @IsString() lastName?: string;
   @IsOptional() @IsString() employeeNumber?: string;
   @IsOptional() @IsString() gender?: string;
-  @IsOptional() @IsDateString() dateOfBirth?: string;
-  @IsOptional() @IsDateString() birthDate?: string;
+  /** Accept ISO date string or null/undefined. Empty strings are treated as null. */
+  @IsOptional() dateOfBirth?: string | null;
+  /** Accept ISO date string or null/undefined. Empty strings are treated as null. */
+  @IsOptional() birthDate?: string | null;
   @IsOptional() @IsString() phone?: string;
   @IsOptional() @IsString() email?: string;
   @IsOptional() @IsString() address?: string;
@@ -75,14 +87,22 @@ export class UpdateStaffDto {
   @IsOptional() @IsString() department?: string;
   @IsOptional() @IsIn(['TEACHER', 'ADMIN', 'SUPPORT', 'DIRECTOR', 'OTHER']) roleType?: string;
   @IsOptional() @IsString() category?: string;
-  @IsOptional() @IsDateString() hireDate?: string;
+  /** Accept ISO date string or null/undefined. Empty strings are treated as null. */
+  @IsOptional() hireDate?: string | null;
   @IsOptional() @IsString() contractType?: string;
   @IsOptional() @IsNumber() @Type(() => Number) salary?: number;
   @IsOptional() bankDetails?: Record<string, any>;
-  @IsOptional() emergencyContact?: Record<string, any>;
+  /** Accept object (structured) or string (free-form). */
+  @IsOptional() emergencyContact?: Record<string, any> | string;
   @IsOptional() @IsString() qualifications?: string;
   @IsOptional() @IsString() status?: string;
   @IsOptional() @IsString() notes?: string;
+  @IsOptional() @IsString() nationality?: string;
+  @IsOptional() @IsString() maritalStatus?: string;
+  @IsOptional() @IsNumber() @Type(() => Number) numberOfChildren?: number;
+  @IsOptional() @IsString() nationalId?: string;
+  @IsOptional() @IsString() cnssNumber?: string;
+  @IsOptional() @IsString() ifuNumber?: string;
   @IsOptional() @IsUUID() academicYearId?: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
   @IsOptional() @IsString() tenantId?: string;

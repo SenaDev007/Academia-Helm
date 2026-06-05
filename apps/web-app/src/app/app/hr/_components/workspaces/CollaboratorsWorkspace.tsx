@@ -61,21 +61,34 @@ export function CollaboratorsWorkspace() {
       setLoading(true);
       hrFetch<any[]>(hrUrl('staff', { tenantId: tenant.id }))
         .then((data) => {
-          setStaffList(data);
+          setStaffList(Array.isArray(data) ? data : []);
         })
-        .catch((err) => { toast({ variant: 'error', title: 'Erreur de chargement des données' }); })
+        .catch((err) => {
+          console.error('Error loading staff for collaborators:', err);
+          toast({ variant: 'error', title: 'Erreur de chargement des données' });
+          setStaffList([]);
+        })
         .finally(() => setLoading(false));
     }
     if (activeTab === 'history') {
       hrFetch<any[]>(hrUrl('contracts', { tenantId: tenant.id }))
-        .then(setContractsList)
-        .catch((err) => { console.error('Error loading contracts:', err); });
+        .then((data) => setContractsList(Array.isArray(data) ? data : []))
+        .catch((err) => {
+          console.error('Error loading contracts:', err);
+          setContractsList([]);
+        });
       hrFetch<any[]>(hrUrl('evaluations', { tenantId: tenant.id }))
-        .then(setEvaluationsList)
-        .catch((err) => { console.error('Error loading evaluations:', err); });
+        .then((data) => setEvaluationsList(Array.isArray(data) ? data : []))
+        .catch((err) => {
+          console.error('Error loading evaluations:', err);
+          setEvaluationsList([]);
+        });
       hrFetch<any[]>(hrUrl('evaluations/trainings', { tenantId: tenant.id }))
-        .then(setTrainingsList)
-        .catch((err) => { console.error('Error loading trainings:', err); });
+        .then((data) => setTrainingsList(Array.isArray(data) ? data : []))
+        .catch((err) => {
+          console.error('Error loading trainings:', err);
+          setTrainingsList([]);
+        });
     }
   }, [tenant?.id, activeTab]);
 

@@ -2,6 +2,10 @@
  * ============================================================================
  * EVALUATIONS PRISMA CONTROLLER - MODULE 5
  * ============================================================================
+ *
+ * IMPORTANT: Route order matters! Specific routes (like 'trainings') must be
+ * declared BEFORE parameterized routes (like ':id') to avoid shadowing.
+ * ============================================================================
  */
 
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
@@ -46,22 +50,8 @@ export class EvaluationsPrismaController {
     return this.evaluationsService.getEvaluationStatistics(tenant.id, academicYearId);
   }
 
-  @Get(':id')
-  async findEvaluationById(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.evaluationsService.findEvaluationById(id, tenant.id);
-  }
+  // ─── Trainings (MUST be before @Get(':id') to avoid route shadowing) ────────
 
-  @Put(':id')
-  async updateEvaluation(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: UpdateEvaluationDto) {
-    return this.evaluationsService.updateEvaluation(id, tenant.id, data);
-  }
-
-  @Delete(':id')
-  async deleteEvaluation(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.evaluationsService.deleteEvaluation(id, tenant.id);
-  }
-
-  // Trainings
   @Post('trainings')
   async createTraining(@GetTenant() tenant: any, @Body() data: CreateTrainingDto) {
     return this.evaluationsService.createTraining({
@@ -70,14 +60,14 @@ export class EvaluationsPrismaController {
     });
   }
 
-  @Get('trainings/staff/:staffId')
-  async findStaffTrainings(@GetTenant() tenant: any, @Param('staffId') staffId: string) {
-    return this.evaluationsService.findStaffTrainings(staffId, tenant.id);
-  }
-
   @Get('trainings')
   async findAllTrainings(@GetTenant() tenant: any) {
     return this.evaluationsService.findAllTrainings(tenant.id);
+  }
+
+  @Get('trainings/staff/:staffId')
+  async findStaffTrainings(@GetTenant() tenant: any, @Param('staffId') staffId: string) {
+    return this.evaluationsService.findStaffTrainings(staffId, tenant.id);
   }
 
   @Get('trainings/:id')
@@ -94,5 +84,21 @@ export class EvaluationsPrismaController {
   async deleteTraining(@GetTenant() tenant: any, @Param('id') id: string) {
     return this.evaluationsService.deleteTraining(id, tenant.id);
   }
-}
 
+  // ─── Evaluations (parameterized routes AFTER specific routes) ───────────────
+
+  @Get(':id')
+  async findEvaluationById(@GetTenant() tenant: any, @Param('id') id: string) {
+    return this.evaluationsService.findEvaluationById(id, tenant.id);
+  }
+
+  @Put(':id')
+  async updateEvaluation(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: UpdateEvaluationDto) {
+    return this.evaluationsService.updateEvaluation(id, tenant.id, data);
+  }
+
+  @Delete(':id')
+  async deleteEvaluation(@GetTenant() tenant: any, @Param('id') id: string) {
+    return this.evaluationsService.deleteEvaluation(id, tenant.id);
+  }
+}

@@ -36,10 +36,10 @@ export function OnboardingWizardModal({ isOpen, onClose, onSuccess, tenantId }: 
     position: '',
     gender: 'MALE',
     birthDate: '',
-    // Step 2: Documents (Simulated files metadata)
-    cvName: '',
-    cniName: '',
-    birthCertName: '',
+    // Step 2: Documents (actual File objects for upload)
+    cvFile: null as File | null,
+    cniFile: null as File | null,
+    birthCertFile: null as File | null,
     // Step 3: Contract
     contractType: 'CDD',
     startDate: new Date().toISOString().split('T')[0],
@@ -81,57 +81,30 @@ export function OnboardingWizardModal({ isOpen, onClose, onSuccess, tenantId }: 
           category: formData.category,
           position: formData.position,
           gender: formData.gender,
-          birthDate: formData.birthDate,
+          birthDate: formData.birthDate || null,
           status: 'ACTIVE',
         },
       });
 
       const staffId = staffResponse.id;
 
-      // 2. Link Uploaded Documents (CV, CNI, Birth Cert)
-      const docPromises = [];
-      if (formData.cvName) {
-        docPromises.push(
-          hrFetch(hrUrl(`staff/${staffId}/documents`, { tenantId }), {
-            method: 'POST',
-            body: {
-              documentType: 'CV',
-              fileName: formData.cvName,
-              filePath: `/uploads/docs/${staffId}_cv.pdf`,
-              mimeType: 'application/pdf',
-            },
-          })
-        );
-      }
-      if (formData.cniName) {
-        docPromises.push(
-          hrFetch(hrUrl(`staff/${staffId}/documents`, { tenantId }), {
-            method: 'POST',
-            body: {
-              documentType: 'CNI',
-              fileName: formData.cniName,
-              filePath: `/uploads/docs/${staffId}_cni.pdf`,
-              mimeType: 'application/pdf',
-            },
-          })
-        );
-      }
-      if (formData.birthCertName) {
-        docPromises.push(
-          hrFetch(hrUrl(`staff/${staffId}/documents`, { tenantId }), {
-            method: 'POST',
-            body: {
-              documentType: 'BIRTH_CERTIFICATE',
-              fileName: formData.birthCertName,
-              filePath: `/uploads/docs/${staffId}_birth.pdf`,
-              mimeType: 'application/pdf',
-            },
-          })
-        );
-      }
+      // 2. Upload Documents using multipart form data (actual file uploads)
+      const docUploads: Promise<any>[] = [];
+      const uploadDoc = async (file: File, documentType: string) => {
+        const docFormData = new FormData();
+        docFormData.append('file', file);
+        docFormData.append('documentType', documentType);
+        return hrFetch(hrUrl(`staff/${staffId}/documents`, { tenantId }), {
+          method: 'POST',
+          body: docFormData,
+        });
+      };
+      if (formData.cvFile) docUploads.push(uploadDoc(formData.cvFile, 'CV'));
+      if (formData.cniFile) docUploads.push(uploadDoc(formData.cniFile, 'CNI'));
+      if (formData.birthCertFile) docUploads.push(uploadDoc(formData.birthCertFile, 'BIRTH_CERTIFICATE'));
 
-      if (docPromises.length > 0) {
-        await Promise.all(docPromises);
+      if (docUploads.length > 0) {
+        await Promise.all(docUploads);
       }
 
       // 3. Create Employment Contract
@@ -140,8 +113,8 @@ export function OnboardingWizardModal({ isOpen, onClose, onSuccess, tenantId }: 
         body: {
           staffId,
           contractType: formData.contractType,
-          startDate: formData.startDate ? new Date(formData.startDate).toISOString() : new Date().toISOString(),
-          endDate: formData.endDate ? new Date(formData.endDate).toISOString() : null,
+          startDate: formData.startDate || new Date().toISOString().split('T')[0],
+          endDate: formData.endDate || null,
           baseSalary: parseFloat(formData.baseSalary),
           paymentMode: formData.paymentMode,
           status: 'ACTIVE',
@@ -329,36 +302,51 @@ export function OnboardingWizardModal({ isOpen, onClose, onSuccess, tenantId }: 
                 </div>
 
                 {[
-                  { key: 'cvName', label: 'Curriculum Vitae (CV)' },
-                  { key: 'cniName', label: "Pièce d'Identité / Passeport" },
-                  { key: 'birthCertName', label: "Acte de Naissance" },
-                ].map((doc) => (
-                  <div key={doc.key} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-slate-400">
-                        <FileText className="h-5 w-5" />
+                  { key: 'cvFile', label: 'Curriculum Vitae (CV)' },
+                  { key: 'cniFile', label: "Pièce d'Identité / Passeport" },
+                  { key: 'birthCertFile', label: "Acte de Naissance" },
+                ].map((doc) => {
+                  const file = formData[doc.key as keyof typeof formData] as File | null;
+                  return (
+                    <div key={doc.key} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-slate-400">
+                          <FileText className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-slate-800">{doc.label}</p>
+                          <p className="text-xs text-slate-400">
+                            {file ? `${file.name} (${(file.size / 1024).toFixed(1)} Ko)` : 'Aucun fichier sélectionné'}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm font-bold text-slate-800">{doc.label}</p>
-                        <p className="text-xs text-slate-400">
-                          {formData[doc.key as keyof typeof formData] || 'Aucun fichier sélectionné'}
-                        </p>
+                      <div className="flex items-center gap-2">
+                        {file && (
+                          <button
+                            type="button"
+                            onClick={() => update(doc.key, null)}
+                            className="p-1 text-red-400 hover:text-red-600 transition-colors"
+                            title="Supprimer"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        )}
+                        <label className="flex items-center gap-1.5 cursor-pointer bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-semibold px-3 py-2 rounded-lg transition">
+                          <Upload className="h-3.5 w-3.5" /> Choisir
+                          <input
+                            type="file"
+                            className="hidden"
+                            accept=".pdf,.png,.jpg,.jpeg"
+                            onChange={(e) => {
+                              const selectedFile = e.target.files?.[0];
+                              if (selectedFile) update(doc.key, selectedFile);
+                            }}
+                          />
+                        </label>
                       </div>
                     </div>
-                    <label className="flex items-center gap-1.5 cursor-pointer bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-semibold px-3 py-2 rounded-lg transition">
-                      <Upload className="h-3.5 w-3.5" /> Choisir
-                      <input
-                        type="file"
-                        className="hidden"
-                        accept=".pdf,.png,.jpg,.jpeg"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) update(doc.key, file.name);
-                        }}
-                      />
-                    </label>
-                  </div>
-                ))}
+                  );
+                })}
               </motion.div>
             )}
 

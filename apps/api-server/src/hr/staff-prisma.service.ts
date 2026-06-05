@@ -239,13 +239,15 @@ export class StaffPrismaService {
 
     // Mapper les champs UI vers Prisma
     const updateData: any = {};
-    
+
     // Only include fields that are explicitly provided
     const allowedFields = [
       'firstName', 'lastName', 'gender', 'dateOfBirth', 'birthDate',
       'phone', 'email', 'address', 'position', 'department',
       'contractType', 'status', 'qualifications', 'notes',
       'academicYearId', 'schoolLevelId',
+      'nationality', 'maritalStatus', 'numberOfChildren',
+      'nationalId', 'cnssNumber', 'ifuNumber',
     ];
 
     for (const field of allowedFields) {
@@ -257,16 +259,24 @@ export class StaffPrismaService {
     // Special field mappings
     if (data.category) {
       updateData.roleType = CATEGORY_TO_ROLE[data.category] || data.category;
+      delete updateData.category; // Not a Prisma field
     }
-    if (data.birthDate) {
-      updateData.birthDate = new Date(data.birthDate);
+    if (data.roleType) {
+      updateData.roleType = data.roleType;
     }
-    if (data.dateOfBirth) {
-      updateData.dateOfBirth = new Date(data.dateOfBirth);
+
+    // Handle date fields — convert empty strings to null, valid strings to Date
+    const dateFields = ['birthDate', 'dateOfBirth', 'hireDate'];
+    for (const df of dateFields) {
+      if (df in updateData) {
+        if (updateData[df] === '' || updateData[df] === null || updateData[df] === undefined) {
+          updateData[df] = null;
+        } else {
+          updateData[df] = new Date(updateData[df]);
+        }
+      }
     }
-    if (data.hireDate) {
-      updateData.hireDate = new Date(data.hireDate);
-    }
+
     if (data.salary !== undefined) {
       updateData.salary = data.salary;
     }
@@ -274,17 +284,26 @@ export class StaffPrismaService {
       updateData.bankDetails = data.bankDetails;
     }
     if (data.emergencyContact !== undefined) {
-      updateData.emergencyContact = data.emergencyContact;
-    }
-    // Handle new fields that may be sent from the edit form
-    if (data.nationality !== undefined) {
-      updateData.notes = updateData.notes || ''; // Store as notes or add custom field
-    }
-    if (data.roleType) {
-      updateData.roleType = data.roleType;
+      // Accept both object and string formats
+      if (typeof data.emergencyContact === 'string' && data.emergencyContact.trim() !== '') {
+        try {
+          updateData.emergencyContact = JSON.parse(data.emergencyContact);
+        } catch {
+          // Store as a structured object with the free-form string
+          updateData.emergencyContact = { note: data.emergencyContact };
+        }
+      } else if (typeof data.emergencyContact === 'object') {
+        updateData.emergencyContact = data.emergencyContact;
+      } else {
+        updateData.emergencyContact = null;
+      }
     }
 
     // Do NOT allow changing employeeNumber, globalMatricule, or tenantMatricule via update
+    delete updateData.employeeNumber;
+    delete updateData.globalMatricule;
+    delete updateData.tenantMatricule;
+    delete updateData.tenantId;
 
     return this.prisma.staff.update({
       where: { id },

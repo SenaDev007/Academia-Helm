@@ -189,7 +189,7 @@ export class ContractPdfService {
     const templateVars = {
       // École / Employeur
       schoolName: contract.tenant?.name || 'L\'École',
-      schoolAddress: contract.tenant?.slug || '',
+      schoolAddress: contract.tenant?.schools?.address || contract.tenant?.slug || '',
       schoolCountry: contract.tenant?.country?.name || '',
       // Employé
       civilite: contract.staff?.gender === 'FEMALE' ? 'Madame' : 'Monsieur',

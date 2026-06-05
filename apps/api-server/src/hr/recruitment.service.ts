@@ -1,10 +1,12 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { StorageService } from '../common/services/storage.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 
 @Injectable()
 export class RecruitmentPrismaService {
+  private readonly logger = new Logger(RecruitmentPrismaService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
@@ -143,50 +145,83 @@ export class RecruitmentPrismaService {
   }
 
   async deleteCandidate(id: string) {
-    // Use a transaction to delete related records explicitly,
-    // in case the DB foreign keys don't have ON DELETE CASCADE yet.
-    return this.prisma.$transaction(async (tx) => {
-      // 1. Delete AI reports linked to candidate's applications
-      const applications = await tx.hrApplication.findMany({
+    // 1. Fetch candidate's documents first (to delete files from storage later)
+    let documents: Array<{ id: string; filePath: string; fileName: string }> = [];
+    try {
+      documents = await this.prisma.candidateDocument.findMany({
         where: { candidateId: id },
-        select: { id: true },
+        select: { id: true, filePath: true, fileName: true },
       });
-      if (applications.length > 0) {
-        await tx.hrAiReport.deleteMany({
-          where: { applicationId: { in: applications.map((a) => a.id) } },
+    } catch (err) {
+      this.logger.warn(`Could not fetch candidate documents for cleanup: ${err.message}`);
+    }
+
+    // 2. Delete related DB records + candidate in a transaction
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        // Delete AI reports linked to candidate's applications
+        const applications = await tx.hrApplication.findMany({
+          where: { candidateId: id },
+          select: { id: true },
         });
+        if (applications.length > 0) {
+          await tx.hrAiReport.deleteMany({
+            where: { applicationId: { in: applications.map((a) => a.id) } },
+          });
+        }
+
+        // Delete AI reports linked directly to candidate
+        await tx.hrAiReport.deleteMany({ where: { candidateId: id } });
+
+        // Delete test results
+        await tx.hrTestResult.deleteMany({ where: { candidateId: id } });
+
+        // Delete interviews
+        await tx.hrInterview.deleteMany({ where: { candidateId: id } });
+
+        // Delete talent pool entry
+        await tx.hrTalentPool.deleteMany({ where: { candidateId: id } });
+
+        // Delete academic profile
+        await tx.academicProfile.deleteMany({ where: { candidateId: id } });
+
+        // Delete candidate documents (DB records)
+        await tx.candidateDocument.deleteMany({ where: { candidateId: id } });
+
+        // Delete teaching certifications
+        await tx.teachingCertification.deleteMany({ where: { candidateId: id } });
+
+        // Delete academic scores
+        await tx.academicScore.deleteMany({ where: { candidateId: id } });
+
+        // Delete applications
+        await tx.hrApplication.deleteMany({ where: { candidateId: id } });
+
+        // Finally, delete the candidate
+        const candidate = await tx.hrCandidate.findUnique({ where: { id } });
+        if (!candidate) {
+          throw new NotFoundException(`Candidat avec l'ID ${id} non trouvé`);
+        }
+        return tx.hrCandidate.delete({ where: { id } });
+      });
+    } catch (err) {
+      this.logger.error(`Failed to delete candidate ${id}: ${err.message}`, err.stack);
+      throw err;
+    }
+
+    // 3. Clean up files from storage (non-blocking, best-effort)
+    if (documents.length > 0) {
+      for (const doc of documents) {
+        try {
+          await this.storageService.deleteFile(doc.filePath);
+        } catch (err) {
+          this.logger.warn(`Failed to delete file from storage: ${doc.filePath} — ${err.message}`);
+          // Non-fatal: DB records are already deleted, just log the warning
+        }
       }
+    }
 
-      // 2. Delete AI reports linked directly to candidate
-      await tx.hrAiReport.deleteMany({ where: { candidateId: id } });
-
-      // 3. Delete test results
-      await tx.hrTestResult.deleteMany({ where: { candidateId: id } });
-
-      // 4. Delete interviews
-      await tx.hrInterview.deleteMany({ where: { candidateId: id } });
-
-      // 5. Delete talent pool entry
-      await tx.hrTalentPool.deleteMany({ where: { candidateId: id } });
-
-      // 6. Delete academic profile
-      await tx.academicProfile.deleteMany({ where: { candidateId: id } });
-
-      // 6b. Delete candidate documents
-      await tx.candidateDocument.deleteMany({ where: { candidateId: id } });
-
-      // 7. Delete teaching certifications
-      await tx.teachingCertification.deleteMany({ where: { candidateId: id } });
-
-      // 8. Delete academic scores
-      await tx.academicScore.deleteMany({ where: { candidateId: id } });
-
-      // 9. Delete applications
-      await tx.hrApplication.deleteMany({ where: { candidateId: id } });
-
-      // 10. Finally, delete the candidate
-      return tx.hrCandidate.delete({ where: { id } });
-    });
+    return { success: true, deletedDocuments: documents.length };
   }
 
   // Applications
@@ -612,8 +647,9 @@ export class RecruitmentPrismaService {
 
   /**
    * Télécharge un document d'un candidat.
-   * - Si le fichier est sur un cloud public (S3, Vercel Blob), redirige vers l'URL.
-   * - Si le fichier est local, le lit depuis le disque et le renvoie.
+   * - R2/S3: redirige vers l'URL publique ou télécharge le fichier
+   * - Vercel Blob: redirige vers l'URL publique
+   * - Local: sert le fichier depuis le disque
    */
   async downloadCandidateDocument(candidateId: string, docId: string, res: any) {
     const doc = await this.prisma.candidateDocument.findFirst({
@@ -624,8 +660,35 @@ export class RecruitmentPrismaService {
       throw new NotFoundException(`Document non trouvé`);
     }
 
-    // If filePath is a full URL (S3), redirect to it
-    if (doc.filePath && doc.filePath.startsWith('https://')) {
+    const storageType = this.storageService.getStorageType();
+
+    // For R2/S3: resolve to a URL (public or presigned) and redirect
+    if (storageType === 'r2' || storageType === 's3') {
+      // If filePath is already a full URL, redirect directly
+      if (doc.filePath && doc.filePath.startsWith('https://')) {
+        return res.redirect(doc.filePath);
+      }
+      // Otherwise, resolve the key to a URL via StorageService
+      try {
+        const url = await this.storageService.resolveFileUrl(doc.filePath);
+        return res.redirect(url);
+      } catch (err) {
+        this.logger.warn(`Failed to resolve file URL for ${doc.filePath}: ${err.message}`);
+        // Fallback: try downloading the file directly
+        try {
+          const buffer = await this.storageService.downloadFile(doc.filePath);
+          res.setHeader('Content-Type', doc.mimeType || 'application/octet-stream');
+          res.setHeader('Content-Disposition', `inline; filename="${doc.fileName}"`);
+          res.setHeader('Content-Length', String(buffer.length));
+          return buffer;
+        } catch (dlErr) {
+          throw new NotFoundException(`Fichier non trouvé sur le stockage`);
+        }
+      }
+    }
+
+    // For Vercel Blob: filePath is the full public URL
+    if (storageType === 'vercel-blob' && doc.filePath && doc.filePath.startsWith('https://')) {
       return res.redirect(doc.filePath);
     }
 

@@ -233,6 +233,18 @@ export async function executePostLoginFlow(
     const isOnline = networkDetectionService.isConnected();
     let pendingOperations = 0;
 
+    // Déclencher le bootstrap offline automatiquement si nécessaire
+    if (tenant && tenant.id && isOnline) {
+      try {
+        const { offlineBootstrapService } = await import('@/lib/offline/offline-bootstrap.service');
+        offlineBootstrapService.ensureBootstrapped(tenant.id).catch((err) => {
+          console.warn('[PostLogin] Auto-bootstrap failed (non-blocking):', err);
+        });
+      } catch (err) {
+        console.warn('[PostLogin] Bootstrap import failed:', err);
+      }
+    }
+
     if (tenant && tenant.id) {
       try {
         // Charger dynamiquement pour éviter les problèmes de circular dependency

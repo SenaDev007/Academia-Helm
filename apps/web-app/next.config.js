@@ -146,8 +146,9 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 
 let exportedConfig = nextConfig;
 if (process.env.NODE_ENV === 'production') {
-  // @ducanh2912/next-pwa (Workbox 7) : évite l'erreur Vercel
-  // « assignWith is not defined » lors de la génération du SW avec next-pwa + Workbox 6.
+  // @ducanh2912/next-pwa (Workbox 7) : Stratégie offline-first
+  // StaleWhileRevalidate pour les API : réponse immédiate depuis le cache +
+  // mise à jour en arrière-plan. Plus de timeout 10s qui bloque l'UI.
   const withPWA = require('@ducanh2912/next-pwa').default({
     dest: 'public',
     register: true,
@@ -158,16 +159,80 @@ if (process.env.NODE_ENV === 'production') {
       cleanupOutdatedCaches: true,
       cacheId: process.env.VERCEL_GIT_COMMIT_SHA || `local-${Date.now()}`,
       runtimeCaching: [
+        // API calls : StaleWhileRevalidate — réponse instantanée depuis le cache,
+        // mise à jour en arrière-plan. Pas de blocage de l'UI.
+        {
+          urlPattern: /\/api\/(?!auth\/).*/i,
+          handler: 'StaleWhileRevalidate',
+          options: {
+            cacheName: 'api-cache',
+            expiration: {
+              maxEntries: 300,
+              maxAgeSeconds: 24 * 60 * 60, // 24 heures
+            },
+            cacheableResponse: {
+              statuses: [0, 200],
+            },
+          },
+        },
+        // Auth endpoints : NetworkOnly — jamais cacher (sécurité)
+        {
+          urlPattern: /\/api\/auth\/.*/i,
+          handler: 'NetworkOnly',
+        },
+        // Static assets (JS, CSS, images) : CacheFirst pour offline complet
+        {
+          urlPattern: /\.(?:js|css|woff2?|ttf|otf|eot)$/i,
+          handler: 'CacheFirst',
+          options: {
+            cacheName: 'static-assets',
+            expiration: {
+              maxEntries: 100,
+              maxAgeSeconds: 30 * 24 * 60 * 60, // 30 jours
+            },
+            cacheableResponse: {
+              statuses: [0, 200],
+            },
+          },
+        },
+        // Images : CacheFirst
+        {
+          urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|avif|ico)$/i,
+          handler: 'CacheFirst',
+          options: {
+            cacheName: 'images-cache',
+            expiration: {
+              maxEntries: 100,
+              maxAgeSeconds: 30 * 24 * 60 * 60, // 30 jours
+            },
+            cacheableResponse: {
+              statuses: [0, 200],
+            },
+          },
+        },
+        // HTML pages : NetworkFirst avec timeout court (3s)
+        {
+          urlPattern: /\.html?$/i,
+          handler: 'NetworkFirst',
+          options: {
+            cacheName: 'html-cache',
+            expiration: {
+              maxEntries: 50,
+              maxAgeSeconds: 24 * 60 * 60,
+            },
+            networkTimeoutSeconds: 3,
+          },
+        },
+        // Default : StaleWhileRevalidate
         {
           urlPattern: /^https?.*/,
-          handler: 'NetworkFirst',
+          handler: 'StaleWhileRevalidate',
           options: {
             cacheName: 'offlineCache',
             expiration: {
               maxEntries: 200,
-              maxAgeSeconds: 24 * 60 * 60, // 24 heures
+              maxAgeSeconds: 24 * 60 * 60,
             },
-            networkTimeoutSeconds: 10,
           },
         },
       ],

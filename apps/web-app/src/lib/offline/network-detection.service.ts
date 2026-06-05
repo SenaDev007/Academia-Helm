@@ -37,23 +37,30 @@ class NetworkDetectionService {
 
   /**
    * Démarre la vérification périodique
+   * Intervalles adaptés : 15s si hors ligne (détection plus rapide du retour), 60s si en ligne
    */
   private startPingInterval(): void {
-    // Ping toutes les 30 secondes
     this.pingInterval = window.setInterval(() => {
       this.checkConnection();
-    }, 30000);
+    }, this.isOnline ? 60000 : 15000) as unknown as number;
   }
 
   /**
    * Vérifie la connexion réelle (ping serveur)
+   * Si navigator.onLine est déjà false, on ne ping pas (gain de ressources)
    */
   private async checkConnection(): Promise<void> {
+    // Si le navigateur dit qu'on est hors ligne, pas la peine de ping
+    if (!navigator.onLine) {
+      this.setOnline(false);
+      return;
+    }
+
     try {
       const response = await fetch('/api/health', {
         method: 'HEAD',
         cache: 'no-cache',
-        signal: AbortSignal.timeout(5000), // Timeout 5s
+        signal: AbortSignal.timeout(3000), // Timeout 3s (était 5s)
       });
       this.setOnline(response.ok);
     } catch {
@@ -62,13 +69,30 @@ class NetworkDetectionService {
   }
 
   /**
-   * Définit l'état online/offline
+   * Définit l'état online/offline et ajuste la fréquence du ping
    */
   private setOnline(online: boolean): void {
     if (this.isOnline !== online) {
       this.isOnline = online;
       this.notifyListeners(online);
+
+      // Ajuster la fréquence du ping : plus fréquent quand hors ligne
+      // pour détecter plus vite le retour de la connexion
+      this.restartPingInterval();
     }
+  }
+
+  /**
+   * Redémarre l'intervalle de ping avec la fréquence adaptée
+   */
+  private restartPingInterval(): void {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+    }
+    const intervalMs = this.isOnline ? 60000 : 15000;
+    this.pingInterval = window.setInterval(() => {
+      this.checkConnection();
+    }, intervalMs) as unknown as number;
   }
 
   /**

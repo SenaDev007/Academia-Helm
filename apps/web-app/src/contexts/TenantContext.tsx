@@ -163,10 +163,25 @@ export function TenantContextProvider({ children }: { children: ReactNode }) {
           }
           clearClientSessionSync();
           offlineCacheService.clearContextCache();
+          // Hors ligne : ne pas rediriger vers login
+          if (!navigator.onLine) {
+            setError('Session expirée. Connectez-vous à Internet pour renouveler vos accès.');
+            return;
+          }
           router.push('/auth/login');
           return;
         }
         if (response.status === 403) {
+          // Hors ligne : ne pas rediriger, utiliser le cache
+          if (!navigator.onLine) {
+            const cachedCtx = offlineCacheService.getCachedContext();
+            if (cachedCtx) {
+              setContext(cachedCtx);
+              return;
+            }
+            setError('Accès refusé. Connectez-vous à Internet pour vérifier vos droits.');
+            return;
+          }
           router.push('/auth/login');
           return;
         }
@@ -189,6 +204,11 @@ export function TenantContextProvider({ children }: { children: ReactNode }) {
       setError(err.message || 'Failed to load context');
 
       if (err.message?.includes('No access token')) {
+        // Hors ligne : ne pas rediriger si on a un cache
+        if (!navigator.onLine) {
+          setError('Session non trouvée. Connectez-vous à Internet pour vous identifier.');
+          return;
+        }
         router.push('/auth/login');
       }
     } finally {

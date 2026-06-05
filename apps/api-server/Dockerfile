@@ -19,9 +19,10 @@ COPY prisma ./prisma/
 COPY prisma.config.ts ./
 RUN test -f prisma/schema.prisma
 
+# Puppeteer: skip Chromium download during npm install (we install it separately in runtime)
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 
-# --ignore-scripts : évite postinstall (prisma generate) avant que prisma soit copié si l’ordre des layers diverge
+# --ignore-scripts : évite postinstall (prisma generate) avant que prisma soit copié si l'ordre des layers diverge
 RUN npm ci --ignore-scripts --include=dev
 
 RUN npx prisma generate
@@ -32,10 +33,22 @@ RUN npm run build
 
 FROM base
 
+# Install runtime dependencies:
+# - openssl: Required by Prisma
+# - chromium: Required by Puppeteer for PDF generation
+# - fonts: Required for PDF rendering with proper characters
 RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y \
-    openssl && \
-    rm -rf /var/lib/apt/lists /var/cache/apt/archives
+    openssl \
+    chromium \
+    fonts-noto-color-emoji \
+    fonts-noto-cjk \
+    fonts-liberation \
+    && rm -rf /var/lib/apt/lists /var/cache/apt/archives
+
+# Tell Puppeteer where to find Chromium
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/node_modules ./node_modules
@@ -44,4 +57,5 @@ COPY --from=build /app/prisma ./prisma
 
 EXPOSE 3000
 
-CMD [ "node", "--max-old-space-size=2048", "dist/main.js" ]
+# Reduced from 2048 to 1024 — TypeORM removed, only Prisma loaded now
+CMD [ "node", "--max-old-space-size=1024", "dist/main.js" ]

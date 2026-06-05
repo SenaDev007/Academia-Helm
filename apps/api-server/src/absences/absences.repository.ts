@@ -1,63 +1,58 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Absence } from './entities/absence.entity';
+import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
 export class AbsencesRepository {
-  constructor(
-    @InjectRepository(Absence)
-    private readonly repository: Repository<Absence>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(absenceData: Partial<Absence>): Promise<Absence> {
-    const absence = this.repository.create(absenceData);
-    return this.repository.save(absence);
+  async create(absenceData: any): Promise<any> {
+    return this.prisma.absence.create({ data: absenceData });
   }
 
-  async findOne(id: string, tenantId: string): Promise<Absence | null> {
-    return this.repository.findOne({
+  async findOne(id: string, tenantId: string): Promise<any | null> {
+    return this.prisma.absence.findFirst({
       where: { id, tenantId },
-      relations: ['student', 'class'],
+      include: { student: true, class: true },
     });
   }
 
-  async findAll(tenantId: string, studentId?: string, classId?: string, startDate?: Date, endDate?: Date): Promise<Absence[]> {
+  async findAll(tenantId: string, studentId?: string, classId?: string, startDate?: Date, endDate?: Date): Promise<any[]> {
     const where: any = { tenantId };
+
     if (studentId) {
       where.studentId = studentId;
     }
     if (classId) {
       where.classId = classId;
     }
-    const query = this.repository.createQueryBuilder('absence')
-      .where('absence.tenantId = :tenantId', { tenantId })
-      .leftJoinAndSelect('absence.student', 'student')
-      .leftJoinAndSelect('absence.class', 'class');
-    
-    if (studentId) {
-      query.andWhere('absence.studentId = :studentId', { studentId });
+    if (startDate || endDate) {
+      where.date = {};
+      if (startDate) {
+        where.date.gte = startDate;
+      }
+      if (endDate) {
+        where.date.lte = endDate;
+      }
     }
-    if (classId) {
-      query.andWhere('absence.classId = :classId', { classId });
-    }
-    if (startDate) {
-      query.andWhere('absence.date >= :startDate', { startDate });
-    }
-    if (endDate) {
-      query.andWhere('absence.date <= :endDate', { endDate });
-    }
-    
-    return query.orderBy('absence.date', 'DESC').getMany();
+
+    return this.prisma.absence.findMany({
+      where,
+      include: { student: true, class: true },
+      orderBy: { date: 'desc' },
+    });
   }
 
-  async update(id: string, tenantId: string, absenceData: Partial<Absence>): Promise<Absence> {
-    await this.repository.update({ id, tenantId }, absenceData);
+  async update(id: string, tenantId: string, absenceData: any): Promise<any> {
+    await this.prisma.absence.updateMany({
+      where: { id, tenantId },
+      data: absenceData,
+    });
     return this.findOne(id, tenantId);
   }
 
   async delete(id: string, tenantId: string): Promise<void> {
-    await this.repository.delete({ id, tenantId });
+    await this.prisma.absence.deleteMany({
+      where: { id, tenantId },
+    });
   }
 }
-

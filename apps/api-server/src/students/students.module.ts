@@ -1,8 +1,6 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
 import { StudentsController } from './students.controller';
 import { StudentsService } from './students.service';
-import { Student } from './entities/student.entity';
 import { StudentsRepository } from './students.repository';
 import { DatabaseModule } from '../database/database.module';
 import { TenantsModule } from '../tenants/tenants.module'; // ✅ Import pour TenantValidationGuard
@@ -47,7 +45,6 @@ import { FinanceModule } from '../finance/finance.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Student]),
     DatabaseModule, // Pour PrismaService
     TenantsModule, // ✅ Import pour que TenantValidationGuard puisse résoudre TenantRepository
     AuditLogsModule, // ✅ Import pour que AuditLogInterceptor puisse résoudre AuditLogRepository

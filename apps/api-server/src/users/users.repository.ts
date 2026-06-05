@@ -1,69 +1,59 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { User } from './entities/user.entity';
-import { Role } from '../roles/entities/role.entity';
+import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
 export class UsersRepository {
-  constructor(
-    @InjectRepository(User)
-    private readonly repository: Repository<User>,
-    @InjectRepository(Role)
-    private readonly roleRepository: Repository<Role>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(userData: Partial<User>): Promise<User> {
-    const user = this.repository.create(userData);
-    return this.repository.save(user);
+  async create(userData: any): Promise<any> {
+    return this.prisma.user.create({ data: userData });
   }
 
-  async findOne(id: string): Promise<User | null> {
-    return this.repository.findOne({ where: { id } });
+  async findOne(id: string): Promise<any | null> {
+    return this.prisma.user.findFirst({ where: { id } });
   }
 
-  async findOneWithRoles(id: string): Promise<User | null> {
-    const user = await this.repository.findOne({ where: { id } });
+  async findOneWithRoles(id: string): Promise<any | null> {
+    const user = await this.prisma.user.findFirst({ where: { id } });
     if (!user) return null;
 
-    // Charger les rôles via la table user_roles sans utiliser la relation TypeORM
-    // (évite l'erreur "User__User_roles.created_at n'existe pas" sur la table de jointure)
-    const roles = await this.roleRepository
-      .createQueryBuilder('role')
-      .innerJoin('user_roles', 'ur', 'ur."roleId" = role.id AND ur."userId" = :userId', { userId: id })
-      .getMany();
+    // Charger les rôles via la relation Prisma
+    const userWithRoles = await this.prisma.user.findFirst({
+      where: { id },
+      include: { roles: true },
+    });
 
-    user.roles = roles;
-    return user;
+    return userWithRoles;
   }
 
-  async findByEmail(email: string): Promise<User | null> {
+  async findByEmail(email: string): Promise<any | null> {
     const normalized = (email || '').trim().toLowerCase();
     if (!normalized) {
       return null;
     }
-    // Postgres : recherche insensible à la casse (évite 401 si l'email a été saisi avec une casse différente).
-    return this.repository
-      .createQueryBuilder('user')
-      .where('LOWER(user.email) = :email', { email: normalized })
-      .getOne();
+    // Recherche insensible à la casse (évite 401 si l'email a été saisi avec une casse différente).
+    return this.prisma.user.findFirst({
+      where: { email: { equals: normalized, mode: 'insensitive' } },
+    });
   }
 
-  async findByTenant(tenantId: string): Promise<User[]> {
-    return this.repository.find({ where: { tenantId } });
+  async findByTenant(tenantId: string): Promise<any[]> {
+    return this.prisma.user.findMany({ where: { tenantId } });
   }
 
-  async update(id: string, userData: Partial<User>): Promise<User> {
-    await this.repository.update(id, userData);
+  async update(id: string, userData: any): Promise<any> {
+    await this.prisma.user.update({ where: { id }, data: userData });
     return this.findOne(id);
   }
 
   async updateLastLogin(id: string): Promise<void> {
-    await this.repository.update(id, { lastLogin: new Date() });
+    await this.prisma.user.update({
+      where: { id },
+      data: { lastLogin: new Date() },
+    });
   }
 
   async delete(id: string): Promise<void> {
-    await this.repository.delete(id);
+    await this.prisma.user.delete({ where: { id } });
   }
 }
-

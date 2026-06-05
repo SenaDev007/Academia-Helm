@@ -1,22 +1,16 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { AuditLog } from './entities/audit-log.entity';
+import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
 export class AuditLogsRepository {
-  constructor(
-    @InjectRepository(AuditLog)
-    private readonly repository: Repository<AuditLog>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(auditLogData: Partial<AuditLog>): Promise<AuditLog> {
-    const auditLog = this.repository.create(auditLogData);
-    return this.repository.save(auditLog);
+  async create(auditLogData: any): Promise<any> {
+    return this.prisma.auditLog.create({ data: auditLogData });
   }
 
-  async findOne(id: string, tenantId: string): Promise<AuditLog | null> {
-    return this.repository.findOne({
+  async findOne(id: string, tenantId: string): Promise<any | null> {
+    return this.prisma.auditLog.findFirst({
       where: { id, tenantId },
     });
   }
@@ -27,35 +21,38 @@ export class AuditLogsRepository {
     action?: string;
     startDate?: Date;
     endDate?: Date;
-  }): Promise<AuditLog[]> {
-    const queryBuilder = this.repository.createQueryBuilder('audit_log')
-      .where('audit_log.tenantId = :tenantId', { tenantId })
-      .orderBy('audit_log.createdAt', 'DESC');
+  }): Promise<any[]> {
+    const where: any = { tenantId };
 
     if (filters?.userId) {
-      queryBuilder.andWhere('audit_log.userId = :userId', { userId: filters.userId });
+      where.userId = filters.userId;
     }
     if (filters?.resource) {
-      queryBuilder.andWhere('audit_log.resource = :resource', { resource: filters.resource });
+      where.resource = filters.resource;
     }
     if (filters?.action) {
-      queryBuilder.andWhere('audit_log.action = :action', { action: filters.action });
+      where.action = filters.action;
     }
-    if (filters?.startDate) {
-      queryBuilder.andWhere('audit_log.createdAt >= :startDate', { startDate: filters.startDate });
-    }
-    if (filters?.endDate) {
-      queryBuilder.andWhere('audit_log.createdAt <= :endDate', { endDate: filters.endDate });
+    if (filters?.startDate || filters?.endDate) {
+      where.createdAt = {};
+      if (filters.startDate) {
+        where.createdAt.gte = filters.startDate;
+      }
+      if (filters.endDate) {
+        where.createdAt.lte = filters.endDate;
+      }
     }
 
-    return queryBuilder.getMany();
+    return this.prisma.auditLog.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
-  async findByResource(resource: string, resourceId: string, tenantId: string): Promise<AuditLog[]> {
-    return this.repository.find({
+  async findByResource(resource: string, resourceId: string, tenantId: string): Promise<any[]> {
+    return this.prisma.auditLog.findMany({
       where: { resource, resourceId, tenantId },
-      order: { createdAt: 'DESC' },
+      orderBy: { createdAt: 'desc' },
     });
   }
 }
-

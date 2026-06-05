@@ -1,61 +1,60 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { AcademicTrack, AcademicTrackCode } from './entities/academic-track.entity';
-import { CreateAcademicTrackDto } from './dto/create-academic-track.dto';
-import { UpdateAcademicTrackDto } from './dto/update-academic-track.dto';
+import { PrismaService } from '../database/prisma.service';
+
+export enum AcademicTrackCode {
+  FR = 'FR',
+}
 
 @Injectable()
 export class AcademicTracksRepository {
-  constructor(
-    @InjectRepository(AcademicTrack)
-    private readonly repository: Repository<AcademicTrack>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(data: CreateAcademicTrackDto & { tenantId: string }): Promise<AcademicTrack> {
-    const track = this.repository.create(data);
-    return this.repository.save(track);
+  async create(data: any): Promise<any> {
+    return this.prisma.academicTrack.create({ data });
   }
 
-  async findAll(tenantId: string): Promise<AcademicTrack[]> {
-    return this.repository.find({
+  async findAll(tenantId: string): Promise<any[]> {
+    return this.prisma.academicTrack.findMany({
       where: { tenantId },
-      order: { order: 'ASC' },
+      orderBy: { order: 'asc' },
     });
   }
 
-  async findOne(id: string, tenantId: string): Promise<AcademicTrack | null> {
-    return this.repository.findOne({
+  async findOne(id: string, tenantId: string): Promise<any | null> {
+    return this.prisma.academicTrack.findFirst({
       where: { id, tenantId },
     });
   }
 
-  async findByCode(code: AcademicTrackCode, tenantId: string): Promise<AcademicTrack | null> {
-    return this.repository.findOne({
+  async findByCode(code: AcademicTrackCode, tenantId: string): Promise<any | null> {
+    return this.prisma.academicTrack.findFirst({
       where: { code, tenantId },
     });
   }
 
-  async findDefault(tenantId: string): Promise<AcademicTrack | null> {
-    return this.repository.findOne({
+  async findDefault(tenantId: string): Promise<any | null> {
+    return this.prisma.academicTrack.findFirst({
       where: { tenantId, isDefault: true },
     });
   }
 
-  async update(id: string, tenantId: string, data: UpdateAcademicTrackDto): Promise<AcademicTrack> {
-    await this.repository.update({ id, tenantId }, data);
+  async update(id: string, tenantId: string, data: any): Promise<any> {
+    await this.prisma.academicTrack.update({
+      where: { id },
+      data,
+    });
     return this.findOne(id, tenantId);
   }
 
   async delete(id: string, tenantId: string): Promise<void> {
-    await this.repository.delete({ id, tenantId });
+    await this.prisma.academicTrack.delete({ where: { id } });
   }
 
   /**
    * Initialise le track FR par défaut pour un tenant
    * Appelé lors de la création d'un tenant ou de l'activation du module bilingue
    */
-  async initializeDefaultTrack(tenantId: string): Promise<AcademicTrack> {
+  async initializeDefaultTrack(tenantId: string): Promise<any> {
     const existing = await this.findByCode(AcademicTrackCode.FR, tenantId);
     if (existing) {
       return existing;
@@ -72,4 +71,3 @@ export class AcademicTracksRepository {
     });
   }
 }
-

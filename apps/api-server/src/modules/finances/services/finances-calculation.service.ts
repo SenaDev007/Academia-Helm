@@ -11,10 +11,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Payment } from '../../../payments/entities/payment.entity';
-import { Expense } from '../../../expenses/entities/expense.entity';
+import { PrismaService } from '../../../database/prisma.service';
 import { CalculationService, CalculationContext, CalculationResult } from '../../../common/services/calculation.service';
 
 export interface FinancialSummary {
@@ -30,10 +27,7 @@ export interface FinancialSummary {
 @Injectable()
 export class FinancesCalculationService {
   constructor(
-    @InjectRepository(Payment)
-    private readonly paymentsRepository: Repository<Payment>,
-    @InjectRepository(Expense)
-    private readonly expensesRepository: Repository<Expense>,
+    private readonly prisma: PrismaService,
     private readonly calculationService: CalculationService,
   ) {}
 
@@ -49,34 +43,37 @@ export class FinancesCalculationService {
 
     const { tenantId, schoolLevelId } = context;
 
-    // Construire les query builders pour TypeORM
-    const paymentsQuery = this.paymentsRepository
-      .createQueryBuilder('payment')
-      .where('payment.tenantId = :tenantId', { tenantId })
-      .andWhere('payment.schoolLevelId = :schoolLevelId', { schoolLevelId }) // OBLIGATOIRE
-      .andWhere('payment.status = :status', { status: 'completed' });
-
-    const expensesQuery = this.expensesRepository
-      .createQueryBuilder('expense')
-      .where('expense.tenantId = :tenantId', { tenantId })
-      .andWhere('expense.schoolLevelId = :schoolLevelId', { schoolLevelId }) // OBLIGATOIRE
-      .andWhere('expense.status = :status', { status: 'approved' });
-
-    // Ajouter les filtres de date si fournis
-    if (startDate) {
-      paymentsQuery.andWhere('payment.paymentDate >= :startDate', { startDate });
-      expensesQuery.andWhere('expense.expenseDate >= :startDate', { startDate });
+    // Construire les filtres Prisma pour les paiements
+    const paymentWhere: any = {
+      tenantId,
+      schoolLevelId, // OBLIGATOIRE
+      status: 'completed',
+    };
+    if (startDate || endDate) {
+      paymentWhere.paymentDate = {
+        ...(startDate && { gte: startDate }),
+        ...(endDate && { lte: endDate }),
+      };
     }
-    if (endDate) {
-      paymentsQuery.andWhere('payment.paymentDate <= :endDate', { endDate });
-      expensesQuery.andWhere('expense.expenseDate <= :endDate', { endDate });
+
+    // Construire les filtres Prisma pour les dépenses
+    const expenseWhere: any = {
+      tenantId,
+      schoolLevelId, // OBLIGATOIRE
+      status: 'approved',
+    };
+    if (startDate || endDate) {
+      expenseWhere.expenseDate = {
+        ...(startDate && { gte: startDate }),
+        ...(endDate && { lte: endDate }),
+      };
     }
 
     // Récupérer tous les paiements du niveau
-    const payments = await paymentsQuery.getMany();
+    const payments = await this.prisma.payment.findMany({ where: paymentWhere });
 
     // Récupérer toutes les dépenses du niveau
-    const expenses = await expensesQuery.getMany();
+    const expenses = await this.prisma.expense.findMany({ where: expenseWhere });
 
     // Calculer les totaux
     const totalRevenue = payments.reduce((sum, p) => sum + Number(p.amount), 0);
@@ -140,7 +137,7 @@ export class FinancesCalculationService {
 
     const { tenantId, schoolLevelId } = context;
 
-    const payments = await this.paymentsRepository.find({
+    const payments = await this.prisma.payment.findMany({
       where: {
         tenantId,
         schoolLevelId, // OBLIGATOIRE

@@ -1,33 +1,28 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Module as ModuleEntity, ModuleType, ModuleStatus } from './entities/module.entity';
+import { PrismaService } from '../database/prisma.service';
+import { ModuleType, ModuleStatus } from './entities/module.entity';
 
 @Injectable()
 export class ModulesRepository {
-  constructor(
-    @InjectRepository(ModuleEntity)
-    private readonly repository: Repository<ModuleEntity>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(data: Partial<ModuleEntity>): Promise<ModuleEntity> {
-    const module = this.repository.create(data);
-    return this.repository.save(module);
+  async create(data: any): Promise<any> {
+    return this.prisma.module.create({ data });
   }
 
-  async findAll(tenantId: string, schoolLevelId?: string): Promise<ModuleEntity[]> {
+  async findAll(tenantId: string, schoolLevelId?: string): Promise<any[]> {
     const where: any = { tenantId };
     if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
-    return this.repository.find({
+    return this.prisma.module.findMany({
       where,
-      relations: ['schoolLevel'],
-      order: { order: 'ASC' },
+      include: { schoolLevel: true },
+      orderBy: { order: 'asc' },
     });
   }
 
-  async findActive(tenantId: string, schoolLevelId?: string): Promise<ModuleEntity[]> {
+  async findActive(tenantId: string, schoolLevelId?: string): Promise<any[]> {
     const where: any = {
       tenantId,
       isEnabled: true,
@@ -36,17 +31,17 @@ export class ModulesRepository {
     if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
-    return this.repository.find({
+    return this.prisma.module.findMany({
       where,
-      relations: ['schoolLevel'],
-      order: { order: 'ASC' },
+      include: { schoolLevel: true },
+      orderBy: { order: 'asc' },
     });
   }
 
-  async findOne(id: string, tenantId: string): Promise<ModuleEntity | null> {
-    return this.repository.findOne({
+  async findOne(id: string, tenantId: string): Promise<any | null> {
+    return this.prisma.module.findFirst({
       where: { id, tenantId },
-      relations: ['schoolLevel'],
+      include: { schoolLevel: true },
     });
   }
 
@@ -54,28 +49,31 @@ export class ModulesRepository {
     tenantId: string,
     type: ModuleType,
     schoolLevelId?: string,
-  ): Promise<ModuleEntity[]> {
+  ): Promise<any[]> {
     const where: any = { tenantId, type };
     if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
-    return this.repository.find({
+    return this.prisma.module.findMany({
       where,
-      relations: ['schoolLevel'],
+      include: { schoolLevel: true },
     });
   }
 
   async update(
     id: string,
     tenantId: string,
-    data: Partial<ModuleEntity>,
-  ): Promise<ModuleEntity> {
-    await this.repository.update({ id, tenantId }, data);
+    data: any,
+  ): Promise<any> {
+    await this.prisma.module.update({
+      where: { id },
+      data,
+    });
     return this.findOne(id, tenantId);
   }
 
   async delete(id: string, tenantId: string): Promise<void> {
-    await this.repository.delete({ id, tenantId });
+    await this.prisma.module.delete({ where: { id } });
   }
 
   /**
@@ -95,7 +93,7 @@ export class ModulesRepository {
     if (schoolLevelId !== 'ALL') {
       whereClause.schoolLevelId = schoolLevelId;
     }
-    const module = await this.repository.findOne({
+    const module = await this.prisma.module.findFirst({
       where: whereClause,
     });
     return !!module;
@@ -107,7 +105,7 @@ export class ModulesRepository {
   async initializeDefaultModules(
     tenantId: string,
     schoolLevelId: string,
-  ): Promise<ModuleEntity[]> {
+  ): Promise<any[]> {
     const defaultModules = [
       {
         tenantId,
@@ -324,7 +322,7 @@ export class ModulesRepository {
 
     const created = [];
     for (const moduleData of defaultModules) {
-      const existing = await this.repository.findOne({
+      const existing = await this.prisma.module.findFirst({
         where: {
           tenantId,
           type: moduleData.type,
@@ -343,4 +341,3 @@ export class ModulesRepository {
     return created;
   }
 }
-

@@ -1,28 +1,19 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { PaymentFlow, PaymentFlowType, PaymentFlowStatus, PaymentDestination } from './entities/payment-flow.entity';
-import { SchoolPaymentAccount } from './entities/school-payment-account.entity';
+import { PrismaService } from '../database/prisma.service';
+import { PaymentFlowType, PaymentFlowStatus, PaymentDestination } from './entities/payment-flow.entity';
 import { CreatePaymentFlowDto } from './dto/create-payment-flow.dto';
 
 @Injectable()
 export class PaymentFlowsRepository {
-  constructor(
-    @InjectRepository(PaymentFlow)
-    private readonly repository: Repository<PaymentFlow>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(data: CreatePaymentFlowDto & { tenantId: string; destination: PaymentDestination; initiatedBy?: string; status?: PaymentFlowStatus }): Promise<PaymentFlow> {
-    const flow = this.repository.create({
-      ...data,
-      destination: data.destination as PaymentDestination, // S'assurer que c'est un enum
+  async create(data: CreatePaymentFlowDto & { tenantId: string; destination: PaymentDestination; initiatedBy?: string; status?: PaymentFlowStatus }): Promise<any> {
+    return this.prisma.paymentFlow.create({
+      data: {
+        ...data,
+        destination: data.destination as PaymentDestination,
+      },
     });
-    const saved = await this.repository.save(flow);
-    // TypeORM create peut retourner un tableau si on passe un tableau, sinon un seul élément
-    if (Array.isArray(saved)) {
-      return saved[0];
-    }
-    return saved;
   }
 
   async findAll(
@@ -30,7 +21,7 @@ export class PaymentFlowsRepository {
     flowType?: PaymentFlowType,
     status?: PaymentFlowStatus,
     studentId?: string,
-  ): Promise<PaymentFlow[]> {
+  ): Promise<any[]> {
     const where: any = { tenantId };
     if (flowType) {
       where.flowType = flowType;
@@ -41,87 +32,91 @@ export class PaymentFlowsRepository {
     if (studentId) {
       where.studentId = studentId;
     }
-    return this.repository.find({
+    return this.prisma.paymentFlow.findMany({
       where,
-      relations: ['student', 'initiatedByUser', 'tenant'],
-      order: { createdAt: 'DESC' },
+      include: { student: true, initiatedByUser: true, tenant: true },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
-  async findOne(id: string, tenantId: string): Promise<PaymentFlow | null> {
-    return this.repository.findOne({
+  async findOne(id: string, tenantId: string): Promise<any | null> {
+    return this.prisma.paymentFlow.findFirst({
       where: { id, tenantId },
-      relations: ['student', 'initiatedByUser', 'tenant'],
+      include: { student: true, initiatedByUser: true, tenant: true },
     });
   }
 
-  async findByPspReference(pspReference: string): Promise<PaymentFlow | null> {
-    return this.repository.findOne({
+  async findByPspReference(pspReference: string): Promise<any | null> {
+    return this.prisma.paymentFlow.findFirst({
       where: { pspReference },
-      relations: ['tenant', 'student'],
+      include: { tenant: true, student: true },
     });
   }
 
-  async update(id: string, tenantId: string, data: Partial<PaymentFlow>): Promise<PaymentFlow> {
-    await this.repository.update({ id, tenantId }, data);
+  async update(id: string, tenantId: string, data: any): Promise<any> {
+    await this.prisma.paymentFlow.update({
+      where: { id },
+      data,
+    });
     return this.findOne(id, tenantId);
   }
 
-  async updateByPspReference(pspReference: string, data: Partial<PaymentFlow>): Promise<PaymentFlow> {
+  async updateByPspReference(pspReference: string, data: any): Promise<any> {
     const flow = await this.findByPspReference(pspReference);
     if (!flow) {
       throw new Error(`Payment flow with PSP reference ${pspReference} not found`);
     }
-    await this.repository.update({ id: flow.id }, data);
+    await this.prisma.paymentFlow.update({
+      where: { id: flow.id },
+      data,
+    });
     return this.findOne(flow.id, flow.tenantId);
   }
 }
 
 @Injectable()
 export class SchoolPaymentAccountsRepository {
-  constructor(
-    @InjectRepository(SchoolPaymentAccount)
-    private readonly repository: Repository<SchoolPaymentAccount>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(data: Partial<SchoolPaymentAccount>): Promise<SchoolPaymentAccount> {
-    const account = this.repository.create(data);
-    return this.repository.save(account);
+  async create(data: any): Promise<any> {
+    return this.prisma.schoolPaymentAccount.create({ data });
   }
 
-  async findAll(tenantId: string): Promise<SchoolPaymentAccount[]> {
-    return this.repository.find({
+  async findAll(tenantId: string): Promise<any[]> {
+    return this.prisma.schoolPaymentAccount.findMany({
       where: { tenantId },
-      relations: ['creator', 'verifiedByUser'],
-      order: { createdAt: 'DESC' },
+      include: { creator: true, verifiedByUser: true },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
-  async findOne(id: string, tenantId: string): Promise<SchoolPaymentAccount | null> {
-    return this.repository.findOne({
+  async findOne(id: string, tenantId: string): Promise<any | null> {
+    return this.prisma.schoolPaymentAccount.findFirst({
       where: { id, tenantId },
-      relations: ['creator', 'verifiedByUser'],
+      include: { creator: true, verifiedByUser: true },
     });
   }
 
-  async findActive(tenantId: string, psp?: string): Promise<SchoolPaymentAccount | null> {
+  async findActive(tenantId: string, psp?: string): Promise<any | null> {
     const where: any = { tenantId, isActive: true, isVerified: true };
     if (psp) {
       where.psp = psp;
     }
-    return this.repository.findOne({
+    return this.prisma.schoolPaymentAccount.findFirst({
       where,
-      order: { createdAt: 'DESC' },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
-  async update(id: string, tenantId: string, data: Partial<SchoolPaymentAccount>): Promise<SchoolPaymentAccount> {
-    await this.repository.update({ id, tenantId }, data);
+  async update(id: string, tenantId: string, data: any): Promise<any> {
+    await this.prisma.schoolPaymentAccount.update({
+      where: { id },
+      data,
+    });
     return this.findOne(id, tenantId);
   }
 
   async delete(id: string, tenantId: string): Promise<void> {
-    await this.repository.delete({ id, tenantId });
+    await this.prisma.schoolPaymentAccount.delete({ where: { id } });
   }
 }
-

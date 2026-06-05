@@ -1,53 +1,55 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Discipline } from './entities/discipline.entity';
+import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
 export class DisciplineRepository {
-  constructor(
-    @InjectRepository(Discipline)
-    private readonly repository: Repository<Discipline>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(disciplineData: Partial<Discipline>): Promise<Discipline> {
-    const discipline = this.repository.create(disciplineData);
-    return this.repository.save(discipline);
+  async create(disciplineData: any): Promise<any> {
+    return this.prisma.discipline.create({ data: disciplineData });
   }
 
-  async findOne(id: string, tenantId: string): Promise<Discipline | null> {
-    return this.repository.findOne({
+  async findOne(id: string, tenantId: string): Promise<any | null> {
+    return this.prisma.discipline.findFirst({
       where: { id, tenantId },
-      relations: ['student', 'reporter'],
+      include: { student: true, reporter: true },
     });
   }
 
-  async findAll(tenantId: string, studentId?: string, startDate?: Date, endDate?: Date): Promise<Discipline[]> {
-    const query = this.repository.createQueryBuilder('discipline')
-      .where('discipline.tenantId = :tenantId', { tenantId })
-      .leftJoinAndSelect('discipline.student', 'student')
-      .leftJoinAndSelect('discipline.reporter', 'reporter');
-    
+  async findAll(tenantId: string, studentId?: string, startDate?: Date, endDate?: Date): Promise<any[]> {
+    const where: any = { tenantId };
+
     if (studentId) {
-      query.andWhere('discipline.studentId = :studentId', { studentId });
+      where.studentId = studentId;
     }
-    if (startDate) {
-      query.andWhere('discipline.incidentDate >= :startDate', { startDate });
+    if (startDate || endDate) {
+      where.incidentDate = {};
+      if (startDate) {
+        where.incidentDate.gte = startDate;
+      }
+      if (endDate) {
+        where.incidentDate.lte = endDate;
+      }
     }
-    if (endDate) {
-      query.andWhere('discipline.incidentDate <= :endDate', { endDate });
-    }
-    
-    return query.orderBy('discipline.incidentDate', 'DESC').getMany();
+
+    return this.prisma.discipline.findMany({
+      where,
+      include: { student: true, reporter: true },
+      orderBy: { incidentDate: 'desc' },
+    });
   }
 
-  async update(id: string, tenantId: string, disciplineData: Partial<Discipline>): Promise<Discipline> {
-    await this.repository.update({ id, tenantId }, disciplineData);
+  async update(id: string, tenantId: string, disciplineData: any): Promise<any> {
+    await this.prisma.discipline.updateMany({
+      where: { id, tenantId },
+      data: disciplineData,
+    });
     return this.findOne(id, tenantId);
   }
 
   async delete(id: string, tenantId: string): Promise<void> {
-    await this.repository.delete({ id, tenantId });
+    await this.prisma.discipline.deleteMany({
+      where: { id, tenantId },
+    });
   }
 }
-

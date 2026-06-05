@@ -1,44 +1,41 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { TenantFeature, FeatureCode, FeatureStatus } from './entities/tenant-feature.entity';
+import { PrismaService } from '../database/prisma.service';
+import { FeatureCode, FeatureStatus } from './entities/tenant-feature.entity';
 import { CreateTenantFeatureDto } from './dto/create-tenant-feature.dto';
 import { UpdateTenantFeatureDto } from './dto/update-tenant-feature.dto';
 
 @Injectable()
 export class TenantFeaturesRepository {
-  constructor(
-    @InjectRepository(TenantFeature)
-    private readonly repository: Repository<TenantFeature>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(data: CreateTenantFeatureDto & { tenantId: string; enabledBy?: string }): Promise<TenantFeature> {
-    const feature = this.repository.create({
-      ...data,
-      status: data.status || FeatureStatus.DISABLED,
-      enabledAt: data.status === FeatureStatus.ENABLED ? new Date() : null,
-      enabledBy: data.status === FeatureStatus.ENABLED ? data.enabledBy : null,
+  async create(data: CreateTenantFeatureDto & { tenantId: string; enabledBy?: string }): Promise<any> {
+    return this.prisma.tenantFeature.create({
+      data: {
+        ...data,
+        status: data.status || FeatureStatus.DISABLED,
+        enabledAt: data.status === FeatureStatus.ENABLED ? new Date() : null,
+        enabledBy: data.status === FeatureStatus.ENABLED ? data.enabledBy : null,
+      },
     });
-    return this.repository.save(feature);
   }
 
-  async findAll(tenantId: string): Promise<TenantFeature[]> {
-    return this.repository.find({
+  async findAll(tenantId: string): Promise<any[]> {
+    return this.prisma.tenantFeature.findMany({
       where: { tenantId },
-      relations: ['enabledByUser', 'disabledByUser'],
-      order: { createdAt: 'DESC' },
+      include: { enabledByUser: true, disabledByUser: true },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
   /** Récupère une feature par code (pas d'id unique, clé composite tenantId + featureCode). */
-  async findOne(tenantId: string, featureCode: FeatureCode): Promise<TenantFeature | null> {
-    return this.repository.findOne({
+  async findOne(tenantId: string, featureCode: FeatureCode): Promise<any | null> {
+    return this.prisma.tenantFeature.findFirst({
       where: { tenantId, featureCode },
-      relations: ['enabledByUser', 'disabledByUser'],
+      include: { enabledByUser: true, disabledByUser: true },
     });
   }
 
-  async findByCode(featureCode: FeatureCode, tenantId: string): Promise<TenantFeature | null> {
+  async findByCode(featureCode: FeatureCode, tenantId: string): Promise<any | null> {
     return this.findOne(tenantId, featureCode);
   }
 
@@ -47,7 +44,7 @@ export class TenantFeaturesRepository {
     return feature?.status === FeatureStatus.ENABLED;
   }
 
-  async update(tenantId: string, featureCode: FeatureCode, data: UpdateTenantFeatureDto & { updatedBy?: string }): Promise<TenantFeature> {
+  async update(tenantId: string, featureCode: FeatureCode, data: UpdateTenantFeatureDto & { updatedBy?: string }): Promise<any> {
     const feature = await this.findOne(tenantId, featureCode);
     if (!feature) {
       throw new Error(`Feature ${featureCode} not found`);
@@ -66,12 +63,16 @@ export class TenantFeaturesRepository {
       updateData.disabledBy = data.updatedBy || feature.disabledBy;
     }
 
-    await this.repository.update({ tenantId, featureCode }, updateData);
-    return this.findOne(tenantId, featureCode) as Promise<TenantFeature>;
+    await this.prisma.tenantFeature.updateMany({
+      where: { tenantId, featureCode },
+      data: updateData,
+    });
+    return this.findOne(tenantId, featureCode);
   }
 
   async delete(tenantId: string, featureCode: FeatureCode): Promise<void> {
-    await this.repository.delete({ tenantId, featureCode });
+    await this.prisma.tenantFeature.deleteMany({
+      where: { tenantId, featureCode },
+    });
   }
 }
-

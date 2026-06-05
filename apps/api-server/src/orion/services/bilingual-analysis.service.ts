@@ -15,13 +15,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Exam } from '../../exams/entities/exam.entity';
-import { Grade } from '../../grades/entities/grade.entity';
-import { Class } from '../../classes/entities/class.entity';
-import { StudentAcademicTrack } from '../../academic-tracks/entities/student-academic-track.entity';
-import { AcademicTrack, AcademicTrackCode } from '../../academic-tracks/entities/academic-track.entity';
+import { PrismaService } from '../../database/prisma.service';
 import { TenantFeaturesService } from '../../tenant-features/tenant-features.service';
 import { FeatureCode } from '../../tenant-features/entities/tenant-feature.entity';
 
@@ -31,6 +25,8 @@ export interface BilingualPerformanceComparison {
   gap: number;
   gapPercentage: number;
 }
+
+export type AcademicTrackCode = 'FR' | 'EN' | 'BILINGUAL';
 
 export interface TrackStatistics {
   trackCode: AcademicTrackCode;
@@ -52,16 +48,7 @@ export interface BilingualAlert {
 @Injectable()
 export class BilingualAnalysisService {
   constructor(
-    @InjectRepository(Exam)
-    private readonly examRepository: Repository<Exam>,
-    @InjectRepository(Grade)
-    private readonly gradeRepository: Repository<Grade>,
-    @InjectRepository(Class)
-    private readonly classRepository: Repository<Class>,
-    @InjectRepository(StudentAcademicTrack)
-    private readonly studentAcademicTrackRepository: Repository<StudentAcademicTrack>,
-    @InjectRepository(AcademicTrack)
-    private readonly academicTrackRepository: Repository<AcademicTrack>,
+    private readonly prisma: PrismaService,
     private readonly tenantFeaturesService: TenantFeaturesService,
   ) {}
 
@@ -98,7 +85,7 @@ export class BilingualAnalysisService {
    */
   async getTrackStatistics(tenantId: string, trackCode: AcademicTrackCode): Promise<TrackStatistics> {
     // Récupérer le track
-    const track = await this.academicTrackRepository.findOne({
+    const track = await this.prisma.academicTrack.findFirst({
       where: { tenantId, code: trackCode },
     });
 
@@ -114,23 +101,22 @@ export class BilingualAnalysisService {
     }
 
     // Compter les élèves
-    // StudentAcademicTrack (TypeORM) n'a pas tenantId directement, filtrer via academicTrack
-    const totalStudents = await this.studentAcademicTrackRepository.count({
-      where: { academicTrack: { id: track.id } },
+    const totalStudents = await this.prisma.studentAcademicTrack.count({
+      where: { academicTrackId: track.id },
     });
 
     // Compter les examens
-    const totalExams = await this.examRepository.count({
+    const totalExams = await this.prisma.exam.count({
       where: { tenantId, academicTrackId: track.id },
     });
 
     // Calculer la moyenne des notes
-    const grades = await this.gradeRepository
-      .createQueryBuilder('grade')
-      .leftJoin('grade.exam', 'exam')
-      .where('grade.tenantId = :tenantId', { tenantId })
-      .andWhere('exam.academicTrackId = :trackId', { trackId: track.id })
-      .getMany();
+    const grades = await this.prisma.grade.findMany({
+      where: {
+        tenantId,
+        exam: { academicTrackId: track.id },
+      },
+    });
 
     const averageScore = grades.length > 0
       ? grades.reduce((sum, g) => sum + Number(g.score || 0), 0) / grades.length
@@ -142,7 +128,7 @@ export class BilingualAnalysisService {
     const successRate = grades.length > 0 ? (successCount / grades.length) * 100 : 0;
 
     // Compter les classes
-    const classesCount = await this.classRepository.count({
+    const classesCount = await this.prisma.class.count({
       where: { tenantId, academicTrackId: track.id },
     });
 
@@ -166,35 +152,44 @@ export class BilingualAnalysisService {
     enAverage: number;
     gap: number;
   }>> {
-    const classes = await this.classRepository.find({
+    const classes = await this.prisma.class.findMany({
       where: { tenantId },
-      relations: ['academicTrack'],
+      include: { academicTrack: true },
     });
 
     const results = [];
 
     for (const cls of classes) {
-      const frGrades = await this.gradeRepository
-        .createQueryBuilder('grade')
-        .leftJoin('grade.exam', 'exam')
-        .leftJoin('exam.class', 'class')
-        .where('class.id = :classId', { classId: cls.id })
-        .andWhere('exam.academicTrackId = (SELECT id FROM academic_tracks WHERE tenant_id = :tenantId AND code = :code)', {
-          tenantId,
-          code: AcademicTrackCode.FR,
-        })
-        .getMany();
+      const frTrack = await this.prisma.academicTrack.findFirst({
+        where: { tenantId, code: AcademicTrackCode.FR },
+        select: { id: true },
+      });
+      const enTrack = await this.prisma.academicTrack.findFirst({
+        where: { tenantId, code: AcademicTrackCode.EN },
+        select: { id: true },
+      });
 
-      const enGrades = await this.gradeRepository
-        .createQueryBuilder('grade')
-        .leftJoin('grade.exam', 'exam')
-        .leftJoin('exam.class', 'class')
-        .where('class.id = :classId', { classId: cls.id })
-        .andWhere('exam.academicTrackId = (SELECT id FROM academic_tracks WHERE tenant_id = :tenantId AND code = :code)', {
-          tenantId,
-          code: AcademicTrackCode.EN,
-        })
-        .getMany();
+      const frGrades = frTrack
+        ? await this.prisma.grade.findMany({
+            where: {
+              exam: {
+                classId: cls.id,
+                academicTrackId: frTrack.id,
+              },
+            },
+          })
+        : [];
+
+      const enGrades = enTrack
+        ? await this.prisma.grade.findMany({
+            where: {
+              exam: {
+                classId: cls.id,
+                academicTrackId: enTrack.id,
+              },
+            },
+          })
+        : [];
 
       const frAverage = frGrades.length > 0
         ? frGrades.reduce((sum, g) => sum + Number(g.score || 0), 0) / frGrades.length

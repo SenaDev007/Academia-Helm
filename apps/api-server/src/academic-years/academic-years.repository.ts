@@ -1,47 +1,43 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { AcademicYear } from './entities/academic-year.entity';
+import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
 export class AcademicYearsRepository {
-  constructor(
-    @InjectRepository(AcademicYear)
-    private readonly repository: Repository<AcademicYear>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(academicYearData: Partial<AcademicYear>): Promise<AcademicYear> {
-    const academicYear = this.repository.create(academicYearData);
-    return this.repository.save(academicYear);
+  async create(academicYearData: any): Promise<any> {
+    return this.prisma.academicYear.create({ data: academicYearData });
   }
 
-  async findOne(id: string, tenantId: string): Promise<AcademicYear | null> {
-    return this.repository.findOne({
+  async findOne(id: string, tenantId: string): Promise<any | null> {
+    return this.prisma.academicYear.findFirst({
       where: { id, tenantId },
-      relations: ['quarters'],
+      include: { quarters: true },
     });
   }
 
-  async findAll(tenantId: string): Promise<AcademicYear[]> {
-    return this.repository.find({
+  async findAll(tenantId: string): Promise<any[]> {
+    return this.prisma.academicYear.findMany({
       where: { tenantId },
-      order: { startDate: 'DESC' },
+      orderBy: { startDate: 'desc' },
     });
   }
 
-  async findCurrent(tenantId: string): Promise<AcademicYear | null> {
-    return this.repository.findOne({
+  async findCurrent(tenantId: string): Promise<any | null> {
+    return this.prisma.academicYear.findFirst({
       where: { tenantId, isCurrent: true },
     });
   }
 
-  async update(id: string, tenantId: string, academicYearData: Partial<AcademicYear>): Promise<AcademicYear> {
-    await this.repository.update({ id, tenantId }, academicYearData);
+  async update(id: string, tenantId: string, academicYearData: any): Promise<any> {
+    await this.prisma.academicYear.update({
+      where: { id },
+      data: academicYearData,
+    });
     return this.findOne(id, tenantId);
   }
 
   async delete(id: string, tenantId: string): Promise<void> {
-    await this.repository.delete({ id, tenantId });
+    await this.prisma.academicYear.delete({ where: { id } });
   }
 }
-

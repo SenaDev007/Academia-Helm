@@ -12,10 +12,6 @@
  */
 
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { Student } from '../../students/entities/student.entity';
-import { Class } from '../../classes/entities/class.entity';
-import { Absence } from '../../absences/entities/absence.entity';
 import { ScolariteCalculationService } from './services/scolarite-calculation.service';
 import { ScolariteController } from './scolarite.controller';
 import { CalculationService } from '../../common/services/calculation.service';
@@ -27,7 +23,6 @@ import { AuditLogsModule } from '../../audit-logs/audit-logs.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Student, Class, Absence]),
     StudentsModule,
     ClassesModule,
     AbsencesModule,

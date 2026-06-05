@@ -11,7 +11,6 @@
  */
 
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
 import { SynthesisController } from './synthesis.controller';
 import { SynthesisService } from './synthesis.service';
 import { SchoolLevelsModule } from '../../school-levels/school-levels.module';
@@ -21,7 +20,6 @@ import { AuditLogsModule } from '../../audit-logs/audit-logs.module'; // ✅ Imp
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([]), // Pas d'entités, seulement des vues
     SchoolLevelsModule,
     TenantsModule,
     UsersModule, // ✅ Import pour que PermissionsGuard puisse résoudre UserRepository

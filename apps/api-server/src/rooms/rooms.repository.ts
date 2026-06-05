@@ -1,27 +1,21 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Room } from './entities/room.entity';
+import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
 export class RoomsRepository {
-  constructor(
-    @InjectRepository(Room)
-    private readonly repository: Repository<Room>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(roomData: Partial<Room>): Promise<Room> {
-    const room = this.repository.create(roomData);
-    return this.repository.save(room);
+  async create(roomData: any): Promise<any> {
+    return this.prisma.room.create({ data: roomData });
   }
 
-  async findOne(id: string, tenantId: string): Promise<Room | null> {
-    return this.repository.findOne({
+  async findOne(id: string, tenantId: string): Promise<any | null> {
+    return this.prisma.room.findFirst({
       where: { id, tenantId },
     });
   }
 
-  async findAll(tenantId: string, type?: string, status?: string): Promise<Room[]> {
+  async findAll(tenantId: string, type?: string, status?: string): Promise<any[]> {
     const where: any = { tenantId };
     if (type) {
       where.type = type;
@@ -29,19 +23,21 @@ export class RoomsRepository {
     if (status) {
       where.status = status;
     }
-    return this.repository.find({
+    return this.prisma.room.findMany({
       where,
-      order: { name: 'ASC' },
+      orderBy: { name: 'asc' },
     });
   }
 
-  async update(id: string, tenantId: string, roomData: Partial<Room>): Promise<Room> {
-    await this.repository.update({ id, tenantId }, roomData);
+  async update(id: string, tenantId: string, roomData: any): Promise<any> {
+    await this.prisma.room.update({
+      where: { id },
+      data: roomData,
+    });
     return this.findOne(id, tenantId);
   }
 
   async delete(id: string, tenantId: string): Promise<void> {
-    await this.repository.delete({ id, tenantId });
+    await this.prisma.room.delete({ where: { id } });
   }
 }
-

@@ -14,11 +14,8 @@
  */
 
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
 import { ComplianceController } from './compliance.controller';
 import { ComplianceService } from './compliance.service';
-import { DataConsent } from './entities/data-consent.entity';
-import { DataExport } from './entities/data-export.entity';
 import { UsersModule } from '../users/users.module';
 import { StudentsModule } from '../students/students.module';
 import { TenantsModule } from '../tenants/tenants.module'; // ✅ Import pour TenantValidationGuard
@@ -26,7 +23,6 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module'; // ✅ Import
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([DataConsent, DataExport]),
     UsersModule,
     StudentsModule,
     TenantsModule, // ✅ Import pour que TenantValidationGuard puisse résoudre TenantRepository

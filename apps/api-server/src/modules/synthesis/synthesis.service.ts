@@ -11,8 +11,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { PrismaService } from '../../../database/prisma.service';
 
 export interface FinancesByModuleAndLevel {
   tenant_id: string;
@@ -116,8 +115,7 @@ export interface DashboardSynthesis {
 @Injectable()
 export class SynthesisService {
   constructor(
-    @InjectDataSource()
-    private readonly dataSource: DataSource,
+    private readonly prisma: PrismaService,
   ) {}
 
   /**
@@ -127,17 +125,15 @@ export class SynthesisService {
     tenantId: string,
     schoolLevelId?: string,
   ): Promise<FinancesByModuleAndLevel[]> {
-    const query = this.dataSource
-      .createQueryBuilder()
-      .select('*')
-      .from('v_finances_by_module_and_level', 'v')
-      .where('v.tenant_id = :tenantId', { tenantId });
+    let sql = `SELECT * FROM v_finances_by_module_and_level v WHERE v.tenant_id = $1`;
+    const params: any[] = [tenantId];
 
     if (schoolLevelId && schoolLevelId !== 'ALL') {
-      query.andWhere('v.school_level_id = :schoolLevelId', { schoolLevelId });
+      sql += ` AND v.school_level_id = $2`;
+      params.push(schoolLevelId);
     }
 
-    return query.getRawMany();
+    return this.prisma.$queryRawUnsafe(sql, ...params) as Promise<FinancesByModuleAndLevel[]>;
   }
 
   /**
@@ -147,17 +143,15 @@ export class SynthesisService {
     tenantId: string,
     schoolLevelId?: string,
   ): Promise<FinancesByLevel[]> {
-    const query = this.dataSource
-      .createQueryBuilder()
-      .select('*')
-      .from('v_finances_by_level', 'v')
-      .where('v.tenant_id = :tenantId', { tenantId });
+    let sql = `SELECT * FROM v_finances_by_level v WHERE v.tenant_id = $1`;
+    const params: any[] = [tenantId];
 
     if (schoolLevelId && schoolLevelId !== 'ALL') {
-      query.andWhere('v.school_level_id = :schoolLevelId', { schoolLevelId });
+      sql += ` AND v.school_level_id = $2`;
+      params.push(schoolLevelId);
     }
 
-    return query.getRawMany();
+    return this.prisma.$queryRawUnsafe(sql, ...params) as Promise<FinancesByLevel[]>;
   }
 
   /**
@@ -167,31 +161,27 @@ export class SynthesisService {
     tenantId: string,
     schoolLevelId?: string,
   ): Promise<EffectifsByLevel[]> {
-    const query = this.dataSource
-      .createQueryBuilder()
-      .select('*')
-      .from('v_effectifs_by_level', 'v')
-      .where('v.tenant_id = :tenantId', { tenantId });
+    let sql = `SELECT * FROM v_effectifs_by_level v WHERE v.tenant_id = $1`;
+    const params: any[] = [tenantId];
 
     if (schoolLevelId && schoolLevelId !== 'ALL') {
-      query.andWhere('v.school_level_id = :schoolLevelId', { schoolLevelId });
+      sql += ` AND v.school_level_id = $2`;
+      params.push(schoolLevelId);
     }
 
-    return query.getRawMany();
+    return this.prisma.$queryRawUnsafe(sql, ...params) as Promise<EffectifsByLevel[]>;
   }
 
   /**
    * Récupère les KPI globaux par tenant
    */
   async getKPIGlobalByTenant(tenantId: string): Promise<KPIGlobalByTenant | null> {
-    const result = await this.dataSource
-      .createQueryBuilder()
-      .select('*')
-      .from('v_kpi_global_by_tenant', 'v')
-      .where('v.tenant_id = :tenantId', { tenantId })
-      .getRawOne();
+    const result = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM v_kpi_global_by_tenant v WHERE v.tenant_id = $1`,
+      tenantId,
+    ) as KPIGlobalByTenant[];
 
-    return result || null;
+    return result[0] || null;
   }
 
   /**
@@ -201,17 +191,15 @@ export class SynthesisService {
     tenantId: string,
     schoolLevelId?: string,
   ): Promise<DashboardSynthesis[]> {
-    const query = this.dataSource
-      .createQueryBuilder()
-      .select('*')
-      .from('v_dashboard_synthesis', 'v')
-      .where('v.tenant_id = :tenantId', { tenantId });
+    let sql = `SELECT * FROM v_dashboard_synthesis v WHERE v.tenant_id = $1`;
+    const params: any[] = [tenantId];
 
     if (schoolLevelId && schoolLevelId !== 'ALL') {
-      query.andWhere('v.school_level_id = :schoolLevelId', { schoolLevelId });
+      sql += ` AND v.school_level_id = $2`;
+      params.push(schoolLevelId);
     }
 
-    return query.getRawMany();
+    return this.prisma.$queryRawUnsafe(sql, ...params) as Promise<DashboardSynthesis[]>;
   }
 
   /**
@@ -221,17 +209,15 @@ export class SynthesisService {
     tenantId: string,
     schoolLevelId?: string,
   ): Promise<any[]> {
-    const query = this.dataSource
-      .createQueryBuilder()
-      .select('*')
-      .from('v_synthesis_with_kpi', 'v')
-      .where('v.tenant_id = :tenantId', { tenantId });
+    let sql = `SELECT * FROM v_synthesis_with_kpi v WHERE v.tenant_id = $1`;
+    const params: any[] = [tenantId];
 
     if (schoolLevelId && schoolLevelId !== 'ALL') {
-      query.andWhere('v.school_level_id = :schoolLevelId', { schoolLevelId });
+      sql += ` AND v.school_level_id = $2`;
+      params.push(schoolLevelId);
     }
 
-    return query.getRawMany();
+    return this.prisma.$queryRawUnsafe(sql, ...params);
   }
 
   /**
@@ -245,17 +231,15 @@ export class SynthesisService {
     previousPeriodStart: Date,
     previousPeriodEnd: Date,
   ): Promise<number | null> {
-    const result = await this.dataSource.query(
+    const result = await this.prisma.$queryRawUnsafe(
       `SELECT calculate_revenue_growth_rate($1, $2, $3, $4, $5, $6) AS growth_rate`,
-      [
-        tenantId,
-        schoolLevelId,
-        periodStart,
-        periodEnd,
-        previousPeriodStart,
-        previousPeriodEnd,
-      ],
-    );
+      tenantId,
+      schoolLevelId,
+      periodStart,
+      periodEnd,
+      previousPeriodStart,
+      previousPeriodEnd,
+    ) as Array<{ growth_rate: number | null }>;
 
     return result[0]?.growth_rate || null;
   }
@@ -267,10 +251,11 @@ export class SynthesisService {
     tenantId: string,
     schoolLevelId: string,
   ): Promise<number | null> {
-    const result = await this.dataSource.query(
+    const result = await this.prisma.$queryRawUnsafe(
       `SELECT calculate_class_occupancy_rate($1, $2) AS occupancy_rate`,
-      [tenantId, schoolLevelId],
-    );
+      tenantId,
+      schoolLevelId,
+    ) as Array<{ occupancy_rate: number | null }>;
 
     return result[0]?.occupancy_rate || null;
   }

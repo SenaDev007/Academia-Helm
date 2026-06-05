@@ -10,11 +10,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Student } from '../../../students/entities/student.entity';
-import { Class } from '../../../classes/entities/class.entity';
-import { Absence } from '../../../absences/entities/absence.entity';
+import { PrismaService } from '../../../database/prisma.service';
 import { CalculationService, CalculationContext, CalculationResult } from '../../../common/services/calculation.service';
 
 export interface ScolariteStatistics {
@@ -30,12 +26,7 @@ export interface ScolariteStatistics {
 @Injectable()
 export class ScolariteCalculationService {
   constructor(
-    @InjectRepository(Student)
-    private readonly studentsRepository: Repository<Student>,
-    @InjectRepository(Class)
-    private readonly classesRepository: Repository<Class>,
-    @InjectRepository(Absence)
-    private readonly absencesRepository: Repository<Absence>,
+    private readonly prisma: PrismaService,
     private readonly calculationService: CalculationService,
   ) {}
 
@@ -51,27 +42,27 @@ export class ScolariteCalculationService {
     const { tenantId, schoolLevelId } = context;
 
     // Compter les élèves
-    const totalStudents = await this.studentsRepository.count({
+    const totalStudents = await this.prisma.student.count({
       where: { tenantId, schoolLevelId },
     });
 
     // Note: enrollmentStatus est dans StudentEnrollment, pas dans Student
     // Pour l'instant, on compte tous les étudiants comme actifs
-    const activeStudents = await this.studentsRepository.count({
+    const activeStudents = await this.prisma.student.count({
       where: { tenantId, schoolLevelId },
     });
 
     // Compter les classes
-    const totalClasses = await this.classesRepository.count({
+    const totalClasses = await this.prisma.class.count({
       where: { tenantId, schoolLevelId },
     });
 
     // Compter les absences
-    const totalAbsences = await this.absencesRepository.count({
+    const totalAbsences = await this.prisma.absence.count({
       where: { tenantId, schoolLevelId },
     });
 
-    const justifiedAbsences = await this.absencesRepository.count({
+    const justifiedAbsences = await this.prisma.absence.count({
       where: { tenantId, schoolLevelId, isJustified: true },
     });
 
@@ -124,7 +115,7 @@ export class ScolariteCalculationService {
     const { tenantId, schoolLevelId } = context;
 
     // Vérifier que la classe appartient au tenant et au niveau
-    const classEntity = await this.classesRepository.findOne({
+    const classEntity = await this.prisma.class.findFirst({
       where: { id: classId, tenantId, schoolLevelId },
     });
 
@@ -134,15 +125,15 @@ export class ScolariteCalculationService {
 
     // Note: classId et enrollmentStatus sont dans StudentEnrollment, pas dans Student
     // Pour l'instant, on compte tous les étudiants du niveau
-    const totalStudents = await this.studentsRepository.count({
+    const totalStudents = await this.prisma.student.count({
       where: { tenantId, schoolLevelId },
     });
 
-    const activeStudents = await this.studentsRepository.count({
+    const activeStudents = await this.prisma.student.count({
       where: { tenantId, schoolLevelId },
     });
 
-    const totalAbsences = await this.absencesRepository.count({
+    const totalAbsences = await this.prisma.absence.count({
       where: { tenantId, schoolLevelId, classId },
     });
 

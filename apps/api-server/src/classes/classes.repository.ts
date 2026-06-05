@@ -1,24 +1,18 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Class } from './entities/class.entity';
+import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
 export class ClassesRepository {
-  constructor(
-    @InjectRepository(Class)
-    private readonly repository: Repository<Class>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(classData: Partial<Class>): Promise<Class> {
-    const classEntity = this.repository.create(classData);
-    return this.repository.save(classEntity);
+  async create(classData: any): Promise<any> {
+    return this.prisma.class.create({ data: classData });
   }
 
-  async findOne(id: string, tenantId: string, schoolLevelId: string): Promise<Class | null> {
-    return this.repository.findOne({
+  async findOne(id: string, tenantId: string, schoolLevelId: string): Promise<any | null> {
+    return this.prisma.class.findFirst({
       where: { id, tenantId, schoolLevelId },
-      relations: ['academicYear'],
+      include: { academicYear: true },
     });
   }
 
@@ -27,21 +21,22 @@ export class ClassesRepository {
     schoolLevelId: string,
     pagination: { skip: number; take: number },
     academicYearId?: string,
-  ): Promise<Class[]> {
-    const queryBuilder = this.repository
-      .createQueryBuilder('class')
-      .where('class.tenantId = :tenantId', { tenantId })
-      .andWhere('class.schoolLevelId = :schoolLevelId', { schoolLevelId })
-      .orderBy('class.name', 'ASC')
-      .skip(pagination.skip)
-      .take(pagination.take);
+  ): Promise<any[]> {
+    const where: any = { tenantId, schoolLevelId };
+    const include: any = {};
 
     if (academicYearId) {
-      queryBuilder.andWhere('class.academicYearId = :academicYearId', { academicYearId });
-      queryBuilder.leftJoinAndSelect('class.academicYear', 'academicYear');
+      where.academicYearId = academicYearId;
+      include.academicYear = true;
     }
 
-    return queryBuilder.getMany();
+    return this.prisma.class.findMany({
+      where,
+      include: Object.keys(include).length > 0 ? include : undefined,
+      orderBy: { name: 'asc' },
+      skip: pagination.skip,
+      take: pagination.take,
+    });
   }
 
   async count(
@@ -53,20 +48,23 @@ export class ClassesRepository {
     if (academicYearId) {
       where.academicYearId = academicYearId;
     }
-    return this.repository.count({ where });
+    return this.prisma.class.count({ where });
   }
 
-  async update(id: string, tenantId: string, classData: Partial<Class>): Promise<Class> {
-    await this.repository.update({ id, tenantId }, classData);
-    const out = await this.repository.findOne({
+  async update(id: string, tenantId: string, classData: any): Promise<any> {
+    await this.prisma.class.updateMany({
       where: { id, tenantId },
-      relations: ['academicYear'],
+      data: classData,
     });
-    return out as Class;
+    return this.prisma.class.findFirst({
+      where: { id, tenantId },
+      include: { academicYear: true },
+    });
   }
 
   async delete(id: string, tenantId: string): Promise<void> {
-    await this.repository.delete({ id, tenantId });
+    await this.prisma.class.deleteMany({
+      where: { id, tenantId },
+    });
   }
 }
-

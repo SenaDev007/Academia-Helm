@@ -22,9 +22,7 @@ import {
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { AuditLog } from '../../audit-logs/entities/audit-log.entity';
+import { PrismaService } from '../../database/prisma.service';
 import { Request } from 'express';
 
 // Actions sensibles à logger (seulement les écritures — pas les GET pour réduire le volume de logs)
@@ -33,8 +31,7 @@ const SENSITIVE_ACTIONS = ['POST', 'PATCH', 'PUT', 'DELETE'];
 @Injectable()
 export class AuditLogInterceptor implements NestInterceptor {
   constructor(
-    @InjectRepository(AuditLog)
-    private auditLogRepository: Repository<AuditLog>,
+    private prisma: PrismaService,
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
@@ -194,25 +191,19 @@ export class AuditLogInterceptor implements NestInterceptor {
         ? data.resource.split('/').pop() || data.resource
         : data.resource;
 
-      const auditLog = this.auditLogRepository.create({
-        tenantId: finalTenantId, // UUID valide pour la colonne tenant_id (uuid)
-        userId: data.userId,
-        action: data.action,
-        resource: data.resource,
-        tableName: tableName || 'unknown', // TableName est NOT NULL
-        resourceId: data.resourceId,
-        changes: data.changes,
-        ipAddress: data.ipAddress,
-        userAgent: data.userAgent,
+      const savePromise = this.prisma.auditLog.create({
+        data: {
+          tenantId: finalTenantId, // UUID valide pour la colonne tenant_id (uuid)
+          userId: data.userId,
+          action: data.action,
+          resource: data.resource,
+          tableName: tableName || 'unknown', // TableName est NOT NULL
+          resourceId: data.resourceId,
+          changes: data.changes,
+          ipAddress: data.ipAddress,
+          userAgent: data.userAgent,
+        },
       });
-      
-      // S'assurer que l'ID est généré si nécessaire
-      if (!auditLog.id) {
-        const { v4: uuidv4 } = require('uuid');
-        auditLog.id = uuidv4();
-      }
-
-      const savePromise = this.auditLogRepository.save(auditLog);
 
       await Promise.race([savePromise, timeoutPromise]);
     } catch (error: any) {

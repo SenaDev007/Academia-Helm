@@ -1,29 +1,29 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { SchoolLevel, SchoolLevelType } from './entities/school-level.entity';
+import { PrismaService } from '../database/prisma.service';
+
+export enum SchoolLevelType {
+  MATERNELLE = 'MATERNELLE',
+  PRIMAIRE = 'PRIMAIRE',
+  SECONDAIRE = 'SECONDAIRE',
+}
 
 @Injectable()
 export class SchoolLevelsRepository {
-  constructor(
-    @InjectRepository(SchoolLevel)
-    private readonly repository: Repository<SchoolLevel>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(data: Partial<SchoolLevel>): Promise<SchoolLevel> {
-    const schoolLevel = this.repository.create(data);
-    return this.repository.save(schoolLevel);
+  async create(data: any): Promise<any> {
+    return this.prisma.schoolLevel.create({ data });
   }
 
-  async findAll(tenantId: string): Promise<SchoolLevel[]> {
-    return this.repository.find({
+  async findAll(tenantId: string): Promise<any[]> {
+    return this.prisma.schoolLevel.findMany({
       where: { tenantId },
-      order: { order: 'ASC' },
+      orderBy: { order: 'asc' },
     });
   }
 
-  async findOne(id: string, tenantId: string): Promise<SchoolLevel | null> {
-    return this.repository.findOne({
+  async findOne(id: string, tenantId: string): Promise<any | null> {
+    return this.prisma.schoolLevel.findFirst({
       where: { id, tenantId },
     });
   }
@@ -31,8 +31,8 @@ export class SchoolLevelsRepository {
   async findByType(
     tenantId: string,
     type: SchoolLevelType,
-  ): Promise<SchoolLevel | null> {
-    return this.repository.findOne({
+  ): Promise<any | null> {
+    return this.prisma.schoolLevel.findFirst({
       where: { tenantId, type },
     });
   }
@@ -40,20 +40,25 @@ export class SchoolLevelsRepository {
   async update(
     id: string,
     tenantId: string,
-    data: Partial<SchoolLevel>,
-  ): Promise<SchoolLevel> {
-    await this.repository.update({ id, tenantId }, data);
+    data: any,
+  ): Promise<any> {
+    await this.prisma.schoolLevel.update({
+      where: { id },
+      data,
+    });
     return this.findOne(id, tenantId);
   }
 
   async delete(id: string, tenantId: string): Promise<void> {
-    await this.repository.delete({ id, tenantId });
+    await this.prisma.schoolLevel.delete({
+      where: { id },
+    });
   }
 
   /**
    * Initialiser les niveaux scolaires par défaut pour un tenant
    */
-  async initializeDefaultLevels(tenantId: string): Promise<SchoolLevel[]> {
+  async initializeDefaultLevels(tenantId: string): Promise<any[]> {
     const defaultLevels = [
       {
         tenantId,
@@ -95,4 +100,3 @@ export class SchoolLevelsRepository {
     return created;
   }
 }
-

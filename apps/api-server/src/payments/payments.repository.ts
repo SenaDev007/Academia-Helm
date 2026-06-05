@@ -1,61 +1,55 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Payment } from './entities/payment.entity';
+import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
 export class PaymentsRepository {
-  constructor(
-    @InjectRepository(Payment)
-    private readonly repository: Repository<Payment>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(paymentData: Partial<Payment>): Promise<Payment> {
-    const payment = this.repository.create(paymentData);
-    return this.repository.save(payment);
+  async create(paymentData: any): Promise<any> {
+    return this.prisma.payment.create({ data: paymentData });
   }
 
-  async findOne(id: string, tenantId: string, schoolLevelId: string): Promise<Payment | null> {
-    return this.repository.findOne({
-      where: { id, tenantId, schoolLevelId }, // OBLIGATOIRE : Isolation par niveau
-      relations: ['student', 'feeConfiguration'],
+  async findOne(id: string, tenantId: string, schoolLevelId: string): Promise<any | null> {
+    return this.prisma.payment.findFirst({
+      where: { id, tenantId, schoolLevelId },
+      include: { student: true, feeConfiguration: true },
     });
   }
 
   async findAll(
     tenantId: string,
-    schoolLevelId: string, // OBLIGATOIRE
+    schoolLevelId: string,
     pagination: { skip: number; take: number },
     studentId?: string,
     status?: string,
     startDate?: Date,
     endDate?: Date,
-  ): Promise<Payment[]> {
-    const query = this.repository.createQueryBuilder('payment')
-      .where('payment.tenantId = :tenantId', { tenantId })
-      .andWhere('payment.schoolLevelId = :schoolLevelId', { schoolLevelId }) // OBLIGATOIRE
-      // Optimisation: charger seulement les relations nécessaires
-      .leftJoinAndSelect('payment.student', 'student')
-      .leftJoinAndSelect('payment.feeConfiguration', 'feeConfiguration');
-    
+  ): Promise<any[]> {
+    const where: any = { tenantId, schoolLevelId };
+
     if (studentId) {
-      query.andWhere('payment.studentId = :studentId', { studentId });
+      where.studentId = studentId;
     }
     if (status) {
-      query.andWhere('payment.status = :status', { status });
+      where.status = status;
     }
-    if (startDate) {
-      query.andWhere('payment.paymentDate >= :startDate', { startDate });
+    if (startDate || endDate) {
+      where.paymentDate = {};
+      if (startDate) {
+        where.paymentDate.gte = startDate;
+      }
+      if (endDate) {
+        where.paymentDate.lte = endDate;
+      }
     }
-    if (endDate) {
-      query.andWhere('payment.paymentDate <= :endDate', { endDate });
-    }
-    
-    return query
-      .orderBy('payment.paymentDate', 'DESC')
-      .skip(pagination.skip)
-      .take(pagination.take)
-      .getMany();
+
+    return this.prisma.payment.findMany({
+      where,
+      include: { student: true, feeConfiguration: true },
+      orderBy: { paymentDate: 'desc' },
+      skip: pagination.skip,
+      take: pagination.take,
+    });
   }
 
   async count(
@@ -66,38 +60,43 @@ export class PaymentsRepository {
     startDate?: Date,
     endDate?: Date,
   ): Promise<number> {
-    const query = this.repository.createQueryBuilder('payment')
-      .where('payment.tenantId = :tenantId', { tenantId })
-      .andWhere('payment.schoolLevelId = :schoolLevelId', { schoolLevelId });
-    
+    const where: any = { tenantId, schoolLevelId };
+
     if (studentId) {
-      query.andWhere('payment.studentId = :studentId', { studentId });
+      where.studentId = studentId;
     }
     if (status) {
-      query.andWhere('payment.status = :status', { status });
+      where.status = status;
     }
-    if (startDate) {
-      query.andWhere('payment.paymentDate >= :startDate', { startDate });
+    if (startDate || endDate) {
+      where.paymentDate = {};
+      if (startDate) {
+        where.paymentDate.gte = startDate;
+      }
+      if (endDate) {
+        where.paymentDate.lte = endDate;
+      }
     }
-    if (endDate) {
-      query.andWhere('payment.paymentDate <= :endDate', { endDate });
-    }
-    
-    return query.getCount();
+
+    return this.prisma.payment.count({ where });
   }
 
   async update(
     id: string,
     tenantId: string,
-    schoolLevelId: string, // OBLIGATOIRE
-    paymentData: Partial<Payment>,
-  ): Promise<Payment> {
-    await this.repository.update({ id, tenantId, schoolLevelId }, paymentData);
+    schoolLevelId: string,
+    paymentData: any,
+  ): Promise<any> {
+    await this.prisma.payment.updateMany({
+      where: { id, tenantId, schoolLevelId },
+      data: paymentData,
+    });
     return this.findOne(id, tenantId, schoolLevelId);
   }
 
   async delete(id: string, tenantId: string, schoolLevelId: string): Promise<void> {
-    await this.repository.delete({ id, tenantId, schoolLevelId });
+    await this.prisma.payment.deleteMany({
+      where: { id, tenantId, schoolLevelId },
+    });
   }
 }
-

@@ -1,48 +1,41 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Permission } from './entities/permission.entity';
+import { PrismaService } from '../../database/prisma.service';
 
 @Injectable()
 export class PermissionsRepository {
-  constructor(
-    @InjectRepository(Permission)
-    private readonly repository: Repository<Permission>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(permissionData: Partial<Permission>): Promise<Permission> {
-    const permission = this.repository.create(permissionData);
-    return this.repository.save(permission);
+  async create(permissionData: any): Promise<any> {
+    return this.prisma.permission.create({ data: permissionData });
   }
 
-  async findOne(id: string): Promise<Permission | null> {
-    return this.repository.findOne({ where: { id } });
+  async findOne(id: string): Promise<any | null> {
+    return this.prisma.permission.findFirst({ where: { id } });
   }
 
-  async findAll(): Promise<Permission[]> {
-    return this.repository.find({
-      order: { createdAt: 'DESC' },
+  async findAll(): Promise<any[]> {
+    return this.prisma.permission.findMany({
+      orderBy: { createdAt: 'desc' },
     });
   }
 
-  async findByName(name: string): Promise<Permission | null> {
-    return this.repository.findOne({ where: { name } });
+  async findByName(name: string): Promise<any | null> {
+    return this.prisma.permission.findFirst({ where: { name } });
   }
 
-  async findByResource(resource: string): Promise<Permission[]> {
-    return this.repository.find({
+  async findByResource(resource: string): Promise<any[]> {
+    return this.prisma.permission.findMany({
       where: { resource },
-      order: { createdAt: 'DESC' },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
-  async update(id: string, permissionData: Partial<Permission>): Promise<Permission> {
-    await this.repository.update({ id }, permissionData);
+  async update(id: string, permissionData: any): Promise<any> {
+    await this.prisma.permission.update({ where: { id }, data: permissionData });
     return this.findOne(id);
   }
 
   async delete(id: string): Promise<void> {
-    await this.repository.delete({ id });
+    await this.prisma.permission.delete({ where: { id } });
   }
 }
-

@@ -1,54 +1,47 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Role } from './entities/role.entity';
+import { PrismaService } from '../../database/prisma.service';
 
 @Injectable()
 export class RolesRepository {
-  constructor(
-    @InjectRepository(Role)
-    private readonly repository: Repository<Role>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(roleData: Partial<Role>): Promise<Role> {
-    const role = this.repository.create(roleData);
-    return this.repository.save(role);
+  async create(roleData: any): Promise<any> {
+    return this.prisma.role.create({ data: roleData });
   }
 
-  async findOne(id: string, tenantId?: string | null): Promise<Role | null> {
+  async findOne(id: string, tenantId?: string | null): Promise<any | null> {
     const where: any = { id };
     if (tenantId !== undefined) {
       where.tenantId = tenantId;
     }
-    return this.repository.findOne({ where });
+    return this.prisma.role.findFirst({ where });
   }
 
-  async findAll(tenantId?: string | null): Promise<Role[]> {
+  async findAll(tenantId?: string | null): Promise<any[]> {
     const where: any = {};
     if (tenantId !== undefined) {
       where.tenantId = tenantId;
     }
-    return this.repository.find({
+    return this.prisma.role.findMany({
       where,
-      order: { createdAt: 'DESC' },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
-  async findByName(name: string, tenantId?: string | null): Promise<Role | null> {
+  async findByName(name: string, tenantId?: string | null): Promise<any | null> {
     const where: any = { name };
     if (tenantId !== undefined) {
       where.tenantId = tenantId;
     }
-    return this.repository.findOne({ where });
+    return this.prisma.role.findFirst({ where });
   }
 
-  async update(id: string, tenantId: string | null, roleData: Partial<Role>): Promise<Role> {
-    await this.repository.update({ id, tenantId }, roleData);
+  async update(id: string, tenantId: string | null, roleData: any): Promise<any> {
+    await this.prisma.role.update({ where: { id }, data: roleData });
     return this.findOne(id, tenantId);
   }
 
   async delete(id: string, tenantId: string | null): Promise<void> {
-    await this.repository.delete({ id, tenantId });
+    await this.prisma.role.delete({ where: { id } });
   }
 }
-

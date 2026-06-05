@@ -1,35 +1,29 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Grade } from './entities/grade.entity';
+import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
 export class GradesRepository {
-  constructor(
-    @InjectRepository(Grade)
-    private readonly repository: Repository<Grade>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(gradeData: Partial<Grade>): Promise<Grade> {
-    const grade = this.repository.create(gradeData);
-    return this.repository.save(grade);
+  async create(gradeData: any): Promise<any> {
+    return this.prisma.grade.create({ data: gradeData });
   }
 
-  async findOne(id: string, tenantId: string): Promise<Grade | null> {
-    return this.repository.findOne({
+  async findOne(id: string, tenantId: string): Promise<any | null> {
+    return this.prisma.grade.findFirst({
       where: { id, tenantId },
-      relations: ['student', 'exam', 'subject', 'class', 'academicYear', 'quarter'],
+      include: { student: true, exam: true, subject: true, class: true, academicYear: true, quarter: true },
     });
   }
 
   async findAll(
-    tenantId: string, 
-    studentId?: string, 
-    subjectId?: string, 
-    classId?: string, 
+    tenantId: string,
+    studentId?: string,
+    subjectId?: string,
+    classId?: string,
     quarterId?: string,
-    academicTrackId?: string | null, // NULL = track par défaut (FR)
-  ): Promise<Grade[]> {
+    academicTrackId?: string | null,
+  ): Promise<any[]> {
     const where: any = { tenantId };
     if (studentId) {
       where.studentId = studentId;
@@ -43,26 +37,27 @@ export class GradesRepository {
     if (quarterId) {
       where.quarterId = quarterId;
     }
-    // Filtrer par academic track si spécifié
-    // Si academicTrackId est null, on filtre les notes sans track (FR par défaut)
-    // Si academicTrackId est défini, on filtre par ce track
     if (academicTrackId !== undefined) {
       where.academicTrackId = academicTrackId;
     }
-    return this.repository.find({
+    return this.prisma.grade.findMany({
       where,
-      relations: ['student', 'subject', 'exam', 'academicTrack'],
-      order: { createdAt: 'DESC' },
+      include: { student: true, subject: true, exam: true, academicTrack: true },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
-  async update(id: string, tenantId: string, gradeData: Partial<Grade>): Promise<Grade> {
-    await this.repository.update({ id, tenantId }, gradeData);
+  async update(id: string, tenantId: string, gradeData: any): Promise<any> {
+    await this.prisma.grade.updateMany({
+      where: { id, tenantId },
+      data: gradeData,
+    });
     return this.findOne(id, tenantId);
   }
 
   async delete(id: string, tenantId: string): Promise<void> {
-    await this.repository.delete({ id, tenantId });
+    await this.prisma.grade.deleteMany({
+      where: { id, tenantId },
+    });
   }
 }
-

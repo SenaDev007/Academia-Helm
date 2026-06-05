@@ -12,9 +12,6 @@
  */
 
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { Payment } from '../../payments/entities/payment.entity';
-import { Expense } from '../../expenses/entities/expense.entity';
 import { FinancesCalculationService } from './services/finances-calculation.service';
 import { FinancesController } from './finances.controller';
 import { CalculationService } from '../../common/services/calculation.service';
@@ -25,7 +22,6 @@ import { AuditLogsModule } from '../../audit-logs/audit-logs.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Payment, Expense]),
     PaymentsModule,
     ExpensesModule,
     UsersModule,

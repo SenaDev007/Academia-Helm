@@ -1,24 +1,17 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Announcement, AnnouncementStatus, AnnouncementTarget } from './entities/announcement.entity';
-import { Message, MessageStatus } from './entities/message.entity';
+import { PrismaService } from '../database/prisma.service';
+import { AnnouncementStatus, AnnouncementTarget } from './entities/announcement.entity';
+import { MessageStatus } from './entities/message.entity';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import { CreateMessageDto } from './dto/create-message.dto';
 
 @Injectable()
 export class CommunicationRepository {
-  constructor(
-    @InjectRepository(Announcement)
-    private readonly announcementRepository: Repository<Announcement>,
-    @InjectRepository(Message)
-    private readonly messageRepository: Repository<Message>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   // Announcements
-  async createAnnouncement(data: CreateAnnouncementDto & { tenantId: string; createdBy: string }): Promise<Announcement> {
-    const announcement = this.announcementRepository.create(data);
-    return this.announcementRepository.save(announcement);
+  async createAnnouncement(data: CreateAnnouncementDto & { tenantId: string; createdBy: string }): Promise<any> {
+    return this.prisma.announcement.create({ data });
   }
 
   async findAllAnnouncements(
@@ -26,7 +19,7 @@ export class CommunicationRepository {
     schoolLevelId?: string,
     status?: AnnouncementStatus,
     target?: AnnouncementTarget,
-  ): Promise<Announcement[]> {
+  ): Promise<any[]> {
     const where: any = { tenantId };
     if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
@@ -37,75 +30,78 @@ export class CommunicationRepository {
     if (target) {
       where.target = target;
     }
-    return this.announcementRepository.find({
+    return this.prisma.announcement.findMany({
       where,
-      relations: ['schoolLevel', 'class', 'creator'],
-      order: { createdAt: 'DESC' },
+      include: { schoolLevel: true, class: true, creator: true },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
-  async findOneAnnouncement(id: string, tenantId: string): Promise<Announcement | null> {
-    return this.announcementRepository.findOne({
+  async findOneAnnouncement(id: string, tenantId: string): Promise<any | null> {
+    return this.prisma.announcement.findFirst({
       where: { id, tenantId },
-      relations: ['schoolLevel', 'class', 'creator'],
+      include: { schoolLevel: true, class: true, creator: true },
     });
   }
 
-  async updateAnnouncement(id: string, tenantId: string, data: Partial<Announcement>): Promise<Announcement> {
-    await this.announcementRepository.update({ id, tenantId }, data);
+  async updateAnnouncement(id: string, tenantId: string, data: any): Promise<any> {
+    await this.prisma.announcement.update({
+      where: { id },
+      data,
+    });
     return this.findOneAnnouncement(id, tenantId);
   }
 
   async deleteAnnouncement(id: string, tenantId: string): Promise<void> {
-    await this.announcementRepository.delete({ id, tenantId });
+    await this.prisma.announcement.delete({ where: { id } });
   }
 
   // Messages
-  async createMessage(data: CreateMessageDto & { tenantId: string; fromUserId: string }): Promise<Message> {
-    const message = this.messageRepository.create(data);
-    return this.messageRepository.save(message);
+  async createMessage(data: CreateMessageDto & { tenantId: string; fromUserId: string }): Promise<any> {
+    return this.prisma.message.create({ data });
   }
 
   async findAllMessages(
     tenantId: string,
     userId?: string,
     type?: string,
-  ): Promise<Message[]> {
-    const query = this.messageRepository.createQueryBuilder('message')
-      .where('message.tenantId = :tenantId', { tenantId })
-      .leftJoinAndSelect('message.fromUser', 'fromUser')
-      .leftJoinAndSelect('message.toUser', 'toUser');
-
+  ): Promise<any[]> {
+    const where: any = { tenantId };
     if (userId) {
-      query.andWhere(
-        '(message.fromUserId = :userId OR message.toUserId = :userId)',
-        { userId }
-      );
+      where.OR = [
+        { fromUserId: userId },
+        { toUserId: userId },
+      ];
     }
     if (type) {
-      query.andWhere('message.type = :type', { type });
+      where.type = type;
     }
-
-    return query.orderBy('message.createdAt', 'DESC').getMany();
-  }
-
-  async findOneMessage(id: string, tenantId: string): Promise<Message | null> {
-    return this.messageRepository.findOne({
-      where: { id, tenantId },
-      relations: ['fromUser', 'toUser'],
+    return this.prisma.message.findMany({
+      where,
+      include: { fromUser: true, toUser: true },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
-  async updateMessage(id: string, tenantId: string, data: Partial<Message>): Promise<Message> {
-    await this.messageRepository.update({ id, tenantId }, data);
+  async findOneMessage(id: string, tenantId: string): Promise<any | null> {
+    return this.prisma.message.findFirst({
+      where: { id, tenantId },
+      include: { fromUser: true, toUser: true },
+    });
+  }
+
+  async updateMessage(id: string, tenantId: string, data: any): Promise<any> {
+    await this.prisma.message.update({
+      where: { id },
+      data,
+    });
     return this.findOneMessage(id, tenantId);
   }
 
-  async markAsRead(id: string, tenantId: string): Promise<Message> {
+  async markAsRead(id: string, tenantId: string): Promise<any> {
     return this.updateMessage(id, tenantId, {
       status: MessageStatus.READ,
       readAt: new Date(),
     });
   }
 }
-

@@ -17,9 +17,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Tenant } from '../../tenants/entities/tenant.entity';
+import { PrismaService } from '../../database/prisma.service';
 import { Request } from 'express';
 import { IS_PUBLIC_KEY } from '../../auth/decorators/public.decorator';
 import { REQUIRE_TENANT_KEY } from '../decorators/require-tenant.decorator';
@@ -38,8 +36,7 @@ function isPlatformOwner(user: any): boolean {
 @Injectable()
 export class TenantValidationGuard implements CanActivate {
   constructor(
-    @InjectRepository(Tenant)
-    private tenantsRepository: Repository<Tenant>,
+    private prisma: PrismaService,
     private reflector: Reflector,
   ) {}
 
@@ -84,7 +81,7 @@ export class TenantValidationGuard implements CanActivate {
     }
 
     // Valider l'existence du tenant
-    const tenant = await this.tenantsRepository.findOne({
+    const tenant = await this.prisma.tenant.findFirst({
       where: { id: tenantId },
     });
 

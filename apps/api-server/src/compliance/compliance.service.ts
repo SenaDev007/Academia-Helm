@@ -5,20 +5,14 @@
  */
 
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { DataConsent } from './entities/data-consent.entity';
-import { DataExport } from './entities/data-export.entity';
+import { PrismaService } from '../database/prisma.service';
 import { StudentsService } from '../students/students.service';
 import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class ComplianceService {
   constructor(
-    @InjectRepository(DataConsent)
-    private consentRepository: Repository<DataConsent>,
-    @InjectRepository(DataExport)
-    private exportRepository: Repository<DataExport>,
+    private readonly prisma: PrismaService,
     private studentsService: StudentsService,
     private usersService: UsersService,
   ) {}
@@ -33,18 +27,18 @@ export class ComplianceService {
     consented: boolean,
     ipAddress?: string,
     userAgent?: string,
-  ): Promise<DataConsent> {
-    const consent = this.consentRepository.create({
-      tenantId,
-      userId,
-      consentType,
-      consented,
-      ipAddress,
-      userAgent,
-      consentText: this.getConsentText(consentType),
+  ): Promise<any> {
+    return this.prisma.dataConsent.create({
+      data: {
+        tenantId,
+        userId,
+        consentType,
+        consented,
+        ipAddress,
+        userAgent,
+        consentText: this.getConsentText(consentType),
+      },
     });
-
-    return this.consentRepository.save(consent);
   }
 
   /**
@@ -55,14 +49,14 @@ export class ComplianceService {
     userId: string,
     consentType: string,
   ): Promise<boolean> {
-    const consent = await this.consentRepository.findOne({
+    const consent = await this.prisma.dataConsent.findFirst({
       where: {
         tenantId,
         userId,
         consentType,
         consented: true,
       },
-      order: { createdAt: 'DESC' },
+      orderBy: { createdAt: 'desc' },
     });
 
     return !!consent;
@@ -75,7 +69,7 @@ export class ComplianceService {
     tenantId: string,
     userId: string,
     exportType: string = 'full',
-  ): Promise<DataExport> {
+  ): Promise<any> {
     // Vérifier que l'utilisateur existe et appartient au tenant
     const user = await this.usersService.findOne(userId);
     if (!user || user.tenantId !== tenantId) {
@@ -83,14 +77,14 @@ export class ComplianceService {
     }
 
     // Créer l'export
-    const dataExport = this.exportRepository.create({
-      tenantId,
-      userId,
-      exportType,
-      status: 'pending',
+    const saved = await this.prisma.dataExport.create({
+      data: {
+        tenantId,
+        userId,
+        exportType,
+        status: 'pending',
+      },
     });
-
-    const saved = await this.exportRepository.save(dataExport);
 
     // Traiter l'export de manière asynchrone
     this.processExport(saved.id, tenantId, userId, exportType);
@@ -115,10 +109,10 @@ export class ComplianceService {
     // TODO: Implémenter l'anonymisation complète selon les besoins
 
     // Supprimer les consentements
-    await this.consentRepository.delete({ tenantId, userId });
+    await this.prisma.dataConsent.deleteMany({ where: { tenantId, userId } });
 
     // Supprimer les exports
-    await this.exportRepository.delete({ tenantId, userId });
+    await this.prisma.dataExport.deleteMany({ where: { tenantId, userId } });
   }
 
   private async processExport(
@@ -129,7 +123,10 @@ export class ComplianceService {
   ): Promise<void> {
     try {
       // Mettre à jour le statut
-      await this.exportRepository.update(exportId, { status: 'processing' });
+      await this.prisma.dataExport.update({
+        where: { id: exportId },
+        data: { status: 'processing' },
+      });
 
       // Collecter les données
       const user = await this.usersService.findOne(userId);
@@ -149,10 +146,10 @@ export class ComplianceService {
           lastName: s.lastName,
           // ... autres champs selon exportType
         })),
-        consents: await this.consentRepository.find({
+        consents: await this.prisma.dataConsent.findMany({
           where: { tenantId, userId },
         }),
-        exports: await this.exportRepository.find({
+        exports: await this.prisma.dataExport.findMany({
           where: { tenantId, userId },
         }),
       };
@@ -161,15 +158,21 @@ export class ComplianceService {
       const filePath = `/exports/${exportId}.json`;
 
       // Mettre à jour avec le chemin du fichier
-      await this.exportRepository.update(exportId, {
-        status: 'completed',
-        filePath,
-        metadata: { exportedAt: new Date().toISOString(), recordCount: Object.keys(exportData).length } as any,
+      await this.prisma.dataExport.update({
+        where: { id: exportId },
+        data: {
+          status: 'completed',
+          filePath,
+          metadata: { exportedAt: new Date().toISOString(), recordCount: Object.keys(exportData).length } as any,
+        },
       });
     } catch (error) {
-      await this.exportRepository.update(exportId, {
-        status: 'failed',
-        metadata: { error: error.message },
+      await this.prisma.dataExport.update({
+        where: { id: exportId },
+        data: {
+          status: 'failed',
+          metadata: { error: error.message },
+        },
       });
     }
   }
@@ -186,4 +189,3 @@ export class ComplianceService {
     return texts[consentType] || 'Consentement pour ' + consentType;
   }
 }
-

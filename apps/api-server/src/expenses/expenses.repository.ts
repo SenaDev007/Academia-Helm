@@ -1,56 +1,58 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Expense } from './entities/expense.entity';
+import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
 export class ExpensesRepository {
-  constructor(
-    @InjectRepository(Expense)
-    private readonly repository: Repository<Expense>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(expenseData: Partial<Expense>): Promise<Expense> {
-    const expense = this.repository.create(expenseData);
-    return this.repository.save(expense);
+  async create(expenseData: any): Promise<any> {
+    return this.prisma.expense.create({ data: expenseData });
   }
 
-  async findOne(id: string, tenantId: string): Promise<Expense | null> {
-    return this.repository.findOne({
+  async findOne(id: string, tenantId: string): Promise<any | null> {
+    return this.prisma.expense.findFirst({
       where: { id, tenantId },
-      relations: ['approver', 'creator'],
+      include: { approver: true, creator: true },
     });
   }
 
-  async findAll(tenantId: string, category?: string, status?: string, startDate?: Date, endDate?: Date): Promise<Expense[]> {
-    const query = this.repository.createQueryBuilder('expense')
-      .where('expense.tenantId = :tenantId', { tenantId })
-      .leftJoinAndSelect('expense.approver', 'approver')
-      .leftJoinAndSelect('expense.creator', 'creator');
-    
+  async findAll(tenantId: string, category?: string, status?: string, startDate?: Date, endDate?: Date): Promise<any[]> {
+    const where: any = { tenantId };
+
     if (category) {
-      query.andWhere('expense.category = :category', { category });
+      where.category = category;
     }
     if (status) {
-      query.andWhere('expense.status = :status', { status });
+      where.status = status;
     }
-    if (startDate) {
-      query.andWhere('expense.expenseDate >= :startDate', { startDate });
+    if (startDate || endDate) {
+      where.expenseDate = {};
+      if (startDate) {
+        where.expenseDate.gte = startDate;
+      }
+      if (endDate) {
+        where.expenseDate.lte = endDate;
+      }
     }
-    if (endDate) {
-      query.andWhere('expense.expenseDate <= :endDate', { endDate });
-    }
-    
-    return query.orderBy('expense.expenseDate', 'DESC').getMany();
+
+    return this.prisma.expense.findMany({
+      where,
+      include: { approver: true, creator: true },
+      orderBy: { expenseDate: 'desc' },
+    });
   }
 
-  async update(id: string, tenantId: string, expenseData: Partial<Expense>): Promise<Expense> {
-    await this.repository.update({ id, tenantId }, expenseData);
+  async update(id: string, tenantId: string, expenseData: any): Promise<any> {
+    await this.prisma.expense.updateMany({
+      where: { id, tenantId },
+      data: expenseData,
+    });
     return this.findOne(id, tenantId);
   }
 
   async delete(id: string, tenantId: string): Promise<void> {
-    await this.repository.delete({ id, tenantId });
+    await this.prisma.expense.deleteMany({
+      where: { id, tenantId },
+    });
   }
 }
-

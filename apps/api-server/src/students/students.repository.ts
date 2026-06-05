@@ -1,22 +1,16 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Student } from './entities/student.entity';
+import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
 export class StudentsRepository {
-  constructor(
-    @InjectRepository(Student)
-    private readonly repository: Repository<Student>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(studentData: Partial<Student>): Promise<Student> {
-    const student = this.repository.create(studentData);
-    return this.repository.save(student);
+  async create(studentData: any): Promise<any> {
+    return this.prisma.student.create({ data: studentData });
   }
 
-  async findOne(id: string, tenantId: string, schoolLevelId: string): Promise<Student | null> {
-    return this.repository.findOne({
+  async findOne(id: string, tenantId: string, schoolLevelId: string): Promise<any | null> {
+    return this.prisma.student.findFirst({
       where: { id, tenantId, schoolLevelId },
     });
   }
@@ -26,32 +20,26 @@ export class StudentsRepository {
     schoolLevelId: string,
     pagination: { skip: number; take: number },
     academicYearId?: string,
-  ): Promise<Student[]> {
+  ): Promise<any[]> {
     const where: any = { tenantId, schoolLevelId };
     if (academicYearId) {
       where.academicYearId = academicYearId;
     }
-    return this.repository.find({
+    return this.prisma.student.findMany({
       where,
-      order: { createdAt: 'DESC' },
+      orderBy: { createdAt: 'desc' },
       skip: pagination.skip,
       take: pagination.take,
-      // Optimisation: ne charger que les champs nécessaires
-      // ✅ Supprimer les propriétés qui n'existent pas dans le modèle Prisma
-      select: [
-        'id',
-        'firstName',
-        'lastName',
-        'dateOfBirth',
-        'gender',
-        'tenantId',
-        'schoolLevelId',
-        'createdAt',
-        // Note: fullName, status, academicYearId n'existent pas dans le modèle Student Prisma
-        // fullName doit être calculé depuis firstName + lastName
-        // status est géré via StudentEnrollment
-        // academicYearId est dans StudentEnrollment, pas directement dans Student
-      ],
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        dateOfBirth: true,
+        gender: true,
+        tenantId: true,
+        schoolLevelId: true,
+        createdAt: true,
+      },
     });
   }
 
@@ -60,27 +48,31 @@ export class StudentsRepository {
     if (academicYearId) {
       where.academicYearId = academicYearId;
     }
-    return this.repository.count({ where });
+    return this.prisma.student.count({ where });
   }
 
   async update(
     id: string,
     tenantId: string,
     schoolLevelId: string,
-    studentData: Partial<Student>,
-  ): Promise<Student> {
-    await this.repository.update({ id, tenantId, schoolLevelId }, studentData);
+    studentData: any,
+  ): Promise<any> {
+    await this.prisma.student.updateMany({
+      where: { id, tenantId, schoolLevelId },
+      data: studentData,
+    });
     return this.findOne(id, tenantId, schoolLevelId);
   }
 
   async delete(id: string, tenantId: string, schoolLevelId: string): Promise<void> {
-    await this.repository.delete({ id, tenantId, schoolLevelId });
+    await this.prisma.student.deleteMany({
+      where: { id, tenantId, schoolLevelId },
+    });
   }
 
-  async findByUserId(tenantId: string, userId: string): Promise<Student[]> {
-    return this.repository.find({
+  async findByUserId(tenantId: string, userId: string): Promise<any[]> {
+    return this.prisma.student.findMany({
       where: { tenantId, createdBy: userId },
     });
   }
 }
-

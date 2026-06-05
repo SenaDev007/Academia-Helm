@@ -1,62 +1,61 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Country } from './entities/country.entity';
+import { PrismaService } from '../../database/prisma.service';
 
 @Injectable()
 export class CountriesRepository {
-  constructor(
-    @InjectRepository(Country)
-    private readonly repository: Repository<Country>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(countryData: Partial<Country>): Promise<Country> {
-    const country = this.repository.create(countryData);
-    return this.repository.save(country);
+  async create(countryData: any): Promise<any> {
+    return this.prisma.country.create({ data: countryData });
   }
 
-  async findOne(id: string): Promise<Country | null> {
-    return this.repository.findOne({ where: { id } });
+  async findOne(id: string): Promise<any | null> {
+    return this.prisma.country.findFirst({ where: { id } });
   }
 
-  async findByCode(code: string): Promise<Country | null> {
-    return this.repository.findOne({ where: { code } });
+  async findByCode(code: string): Promise<any | null> {
+    return this.prisma.country.findFirst({ where: { code } });
   }
 
-  async findDefault(): Promise<Country | null> {
-    return this.repository.findOne({ where: { isDefault: true, isActive: true } });
+  async findDefault(): Promise<any | null> {
+    return this.prisma.country.findFirst({ where: { isDefault: true, isActive: true } });
   }
 
-  async findAll(activeOnly: boolean = false): Promise<Country[]> {
+  async findAll(activeOnly: boolean = false): Promise<any[]> {
     const where: any = {};
     if (activeOnly) {
       where.isActive = true;
     }
-    return this.repository.find({
+    return this.prisma.country.findMany({
       where,
-      order: { isDefault: 'DESC', name: 'ASC' },
+      orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
     });
   }
 
-  async update(id: string, countryData: Partial<Country>): Promise<Country> {
-    await this.repository.update({ id }, countryData);
+  async update(id: string, countryData: any): Promise<any> {
+    await this.prisma.country.update({ where: { id }, data: countryData });
     return this.findOne(id);
   }
 
   async delete(id: string): Promise<void> {
-    await this.repository.delete({ id });
+    await this.prisma.country.delete({ where: { id } });
   }
 
   /**
    * Définit un pays comme pays par défaut
    * Désactive le précédent pays par défaut si nécessaire
    */
-  async setAsDefault(id: string): Promise<Country> {
+  async setAsDefault(id: string): Promise<any> {
     // Désactiver tous les autres pays par défaut
-    await this.repository.update({ isDefault: true }, { isDefault: false });
+    await this.prisma.country.updateMany({
+      where: { isDefault: true },
+      data: { isDefault: false },
+    });
     // Activer ce pays comme défaut
-    await this.repository.update({ id }, { isDefault: true });
+    await this.prisma.country.update({
+      where: { id },
+      data: { isDefault: true },
+    });
     return this.findOne(id);
   }
 }
-

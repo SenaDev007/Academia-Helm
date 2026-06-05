@@ -1,76 +1,78 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { GradingPolicy } from './entities/grading-policy.entity';
+import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
 export class GradingPoliciesRepository {
-  constructor(
-    @InjectRepository(GradingPolicy)
-    private readonly repository: Repository<GradingPolicy>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(policyData: Partial<GradingPolicy>): Promise<GradingPolicy> {
-    const policy = this.repository.create(policyData);
-    return this.repository.save(policy);
+  async create(policyData: any): Promise<any> {
+    return this.prisma.gradingPolicy.create({ data: policyData });
   }
 
-  async findOne(id: string, countryId?: string): Promise<GradingPolicy | null> {
+  async findOne(id: string, countryId?: string): Promise<any | null> {
     const where: any = { id };
     if (countryId) {
       where.countryId = countryId;
     }
-    return this.repository.findOne({ where, relations: ['country'] });
+    return this.prisma.gradingPolicy.findFirst({
+      where,
+      include: { country: true },
+    });
   }
 
-  async findByCountry(countryId: string, educationLevel?: string): Promise<GradingPolicy[]> {
+  async findByCountry(countryId: string, educationLevel?: string): Promise<any[]> {
     const where: any = { countryId };
     if (educationLevel) {
       where.educationLevel = educationLevel;
     }
-    return this.repository.find({
+    return this.prisma.gradingPolicy.findMany({
       where,
-      relations: ['country'],
-      order: { isDefault: 'DESC', createdAt: 'DESC' },
+      include: { country: true },
+      orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
     });
   }
 
-  async findDefaultByCountry(countryId: string, educationLevel?: string): Promise<GradingPolicy | null> {
+  async findDefaultByCountry(countryId: string, educationLevel?: string): Promise<any | null> {
     const where: any = { countryId, isDefault: true, isActive: true };
     if (educationLevel) {
       where.educationLevel = educationLevel;
     }
-    return this.repository.findOne({
+    return this.prisma.gradingPolicy.findFirst({
       where,
-      relations: ['country'],
+      include: { country: true },
     });
   }
 
-  async findAll(): Promise<GradingPolicy[]> {
-    return this.repository.find({
-      relations: ['country'],
-      order: { countryId: 'ASC', educationLevel: 'ASC', isDefault: 'DESC' },
+  async findAll(): Promise<any[]> {
+    return this.prisma.gradingPolicy.findMany({
+      include: { country: true },
+      orderBy: [{ countryId: 'asc' }, { educationLevel: 'asc' }, { isDefault: 'desc' }],
     });
   }
 
-  async update(id: string, countryId: string, policyData: Partial<GradingPolicy>): Promise<GradingPolicy> {
-    await this.repository.update({ id, countryId }, policyData);
+  async update(id: string, countryId: string, policyData: any): Promise<any> {
+    await this.prisma.gradingPolicy.update({
+      where: { id },
+      data: policyData,
+    });
     return this.findOne(id, countryId);
   }
 
   async delete(id: string, countryId: string): Promise<void> {
-    await this.repository.delete({ id, countryId });
+    await this.prisma.gradingPolicy.delete({ where: { id } });
   }
 
-  async setAsDefault(id: string, countryId: string): Promise<GradingPolicy> {
+  async setAsDefault(id: string, countryId: string): Promise<any> {
     // Désactiver les autres policies par défaut pour ce pays
-    await this.repository.update(
-      { countryId, isDefault: true },
-      { isDefault: false },
-    );
+    await this.prisma.gradingPolicy.updateMany({
+      where: { countryId, isDefault: true },
+      data: { isDefault: false },
+    });
     // Activer cette policy comme défaut
-    await this.repository.update({ id, countryId }, { isDefault: true });
+    await this.prisma.gradingPolicy.update({
+      where: { id },
+      data: { isDefault: true },
+    });
     return this.findOne(id, countryId);
   }
 }
-

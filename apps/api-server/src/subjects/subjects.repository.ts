@@ -1,28 +1,22 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Subject } from './entities/subject.entity';
+import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
 export class SubjectsRepository {
-  constructor(
-    @InjectRepository(Subject)
-    private readonly repository: Repository<Subject>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(subjectData: Partial<Subject>): Promise<Subject> {
-    const subject = this.repository.create(subjectData);
-    return this.repository.save(subject);
+  async create(subjectData: any): Promise<any> {
+    return this.prisma.subject.create({ data: subjectData });
   }
 
-  async findOne(id: string, tenantId: string): Promise<Subject | null> {
-    return this.repository.findOne({
+  async findOne(id: string, tenantId: string): Promise<any | null> {
+    return this.prisma.subject.findFirst({
       where: { id, tenantId },
-      relations: ['academicYear', 'schoolLevel'],
+      include: { academicYear: true, schoolLevel: true },
     });
   }
 
-  async findAll(tenantId: string, level?: string, academicYearId?: string): Promise<Subject[]> {
+  async findAll(tenantId: string, level?: string, academicYearId?: string): Promise<any[]> {
     const where: any = { tenantId };
     if (level) {
       where.schoolLevelId = level;
@@ -30,20 +24,24 @@ export class SubjectsRepository {
     if (academicYearId) {
       where.academicYearId = academicYearId;
     }
-    return this.repository.find({
+    return this.prisma.subject.findMany({
       where,
-      relations: ['schoolLevel'],
-      order: { code: 'ASC' },
+      include: { schoolLevel: true },
+      orderBy: { code: 'asc' },
     });
   }
 
-  async update(id: string, tenantId: string, subjectData: Partial<Subject>): Promise<Subject> {
-    await this.repository.update({ id, tenantId }, subjectData);
+  async update(id: string, tenantId: string, subjectData: any): Promise<any> {
+    await this.prisma.subject.updateMany({
+      where: { id, tenantId },
+      data: subjectData,
+    });
     return this.findOne(id, tenantId);
   }
 
   async delete(id: string, tenantId: string): Promise<void> {
-    await this.repository.delete({ id, tenantId });
+    await this.prisma.subject.deleteMany({
+      where: { id, tenantId },
+    });
   }
 }
-

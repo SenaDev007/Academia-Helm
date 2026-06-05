@@ -30,7 +30,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     const needsSsl = databaseUrl.includes('sslmode=') || process.env.NODE_ENV === 'production';
     const poolConfig: any = {
       connectionString: databaseUrl,
-      max: 10,                        // Max 10 connections in pool
+      max: 5,                         // Reduced from 10 — TypeORM pool removed, single pool only
       idleTimeoutMillis: 30000,       // Close idle connections after 30s
       connectionTimeoutMillis: 10000, // Fail fast if DB unreachable (10s)
     };

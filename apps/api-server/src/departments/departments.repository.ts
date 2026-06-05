@@ -1,41 +1,37 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Department } from './entities/department.entity';
+import { PrismaService } from '../../database/prisma.service';
 
 @Injectable()
 export class DepartmentsRepository {
-  constructor(
-    @InjectRepository(Department)
-    private readonly repository: Repository<Department>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(departmentData: Partial<Department>): Promise<Department> {
-    const department = this.repository.create(departmentData);
-    return this.repository.save(department);
+  async create(departmentData: any): Promise<any> {
+    return this.prisma.department.create({ data: departmentData });
   }
 
-  async findOne(id: string, tenantId: string): Promise<Department | null> {
-    return this.repository.findOne({
+  async findOne(id: string, tenantId: string): Promise<any | null> {
+    return this.prisma.department.findFirst({
       where: { id, tenantId },
-      relations: ['manager'],
+      include: { manager: true },
     });
   }
 
-  async findAll(tenantId: string): Promise<Department[]> {
-    return this.repository.find({
+  async findAll(tenantId: string): Promise<any[]> {
+    return this.prisma.department.findMany({
       where: { tenantId },
-      order: { name: 'ASC' },
+      orderBy: { name: 'asc' },
     });
   }
 
-  async update(id: string, tenantId: string, departmentData: Partial<Department>): Promise<Department> {
-    await this.repository.update({ id, tenantId }, departmentData);
+  async update(id: string, tenantId: string, departmentData: any): Promise<any> {
+    await this.prisma.department.update({
+      where: { id },
+      data: departmentData,
+    });
     return this.findOne(id, tenantId);
   }
 
   async delete(id: string, tenantId: string): Promise<void> {
-    await this.repository.delete({ id, tenantId });
+    await this.prisma.department.delete({ where: { id } });
   }
 }
-

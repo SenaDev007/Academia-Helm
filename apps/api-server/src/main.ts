@@ -4,6 +4,7 @@ import { json, urlencoded } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
+import { PrismaService } from './database/prisma.service';
 
 /** Défaut Express ~100 ko — insuffisant pour identité + logos base64 (POST /settings/identity).
  *  Réduit de 10mb à 5mb pour limiter la consommation mémoire par requête.
@@ -71,6 +72,22 @@ async function bootstrap() {
   });
 
   const port = Number(process.env.PORT ?? process.env.API_PORT ?? 3000);
+
+  // Run pending migrations before starting the server
+  try {
+    const { execSync } = await import('child_process');
+    const appEnv = process.env.APP_ENV || process.env.NODE_ENV || 'production';
+    logger.log(`Running database migrations (APP_ENV=${appEnv})...`);
+    execSync('npx prisma migrate deploy --schema=prisma/schema.prisma', {
+      stdio: 'inherit',
+      timeout: 120_000,
+    });
+    logger.log('Database migrations completed successfully');
+  } catch (migrateErr) {
+    logger.error(`Migration failed: ${migrateErr.message}`);
+    logger.warn('Continuing startup despite migration failure — some features may not work');
+  }
+
   await app.listen(port, '0.0.0.0');
 
   // Log memory info on startup

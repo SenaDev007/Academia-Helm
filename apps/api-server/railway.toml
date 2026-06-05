@@ -3,7 +3,7 @@
     type = "http"
     port = 3000
     path = "/health"
-    grace_period = 120
+    grace_period = 300
 
 [env]
   NODE_OPTIONS = "--max-old-space-size=1024 --expose-gc"

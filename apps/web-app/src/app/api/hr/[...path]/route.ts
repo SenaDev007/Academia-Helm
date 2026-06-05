@@ -37,6 +37,19 @@ async function parseBackendJson(res: Response): Promise<unknown> {
   }
 }
 
+/**
+ * Check if the response is binary (PDF, image, etc.) that should NOT be parsed as JSON.
+ */
+function isBinaryContentType(contentType: string): boolean {
+  return (
+    contentType.includes('application/pdf') ||
+    contentType.includes('application/octet-stream') ||
+    contentType.includes('application/zip') ||
+    contentType.includes('image/') ||
+    contentType.includes('application/vnd.openxmlformats')
+  );
+}
+
 async function forward(
   request: NextRequest,
   pathSegments: string[],
@@ -56,6 +69,21 @@ async function forward(
       options.body = bodyText;
     }
     const res = await fetch(normalizeApiUrl(url.toString()), options);
+
+    // Binary responses (PDF, images, etc.) must be forwarded as-is, not parsed as JSON
+    const contentType = res.headers.get('content-type') || '';
+    if (isBinaryContentType(contentType)) {
+      const buffer = Buffer.from(await res.arrayBuffer());
+      return new NextResponse(buffer, {
+        status: res.status,
+        headers: {
+          'content-type': contentType,
+          'content-disposition': res.headers.get('content-disposition') || '',
+          'content-length': String(buffer.length),
+        },
+      });
+    }
+
     const data = await parseBackendJson(res);
     return NextResponse.json(data, { status: res.status });
   } catch (e) {

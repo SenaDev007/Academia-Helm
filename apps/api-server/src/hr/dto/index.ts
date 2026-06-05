@@ -341,10 +341,12 @@ export class CreateTrainingDto {
   @IsUUID() staffId: string;
   @IsString() title: string;
   @IsOptional() @IsString() provider?: string;
-  @IsDateString() dateCompleted: string;
+  @IsDateString() @Type(() => Date) dateCompleted: string;
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsUUID() academicYearId?: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
+  /** Frontend may send tenantId — ignored (resolved server-side) */
+  @IsOptional() @IsString() tenantId?: string;
 }
 
 // ─── Document DTOs ───────────────────────────────────────────────────────────
@@ -578,7 +580,7 @@ export class UpdateAttendanceDto {
 export class UpdateTrainingDto {
   @IsOptional() @IsString() title?: string;
   @IsOptional() @IsString() provider?: string;
-  @IsOptional() @IsDateString() dateCompleted?: string;
+  @IsOptional() @IsDateString() @Type(() => Date) dateCompleted?: string;
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsString() certificatePath?: string;
   @IsOptional() @IsUUID() academicYearId?: string;

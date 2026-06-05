@@ -240,7 +240,15 @@ export class ContractPdfService {
     // 6. Générer le PDF via Puppeteer Pool
     // (PuppeteerPoolService handles browser availability)
 
-    const pdfBuffer = await this.renderPdf(compiledHtml);
+    let pdfBuffer: Buffer;
+    try {
+      pdfBuffer = await this.renderPdf(compiledHtml);
+    } catch (renderError: any) {
+      this.logger.error('PDF rendering failed', renderError?.message || renderError);
+      throw new BadRequestException(
+        `Impossible de générer le PDF du contrat. Le service de rendu PDF est indisponible. Détail : ${renderError?.message || 'Erreur inconnue'}`,
+      );
+    }
 
     // 7. Sauvegarder sur le filesystem
     const pdfUrl = await this.savePdf(tenantId, contractId, pdfBuffer);

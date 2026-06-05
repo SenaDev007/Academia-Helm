@@ -2,12 +2,30 @@ import { Catch, ExceptionFilter, ArgumentsHost, HttpException, HttpStatus } from
 import { Response } from 'express';
 import { Prisma } from '@prisma/client';
 
-@Catch(Prisma.PrismaClientKnownRequestError)
+/**
+ * Catches both PrismaClientKnownRequestError (P-codes) and PrismaClientValidationError.
+ * PrismaClientValidationError occurs when data types don't match the schema
+ * (e.g. passing "2025-03-15" as a string for a DateTime field).
+ */
+@Catch(Prisma.PrismaClientKnownRequestError, Prisma.PrismaClientValidationError)
 export class PrismaExceptionFilter implements ExceptionFilter {
-  catch(exception: Prisma.PrismaClientKnownRequestError, host: ArgumentsHost) {
+  catch(exception: Prisma.PrismaClientKnownRequestError | Prisma.PrismaClientValidationError, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
 
+    // Handle PrismaClientValidationError (bad data types, missing required fields, etc.)
+    if (exception instanceof Prisma.PrismaClientValidationError) {
+      const detail = exception.message?.replace(/\n/g, ' ').substring(0, 300);
+      response.status(HttpStatus.BAD_REQUEST).json({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: `Données invalides : vérifiez les formats de champs (dates, nombres, etc.)`,
+        error: 'PrismaClientValidationError',
+        detail,
+      });
+      return;
+    }
+
+    // Handle PrismaClientKnownRequestError (P-codes)
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Erreur interne du serveur';
 

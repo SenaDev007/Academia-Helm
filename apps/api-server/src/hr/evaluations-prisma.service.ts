@@ -204,11 +204,29 @@ export class EvaluationsPrismaService {
     description?: string;
     certificatePath?: string;
   }) {
+    // Ensure dateCompleted is a proper Date object
+    // Accepts both ISO format ("2025-03-15T00:00:00.000Z") and simple format ("2025-03-15")
+    const dateCompleted = data.dateCompleted
+      ? new Date(data.dateCompleted)
+      : new Date();
+
+    // Validate that the date was parsed correctly
+    if (isNaN(dateCompleted.getTime())) {
+      throw new Error(`Format de date invalide pour dateCompleted: ${data.dateCompleted}`);
+    }
+
     return this.prisma.staffTraining.create({
       data: {
         ...prismaCreateDefaults(),
-        ...data,
-        dateCompleted: data.dateCompleted ? new Date(data.dateCompleted) : new Date(),
+        tenantId: data.tenantId,
+        academicYearId: data.academicYearId,
+        schoolLevelId: data.schoolLevelId,
+        staffId: data.staffId,
+        title: data.title,
+        provider: data.provider,
+        dateCompleted,
+        description: data.description,
+        certificatePath: data.certificatePath,
       },
     });
   }
@@ -256,11 +274,23 @@ export class EvaluationsPrismaService {
   async updateTraining(id: string, tenantId: string, data: any) {
     const training = await this.findTrainingById(id, tenantId);
 
+    // Explicitly convert dateCompleted to Date if provided
+    // This ensures both "2025-03-15" and "2025-03-15T00:00:00.000Z" work
+    const updateData: any = { ...data };
+    if (updateData.dateCompleted !== undefined) {
+      updateData.dateCompleted = new Date(updateData.dateCompleted);
+      if (isNaN(updateData.dateCompleted.getTime())) {
+        throw new Error(`Format de date invalide pour dateCompleted: ${data.dateCompleted}`);
+      }
+    }
+    // Remove tenantId from update data (should not be changed)
+    delete updateData.tenantId;
+
     return this.prisma.staffTraining.update({
       where: { id },
       data: {
         ...prismaUpdateDefaults(),
-        ...data,
+        ...updateData,
       },
     });
   }

@@ -76,8 +76,8 @@ export default function ContractDetailPage() {
     if (!contract) return;
     try {
       setGenerating(true);
-      // Download existing PDF via GET (not POST — avoid regenerating)
-      const response = await fetch(`/api/hr/contracts/${contractId}/generate-pdf?tenantId=${tenant.id}`, {
+      // Download existing PDF via GET /pdf endpoint (not POST /generate-pdf)
+      const response = await fetch(`/api/hr/contracts/${contractId}/pdf?tenantId=${tenant.id}`, {
         method: 'GET',
       });
 

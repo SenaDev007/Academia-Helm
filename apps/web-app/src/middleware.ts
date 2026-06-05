@@ -145,6 +145,18 @@ const publicRoutes = [
   '/avis', // Formulaire public pour laisser un avis
 ];
 
+/**
+ * Ajoute les headers anti-cache Cloudflare à une réponse.
+ * Empêche le buffering et la mise en cache des réponses HTML,
+ * ce qui est essentiel pour le streaming Next.js / Suspense (loading.tsx).
+ */
+function withAntiCacheHeaders(response: NextResponse): NextResponse {
+  response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  response.headers.set('Pragma', 'no-cache');
+  response.headers.set('X-Accel-Buffering', 'no'); // Empêche le buffering par reverse-proxy (nginx/Cloudflare)
+  return response;
+}
+
 // Routes admin (ne nécessitent pas de subdomain)
 const adminRoutes = [
   '/admin',
@@ -160,14 +172,15 @@ export async function middleware(request: NextRequest) {
     return patronatMiddleware(request);
   }
 
-  const response = NextResponse.next();
+  const response = withAntiCacheHeaders(NextResponse.next());
+
   const user = getUserFromSessionCookie(request);
 
   // Routes admin : pas de vérification de subdomain
   if (pathname.startsWith('/admin')) {
     // La vérification du rôle SUPER_ADMIN se fait dans le layout
     // Ajouter le pathname dans les headers pour le layout
-    const adminResponse = NextResponse.next();
+    const adminResponse = withAntiCacheHeaders(NextResponse.next());
     adminResponse.headers.set('x-pathname', pathname);
     if (user) {
       adminResponse.headers.set('x-user-id', user.id);
@@ -275,7 +288,7 @@ export async function middleware(request: NextRequest) {
         : true;
 
       if (sameTenantById && sameTenantBySlug) {
-        const tenantResponse = NextResponse.next();
+        const tenantResponse = withAntiCacheHeaders(NextResponse.next());
         tenantResponse.headers.set('X-Tenant-ID', user.tenantId);
         if (user.tenantSlug) {
           tenantResponse.headers.set('X-Tenant-Slug', user.tenantSlug);
@@ -327,7 +340,7 @@ export async function middleware(request: NextRequest) {
       }
 
       // Créer une nouvelle réponse pour ajouter les headers
-      const tenantResponse = NextResponse.next();
+      const tenantResponse = withAntiCacheHeaders(NextResponse.next());
       tenantResponse.headers.set('X-Tenant-ID', tenant.id);
       tenantResponse.headers.set('X-Tenant-Slug', tenant.slug);
       if (tenant.subscriptionStatus) {

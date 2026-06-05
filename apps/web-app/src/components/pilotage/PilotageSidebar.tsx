@@ -52,6 +52,37 @@ import type { User } from '@/types';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { useEnabledFeatureCodes } from '@/hooks/useEnabledFeatureCodes';
 
+/**
+ * Construit l'URL de la landing page (domaine principal sans sous-domaine).
+ * En local : même origine. En prod : retire le sous-domaine du host.
+ */
+function getLandingPageUrl(): string {
+  if (typeof window === 'undefined') return '/';
+  try {
+    const { hostname, protocol, port } = window.location;
+    // Local
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return port ? `${protocol}//${hostname}:${port}` : `${protocol}//${hostname}`;
+    }
+    // Production / Preview : extraire le domaine principal
+    // ex: school.academiahelm.com → academiahelm.com
+    const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN;
+    if (baseDomain) {
+      const clean = baseDomain.replace(/^https?:\/\//, '').replace(/\/$/, '');
+      return `https://${clean}`;
+    }
+    // Fallback : retirer la première partie si >= 3 segments
+    const parts = hostname.split('.');
+    if (parts.length >= 3) {
+      const main = parts.slice(1).join('.');
+      return port ? `${protocol}//${main}:${port}` : `${protocol}//${main}`;
+    }
+    return `${protocol}//${hostname}${port ? ':' + port : ''}`;
+  } catch {
+    return '/';
+  }
+}
+
 interface PilotageSidebarProps {
   isOpen: boolean;
   onToggle: () => void;
@@ -451,8 +482,22 @@ export default function PilotageSidebar({
             )}
           </div>
 
-          {/* Paramètres */}
+          {/* Visiter le site + Paramètres */}
           <div className="mt-auto pt-4 border-t border-blue-700/50">
+            {/* Visiter le site public */}
+            <Link
+              href={typeof window !== 'undefined' ? getLandingPageUrl() : '/'}
+              onClick={onCloseMobileDrawer}
+              className="group flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-blue-100 hover:bg-blue-800/60 hover:text-white hover:translate-x-1 mb-1"
+              title={!effectiveOpen ? 'Visiter le site' : undefined}
+              {...(typeof window !== 'undefined' && getLandingPageUrl() !== '/' ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+            >
+              <Globe className="w-5 h-5 flex-shrink-0 transition-transform duration-200 group-hover:scale-105" />
+              {effectiveOpen && (
+                <span className="text-sm font-medium transition-all duration-200 whitespace-nowrap overflow-hidden text-ellipsis flex-1" title="Visiter le site">Visiter le site</span>
+              )}
+            </Link>
+            {/* Paramètres */}
             <Link
               href={tenantParam ? `/app/settings?tenant=${tenantParam}` : '/app/settings'}
               onClick={onCloseMobileDrawer}
@@ -556,8 +601,16 @@ export default function PilotageSidebar({
           })}
         </nav>
         <Link
-          href="/app/settings"
+          href={typeof window !== 'undefined' ? getLandingPageUrl() : '/'}
           className="flex items-center justify-center p-2.5 rounded-lg text-blue-100 hover:bg-blue-800/60 hover:text-white min-h-[44px] min-w-[44px] mt-auto border-t border-blue-700/50"
+          title="Visiter le site"
+          {...(typeof window !== 'undefined' && getLandingPageUrl() !== '/' ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+        >
+          <Globe className="w-5 h-5 flex-shrink-0" />
+        </Link>
+        <Link
+          href="/app/settings"
+          className="flex items-center justify-center p-2.5 rounded-lg text-blue-100 hover:bg-blue-800/60 hover:text-white min-h-[44px] min-w-[44px]"
           title="Paramètres"
         >
           <Settings className="w-5 h-5 flex-shrink-0" />

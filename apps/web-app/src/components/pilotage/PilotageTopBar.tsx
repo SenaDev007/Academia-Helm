@@ -14,7 +14,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Image from 'next/image';
-import { Bell, RefreshCw, User as UserIcon, LogOut, Wifi, WifiOff, AlertCircle, ChevronDown, Settings, HelpCircle, School } from 'lucide-react';
+import { Bell, RefreshCw, User as UserIcon, LogOut, Wifi, WifiOff, AlertCircle, ChevronDown, Settings, HelpCircle, School, Globe } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import AcademicYearSelector from './AcademicYearSelector';
 import SchoolLevelSelector from './SchoolLevelSelector';
@@ -36,6 +36,32 @@ interface PilotageTopBarProps {
 }
 
 const SCHOOL_IDENTITY_UPDATED_EVENT = 'settings-school-identity-updated';
+
+/**
+ * Construit l'URL de la landing page (domaine principal sans sous-domaine).
+ */
+function getLandingPageUrl(): string {
+  if (typeof window === 'undefined') return '/';
+  try {
+    const { hostname, protocol, port } = window.location;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return port ? `${protocol}//${hostname}:${port}` : `${protocol}//${hostname}`;
+    }
+    const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN;
+    if (baseDomain) {
+      const clean = baseDomain.replace(/^https?:\/\//, '').replace(/\/$/, '');
+      return `https://${clean}`;
+    }
+    const parts = hostname.split('.');
+    if (parts.length >= 3) {
+      const main = parts.slice(1).join('.');
+      return port ? `${protocol}//${main}:${port}` : `${protocol}//${main}`;
+    }
+    return `${protocol}//${hostname}${port ? ':' + port : ''}`;
+  } catch {
+    return '/';
+  }
+}
 
 function formatRoleLabel(role?: string) {
   if (!role) return '—';
@@ -287,6 +313,16 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
                       <Settings className="w-4 h-4 text-gray-500" />
                       <span>Paramètres</span>
                     </button>
+                    <a
+                      href={getLandingPageUrl()}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setProfileDropdownOpen(false)}
+                      className="w-full flex items-center space-x-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                      <Globe className="w-4 h-4 text-gray-500" />
+                      <span>Visiter le site</span>
+                    </a>
                     <button
                       onClick={() => {
                         // TODO: Ajouter page d'aide

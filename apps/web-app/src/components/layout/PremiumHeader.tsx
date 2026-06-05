@@ -16,10 +16,32 @@ import { bgColor, textColor } from '@/lib/design-tokens';
 import { cn } from '@/lib/utils';
 import { BRAND } from '@/lib/brand';
 
+/**
+ * Vérifie si l'utilisateur est authentifié en lisant le cookie non-httpOnly.
+ * Le cookie `academia_token` est accessible côté client (requis pour Axios).
+ */
+function useIsAuthenticated(): boolean {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  useEffect(() => {
+    try {
+      const hasToken = document.cookie
+        .split(';')
+        .some((c) => c.trim().startsWith('academia_token='));
+      setIsAuthenticated(hasToken);
+    } catch {
+      // Cookie indisponible (SSR, etc.)
+    }
+  }, []);
+
+  return isAuthenticated;
+}
+
 export default function PremiumHeader() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const pathname = usePathname();
+  const isAuthenticated = useIsAuthenticated();
   const ariaExpanded = isMenuOpen ? 'true' : 'false';
 
   useEffect(() => {
@@ -103,19 +125,35 @@ export default function PremiumHeader() {
               </Link>
             ))}
             <div className="ml-8 pl-8 border-l border-white/20 flex-shrink-0 flex items-center space-x-3">
-              <Link
-                href="/portal"
-                prefetch={true}
-                className={cn(
-                  'bg-[#f5b335] text-[#0b2f73] px-6 py-2.5 rounded-md min-h-[44px]',
-                  'font-semibold hover:bg-[#f7c359] transition-all duration-200',
-                  'shadow-sm hover:shadow-md transform hover:-translate-y-0.5',
-                  'inline-flex items-center space-x-2'
-                )}
-              >
-                <span>Accéder à un portail</span>
-                <AppIcon name="login" size="submenu" className="text-[#0b2f73]" />
-              </Link>
+              {isAuthenticated ? (
+                <Link
+                  href="/app"
+                  prefetch={true}
+                  className={cn(
+                    'bg-[#f5b335] text-[#0b2f73] px-6 py-2.5 rounded-md min-h-[44px]',
+                    'font-semibold hover:bg-[#f7c359] transition-all duration-200',
+                    'shadow-sm hover:shadow-md transform hover:-translate-y-0.5',
+                    'inline-flex items-center space-x-2'
+                  )}
+                >
+                  <span>Retourner à l&apos;application</span>
+                  <AppIcon name="dashboard" size="submenu" className="text-[#0b2f73]" />
+                </Link>
+              ) : (
+                <Link
+                  href="/portal"
+                  prefetch={true}
+                  className={cn(
+                    'bg-[#f5b335] text-[#0b2f73] px-6 py-2.5 rounded-md min-h-[44px]',
+                    'font-semibold hover:bg-[#f7c359] transition-all duration-200',
+                    'shadow-sm hover:shadow-md transform hover:-translate-y-0.5',
+                    'inline-flex items-center space-x-2'
+                  )}
+                >
+                  <span>Accéder à un portail</span>
+                  <AppIcon name="login" size="submenu" className="text-[#0b2f73]" />
+                </Link>
+              )}
             </div>
           </nav>
 
@@ -169,19 +207,35 @@ export default function PremiumHeader() {
               </Link>
             ))}
             <div className="pt-4 mt-4 border-t border-gray-200 space-y-2">
-              <Link
-                href="/portal"
-                onClick={() => setIsMenuOpen(false)}
-                className={cn(
-                  'bg-[#f5b335] text-[#0b2f73] w-full py-3 rounded-md min-h-[44px]',
-                  'font-semibold hover:bg-[#f7c359] transition-all duration-200',
-                  'shadow-sm hover:shadow-md',
-                  'inline-flex items-center justify-center space-x-2'
-                )}
-              >
-                <span>Accéder à un portail</span>
-                <AppIcon name="login" size="submenu" className="text-[#0b2f73]" />
-              </Link>
+              {isAuthenticated ? (
+                <Link
+                  href="/app"
+                  onClick={() => setIsMenuOpen(false)}
+                  className={cn(
+                    'bg-[#f5b335] text-[#0b2f73] w-full py-3 rounded-md min-h-[44px]',
+                    'font-semibold hover:bg-[#f7c359] transition-all duration-200',
+                    'shadow-sm hover:shadow-md',
+                    'inline-flex items-center justify-center space-x-2'
+                  )}
+                >
+                  <span>Retourner à l&apos;application</span>
+                  <AppIcon name="dashboard" size="submenu" className="text-[#0b2f73]" />
+                </Link>
+              ) : (
+                <Link
+                  href="/portal"
+                  onClick={() => setIsMenuOpen(false)}
+                  className={cn(
+                    'bg-[#f5b335] text-[#0b2f73] w-full py-3 rounded-md min-h-[44px]',
+                    'font-semibold hover:bg-[#f7c359] transition-all duration-200',
+                    'shadow-sm hover:shadow-md',
+                    'inline-flex items-center justify-center space-x-2'
+                  )}
+                >
+                  <span>Accéder à un portail</span>
+                  <AppIcon name="login" size="submenu" className="text-[#0b2f73]" />
+                </Link>
+              )}
             </div>
           </nav>
         </div>

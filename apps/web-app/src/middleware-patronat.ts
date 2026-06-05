@@ -12,6 +12,18 @@ import type { PatronatRole } from '@/lib/patronat/permissions';
 
 const SESSION_COOKIE = 'academia_session';
 
+/**
+ * Ajoute les headers anti-cache Cloudflare à une réponse.
+ * Empêche le buffering et la mise en cache des réponses HTML,
+ * ce qui est essentiel pour le streaming Next.js / Suspense (loading.tsx).
+ */
+function withAntiCacheHeaders(response: NextResponse): NextResponse {
+  response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  response.headers.set('Pragma', 'no-cache');
+  response.headers.set('X-Accel-Buffering', 'no');
+  return response;
+}
+
 function getPatronatUserFromCookie(request: NextRequest): { id: string; role?: string } | null {
   const sessionCookie = request.cookies.get(SESSION_COOKIE)?.value;
   if (!sessionCookie) return null;
@@ -51,7 +63,7 @@ export async function patronatMiddleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (marketingRoutes.some(route => pathname.startsWith(route) || pathname === route)) {
-    return NextResponse.next();
+    return withAntiCacheHeaders(NextResponse.next());
   }
 
   if (protectedRoutes.some(route => pathname.startsWith(route))) {
@@ -72,12 +84,12 @@ export async function patronatMiddleware(request: NextRequest) {
       );
     }
 
-    const response = NextResponse.next({ request: { headers: request.headers } });
+    const response = withAntiCacheHeaders(NextResponse.next({ request: { headers: request.headers } }));
     response.headers.set('X-User-ID', user.id);
     response.headers.set('X-User-Role', userRole);
     return response;
   }
 
-  return NextResponse.next();
+  return withAntiCacheHeaders(NextResponse.next());
 }
 

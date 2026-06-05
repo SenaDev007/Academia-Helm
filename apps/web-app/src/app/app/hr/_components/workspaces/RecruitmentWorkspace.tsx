@@ -363,9 +363,10 @@ export function RecruitmentWorkspace() {
       await hrFetch(hrUrl(`recruitment/candidates/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Candidat supprimé', description: 'Le candidat et toutes ses données associées ont été supprimés.' });
       loadData();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to delete candidate:', err);
-      toast({ variant: 'error', title: 'Erreur de suppression', description: 'Impossible de supprimer ce candidat. Veuillez réessayer.' });
+      const backendMsg = err?.message || err?.toString() || '';
+      toast({ variant: 'error', title: 'Erreur de suppression', description: backendMsg || 'Impossible de supprimer ce candidat. Veuillez réessayer.' });
     }
   };
 

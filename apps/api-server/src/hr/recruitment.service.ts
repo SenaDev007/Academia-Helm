@@ -156,67 +156,117 @@ export class RecruitmentPrismaService {
       this.logger.warn(`Could not fetch candidate documents for cleanup: ${err.message}`);
     }
 
-    // 2. Delete related DB records + candidate in a transaction
+    // 2. Verify the candidate exists
+    const candidate = await this.prisma.hrCandidate.findUnique({ where: { id } });
+    if (!candidate) {
+      throw new NotFoundException(`Candidat avec l'ID ${id} non trouvé`);
+    }
+
+    // 3. Delete related records one by one (resilient to missing tables)
+    // We do NOT use a transaction because if any table is missing,
+    // the whole transaction fails. Instead, we delete each relation
+    // independently and catch errors gracefully.
+
+    // Get applications for AI report deletion
+    let applications: Array<{ id: string }> = [];
     try {
-      await this.prisma.$transaction(async (tx) => {
-        // Delete AI reports linked to candidate's applications
-        const applications = await tx.hrApplication.findMany({
-          where: { candidateId: id },
-          select: { id: true },
-        });
-        if (applications.length > 0) {
-          await tx.hrAiReport.deleteMany({
-            where: { applicationId: { in: applications.map((a) => a.id) } },
-          });
-        }
-
-        // Delete AI reports linked directly to candidate
-        await tx.hrAiReport.deleteMany({ where: { candidateId: id } });
-
-        // Delete test results
-        await tx.hrTestResult.deleteMany({ where: { candidateId: id } });
-
-        // Delete interviews
-        await tx.hrInterview.deleteMany({ where: { candidateId: id } });
-
-        // Delete talent pool entry
-        await tx.hrTalentPool.deleteMany({ where: { candidateId: id } });
-
-        // Delete academic profile
-        await tx.academicProfile.deleteMany({ where: { candidateId: id } });
-
-        // Delete candidate documents (DB records)
-        await tx.candidateDocument.deleteMany({ where: { candidateId: id } });
-
-        // Delete teaching certifications
-        await tx.teachingCertification.deleteMany({ where: { candidateId: id } });
-
-        // Delete academic scores
-        await tx.academicScore.deleteMany({ where: { candidateId: id } });
-
-        // Delete applications
-        await tx.hrApplication.deleteMany({ where: { candidateId: id } });
-
-        // Finally, delete the candidate
-        const candidate = await tx.hrCandidate.findUnique({ where: { id } });
-        if (!candidate) {
-          throw new NotFoundException(`Candidat avec l'ID ${id} non trouvé`);
-        }
-        return tx.hrCandidate.delete({ where: { id } });
+      applications = await this.prisma.hrApplication.findMany({
+        where: { candidateId: id },
+        select: { id: true },
       });
+    } catch (err) {
+      this.logger.warn(`Could not fetch applications for candidate ${id}: ${err.message}`);
+    }
+
+    // Delete AI reports by application
+    if (applications.length > 0) {
+      try {
+        await this.prisma.hrAiReport.deleteMany({
+          where: { applicationId: { in: applications.map((a) => a.id) } },
+        });
+      } catch (err) {
+        this.logger.warn(`Could not delete AI reports by application: ${err.message}`);
+      }
+    }
+
+    // Delete AI reports by candidate
+    try {
+      await this.prisma.hrAiReport.deleteMany({ where: { candidateId: id } });
+    } catch (err) {
+      this.logger.warn(`Could not delete AI reports by candidate: ${err.message}`);
+    }
+
+    // Delete test results
+    try {
+      await this.prisma.hrTestResult.deleteMany({ where: { candidateId: id } });
+    } catch (err) {
+      this.logger.warn(`Could not delete test results: ${err.message}`);
+    }
+
+    // Delete interviews
+    try {
+      await this.prisma.hrInterview.deleteMany({ where: { candidateId: id } });
+    } catch (err) {
+      this.logger.warn(`Could not delete interviews: ${err.message}`);
+    }
+
+    // Delete talent pool entry
+    try {
+      await this.prisma.hrTalentPool.deleteMany({ where: { candidateId: id } });
+    } catch (err) {
+      this.logger.warn(`Could not delete talent pool entry: ${err.message}`);
+    }
+
+    // Delete academic profile
+    try {
+      await this.prisma.academicProfile.deleteMany({ where: { candidateId: id } });
+    } catch (err) {
+      this.logger.warn(`Could not delete academic profile: ${err.message}`);
+    }
+
+    // Delete candidate documents (DB records)
+    try {
+      await this.prisma.candidateDocument.deleteMany({ where: { candidateId: id } });
+    } catch (err) {
+      this.logger.warn(`Could not delete candidate documents: ${err.message}`);
+    }
+
+    // Delete teaching certifications
+    try {
+      await this.prisma.teachingCertification.deleteMany({ where: { candidateId: id } });
+    } catch (err) {
+      this.logger.warn(`Could not delete teaching certifications: ${err.message}`);
+    }
+
+    // Delete academic scores
+    try {
+      await this.prisma.academicScore.deleteMany({ where: { candidateId: id } });
+    } catch (err) {
+      this.logger.warn(`Could not delete academic scores: ${err.message}`);
+    }
+
+    // Delete applications
+    try {
+      await this.prisma.hrApplication.deleteMany({ where: { candidateId: id } });
+    } catch (err) {
+      this.logger.warn(`Could not delete applications: ${err.message}`);
+    }
+
+    // 4. Finally, delete the candidate itself
+    try {
+      await this.prisma.hrCandidate.delete({ where: { id } });
     } catch (err) {
       this.logger.error(`Failed to delete candidate ${id}: ${err.message}`, err.stack);
       throw err;
     }
 
-    // 3. Clean up files from storage (non-blocking, best-effort)
+    // 5. Clean up files from storage (non-blocking, best-effort)
     if (documents.length > 0) {
       for (const doc of documents) {
         try {
           await this.storageService.deleteFile(doc.filePath);
         } catch (err) {
           this.logger.warn(`Failed to delete file from storage: ${doc.filePath} — ${err.message}`);
-          // Non-fatal: DB records are already deleted, just log the warning
         }
       }
     }

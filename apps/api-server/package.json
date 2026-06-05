@@ -24,7 +24,6 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-
     "generate:sqlite-schema": "ts-node scripts/generate-sqlite-schema-improved.ts",
     "migrate:sqlite:generate": "ts-node scripts/sqlite-migration-manager.ts generate",
     "migrate:sqlite:up": "ts-node scripts/sqlite-migration-manager.ts up",
@@ -71,7 +70,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.0",
     "cloudinary": "^2.9.0",
-    "dotenv": "^17.2.4",
+    "dotenv": "^17.4.2",
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "fedapay": "^1.2.5",

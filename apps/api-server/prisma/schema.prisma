@@ -4973,15 +4973,19 @@ model StaffDocument {
 
 /// Historique des photos du personnel (original + HD + thumbnail)
 model StaffPhoto {
-  id           String   @id @default(uuid())
-  tenantId     String
-  staffId      String   @unique
-  originalUrl  String
-  hdUrl        String
-  thumbnailUrl String
-  createdAt    DateTime @default(now())
-  staff        Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id              String       @id @default(uuid())
+  tenantId        String
+  staffId         String       @unique
+  originalUrl     String
+  hdUrl           String
+  thumbnailUrl    String
+  createdAt       DateTime     @default(now())
+  staff           Staff        @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  tenant          Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear    AcademicYear? @relation(fields: [academicYearId], references: [id], onDelete: SetNull)
+  academicYearId  String?
+  schoolLevel     SchoolLevel? @relation(fields: [schoolLevelId], references: [id], onDelete: SetNull)
+  schoolLevelId   String?
 
   @@index([tenantId, staffId])
   @@map("staff_photos")
@@ -13490,6 +13494,7 @@ model HrCandidate {
   academicProfile        AcademicProfile?
   teachingCertifications TeachingCertification[]
   academicScores         AcademicScore?
+  documents              CandidateDocument[]
   tenant                 Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
@@ -13607,6 +13612,23 @@ model AcademicProfile {
   candidate             HrCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
 
   @@map("hr_academic_profiles")
+}
+
+model CandidateDocument {
+  id             String      @id @default(uuid())
+  candidateId    String
+  documentType   String      // CV, COVER_LETTER, RECOMMENDATION, DIPLOMA, CERTIFICATE, OTHER
+  fileName       String
+  filePath       String
+  fileSize       Int?
+  mimeType       String?
+  category       String      @default("GENERAL") // IDENTITE, DIPLOMES, EXPERIENCE, ADMINISTRATIF, GENERAL
+  description    String?
+  createdAt      DateTime    @default(now())
+  candidate      HrCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([candidateId])
+  @@map("hr_candidate_documents")
 }
 
 model TeachingCertification {

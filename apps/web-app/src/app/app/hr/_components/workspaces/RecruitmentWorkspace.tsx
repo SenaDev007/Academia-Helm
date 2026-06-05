@@ -59,6 +59,17 @@ interface Job {
   contractType?: string;
 }
 
+interface CandidateDocument {
+  id: string;
+  documentType: string;
+  fileName: string;
+  filePath: string;
+  fileSize?: number;
+  mimeType?: string;
+  category: string;
+  createdAt: string;
+}
+
 interface Candidate {
   id: string;
   applicationId?: string;
@@ -85,6 +96,7 @@ interface Candidate {
     subjects?: string[];
     pedagogicalExperience?: string;
   };
+  documents?: CandidateDocument[];
 }
 
 interface Interview {
@@ -223,6 +235,7 @@ export function RecruitmentWorkspace() {
             status: primaryApp?.status || 'NOUVEAU',
             history: primaryApp?.history || [{ action: 'Profil créé', date: new Date().toISOString().replace('T', ' ').slice(0, 16), user: 'Système' }],
             academicProfile: c.academicProfile || null,
+            documents: c.documents || [],
           };
         }));
       }
@@ -1052,14 +1065,53 @@ export function RecruitmentWorkspace() {
                       )}
                       {activeCandidateTab === 'documents' && (
                         <div className="space-y-3">
-                          <div className="flex items-center gap-2 p-2.5 border border-slate-100 rounded-lg hover:bg-slate-50 cursor-pointer">
-                            <FileText className="h-4 w-4 text-[#1A2BA6]" />
-                            <span>Curriculum_Vitae_{selectedCandidate.lastName}_{selectedCandidate.firstName}.pdf</span>
-                          </div>
-                          <div className="flex items-center gap-2 p-2.5 border border-slate-100 rounded-lg hover:bg-slate-50 cursor-pointer">
-                            <FileText className="h-4 w-4 text-[#1A2BA6]" />
-                            <span>Lettre_Motivation_{selectedCandidate.lastName}_{selectedCandidate.firstName}.pdf</span>
-                          </div>
+                          {selectedCandidate.documents && selectedCandidate.documents.length > 0 ? (
+                            selectedCandidate.documents.map((doc) => {
+                              const typeLabel: Record<string, string> = {
+                                CV: 'Curriculum Vitae',
+                                COVER_LETTER: 'Lettre de Motivation',
+                                RECOMMENDATION: 'Lettre de Recommandation',
+                                DIPLOMA: 'Diplôme',
+                                CERTIFICATE: 'Certificat',
+                                OTHER: 'Autre document',
+                              };
+                              const typeIcon: Record<string, string> = {
+                                CV: '📄',
+                                COVER_LETTER: '✉️',
+                                RECOMMENDATION: '🏅',
+                                DIPLOMA: '🎓',
+                                CERTIFICATE: '📋',
+                                OTHER: '📎',
+                              };
+                              const fileSizeStr = doc.fileSize
+                                ? doc.fileSize > 1024 * 1024
+                                  ? `${(doc.fileSize / (1024 * 1024)).toFixed(1)} Mo`
+                                  : `${(doc.fileSize / 1024).toFixed(0)} Ko`
+                                : '';
+                              return (
+                                <div key={doc.id} className="flex items-center gap-3 p-3 border border-slate-100 rounded-lg hover:bg-slate-50 cursor-pointer transition">
+                                  <span className="text-lg">{typeIcon[doc.documentType] || '📎'}</span>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-bold text-slate-800 text-xs truncate">{typeLabel[doc.documentType] || doc.documentType}</p>
+                                    <p className="text-[10px] text-slate-500 truncate">{doc.fileName} {fileSizeStr && `· ${fileSizeStr}`}</p>
+                                  </div>
+                                  <a
+                                    href={doc.filePath}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-[#1A2BA6] hover:underline text-[10px] font-bold whitespace-nowrap"
+                                  >
+                                    Ouvrir →
+                                  </a>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <div className="text-center py-6">
+                              <FileText className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+                              <p className="text-[10px] text-slate-400 italic">Aucun document téléchargé pour ce candidat.</p>
+                            </div>
+                          )}
                         </div>
                       )}
                       {activeCandidateTab === 'ia' && (

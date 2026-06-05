@@ -98,6 +98,9 @@ export class RecruitmentPrismaService {
         interviews: true,
         academicProfile: true,
         academicScores: true,
+        documents: {
+          orderBy: { createdAt: 'desc' },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -164,6 +167,9 @@ export class RecruitmentPrismaService {
 
       // 6. Delete academic profile
       await tx.academicProfile.deleteMany({ where: { candidateId: id } });
+
+      // 6b. Delete candidate documents
+      await tx.candidateDocument.deleteMany({ where: { candidateId: id } });
 
       // 7. Delete teaching certifications
       await tx.teachingCertification.deleteMany({ where: { candidateId: id } });
@@ -530,7 +536,61 @@ export class RecruitmentPrismaService {
         }
       });
 
-      return { candidate, application };
+      // 4. Save document references
+      const documentRecords: any[] = [];
+
+      if (hasCV) {
+        const cvFile = files.cv[0];
+        const doc = await tx.candidateDocument.create({
+          data: {
+            id: crypto.randomUUID(),
+            candidateId: candidate.id,
+            documentType: 'CV',
+            fileName: cvFile.originalname,
+            filePath: `/uploads/candidates/${candidate.id}/${cvFile.originalname}`,
+            fileSize: cvFile.size,
+            mimeType: cvFile.mimetype,
+            category: 'IDENTITE',
+          }
+        });
+        documentRecords.push(doc);
+      }
+
+      if (hasLetter) {
+        const letterFile = files.coverLetter[0];
+        const doc = await tx.candidateDocument.create({
+          data: {
+            id: crypto.randomUUID(),
+            candidateId: candidate.id,
+            documentType: 'COVER_LETTER',
+            fileName: letterFile.originalname,
+            filePath: `/uploads/candidates/${candidate.id}/${letterFile.originalname}`,
+            fileSize: letterFile.size,
+            mimeType: letterFile.mimetype,
+            category: 'IDENTITE',
+          }
+        });
+        documentRecords.push(doc);
+      }
+
+      if (files?.recommendationLetter && files.recommendationLetter.length > 0) {
+        const recoFile = files.recommendationLetter[0];
+        const doc = await tx.candidateDocument.create({
+          data: {
+            id: crypto.randomUUID(),
+            candidateId: candidate.id,
+            documentType: 'RECOMMENDATION',
+            fileName: recoFile.originalname,
+            filePath: `/uploads/candidates/${candidate.id}/${recoFile.originalname}`,
+            fileSize: recoFile.size,
+            mimeType: recoFile.mimetype,
+            category: 'DIPLOMES',
+          }
+        });
+        documentRecords.push(doc);
+      }
+
+      return { candidate, application, documents: documentRecords };
     });
   }
 }

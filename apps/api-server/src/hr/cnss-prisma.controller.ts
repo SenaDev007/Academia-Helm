@@ -10,7 +10,7 @@
  */
 
 import {
-  Controller, Get, Post, Put, Body, Param, Query, UseGuards,
+  Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards,
 } from '@nestjs/common';
 import { CNSSPrismaService } from './cnss-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -105,5 +105,10 @@ export class CNSSPrismaController {
       id, tenant.id, finalStatus as 'SUBMITTED' | 'PAID',
       body.paymentReference, body.paymentProofPath,
     );
+  }
+
+  @Delete('declarations/:id')
+  async deleteDeclaration(@GetTenant() tenant: any, @Param('id') id: string) {
+    return this.cnssService.deleteDeclaration(id, tenant.id);
   }
 }

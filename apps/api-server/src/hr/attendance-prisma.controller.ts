@@ -9,7 +9,7 @@
  * ============================================================================
  */
 
-import { Controller, Get, Post, Put, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { AttendancePrismaService } from './attendance-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
@@ -87,6 +87,16 @@ export class AttendancePrismaController {
     return this.attendanceService.processOvertime(
       id, tenant.id, body.action, body.validatedBy,
     );
+  }
+
+  @Delete(':id')
+  async deleteAttendance(@GetTenant() tenant: any, @Param('id') id: string) {
+    return this.attendanceService.deleteAttendance(id, tenant.id);
+  }
+
+  @Delete('overtime/:id')
+  async deleteOvertime(@GetTenant() tenant: any, @Param('id') id: string) {
+    return this.attendanceService.deleteOvertime(id, tenant.id);
   }
 
   @Get('overtime/staff/:staffId')

@@ -61,6 +61,11 @@ export class AllowancesPrismaController {
     return this.allowancesService.updateAllowanceType(id, tenant.id, data as any);
   }
 
+  @Delete('types/:id')
+  async deleteAllowanceType(@GetTenant() tenant: any, @Param('id') id: string) {
+    return this.allowancesService.deleteAllowanceType(id, tenant.id);
+  }
+
   // ─── Staff Allowance Assignments ────────────────────────────────────────────
 
   @Post('assignments')

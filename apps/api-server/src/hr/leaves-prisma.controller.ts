@@ -10,7 +10,7 @@
  * ============================================================================
  */
 
-import { Controller, Get, Post, Put, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { LeavesPrismaService } from './leaves-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
@@ -60,6 +60,11 @@ export class LeavesPrismaController {
     return this.leavesService.processLeaveRequest(
       id, tenant.id, body.status, body.approvedBy, body.rejectedReason,
     );
+  }
+
+  @Delete('requests/:id')
+  async deleteLeaveRequest(@GetTenant() tenant: any, @Param('id') id: string) {
+    return this.leavesService.deleteLeaveRequest(id, tenant.id);
   }
 
   @Get('staff/:staffId/balance')

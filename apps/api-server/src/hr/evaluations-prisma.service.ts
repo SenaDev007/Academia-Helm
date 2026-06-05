@@ -140,6 +140,14 @@ export class EvaluationsPrismaService {
   }
 
   /**
+   * Supprime une évaluation
+   */
+  async deleteEvaluation(id: string, tenantId: string) {
+    const existing = await this.findEvaluationById(id, tenantId);
+    return this.prisma.staffEvaluation.delete({ where: { id } });
+  }
+
+  /**
    * Récupère les statistiques d'évaluation
    */
   async getEvaluationStatistics(tenantId: string, academicYearId: string) {
@@ -200,6 +208,7 @@ export class EvaluationsPrismaService {
       data: {
         ...prismaCreateDefaults(),
         ...data,
+        dateCompleted: data.dateCompleted ? new Date(data.dateCompleted) : new Date(),
       },
     });
   }

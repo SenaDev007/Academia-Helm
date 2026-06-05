@@ -103,6 +103,11 @@ export class ContractsPrismaController {
     return this.contractsService.terminateContract(id, tenant.id);
   }
 
+  @Delete(':id')
+  async deleteContract(@GetTenant() tenant: any, @Param('id') id: string) {
+    return this.contractsService.deleteContract(id, tenant.id);
+  }
+
   @Post(':id/amendments')
   async createAmendment(
     @GetTenant() tenant: any,

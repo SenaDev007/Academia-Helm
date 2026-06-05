@@ -327,4 +327,24 @@ export class AllowancesPrismaService {
       },
     });
   }
+
+  /**
+   * Deletes an allowance type (soft-delete: isActive → false)
+   */
+  async deleteAllowanceType(id: string, tenantId: string) {
+    const existing = await this.prisma.allowanceType.findFirst({
+      where: { id, tenantId },
+    });
+    if (!existing) {
+      throw new NotFoundException(`Allowance type ${id} not found`);
+    }
+
+    return this.prisma.allowanceType.update({
+      where: { id },
+      data: {
+        ...prismaUpdateDefaults(),
+        isActive: false,
+      },
+    });
+  }
 }

@@ -294,5 +294,31 @@ export class AttendancePrismaService {
       return total + Number(record.hours);
     }, 0);
   }
+
+  /**
+   * Supprime un enregistrement de présence
+   */
+  async deleteAttendance(id: string, tenantId: string) {
+    const existing = await this.prisma.staffAttendance.findFirst({
+      where: { id, tenantId },
+    });
+    if (!existing) {
+      throw new NotFoundException(`Attendance record ${id} not found`);
+    }
+    return this.prisma.staffAttendance.delete({ where: { id } });
+  }
+
+  /**
+   * Supprime un enregistrement d'heures supplémentaires
+   */
+  async deleteOvertime(id: string, tenantId: string) {
+    const existing = await this.prisma.overtimeRecord.findFirst({
+      where: { id, tenantId },
+    });
+    if (!existing) {
+      throw new NotFoundException(`Overtime record ${id} not found`);
+    }
+    return this.prisma.overtimeRecord.delete({ where: { id } });
+  }
 }
 

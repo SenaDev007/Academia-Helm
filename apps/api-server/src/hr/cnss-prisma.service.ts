@@ -397,4 +397,22 @@ export class CNSSPrismaService {
       },
     });
   }
+
+  /**
+   * Supprime une déclaration CNSS (seulement si DRAFT)
+   */
+  async deleteDeclaration(id: string, tenantId: string) {
+    const declaration = await this.prisma.cNSSDeclaration.findFirst({
+      where: { id, tenantId },
+    });
+    if (!declaration) {
+      throw new NotFoundException(`Declaration ${id} not found`);
+    }
+    if (declaration.status !== 'DRAFT') {
+      throw new BadRequestException('Seules les déclarations en brouillon peuvent être supprimées.');
+    }
+    // Delete lines first
+    await this.prisma.cNSSDeclarationLine.deleteMany({ where: { declarationId: id } });
+    return this.prisma.cNSSDeclaration.delete({ where: { id } });
+  }
 }

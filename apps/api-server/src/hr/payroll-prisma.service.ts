@@ -923,6 +923,53 @@ export class PayrollPrismaService {
   }
 
   /**
+   * Supprime un lot de paie (seulement si DRAFT)
+   */
+  async deletePayrollBatch(id: string, tenantId: string) {
+    const payroll = await this.prisma.payroll.findFirst({
+      where: { id, tenantId },
+    });
+    if (!payroll) {
+      throw new NotFoundException(`Payroll batch ${id} not found`);
+    }
+    if (payroll.status !== 'DRAFT') {
+      throw new BadRequestException('Seuls les lots en brouillon peuvent être supprimés.');
+    }
+    // Delete associated items first
+    await this.prisma.payrollItem.deleteMany({ where: { payrollId: id } });
+    return this.prisma.payroll.delete({ where: { id } });
+  }
+
+  /**
+   * Supprime une période de paie (seulement si OPEN)
+   */
+  async deletePayrollPeriod(id: string, tenantId: string) {
+    const period = await this.prisma.payrollPeriod.findFirst({
+      where: { id, tenantId },
+    });
+    if (!period) {
+      throw new NotFoundException(`Payroll period ${id} not found`);
+    }
+    if (period.status !== 'OPEN') {
+      throw new BadRequestException('Seules les périodes ouvertes peuvent être supprimées.');
+    }
+    return this.prisma.payrollPeriod.delete({ where: { id } });
+  }
+
+  /**
+   * Supprime une prime ponctuelle
+   */
+  async deleteOneTimeBonus(id: string, tenantId: string) {
+    const bonus = await this.prisma.oneTimeBonus.findFirst({
+      where: { id, tenantId },
+    });
+    if (!bonus) {
+      throw new NotFoundException(`Bonus ${id} not found`);
+    }
+    return this.prisma.oneTimeBonus.delete({ where: { id } });
+  }
+
+  /**
    * Calcule le total des primes approuvées pour un staff dans une période
    */
   async calculateStaffBonuses(staffId: string, tenantId: string, payrollItemId?: string) {

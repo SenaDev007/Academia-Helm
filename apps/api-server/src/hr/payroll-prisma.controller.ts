@@ -10,7 +10,7 @@
  */
 
 import {
-  Controller, Get, Post, Put, Body, Param,
+  Controller, Get, Post, Put, Delete, Body, Param,
   Query, UseGuards, Res
 } from '@nestjs/common';
 import { Response } from 'express';
@@ -104,6 +104,11 @@ export class PayrollPrismaController {
     @CurrentUser() user: any,
   ) {
     return this.payrollService.updatePayrollStatus(id, tenant.id, body.status, user?.id);
+  }
+
+  @Delete('batches/:id')
+  async deletePayrollBatch(@GetTenant() tenant: any, @Param('id') id: string) {
+    return this.payrollService.deletePayrollBatch(id, tenant.id);
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -280,6 +285,11 @@ export class PayrollPrismaController {
     return this.payrollService.closePayrollPeriod(id, tenant.id, user?.id);
   }
 
+  @Delete('periods/:id')
+  async deletePayrollPeriod(@GetTenant() tenant: any, @Param('id') id: string) {
+    return this.payrollService.deletePayrollPeriod(id, tenant.id);
+  }
+
   // ──────────────────────────────────────────────────────────────────────────
   // TAUX SALARIAUX (PayrollRate)
   // ──────────────────────────────────────────────────────────────────────────
@@ -351,5 +361,10 @@ export class PayrollPrismaController {
     @CurrentUser() user: any,
   ) {
     return this.payrollService.approveOneTimeBonus(id, tenant.id, user?.id);
+  }
+
+  @Delete('bonuses/:id')
+  async deleteOneTimeBonus(@GetTenant() tenant: any, @Param('id') id: string) {
+    return this.payrollService.deleteOneTimeBonus(id, tenant.id);
   }
 }

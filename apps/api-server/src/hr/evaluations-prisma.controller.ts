@@ -56,6 +56,11 @@ export class EvaluationsPrismaController {
     return this.evaluationsService.updateEvaluation(id, tenant.id, data);
   }
 
+  @Delete(':id')
+  async deleteEvaluation(@GetTenant() tenant: any, @Param('id') id: string) {
+    return this.evaluationsService.deleteEvaluation(id, tenant.id);
+  }
+
   // Trainings
   @Post('trainings')
   async createTraining(@GetTenant() tenant: any, @Body() data: CreateTrainingDto) {

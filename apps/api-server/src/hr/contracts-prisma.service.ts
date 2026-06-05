@@ -208,6 +208,20 @@ export class ContractsPrismaService {
   }
 
   /**
+   * Supprime un contrat (soft-delete : status → DELETED)
+   */
+  async deleteContract(id: string, tenantId: string) {
+    const contract = await this.findContractById(id, tenantId);
+    return this.prisma.contract.update({
+      where: { id },
+      data: {
+        ...prismaUpdateDefaults(),
+        status: 'DELETED',
+      },
+    });
+  }
+
+  /**
    * Récupère le contrat actif d'un membre du personnel
    */
   async findActiveContract(staffId: string, tenantId: string) {

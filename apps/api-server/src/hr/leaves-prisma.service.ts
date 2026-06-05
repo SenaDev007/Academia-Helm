@@ -337,4 +337,29 @@ export class LeavesPrismaService {
       balance: totalEarned - totalTaken,
     };
   }
+
+  /**
+   * Supprime une demande de congé (soft-delete : status → CANCELLED)
+   */
+  async deleteLeaveRequest(id: string, tenantId: string) {
+    const existing = await this.prisma.leaveRequest.findFirst({
+      where: { id, tenantId },
+    });
+    if (!existing) {
+      throw new NotFoundException(`Leave request ${id} not found`);
+    }
+
+    // Only allow deletion of PENDING requests
+    if (existing.status === 'APPROVED') {
+      throw new BadRequestException('Cannot delete an approved leave request. Cancel it first.');
+    }
+
+    return this.prisma.leaveRequest.update({
+      where: { id },
+      data: {
+        ...prismaUpdateDefaults(),
+        status: 'CANCELLED',
+      },
+    });
+  }
 }

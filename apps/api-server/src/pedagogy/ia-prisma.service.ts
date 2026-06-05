@@ -46,6 +46,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { OpenRouterService } from '../common/services/openrouter.service';
 
 // Pondérations de couverture pédagogique
 const COVERAGE_WEIGHTS = {
@@ -156,13 +157,16 @@ const DEFAULT_SKILLS = [
 export class IaPrismaService {
   private readonly logger = new Logger(IaPrismaService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly openRouter: OpenRouterService,
+  ) {}
 
   /**
-   * Vérifie si une clé API IA est configurée
+   * Vérifie si l'IA est configurée (via OpenRouter)
    */
   private isAiConfigured(): boolean {
-    return !!(process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY);
+    return this.openRouter.isConfigured();
   }
 
   // ─── GÉNÉRATION DE DOCUMENTS PÉDAGOGIQUES ──────────────────────────────────
@@ -212,8 +216,55 @@ export class IaPrismaService {
     const uniqueNotions = [...new Set(allNotions)];
 
     if (this.isAiConfigured()) {
-      // TODO: Implémenter l'appel réel à l'API Claude pour la génération
-      this.logger.warn('AI configured but Claude integration not yet implemented. Using template fallback.');
+      // Appel réel à l'IA via OpenRouter pour la génération
+      try {
+        const styleDesc = styleConfig.approach || styleConfig.description || data.style || 'classique';
+        const notionsText = uniqueNotions.length > 0 ? uniqueNotions.join(', ') : 'notions du programme';
+
+        const generatedContent = await this.openRouter.simpleChat(
+          `Génère un document pédagogique de type "${docType}" avec les paramètres suivants :
+- Nombre de questions/exercices : ${numQuestions}
+- Difficulté : ${difficulty}
+- Style : ${styleDesc}
+- Notions : ${notionsText}
+- Classe : ${context.academicClass?.name || 'Non spécifiée'}
+- Matière : ${context.subject?.name || 'Non spécifiée'}
+- Enseignant : ${context.teacher ? `${context.teacher.firstName} ${context.teacher.lastName}` : 'Non spécifié'}\n\nGénère le contenu complet avec énoncés, questions et barème sur 20 points.`,
+          `Tu es le moteur SCE (Sara Compose Engine) d'Academia Helm. Tu génères des documents pédagogiques de qualité professionnelle pour des établissements scolaires africains.
+RÈGLES :
+- Adapte le niveau au type de classe spécifié
+- Respecte le format ${docType} (composition, devoir, interrogation, fiche-activité)
+- Utilise le style ${styleDesc}
+- Assure-toi que le barème total est de 20 points
+- Réponds en français
+- Sois précis et pédagogiquement pertinent`,
+          'SCE',
+          0.7,
+        );
+
+        if (generatedContent && !generatedContent.includes('n\'est pas encore configurée')) {
+          // Enrichir le template avec le contenu généré par l'IA
+          const generated = this.generateFromTemplate(tenantId, {
+            docType,
+            template,
+            styleConfig,
+            numQuestions,
+            difficulty,
+            notions: uniqueNotions,
+            context,
+            skillId: data.skillId,
+          });
+
+          (generated as any).aiGeneratedContent = generatedContent;
+          generated.metadata.isPlaceholder = false;
+          generated.metadata.aiConfigured = true;
+          generated.metadata.engine = 'SCE v2.0 + OpenRouter';
+
+          return generated;
+        }
+      } catch (error) {
+        this.logger.error('OpenRouter generation failed, using template fallback', error);
+      }
     }
 
     // Génération basée sur les templates et le contexte
@@ -264,8 +315,35 @@ export class IaPrismaService {
     }
 
     if (this.isAiConfigured()) {
-      // TODO: Implémenter l'appel réel à l'API Claude pour l'analyse
-      this.logger.warn('AI configured but Claude integration not yet implemented. Using rule-based analysis.');
+      // Appel réel à l'IA via OpenRouter pour l'analyse
+      try {
+        const contentToAnalyze = documentData
+          ? `Document: ${documentData.title || 'Sans titre'}, Type: ${documentData.type || 'N/A'}, Statut: ${documentData.status || 'N/A'}, Versions: ${documentData.versions?.length || 0}`
+          : data.content || 'Contenu à analyser';
+
+        const analysisResult = await this.openRouter.structuredChat<{
+          score: number;
+          recommendations: string[];
+        }>(
+          `Analyse ce document pédagogique selon le type "${analysisType}" :\n${contentToAnalyze}`,
+          `Tu es le moteur SCE d'Academia Helm. Tu analyses des documents pédagogiques.
+Type d'analyse : ${analysisType}
+Réponds en JSON avec : { "score": number (0-100), "recommendations": string[] }`,
+          'SCE',
+        );
+
+        if (analysisResult.data && !analysisResult.isPlaceholder) {
+          return {
+            analysisType,
+            ...analysisResult.data,
+            isPlaceholder: false,
+            aiConfigured: true,
+            analyzedAt: new Date().toISOString(),
+          };
+        }
+      } catch (error) {
+        this.logger.error('OpenRouter analysis failed, using rule-based fallback', error);
+      }
     }
 
     // Analyse basée sur les règles
@@ -497,8 +575,51 @@ export class IaPrismaService {
     ]);
 
     if (this.isAiConfigured()) {
-      // TODO: Implémenter l'appel réel à Claude API
-      this.logger.warn('AI configured but Claude integration not yet implemented. Using rule engine fallback.');
+      // Appel réel à l'IA via OpenRouter pour le copilote pédagogique
+      const systemPrompt = `Tu es Sara, le Copilote Pédagogique d'Academia Helm. Tu aides les enseignants et la direction.
+Tu as accès aux données suivantes :
+- Enseignants : ${teacherCount}
+- Classes : ${classCount}
+- Matières : ${subjectCount}
+- Plans de cours : ${lessonPlanCount}
+- Entrées cahier journal : ${dailyLogCount}
+- Matériel pédagogique : ${materialsCount}
+
+RÈGLES :
+- Réponds en français
+- Sois concis et professionnel
+- Base-toi sur les données réelles fournies
+- Propose des actions concrètes
+- Si tu ne connais pas la réponse, dis-le honnêtement`;
+
+      const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+        { role: 'system', content: systemPrompt },
+      ];
+
+      if (conversationHistory && conversationHistory.length > 0) {
+        for (const msg of conversationHistory.slice(-10)) {
+          if (msg.role === 'user' || msg.role === 'assistant') {
+            messages.push({ role: msg.role as 'user' | 'assistant', content: msg.content });
+          }
+        }
+      }
+
+      messages.push({ role: 'user', content: message });
+
+      const response = await this.openRouter.chat({
+        messages,
+        temperature: 0.6,
+        maxTokens: 600,
+        persona: 'SCE',
+      });
+
+      if (!response.isPlaceholder) {
+        return {
+          reply: response.content,
+          isAiEnhanced: true,
+          timestamp: new Date().toISOString(),
+        };
+      }
     }
 
     // Moteur de règles pédagogiques

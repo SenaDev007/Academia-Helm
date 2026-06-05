@@ -13,6 +13,7 @@ import { SubdomainService } from './services/subdomain.service';
 import { PuppeteerPoolService } from './services/puppeteer-pool.service';
 import { PermissionsController } from './controllers/permissions.controller';
 import { DashboardController } from './controllers/dashboard.controller';
+import { OpenRouterModule } from './services/openrouter.module';
 import { DatabaseModule } from '../database/database.module';
 import { SecurityModule } from '../security/security.module';
 
@@ -21,6 +22,7 @@ import { SecurityModule } from '../security/security.module';
   imports: [
     DatabaseModule, // Pour accéder à PrismaService
     SecurityModule, // Pour accéder à PlatformOwnerService
+    OpenRouterModule, // Pour accéder à OpenRouterService (IA partagée)
   ],
   controllers: [PermissionsController, DashboardController],
   providers: [
@@ -38,6 +40,7 @@ import { SecurityModule } from '../security/security.module';
     AccessDeniedLogService,
     SubdomainService,
     PuppeteerPoolService,
+    OpenRouterModule,
   ],
 })
 export class CommonModule {}

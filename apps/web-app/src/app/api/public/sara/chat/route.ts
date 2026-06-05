@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 type ChatMessage = {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
 };
 
@@ -101,43 +101,13 @@ function detectUnsafeTopic(text: string): boolean {
   const t = (text || '').toLowerCase();
   if (!t) return false;
 
-  // Liste noire pragmatique (éviter débats sensibles / illégaux)
   const blocked = [
-    // politique / religion
-    'politique',
-    'élection',
-    'président',
-    'gouvernement',
-    'parti',
-    'religion',
-    'islam',
-    'christianisme',
-    'église',
-    'mosquée',
-    // haine / violence
-    'haine',
-    'racisme',
-    'xénophobie',
-    'tuer',
-    'arme',
-    'bombe',
-    // illégal
-    'pirater',
-    'hacker',
-    'arnaque',
-    'fraude',
-    'carte volée',
-    'drogue',
-    // médical / juridique perso
-    'diagnostic',
-    'symptôme',
-    'traitement',
-    'avocat',
-    'tribunal',
-    'plainte',
-    // contenus sexuels explicites
-    'porno',
-    'sexuel',
+    'politique', 'élection', 'président', 'gouvernement', 'parti',
+    'religion', 'islam', 'christianisme', 'église', 'mosquée',
+    'haine', 'racisme', 'xénophobie', 'tuer', 'arme', 'bombe',
+    'pirater', 'hacker', 'arnaque', 'fraude', 'carte volée', 'drogue',
+    'diagnostic', 'symptôme', 'traitement', 'avocat', 'tribunal', 'plainte',
+    'porno', 'sexuel',
   ];
 
   return blocked.some((k) => t.includes(k));
@@ -146,7 +116,7 @@ function detectUnsafeTopic(text: string): boolean {
 function buildRefusalMessage(outputLanguage: 'FR' | 'EN'): string {
   if (outputLanguage === 'EN') {
     return normalizeSaraOutput(
-      "I can’t help with that topic. I’m here only to answer questions about Academia Helm (modules, pricing, onboarding, security) and help you choose the right plan. What’s your school size (number of students)?",
+      "I can't help with that topic. I'm here only to answer questions about Academia Helm (modules, pricing, onboarding, security) and help you choose the right plan. What's your school size (number of students)?",
     );
   }
 
@@ -155,12 +125,36 @@ function buildRefusalMessage(outputLanguage: 'FR' | 'EN'): string {
   );
 }
 
+/**
+ * Détermine le provider IA à utiliser
+ * Priorité : OPENROUTER_API_KEY > ANTHROPIC_API_KEY
+ */
+function getAIProvider(): { provider: 'openrouter' | 'anthropic'; apiKey: string; model: string } {
+  const openrouterKey = process.env.OPENROUTER_API_KEY;
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+
+  if (openrouterKey) {
+    return {
+      provider: 'openrouter',
+      apiKey: openrouterKey,
+      model: process.env.OPENROUTER_MODEL || 'z-ai/glm-4.5-air:free',
+    };
+  }
+
+  return {
+    provider: 'anthropic',
+    apiKey: anthropicKey || '',
+    model: process.env.ORION_LLM_MODEL || 'claude-3-5-sonnet-latest',
+  };
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const { provider, apiKey, model } = getAIProvider();
+
     if (!apiKey) {
       return NextResponse.json(
-        { error: 'ANTHROPIC_API_KEY non configurée' },
+        { error: 'OPENROUTER_API_KEY ou ANTHROPIC_API_KEY non configurée' },
         { status: 500 },
       );
     }
@@ -173,66 +167,111 @@ export async function POST(request: NextRequest) {
     const outputLanguage = detectOutputLanguage(lastUser);
     const policy = buildPolicyPrompt(outputLanguage);
 
-    // Refus server-side si sujet interdit (ne dépend pas du modèle)
+    // Refus server-side si sujet interdit
     if (detectUnsafeTopic(lastUser)) {
       return NextResponse.json({ text: buildRefusalMessage(outputLanguage) });
     }
 
-    // Anthropic Messages API (version utilisée ailleurs dans le repo)
-    // NB: on passe le contexte système en "user" initial pour rester compatible
-    // avec l'usage actuel (anthropic-version 2023-06-01).
-    const anthropicMessages: ChatMessage[] = [
-      {
-        role: 'user',
-        content:
-          `${systemPrompt}\n\n` +
-          `---\n` +
-          `${policy}\n` +
-          `---\n` +
-          `RÈGLE DE SORTIE : Réponds directement au prospect (max 4 phrases), puis termine par UNE question.\n` +
-          `---`,
-      },
-      ...messages,
-    ];
+    let responseText = '';
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: process.env.ORION_LLM_MODEL || 'claude-3-5-sonnet-latest',
-        max_tokens: 500,
-        temperature: 0.6,
-        messages: anthropicMessages,
-      }),
-      signal: AbortSignal.timeout(30000),
-    });
+    if (provider === 'openrouter') {
+      // ─── OpenRouter (compatible OpenAI) ───
+      const chatMessages: ChatMessage[] = [
+        {
+          role: 'system',
+          content:
+            `${systemPrompt}\n\n` +
+            `---\n` +
+            `${policy}\n` +
+            `---\n` +
+            `RÈGLE DE SORTIE : Réponds directement au prospect (max 4 phrases), puis termine par UNE question.\n` +
+            `---`,
+        },
+        ...messages,
+      ];
 
-    const data = await response.json();
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'https://academiahelm.com',
+          'X-Title': 'Academia Helm - SARA',
+        },
+        body: JSON.stringify({
+          model,
+          messages: chatMessages,
+          max_tokens: 500,
+          temperature: 0.6,
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
 
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: 'Anthropic API error', details: data },
-        { status: response.status },
-      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        return NextResponse.json(
+          { error: 'OpenRouter API error', details: data },
+          { status: response.status },
+        );
+      }
+
+      responseText = data?.choices?.[0]?.message?.content || '';
+    } else {
+      // ─── Anthropic (legacy fallback) ───
+      const anthropicMessages: ChatMessage[] = [
+        {
+          role: 'user',
+          content:
+            `${systemPrompt}\n\n` +
+            `---\n` +
+            `${policy}\n` +
+            `---\n` +
+            `RÈGLE DE SORTIE : Réponds directement au prospect (max 4 phrases), puis termine par UNE question.\n` +
+            `---`,
+        },
+        ...messages,
+      ];
+
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 500,
+          temperature: 0.6,
+          messages: anthropicMessages,
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return NextResponse.json(
+          { error: 'Anthropic API error', details: data },
+          { status: response.status },
+        );
+      }
+
+      responseText =
+        Array.isArray(data?.content) && data.content[0]?.text
+          ? String(data.content[0].text)
+          : '';
     }
 
-    const text =
-      Array.isArray(data?.content) && data.content[0]?.text
-        ? String(data.content[0].text)
-        : '';
-
-    if (!text.trim()) {
+    if (!responseText.trim()) {
       return NextResponse.json(
         { error: 'Réponse vide du modèle' },
         { status: 502 },
       );
     }
 
-    return NextResponse.json({ text: normalizeSaraOutput(text) });
+    return NextResponse.json({ text: normalizeSaraOutput(responseText) });
   } catch (error: any) {
     console.error('SARA chat API error:', error);
     return NextResponse.json(
@@ -244,4 +283,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

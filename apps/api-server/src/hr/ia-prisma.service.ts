@@ -30,6 +30,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { OpenRouterService } from '../common/services/openrouter.service';
 
 // Pondérations du score de matching XAI
 const MATCHING_WEIGHTS = {
@@ -44,13 +45,16 @@ const MATCHING_WEIGHTS = {
 export class IaPrismaService {
   private readonly logger = new Logger(IaPrismaService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly openRouter: OpenRouterService,
+  ) {}
 
   /**
-   * Vérifie si une clé API IA est configurée
+   * Vérifie si l'IA est configurée (via OpenRouter)
    */
   private isAiConfigured(): boolean {
-    return !!(process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY);
+    return this.openRouter.isConfigured();
   }
 
   // ─── CV PARSING ────────────────────────────────────────────────────────────
@@ -85,31 +89,51 @@ export class IaPrismaService {
     }
 
     if (this.isAiConfigured()) {
-      // TODO: Implémenter l'appel réel à l'API Claude quand la clé sera configurée
-      if (existingCandidate) {
+      // Appel réel à l'IA via OpenRouter
+      const candidateInfo = existingCandidate
+        ? `Candidat : ${existingCandidate.firstName} ${existingCandidate.lastName}, Compétences: ${this.extractSkillsFromCandidate(existingCandidate).join(', ')}, Expérience: ${existingCandidate.academicProfile?.pedagogicalExperience || 'Non spécifiée'}, Formation: ${existingCandidate.academicProfile?.teachingLevel || 'Non spécifiée'}`
+        : `Document : ${data.fileName || 'CV à analyser'}`;
+
+      const result = await this.openRouter.structuredChat<{
+        name: string;
+        skills: string[];
+        experience: string;
+        education: string;
+        strengths: string;
+        weaknesses: string;
+      }>(
+        `Analyse ce profil de candidat pour un poste dans l'enseignement et extrais les informations clés :\n${candidateInfo}`,
+        `Tu es le moteur HDIE (Helm Document Intelligence Engine) d'Academia Helm. Tu analyses des CV et profils de candidats pour des postes dans l'enseignement.
+Tu extrais les informations clés de manière structurée et factuelle.
+Réponds en JSON avec les champs : name, skills (tableau), experience, education, strengths, weaknesses.`,
+        'HDIE',
+      );
+
+      if (result.data && !result.isPlaceholder) {
         return {
-          name: `${existingCandidate.firstName} ${existingCandidate.lastName}`,
-          skills: this.extractSkillsFromCandidate(existingCandidate),
-          experience: existingCandidate.academicProfile?.pedagogicalExperience || 'Expérience extraite par IA',
-          education: existingCandidate.academicProfile?.teachingLevel || 'Formation extraite par IA',
-          strengths: 'Points forts identifiés par l\'analyse sémantique HDIE',
-          weaknesses: 'Axes d\'amélioration identifiés par l\'analyse sémantique HDIE',
+          ...result.data,
           isPlaceholder: false,
-          confidence: 92,
-          candidateId: existingCandidate.id,
+          confidence: 85,
+          candidateId: existingCandidate?.id,
         };
       }
 
-      return {
-        name: 'Document en cours d\'analyse',
-        skills: ['Analyse en cours via HDIE Engine'],
-        experience: 'Extraction sémantique via Claude API en cours',
-        education: 'Veuillez recharger pour voir les résultats',
-        strengths: 'Analyse IA en cours de traitement',
-        weaknesses: 'Résultats disponibles sous quelques secondes',
-        isPlaceholder: true,
-        confidence: 0,
-      };
+      // Fallback si le parsing JSON échoue mais qu'on a une réponse IA
+      if (!result.isPlaceholder && result.raw) {
+        if (existingCandidate) {
+          return {
+            name: `${existingCandidate.firstName} ${existingCandidate.lastName}`,
+            skills: this.extractSkillsFromCandidate(existingCandidate),
+            experience: existingCandidate.academicProfile?.pedagogicalExperience || 'Expérience extraite par IA',
+            education: existingCandidate.academicProfile?.teachingLevel || 'Formation extraite par IA',
+            strengths: result.raw.substring(0, 200),
+            weaknesses: 'Consultez l\'analyse complète pour plus de détails',
+            isPlaceholder: false,
+            confidence: 70,
+            candidateId: existingCandidate.id,
+          };
+        }
+      }
     }
 
     // IA non configurée — retourner un résultat placeholder structuré
@@ -119,8 +143,8 @@ export class IaPrismaService {
         skills: this.extractSkillsFromCandidate(existingCandidate),
         experience: existingCandidate.academicProfile?.pedagogicalExperience || 'Données du candidat (IA non configurée)',
         education: existingCandidate.academicProfile?.teachingLevel || 'Données du candidat (IA non configurée)',
-        strengths: 'Module HDIE prêt à être activé avec une clé API Claude',
-        weaknesses: 'Clé API Claude requise pour l\'analyse sémantique avancée',
+        strengths: 'Module HDIE prêt — configurez OPENROUTER_API_KEY pour activer l\'IA',
+        weaknesses: 'Clé API OpenRouter requise pour l\'analyse sémantique avancée',
         isPlaceholder: true,
         confidence: 0,
         candidateId: existingCandidate.id,
@@ -131,10 +155,10 @@ export class IaPrismaService {
     return {
       name: '— (IA non configurée)',
       skills: ['Analyse sémantique non disponible'],
-      experience: 'L\'intégration IA nécessite la configuration d\'une clé API Claude.',
-      education: 'Connectez votre clé API pour activer l\'analyse de CV automatisée.',
-      strengths: 'Le module HDIE est prêt à être activé avec une clé API',
-      weaknesses: 'Clé API Claude requise pour l\'analyse sémantique avancée',
+      experience: 'L\'intégration IA nécessite la configuration d\'OPENROUTER_API_KEY.',
+      education: 'Configurez votre clé API OpenRouter pour activer l\'analyse de CV.',
+      strengths: 'Le module HDIE est prêt à être activé avec OpenRouter',
+      weaknesses: 'Clé API OpenRouter requise pour l\'analyse sémantique avancée',
       isPlaceholder: true,
       confidence: 0,
     };
@@ -353,17 +377,63 @@ export class IaPrismaService {
       this.getDashboardKpis(tenantId),
     ]);
 
-    if (this.isAiConfigured()) {
-      // TODO: Implémenter l'appel réel à Claude API
-      this.logger.warn('AI configured but Claude integration not yet implemented. Using rule engine fallback.');
-    }
-
-    // Moteur de règles (fallback et base)
-    const response = this.generateRuleBasedResponse(message, {
+    // Contexte RH pour le prompt
+    const contextData = {
       totalStaff: staffCount,
       totalCandidates: candidateCount,
       ...kpis,
-    });
+    };
+
+    if (this.isAiConfigured()) {
+      // Appel réel à l'IA via OpenRouter
+      const systemPrompt = `Tu es Sara, le Copilote RH d'Academia Helm. Tu aides les gestionnaires RH dans leur quotidien.
+Tu as accès aux données suivantes :
+- Effectif total : ${contextData.totalStaff} collaborateur(s)
+- Candidats enregistrés : ${contextData.totalCandidates}
+- Contrats actifs : ${contextData.activeContracts}
+- Congés en attente : ${contextData.pendingLeaves}
+- Masse salariale cumulée : ${contextData.totalPayroll.toLocaleString()} FCFA
+
+RÈGLES :
+- Réponds en français
+- Sois concis et professionnel
+- Base-toi sur les données réelles fournies
+- Propose des actions concrètes quand c'est pertinent
+- Si tu ne connais pas la réponse, dis-le honnêtement`;
+
+      const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+        { role: 'system', content: systemPrompt },
+      ];
+
+      // Ajouter l'historique de conversation
+      if (conversationHistory && conversationHistory.length > 0) {
+        for (const msg of conversationHistory.slice(-10)) {
+          if (msg.role === 'user' || msg.role === 'assistant') {
+            messages.push({ role: msg.role as 'user' | 'assistant', content: msg.content });
+          }
+        }
+      }
+
+      messages.push({ role: 'user', content: message });
+
+      const response = await this.openRouter.chat({
+        messages,
+        temperature: 0.6,
+        maxTokens: 600,
+        persona: 'HDIE',
+      });
+
+      if (!response.isPlaceholder) {
+        return {
+          reply: response.content,
+          isAiEnhanced: true,
+          timestamp: new Date().toISOString(),
+        };
+      }
+    }
+
+    // Moteur de règles (fallback)
+    const response = this.generateRuleBasedResponse(message, contextData);
 
     return {
       reply: response,
@@ -530,7 +600,7 @@ export class IaPrismaService {
 
     if (textLower.includes('cv') || textLower.includes('curriculum') || textLower.includes('resume')) {
       if (context.totalCandidates > 0) {
-        return `J'ai trouvé **${context.totalCandidates} CV** dans la base de données. Pour une analyse sémantique approfondie, utilisez l'onglet "Analyse CV & Lettres" ou activez le module IA avec une clé API Claude.`;
+        return `J'ai trouvé **${context.totalCandidates} CV** dans la base de données. Pour une analyse sémantique approfondie, utilisez l'onglet "Analyse CV & Lettres".`;
       }
       return "Aucun CV disponible dans la base de données. Utilisez l'onglet 'Analyse CV' pour téléverser et analyser un document.";
     }
@@ -544,6 +614,6 @@ export class IaPrismaService {
     }
 
     // Réponse par défaut
-    return `Entendu ! J'analyse les données RH disponibles. Pour des réponses plus pertinentes, essayez de demander :\n- "Quels sont les meilleurs candidats ?"\n- "Quel est l'effectif actuel ?"\n- "Prépare un entretien pour ce poste."\n- "Combien de congés en attente ?"\n\n💡 *L'intégration IA complète nécessite une clé API Claude.*`;
+    return `Entendu ! J'analyse les données RH disponibles. Pour des réponses plus pertinentes, essayez de demander :\n- "Quels sont les meilleurs candidats ?"\n- "Quel est l'effectif actuel ?"\n- "Prépare un entretien pour ce poste."\n- "Combien de congés en attente ?"`;
   }
 }

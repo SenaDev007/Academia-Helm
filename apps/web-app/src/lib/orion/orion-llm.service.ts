@@ -7,6 +7,8 @@
  * - Validation stricte des réponses
  * - Fallback local si réponse non conforme
  * - Journalisation de toutes les interactions
+ * 
+ * SUPPORT : OpenRouter (GLM 4.5 Air), OpenAI, Anthropic
  */
 
 import type {
@@ -22,8 +24,8 @@ import { validateOrionResponse } from './orion-response-validator';
  * Configuration LLM
  */
 const LLM_CONFIG = {
-  provider: (process.env.ORION_LLM_PROVIDER || 'openai') as 'openai' | 'anthropic' | 'local',
-  model: process.env.ORION_LLM_MODEL || 'gpt-4',
+  provider: (process.env.ORION_LLM_PROVIDER || 'openrouter') as 'openrouter' | 'openai' | 'anthropic' | 'local',
+  model: process.env.ORION_LLM_MODEL || 'z-ai/glm-4.5-air:free',
   temperature: 0.1, // Très basse pour des réponses factuelles
   maxTokens: 1000,
 };
@@ -40,16 +42,66 @@ interface LLMResponse {
 }
 
 /**
- * Appelle le LLM externe (OpenAI ou Anthropic)
+ * Appelle le LLM externe (OpenRouter, OpenAI ou Anthropic)
  */
 async function callExternalLLM(prompt: string): Promise<LLMResponse> {
-  if (LLM_CONFIG.provider === 'openai') {
+  if (LLM_CONFIG.provider === 'openrouter') {
+    return callOpenRouter(prompt);
+  } else if (LLM_CONFIG.provider === 'openai') {
     return callOpenAI(prompt);
   } else if (LLM_CONFIG.provider === 'anthropic') {
     return callAnthropic(prompt);
   } else {
     throw new Error('Provider LLM non configuré');
   }
+}
+
+/**
+ * Appelle OpenRouter (compatible OpenAI)
+ */
+async function callOpenRouter(prompt: string): Promise<LLMResponse> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    throw new Error('OPENROUTER_API_KEY non configurée');
+  }
+
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+      'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'https://academiahelm.com',
+      'X-Title': 'Academia Helm - ORION',
+    },
+    body: JSON.stringify({
+      model: LLM_CONFIG.model,
+      messages: [
+        {
+          role: 'system',
+          content: 'Tu es ORION, un assistant de direction institutionnel. Tu réponds uniquement avec des faits basés sur les données fournies. Ton ton est professionnel et sobre.',
+        },
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+      temperature: LLM_CONFIG.temperature,
+      max_tokens: LLM_CONFIG.maxTokens,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`OpenRouter API error: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  return {
+    content: data.choices[0].message.content,
+    usage: data.usage ? {
+      promptTokens: data.usage.prompt_tokens,
+      completionTokens: data.usage.completion_tokens,
+    } : undefined,
+  };
 }
 
 /**
@@ -260,4 +312,3 @@ export async function generateOrionSummary(
     };
   }
 }
-

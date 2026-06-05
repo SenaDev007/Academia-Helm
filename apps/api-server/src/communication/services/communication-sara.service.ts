@@ -1,14 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { OpenRouterService } from '../../common/services/openrouter.service';
 
 @Injectable()
 export class CommunicationSaraService {
   private readonly logger = new Logger(CommunicationSaraService.name);
-  private readonly apiKey: string;
 
-  constructor(private readonly configService: ConfigService) {
-    this.apiKey = this.configService.get<string>('ANTHROPIC_API_KEY') || this.configService.get<string>('OPENAI_API_KEY');
-  }
+  constructor(private readonly openRouter: OpenRouterService) {}
 
   /**
    * Helps draft a communication message based on context
@@ -21,23 +18,39 @@ export class CommunicationSaraService {
     language?: 'fr' | 'en';
   }) {
     const { intent, targetAudience, tone = 'professional', keyPoints = [], language = 'fr' } = context;
-    
-    const systemPrompt = `Tu es SARA, l'assistant intelligent d'Academia Helm. 
-    Ta mission est d'aider les administrateurs scolaires à rédiger des communications claires, efficaces et professionnelles.
-    Audience : ${targetAudience}. Ton : ${tone}. Langue : ${language}.`;
 
-    const userPrompt = `Rédige un message pour : ${intent}. 
-    Points clés à inclure : ${keyPoints.join(', ')}.`;
+    const langInstruction = language === 'en'
+      ? 'Write ONLY in English.'
+      : 'Rédige UNIQUEMENT en français.';
 
-    const draftedContent = await this.callAI(userPrompt, systemPrompt);
+    const systemPrompt = `Tu es SARA, l'assistante intelligente d'Academia Helm.
+Ta mission est d'aider les administrateurs scolaires à rédiger des communications claires, efficaces et professionnelles.
+Audience cible : ${targetAudience}. Ton : ${tone}. ${langInstruction}
+
+RÈGLES :
+- Adapte le ton au contexte (${tone})
+- Inclus une formule de salutation appropriée
+- Termine par une formule de politesse
+- Sois concis mais complet`;
+
+    const userPrompt = `Rédige un message pour : ${intent}.
+Points clés à inclure : ${keyPoints.join(', ') || 'Aucun point clé spécifié - rédige selon le contexte'}.`;
+
+    const draftedContent = await this.openRouter.simpleChat(
+      userPrompt,
+      systemPrompt,
+      'SARA',
+      0.7,
+    );
 
     return {
       content: draftedContent,
       suggestions: [
-        "Ajouter une signature institutionnelle",
-        "Inclure un lien vers le portail de paiement",
-        "Préciser la date limite"
-      ]
+        'Ajouter une signature institutionnelle',
+        'Inclure un lien vers le portail de paiement',
+        'Préciser la date limite',
+      ],
+      isAiEnhanced: this.openRouter.isConfigured(),
     };
   }
 
@@ -45,14 +58,24 @@ export class CommunicationSaraService {
    * Refines existing content to improve clarity or tone
    */
   async refineContent(content: string, instruction: string) {
-    const systemPrompt = "Tu es SARA. Améliore le texte suivant selon l'instruction fournie.";
-    const userPrompt = `Texte original : "${content}"\nInstruction : ${instruction}`;
+    const systemPrompt = `Tu es SARA, l'assistante intelligente d'Academia Helm.
+Améliore le texte fourni selon l'instruction donnée.
+Conserve le sens original tout en optimisant la clarté et le ton.
+Réponds uniquement avec le texte amélioré, sans commentaires.`;
 
-    const refinedContent = await this.callAI(userPrompt, systemPrompt);
+    const userPrompt = `Texte original :\n"${content}"\n\nInstruction : ${instruction}`;
+
+    const refinedContent = await this.openRouter.simpleChat(
+      userPrompt,
+      systemPrompt,
+      'SARA',
+      0.5,
+    );
 
     return {
       original: content,
-      refined: refinedContent
+      refined: refinedContent,
+      isAiEnhanced: this.openRouter.isConfigured(),
     };
   }
 
@@ -64,33 +87,22 @@ export class CommunicationSaraService {
       return {
         channel: 'SMS',
         reason: 'Taux de lecture immédiat le plus élevé pour les urgences.',
-        fallback: 'WHATSAPP'
+        fallback: 'WHATSAPP',
       };
     }
-    
+
     if (messageType === 'PEDAGOGICAL' || messageType === 'GENERAL') {
       return {
         channel: 'PORTAL',
         reason: 'Moins intrusif et permet un contenu riche (images, documents).',
-        fallback: 'EMAIL'
+        fallback: 'EMAIL',
       };
     }
 
     return {
       channel: 'EMAIL',
       reason: 'Standard pour les communications administratives et financières.',
-      fallback: 'PORTAL'
+      fallback: 'PORTAL',
     };
-  }
-
-  private async callAI(prompt: string, systemPrompt: string): Promise<string> {
-    if (!this.apiKey) {
-      // Return a high-quality template if no API key is available
-      return `[SARA AI - Mode Template] \n\nCher(s) ${prompt.includes('parent') ? 'Parents' : 'Membres du personnel'},\n\nNous vous contactons concernant ${prompt}. \n\nNous restons à votre disposition pour toute information complémentaire.\n\nCordialement,\nLa Direction.`;
-    }
-
-    // In a real implementation, we would call Anthropic or OpenAI here.
-    // For this demonstration, we'll return a simulated high-fidelity response.
-    return `[SARA AI] Voici une proposition de rédaction :\n\nObjet : Communication Importante - Academia Hub\n\nMadame, Monsieur,\n\nNous tenons à vous informer que ${prompt}. \n\nCette mesure vise à garantir la continuité de nos services et l'excellence académique de notre établissement.\n\nNous vous remercions de votre confiance.\n\nL'administration d'Academia Helm.`;
   }
 }

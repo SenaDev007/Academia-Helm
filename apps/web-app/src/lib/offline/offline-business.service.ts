@@ -16,7 +16,7 @@ import type { SyncEntityType, SyncOperationType } from '@/types';
 /**
  * Crée une entité en mode offline-first
  */
-export async function createEntityOffline<T extends { id?: string }>(
+export async function createEntityOffline<T extends { id?: string; createdAt?: string; updatedAt?: string }>(
   tenantId: string,
   entityType: SyncEntityType,
   entityData: T,
@@ -35,7 +35,7 @@ export async function createEntityOffline<T extends { id?: string }>(
     _isDirty: true,
     _deleted: false,
     _lastSync: null,
-    createdAt: entity.createdAt || new Date().toISOString(),
+    createdAt: (entity as any).createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
 
@@ -62,7 +62,7 @@ export async function createEntityOffline<T extends { id?: string }>(
 /**
  * Met à jour une entité en mode offline-first
  */
-export async function updateEntityOffline<T extends { id: string }>(
+export async function updateEntityOffline<T extends Record<string, any> & { id: string }>(
   tenantId: string,
   entityType: SyncEntityType,
   entityId: string,

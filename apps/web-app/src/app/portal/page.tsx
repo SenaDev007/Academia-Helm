@@ -362,7 +362,16 @@ export default function PortalPage() {
       console.error('[Dev Login] Error:', error);
       const message =
         error instanceof Error ? error.message : 'Impossible de se connecter';
-      alert(`Erreur: ${message}`);
+      // Messages plus clairs selon le type d'erreur
+      let userMessage = message;
+      if (message.includes('timeout') || message.includes('ne répond pas') || message.includes('30 secondes')) {
+        userMessage = 'Le serveur est en cours de démarrage. Veuillez réessayer dans quelques secondes.';
+      } else if (message.includes('Internal server error') || message.includes('500')) {
+        userMessage = 'Erreur serveur temporaire. Veuillez réessayer dans quelques instants.';
+      } else if (message.includes('Unauthorized') || message.includes('401')) {
+        userMessage = 'Email ou mot de passe incorrect. Vérifiez vos identifiants.';
+      }
+      alert(`Erreur: ${userMessage}`);
       setIsDevLoggingIn(false);
     }
   };

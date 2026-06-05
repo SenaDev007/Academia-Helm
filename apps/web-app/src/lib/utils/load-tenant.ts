@@ -12,7 +12,10 @@
 import { getApiBaseUrlForRoutes } from './api-urls';
 import type { Tenant } from '@/types';
 
-const API_BASE_URL = getApiBaseUrlForRoutes();
+/** ⚠️ Ne PAS utiliser de constante au niveau du module — getApiBaseUrlForRoutes() 
+ *  peut retourner une URL différente après un cold start Vercel (les env vars 
+ *  ne sont pas encore disponibles au moment de l'import du module). 
+ *  On l'évalue à chaque appel à la place. */
 
 /**
  * Charge un tenant depuis l'API backend par son ID
@@ -41,6 +44,7 @@ export async function loadTenantFromApi(
       'Authorization': `Bearer ${token}`,
     };
 
+    const API_BASE_URL = getApiBaseUrlForRoutes();
     const response = await fetch(`${API_BASE_URL}/tenants/${tenantId}`, {
       method: 'GET',
       headers,

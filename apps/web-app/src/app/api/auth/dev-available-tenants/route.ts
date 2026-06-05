@@ -9,7 +9,7 @@ import {
 
 /** Évite les attentes de plusieurs minutes si l’API Nest n’est pas démarrée */
 const DEV_PROXY_TIMEOUT_MS = Number(
-  process.env.DEV_API_PROXY_TIMEOUT_MS ?? 15_000,
+  process.env.DEV_API_PROXY_TIMEOUT_MS ?? 30_000,
 );
 
 export async function GET(_request: NextRequest) {

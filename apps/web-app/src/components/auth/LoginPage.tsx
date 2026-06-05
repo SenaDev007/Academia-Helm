@@ -287,12 +287,31 @@ export default function LoginPage() {
       return;
     }
 
-    const redirectUrl = getTenantRedirectUrl({
-      tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,
-      tenantId: tenantIdFromUrl || data.tenant?.id,
-      path: redirectPath,
-    });
-    window.location.href = redirectUrl;
+    // Compute the best tenant slug for redirect (prefer API response over URL)
+    const resolvedSlug = tenantSlug || data.tenant?.slug || data.tenant?.subdomain;
+    const resolvedTenantId = tenantIdFromUrl || data.tenant?.id;
+
+    if (!resolvedSlug && !resolvedTenantId) {
+      // No tenant info at all — go to /app and let middleware handle it
+      window.location.href = redirectPath;
+      return;
+    }
+
+    try {
+      const redirectUrl = getTenantRedirectUrl({
+        tenantSlug: resolvedSlug || resolvedTenantId || 'unknown',
+        tenantId: resolvedTenantId,
+        path: redirectPath,
+      });
+      window.location.href = redirectUrl;
+    } catch {
+      // Fallback: redirect with query params
+      const baseUrl = window.location.origin;
+      const url = new URL(redirectPath, baseUrl);
+      if (resolvedSlug) url.searchParams.set('tenant', resolvedSlug);
+      if (resolvedTenantId) url.searchParams.set('tenant_id', resolvedTenantId);
+      window.location.href = url.toString();
+    }
   };
 
   const handleSchoolLogin = async () => {

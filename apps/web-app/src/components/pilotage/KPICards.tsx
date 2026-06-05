@@ -2,14 +2,15 @@
  * ============================================================================
  * KPI CARDS - CARTES SYNTHÈSE
  * ============================================================================
- * 
+ *
  * Cartes KPI clés : Effectifs, Assiduité, Recettes, Alertes
+ * Données réelles depuis /api/general/consolidated-report
  * ============================================================================
  */
 
 'use client';
 
-import { Users, TrendingUp, AlertTriangle, DollarSign } from 'lucide-react';
+import { Users, TrendingUp, AlertTriangle, DollarSign, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 
 interface KPICardsProps {
   data: any;
@@ -24,8 +25,8 @@ export default function KPICards({ data, isLoading }: KPICardsProps) {
       icon: Users,
       color: 'text-blue-600',
       bgColor: 'bg-blue-50',
-      change: '+5%',
-      changeType: 'positive' as const,
+      borderColor: 'border-blue-100',
+      format: 'number' as const,
     },
     {
       label: 'Assiduité',
@@ -34,18 +35,18 @@ export default function KPICards({ data, isLoading }: KPICardsProps) {
       icon: TrendingUp,
       color: 'text-green-600',
       bgColor: 'bg-green-50',
-      change: '+2%',
-      changeType: 'positive' as const,
+      borderColor: 'border-green-100',
+      format: 'percent' as const,
     },
     {
       label: 'Recettes',
       value: data?.revenue?.total || 0,
       prefix: 'FCFA',
       icon: DollarSign,
-      color: 'text-yellow-600',
-      bgColor: 'bg-yellow-50',
-      change: '+12%',
-      changeType: 'positive' as const,
+      color: 'text-amber-600',
+      bgColor: 'bg-amber-50',
+      borderColor: 'border-amber-100',
+      format: 'currency' as const,
     },
     {
       label: 'Alertes actives',
@@ -53,8 +54,8 @@ export default function KPICards({ data, isLoading }: KPICardsProps) {
       icon: AlertTriangle,
       color: 'text-red-600',
       bgColor: 'bg-red-50',
-      change: null,
-      changeType: null as any,
+      borderColor: 'border-red-100',
+      format: 'number' as const,
     },
   ];
 
@@ -64,7 +65,7 @@ export default function KPICards({ data, isLoading }: KPICardsProps) {
         {[1, 2, 3, 4].map((i) => (
           <div
             key={i}
-            className="bg-white rounded-lg border border-gray-200 shadow-sm p-6 animate-pulse"
+            className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 animate-pulse"
           >
             <div className="h-4 bg-gray-200 rounded w-24 mb-4" />
             <div className="h-8 bg-gray-200 rounded w-32 mb-2" />
@@ -89,28 +90,25 @@ export default function KPICards({ data, isLoading }: KPICardsProps) {
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
       {kpis.map((kpi) => {
         const Icon = kpi.icon;
+        const hasData = kpi.value > 0;
         return (
           <div
             key={kpi.label}
-            className="bg-white rounded-lg border border-gray-200 shadow-sm p-6 hover:shadow-md transition-shadow"
+            className={`bg-white rounded-xl border shadow-sm p-6 hover:shadow-md transition-shadow ${hasData ? kpi.borderColor : 'border-gray-200'}`}
           >
             <div className="flex items-center justify-between mb-4">
               <div className={`p-3 rounded-lg ${kpi.bgColor}`}>
                 <Icon className={`w-6 h-6 ${kpi.color}`} />
               </div>
-              {kpi.change && (
-                <span
-                  className={`text-sm font-medium ${
-                    kpi.changeType === 'positive' ? 'text-green-600' : 'text-red-600'
-                  }`}
-                >
-                  {kpi.change}
+              {hasData && kpi.format !== 'currency' && (
+                <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                  Actif
                 </span>
               )}
             </div>
             <div>
-              <p className="text-sm text-gray-600 mb-1">{kpi.label}</p>
-              <p className="text-3xl font-bold text-navy-900">
+              <p className="text-sm text-gray-500 mb-1">{kpi.label}</p>
+              <p className={`text-3xl font-bold ${hasData ? 'text-gray-900' : 'text-gray-300'}`}>
                 {formatValue(kpi.value, kpi.prefix, kpi.suffix)}
               </p>
             </div>
@@ -120,4 +118,3 @@ export default function KPICards({ data, isLoading }: KPICardsProps) {
     </div>
   );
 }
-

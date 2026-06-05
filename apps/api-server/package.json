@@ -67,6 +67,7 @@
     "@swc/core": "^1.15.10",
     "@types/helmet": "^0.0.48",
     "@upstash/redis": "^1.37.0",
+    "@vercel/blob": "^2.4.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.0",
     "cloudinary": "^2.9.0",

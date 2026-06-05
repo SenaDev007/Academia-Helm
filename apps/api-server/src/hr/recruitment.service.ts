@@ -612,7 +612,7 @@ export class RecruitmentPrismaService {
 
   /**
    * Télécharge un document d'un candidat.
-   * - Si le fichier est sur S3, redirige vers l'URL S3.
+   * - Si le fichier est sur un cloud public (S3, Vercel Blob), redirige vers l'URL.
    * - Si le fichier est local, le lit depuis le disque et le renvoie.
    */
   async downloadCandidateDocument(candidateId: string, docId: string, res: any) {

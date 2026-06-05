@@ -164,9 +164,9 @@ export function StaffWorkspace() {
 function StaffCard({ member, index }: { member: any; index: number }) {
   const status = STATUS_CONFIG[member.status] || STATUS_CONFIG.INACTIVE;
   // Collect document badges from the documents array
-  const docTypes = [...new Set((member.documents || []).map((d: any) => d.documentType))];
+  const docTypes = [...new Set<string>((member.documents || []).map((d: any) => d.documentType as string))];
   const docBadges = docTypes.length > 0 
-    ? docTypes.slice(0, 4).map((t: string) => {
+    ? docTypes.slice(0, 4).map((t) => {
         const shortMap: Record<string, string> = {
           CV: 'CV', CNI: 'CNI', PASSPORT: 'PSP', BIRTH_CERTIFICATE: 'NAI',
           DIPLOMA: 'DIP', CERTIFICATE: 'CERT', CONTRACT: 'CTR',

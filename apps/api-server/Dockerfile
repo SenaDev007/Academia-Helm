@@ -47,5 +47,5 @@ COPY --from=build /app/prisma ./prisma
 
 EXPOSE 3000
 
-# Reduced from 2048 to 1024 — TypeORM removed, only Prisma loaded now
-CMD [ "node", "--max-old-space-size=1024", "dist/main.js" ]
+# TypeORM removed — but Prisma with 270+ models still needs ~2GB during startup
+CMD [ "node", "--max-old-space-size=3072", "dist/main.js" ]

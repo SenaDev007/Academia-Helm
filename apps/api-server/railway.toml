@@ -6,4 +6,4 @@
     grace_period = 300
 
 [env]
-  NODE_OPTIONS = "--max-old-space-size=1024 --expose-gc"
+  NODE_OPTIONS = "--max-old-space-size=3072 --expose-gc"

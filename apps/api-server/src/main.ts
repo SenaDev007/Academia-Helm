@@ -85,7 +85,7 @@ async function bootstrap() {
     const heapUsedMB = Math.round(mem.heapUsed / 1024 / 1024);
     const heapTotalMB = Math.round(mem.heapTotal / 1024 / 1024);
     const rssMB = Math.round(mem.rss / 1024 / 1024);
-    const maxHeapMB = parseInt(process.env.MAX_HEAP_MB ?? '1024', 10); // matches --max-old-space-size
+    const maxHeapMB = parseInt(process.env.MAX_HEAP_MB ?? '3072', 10); // matches --max-old-space-size
     const heapPercent = Math.round((mem.heapUsed / (maxHeapMB * 1024 * 1024)) * 100);
 
     if (heapPercent > 70) {

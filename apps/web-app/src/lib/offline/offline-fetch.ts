@@ -194,9 +194,10 @@ async function cacheResponse<T>(
  * Variante pour les mutations (POST, PUT, PATCH, DELETE).
  *
  * En ligne : exécute la mutation sur le serveur.
- * Hors ligne : écrit localement dans IndexedDB + crée un événement outbox.
+ * Hors ligne : écrit localement dans IndexedDB + crée un événement outbox
+ * pour synchronisation automatique à la reconnexion.
  *
- * @returns true si la mutation a été traitée (soif en ligne, soit hors ligne)
+ * @returns true si la mutation a été traitée (soit en ligne, soit hors ligne)
  */
 export async function offlineMutation<T = any>(
   url: string,
@@ -215,19 +216,139 @@ export async function offlineMutation<T = any>(
       });
       return { data, offline: false };
     } catch (error) {
-      // Si le réseau échoue, on ne fait PAS de fallback pour les mutations
-      // car les mutations nécessitent une confirmation du serveur
-      return {
-        offline: false,
-        error: (error as Error).message || 'Erreur réseau',
-      };
+      // Si le réseau échoue, on tente le fallback offline
+      console.warn(`[OfflineMutation] Network failed for ${method} ${url}, trying offline fallback`);
+      const result = await offlineMutationFallback<T>(url, method, body, options);
+      return result;
     }
   }
 
-  // Hors ligne : la mutation sera mise en file d'attente
-  // L'utilisateur doit savoir qu'il est hors ligne et que l'action sera synchronisée plus tard
-  return {
-    offline: true,
-    error: 'Vous êtes hors ligne. Cette action sera synchronisée automatiquement à la reconnexion.',
+  // Hors ligne : écrire localement + créer événement outbox
+  return await offlineMutationFallback<T>(url, method, body, options);
+}
+
+/**
+ * Fallback offline pour les mutations : écrit dans IndexedDB + outbox
+ */
+async function offlineMutationFallback<T = any>(
+  url: string,
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+  body?: any,
+  options: OfflineFetchOptions = {}
+): Promise<{ data?: T; offline: boolean; error?: string }> {
+  try {
+    const { createEntityOffline, updateEntityOffline, deleteEntityOffline } = await import('./offline-business.service');
+    const tenantId = options.tenantId || getTenantIdFromCookie();
+
+    if (!tenantId) {
+      return {
+        offline: true,
+        error: 'Impossible de sauvegarder hors ligne : identifiant tenant manquant.',
+      };
+    }
+
+    // Déterminer le type d'entité et le store depuis l'URL
+    const entityType = inferEntityTypeFromUrl(url);
+    const entityId = body?.id || inferIdFromUrl(url) || generateLocalId();
+
+    let result: any;
+
+    if (method === 'POST') {
+      result = await createEntityOffline(tenantId, entityType, { ...body, id: entityId });
+    } else if (method === 'PUT' || method === 'PATCH') {
+      result = await updateEntityOffline(tenantId, entityType, entityId, body);
+    } else if (method === 'DELETE') {
+      await deleteEntityOffline(tenantId, entityType, entityId);
+      result = { id: entityId, deleted: true };
+    }
+
+    return { data: result as T, offline: true };
+  } catch (fallbackError) {
+    console.error('[OfflineMutation] Fallback failed:', fallbackError);
+    return {
+      offline: true,
+      error: 'Vous êtes hors ligne. Cette action sera synchronisée automatiquement à la reconnexion.',
+    };
+  }
+}
+
+/**
+ * Infère le type d'entité SyncEntityType depuis l'URL
+ */
+function inferEntityTypeFromUrl(url: string): import('@/types').SyncEntityType {
+  const mapping: Record<string, import('@/types').SyncEntityType> = {
+    'students': 'STUDENT',
+    'teachers': 'TEACHER',
+    'classes': 'CLASS',
+    'subjects': 'SUBJECT',
+    'exams': 'EXAM',
+    'grades': 'GRADE',
+    'attendance': 'ATTENDANCE',
+    'absences': 'ABSENCE',
+    'payments': 'PAYMENT',
+    'invoices': 'INVOICE',
+    'finance/fee-structures': 'FEE_STRUCTURE',
+    'finance/expenses': 'EXPENSE',
+    'finance/settings': 'FINANCE_SETTING',
+    'discipline': 'DISCIPLINARY_INCIDENT',
+    'incidents': 'INCIDENT',
+    'homeworks': 'HOMEWORK',
+    'loans': 'LOAN',
+    'sessions': 'SESSION',
+    'messages': 'MESSAGE',
+    'notifications': 'NOTIFICATION',
+    'alerts': 'ALERT',
+    'class-diaries': 'CLASS_DIARY',
+    'lesson-plans': 'LESSON_PLAN',
+    'pedagogy/teacher/documents': 'LESSON_JOURNAL',
+    'pedagogy/academic-series': 'ACADEMIC_SERIES',
+    'pedagogy/teacher-profiles': 'TEACHER_PROFILE',
+    'pedagogy/pedagogical-materials': 'PEDAGOGICAL_MATERIAL',
+    'pedagogy/assignments': 'TEACHER_CLASS_ASSIGNMENT',
+    'daily-logs': 'HOMEWORK_ENTRY',
+    'exam-candidates': 'EXAM_CANDIDATE',
+    'exam-results': 'EXAM_RESULT',
   };
+
+  // Parcourir les clés de la plus longue à la plus courte pour correspondance la plus spécifique
+  const sortedKeys = Object.keys(mapping).sort((a, b) => b.length - a.length);
+  for (const key of sortedKeys) {
+    if (url.toLowerCase().includes(key.toLowerCase())) {
+      return mapping[key];
+    }
+  }
+
+  // Fallback : extraire le premier segment après /api/ et le convertir
+  const segments = url.replace(/^\/api\//, '').split('/');
+  const firstSegment = segments[0]?.replace(/-/g, '_').toUpperCase();
+  return (firstSegment || 'STUDENT') as import('@/types').SyncEntityType;
+}
+
+/**
+ * Extrait l'ID depuis l'URL (dernier segment UUID-like)
+ */
+function inferIdFromUrl(url: string): string | null {
+  const uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+  const match = url.match(uuidRegex);
+  return match ? match[0] : null;
+}
+
+/**
+ * Génère un ID local temporaire
+ */
+function generateLocalId(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+/**
+ * Récupère le tenantId depuis les cookies
+ */
+function getTenantIdFromCookie(): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(/(?:(?:^|.*;\s*)x-tenant-id\s*\=\s*([^;]*).*$)|^.*$/);
+  return match ? decodeURIComponent(match[1]) : null;
 }

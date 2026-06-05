@@ -190,7 +190,7 @@ async function setLastSyncTimestamp(tenantId: string, iso: string): Promise<void
       updatedAt: new Date().toISOString(),
     });
   } else {
-    await localDb.execute('sync_state', 'add', {
+    await localDb.execute('sync_state', 'put', {
       tenantId,
       lastSyncTimestamp: iso,
       lastSyncSuccess: true,
@@ -347,17 +347,8 @@ export async function runSync(tenantId: string, deviceId?: string): Promise<{
 
   result.success = result.errors === 0 && result.conflicts === 0;
 
-  // 7. Déclencher l'événement UI (Section 22.3)
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('sync-end', {
-      detail: {
-        success: result.success,
-        successful: result.pushed,
-        conflicted: result.conflicts,
-        failed: result.errors,
-      }
-    }));
-  }
+  // Ne PAS dispatcher sync-end ici — c'est la responsabilité de offline-sync.service.ts
+  // qui gère l'orchestration globale et évite les doubles dispatchs
 
   return result;
 }

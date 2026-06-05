@@ -36,18 +36,40 @@ class StudentsService {
   }
 
   /**
-   * Admissions
+   * Admissions — avec fallback offline
    */
   async getAdmissions(params?: Record<string, string>): Promise<any> {
     const qs = params ? new URLSearchParams(params).toString() : "";
-    return apiFetch(`${BASE_URL}/admissions${qs ? `?${qs}` : ""}`);
+    
+    if (!networkDetectionService.isConnected()) {
+      return LocalSearchService.search("students", { tenantId: getTenantId(), filters: { type: 'admission' } });
+    }
+
+    try {
+      return await apiFetch(`${BASE_URL}/admissions${qs ? `?${qs}` : ""}`);
+    } catch (error) {
+      return LocalSearchService.search("students", { tenantId: getTenantId(), filters: { type: 'admission' } });
+    }
   }
 
   async getAdmissionById(id: string): Promise<any> {
-    return apiFetch(`${BASE_URL}/admissions/${encodeURIComponent(id)}`);
+    if (!networkDetectionService.isConnected()) {
+      const results = await LocalSearchService.search("students", { tenantId: getTenantId() });
+      return results.find((s: any) => s.id === id) || null;
+    }
+    try {
+      return await apiFetch(`${BASE_URL}/admissions/${encodeURIComponent(id)}`);
+    } catch (error) {
+      const results = await LocalSearchService.search("students", { tenantId: getTenantId() });
+      return results.find((s: any) => s.id === id) || null;
+    }
   }
 
   async createAdmission(data: any): Promise<any> {
+    const tenantId = getTenantId();
+    if (tenantId) {
+      return createEntityOffline(tenantId, "STUDENT", { ...data, admissionStatus: 'PENDING' });
+    }
     return apiFetch(`${BASE_URL}/admissions`, {
       method: "POST",
       body: data,
@@ -55,6 +77,10 @@ class StudentsService {
   }
 
   async updateAdmission(id: string, data: any): Promise<any> {
+    const tenantId = getTenantId();
+    if (tenantId) {
+      return updateEntityOffline(tenantId, "STUDENT", id, data);
+    }
     return apiFetch(`${BASE_URL}/admissions/${encodeURIComponent(id)}`, {
       method: "PATCH",
       body: data,
@@ -120,17 +146,30 @@ class StudentsService {
   }
 
   /**
-   * Récupère les inscriptions
+   * Récupère les inscriptions — avec fallback offline
    */
   async getEnrollments(params?: Record<string, string>): Promise<any> {
     const qs = params ? new URLSearchParams(params).toString() : "";
-    return apiFetch(`${BASE_URL}/enrollments${qs ? `?${qs}` : ""}`);
+    
+    if (!networkDetectionService.isConnected()) {
+      return LocalSearchService.search("students", { tenantId: getTenantId(), filters: { enrollmentStatus: 'ENROLLED' } });
+    }
+    
+    try {
+      return await apiFetch(`${BASE_URL}/enrollments${qs ? `?${qs}` : ""}`);
+    } catch (error) {
+      return LocalSearchService.search("students", { tenantId: getTenantId(), filters: { enrollmentStatus: 'ENROLLED' } });
+    }
   }
 
   /**
-   * Crée une inscription / admission
+   * Crée une inscription / admission — offline-first
    */
   async createEnrollment(data: any): Promise<any> {
+    const tenantId = getTenantId();
+    if (tenantId) {
+      return createEntityOffline(tenantId, "STUDENT", { ...data, type: 'enrollment' });
+    }
     return apiFetch(`${BASE_URL}/enrollments`, {
       method: "POST",
       body: data,

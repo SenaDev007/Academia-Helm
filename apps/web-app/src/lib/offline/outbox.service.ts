@@ -79,7 +79,7 @@ class OutboxService {
       conflictStrategy: 'LAST_WRITE_WINS',
     };
 
-    await localDb.execute('outbox_events', 'add', event);
+    await localDb.execute('outbox_events', 'put', event);
 
     // Mettre à jour le compteur d'événements en attente
     await this.updatePendingCount(tenantId);
@@ -221,7 +221,7 @@ class OutboxService {
         updatedAt: new Date().toISOString(),
       });
     } else {
-      await localDb.execute('sync_state', 'add', {
+      await localDb.execute('sync_state', 'put', {
         tenantId,
         pendingEventsCount: count,
         lastSyncTimestamp: null,

@@ -73,6 +73,9 @@ class OfflineBootstrapService {
     try {
       console.log('[Bootstrap] Starting initial offline initialization...');
 
+      // Demander la persistance du stockage pour éviter que le navigateur n'évince IndexedDB
+      await this.requestPersistentStorage();
+
       const res = await fetch(BOOTSTRAP_API, {
         headers: {
           'Content-Type': 'application/json',
@@ -249,6 +252,26 @@ class OfflineBootstrapService {
     if (!isReady && syncEngine.isOnline()) {
       console.log('[Bootstrap] Not yet bootstrapped — starting auto-bootstrap...');
       await this.bootstrap(tenantId);
+    }
+  }
+
+  /**
+   * Demande la persistance du stockage navigateur pour éviter
+   * que le navigateur n'évince IndexedDB sous pression mémoire.
+   * Appelé lors du bootstrap initial.
+   */
+  private async requestPersistentStorage(): Promise<void> {
+    if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.persist) {
+      try {
+        const granted = await navigator.storage.persist();
+        if (granted) {
+          console.log('[Bootstrap] Storage persistence granted — IndexedDB is safe from eviction');
+        } else {
+          console.warn('[Bootstrap] Storage persistence NOT granted — browser may evict IndexedDB under storage pressure');
+        }
+      } catch (err) {
+        console.warn('[Bootstrap] Failed to request storage persistence:', err);
+      }
     }
   }
 

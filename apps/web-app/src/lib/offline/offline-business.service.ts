@@ -26,16 +26,16 @@ export async function createEntityOffline<T extends { id?: string }>(
   const entityId = entityData.id || generateUUID();
   const entity = { ...entityData, id: entityId };
 
-  // 2. Écrire dans SQLite local
+  // 2. Écrire dans la base locale (put = upsert, évite ConstraintError si l'entité existe déjà)
   const storeName = `${entityType.toLowerCase()}s`;
-  await localDb.execute(storeName, 'add', {
+  await localDb.execute(storeName, 'put', {
     ...entity,
     tenantId,
     _version: 1,
     _isDirty: true,
     _deleted: false,
     _lastSync: null,
-    createdAt: new Date().toISOString(),
+    createdAt: entity.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
 

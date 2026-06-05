@@ -80,7 +80,10 @@ class LocalDbService {
       'weekly_semainier_daily_entries', 'teacher_class_assignments', 'homework_entries',
       'teacher_profiles', 'academic_series', 'series_subjects',
       'pedagogical_materials', 'material_stocks', 'material_movements', 'teacher_material_assignments',
-      'school_academic_settings'
+      'school_academic_settings',
+      // Stores ajoutés pour support offline complet
+      'fee_structures', 'expenses', 'finance_settings',
+      'modules', 'academic_terms',
     ];
 
     entities.forEach(storeName => {
@@ -271,6 +274,6 @@ class LocalDbService {
 // Instance singleton
 export const localDb = new LocalDbService({
   dbName: 'academia-helm-local',
-  version: 8, // + school_academic_settings
+  version: 9, // + fee_structures, expenses, finance_settings, modules, academic_terms
 });
 

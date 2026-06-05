@@ -2,6 +2,7 @@
  * API Client
  * 
  * Client HTTP pour communiquer avec l'API backend
+ * Inclut un intercepteur offline-aware qui évite les crashes hors ligne
  */
 
 import axios, { AxiosInstance, AxiosError } from 'axios';
@@ -84,13 +85,38 @@ apiClient.interceptors.request.use(
 );
 
 /**
- * Intercepteur de réponse : Gère les erreurs
+ * Intercepteur de réponse : Gère les erreurs avec support offline
  */
 apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
-    if (error.response?.status === 401) {
-      // Non authentifié : rediriger vers login
+    // Erreur réseau (pas de réponse = hors ligne ou timeout)
+    if (!error.response) {
+      // Ne PAS rediriger vers login quand hors ligne
+      // L'utilisateur a simplement perdu la connexion, pas sa session
+      console.warn('[API Client] Erreur réseau (connexion indisponible) :', error.message);
+      
+      // Marquer l'erreur comme offline pour que les callers puissent réagir
+      const offlineError: any = new Error(
+        'Connexion indisponible. Vérifiez votre connexion Internet et réessayez.'
+      );
+      offlineError.isOffline = true;
+      offlineError.originalError = error;
+      return Promise.reject(offlineError);
+    }
+
+    // Erreur 401 : Non authentifié
+    if (error.response.status === 401) {
+      // Vérifier si on est hors ligne — ne pas rediriger si c'est juste une erreur réseau
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        console.warn('[API Client] 401 reçu hors ligne — probablement un token expiré, utilisation du cache');
+        const offlineError: any = new Error('Session expirée hors ligne. Les données en cache sont disponibles.');
+        offlineError.isOffline = true;
+        offlineError.isAuthExpired = true;
+        return Promise.reject(offlineError);
+      }
+      
+      // En ligne : rediriger vers login
       if (typeof window !== 'undefined') {
         window.location.href = '/login';
       }

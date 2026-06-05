@@ -28,3 +28,30 @@ Stage Summary:
 - The academicProfile data (experience, education, skills, pitch) was already being saved correctly — the issue for existing candidates was likely that they applied before the code was properly implemented, or didn't fill in those fields
 - New candidates applying from the public site will have their full profile data and document references visible in the RH module
 - Deployment will auto-apply the migration via Railway's docker-entrypoint.sh
+
+---
+Task ID: 2
+Agent: Main
+Task: Implement Cloudflare R2 storage support as AWS S3 alternative
+
+Work Log:
+- Analyzed existing StorageService: supports S3, Vercel Blob, Local — but S3 requires AWS verification (user blocked for 2 months)
+- Decided on Cloudflare R2 as the best alternative: S3-compatible, free egress, no AWS account needed
+- Rewrote StorageService with R2 support: added custom S3_ENDPOINT, forcePathStyle, S3_PUBLIC_URL for custom domains
+- Added new STORAGE_TYPE='r2' option alongside existing 's3', 'vercel-blob', 'local'
+- Added missing methods: downloadFile(), deleteFile(), getPresignedUrl(), resolveFileUrl()
+- Created StorageModule as @Global() module to provide StorageService as a singleton (was duplicated in HRModule and PedagogyModule)
+- Added StorageModule to CommonModule imports/exports — now available app-wide
+- Removed StorageService from HRModule and PedagogyModule providers/exports
+- Updated RecruitmentPrismaService.downloadCandidateDocument to use new downloadFile/getPresignedUrl methods
+- Installed @aws-sdk/s3-request-presigner for presigned URL generation
+- Updated .env.example with full R2 configuration guide
+- Build compiled successfully (765 files with SWC)
+- Committed and pushed to main (7ad3832)
+
+Stage Summary:
+- Cloudflare R2 is now the recommended storage provider (STORAGE_TYPE=r2)
+- StorageService is a global singleton — no more duplicate S3Client instances
+- Complete storage API: upload, download, delete, presigned URLs, URL resolution
+- User needs to: (1) Create R2 bucket in Cloudflare, (2) Create API token, (3) Set env vars on Railway
+- Railway will auto-redeploy with the new code — then needs R2 env vars configured

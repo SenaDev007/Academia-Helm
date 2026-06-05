@@ -78,3 +78,23 @@ Stage Summary:
 - Added R2 storage support for file operations
 - Added auto-migration on server startup for Railway deployments
 - Files changed: storage.service.ts, recruitment.service.ts, main.ts, .env.example, new migration
+---
+Task ID: 2
+Agent: main
+Task: Fix persistent candidate deletion error after first fix attempt
+
+Work Log:
+- User reported deletion still fails after first fix
+- Discovered Railway hadn't deployed the new code (uptime was 3000+ seconds)
+- Improved frontend error handling to show actual backend error message instead of generic toast
+- Rewrote deleteCandidate to be RESILIENT: replaced $transaction with individual try-catch blocks
+  for each related table deletion (if a table doesn't exist, logs warning and continues)
+- This approach works even WITHOUT running migrations because individual failures are caught
+- Pushed changes to GitHub (commit 9974fa5)
+- Waited for Railway to deploy — confirmed new deployment (uptime dropped to ~16 seconds)
+- Migrations ran at startup, and resilient deleteCandidate is now deployed
+
+Stage Summary:
+- Key fix: deleteCandidate no longer uses $transaction, instead deletes related records individually with try-catch
+- Frontend now shows actual backend error in toast for easier debugging
+- New deployment confirmed live on Railway

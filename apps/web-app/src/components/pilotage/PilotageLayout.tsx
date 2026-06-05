@@ -25,6 +25,7 @@ import PilotageSidebar from './PilotageSidebar';
 import { OfflineStatusBadge } from '@/components/offline/OfflineStatusBadge';
 import { SyncToast } from '@/components/offline/SyncToast';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
+import { useIdleTimeout } from '@/hooks/useIdleTimeout';
 import type { User, Tenant } from '@/types';
 
 interface PilotageLayoutProps {
@@ -46,18 +47,26 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
 
   // Stabilized callbacks — prevent useEffect from firing on every render
   // (inline arrow functions create new references, causing the mobile drawer to close immediately)
-  const handleOpenMobileDrawer = useCallback(() => setMobileDrawerOpen(true), []);
+  const handleToggleMobileDrawer = useCallback(() => setMobileDrawerOpen(prev => !prev), []);
   const handleCloseMobileDrawer = useCallback(() => setMobileDrawerOpen(false), []);
   const handleToggleSidebar = useCallback(() => setSidebarOpen(prev => !prev), []);
 
+  // Déconnexion automatique après 15 minutes d'inactivité
+  useIdleTimeout({
+    userEmail: user.email,
+    tenantId: tenant.id,
+    tenantSlug: tenant.slug,
+  });
+
   return (
     <OfflineGuard>
-      <div className="min-h-screen bg-gray-50 overflow-x-hidden flex flex-col">
+      <div className="min-h-screen bg-gray-50 flex flex-col">
         {/* Top Bar - Fixe en haut, toujours visible — hamburger mobile */}
         <PilotageTopBar
           user={user}
           tenant={tenant}
-          onMenuClick={handleOpenMobileDrawer}
+          onMenuClick={handleToggleMobileDrawer}
+          mobileDrawerOpen={mobileDrawerOpen}
         />
 
         {/* Spacer pour éviter que le contenu passe sous la barre fixe (hauteur ~ barre) */}
@@ -65,16 +74,16 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
 
         {/* Zone principale + footer : flex-1 pour occuper l'espace et garder le footer en bas */}
         <div className="flex flex-1 min-h-0">
-          {/* Mobile: backdrop drawer */}
+          {/* Mobile: backdrop drawer — z-[55] pour couvrir la TopBar (z-50) mais rester sous le drawer (z-[60]) */}
           {mobileDrawerOpen && (
             <>
               <div
-                className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+                className="fixed inset-0 z-[55] bg-black/50 lg:hidden"
                 aria-hidden
-              onClick={handleCloseMobileDrawer}
+                onClick={handleCloseMobileDrawer}
               />
             </>
-          )}
+          )
           {/* Sidebar — 3 états: drawer mobile / icônes tablette / complète PC */}
           <PilotageSidebar
             isOpen={sidebarOpen}
@@ -86,7 +95,7 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
 
           {/* Main Content — décalé selon breakpoint: 0 mobile, ml-16 tablette, ml-16/lg:ml-64 PC */}
           <main
-            className={`flex-1 min-h-0 transition-all duration-300 overflow-x-hidden overflow-y-auto md:ml-16 ${
+            className={`flex-1 min-h-0 transition-all duration-300 overflow-y-auto md:ml-16 ${
               sidebarOpen ? 'lg:ml-64' : 'lg:ml-16'
             }`}
           >

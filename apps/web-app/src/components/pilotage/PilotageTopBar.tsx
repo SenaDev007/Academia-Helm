@@ -32,6 +32,7 @@ interface PilotageTopBarProps {
   user: User;
   tenant: Tenant;
   onMenuClick?: () => void;
+  mobileDrawerOpen?: boolean;
 }
 
 const SCHOOL_IDENTITY_UPDATED_EVENT = 'settings-school-identity-updated';
@@ -49,7 +50,7 @@ function formatRoleLabel(role?: string) {
   return labels[role] ?? role;
 }
 
-export default function PilotageTopBar({ user, tenant, onMenuClick }: PilotageTopBarProps) {
+export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawerOpen }: PilotageTopBarProps) {
   const router = useRouter();
   const isOnline = useOffline();
   const { isSyncing, pendingCount } = useSyncStatus();
@@ -143,17 +144,23 @@ export default function PilotageTopBar({ user, tenant, onMenuClick }: PilotageTo
         <div className="flex items-center justify-between gap-2">
           {/* Gauche : Hamburger mobile + Logo École + Contexte */}
           <div className="flex items-center gap-2 sm:gap-4 md:gap-6 min-w-0 flex-1">
-            {/* Hamburger — visible mobile/tablette uniquement (spec: ouvrir drawer) */}
+            {/* Hamburger / Close — visible mobile/tablette uniquement */}
             {onMenuClick && (
               <button
                 type="button"
                 onClick={onMenuClick}
-                className="md:hidden p-2 rounded-lg hover:bg-gray-100 min-h-[44px] min-w-[44px] flex items-center justify-center flex-shrink-0 text-gray-600"
-                aria-label="Ouvrir le menu"
+                className="md:hidden p-2 rounded-lg hover:bg-gray-100 min-h-[44px] min-w-[44px] flex items-center justify-center flex-shrink-0 text-gray-600 transition-colors"
+                aria-label={mobileDrawerOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
+                {mobileDrawerOpen ? (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                ) : (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                )}
               </button>
             )}
             {/* Logo et Nom de l'École */}

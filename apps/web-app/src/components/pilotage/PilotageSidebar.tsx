@@ -501,16 +501,17 @@ export default function PilotageSidebar({
 
   return (
     <>
-      {/* 1. Mobile : drawer overlay (visible quand mobileDrawerOpen) */}
-      {mobileDrawerOpen && (
-        <aside
-          className="fixed left-0 top-0 h-full w-72 z-50 lg:hidden flex flex-col bg-gradient-to-b from-blue-900 via-blue-900 to-blue-800 text-white shadow-2xl transition-transform duration-300"
-          role="dialog"
-          aria-label="Menu de navigation"
-        >
-          {sidebarContent}
-        </aside>
-      )}
+      {/* 1. Mobile : drawer overlay (visible quand mobileDrawerOpen) — z-[60] au-dessus de la TopBar (z-50) et du backdrop (z-[55]) */}
+      <aside
+        className={`fixed left-0 top-0 h-full w-72 z-[60] lg:hidden flex flex-col bg-gradient-to-b from-blue-900 via-blue-900 to-blue-800 text-white shadow-2xl transition-transform duration-300 ease-in-out ${
+          mobileDrawerOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+        role="dialog"
+        aria-label="Menu de navigation"
+        aria-hidden={!mobileDrawerOpen}
+      >
+        {sidebarContent}
+      </aside>
 
       {/* 2. Tablette : icônes seules (md → lg) */}
       <aside

@@ -119,6 +119,12 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Message de déconnexion pour inactivité
+  const reasonParam = searchParams?.get('reason');
+  const idleLogoutMessage = reasonParam === 'idle_timeout'
+    ? 'Vous avez été déconnecté(e) automatiquement après 15 minutes d\'inactivité.'
+    : null;
+
   const tenantStorageKey = tenantIdFromUrl || tenantSlug || 'platform';
 
   const dur = useMemo(
@@ -668,6 +674,25 @@ export default function LoginPage() {
                 <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50/95 p-4 shadow-sm">
                   <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
                   <p className="text-sm text-red-800">{error}</p>
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+
+          {/* Message de déconnexion automatique pour inactivité */}
+          <AnimatePresence>
+            {idleLogoutMessage && !error ? (
+              <motion.div
+                key="idle-logout-info"
+                initial={shouldReduceMotion ? false : { opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={shouldReduceMotion ? undefined : { opacity: 0, y: -4 }}
+                transition={{ duration: dur * 0.85 }}
+                className="mb-6"
+              >
+                <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/95 p-4 shadow-sm">
+                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                  <p className="text-sm text-amber-800">{idleLogoutMessage}</p>
                 </div>
               </motion.div>
             ) : null}

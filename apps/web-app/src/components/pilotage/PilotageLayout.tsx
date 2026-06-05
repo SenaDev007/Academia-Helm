@@ -15,7 +15,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { usePathname } from 'next/navigation';
 import { getPageSlideMotion } from '@/lib/motion/presets';
@@ -44,6 +44,12 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
   const { shouldReduceMotion } = useMotionBudget();
   const pageMotion = getPageSlideMotion(shouldReduceMotion);
 
+  // Stabilized callbacks — prevent useEffect from firing on every render
+  // (inline arrow functions create new references, causing the mobile drawer to close immediately)
+  const handleOpenMobileDrawer = useCallback(() => setMobileDrawerOpen(true), []);
+  const handleCloseMobileDrawer = useCallback(() => setMobileDrawerOpen(false), []);
+  const handleToggleSidebar = useCallback(() => setSidebarOpen(prev => !prev), []);
+
   return (
     <OfflineGuard>
       <div className="min-h-screen bg-gray-50 overflow-x-hidden flex flex-col">
@@ -51,7 +57,7 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
         <PilotageTopBar
           user={user}
           tenant={tenant}
-          onMenuClick={() => setMobileDrawerOpen(true)}
+          onMenuClick={handleOpenMobileDrawer}
         />
 
         {/* Spacer pour éviter que le contenu passe sous la barre fixe (hauteur ~ barre) */}
@@ -65,17 +71,17 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
               <div
                 className="fixed inset-0 z-40 bg-black/50 lg:hidden"
                 aria-hidden
-                onClick={() => setMobileDrawerOpen(false)}
+              onClick={handleCloseMobileDrawer}
               />
             </>
           )}
           {/* Sidebar — 3 états: drawer mobile / icônes tablette / complète PC */}
           <PilotageSidebar
             isOpen={sidebarOpen}
-            onToggle={() => setSidebarOpen(!sidebarOpen)}
+            onToggle={handleToggleSidebar}
             user={user}
             mobileDrawerOpen={mobileDrawerOpen}
-            onCloseMobileDrawer={() => setMobileDrawerOpen(false)}
+            onCloseMobileDrawer={handleCloseMobileDrawer}
           />
 
           {/* Main Content — décalé selon breakpoint: 0 mobile, ml-16 tablette, ml-16/lg:ml-64 PC */}

@@ -11,7 +11,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../../database/prisma.service';
+import { PrismaService } from '../../database/prisma.service';
 
 export interface FinancesByModuleAndLevel {
   tenant_id: string;

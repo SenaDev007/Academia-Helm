@@ -1,12 +1,12 @@
 /**
  * ============================================================================
- * HR MODULE - STAFF DETAIL PAGE
+ * HR MODULE - STAFF DETAIL PAGE (v2 — Photo + Matricules + Structured Docs)
  * ============================================================================
  */
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { 
   ArrowLeft, 
@@ -25,7 +25,18 @@ import {
   Upload,
   Loader2,
   GraduationCap,
-  Award
+  Award,
+  Camera,
+  Trash2,
+  Eye,
+  Clock,
+  BadgeCheck,
+  XCircle,
+  ChevronDown,
+  ChevronRight,
+  FolderOpen,
+  Globe,
+  Building2,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -33,6 +44,7 @@ import { toast } from '@/components/ui/toast';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const PRIMARY = '#1A2BA6';
 
@@ -41,6 +53,37 @@ const inputClass =
   'focus:outline-none focus:border-[#1A2BA6] focus:ring-2 focus:ring-[#1A2BA6]/10 transition';
 
 const labelClass = 'block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5';
+
+// Document categories configuration
+const DOC_CATEGORIES: Record<string, { label: string; icon: any; color: string; order: number }> = {
+  IDENTITE:      { label: 'Pièces d\'identité',          icon: Shield,         color: 'blue',   order: 1 },
+  DIPLOMES:      { label: 'Diplômes & Certificats',      icon: GraduationCap,  color: 'purple', order: 2 },
+  EXPERIENCE:    { label: 'Expérience professionnelle',   icon: Briefcase,      color: 'emerald',order: 3 },
+  ADMINISTRATIF: { label: 'Documents administratifs',     icon: FileText,       color: 'amber',  order: 4 },
+  MEDICAL:       { label: 'Documents médicaux',           icon: Award,          color: 'red',    order: 5 },
+  GENERAL:       { label: 'Autres documents',             icon: FolderOpen,     color: 'slate',  order: 6 },
+};
+
+const DOC_TYPE_OPTIONS = [
+  { value: 'CV',                    label: 'CV / Curriculum Vitae',   category: 'EXPERIENCE' },
+  { value: 'CNI',                   label: 'Carte d\'identité',       category: 'IDENTITE' },
+  { value: 'PASSPORT',              label: 'Passeport',               category: 'IDENTITE' },
+  { value: 'BIRTH_CERTIFICATE',     label: 'Acte de naissance',      category: 'IDENTITE' },
+  { value: 'DIPLOMA',               label: 'Diplôme',                category: 'DIPLOMES' },
+  { value: 'CERTIFICATE',           label: 'Certificat / Attestation',category: 'DIPLOMES' },
+  { value: 'TRANSCRIPT',            label: 'Relevé de notes',        category: 'DIPLOMES' },
+  { value: 'CONTRACT',              label: 'Contrat de travail',      category: 'ADMINISTRATIF' },
+  { value: 'CNSS_CERTIFICATE',      label: 'Attestation CNSS',       category: 'ADMINISTRATIF' },
+  { value: 'WORK_PERMIT',           label: 'Autorisation de travail', category: 'ADMINISTRATIF' },
+  { value: 'MEDICAL_CERTIFICATE',   label: 'Certificat médical',     category: 'MEDICAL' },
+  { value: 'OTHER',                 label: 'Autre document',         category: 'GENERAL' },
+];
+
+const VALIDATION_STATUS: Record<string, { label: string; className: string; icon: any }> = {
+  PENDING:   { label: 'En attente', className: 'bg-amber-50 text-amber-700 border-amber-200', icon: Clock },
+  VALIDATED: { label: 'Validé',     className: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: BadgeCheck },
+  REJECTED:  { label: 'Rejeté',     className: 'bg-red-50 text-red-700 border-red-200', icon: XCircle },
+};
 
 function formatEmergencyContact(contact: any): string {
   if (!contact) return 'Non renseigné';
@@ -85,6 +128,7 @@ export default function StaffDetailPage() {
   const [evaluations, setEvaluations] = useState<any[]>([]);
   const [trainings, setTrainings] = useState<any[]>([]);
   const [contracts, setContracts] = useState<any[]>([]);
+  const [documentsGrouped, setDocumentsGrouped] = useState<Record<string, any[]>>({});
 
   // Edit modal
   const [editOpen, setEditOpen] = useState(false);
@@ -94,10 +138,21 @@ export default function StaffDetailPage() {
   // Document upload modal
   const [docOpen, setDocOpen] = useState(false);
   const [docLoading, setDocLoading] = useState(false);
-  const [deleteDocId, setDeleteDocId] = useState<string | null>(null);
-  const [docForm, setDocForm] = useState({ documentType: 'CV', fileName: '', filePath: '', mimeType: 'application/pdf' });
+  const [docForm, setDocForm] = useState({ 
+    documentType: 'CV', 
+    description: '',
+    expiresAt: '',
+  });
+  const [docFile, setDocFile] = useState<File | null>(null);
 
-  async function fetchMember() {
+  // Photo upload
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  // Expanded document categories
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+
+  const fetchMember = useCallback(async () => {
     if (!tenant?.id || !id) return;
     try {
       setLoading(true);
@@ -106,6 +161,38 @@ export default function StaffDetailPage() {
       setContracts(result.contracts || []);
       setEvaluations(result.evaluations || []);
       setTrainings(result.trainings || []);
+
+      // Fetch documents grouped
+      try {
+        const docsResult = await hrFetch<any>(hrUrl(`staff/${id}/documents`, { tenantId: tenant.id }));
+        if (docsResult?.grouped) {
+          setDocumentsGrouped(docsResult.grouped);
+          // Auto-expand all categories that have documents
+          setExpandedCategories(new Set(Object.keys(docsResult.grouped)));
+        } else if (Array.isArray(result.documents)) {
+          // Fallback: group client-side
+          const grouped: Record<string, any[]> = {};
+          for (const doc of result.documents) {
+            const cat = doc.category || 'GENERAL';
+            if (!grouped[cat]) grouped[cat] = [];
+            grouped[cat].push(doc);
+          }
+          setDocumentsGrouped(grouped);
+          setExpandedCategories(new Set(Object.keys(grouped)));
+        }
+      } catch {
+        // Fallback to member.documents
+        if (Array.isArray(result.documents)) {
+          const grouped: Record<string, any[]> = {};
+          for (const doc of result.documents) {
+            const cat = doc.category || 'GENERAL';
+            if (!grouped[cat]) grouped[cat] = [];
+            grouped[cat].push(doc);
+          }
+          setDocumentsGrouped(grouped);
+          setExpandedCategories(new Set(Object.keys(grouped)));
+        }
+      }
 
       // Try to fetch trainings from dedicated endpoint
       try {
@@ -117,10 +204,59 @@ export default function StaffDetailPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [tenant?.id, id]);
 
-  useEffect(() => { fetchMember(); }, [tenant?.id, id]);
+  useEffect(() => { fetchMember(); }, [fetchMember]);
 
+  // ─── Photo Upload ───────────────────────────────────────────────────────────
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !tenant?.id) return;
+
+    // Validate
+    if (!file.type.startsWith('image/')) {
+      toast({ variant: 'error', title: 'Format invalide. Utilisez JPEG, PNG ou WebP.' });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ variant: 'error', title: 'Fichier trop volumineux (max 5 Mo).' });
+      return;
+    }
+
+    try {
+      setPhotoUploading(true);
+      const formData = new FormData();
+      formData.append('photo', file);
+
+      await hrFetch<any>(hrUrl(`staff/${id}/photo`, { tenantId: tenant.id }), {
+        method: 'POST',
+        body: formData,
+      });
+      toast({ variant: 'success', title: 'Photo mise à jour avec succès' });
+      fetchMember();
+    } catch (err: any) {
+      toast({ variant: 'error', title: err.message || 'Erreur lors du téléchargement de la photo' });
+    } finally {
+      setPhotoUploading(false);
+      // Reset input
+      if (photoInputRef.current) photoInputRef.current.value = '';
+    }
+  };
+
+  const handlePhotoDelete = async () => {
+    if (!tenant?.id) return;
+    try {
+      await hrFetch<any>(hrUrl(`staff/${id}/photo`, { tenantId: tenant.id }), {
+        method: 'DELETE',
+      });
+      toast({ variant: 'success', title: 'Photo supprimée' });
+      fetchMember();
+    } catch (err: any) {
+      toast({ variant: 'error', title: 'Erreur lors de la suppression de la photo' });
+    }
+  };
+
+  // ─── Edit Modal ─────────────────────────────────────────────────────────────
   const openEditModal = () => {
     if (!member) return;
     setEditForm({
@@ -132,14 +268,12 @@ export default function StaffDetailPage() {
       category: member.category || 'ADMIN',
       gender: member.gender || 'MALE',
       dateOfBirth: member.dateOfBirth ? new Date(member.dateOfBirth).toISOString().split('T')[0] : '',
-      nationality: member.nationality || '',
-      maritalStatus: member.maritalStatus || '',
-      numberOfChildren: member.numberOfChildren || 0,
+      birthDate: member.birthDate ? new Date(member.birthDate).toISOString().split('T')[0] : '',
       address: member.address || '',
       emergencyContact: typeof member.emergencyContact === 'object' && member.emergencyContact ? JSON.stringify(member.emergencyContact) : (member.emergencyContact || ''),
-      ifuNumber: member.ifuNumber || '',
-      nationalId: member.nationalId || '',
-      cnssNumber: member.cnssNumber || '',
+      qualifications: member.qualifications || '',
+      department: member.department || '',
+      notes: member.notes || '',
     });
     setEditOpen(true);
   };
@@ -148,7 +282,6 @@ export default function StaffDetailPage() {
     e.preventDefault();
     try {
       setEditLoading(true);
-      // Parse emergencyContact: if it's a JSON string, parse back to object
       const submitData = { ...editForm };
       if (typeof submitData.emergencyContact === 'string' && submitData.emergencyContact.trim()) {
         try {
@@ -163,46 +296,75 @@ export default function StaffDetailPage() {
       });
       toast({ variant: 'success', title: 'Fiche collaborateur mise à jour' });
       setEditOpen(false);
-      await fetchMember();
-    } catch (err) {
-      toast({ variant: 'error', title: 'Erreur lors de la mise à jour' });
+      fetchMember();
+    } catch (err: any) {
+      toast({ variant: 'error', title: err.message || 'Erreur lors de la mise à jour' });
     } finally {
       setEditLoading(false);
     }
   };
 
+  // ─── Document Upload ────────────────────────────────────────────────────────
   const handleDocSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!docFile || !tenant?.id) return;
     try {
       setDocLoading(true);
+      const formData = new FormData();
+      formData.append('file', docFile);
+      formData.append('documentType', docForm.documentType);
+      if (docForm.description) formData.append('description', docForm.description);
+      if (docForm.expiresAt) formData.append('expiresAt', docForm.expiresAt);
+
       await hrFetch<any>(hrUrl(`staff/${id}/documents`, { tenantId: tenant.id }), {
         method: 'POST',
-        body: docForm,
+        body: formData,
       });
       toast({ variant: 'success', title: 'Document ajouté avec succès' });
       setDocOpen(false);
-      setDocForm({ documentType: 'CV', fileName: '', filePath: '', mimeType: 'application/pdf' });
-      await fetchMember();
-    } catch (err) {
-      toast({ variant: 'error', title: 'Erreur lors de l\'ajout du document' });
+      setDocForm({ documentType: 'CV', description: '', expiresAt: '' });
+      setDocFile(null);
+      fetchMember();
+    } catch (err: any) {
+      toast({ variant: 'error', title: err.message || 'Erreur lors de l\'ajout du document' });
     } finally {
       setDocLoading(false);
     }
   };
 
-  const handleDeleteDocument = async (docId: string) => {
+  const handleDocDelete = async (docId: string) => {
+    if (!tenant?.id) return;
     try {
-      setDeleteDocId(docId);
       await hrFetch<any>(hrUrl(`staff/${id}/documents/${docId}`, { tenantId: tenant.id }), {
         method: 'DELETE',
       });
       toast({ variant: 'success', title: 'Document supprimé' });
-      await fetchMember();
-    } catch (err) {
-      toast({ variant: 'error', title: 'Erreur lors de la suppression du document' });
-    } finally {
-      setDeleteDocId(null);
+      fetchMember();
+    } catch (err: any) {
+      toast({ variant: 'error', title: err.message || 'Erreur lors de la suppression du document' });
     }
+  };
+
+  const handleDocValidate = async (docId: string, status: 'VALIDATED' | 'REJECTED') => {
+    if (!tenant?.id) return;
+    try {
+      await hrFetch<any>(hrUrl(`staff/${id}/documents/${docId}/validate`, { tenantId: tenant.id }), {
+        method: 'PUT',
+        body: { status },
+      });
+      toast({ variant: 'success', title: status === 'VALIDATED' ? 'Document validé' : 'Document rejeté' });
+      fetchMember();
+    } catch (err: any) {
+      toast({ variant: 'error', title: 'Erreur lors de la validation' });
+    }
+  };
+
+  const toggleCategory = (cat: string) => {
+    setExpandedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat); else next.add(cat);
+      return next;
+    });
   };
 
   if (loading) {
@@ -223,9 +385,24 @@ export default function StaffDetailPage() {
   const statusInfo = STATUS_LABELS[member.status] || STATUS_LABELS.INACTIVE;
   const hireDate = member.contracts?.[0]?.startDate || member.hireDate || null;
 
+  // Sort categories by order
+  const sortedCategories = Object.entries(DOC_CATEGORIES).sort(([,a], [,b]) => a.order - b.order);
+
+  // Compute total documents count
+  const totalDocs = Object.values(documentsGrouped).reduce((acc: number, docs: any[]) => acc + docs.length, 0);
+
   return (
     <div className="space-y-6 pb-20">
-      {/* Edit Modal */}
+      {/* Hidden photo input */}
+      <input
+        ref={photoInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        className="hidden"
+        onChange={handlePhotoUpload}
+      />
+
+      {/* ─── Edit Modal ──────────────────────────────────────────────────── */}
       {editOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
@@ -266,6 +443,12 @@ export default function StaffDetailPage() {
                   <input type="text" className={inputClass} value={editForm.position} onChange={(e) => setEditForm({ ...editForm, position: e.target.value })} />
                 </div>
                 <div>
+                  <label className={labelClass}>Département</label>
+                  <input type="text" className={inputClass} value={editForm.department} onChange={(e) => setEditForm({ ...editForm, department: e.target.value })} />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
                   <label className={labelClass}>Catégorie</label>
                   <select className={inputClass} value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}>
                     <option value="PEDAGOGICAL">Corps Enseignant</option>
@@ -273,8 +456,6 @@ export default function StaffDetailPage() {
                     <option value="SUPPORT">Personnel d&apos;appui</option>
                   </select>
                 </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Genre</label>
                   <select className={inputClass} value={editForm.gender} onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}>
@@ -282,29 +463,15 @@ export default function StaffDetailPage() {
                     <option value="FEMALE">Féminin</option>
                   </select>
                 </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Date de naissance</label>
-                  <input type="date" className={inputClass} value={editForm.dateOfBirth} onChange={(e) => setEditForm({ ...editForm, dateOfBirth: e.target.value })} />
+                  <input type="date" className={inputClass} value={editForm.birthDate} onChange={(e) => setEditForm({ ...editForm, birthDate: e.target.value })} />
                 </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Nationalité</label>
-                  <input type="text" className={inputClass} value={editForm.nationality} onChange={(e) => setEditForm({ ...editForm, nationality: e.target.value })} />
-                </div>
-                <div>
-                  <label className={labelClass}>Situation matrimoniale</label>
-                  <input type="text" className={inputClass} value={editForm.maritalStatus} onChange={(e) => setEditForm({ ...editForm, maritalStatus: e.target.value })} />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Adresse</label>
                   <input type="text" className={inputClass} value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
-                </div>
-                <div>
-                  <label className={labelClass}>Nombre d&apos;enfants</label>
-                  <input type="number" className={inputClass} value={editForm.numberOfChildren} onChange={(e) => setEditForm({ ...editForm, numberOfChildren: parseInt(e.target.value) || 0 })} />
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -313,19 +480,13 @@ export default function StaffDetailPage() {
                   <input type="text" className={inputClass} value={editForm.emergencyContact} onChange={(e) => setEditForm({ ...editForm, emergencyContact: e.target.value })} placeholder='Nom — Tél — Lien' />
                 </div>
                 <div>
-                  <label className={labelClass}>Numéro IFU</label>
-                  <input type="text" className={inputClass} value={editForm.ifuNumber} onChange={(e) => setEditForm({ ...editForm, ifuNumber: e.target.value })} />
+                  <label className={labelClass}>Qualifications</label>
+                  <input type="text" className={inputClass} value={editForm.qualifications} onChange={(e) => setEditForm({ ...editForm, qualifications: e.target.value })} />
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Numéro CNI / Passeport</label>
-                  <input type="text" className={inputClass} value={editForm.nationalId} onChange={(e) => setEditForm({ ...editForm, nationalId: e.target.value })} />
-                </div>
-                <div>
-                  <label className={labelClass}>Numéro CNSS</label>
-                  <input type="text" className={inputClass} value={editForm.cnssNumber} onChange={(e) => setEditForm({ ...editForm, cnssNumber: e.target.value })} />
-                </div>
+              <div>
+                <label className={labelClass}>Notes</label>
+                <textarea className={inputClass + ' min-h-[80px]'} value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
               </div>
               <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
                 <button type="button" onClick={() => setEditOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-50 transition">Annuler</button>
@@ -338,7 +499,7 @@ export default function StaffDetailPage() {
         </div>
       )}
 
-      {/* Document Upload Modal */}
+      {/* ─── Document Upload Modal ───────────────────────────────────────── */}
       {docOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
@@ -356,35 +517,49 @@ export default function StaffDetailPage() {
               <div>
                 <label className={labelClass}>Type de document</label>
                 <select className={inputClass} value={docForm.documentType} onChange={(e) => setDocForm({ ...docForm, documentType: e.target.value })}>
-                  <option value="CV">CV</option>
-                  <option value="CNI">Pièce d&apos;identité</option>
-                  <option value="BIRTH_CERTIFICATE">Acte de naissance</option>
-                  <option value="DIPLOMA">Diplôme</option>
-                  <option value="CONTRACT">Contrat</option>
-                  <option value="OTHER">Autre</option>
+                  {DOC_TYPE_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
                 </select>
               </div>
               <div>
+                <label className={labelClass}>Description (optionnelle)</label>
+                <input type="text" className={inputClass} value={docForm.description} onChange={(e) => setDocForm({ ...docForm, description: e.target.value })} placeholder="Ex: Diplôme de licence 2020" />
+              </div>
+              <div>
+                <label className={labelClass}>Date d&apos;expiration (optionnelle)</label>
+                <input type="date" className={inputClass} value={docForm.expiresAt} onChange={(e) => setDocForm({ ...docForm, expiresAt: e.target.value })} />
+              </div>
+              <div>
                 <label className={labelClass}>Fichier</label>
-                <div className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-slate-400"><FileText className="h-5 w-5" /></div>
-                    <p className="text-sm text-slate-600">{docForm.fileName || 'Aucun fichier sélectionné'}</p>
-                  </div>
-                  <label className="flex items-center gap-1.5 cursor-pointer bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-semibold px-3 py-2 rounded-lg transition">
-                    <Upload className="h-3.5 w-3.5" /> Choisir
-                    <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg" onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        setDocForm({ ...docForm, fileName: file.name, filePath: `/uploads/docs/${member.id}_${docForm.documentType.toLowerCase()}.${file.name.split('.').pop()}`, mimeType: file.type });
-                      }
-                    }} />
-                  </label>
+                <div className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm">
+                  {docFile ? (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-blue-50 border border-blue-100 rounded-lg text-blue-600"><FileText className="h-5 w-5" /></div>
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">{docFile.name}</p>
+                          <p className="text-xs text-slate-400">{(docFile.size / 1024).toFixed(1)} Ko</p>
+                        </div>
+                      </div>
+                      <button type="button" onClick={() => setDocFile(null)} className="p-1 text-slate-400 hover:text-red-500"><X size={16} /></button>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center cursor-pointer py-4 hover:bg-slate-50 rounded-lg transition">
+                      <Upload className="h-8 w-8 text-slate-300 mb-2" />
+                      <p className="text-sm text-slate-500">Cliquez pour choisir un fichier</p>
+                      <p className="text-xs text-slate-400 mt-1">PDF, PNG, JPG — Max 20 Mo</p>
+                      <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) setDocFile(file);
+                      }} />
+                    </label>
+                  )}
                 </div>
               </div>
               <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
-                <button type="button" onClick={() => setDocOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-50 transition">Annuler</button>
-                <button type="submit" disabled={docLoading || !docForm.fileName} className="flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-sm font-bold shadow-sm hover:opacity-90 disabled:opacity-50 transition" style={{ backgroundColor: PRIMARY }}>
+                <button type="button" onClick={() => { setDocOpen(false); setDocFile(null); }} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-50 transition">Annuler</button>
+                <button type="submit" disabled={docLoading || !docFile} className="flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-sm font-bold shadow-sm hover:opacity-90 disabled:opacity-50 transition" style={{ backgroundColor: PRIMARY }}>
                   {docLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Ajouter
                 </button>
               </div>
@@ -393,6 +568,7 @@ export default function StaffDetailPage() {
         </div>
       )}
 
+      {/* ─── Back Button ──────────────────────────────────────────────────── */}
       <div className="px-6 pt-4">
         <button 
           onClick={() => router.back()}
@@ -403,22 +579,81 @@ export default function StaffDetailPage() {
       </div>
 
       <div className="px-6 flex flex-col lg:flex-row gap-6">
-        {/* Left Column: Profile Card */}
+        {/* ─── Left Column: Profile Card ─────────────────────────────────── */}
         <div className="lg:w-1/3 space-y-6">
           <Card className="border-none shadow-sm rounded-3xl overflow-hidden bg-white">
             <CardContent className="p-0">
-              <div className="h-24 bg-gradient-to-r from-blue-600 to-blue-600" />
-              <div className="px-6 pb-6 -mt-12">
-                <div className="w-24 h-24 rounded-3xl bg-white p-1 shadow-lg mb-4">
-                  <div className="w-full h-full rounded-[20px] bg-blue-50 flex items-center justify-center text-blue-600 text-3xl font-bold">
-                    {member.firstName[0]}{member.lastName[0]}
+              {/* Banner + Photo */}
+              <div className="h-28 bg-gradient-to-r from-[#1A2BA6] to-[#2D3FC7] relative">
+                <div className="absolute -bottom-12 left-6">
+                  <div className="relative group">
+                    {/* Photo or Initials */}
+                    {member.photoUrl ? (
+                      <div className="w-24 h-24 rounded-3xl bg-white p-1 shadow-lg overflow-hidden">
+                        <img 
+                          src={member.photoUrl} 
+                          alt={`${member.firstName} ${member.lastName}`}
+                          className="w-full h-full rounded-[20px] object-cover"
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-24 h-24 rounded-3xl bg-white p-1 shadow-lg">
+                        <div className="w-full h-full rounded-[20px] bg-blue-50 flex items-center justify-center text-blue-600 text-3xl font-bold">
+                          {member.firstName?.[0]}{member.lastName?.[0]}
+                        </div>
+                      </div>
+                    )}
+                    {/* Photo overlay on hover */}
+                    <div 
+                      className="absolute inset-0 rounded-3xl bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                      onClick={() => photoInputRef.current?.click()}
+                    >
+                      {photoUploading ? (
+                        <Loader2 className="h-6 w-6 text-white animate-spin" />
+                      ) : (
+                        <Camera className="h-6 w-6 text-white" />
+                      )}
+                    </div>
                   </div>
                 </div>
+                {/* Delete photo button */}
+                {member.photoUrl && (
+                  <button 
+                    onClick={handlePhotoDelete}
+                    className="absolute top-2 right-2 p-1.5 bg-white/20 hover:bg-white/40 rounded-lg transition-colors"
+                    title="Supprimer la photo"
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-white" />
+                  </button>
+                )}
+              </div>
+
+              <div className="px-6 pb-6 mt-14">
                 <h2 className="text-2xl font-bold text-gray-900">{member.firstName} {member.lastName}</h2>
-                <p className="text-blue-600 font-bold tracking-widest uppercase text-xs mt-1">
-                  {member.staffCode || 'MAT-PENDING'}
-                </p>
                 
+                {/* Dual Matricules */}
+                <div className="mt-2 space-y-1.5">
+                  {member.globalMatricule && (
+                    <div className="flex items-center gap-2">
+                      <Globe className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />
+                      <span className="text-xs font-bold text-blue-600 tracking-widest uppercase">{member.globalMatricule}</span>
+                      <span className="text-[9px] text-slate-400 font-semibold uppercase">Global</span>
+                    </div>
+                  )}
+                  {member.tenantMatricule && (
+                    <div className="flex items-center gap-2">
+                      <Building2 className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />
+                      <span className="text-xs font-bold text-emerald-600 tracking-widest uppercase">{member.tenantMatricule}</span>
+                      <span className="text-[9px] text-slate-400 font-semibold uppercase">École</span>
+                    </div>
+                  )}
+                  {!member.globalMatricule && !member.tenantMatricule && (
+                    <p className="text-blue-600 font-bold tracking-widest uppercase text-xs">
+                      {member.staffCode || 'MAT-PENDING'}
+                    </p>
+                  )}
+                </div>
+
                 <div className="mt-6 space-y-3">
                   <div className="flex items-center gap-3 text-sm text-gray-600">
                     <Briefcase size={18} className="text-gray-400" />
@@ -460,6 +695,14 @@ export default function StaffDetailPage() {
             <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Statut Administratif</h4>
             <div className="space-y-4">
               <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-500">Matricule Global</span>
+                <span className="text-xs font-bold text-blue-600">{member.globalMatricule || '—'}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-500">Matricule École</span>
+                <span className="text-xs font-bold text-emerald-600">{member.tenantMatricule || '—'}</span>
+              </div>
+              <div className="flex justify-between items-center">
                 <span className="text-sm text-gray-500">Immatriculation CNSS</span>
                 <Badge className={member.cnssNumber ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}>
                   {member.cnssNumber ? 'Déclaré' : 'Non déclaré'}
@@ -477,7 +720,7 @@ export default function StaffDetailPage() {
           </Card>
         </div>
 
-        {/* Right Column: Tabs Content */}
+        {/* ─── Right Column: Tabs Content ────────────────────────────────── */}
         <div className="lg:w-2/3">
           <Tabs defaultValue="infos" className="w-full">
             <TabsList className="bg-white p-1 rounded-2xl shadow-sm mb-6 border border-gray-50 h-14 w-full justify-start overflow-x-auto no-scrollbar">
@@ -485,7 +728,7 @@ export default function StaffDetailPage() {
                 Informations
               </TabsTrigger>
               <TabsTrigger value="docs" className="rounded-xl px-8 h-full data-[state=active]:bg-blue-50 data-[state=active]:text-blue-600 font-bold text-sm">
-                Documents
+                Documents {totalDocs > 0 && <span className="ml-1.5 px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded-full text-[10px] font-bold">{totalDocs}</span>}
               </TabsTrigger>
               <TabsTrigger value="contracts" className="rounded-xl px-8 h-full data-[state=active]:bg-blue-50 data-[state=active]:text-blue-600 font-bold text-sm">
                 Contrats
@@ -505,7 +748,7 @@ export default function StaffDetailPage() {
                     </h3>
                     <div className="space-y-6">
                       <InfoField label="Genre" value={member.gender === 'M' || member.gender === 'MALE' ? 'Masculin' : 'Féminin'} />
-                      <InfoField label="Date de naissance" value={member.dateOfBirth ? new Date(member.dateOfBirth).toLocaleDateString('fr-FR') : 'Non renseignée'} />
+                      <InfoField label="Date de naissance" value={member.birthDate ? new Date(member.birthDate).toLocaleDateString('fr-FR') : member.dateOfBirth ? new Date(member.dateOfBirth).toLocaleDateString('fr-FR') : 'Non renseignée'} />
                       <InfoField label="Nationalité" value={member.nationality || 'Béninoise'} />
                       <InfoField label="Situation Matrimoniale" value={member.maritalStatus || 'Célibataire'} />
                       <InfoField label="Nombre d'enfants" value={member.numberOfChildren?.toString() || '0'} />
@@ -531,6 +774,9 @@ export default function StaffDetailPage() {
                       Identifiants Officiels
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <InfoField label="Matricule Global (AH)" value={member.globalMatricule || 'Non assigné'} />
+                      <InfoField label="Matricule École" value={member.tenantMatricule || 'Non assigné'} />
+                      <InfoField label="N° Employé (interne)" value={member.employeeNumber || '—'} />
                       <InfoField label="Numéro CNI / Passeport" value={member.nationalId || 'Non renseigné'} />
                       <InfoField label="Numéro CNSS" value={member.cnssNumber || 'Non renseigné'} />
                       <InfoField label="Numéro IFU" value={member.ifuNumber || 'N/A'} />
@@ -545,50 +791,148 @@ export default function StaffDetailPage() {
                 <div className="flex justify-between items-center mb-8">
                   <div>
                     <h3 className="text-lg font-bold text-gray-900">Dossier Numérique</h3>
-                    <p className="text-sm text-gray-500">Pièces justificatives et documents légaux.</p>
+                    <p className="text-sm text-gray-500">Documents classés par catégorie — {totalDocs} document(s)</p>
                   </div>
                   <button onClick={() => setDocOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-xl font-bold text-sm hover:bg-blue-100 transition-all border border-blue-100">
                     <Plus size={18} /> Ajouter un document
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {member.documents?.length > 0 ? (
-                    member.documents.map((doc: any) => (
-                      <div key={doc.id} className="p-4 border border-gray-100 rounded-2xl flex items-center justify-between hover:bg-gray-50 transition-colors group">
-                        <div className="flex items-center gap-3">
-                          <div className="p-3 bg-blue-50 text-blue-600 rounded-xl group-hover:bg-white transition-colors">
-                            <FileText size={20} />
+                {/* Structured Document Categories */}
+                <div className="space-y-3">
+                  {sortedCategories.map(([catKey, catConfig]) => {
+                    const docs = documentsGrouped[catKey] || [];
+                    const isExpanded = expandedCategories.has(catKey);
+                    const CatIcon = catConfig.icon;
+
+                    return (
+                      <div key={catKey} className="rounded-2xl border border-slate-200 overflow-hidden">
+                        {/* Category Header */}
+                        <button
+                          onClick={() => toggleCategory(catKey)}
+                          className="w-full flex items-center justify-between px-5 py-3.5 bg-slate-50 hover:bg-slate-100 transition-colors"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                              catConfig.color === 'blue' ? 'bg-blue-100 text-blue-600' :
+                              catConfig.color === 'purple' ? 'bg-purple-100 text-purple-600' :
+                              catConfig.color === 'emerald' ? 'bg-emerald-100 text-emerald-600' :
+                              catConfig.color === 'amber' ? 'bg-amber-100 text-amber-600' :
+                              catConfig.color === 'red' ? 'bg-red-100 text-red-600' :
+                              'bg-slate-100 text-slate-600'
+                            }`}>
+                              <CatIcon className="h-4 w-4" />
+                            </div>
+                            <span className="text-sm font-bold text-slate-800">{catConfig.label}</span>
                           </div>
-                          <div>
-                            <p className="font-bold text-gray-900 text-sm">{doc.type || doc.documentType}</p>
-                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mt-0.5">
-                              {doc.version ? `Version ${doc.version} • ` : ''}{new Date(doc.uploadedAt || doc.createdAt).toLocaleDateString()}
-                            </p>
+                          <div className="flex items-center gap-2">
+                            <Badge className={
+                              docs.length > 0
+                                ? 'bg-blue-50 text-blue-600 border-blue-100'
+                                : 'bg-slate-50 text-slate-400 border-slate-100'
+                            }>
+                              {docs.length}
+                            </Badge>
+                            {isExpanded ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronRight className="h-4 w-4 text-slate-400" />}
                           </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button className="text-gray-400 hover:text-blue-600 transition-colors" title="Voir le document">
-                            <FileText size={20} />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteDocument(doc.id)}
-                            disabled={deleteDocId === doc.id}
-                            className="text-gray-400 hover:text-red-500 transition-colors"
-                            title="Supprimer le document"
-                          >
-                            {deleteDocId === doc.id ? <Loader2 size={18} className="animate-spin" /> : <X size={18} />}
-                          </button>
-                        </div>
+                        </button>
+
+                        {/* Category Documents */}
+                        <AnimatePresence>
+                          {isExpanded && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.2 }}
+                              className="overflow-hidden"
+                            >
+                              {docs.length > 0 ? (
+                                <div className="divide-y divide-slate-50">
+                                  {docs.map((doc: any) => {
+                                    const validationInfo = VALIDATION_STATUS[doc.validationStatus] || VALIDATION_STATUS.PENDING;
+                                    const ValidationIcon = validationInfo.icon;
+                                    return (
+                                      <div key={doc.id} className="px-5 py-3 flex items-center justify-between hover:bg-slate-50/50 transition-colors group">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                          <div className="p-2 bg-white border border-slate-100 rounded-lg text-slate-400 group-hover:text-blue-500 transition-colors flex-shrink-0">
+                                            <FileText className="h-4 w-4" />
+                                          </div>
+                                          <div className="min-w-0">
+                                            <p className="font-semibold text-slate-900 text-sm truncate">{doc.fileName || doc.type || doc.documentType}</p>
+                                            <div className="flex items-center gap-2 mt-0.5">
+                                              <span className="text-[10px] text-slate-400 font-semibold uppercase">{doc.documentType}</span>
+                                              {doc.version > 1 && <span className="text-[10px] text-blue-500 font-semibold">v{doc.version}</span>}
+                                              <span className="text-[10px] text-slate-300">•</span>
+                                              <span className="text-[10px] text-slate-400">{new Date(doc.createdAt).toLocaleDateString('fr-FR')}</span>
+                                              {doc.fileSize && <span className="text-[10px] text-slate-400">• {(doc.fileSize / 1024).toFixed(0)} Ko</span>}
+                                            </div>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-2 flex-shrink-0">
+                                          {/* Validation badge */}
+                                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold border ${validationInfo.className}`}>
+                                            <ValidationIcon className="h-2.5 w-2.5" />
+                                            {validationInfo.label}
+                                          </span>
+                                          {/* Actions */}
+                                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            {doc.validationStatus === 'PENDING' && (
+                                              <>
+                                                <button 
+                                                  onClick={() => handleDocValidate(doc.id, 'VALIDATED')}
+                                                  className="p-1 text-emerald-500 hover:bg-emerald-50 rounded transition-colors"
+                                                  title="Valider"
+                                                >
+                                                  <BadgeCheck className="h-3.5 w-3.5" />
+                                                </button>
+                                                <button 
+                                                  onClick={() => handleDocValidate(doc.id, 'REJECTED')}
+                                                  className="p-1 text-amber-500 hover:bg-amber-50 rounded transition-colors"
+                                                  title="Rejeter"
+                                                >
+                                                  <XCircle className="h-3.5 w-3.5" />
+                                                </button>
+                                              </>
+                                            )}
+                                            <button 
+                                              onClick={() => handleDocDelete(doc.id)}
+                                              className="p-1 text-red-400 hover:bg-red-50 rounded transition-colors"
+                                              title="Supprimer"
+                                            >
+                                              <Trash2 className="h-3.5 w-3.5" />
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <div className="px-5 py-6 text-center">
+                                  <p className="text-sm text-slate-400">Aucun document dans cette catégorie</p>
+                                </div>
+                              )}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </div>
-                    ))
-                  ) : (
-                    <div className="col-span-2 py-10 text-center bg-gray-50 rounded-2xl border-2 border-dashed border-gray-100">
-                      <AlertCircle className="mx-auto text-gray-300 mb-2" size={32} />
-                      <p className="text-gray-400 font-medium">Aucun document numérisé pour le moment.</p>
-                    </div>
-                  )}
+                    );
+                  })}
                 </div>
+
+                {totalDocs === 0 && (
+                  <div className="mt-4 py-10 text-center bg-gray-50 rounded-2xl border-2 border-dashed border-gray-100">
+                    <AlertCircle className="mx-auto text-gray-300 mb-2" size={32} />
+                    <p className="text-gray-400 font-medium">Aucun document numérisé pour le moment.</p>
+                    <button
+                      onClick={() => setDocOpen(true)}
+                      className="mt-4 flex items-center gap-2 mx-auto px-4 py-2 bg-blue-50 text-blue-600 rounded-xl font-bold text-sm hover:bg-blue-100 transition-all border border-blue-100"
+                    >
+                      <Plus size={16} /> Ajouter le premier document
+                    </button>
+                  </div>
+                )}
               </Card>
             </TabsContent>
 

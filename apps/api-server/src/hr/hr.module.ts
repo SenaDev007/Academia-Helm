@@ -8,6 +8,8 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../database/prisma.module';
 import { PrismaService } from '../database/prisma.service';
 import { StaffPrismaService } from './staff-prisma.service';
+import { StaffMatriculeService } from './staff-matricule.service';
+import { StorageService } from '../common/services/storage.service';
 import { ContractsPrismaService } from './contracts-prisma.service';
 import { AttendancePrismaService } from './attendance-prisma.service';
 import { LeavesPrismaService } from './leaves-prisma.service';
@@ -43,6 +45,8 @@ import { OrionModule } from '../orion/orion.module';
   providers: [
     PrismaService,
     StaffPrismaService,
+    StaffMatriculeService,
+    StorageService,
     ContractsPrismaService,
     AttendancePrismaService,
     LeavesPrismaService,
@@ -76,6 +80,8 @@ import { OrionModule } from '../orion/orion.module';
   ],
   exports: [
     StaffPrismaService,
+    StaffMatriculeService,
+    StorageService,
     ContractsPrismaService,
     AttendancePrismaService,
     LeavesPrismaService,

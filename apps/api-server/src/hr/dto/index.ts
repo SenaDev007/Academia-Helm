@@ -86,13 +86,6 @@ export class UpdateStaffDto {
   @IsOptional() @IsUUID() academicYearId?: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
   @IsOptional() @IsString() tenantId?: string;
-  /** Extra fields sent by frontend edit form — stored in notes JSON or ignored if not in Prisma schema */
-  @IsOptional() @IsString() nationality?: string;
-  @IsOptional() @IsString() maritalStatus?: string;
-  @IsOptional() @IsNumber() @Type(() => Number) numberOfChildren?: number;
-  @IsOptional() @IsString() ifuNumber?: string;
-  @IsOptional() @IsString() nationalId?: string;
-  @IsOptional() @IsString() cnssNumber?: string;
 }
 
 // ─── Contract DTOs ───────────────────────────────────────────────────────────
@@ -364,6 +357,32 @@ export class AddStaffDocumentDto {
   @IsString() filePath: string;
   @IsOptional() @IsNumber() @Type(() => Number) fileSize?: number;
   @IsOptional() @IsString() mimeType?: string;
+  @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsString() category?: string;
+  @IsOptional() @IsDateString() expiresAt?: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+/**
+ * DTO for Multer file upload of staff document.
+ * The file itself is handled by FileInterceptor; this DTO captures the
+ * additional form fields sent alongside the file.
+ */
+export class UploadStaffDocumentDto {
+  /** Document type: CV, CNI, BIRTH_CERTIFICATE, DIPLOMA, CONTRACT, CNSS_CERTIFICATE, MEDICAL_CERTIFICATE, WORK_PERMIT, OTHER */
+  @IsString() documentType: string;
+  @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsDateString() expiresAt?: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+/**
+ * DTO for document validation/rejection
+ */
+export class ValidateDocumentDto {
+  @IsIn(['VALIDATED', 'REJECTED']) status: 'VALIDATED' | 'REJECTED';
 }
 
 // ─── Sign Contract DTO ───────────────────────────────────────────────────────

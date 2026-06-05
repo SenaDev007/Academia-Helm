@@ -1,12 +1,12 @@
 /**
  * ============================================================================
- * PROXY API — MODULE RH (catch-all)
+ * PROXY API — MODULE HR (catch-all)
  * ============================================================================
  *
- * Même pattern que /api/pedagogy/academic-structure/[...path]/route.ts :
- *   - getProxyAuthHeaders → résout JWT + tenant côté serveur
- *   - nestControllerUrl   → construit l'URL NestJS sans double préfixe /api
- *   - readProxyBodyText   → relay body brut (évite les problèmes de parsing)
+ * Supports:
+ *   - JSON body (standard API calls)
+ *   - FormData / multipart (file uploads: photo, documents)
+ *   - Binary responses (PDF, images)
  *
  * Toutes les requêtes /api/hr/* sont proxysées vers NestJS :
  *   /api/hr/staff?tenantId=...  →  {API_BASE}/hr/staff?tenantId=...
@@ -17,7 +17,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { nestControllerUrl, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
-import { readProxyBodyText } from '@/lib/api/pedagogy-proxy-body';
 
 /** Force dynamique — les cookies / session doivent être lus côté serveur. */
 export const dynamic = 'force-dynamic';
@@ -50,6 +49,14 @@ function isBinaryContentType(contentType: string): boolean {
   );
 }
 
+/**
+ * Check if the request is a multipart/form-data upload.
+ */
+function isMultipartRequest(request: NextRequest): boolean {
+  const contentType = request.headers.get('content-type') || '';
+  return contentType.includes('multipart/form-data');
+}
+
 async function forward(
   request: NextRequest,
   pathSegments: string[],
@@ -64,10 +71,29 @@ async function forward(
 
   try {
     const options: RequestInit = { method, headers, cache: 'no-store' };
-    const bodyText = await readProxyBodyText(request, method);
-    if (bodyText !== undefined) {
-      options.body = bodyText;
+
+    if (method !== 'GET' && method !== 'HEAD') {
+      if (isMultipartRequest(request)) {
+        // For multipart/form-data, forward raw body bytes with original Content-Type
+        // (which includes the boundary string needed for parsing)
+        const bodyBuffer = Buffer.from(await request.arrayBuffer());
+        options.body = bodyBuffer as any;
+        // Preserve the multipart content-type with boundary
+        const contentType = request.headers.get('content-type');
+        if (contentType) {
+          (options.headers as Record<string, string>)['content-type'] = contentType;
+        }
+        // Remove content-length from forwarded headers to let fetch set it
+        delete (options.headers as Record<string, string>)['content-length'];
+      } else {
+        // Standard JSON body
+        const text = await request.text();
+        if (text.length > 0) {
+          options.body = text;
+        }
+      }
     }
+
     const res = await fetch(normalizeApiUrl(url.toString()), options);
 
     // Binary responses (PDF, images, etc.) must be forwarded as-is, not parsed as JSON

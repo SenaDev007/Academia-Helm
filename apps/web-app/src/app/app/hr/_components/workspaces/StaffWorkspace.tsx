@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import {
   Plus, Search, Phone, Briefcase, GraduationCap,
-  Users, Loader2,
+  Users, Loader2, Globe, Building2,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -163,6 +163,19 @@ export function StaffWorkspace() {
 
 function StaffCard({ member, index }: { member: any; index: number }) {
   const status = STATUS_CONFIG[member.status] || STATUS_CONFIG.INACTIVE;
+  // Collect document badges from the documents array
+  const docTypes = [...new Set((member.documents || []).map((d: any) => d.documentType))];
+  const docBadges = docTypes.length > 0 
+    ? docTypes.slice(0, 4).map((t: string) => {
+        const shortMap: Record<string, string> = {
+          CV: 'CV', CNI: 'CNI', PASSPORT: 'PSP', BIRTH_CERTIFICATE: 'NAI',
+          DIPLOMA: 'DIP', CERTIFICATE: 'CERT', CONTRACT: 'CTR',
+          CNSS_CERTIFICATE: 'CNSS', MEDICAL_CERTIFICATE: 'MED', WORK_PERMIT: 'AUT',
+        };
+        return shortMap[t] || t.slice(0, 3);
+      })
+    : ['CNI', 'DIP', 'CNSS']; // placeholder badges
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
@@ -173,19 +186,47 @@ function StaffCard({ member, index }: { member: any; index: number }) {
       <div className="p-5">
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div
-              className="w-12 h-12 rounded-xl flex items-center justify-center text-base font-bold shadow-sm"
-              style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}
-            >
-              {member.firstName?.[0]}{member.lastName?.[0]}
-            </div>
+            {/* Photo or Initials */}
+            {member.photoUrl ? (
+              <img 
+                src={member.photoUrl} 
+                alt={`${member.firstName} ${member.lastName}`}
+                className="w-12 h-12 rounded-xl object-cover shadow-sm"
+              />
+            ) : (
+              <div
+                className="w-12 h-12 rounded-xl flex items-center justify-center text-base font-bold shadow-sm"
+                style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}
+              >
+                {member.firstName?.[0]}{member.lastName?.[0]}
+              </div>
+            )}
             <div>
               <h4 className="font-bold text-slate-900 text-sm leading-tight group-hover:text-[#1A2BA6] transition-colors">
                 {member.firstName} {member.lastName}
               </h4>
-              <p className="text-[10px] font-bold uppercase tracking-wider mt-0.5" style={{ color: PRIMARY }}>
-                {member.staffCode || 'MAT-PENDING'}
-              </p>
+              {/* Dual Matricules */}
+              <div className="space-y-0.5 mt-0.5">
+                {member.tenantMatricule ? (
+                  <div className="flex items-center gap-1">
+                    <Building2 className="h-2.5 w-2.5 text-emerald-500" />
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">
+                      {member.tenantMatricule}
+                    </p>
+                  </div>
+                ) : member.globalMatricule ? (
+                  <div className="flex items-center gap-1">
+                    <Globe className="h-2.5 w-2.5 text-blue-500" />
+                    <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: PRIMARY }}>
+                      {member.globalMatricule}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: PRIMARY }}>
+                    {member.staffCode || 'MAT-PENDING'}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
           <span className={cn('px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase', status.className)}>
@@ -208,8 +249,8 @@ function StaffCard({ member, index }: { member: any; index: number }) {
         </div>
         <div className="flex items-center justify-between pt-4 border-t border-slate-100">
           <div className="flex gap-1.5">
-            {['CNI', 'DIP', 'CNSS'].map((doc) => (
-              <span key={doc} className="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded border border-slate-200 text-slate-400 bg-slate-50">
+            {docBadges.map((doc, i) => (
+              <span key={i} className="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded border border-slate-200 text-slate-400 bg-slate-50">
                 {doc}
               </span>
             ))}

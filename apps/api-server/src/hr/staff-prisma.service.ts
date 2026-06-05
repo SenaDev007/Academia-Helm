@@ -1,18 +1,22 @@
 /**
  * ============================================================================
- * STAFF PRISMA SERVICE - MODULE 5 (SCHEMA-ALIGNED v2)
+ * STAFF PRISMA SERVICE - MODULE 5 (SCHEMA-ALIGNED v3)
  * ============================================================================
  *
  * Service aligné sur le schéma Prisma réel :
- * - employeeNumber (unique, auto-généré si absent)
+ * - Dual matricule: globalMatricule (Academia Helm) + tenantMatricule (école)
+ * - employeeNumber kept as legacy internal reference
  * - roleType (ex category: PEDAGOGICAL→TEACHER, ADMIN→ADMIN, SUPPORT→SUPPORT)
- * - StaffDocument : { documentType, fileName, filePath, mimeType }
+ * - StaffDocument : { documentType, category, fileName, filePath, mimeType, validationStatus, ... }
+ * - StaffPhoto : { originalUrl, hdUrl, thumbnailUrl }
  *
  * ============================================================================
  */
 
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { StaffMatriculeService } from './staff-matricule.service';
+import { StorageService } from '../common/services/storage.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 
 // Mapping catégorie UI → roleType Prisma
@@ -23,6 +27,32 @@ const CATEGORY_TO_ROLE: Record<string, string> = {
   TEACHER:     'TEACHER',
 };
 
+// Document type → category mapping (structured organization)
+const DOC_TYPE_TO_CATEGORY: Record<string, string> = {
+  CV:                 'EXPERIENCE',
+  CNI:                'IDENTITE',
+  PASSPORT:           'IDENTITE',
+  BIRTH_CERTIFICATE:  'IDENTITE',
+  DIPLOMA:            'DIPLOMES',
+  CERTIFICATE:        'DIPLOMES',
+  TRANSCRIPT:         'DIPLOMES',
+  CONTRACT:           'ADMINISTRATIF',
+  CNSS_CERTIFICATE:   'ADMINISTRATIF',
+  MEDICAL_CERTIFICATE:'MEDICAL',
+  WORK_PERMIT:        'ADMINISTRATIF',
+  OTHER:              'GENERAL',
+};
+
+// Document categories for display
+export const DOC_CATEGORIES = {
+  IDENTITE:      { label: 'Pièces d\'identité',     icon: 'shield',    order: 1 },
+  DIPLOMES:      { label: 'Diplômes & Certificats', icon: 'graduation',order: 2 },
+  EXPERIENCE:    { label: 'Expérience professionnelle', icon: 'briefcase', order: 3 },
+  ADMINISTRATIF: { label: 'Documents administratifs', icon: 'file',     order: 4 },
+  MEDICAL:       { label: 'Documents médicaux',      icon: 'heart',     order: 5 },
+  GENERAL:       { label: 'Autres documents',        icon: 'folder',    order: 6 },
+} as const;
+
 function generateEmployeeNumber(): string {
   const year = new Date().getFullYear().toString().slice(-2);
   const rand = Math.floor(Math.random() * 90000) + 10000;
@@ -31,12 +61,14 @@ function generateEmployeeNumber(): string {
 
 @Injectable()
 export class StaffPrismaService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly matriculeService: StaffMatriculeService,
+    private readonly storageService: StorageService,
+  ) {}
 
   /**
-   * Crée un membre du personnel.
-   * Accepte les champs envoyés par l'OnboardingWizard et les mappe
-   * correctement au schéma Prisma (employeeNumber, roleType, etc.)
+   * Crée un membre du personnel avec matricules dual.
    */
   async createStaff(data: {
     tenantId: string;
@@ -71,7 +103,6 @@ export class StaffPrismaService {
       where: { employeeNumber },
     });
     if (existing) {
-      // Générer un nouveau numéro unique en cas de collision
       const newNumber = `${employeeNumber}-${Date.now().toString().slice(-4)}`;
       return this.doCreateStaff(data, newNumber);
     }
@@ -84,12 +115,26 @@ export class StaffPrismaService {
       || CATEGORY_TO_ROLE[data.category || '']
       || 'TEACHER';
 
+    // Generate dual matricules
+    let globalMatricule: string | null = null;
+    let tenantMatricule: string | null = null;
+    try {
+      const matricules = await this.matriculeService.generate(data.tenantId);
+      globalMatricule = matricules.globalMatricule;
+      tenantMatricule = matricules.tenantMatricule;
+    } catch (error) {
+      // If matricule generation fails, continue without it (will be generated later)
+      console.error('Matricule generation failed:', error.message);
+    }
+
     const created = await this.prisma.staff.create({
       data: {
         ...prismaCreateDefaults(),
         tenantId:       data.tenantId,
         academicYearId: data.academicYearId || null,
         employeeNumber,
+        globalMatricule,
+        tenantMatricule,
         firstName:      data.firstName,
         lastName:       data.lastName,
         gender:         data.gender || null,
@@ -108,7 +153,11 @@ export class StaffPrismaService {
     });
 
     // Retourner avec staffCode alias pour compatibilité frontend
-    return { ...created, staffCode: created.employeeNumber, category: data.category || 'PEDAGOGICAL' };
+    return {
+      ...created,
+      staffCode: created.employeeNumber,
+      category: data.category || 'PEDAGOGICAL',
+    };
   }
 
   /**
@@ -140,6 +189,7 @@ export class StaffPrismaService {
         documents: {
           orderBy: { createdAt: 'desc' },
         },
+        photo: true,
       },
       orderBy: { lastName: 'asc' },
     });
@@ -149,6 +199,7 @@ export class StaffPrismaService {
       ...s,
       staffCode: s.employeeNumber,
       category: Object.entries(CATEGORY_TO_ROLE).find(([, v]) => v === s.roleType)?.[0] || s.roleType,
+      photoUrl: s.photo?.thumbnailUrl || null,
     }));
   }
 
@@ -160,10 +211,11 @@ export class StaffPrismaService {
       where: { id, tenantId },
       include: {
         contracts: { orderBy: { startDate: 'desc' } },
-        documents: { orderBy: { createdAt: 'desc' } },
+        documents: { orderBy: [{ category: 'asc' }, { createdAt: 'desc' }] },
         attendance: { take: 30, orderBy: { date: 'desc' } },
         evaluations: { take: 10, orderBy: { createdAt: 'desc' } },
         trainings: { orderBy: { createdAt: 'desc' } },
+        photo: true,
       },
     });
 
@@ -171,25 +223,11 @@ export class StaffPrismaService {
       throw new NotFoundException(`Staff with ID ${id} not found`);
     }
 
-    // Extract extra fields stored in notes JSON and expose at top level for frontend
-    let notesExtra: Record<string, any> = {};
-    try {
-      notesExtra = typeof staff.notes === 'string'
-        ? JSON.parse(staff.notes)
-        : (staff.notes as any) || {};
-    } catch { notesExtra = {}; }
-
     return {
       ...staff,
       staffCode: staff.employeeNumber,
       category: Object.entries(CATEGORY_TO_ROLE).find(([, v]) => v === staff.roleType)?.[0] || staff.roleType,
-      // Expose extra fields from notes at top level for frontend compatibility
-      nationality: notesExtra.nationality || null,
-      maritalStatus: notesExtra.maritalStatus || null,
-      numberOfChildren: notesExtra.numberOfChildren || null,
-      ifuNumber: notesExtra.ifuNumber || null,
-      nationalId: notesExtra.nationalId || null,
-      cnssNumber: notesExtra.cnssNumber || null,
+      photoUrl: staff.photo?.thumbnailUrl || null,
     };
   }
 
@@ -201,21 +239,30 @@ export class StaffPrismaService {
 
     // Mapper les champs UI vers Prisma
     const updateData: any = {};
+    
+    // Only include fields that are explicitly provided
+    const allowedFields = [
+      'firstName', 'lastName', 'gender', 'dateOfBirth', 'birthDate',
+      'phone', 'email', 'address', 'position', 'department',
+      'contractType', 'status', 'qualifications', 'notes',
+      'academicYearId', 'schoolLevelId',
+    ];
+
+    for (const field of allowedFields) {
+      if (data[field] !== undefined) {
+        updateData[field] = data[field];
+      }
+    }
+
+    // Special field mappings
     if (data.category) {
       updateData.roleType = CATEGORY_TO_ROLE[data.category] || data.category;
-    }
-    if (data.staffCode) {
-      // Non modifiable directement — skip
     }
     if (data.birthDate) {
       updateData.birthDate = new Date(data.birthDate);
     }
     if (data.dateOfBirth) {
       updateData.dateOfBirth = new Date(data.dateOfBirth);
-      // Also set birthDate if not explicitly provided (they represent the same info)
-      if (!data.birthDate) {
-        updateData.birthDate = new Date(data.dateOfBirth);
-      }
     }
     if (data.hireDate) {
       updateData.hireDate = new Date(data.hireDate);
@@ -223,43 +270,21 @@ export class StaffPrismaService {
     if (data.salary !== undefined) {
       updateData.salary = data.salary;
     }
-
-    // Direct scalar fields that exist in Prisma schema
-    const scalarFields = [
-      'firstName', 'lastName', 'gender', 'phone', 'email', 'address',
-      'position', 'department', 'contractType', 'qualifications', 'status',
-      'notes', 'emergencyContact', 'bankDetails',
-    ];
-    for (const field of scalarFields) {
-      if (data[field] !== undefined) {
-        updateData[field] = data[field];
-      }
+    if (data.bankDetails !== undefined) {
+      updateData.bankDetails = data.bankDetails;
+    }
+    if (data.emergencyContact !== undefined) {
+      updateData.emergencyContact = data.emergencyContact;
+    }
+    // Handle new fields that may be sent from the edit form
+    if (data.nationality !== undefined) {
+      updateData.notes = updateData.notes || ''; // Store as notes or add custom field
+    }
+    if (data.roleType) {
+      updateData.roleType = data.roleType;
     }
 
-    // Fields NOT in Prisma Staff model — store them in the `notes` JSON field
-    const extraFields = ['nationality', 'maritalStatus', 'numberOfChildren', 'ifuNumber', 'nationalId', 'cnssNumber'];
-    const extraData: Record<string, any> = {};
-    for (const field of extraFields) {
-      if (data[field] !== undefined) {
-        extraData[field] = data[field];
-      }
-    }
-
-    // Merge extra fields into existing notes
-    if (Object.keys(extraData).length > 0) {
-      const existingStaff = await this.prisma.staff.findUnique({ where: { id } });
-      let existingNotes: any = {};
-      try {
-        existingNotes = typeof existingStaff?.notes === 'string'
-          ? JSON.parse(existingStaff.notes)
-          : (existingStaff?.notes as any) || {};
-      } catch { existingNotes = {}; }
-
-      updateData.notes = JSON.stringify({
-        ...existingNotes,
-        ...extraData,
-      });
-    }
+    // Do NOT allow changing employeeNumber, globalMatricule, or tenantMatricule via update
 
     return this.prisma.staff.update({
       where: { id },
@@ -278,22 +303,173 @@ export class StaffPrismaService {
     });
   }
 
+  // ─── STAFF PHOTO ────────────────────────────────────────────────────────
+
+  /**
+   * Upload et sauvegarde la photo d'un membre du personnel.
+   * Crée ou remplace la photo existante (une seule photo par staff).
+   */
+  async uploadStaffPhoto(
+    staffId: string,
+    tenantId: string,
+    file: Express.Multer.File,
+  ): Promise<any> {
+    // Verify staff exists
+    await this.findStaffById(staffId, tenantId);
+
+    // Validate file type
+    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+      throw new BadRequestException(`Type de fichier non autorisé. Formats acceptés: JPEG, PNG, WebP, GIF`);
+    }
+
+    // Validate file size (max 5MB)
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      throw new BadRequestException(`Fichier trop volumineux. Taille maximale: 5 Mo`);
+    }
+
+    // Upload file to storage
+    const originalUrl = await this.storageService.uploadFile(file, `staff-photos/${tenantId}`);
+
+    // For now, use the same URL for all sizes (could add Sharp processing later)
+    const hdUrl = originalUrl;
+    const thumbnailUrl = originalUrl;
+
+    // Upsert photo (one per staff)
+    const photo = await this.prisma.staffPhoto.upsert({
+      where: { staffId },
+      create: {
+        ...prismaCreateDefaults(),
+        tenantId,
+        staffId,
+        originalUrl,
+        hdUrl,
+        thumbnailUrl,
+      },
+      update: {
+        originalUrl,
+        hdUrl,
+        thumbnailUrl,
+      },
+    });
+
+    return photo;
+  }
+
+  /**
+   * Récupère la photo d'un membre du personnel
+   */
+  async getStaffPhoto(staffId: string, tenantId: string): Promise<any> {
+    await this.findStaffById(staffId, tenantId);
+    return this.prisma.staffPhoto.findUnique({
+      where: { staffId },
+    });
+  }
+
+  /**
+   * Supprime la photo d'un membre du personnel
+   */
+  async deleteStaffPhoto(staffId: string, tenantId: string): Promise<any> {
+    await this.findStaffById(staffId, tenantId);
+    return this.prisma.staffPhoto.deleteMany({
+      where: { staffId, tenantId },
+    });
+  }
+
   // ─── STAFF DOCUMENTS ──────────────────────────────────────────────────────
 
   /**
-   * Ajoute un document à un membre du personnel.
+   * Upload et ajoute un document à un membre du personnel.
+   * Le document est classé automatiquement par catégorie selon son type.
+   */
+  async uploadStaffDocument(
+    staffId: string,
+    tenantId: string,
+    file: Express.Multer.File,
+    documentType: string,
+    description?: string,
+    expiresAt?: string,
+  ): Promise<any> {
+    // Verify staff exists
+    await this.findStaffById(staffId, tenantId);
+
+    // Validate file size (max 20MB)
+    const maxSize = 20 * 1024 * 1024;
+    if (file.size > maxSize) {
+      throw new BadRequestException(`Fichier trop volumineux. Taille maximale: 20 Mo`);
+    }
+
+    // Determine category from document type
+    const category = DOC_TYPE_TO_CATEGORY[documentType] || 'GENERAL';
+
+    // Check if a document of this type already exists (for versioning)
+    const existingDoc = await this.prisma.staffDocument.findFirst({
+      where: { staffId, tenantId, documentType },
+      orderBy: { version: 'desc' },
+    });
+
+    const version = existingDoc ? existingDoc.version + 1 : 1;
+
+    // Upload file to storage, organized by staff member and document type
+    const filePath = await this.storageService.uploadFile(
+      file,
+      `staff-docs/${tenantId}/${staffId}/${documentType.toLowerCase()}`,
+    );
+
+    // If replacing (version 1 exists), mark old document as superseded
+    if (existingDoc && version > 1) {
+      // Keep old document for history but mark it
+    }
+
+    return this.prisma.staffDocument.create({
+      data: {
+        ...prismaCreateDefaults(),
+        tenantId,
+        staffId,
+        documentType,
+        fileName: file.originalname,
+        filePath,
+        fileSize: file.size,
+        mimeType: file.mimetype,
+        category,
+        description: description || null,
+        validationStatus: 'PENDING',
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
+        version,
+      },
+    });
+  }
+
+  /**
+   * Ajoute un document à un membre du personnel (legacy JSON method).
    * Champs alignés sur le schéma Prisma : documentType, fileName, filePath, mimeType
    */
   async addStaffDocument(data: {
     tenantId: string;
     staffId: string;
-    documentType: string;  // CV / CNI / BIRTH_CERTIFICATE / DIPLOMA / OTHER
+    documentType: string;
     fileName: string;
     filePath: string;
     fileSize?: number;
     mimeType?: string;
     uploadedBy?: string;
+    description?: string;
+    category?: string;
+    expiresAt?: string;
   }) {
+    // Verify staff exists
+    await this.findStaffById(data.staffId, data.tenantId);
+
+    const category = data.category || DOC_TYPE_TO_CATEGORY[data.documentType] || 'GENERAL';
+
+    // Check for existing doc of same type for versioning
+    const existingDoc = await this.prisma.staffDocument.findFirst({
+      where: { staffId: data.staffId, tenantId: data.tenantId, documentType: data.documentType },
+      orderBy: { version: 'desc' },
+    });
+    const version = existingDoc ? existingDoc.version + 1 : 1;
+
     return this.prisma.staffDocument.create({
       data: {
         ...prismaCreateDefaults(),
@@ -304,31 +480,88 @@ export class StaffPrismaService {
         filePath:     data.filePath,
         fileSize:     data.fileSize || null,
         mimeType:     data.mimeType || 'application/pdf',
+        category,
+        description:  data.description || null,
+        validationStatus: 'PENDING',
+        expiresAt:    data.expiresAt ? new Date(data.expiresAt) : null,
         uploadedBy:   data.uploadedBy || null,
+        version,
       },
     });
   }
 
   /**
-   * Récupère tous les documents d'un membre du personnel
+   * Récupère tous les documents d'un membre du personnel, organisés par catégorie
    */
   async findStaffDocuments(staffId: string, tenantId: string) {
-    return this.prisma.staffDocument.findMany({
+    const documents = await this.prisma.staffDocument.findMany({
       where: { staffId, tenantId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ category: 'asc' }, { createdAt: 'desc' }],
     });
+
+    // Group by category
+    const grouped: Record<string, any[]> = {};
+    for (const doc of documents) {
+      const cat = doc.category || 'GENERAL';
+      if (!grouped[cat]) grouped[cat] = [];
+      grouped[cat].push(doc);
+    }
+
+    return { documents, grouped };
   }
 
   /**
    * Supprime un document d'un membre du personnel
    */
-  async deleteStaffDocument(docId: string, staffId: string, tenantId: string) {
+  async deleteStaffDocument(documentId: string, staffId: string, tenantId: string) {
+    // Verify the document belongs to this staff and tenant
     const doc = await this.prisma.staffDocument.findFirst({
-      where: { id: docId, staffId, tenantId },
+      where: { id: documentId, staffId, tenantId },
     });
     if (!doc) {
-      throw new NotFoundException(`Document ${docId} introuvable`);
+      throw new NotFoundException(`Document non trouvé`);
     }
-    return this.prisma.staffDocument.delete({ where: { id: docId } });
+
+    return this.prisma.staffDocument.delete({
+      where: { id: documentId },
+    });
+  }
+
+  /**
+   * Valide ou rejette un document
+   */
+  async validateStaffDocument(documentId: string, staffId: string, tenantId: string, status: 'VALIDATED' | 'REJECTED') {
+    const doc = await this.prisma.staffDocument.findFirst({
+      where: { id: documentId, staffId, tenantId },
+    });
+    if (!doc) {
+      throw new NotFoundException(`Document non trouvé`);
+    }
+
+    return this.prisma.staffDocument.update({
+      where: { id: documentId },
+      data: { validationStatus: status },
+    });
+  }
+
+  /**
+   * Génère les matricules manquants pour un staff existant (migration helper)
+   */
+  async generateMissingMatricules(staffId: string, tenantId: string) {
+    const staff = await this.findStaffById(staffId, tenantId);
+
+    if (staff.globalMatricule && staff.tenantMatricule) {
+      return staff; // Already has both matricules
+    }
+
+    const matricules = await this.matriculeService.generate(tenantId);
+
+    return this.prisma.staff.update({
+      where: { id: staffId },
+      data: {
+        globalMatricule: matricules.globalMatricule,
+        tenantMatricule: matricules.tenantMatricule,
+      },
+    });
   }
 }

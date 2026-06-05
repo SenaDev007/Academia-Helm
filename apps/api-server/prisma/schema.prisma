@@ -356,6 +356,8 @@ model Tenant {
   staffDocuments                   StaffDocument[]
   staffEvaluations                 StaffEvaluation[]
   staffTrainings                   StaffTraining[]
+  staffPhotos                      StaffPhoto[]
+  staffNumberSequence              StaffNumberSequence?
   hrJobs                           HrJob[]
   hrCandidates                     HrCandidate[]
   hrApplications                   HrApplication[]
@@ -698,6 +700,7 @@ model AcademicYear {
   staffDocuments                   StaffDocument[]
   staffEvaluations                 StaffEvaluation[]
   staffTrainings                   StaffTraining[]
+  staffPhotos                      StaffPhoto[]
   leaveRequests                    LeaveRequest[]
   staffAllowances                  StaffAllowance[]
   staffSchedules                   StaffSchedule[]
@@ -1614,6 +1617,7 @@ model SchoolLevel {
   staffDocuments                   StaffDocument[]
   staffEvaluations                 StaffEvaluation[]
   staffTrainings                   StaffTraining[]
+  staffPhotos                      StaffPhoto[]
   leaveRequests                    LeaveRequest[]
   staffAllowances                  StaffAllowance[]
   staffSchedules                   StaffSchedule[]
@@ -4869,6 +4873,10 @@ model Staff {
   academicYearId            String?
   schoolLevelId             String?
   employeeNumber            String                     @unique
+  /// Matricule global Academia Helm (format: AH-STF-YY-XXXXXX, unique système-wide)
+  globalMatricule           String?                    @unique
+  /// Matricule spécifique au tenant/école (format: <CODE>-YY-XXXXX, unique par tenant)
+  tenantMatricule           String?
   firstName                 String
   lastName                  String
   gender                    String?
@@ -4911,11 +4919,14 @@ model Staff {
   taxWithholdings           TaxWithholding[]
   transportAttendants       TransportAttendant[]
   transportDrivers          TransportDriver[]
+  photo                     StaffPhoto?
   globalResourceUsages      TenantResourceUsage[]      @relation("StaffResourceUsages")
   globalResourceAnnotations TenantResourceAnnotation[] @relation("StaffResourceAnnotations")
 
   @@index([tenantId])
   @@index([employeeNumber])
+  @@index([globalMatricule])
+  @@index([tenantMatricule])
   @@index([status])
   @@index([roleType])
   @@map("staff")
@@ -4941,10 +4952,50 @@ model StaffDocument {
   staff          Staff         @relation(fields: [staffId], references: [id], onDelete: Cascade)
   tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  /// Catégorie de classement du document (pour organiser les documents sans mélange)
+  category      String        @default("GENERAL") // IDENTITE, DIPLOMES, EXPERIENCE, ADMINISTRATIF, MEDICAL, GENERAL
+  /// Description optionnelle du document
+  description   String?
+  /// Statut de validation: PENDING, VALIDATED, REJECTED
+  validationStatus String     @default("PENDING")
+  /// Date d'expiration du document (pour les documents avec validité limitée)
+  expiresAt     DateTime?
+  /// Identifiant de la version (permet de gérer les remplacements)
+  version       Int           @default(1)
+
   @@index([tenantId])
   @@index([staffId])
   @@index([documentType])
+  @@index([category])
+  @@index([validationStatus])
   @@map("staff_documents")
+}
+
+/// Historique des photos du personnel (original + HD + thumbnail)
+model StaffPhoto {
+  id           String   @id @default(uuid())
+  tenantId     String
+  staffId      String   @unique
+  originalUrl  String
+  hdUrl        String
+  thumbnailUrl String
+  createdAt    DateTime @default(now())
+  staff        Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, staffId])
+  @@map("staff_photos")
+}
+
+/// Séquence de numérotation du personnel par tenant
+model StaffNumberSequence {
+  id        String   @id @default(uuid())
+  tenantId  String   @unique
+  current   Int      @default(0)
+  updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("staff_number_sequences")
 }
 
 model StaffAssignment {

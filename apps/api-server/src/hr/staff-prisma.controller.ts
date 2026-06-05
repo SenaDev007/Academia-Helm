@@ -1,21 +1,49 @@
 /**
  * ============================================================================
- * STAFF PRISMA CONTROLLER - MODULE 5
+ * STAFF PRISMA CONTROLLER - MODULE 5 (v3 — Photo + Documents + Matricules)
+ * ============================================================================
+ *
+ * Endpoints:
+ *   POST   /hr/staff                    — Create staff (with dual matricule auto-gen)
+ *   GET    /hr/staff                    — List all staff (with photo)
+ *   GET    /hr/staff/:id               — Get staff detail (with photo + documents grouped)
+ *   PUT    /hr/staff/:id               — Update staff info
+ *   DELETE /hr/staff/:id               — Archive staff
+ *
+ *   POST   /hr/staff/:id/photo         — Upload/replace staff photo (Multer)
+ *   GET    /hr/staff/:id/photo         — Get staff photo
+ *   DELETE /hr/staff/:id/photo         — Delete staff photo
+ *
+ *   POST   /hr/staff/:id/documents     — Upload document (Multer file upload)
+ *   POST   /hr/staff/:id/documents/json— Add document metadata (legacy JSON body)
+ *   GET    /hr/staff/:id/documents     — Get all documents (grouped by category)
+ *   DELETE /hr/staff/:id/documents/:docId — Delete a document
+ *   PUT    /hr/staff/:id/documents/:docId/validate — Validate/reject a document
+ *
+ *   POST   /hr/staff/:id/generate-matricules — Generate missing matricules
  * ============================================================================
  */
 
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller, Get, Post, Put, Delete, Body, Param, Query,
+  UseGuards, UseInterceptors, UploadedFile, UploadedFiles,
+} from '@nestjs/common';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { StaffPrismaService } from './staff-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
-import { SchoolLevelId } from '../common/decorators/school-level-id.decorator';
-import { CreateStaffDto, UpdateStaffDto, AddStaffDocumentDto } from './dto/index';
+import {
+  CreateStaffDto, UpdateStaffDto, AddStaffDocumentDto,
+  UploadStaffDocumentDto, ValidateDocumentDto,
+} from './dto/index';
 
 @Controller('hr/staff')
 @UseGuards(JwtAuthGuard, TenantGuard)
 export class StaffPrismaController {
   constructor(private readonly staffService: StaffPrismaService) {}
+
+  // ─── CRUD ──────────────────────────────────────────────────────────────────
 
   @Post()
   async createStaff(@GetTenant() tenant: any, @Body() data: CreateStaffDto) {
@@ -56,14 +84,60 @@ export class StaffPrismaController {
     return this.staffService.archiveStaff(id, tenant.id);
   }
 
-  // Documents
+  // ─── PHOTO ─────────────────────────────────────────────────────────────────
+
+  @Post(':id/photo')
+  @UseInterceptors(FileInterceptor('photo', {
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  }))
+  async uploadPhoto(
+    @GetTenant() tenant: any,
+    @Param('id') staffId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new Error('Aucun fichier photo fourni');
+    }
+    return this.staffService.uploadStaffPhoto(staffId, tenant.id, file);
+  }
+
+  @Get(':id/photo')
+  async getPhoto(@GetTenant() tenant: any, @Param('id') staffId: string) {
+    return this.staffService.getStaffPhoto(staffId, tenant.id);
+  }
+
+  @Delete(':id/photo')
+  async deletePhoto(@GetTenant() tenant: any, @Param('id') staffId: string) {
+    return this.staffService.deleteStaffPhoto(staffId, tenant.id);
+  }
+
+  // ─── DOCUMENTS ─────────────────────────────────────────────────────────────
+
+  /**
+   * Upload a document file (Multer multipart/form-data)
+   * Query params: documentType, description?, expiresAt?
+   */
   @Post(':id/documents')
-  async addStaffDocument(@GetTenant() tenant: any, @Param('id') staffId: string, @Body() data: AddStaffDocumentDto) {
-    return this.staffService.addStaffDocument({
-      ...data,
-      tenantId: tenant.id,
+  @UseInterceptors(FileInterceptor('file', {
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+  }))
+  async uploadDocument(
+    @GetTenant() tenant: any,
+    @Param('id') staffId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: UploadStaffDocumentDto,
+  ) {
+    if (!file) {
+      throw new Error('Aucun fichier fourni');
+    }
+    return this.staffService.uploadStaffDocument(
       staffId,
-    });
+      tenant.id,
+      file,
+      body.documentType || 'OTHER',
+      body.description,
+      body.expiresAt,
+    );
   }
 
   @Get(':id/documents')
@@ -71,12 +145,29 @@ export class StaffPrismaController {
     return this.staffService.findStaffDocuments(staffId, tenant.id);
   }
 
-  @Delete(':staffId/documents/:docId')
+  @Delete(':id/documents/:docId')
   async deleteStaffDocument(
     @GetTenant() tenant: any,
-    @Param('staffId') staffId: string,
+    @Param('id') staffId: string,
     @Param('docId') docId: string,
   ) {
     return this.staffService.deleteStaffDocument(docId, staffId, tenant.id);
+  }
+
+  @Put(':id/documents/:docId/validate')
+  async validateDocument(
+    @GetTenant() tenant: any,
+    @Param('id') staffId: string,
+    @Param('docId') docId: string,
+    @Body() body: ValidateDocumentDto,
+  ) {
+    return this.staffService.validateStaffDocument(docId, staffId, tenant.id, body.status);
+  }
+
+  // ─── MATRICULES ────────────────────────────────────────────────────────────
+
+  @Post(':id/generate-matricules')
+  async generateMatricules(@GetTenant() tenant: any, @Param('id') staffId: string) {
+    return this.staffService.generateMissingMatricules(staffId, tenant.id);
   }
 }

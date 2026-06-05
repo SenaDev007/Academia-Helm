@@ -83,7 +83,7 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
                 onClick={handleCloseMobileDrawer}
               />
             </>
-          )
+          )}
           {/* Sidebar — 3 états: drawer mobile / icônes tablette / complète PC */}
           <PilotageSidebar
             isOpen={sidebarOpen}

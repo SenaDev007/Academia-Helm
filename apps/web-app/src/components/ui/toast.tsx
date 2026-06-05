@@ -173,7 +173,7 @@ function ToastItem({
   const [isLeaving, setIsLeaving] = useState(false);
   const [progress, setProgress] = useState(100);
   const startTimeRef = useRef<number>(Date.now());
-  const rafRef = useRef<number>();
+  const rafRef = useRef<number>(0);
 
   const config = VARIANT_CONFIG[variant] || VARIANT_CONFIG.info;
   const Icon = config.icon;

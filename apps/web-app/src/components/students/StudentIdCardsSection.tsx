@@ -90,7 +90,7 @@ export default function StudentIdCardsSection() {
   };
 
   const handleGenerateBulk = async () => {
-    const ok = await confirmDialog.info('Des cartes d'identité seront générées pour tous les élèves sans carte. Voulez-vous continuer ?', 'Générer les cartes');
+    const ok = await confirmDialog.info('Des cartes d\'identité seront générées pour tous les élèves sans carte. Voulez-vous continuer ?', 'Générer les cartes');
     if (!ok) {
       return;
     }

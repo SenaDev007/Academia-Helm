@@ -10,9 +10,9 @@
  * ============================================================================
  */
 
-import { Controller, Get, Post, Put, Body, Query, Param, Delete, UseGuards, UseInterceptors, UploadedFiles } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Query, Param, Delete, UseGuards, UseInterceptors, UploadedFiles, Res, StreamableFile } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
-import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { RecruitmentPrismaService } from './recruitment.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
@@ -194,5 +194,16 @@ export class RecruitmentPrismaController {
     @UploadedFiles() files: { cv?: Express.Multer.File[], coverLetter?: Express.Multer.File[], recommendationLetter?: Express.Multer.File[] }
   ) {
     return this.service.applyJob(body, files);
+  }
+
+  // ─── Candidate Document Download ──────────────────────────────────────────
+
+  @Get('candidates/:candidateId/documents/:docId/download')
+  async downloadCandidateDocument(
+    @Param('candidateId') candidateId: string,
+    @Param('docId') docId: string,
+    @Res({ passthrough: true }) res: any,
+  ) {
+    return this.service.downloadCandidateDocument(candidateId, docId, res);
   }
 }

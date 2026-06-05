@@ -1,10 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { StorageService } from '../common/services/storage.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 
 @Injectable()
 export class RecruitmentPrismaService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storageService: StorageService,
+  ) {}
 
   // Job Offers CRUD
   async getJobs(tenantId: string) {
@@ -541,16 +545,20 @@ export class RecruitmentPrismaService {
 
       if (hasCV) {
         const cvFile = files.cv[0];
+        const cvPath = await this.storageService.uploadFile(
+          cvFile,
+          `candidate-docs/${tenantId}/${candidate.id}/cv`,
+        );
         const doc = await tx.candidateDocument.create({
           data: {
             id: crypto.randomUUID(),
             candidateId: candidate.id,
             documentType: 'CV',
             fileName: cvFile.originalname,
-            filePath: `/uploads/candidates/${candidate.id}/${cvFile.originalname}`,
+            filePath: cvPath,
             fileSize: cvFile.size,
             mimeType: cvFile.mimetype,
-            category: 'IDENTITE',
+            category: 'EXPERIENCE',
           }
         });
         documentRecords.push(doc);
@@ -558,16 +566,20 @@ export class RecruitmentPrismaService {
 
       if (hasLetter) {
         const letterFile = files.coverLetter[0];
+        const letterPath = await this.storageService.uploadFile(
+          letterFile,
+          `candidate-docs/${tenantId}/${candidate.id}/cover-letter`,
+        );
         const doc = await tx.candidateDocument.create({
           data: {
             id: crypto.randomUUID(),
             candidateId: candidate.id,
             documentType: 'COVER_LETTER',
             fileName: letterFile.originalname,
-            filePath: `/uploads/candidates/${candidate.id}/${letterFile.originalname}`,
+            filePath: letterPath,
             fileSize: letterFile.size,
             mimeType: letterFile.mimetype,
-            category: 'IDENTITE',
+            category: 'EXPERIENCE',
           }
         });
         documentRecords.push(doc);
@@ -575,13 +587,17 @@ export class RecruitmentPrismaService {
 
       if (files?.recommendationLetter && files.recommendationLetter.length > 0) {
         const recoFile = files.recommendationLetter[0];
+        const recoPath = await this.storageService.uploadFile(
+          recoFile,
+          `candidate-docs/${tenantId}/${candidate.id}/recommendation`,
+        );
         const doc = await tx.candidateDocument.create({
           data: {
             id: crypto.randomUUID(),
             candidateId: candidate.id,
             documentType: 'RECOMMENDATION',
             fileName: recoFile.originalname,
-            filePath: `/uploads/candidates/${candidate.id}/${recoFile.originalname}`,
+            filePath: recoPath,
             fileSize: recoFile.size,
             mimeType: recoFile.mimetype,
             category: 'DIPLOMES',
@@ -593,7 +609,40 @@ export class RecruitmentPrismaService {
       return { candidate, application, documents: documentRecords };
     });
   }
+
+  /**
+   * Télécharge un document d'un candidat.
+   * - Si le fichier est sur S3, redirige vers l'URL S3.
+   * - Si le fichier est local, le lit depuis le disque et le renvoie.
+   */
+  async downloadCandidateDocument(candidateId: string, docId: string, res: any) {
+    const doc = await this.prisma.candidateDocument.findFirst({
+      where: { id: docId, candidateId },
+    });
+
+    if (!doc) {
+      throw new NotFoundException(`Document non trouvé`);
+    }
+
+    // If filePath is a full URL (S3), redirect to it
+    if (doc.filePath && doc.filePath.startsWith('https://')) {
+      return res.redirect(doc.filePath);
+    }
+
+    // Local file: serve from disk
+    const fs = await import('fs');
+    const path = await import('path');
+    const localPath = path.join(process.cwd(), 'public', doc.filePath);
+
+    if (!fs.existsSync(localPath)) {
+      throw new NotFoundException(`Fichier non trouvé sur le serveur`);
+    }
+
+    res.setHeader('Content-Type', doc.mimeType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${doc.fileName}"`);
+
+    const fileStream = fs.createReadStream(localPath);
+    fileStream.pipe(res);
+  }
 }
-
-
 

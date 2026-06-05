@@ -1096,7 +1096,10 @@ export function RecruitmentWorkspace() {
                                     <p className="text-[10px] text-slate-500 truncate">{doc.fileName} {fileSizeStr && `· ${fileSizeStr}`}</p>
                                   </div>
                                   <a
-                                    href={doc.filePath}
+                                    href={doc.filePath?.startsWith('https://')
+                                      ? doc.filePath
+                                      : hrUrl(`recruitment/candidates/${selectedCandidate.id}/documents/${doc.id}/download`)
+                                    }
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="text-[#1A2BA6] hover:underline text-[10px] font-bold whitespace-nowrap"

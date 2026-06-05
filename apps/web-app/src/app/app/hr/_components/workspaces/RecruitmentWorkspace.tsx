@@ -79,6 +79,7 @@ interface Candidate {
   email: string;
   phone: string;
   address: string;
+  gender: string;
   job: string;
   score: number;
   scoreCV: number;
@@ -222,6 +223,7 @@ export function RecruitmentWorkspace() {
             email: c.email,
             phone: c.phone || '',
             address: c.address || '',
+            gender: c.gender || 'M',
             job: jobTitle || 'Aucun poste',
             score: primaryApp?.score || 0,
             scoreCV: primaryApp?.scoreCV || 0,
@@ -1056,11 +1058,69 @@ export function RecruitmentWorkspace() {
                       })()}
                       {activeCandidateTab === 'identity' && (
                         <div className="space-y-3">
-                          <p><strong>Email:</strong> {selectedCandidate.email}</p>
-                          <p><strong>Téléphone:</strong> {selectedCandidate.phone}</p>
-                          <p><strong>Adresse:</strong> {selectedCandidate.address}</p>
-                          <p><strong>Date de dépôt:</strong> {selectedCandidate.date}</p>
-                          <p><strong>Statut:</strong> {selectedCandidate.status}</p>
+                          {(() => {
+                            let parsedProfile: any = {};
+                            try {
+                              if (selectedCandidate.academicProfile?.pedagogicalExperience) {
+                                parsedProfile = JSON.parse(selectedCandidate.academicProfile.pedagogicalExperience);
+                              }
+                            } catch (e) {}
+                            const candidateLinkedin = parsedProfile.linkedinUrl || "";
+                            return (
+                              <>
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Nom complet</p>
+                                    <p className="font-bold text-slate-900 text-sm mt-0.5">{selectedCandidate.name}</p>
+                                  </div>
+                                  <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Genre</p>
+                                    <p className="font-bold text-slate-900 text-sm mt-0.5">{selectedCandidate.gender === 'F' ? 'Féminin' : 'Masculin'}</p>
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Email</p>
+                                    <p className="text-slate-700 text-xs mt-0.5">{selectedCandidate.email}</p>
+                                  </div>
+                                  <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Téléphone</p>
+                                    <p className="text-slate-700 text-xs mt-0.5">{selectedCandidate.phone || 'Non renseigné'}</p>
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Adresse</p>
+                                    <p className="text-slate-700 text-xs mt-0.5">{selectedCandidate.address || 'Non renseignée'}</p>
+                                  </div>
+                                  <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Poste visé</p>
+                                    <p className="text-slate-700 text-xs mt-0.5">{selectedCandidate.job || 'Aucun poste'}</p>
+                                  </div>
+                                </div>
+                                {candidateLinkedin && (
+                                  <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 flex items-center gap-2">
+                                    <Linkedin className="h-4 w-4 text-[#0A66C2] fill-[#0A66C2]" />
+                                    <a href={candidateLinkedin} target="_blank" rel="noopener noreferrer" className="text-[#0A66C2] text-xs font-bold hover:underline">Profil LinkedIn</a>
+                                  </div>
+                                )}
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Date de dépôt</p>
+                                    <p className="text-slate-700 text-xs mt-0.5">{selectedCandidate.date}</p>
+                                  </div>
+                                  <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Statut</p>
+                                    <span className={cn('inline-flex items-center gap-1 font-semibold px-2 py-0.5 rounded-full text-[10px]', 
+                                      selectedCandidate.status === 'EMBAUCHÉ' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                                      selectedCandidate.status === 'REJETÉ' ? 'bg-red-50 text-red-600 border border-red-100' :
+                                      'bg-amber-50 text-amber-600 border border-amber-100'
+                                    )}>{selectedCandidate.status}</span>
+                                  </div>
+                                </div>
+                              </>
+                            );
+                          })()}
                         </div>
                       )}
                       {activeCandidateTab === 'documents' && (

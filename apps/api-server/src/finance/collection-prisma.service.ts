@@ -19,26 +19,27 @@ export class CollectionPrismaService {
    * Détecte et crée les impayés automatiquement
    */
   async detectArrears(tenantId: string, academicYearId: string) {
-    // Récupérer tous les résumés de paiement avec solde > 0
-    const summaries = await this.prisma.paymentSummary.findMany({
-      where: {
-        tenantId,
-        academicYearId,
-        balance: {
-          gt: 0,
-        },
-      },
-      include: {
-        studentFee: {
-          include: {
-            feeDefinition: true,
-          },
-        },
-        student: true,
-      },
-    });
-
+    // FIX OOM: Process in batches of 200 instead of loading all at once
+    const BATCH_SIZE = 200;
+    let skip = 0;
     const arrears = [];
+
+    while (true) {
+      const summaries = await this.prisma.paymentSummary.findMany({
+        where: {
+          tenantId,
+          academicYearId,
+          balance: { gt: 0 },
+        },
+        include: {
+          studentFee: { include: { feeDefinition: { select: { id: true, label: true } } } },
+          student: { select: { id: true, firstName: true, lastName: true } },
+        },
+        take: BATCH_SIZE,
+        skip,
+      });
+
+      if (summaries.length === 0) break;
 
     for (const summary of summaries) {
       // Vérifier si un impayé existe déjà
@@ -101,6 +102,10 @@ export class CollectionPrismaService {
 
         arrears.push(arrear);
       }
+    }
+
+      skip += BATCH_SIZE;
+      if (global.gc) global.gc();
     }
 
     return arrears;
@@ -185,12 +190,12 @@ export class CollectionPrismaService {
     return this.prisma.feeArrear.findMany({
       where,
       include: {
-        student: true,
+        student: { select: { id: true, firstName: true, lastName: true, studentCode: true } },
         studentFee: {
           include: {
             feeDefinition: {
               include: {
-                feeCategory: true,
+                feeCategory: { select: { id: true, name: true } },
               },
             },
           },
@@ -214,6 +219,7 @@ export class CollectionPrismaService {
         { arrearsLevel: 'desc' },
         { balanceDue: 'desc' },
       ],
+      take: 500,
     });
   }
 

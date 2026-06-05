@@ -77,6 +77,29 @@ async function bootstrap() {
   const memUsage = process.memoryUsage();
   logger.log(`Academia Helm API listening on http://0.0.0.0:${port} (PORT=${process.env.PORT ?? 'unset'})`);
   logger.log(`Memory: heapUsed=${Math.round(memUsage.heapUsed / 1024 / 1024)}MB, rss=${Math.round(memUsage.rss / 1024 / 1024)}MB`);
+
+  // FIX OOM: Periodic memory monitoring (every 10 minutes)
+  // Logs heap usage and triggers GC if heap is above 80% of max
+  setInterval(() => {
+    const mem = process.memoryUsage();
+    const heapUsedMB = Math.round(mem.heapUsed / 1024 / 1024);
+    const heapTotalMB = Math.round(mem.heapTotal / 1024 / 1024);
+    const rssMB = Math.round(mem.rss / 1024 / 1024);
+    const maxHeapMB = 2048; // matches --max-old-space-size
+    const heapPercent = Math.round((mem.heapUsed / (maxHeapMB * 1024 * 1024)) * 100);
+
+    if (heapPercent > 70) {
+      logger.warn(`Memory pressure: heapUsed=${heapUsedMB}MB/${maxHeapMB}MB (${heapPercent}%), rss=${rssMB}MB`);
+    }
+
+    // Force GC if heap usage exceeds 80% and --expose-gc is enabled
+    if (heapPercent > 80 && global.gc) {
+      logger.warn(`Triggering GC due to high heap usage (${heapPercent}%)`);
+      global.gc();
+      const afterGC = process.memoryUsage();
+      logger.log(`After GC: heapUsed=${Math.round(afterGC.heapUsed / 1024 / 1024)}MB, rss=${Math.round(afterGC.rss / 1024 / 1024)}MB`);
+    }
+  }, 10 * 60 * 1000);
 }
 bootstrap();
 

@@ -250,18 +250,28 @@ export class OfflineSyncService {
       }
     }
 
+    // FIX OOM: Add take limits to prevent loading unbounded data when device hasn't synced in a while
+    const SYNC_BATCH_LIMIT = 5000;
     const [students, studentEnrollments, payments, schoolAcademicSettings] = await Promise.all([
       this.prisma.student.findMany({
         where: { tenantId: request.tenant_id, updatedAt: { gt: since } },
+        take: SYNC_BATCH_LIMIT,
+        orderBy: { updatedAt: 'asc' },
       }),
       this.prisma.studentEnrollment.findMany({
         where: { tenantId: request.tenant_id, updatedAt: { gt: since } },
+        take: SYNC_BATCH_LIMIT,
+        orderBy: { updatedAt: 'asc' },
       }),
       this.prisma.payment.findMany({
         where: { tenantId: request.tenant_id, updatedAt: { gt: since } },
+        take: SYNC_BATCH_LIMIT,
+        orderBy: { updatedAt: 'asc' },
       }),
       this.prisma.schoolAcademicSettings.findMany({
         where: { tenantId: request.tenant_id, updatedAt: { gt: since } },
+        take: SYNC_BATCH_LIMIT,
+        orderBy: { updatedAt: 'asc' },
       }),
     ]);
 

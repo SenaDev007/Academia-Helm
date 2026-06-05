@@ -321,19 +321,26 @@ export class DashboardService {
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
 
-      const payments = await this.prisma.payment.findMany({
-        where: {
-          tenantId,
-          paymentDate: {
-            gte: today,
-            lt: tomorrow,
+      // FIX OOM: Use aggregate instead of loading all payments
+      const [result, count] = await Promise.all([
+        this.prisma.payment.aggregate({
+          where: {
+            tenantId,
+            paymentDate: { gte: today, lt: tomorrow },
+            status: 'completed',
           },
-          status: 'completed',
-        },
-      });
+          _sum: { amount: true },
+        }),
+        this.prisma.payment.count({
+          where: {
+            tenantId,
+            paymentDate: { gte: today, lt: tomorrow },
+            status: 'completed',
+          },
+        }),
+      ]);
 
-      const total = payments.reduce((sum, p) => sum + p.amount.toNumber(), 0);
-      return { total, count: payments.length };
+      return { total: result._sum.amount?.toNumber() ?? 0, count };
     } catch (error) {
       this.logger.warn(`Error getting today payments: ${error.message}`);
       return { total: 0, count: 0 };
@@ -342,18 +349,17 @@ export class DashboardService {
 
   private async getUnpaidInvoicesCount(tenantId: string): Promise<{ count: number; amount: number }> {
     try {
-      // Calculer les impayés depuis les paiements non complétés
-      const unpaidPayments = await this.prisma.payment.findMany({
+      // FIX OOM: Use aggregate instead of loading all unpaid payments
+      const result = await this.prisma.payment.aggregate({
         where: {
           tenantId,
-          status: {
-            not: 'completed',
-          },
+          status: { not: 'completed' },
         },
+        _sum: { amount: true },
+        _count: { id: true },
       });
 
-      const amount = unpaidPayments.reduce((sum, p) => sum + p.amount.toNumber(), 0);
-      return { count: unpaidPayments.length, amount };
+      return { count: result._count.id, amount: result._sum.amount?.toNumber() ?? 0 };
     } catch (error) {
       this.logger.warn(`Error getting unpaid invoices: ${error.message}`);
       return { count: 0, amount: 0 };

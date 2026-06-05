@@ -18,76 +18,116 @@ export class RecoveryReminderService {
 
   /**
    * Cron quotidien : détecte les comptes en retard et crée les relances selon le niveau (J+3, J+7, J+15).
+   *
+   * FIX OOM: Process tenants in batches of 5, with forced GC between batches.
+   * Previously loaded ALL tenants × ALL accounts in one go → OOM crash at ~2AM.
    */
   @Cron('0 2 * * *')
   async runNightlyDetection() {
-    const tenants = await this.prisma.tenant.findMany({
-      where: { status: 'active' },
-      select: { id: true },
-    });
-    for (const t of tenants) {
-      try {
-        await this.processTenantReminders(t.id);
-      } catch (e) {
-        console.error(`RecoveryReminder nightly failed for tenant ${t.id}:`, e);
+    const BATCH_SIZE = 5;
+    let skip = 0;
+    let totalProcessed = 0;
+
+    while (true) {
+      const tenants = await this.prisma.tenant.findMany({
+        where: { status: 'active' },
+        select: { id: true },
+        take: BATCH_SIZE,
+        skip,
+      });
+
+      if (tenants.length === 0) break;
+
+      for (const t of tenants) {
+        try {
+          await this.processTenantReminders(t.id);
+          totalProcessed++;
+        } catch (e) {
+          console.error(`RecoveryReminder nightly failed for tenant ${t.id}:`, e);
+        }
       }
+
+      skip += BATCH_SIZE;
+
+      // Allow GC between batches to prevent heap growth
+      if (global.gc) global.gc();
     }
+
+    console.log(`RecoveryReminder nightly: processed ${totalProcessed} tenants`);
   }
 
   async processTenantReminders(tenantId: string) {
-    const accounts = await this.prisma.studentAccount.findMany({
-      where: {
-        tenantId,
-        balance: { gt: 0 },
-        isBlocked: false,
-      },
-      include: {
-        student: true,
-        recoveryReminders: { orderBy: { sentAt: 'desc' }, take: 5 },
-      },
-    });
+    const ACCOUNT_BATCH_SIZE = 200;
+    let accountSkip = 0;
+    let totalProcessed = 0;
+    const created: any[] = [];
 
-    const now = new Date();
-    const created = [];
-
-    for (const account of accounts) {
-      const balance = Number(account.balance);
-      if (balance <= 0) continue;
-
-      const reminders = account.recoveryReminders;
-      const lastWarning = reminders.find((r) => r.reminderLevel === ReminderLevel.WARNING);
-      const lastUrgent = reminders.find((r) => r.reminderLevel === ReminderLevel.URGENT);
-      const lastFinal = reminders.find((r) => r.reminderLevel === ReminderLevel.FINAL_NOTICE);
-
-      const academicYear = await this.prisma.academicYear.findFirst({
-        where: { id: account.academicYearId },
+    while (true) {
+      const accounts = await this.prisma.studentAccount.findMany({
+        where: {
+          tenantId,
+          balance: { gt: 0 },
+          isBlocked: false,
+        },
+        include: {
+          student: { select: { id: true, firstName: true, lastName: true } },
+          recoveryReminders: { orderBy: { sentAt: 'desc' }, take: 5 },
+        },
+        take: ACCOUNT_BATCH_SIZE,
+        skip: accountSkip,
       });
-      const refDate = academicYear?.startDate ? new Date(academicYear.startDate) : account.createdAt;
-      const daysSinceStart = Math.floor((now.getTime() - refDate.getTime()) / (1000 * 60 * 60 * 24));
 
-      if (daysSinceStart >= 15 && !lastFinal) {
-        await this.createReminder(tenantId, account.id, account.academicYearId, ReminderLevel.FINAL_NOTICE, balance);
-        created.push({ accountId: account.id, level: ReminderLevel.FINAL_NOTICE });
-      } else if (daysSinceStart >= 7 && !lastUrgent) {
-        await this.createReminder(tenantId, account.id, account.academicYearId, ReminderLevel.URGENT, balance);
-        created.push({ accountId: account.id, level: ReminderLevel.URGENT });
-      } else if (daysSinceStart >= 3 && !lastWarning) {
-        await this.createReminder(tenantId, account.id, account.academicYearId, ReminderLevel.WARNING, balance);
-        created.push({ accountId: account.id, level: ReminderLevel.WARNING });
-      }
+      if (accounts.length === 0) break;
 
-      // Blocage automatique si balance > seuil (RECOVERY_BLOCK_THRESHOLD en unités monétaires, ex. 50000)
-      const blockThreshold = this.config.get<number>('RECOVERY_BLOCK_THRESHOLD', { infer: true })
-        ?? Number(process.env.RECOVERY_BLOCK_THRESHOLD);
-      if (typeof blockThreshold === 'number' && blockThreshold > 0 && balance >= blockThreshold) {
-        await this.prisma.studentAccount.update({
-          where: { id: account.id },
-          data: { isBlocked: true, status: 'BLOCKED' as const, updatedAt: new Date() },
+      const now = new Date();
+
+      for (const account of accounts) {
+        const balance = Number(account.balance);
+        if (balance <= 0) continue;
+
+        const reminders = account.recoveryReminders;
+        const lastWarning = reminders.find((r) => r.reminderLevel === ReminderLevel.WARNING);
+        const lastUrgent = reminders.find((r) => r.reminderLevel === ReminderLevel.URGENT);
+        const lastFinal = reminders.find((r) => r.reminderLevel === ReminderLevel.FINAL_NOTICE);
+
+        const academicYear = await this.prisma.academicYear.findFirst({
+          where: { id: account.academicYearId },
+          select: { startDate: true },
         });
+        const refDate = academicYear?.startDate ? new Date(academicYear.startDate) : account.createdAt;
+        const daysSinceStart = Math.floor((now.getTime() - refDate.getTime()) / (1000 * 60 * 60 * 24));
+
+        if (daysSinceStart >= 15 && !lastFinal) {
+          await this.createReminder(tenantId, account.id, account.academicYearId, ReminderLevel.FINAL_NOTICE, balance);
+          created.push({ accountId: account.id, level: ReminderLevel.FINAL_NOTICE });
+        } else if (daysSinceStart >= 7 && !lastUrgent) {
+          await this.createReminder(tenantId, account.id, account.academicYearId, ReminderLevel.URGENT, balance);
+          created.push({ accountId: account.id, level: ReminderLevel.URGENT });
+        } else if (daysSinceStart >= 3 && !lastWarning) {
+          await this.createReminder(tenantId, account.id, account.academicYearId, ReminderLevel.WARNING, balance);
+          created.push({ accountId: account.id, level: ReminderLevel.WARNING });
+        }
+
+        // Blocage automatique si balance > seuil (RECOVERY_BLOCK_THRESHOLD en unités monétaires, ex. 50000)
+        const blockThreshold = this.config.get<number>('RECOVERY_BLOCK_THRESHOLD', { infer: true })
+          ?? Number(process.env.RECOVERY_BLOCK_THRESHOLD);
+        if (typeof blockThreshold === 'number' && blockThreshold > 0 && balance >= blockThreshold) {
+          await this.prisma.studentAccount.update({
+            where: { id: account.id },
+            data: { isBlocked: true, status: 'BLOCKED' as const, updatedAt: new Date() },
+          });
+        }
+
+        totalProcessed++;
       }
+
+      accountSkip += ACCOUNT_BATCH_SIZE;
+
+      // Allow GC between account batches
+      if (global.gc) global.gc();
     }
 
-    return { processed: accounts.length, created };
+    return { processed: totalProcessed, created };
   }
 
   async createReminder(
@@ -143,8 +183,9 @@ export class RecoveryReminderService {
 
     return this.prisma.recoveryReminder.findMany({
       where,
-      include: { studentAccount: { include: { student: true } } },
+      include: { studentAccount: { include: { student: { select: { id: true, firstName: true, lastName: true } } } } },
       orderBy: { sentAt: 'desc' },
+      take: 200,
     });
   }
 }

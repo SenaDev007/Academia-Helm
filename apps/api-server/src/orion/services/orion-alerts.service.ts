@@ -521,19 +521,16 @@ export class OrionAlertsService {
       });
     }
 
-    // 3. Alertes pour taux de recouvrement faible
-    const allArrears = await this.prisma.feeArrear.findMany({
+    // 3. Alertes pour taux de recouvrement faible — FIX OOM: use aggregate instead of loading all arrears
+    const arrearAgg = await this.prisma.feeArrear.aggregate({
       where,
-      select: {
-        totalDue: true,
-        totalPaid: true,
-        balanceDue: true,
-      },
+      _sum: { totalDue: true, totalPaid: true, balanceDue: true },
+      _count: { id: true },
     });
 
-    if (allArrears.length > 0) {
-      const totalExpected = allArrears.reduce((sum, a) => sum + Number(a.totalDue), 0);
-      const totalPaid = allArrears.reduce((sum, a) => sum + Number(a.totalPaid), 0);
+    if (arrearAgg._count.id > 0) {
+      const totalExpected = Number(arrearAgg._sum.totalDue ?? 0);
+      const totalPaid = Number(arrearAgg._sum.totalPaid ?? 0);
       const collectionRate = totalExpected > 0 ? (totalPaid / totalExpected) * 100 : 0;
 
       if (collectionRate < 70) {
@@ -548,7 +545,7 @@ export class OrionAlertsService {
             collectionRate: parseFloat(collectionRate.toFixed(2)),
             totalExpected,
             totalPaid,
-            totalBalanceDue: allArrears.reduce((sum, a) => sum + Number(a.balanceDue), 0),
+            totalBalanceDue: Number(arrearAgg._sum.balanceDue ?? 0),
           },
         });
       }
@@ -630,30 +627,30 @@ export class OrionAlertsService {
       });
     }
 
-    // 6. Alertes pour risques de trésorerie (dépenses > recettes sur 30 jours)
+    // 6. Alertes pour risques de trésorerie (dépenses > recettes sur 30 jours) — FIX OOM: use aggregate
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const [recentPayments, recentExpenses] = await Promise.all([
-      this.prisma.payment.findMany({
+    const [recentPaymentsAgg, recentExpensesAgg] = await Promise.all([
+      this.prisma.payment.aggregate({
         where: {
           ...where,
           paymentDate: { gte: thirtyDaysAgo },
         },
-        select: { amount: true },
+        _sum: { amount: true },
       }),
-      this.prisma.expense.findMany({
+      this.prisma.expense.aggregate({
         where: {
           ...where,
           status: 'approved',
           expenseDate: { gte: thirtyDaysAgo },
         },
-        select: { amount: true },
+        _sum: { amount: true },
       }),
     ]);
 
-    const totalIncome = recentPayments.reduce((sum, p) => sum + Number(p.amount), 0);
-    const totalExpenses = recentExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
+    const totalIncome = Number(recentPaymentsAgg._sum.amount ?? 0);
+    const totalExpenses = Number(recentExpensesAgg._sum.amount ?? 0);
     const netCashFlow = totalIncome - totalExpenses;
 
     if (netCashFlow < 0) {
@@ -839,18 +836,15 @@ export class OrionAlertsService {
       });
     }
 
-    // 5. Alertes pour employés déclarés CNSS sans déclaration
-    const employeesCNSS = await this.prisma.employeeCNSS.findMany({
+    // 5. Alertes pour employés déclarés CNSS sans déclaration — FIX OOM: use count
+    const employeesCNSSCount = await this.prisma.employeeCNSS.count({
       where: {
         tenantId,
         isActive: true,
       },
-      include: {
-        staff: { select: { firstName: true, lastName: true } },
-      },
     });
 
-    if (employeesCNSS.length > 0 && academicYearId) {
+    if (employeesCNSSCount > 0 && academicYearId) {
       const currentMonth = new Date().toISOString().slice(0, 7);
       const currentDeclaration = await this.prisma.cNSSDeclaration.findFirst({
         where: {
@@ -864,12 +858,12 @@ export class OrionAlertsService {
         alerts.push({
           type: OrionAlertType.RH,
           severity: OrionAlertSeverity.WARNING,
-          title: `${employeesCNSS.length} employé(s) CNSS sans déclaration pour le mois en cours`,
+          title: `${employeesCNSSCount} employé(s) CNSS sans déclaration pour le mois en cours`,
           description: `Des employés sont déclarés CNSS mais aucune déclaration n'a été générée pour le mois en cours.`,
           recommendation: 'Générer la déclaration CNSS du mois en cours pour assurer la conformité.',
           metadata: {
             source: 'HR_CNSS_MISSING_DECLARATION',
-            employeeCount: employeesCNSS.length,
+            employeeCount: employeesCNSSCount,
             currentMonth,
           },
         });
@@ -1028,23 +1022,32 @@ export class OrionAlertsService {
     }
 
     // 5. Alertes pour canaux de communication inactifs
-    const inactiveChannels = await this.prisma.communicationChannel.findMany({
+    // FIX OOM: use count + limited sample instead of loading all inactive channels
+    const inactiveChannelsCount = await this.prisma.communicationChannel.count({
       where: {
         tenantId,
         isActive: false,
       },
     });
 
-    if (inactiveChannels.length > 0) {
+    if (inactiveChannelsCount > 0) {
+      const inactiveChannels = await this.prisma.communicationChannel.findMany({
+        where: {
+          tenantId,
+          isActive: false,
+        },
+        select: { id: true, code: true, name: true },
+        take: 10,
+      });
       alerts.push({
         type: 'OPERATIONAL',
         severity: 'INFO',
-        title: `${inactiveChannels.length} canal(x) de communication inactif(s)`,
+        title: `${inactiveChannelsCount} canal(x) de communication inactif(s)`,
         description: `Certains canaux de communication sont désactivés et ne peuvent pas être utilisés pour envoyer des messages.`,
         recommendation: 'Réactiver les canaux nécessaires ou vérifier leur configuration.',
         metadata: {
           source: 'COMMUNICATION_INACTIVE_CHANNELS',
-          count: inactiveChannels.length,
+          count: inactiveChannelsCount,
           channels: inactiveChannels.map(c => ({
             id: c.id,
             code: c.code,

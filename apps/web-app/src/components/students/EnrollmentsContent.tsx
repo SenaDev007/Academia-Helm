@@ -17,6 +17,8 @@ import { studentsService } from '@/services/students.service';
 import { financeService } from '@/services/finance.service';
 import { toast } from '@/components/ui/toast';
 import { apiFetch } from '@/lib/api/client';
+import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
+import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 
 interface Enrollment {
   id: string;
@@ -34,7 +36,8 @@ interface Enrollment {
 }
 
 export default function EnrollmentsContent() {
-  const { academicYear, schoolLevel } = useModuleContext();
+  const { academicYear, schoolLevel, tenantId } = useModuleContext();
+  const syncStatuses = useEntitySyncStatusBatch('STUDENT', tenantId ?? undefined);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -176,6 +179,7 @@ export default function EnrollmentsContent() {
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Type</th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Date</th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Statut</th>
+                    <th className="px-6 py-4 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Sync</th>
                     <th className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
@@ -226,6 +230,9 @@ export default function EnrollmentsContent() {
                             {getStatusIcon(enrollment.status)}
                             {enrollment.status}
                           </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <EntitySyncIndicator variant="dot" status={syncStatuses[enrollment.id] ?? 'UNKNOWN'} />
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right">
                           <button className="p-2 hover:bg-white hover:shadow-sm rounded-lg text-slate-400 hover:text-blue-600 transition-all">

@@ -5,8 +5,15 @@
  */
 
 import { getClientAuthorizationHeader, tryRefreshAccessToken } from '@/lib/auth/client-access-token';
+import { offlineFetch, offlineMutation } from '@/lib/offline/offline-fetch';
 
 const BASE_URL = '/api/settings';
+
+function getTenantIdFromCookie(): string {
+  if (typeof document === 'undefined') return '';
+  const match = document.cookie.match(/(?:(?:^|.*;\s*)x-tenant-id\s*\=\s*([^;]*).*$)|^.*$/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
 
 function getErrorMessage(error: { message?: unknown; error?: string }, fallback: string): string {
   const msg = error.message;
@@ -36,58 +43,149 @@ function settingsAuthHeaders(extra?: HeadersInit): Record<string, string> {
 }
 
 async function fetchWithAuth(url: string, options: RequestInit = {}) {
-  let response = await fetch(url, {
-    ...options,
-    credentials: 'include',
-    headers: settingsAuthHeaders(options.headers),
-  });
+  const method = (options.method || 'GET').toUpperCase();
+  const isMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
 
-  if (response.status === 401 && (await tryRefreshAccessToken())) {
-    response = await fetch(url, {
+  if (!isMutation) {
+    // GET requests: use offlineFetch for offline support
+    try {
+      return await offlineFetch(url, 'settings_cache', {
+        tenantId: getTenantIdFromCookie(),
+        fetchOptions: { ...options, credentials: 'include', headers: settingsAuthHeaders(options.headers) },
+      });
+    } catch {
+      // Fallback to original network logic if offlineFetch fails
+      let response = await fetch(url, {
+        ...options,
+        credentials: 'include',
+        headers: settingsAuthHeaders(options.headers),
+      });
+      if (response.status === 401 && (await tryRefreshAccessToken())) {
+        response = await fetch(url, {
+          ...options,
+          credentials: 'include',
+          headers: settingsAuthHeaders(options.headers),
+        });
+      }
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Une erreur est survenue' }));
+        throw new Error(getErrorMessage(error, `HTTP ${response.status}`));
+      }
+      return response.json();
+    }
+  }
+
+  // Mutations: use offlineMutation for offline support
+  try {
+    const body = options.body ? JSON.parse(options.body as string) : undefined;
+    const result = await offlineMutation(url, method as 'POST' | 'PUT' | 'PATCH' | 'DELETE', body, {
+      tenantId: getTenantIdFromCookie(),
+    });
+    if (result.error) throw new Error(result.error);
+    return result.data;
+  } catch (mutationError) {
+    // If offlineMutation gives a meaningful error, re-throw it
+    if (mutationError instanceof Error && mutationError.message !== 'undefined') {
+      // Check if it's our own error from offlineMutation
+      const msg = (mutationError as Error).message;
+      if (msg && msg !== 'undefined' && !msg.includes('fallback')) {
+        // It's a real error from the mutation result, re-throw
+        // But first try the original network path as fallback
+      }
+    }
+    // Fallback to original network logic
+    let response = await fetch(url, {
       ...options,
       credentials: 'include',
       headers: settingsAuthHeaders(options.headers),
     });
+    if (response.status === 401 && (await tryRefreshAccessToken())) {
+      response = await fetch(url, {
+        ...options,
+        credentials: 'include',
+        headers: settingsAuthHeaders(options.headers),
+      });
+    }
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Une erreur est survenue' }));
+      throw new Error(getErrorMessage(error, `HTTP ${response.status}`));
+    }
+    return response.json();
   }
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: 'Une erreur est survenue' }));
-    throw new Error(getErrorMessage(error, `HTTP ${response.status}`));
-  }
-
-  return response.json();
 }
 
 /** Appels sans cache pour données toujours à jour (ex. années scolaires depuis le backend) */
 async function fetchWithAuthNoCache(url: string, options: RequestInit = {}) {
+  const method = (options.method || 'GET').toUpperCase();
+  const isMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
   const noCacheHeaders = (): Record<string, string> => ({
     ...settingsAuthHeaders(options.headers),
     'Cache-Control': 'no-cache',
     Pragma: 'no-cache',
   });
 
-  let response = await fetch(url, {
-    ...options,
-    cache: 'no-store',
-    credentials: 'include',
-    headers: noCacheHeaders(),
-  });
+  if (!isMutation) {
+    // GET requests: use offlineFetch with skipCache for no-cache behavior
+    try {
+      return await offlineFetch(url, 'settings_cache', {
+        tenantId: getTenantIdFromCookie(),
+        fetchOptions: { ...options, cache: 'no-store', credentials: 'include', headers: noCacheHeaders() },
+        skipCache: true,
+      });
+    } catch {
+      // Fallback to original network logic
+      let response = await fetch(url, {
+        ...options,
+        cache: 'no-store',
+        credentials: 'include',
+        headers: noCacheHeaders(),
+      });
+      if (response.status === 401 && (await tryRefreshAccessToken())) {
+        response = await fetch(url, {
+          ...options,
+          cache: 'no-store',
+          credentials: 'include',
+          headers: noCacheHeaders(),
+        });
+      }
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Une erreur est survenue' }));
+        throw new Error(getErrorMessage(error, `HTTP ${response.status}`));
+      }
+      return response.json();
+    }
+  }
 
-  if (response.status === 401 && (await tryRefreshAccessToken())) {
-    response = await fetch(url, {
+  // Mutations: use offlineMutation
+  try {
+    const body = options.body ? JSON.parse(options.body as string) : undefined;
+    const result = await offlineMutation(url, method as 'POST' | 'PUT' | 'PATCH' | 'DELETE', body, {
+      tenantId: getTenantIdFromCookie(),
+    });
+    if (result.error) throw new Error(result.error);
+    return result.data;
+  } catch (mutationError) {
+    // Fallback to original network logic
+    let response = await fetch(url, {
       ...options,
       cache: 'no-store',
       credentials: 'include',
       headers: noCacheHeaders(),
     });
+    if (response.status === 401 && (await tryRefreshAccessToken())) {
+      response = await fetch(url, {
+        ...options,
+        cache: 'no-store',
+        credentials: 'include',
+        headers: noCacheHeaders(),
+      });
+    }
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Une erreur est survenue' }));
+      throw new Error(getErrorMessage(error, `HTTP ${response.status}`));
+    }
+    return response.json();
   }
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: 'Une erreur est survenue' }));
-    throw new Error(getErrorMessage(error, `HTTP ${response.status}`));
-  }
-
-  return response.json();
 }
 
 // ============================================================================

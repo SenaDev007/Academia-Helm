@@ -5,8 +5,14 @@
  * Toutes les agrégations et calculs sont effectués côté backend.
  */
 
-import { apiClient } from '@/lib/api/client';
+import { offlineFetch } from '@/lib/offline/offline-fetch';
 import type { DirectionKpiResponse } from '@/types';
+
+function getTenantId(): string {
+  if (typeof document === 'undefined') return '';
+  const match = document.cookie.match(/(?:(?:^|.*;\s*)x-tenant-id\s*\=\s*([^;]*).*$)|^.*$/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
 
 /**
  * Récupère les KPI directionnels pour le tenant courant.
@@ -14,8 +20,7 @@ import type { DirectionKpiResponse } from '@/types';
  * Route backend attendue : GET /analytics/direction
  */
 export async function getDirectionKpi(): Promise<DirectionKpiResponse> {
-  const response = await apiClient.get<DirectionKpiResponse>('/analytics/direction');
-  return response.data;
+  return offlineFetch<DirectionKpiResponse>('/analytics/direction', 'kpi_cache', {
+    tenantId: getTenantId(),
+  });
 }
-
-

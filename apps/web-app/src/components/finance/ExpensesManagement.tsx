@@ -15,8 +15,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
+import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 
 export default function ExpensesManagement() {
+  const syncStatuses = useEntitySyncStatusBatch('EXPENSE');
   const { toast } = useToast();
   const [expenses, setExpenses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -119,6 +122,7 @@ export default function ExpensesManagement() {
                       <AlertCircle className="w-3 h-3" /> En attente
                     </span>
                   )}
+                  <EntitySyncIndicator variant="dot" status={syncStatuses[exp.id] ?? 'UNKNOWN'} />
                 </div>
               </div>
             </div>

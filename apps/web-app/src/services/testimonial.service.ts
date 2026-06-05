@@ -5,8 +5,14 @@
  * Validation manuelle obligatoire côté backend
  */
 
-import apiClient from '@/lib/api/client';
+import { offlineFetch, offlineMutation } from '@/lib/offline/offline-fetch';
 import type { Testimonial, TestimonialSubmission, TestimonialSubmissionResponse } from '@/types';
+
+function getTenantId(): string {
+  if (typeof document === 'undefined') return '';
+  const match = document.cookie.match(/(?:(?:^|.*;\s*)x-tenant-id\s*\=\s*([^;]*).*$)|^.*$/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
 
 /**
  * Récupère les témoignages publiés (APPROVED uniquement)
@@ -30,21 +36,14 @@ export async function getPublishedTestimonials(
     if (limit) {
       params.limit = limit;
     }
-    
-    const response = await apiClient.get<Testimonial[]>('/testimonials', {
-      params,
+
+    const qs = new URLSearchParams(params).toString();
+    return await offlineFetch<Testimonial[]>(`/testimonials?${qs}`, 'testimonials_cache', {
+      tenantId: getTenantId(),
     });
-    
-    return response.data;
   } catch (error: any) {
-    // Si l'API n'est pas disponible (404, etc.), retourner un tableau vide
-    // Le composant gérera l'affichage en conséquence
-    if (error?.response?.status === 404 || error?.code === 'ECONNREFUSED' || error?.code === 'ERR_NETWORK') {
-      // Erreur silencieuse : l'API n'est pas disponible, c'est attendu si le backend n'est pas démarré
-      return [];
-    }
-    // Pour les autres erreurs, on les propage
-    throw error;
+    // Si l'API n'est pas disponible, retourner un tableau vide
+    return [];
   }
 }
 
@@ -57,12 +56,14 @@ export async function getPublishedTestimonials(
 export async function submitTestimonial(
   submission: TestimonialSubmission
 ): Promise<TestimonialSubmissionResponse> {
-  const response = await apiClient.post<TestimonialSubmissionResponse>(
+  const result = await offlineMutation<TestimonialSubmissionResponse>(
     '/testimonials/submit',
-    submission
+    'POST',
+    submission,
+    { tenantId: getTenantId() }
   );
-  
-  return response.data;
+  if (result.error) throw new Error(result.error);
+  return result.data!;
 }
 
 /**
@@ -70,8 +71,9 @@ export async function submitTestimonial(
  * (pour affichage dans le dashboard de l'école)
  */
 export async function getTenantTestimonials(): Promise<Testimonial[]> {
-  const response = await apiClient.get<Testimonial[]>('/testimonials/my');
-  return response.data;
+  return offlineFetch<Testimonial[]>('/testimonials/my', 'testimonials_cache', {
+    tenantId: getTenantId(),
+  });
 }
 
 /**
@@ -84,15 +86,15 @@ export async function getTestimonialStats(): Promise<{
   averageRating: number;
 }> {
   try {
-    const response = await apiClient.get<{
+    return await offlineFetch<{
       totalSchools: number;
       satisfactionRate: number;
       averageRating: number;
-    }>('/testimonials/stats');
-    return response.data;
+    }>('/testimonials/stats', 'testimonials_cache', {
+      tenantId: getTenantId(),
+    });
   } catch (error) {
     // Fallback en cas d'erreur : l'API n'est pas disponible, retourner des valeurs par défaut
-    // Erreur silencieuse car c'est attendu si le backend n'est pas démarré
     return {
       totalSchools: 0,
       satisfactionRate: 0,
@@ -100,4 +102,3 @@ export async function getTestimonialStats(): Promise<{
     };
   }
 }
-

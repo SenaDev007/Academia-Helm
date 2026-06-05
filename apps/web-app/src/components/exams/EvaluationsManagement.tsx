@@ -10,6 +10,8 @@
 import { useState } from 'react';
 import { Plus, Search, Filter, MoreHorizontal, BookOpen, Calendar, CheckCircle2, Clock, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
+import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 
 const statusConfig: Record<string, { label: string; color: string }> = {
   DRAFT:            { label: 'Brouillon',  color: 'bg-slate-100 text-slate-500' },
@@ -20,6 +22,7 @@ const statusConfig: Record<string, { label: string; color: string }> = {
 };
 
 export default function EvaluationsManagement() {
+  const syncStatuses = useEntitySyncStatusBatch('EXAM');
   const [evaluations] = useState([
     { id: 'EVL-001', title: 'Devoir n°3', class: 'Terminale C', subject: 'Mathématiques', type: 'Devoir', date: '14 Mai 2026', scale: '/20', status: 'OPEN_FOR_GRADING', teacher: 'M. Kouassi' },
     { id: 'EVL-002', title: 'Composition Trimestre 2', class: 'Terminale C', subject: 'Physique', type: 'Composition', date: '20 Mai 2026', scale: '/20', status: 'PLANNED', teacher: 'Mme. Traoré' },
@@ -77,6 +80,7 @@ export default function EvaluationsManagement() {
                 <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Type</th>
                 <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Date</th>
                 <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Statut</th>
+                <th className="px-6 py-4 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">Sync</th>
                 <th className="px-6 py-4 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest">Actions</th>
               </tr>
             </thead>
@@ -103,6 +107,9 @@ export default function EvaluationsManagement() {
                     <span className={cn("px-2.5 py-1 rounded-full text-[10px] font-black", statusConfig[ev.status]?.color)}>
                       {statusConfig[ev.status]?.label}
                     </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <EntitySyncIndicator variant="dot" status={syncStatuses[ev.id] ?? 'UNKNOWN'} />
                   </td>
                   <td className="px-6 py-4 text-right">
                     <button className="p-2 hover:bg-slate-100 rounded-lg transition-all opacity-0 group-hover:opacity-100">

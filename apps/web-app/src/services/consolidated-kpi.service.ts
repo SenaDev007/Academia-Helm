@@ -5,8 +5,14 @@
  * Uniquement pour les SUPER_DIRECTOR (promoteurs)
  */
 
-import apiClient from '@/lib/api/client';
+import { offlineFetch } from '@/lib/offline/offline-fetch';
 import type { ConsolidatedKpiResponse } from '@/types';
+
+function getTenantId(): string {
+  if (typeof document === 'undefined') return '';
+  const match = document.cookie.match(/(?:(?:^|.*;\s*)x-tenant-id\s*\=\s*([^;]*).*$)|^.*$/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
 
 /**
  * Récupère les bilans consolidés pour tous les établissements du groupe
@@ -14,12 +20,8 @@ import type { ConsolidatedKpiResponse } from '@/types';
  * @param period - Période de référence (ex: "2024-2025", "2025-01")
  */
 export async function getConsolidatedKpi(period?: string): Promise<ConsolidatedKpiResponse> {
-  const params = period ? { period } : {};
-  
-  const response = await apiClient.get<ConsolidatedKpiResponse>('/analytics/consolidated', {
-    params,
+  const qs = period ? `?period=${encodeURIComponent(period)}` : '';
+  return offlineFetch<ConsolidatedKpiResponse>(`/analytics/consolidated${qs}`, 'kpi_cache', {
+    tenantId: getTenantId(),
   });
-
-  return response.data;
 }
-

@@ -19,6 +19,8 @@ import { classesService } from '@/services/classes.service';
 import { getAcademicYears } from '@/services/settings.service';
 import FeeStructureModal from './FeeStructureModal';
 import FeeOverrideModal from './FeeOverrideModal';
+import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
+import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 
 const FEE_TYPES = [
   { value: 'INSCRIPTION', label: 'Inscription' },
@@ -29,7 +31,8 @@ const FEE_TYPES = [
 ];
 
 export default function FeeStructuresContent() {
-  const { academicYear } = useModuleContext();
+  const { academicYear, tenantId } = useModuleContext();
+  const syncStatuses = useEntitySyncStatusBatch('FEE_STRUCTURE', tenantId ?? undefined);
   const { toast } = useToast();
   const [structures, setStructures] = useState<any[]>([]);
   const [levels, setLevels] = useState<any[]>([]);
@@ -198,6 +201,7 @@ export default function FeeStructuresContent() {
               <TableHead>Tranches</TableHead>
               <TableHead>Oblig.</TableHead>
               <TableHead>Statut</TableHead>
+              <TableHead>Sync</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -215,6 +219,9 @@ export default function FeeStructuresContent() {
                   <TableCell>{s.isInstallment ? 'Oui' : 'Non'}</TableCell>
                   <TableCell><Badge variant={s.isMandatory ? 'default' : 'outline'}>{s.isMandatory ? 'Oui' : 'Non'}</Badge></TableCell>
                   <TableCell><Badge variant={s.isActive ? 'default' : 'secondary'}>{s.isActive ? 'Actif' : 'Inactif'}</Badge></TableCell>
+                  <TableCell className="text-center">
+                    <EntitySyncIndicator variant="dot" status={syncStatuses[s.id] ?? 'UNKNOWN'} />
+                  </TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="icon" onClick={() => setEditingFee(s)}>
                       <Pencil className="h-4 w-4" />

@@ -14,6 +14,8 @@ import {
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { disciplineService } from '@/services/discipline.service';
+import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
+import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 import { studentsService } from '@/services/students.service';
 
 interface DisciplinaryAction {
@@ -55,7 +57,8 @@ const EMPTY_FORM: DisciplineForm = {
 };
 
 export default function DisciplinePage() {
-  const { academicYear, schoolLevel } = useModuleContext();
+  const { academicYear, schoolLevel, tenantId } = useModuleContext();
+  const syncStatuses = useEntitySyncStatusBatch('DISCIPLINARY_INCIDENT', tenantId ?? undefined);
   const [actions, setActions] = useState<DisciplinaryAction[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -185,6 +188,7 @@ export default function DisciplinePage() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Durée (j)</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Statut</th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Sync</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -222,6 +226,9 @@ export default function DisciplinePage() {
                       }`}>
                         {getStatusLabel(action.status)}
                       </span>
+                    </td>
+                    <td className="px-2 py-3 text-center">
+                      <EntitySyncIndicator variant="dot" status={syncStatuses[action.id] ?? 'UNKNOWN'} />
                     </td>
                   </tr>
                 ))}

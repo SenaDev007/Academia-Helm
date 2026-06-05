@@ -48,6 +48,8 @@ import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { pedagogyService } from '@/services/pedagogy.service';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
+import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
+import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 
 const PRIMARY = '#1A2BA6';
 const ACCENT = '#F5A623';
@@ -94,7 +96,8 @@ const isHomeroomLevel = (levelName?: string): boolean => {
 // --- Component ---
 
 export default function AssignmentsWorkspace() {
-  const { academicYear } = useModuleContext();
+  const { academicYear, tenantId } = useModuleContext();
+  const syncStatuses = useEntitySyncStatusBatch('CLASS', tenantId ?? undefined);
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
 
@@ -326,6 +329,7 @@ export default function AssignmentsWorkspace() {
                       )}>
                         {c.name}
                       </p>
+                      <EntitySyncIndicator variant="dot" status={syncStatuses[c.id] ?? 'UNKNOWN'} />
                       {selectedClassId !== c.id && <LevelBadge cls={c} />}
                     </div>
                     {selectedClassId === c.id && (

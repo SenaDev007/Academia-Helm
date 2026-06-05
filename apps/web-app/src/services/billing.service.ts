@@ -5,7 +5,7 @@
  * Toute la logique métier (numérotation, archivage, PDF) reste côté backend.
  */
 
-import { apiClient } from '@/lib/api/client';
+import { offlineFetch } from '@/lib/offline/offline-fetch';
 import type { Invoice, Payment, Receipt } from '@/types';
 
 export interface BillingSummary {
@@ -14,28 +14,35 @@ export interface BillingSummary {
   receipts: Receipt[];
 }
 
+function getTenantId(): string {
+  if (typeof document === 'undefined') return '';
+  const match = document.cookie.match(/(?:(?:^|.*;\s*)x-tenant-id\s*\=\s*([^;]*).*$)|^.*$/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
 /**
  * Récupère l'historique complet de facturation du tenant courant.
  */
 export async function getBillingHistory(): Promise<BillingSummary> {
-  const response = await apiClient.get<BillingSummary>('/billing/history');
-  return response.data;
+  return offlineFetch<BillingSummary>('/billing/history', 'invoices', {
+    tenantId: getTenantId(),
+  });
 }
 
 /**
  * Récupère les factures uniquement.
  */
 export async function getInvoices(): Promise<Invoice[]> {
-  const response = await apiClient.get<Invoice[]>('/billing/invoices');
-  return response.data;
+  return offlineFetch<Invoice[]>('/billing/invoices', 'invoices', {
+    tenantId: getTenantId(),
+  });
 }
 
 /**
  * Récupère les reçus uniquement.
  */
 export async function getReceipts(): Promise<Receipt[]> {
-  const response = await apiClient.get<Receipt[]>('/billing/receipts');
-  return response.data;
+  return offlineFetch<Receipt[]>('/billing/receipts', 'payments', {
+    tenantId: getTenantId(),
+  });
 }
-
-

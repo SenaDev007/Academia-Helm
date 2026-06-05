@@ -5,7 +5,7 @@
  * Accès ultra sécurisé - uniquement pour le rôle SUPER_ADMIN
  */
 
-import apiClient from '@/lib/api/client';
+import { offlineFetch, offlineMutation } from '@/lib/offline/offline-fetch';
 import type {
   AdminDashboardData,
   AdminTenantView,
@@ -16,12 +16,19 @@ import type {
   Testimonial,
 } from '@/types';
 
+function getTenantId(): string {
+  if (typeof document === 'undefined') return '';
+  const match = document.cookie.match(/(?:(?:^|.*;\s*)x-tenant-id\s*\=\s*([^;]*).*$)|^.*$/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
 /**
  * Récupère les données du dashboard Super Admin
  */
 export async function getAdminDashboard(): Promise<AdminDashboardData> {
-  const response = await apiClient.get<AdminDashboardData>('/admin/dashboard');
-  return response.data;
+  return offlineFetch<AdminDashboardData>('/admin/dashboard', 'admin_cache', {
+    tenantId: getTenantId(),
+  });
 }
 
 /**
@@ -39,69 +46,100 @@ export async function getAllTenants(
   if (filters?.status) params.status = filters.status;
   if (filters?.search) params.search = filters.search;
 
-  const response = await apiClient.get<{ tenants: AdminTenantView[]; total: number; page: number; limit: number }>(
-    '/admin/tenants',
-    { params }
+  const qs = new URLSearchParams(params).toString();
+  return offlineFetch<{ tenants: AdminTenantView[]; total: number; page: number; limit: number }>(
+    `/admin/tenants?${qs}`,
+    'admin_cache',
+    { tenantId: getTenantId() }
   );
-  return response.data;
 }
 
 /**
  * Récupère les détails d'un tenant spécifique
  */
 export async function getTenantDetails(tenantId: string): Promise<AdminTenantView> {
-  const response = await apiClient.get<AdminTenantView>(`/admin/tenants/${tenantId}`);
-  return response.data;
+  return offlineFetch<AdminTenantView>(`/admin/tenants/${tenantId}`, 'admin_cache', {
+    tenantId: getTenantId(),
+  });
 }
 
 /**
  * Suspend un tenant
+ * Security-sensitive: networkOnly
  */
 export async function suspendTenant(request: TenantActionRequest): Promise<void> {
-  await apiClient.post(`/admin/tenants/${request.tenantId}/suspend`, {
-    reason: request.reason,
-    notifyTenant: request.notifyTenant,
-  });
+  const result = await offlineMutation(
+    `/admin/tenants/${request.tenantId}/suspend`,
+    'POST',
+    {
+      reason: request.reason,
+      notifyTenant: request.notifyTenant,
+    },
+    { tenantId: getTenantId(), networkOnly: true }
+  );
+  if (result.error) throw new Error(result.error);
 }
 
 /**
  * Active un tenant (lève la suspension)
+ * Security-sensitive: networkOnly
  */
 export async function activateTenant(request: TenantActionRequest): Promise<void> {
-  await apiClient.post(`/admin/tenants/${request.tenantId}/activate`, {
-    reason: request.reason,
-    notifyTenant: request.notifyTenant,
-  });
+  const result = await offlineMutation(
+    `/admin/tenants/${request.tenantId}/activate`,
+    'POST',
+    {
+      reason: request.reason,
+      notifyTenant: request.notifyTenant,
+    },
+    { tenantId: getTenantId(), networkOnly: true }
+  );
+  if (result.error) throw new Error(result.error);
 }
 
 /**
  * Termine définitivement un tenant
+ * Security-sensitive: networkOnly
  */
 export async function terminateTenant(request: TenantActionRequest): Promise<void> {
-  await apiClient.post(`/admin/tenants/${request.tenantId}/terminate`, {
-    reason: request.reason,
-    notifyTenant: request.notifyTenant,
-  });
+  const result = await offlineMutation(
+    `/admin/tenants/${request.tenantId}/terminate`,
+    'POST',
+    {
+      reason: request.reason,
+      notifyTenant: request.notifyTenant,
+    },
+    { tenantId: getTenantId(), networkOnly: true }
+  );
+  if (result.error) throw new Error(result.error);
 }
 
 /**
  * Modifie le statut d'abonnement d'un tenant
+ * Security-sensitive: networkOnly
  */
 export async function modifySubscription(request: SubscriptionModificationRequest): Promise<void> {
-  await apiClient.post(`/admin/tenants/${request.tenantId}/subscription`, {
-    newStatus: request.newStatus,
-    reason: request.reason,
-    effectiveDate: request.effectiveDate,
-    notifyTenant: request.notifyTenant,
-  });
+  const result = await offlineMutation(
+    `/admin/tenants/${request.tenantId}/subscription`,
+    'POST',
+    {
+      newStatus: request.newStatus,
+      reason: request.reason,
+      effectiveDate: request.effectiveDate,
+      notifyTenant: request.notifyTenant,
+    },
+    { tenantId: getTenantId(), networkOnly: true }
+  );
+  if (result.error) throw new Error(result.error);
 }
 
 /**
  * Récupère les statistiques globales
  */
 export async function getGlobalStats(): Promise<GlobalStats> {
-  const response = await apiClient.get<GlobalStats>('/admin/stats');
-  return response.data;
+  return offlineFetch<GlobalStats>('/admin/stats', 'admin_cache', {
+    tenantId: getTenantId(),
+  });
 }
 
 /**
@@ -125,42 +163,53 @@ export async function getAuditLogs(
   if (filters?.startDate) params.startDate = filters.startDate;
   if (filters?.endDate) params.endDate = filters.endDate;
 
-  const response = await apiClient.get<{ logs: AdminAuditLog[]; total: number; page: number; limit: number }>(
-    '/admin/audit-logs',
-    { params }
+  const qs = new URLSearchParams(params).toString();
+  return offlineFetch<{ logs: AdminAuditLog[]; total: number; page: number; limit: number }>(
+    `/admin/audit-logs?${qs}`,
+    'admin_cache',
+    { tenantId: getTenantId() }
   );
-  return response.data;
 }
 
 /**
  * Récupère les témoignages en attente de validation
  */
 export async function getPendingTestimonials(): Promise<Testimonial[]> {
-  const response = await apiClient.get<Testimonial[]>('/admin/testimonials/pending');
-  return response.data;
+  return offlineFetch<Testimonial[]>('/admin/testimonials/pending', 'admin_cache', {
+    tenantId: getTenantId(),
+  });
 }
 
 /**
  * Approuve un témoignage
+ * Security-sensitive: networkOnly
  */
 export async function approveTestimonial(
   testimonialId: string,
   featured?: boolean
 ): Promise<void> {
-  await apiClient.post(`/admin/testimonials/${testimonialId}/approve`, {
-    featured,
-  });
+  const result = await offlineMutation(
+    `/admin/testimonials/${testimonialId}/approve`,
+    'POST',
+    { featured },
+    { tenantId: getTenantId(), networkOnly: true }
+  );
+  if (result.error) throw new Error(result.error);
 }
 
 /**
  * Rejette un témoignage
+ * Security-sensitive: networkOnly
  */
 export async function rejectTestimonial(
   testimonialId: string,
   reason: string
 ): Promise<void> {
-  await apiClient.post(`/admin/testimonials/${testimonialId}/reject`, {
-    reason,
-  });
+  const result = await offlineMutation(
+    `/admin/testimonials/${testimonialId}/reject`,
+    'POST',
+    { reason },
+    { tenantId: getTenantId(), networkOnly: true }
+  );
+  if (result.error) throw new Error(result.error);
 }
-

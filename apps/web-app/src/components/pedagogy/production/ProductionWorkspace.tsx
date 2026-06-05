@@ -43,6 +43,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/components/ui/use-toast';
 import { networkDetectionService } from '@/lib/offline/network-detection.service';
 import { cn } from '@/lib/utils';
+import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
+import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
@@ -85,6 +87,8 @@ interface AssignedSubject {
 
 export default function ProductionWorkspace() {
   const { academicYear, tenantId } = useModuleContext();
+  const diarySyncStatuses = useEntitySyncStatusBatch('CLASS_DIARY', tenantId ?? undefined);
+  const lessonSyncStatuses = useEntitySyncStatusBatch('LESSON_PLAN', tenantId ?? undefined);
   const { user } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
@@ -583,6 +587,7 @@ export default function ProductionWorkspace() {
                          <div className="flex-1 space-y-4">
                             <div className="flex items-center justify-between">
                                <h4 className="text-lg font-bold text-gray-900">Résumé de la séance</h4>
+                               <EntitySyncIndicator variant="dot" status={diarySyncStatuses[d.id] ?? 'UNKNOWN'} />
                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                   <button className="p-2 hover:bg-gray-50 rounded-xl text-gray-400 transition-all"><Edit3 className="w-4 h-4" /></button>
                                   <button className="p-2 hover:bg-gray-50 rounded-xl text-gray-400 transition-all"><MessageSquare className="w-4 h-4" /></button>
@@ -645,6 +650,7 @@ export default function ProductionWorkspace() {
                                l.status === 'REJECTED' ? "bg-rose-100 text-rose-600" :
                                l.status === 'CORRECTION_REQUIRED' ? "bg-amber-100 text-amber-600" : "bg-blue-100 text-blue-600"
                              )}>{l.status}</span>
+                             <EntitySyncIndicator variant="dot" status={lessonSyncStatuses[l.id] ?? 'UNKNOWN'} />
                              <span className="text-gray-300">•</span>
                              <span className="text-[9px] font-bold text-gray-500 uppercase">v{l.version}</span>
                            </div>
@@ -731,6 +737,7 @@ export default function ProductionWorkspace() {
                            <span className="px-3 py-1 bg-gray-50 rounded-xl text-xs font-bold text-gray-600">
                              {t.grades?.length > 0 ? `${t.grades.length} Notes saisies` : 'Non saisi'}
                            </span>
+                           <EntitySyncIndicator variant="dot" status={diarySyncStatuses[t.id] ?? 'UNKNOWN'} />
                          </div>
                        ))
                      )}

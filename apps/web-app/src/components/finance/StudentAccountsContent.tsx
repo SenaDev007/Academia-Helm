@@ -13,6 +13,8 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import { financeService } from '@/services/finance.service';
 import { classesService } from '@/services/classes.service';
+import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
+import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 
 const STATUS_COLORS: Record<string, string> = {
   PAID: 'bg-green-100 text-green-800',
@@ -24,7 +26,8 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function StudentAccountsContent() {
-  const { academicYear } = useModuleContext();
+  const { academicYear, tenantId } = useModuleContext();
+  const syncStatuses = useEntitySyncStatusBatch('STUDENT', tenantId ?? undefined);
   const { toast } = useToast();
   const [accounts, setAccounts] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
@@ -133,6 +136,7 @@ export default function StudentAccountsContent() {
               <TableHead>Payé</TableHead>
               <TableHead>Solde</TableHead>
               <TableHead>Statut</TableHead>
+              <TableHead>Sync</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -156,6 +160,9 @@ export default function StudentAccountsContent() {
                   <TableCell>{formatXOF(Number(a.balance))}</TableCell>
                   <TableCell>
                     <Badge className={STATUS_COLORS[a.status] ?? 'bg-gray-100 text-gray-800'}>{a.status}</Badge>
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <EntitySyncIndicator variant="dot" status={syncStatuses[a.id] ?? 'UNKNOWN'} />
                   </TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="icon" onClick={() => loadDetail(a.id)}>

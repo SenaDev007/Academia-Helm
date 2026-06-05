@@ -14,6 +14,8 @@ import {
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { classesService } from '@/services/classes.service';
+import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
+import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 
 interface Class {
   id: string;
@@ -35,7 +37,8 @@ interface ClassForm {
 const EMPTY_FORM: ClassForm = { name: '', level: '', capacity: '' };
 
 export default function ClassesPage() {
-  const { academicYear, schoolLevel } = useModuleContext();
+  const { academicYear, schoolLevel, tenantId } = useModuleContext();
+  const syncStatuses = useEntitySyncStatusBatch('CLASS', tenantId ?? undefined);
   const [classes, setClasses] = useState<Class[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -109,7 +112,10 @@ export default function ClassesPage() {
             >
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900">{classItem.name}</h3>
-                <span className="text-sm text-gray-500">{classItem.level ?? classItem.code}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-500">{classItem.level ?? classItem.code}</span>
+                  <EntitySyncIndicator variant="icon" status={syncStatuses[classItem.id] ?? 'UNKNOWN'} />
+                </div>
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">

@@ -25,6 +25,8 @@ import { FormModal, ConfirmModal } from '@/components/modules/blueprint';
 import AdmissionForm from './AdmissionForm';
 import { toast } from '@/components/ui/toast';
 import { studentsService } from '@/services/students.service';
+import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
+import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 
 interface Admission {
   id: string;
@@ -39,7 +41,8 @@ interface Admission {
 }
 
 export default function AdmissionsContent() {
-  const { academicYear, schoolLevel } = useModuleContext();
+  const { academicYear, schoolLevel, tenantId } = useModuleContext();
+  const syncStatuses = useEntitySyncStatusBatch('STUDENT', tenantId ?? undefined);
   const [admissions, setAdmissions] = useState<Admission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -237,6 +240,7 @@ export default function AdmissionsContent() {
                   <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Niveau Souhaité</th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Date de Dépôt</th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Statut</th>
+                  <th className="px-6 py-4 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Sync</th>
                   <th className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
@@ -291,6 +295,9 @@ export default function AdmissionsContent() {
                             {status.icon}
                             {status.label}
                           </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <EntitySyncIndicator variant="dot" status={syncStatuses[admission.id] ?? 'UNKNOWN'} />
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right">
                           <div className="flex items-center justify-end space-x-1 opacity-0 group-hover:opacity-100 transition-all">

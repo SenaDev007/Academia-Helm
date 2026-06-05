@@ -16,9 +16,12 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/components/ui/use-toast';
 import { financeService } from '@/services/finance.service';
+import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
+import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 
 export default function RecoveryRemindersContent() {
-  const { academicYear } = useModuleContext();
+  const { academicYear, tenantId } = useModuleContext();
+  const syncStatuses = useEntitySyncStatusBatch('PAYMENT', tenantId ?? undefined);
   const { toast } = useToast();
   const [reminders, setReminders] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -119,6 +122,7 @@ export default function RecoveryRemindersContent() {
               <TableHead>Niveau</TableHead>
               <TableHead>Canal</TableHead>
               <TableHead>Date</TableHead>
+              <TableHead>Sync</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -136,6 +140,9 @@ export default function RecoveryRemindersContent() {
                   <TableCell>{levelBadge(r.reminderLevel)}</TableCell>
                   <TableCell>{r.sentVia}</TableCell>
                   <TableCell>{r.sentAt ? new Date(r.sentAt).toLocaleDateString('fr-FR') : '—'}</TableCell>
+                  <TableCell className="text-center">
+                    <EntitySyncIndicator variant="dot" status={syncStatuses[r.id] ?? 'UNKNOWN'} />
+                  </TableCell>
                 </TableRow>
               ))
             )}

@@ -25,6 +25,8 @@ import { cn } from '@/lib/utils';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useToast } from '@/components/ui/use-toast';
+import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
+import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -51,8 +53,9 @@ interface WeeklyOverviewItem {
 /* ------------------------------------------------------------------ */
 
 export default function ClassLogManagement() {
-  const { academicYear } = useModuleContext();
+  const { academicYear, tenantId } = useModuleContext();
   const yearId = academicYear?.id ?? '';
+  const syncStatuses = useEntitySyncStatusBatch('CLASS_DIARY', tenantId ?? undefined);
   const { toast } = useToast();
 
   const [logs, setLogs] = useState<ClassDiaryRow[]>([]);
@@ -291,6 +294,7 @@ export default function ClassLogManagement() {
                 <div className="flex-1">
                   <div className="flex items-center justify-between mb-1">
                     <h4 className="text-lg font-black text-slate-900">{log.topic || 'Sans titre'}</h4>
+                    <EntitySyncIndicator variant="icon" status={syncStatuses[log.id] ?? 'UNKNOWN'} />
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{displayDate(log.date)}</span>
                   </div>
                   <div className="flex items-center gap-3 mb-4">

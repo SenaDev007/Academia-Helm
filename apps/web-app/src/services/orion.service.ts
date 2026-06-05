@@ -11,7 +11,7 @@
  * - Uniquement données réelles et agrégées
  */
 
-import apiClient from '@/lib/api/client';
+import { offlineFetch, offlineMutation } from '@/lib/offline/offline-fetch';
 import type {
   OrionQueryRequest,
   OrionResponse,
@@ -21,6 +21,12 @@ import type {
   OrionConfig,
 } from '@/types';
 
+function getTenantId(): string {
+  if (typeof document === 'undefined') return '';
+  const match = document.cookie.match(/(?:(?:^|.*;\s*)x-tenant-id\s*\=\s*([^;]*).*$)|^.*$/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
 /**
  * Pose une question à ORION
  * 
@@ -28,8 +34,11 @@ import type {
  * Aucune supposition, aucun conseil non factuel
  */
 export async function askOrion(request: OrionQueryRequest): Promise<OrionResponse> {
-  const response = await apiClient.post<OrionResponse>('/orion/query', request);
-  return response.data;
+  const result = await offlineMutation<OrionResponse>('/orion/query', 'POST', request, {
+    tenantId: getTenantId(),
+  });
+  if (result.error) throw new Error(result.error);
+  return result.data!;
 }
 
 /**
@@ -38,9 +47,10 @@ export async function askOrion(request: OrionQueryRequest): Promise<OrionRespons
  * Résumé structuré : Faits, Interprétation, Vigilance
  */
 export async function getOrionMonthlySummary(period?: string): Promise<OrionMonthlySummary> {
-  const params = period ? { period } : {};
-  const response = await apiClient.get<OrionMonthlySummary>('/orion/monthly-summary', { params });
-  return response.data;
+  const params = period ? `?period=${encodeURIComponent(period)}` : '';
+  return offlineFetch<OrionMonthlySummary>(`/orion/monthly-summary${params}`, 'orion_cache', {
+    tenantId: getTenantId(),
+  });
 }
 
 /**
@@ -65,16 +75,21 @@ export async function getOrionAlerts(
   if (params?.level) requestParams.level = params.level;
   if (params?.alertType) requestParams.alertType = params.alertType;
   if (params?.academicYearId) requestParams.academicYearId = params.academicYearId;
-  
-  const response = await apiClient.get<OrionAlert[]>('/orion/alerts', { params: requestParams });
-  return response.data;
+
+  const qs = new URLSearchParams(requestParams).toString();
+  return offlineFetch<OrionAlert[]>(`/orion/alerts${qs ? `?${qs}` : ''}`, 'orion_alerts', {
+    tenantId: getTenantId(),
+  });
 }
 
 /**
  * Acquitte une alerte ORION
  */
 export async function acknowledgeOrionAlert(alertId: string): Promise<void> {
-  await apiClient.post(`/orion/alerts/${alertId}/acknowledge`);
+  const result = await offlineMutation(`/orion/alerts/${alertId}/acknowledge`, 'POST', undefined, {
+    tenantId: getTenantId(),
+  });
+  if (result.error) throw new Error(result.error);
 }
 
 /**
@@ -88,29 +103,35 @@ export async function getOrionHistory(
     endDate?: string;
   }
 ): Promise<OrionAnalysisHistory[]> {
-  const params: Record<string, any> = { limit };
-  if (filters?.type) params.type = filters.type;
-  if (filters?.startDate) params.startDate = filters.startDate;
-  if (filters?.endDate) params.endDate = filters.endDate;
+  const requestParams: Record<string, any> = { limit };
+  if (filters?.type) requestParams.type = filters.type;
+  if (filters?.startDate) requestParams.startDate = filters.startDate;
+  if (filters?.endDate) requestParams.endDate = filters.endDate;
 
-  const response = await apiClient.get<OrionAnalysisHistory[]>('/orion/history', { params });
-  return response.data;
+  const qs = new URLSearchParams(requestParams).toString();
+  return offlineFetch<OrionAnalysisHistory[]>(`/orion/history?${qs}`, 'orion_cache', {
+    tenantId: getTenantId(),
+  });
 }
 
 /**
  * Récupère la configuration ORION
  */
 export async function getOrionConfig(): Promise<OrionConfig> {
-  const response = await apiClient.get<OrionConfig>('/orion/config');
-  return response.data;
+  return offlineFetch<OrionConfig>('/orion/config', 'orion_cache', {
+    tenantId: getTenantId(),
+  });
 }
 
 /**
  * Met à jour la configuration ORION
  */
 export async function updateOrionConfig(config: Partial<OrionConfig>): Promise<OrionConfig> {
-  const response = await apiClient.put<OrionConfig>('/orion/config', config);
-  return response.data;
+  const result = await offlineMutation<OrionConfig>('/orion/config', 'PUT', config, {
+    tenantId: getTenantId(),
+  });
+  if (result.error) throw new Error(result.error);
+  return result.data!;
 }
 
 export const orionService = {
@@ -122,4 +143,3 @@ export const orionService = {
   getConfig: getOrionConfig,
   updateConfig: updateOrionConfig,
 };
-

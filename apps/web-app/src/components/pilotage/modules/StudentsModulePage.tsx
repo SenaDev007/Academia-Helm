@@ -65,6 +65,8 @@ import StudentAuditContent from '@/components/students/StudentAuditContent';
 import StudentTransferContent from '@/components/students/StudentTransferContent';
 import StudentSaraAssistant from '@/components/students/StudentSaraAssistant';
 import { ArrowRightLeft } from 'lucide-react';
+import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
+import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 
 // ============================================================================
 // TYPES
@@ -114,7 +116,8 @@ interface Student {
 // ============================================================================
 
 export default function StudentsModulePage() {
-  const { academicYear, schoolLevel, isLoading: contextLoading } = useModuleContext();
+  const { academicYear, schoolLevel, tenantId, isLoading: contextLoading } = useModuleContext();
+  const syncStatuses = useEntitySyncStatusBatch('STUDENT', tenantId ?? undefined);
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -645,6 +648,9 @@ export default function StudentsModulePage() {
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Statut
                         </th>
+                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Sync
+                        </th>
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Actions
                         </th>
@@ -684,6 +690,9 @@ export default function StudentsModulePage() {
                             >
                               {getStatusLabel(student.status)}
                             </span>
+                          </td>
+                          <td className="px-2 py-3 text-center">
+                            <EntitySyncIndicator variant="dot" status={syncStatuses[student.id] ?? 'UNKNOWN'} />
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                             <div className="flex items-center justify-end gap-1">

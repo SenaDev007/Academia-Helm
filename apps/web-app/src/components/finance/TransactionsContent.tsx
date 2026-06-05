@@ -10,6 +10,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import NewPaymentModal from './NewPaymentModal';
 import { financeService } from '@/services/finance.service';
+import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
+import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 
 const METHOD_LABELS: Record<string, string> = {
   CASH: 'Espèces',
@@ -19,7 +21,8 @@ const METHOD_LABELS: Record<string, string> = {
 };
 
 export default function TransactionsContent() {
-  const { academicYear } = useModuleContext();
+  const { academicYear, tenantId } = useModuleContext();
+  const syncStatuses = useEntitySyncStatusBatch('PAYMENT', tenantId ?? undefined);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,6 +85,7 @@ export default function TransactionsContent() {
               <TableHead>Méthode</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Date</TableHead>
+              <TableHead>Sync</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -108,6 +112,9 @@ export default function TransactionsContent() {
                     <Badge variant={t.type === 'REVERSAL' ? 'destructive' : 'default'}>{t.type}</Badge>
                   </TableCell>
                   <TableCell>{t.createdAt ? new Date(t.createdAt).toLocaleDateString('fr-FR') : '—'}</TableCell>
+                  <TableCell className="text-center">
+                    <EntitySyncIndicator variant="dot" status={syncStatuses[t.id] ?? 'UNKNOWN'} />
+                  </TableCell>
                 </TableRow>
               ))
             )}

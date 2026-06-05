@@ -4,6 +4,8 @@
  * ============================================================================
  */
 
+import { offlineFetch } from '@/lib/offline/offline-fetch';
+
 export interface DashboardKpi {
   title: string;
   value: string | number;
@@ -20,15 +22,13 @@ export interface DashboardData {
   alerts?: any[];
 }
 
-class DashboardService {
-  private getAuthHeaders(): HeadersInit {
-    const token = localStorage.getItem('accessToken');
-    return {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    };
-  }
+function getTenantId(): string {
+  if (typeof document === 'undefined') return '';
+  const match = document.cookie.match(/(?:(?:^|.*;\s*)x-tenant-id\s*\=\s*([^;]*).*$)|^.*$/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
 
+class DashboardService {
   /**
    * Récupère les KPIs pour le dashboard Promoteur
    */
@@ -37,19 +37,13 @@ class DashboardService {
       const params = new URLSearchParams();
       if (academicYearId) params.append('academicYearId', academicYearId);
 
-      const response = await fetch(
+      return await offlineFetch<DashboardKpi[]>(
         `/api/dashboard/promoter/kpis?${params.toString()}`,
-        { headers: this.getAuthHeaders() }
+        'dashboard_cache',
+        { tenantId: tenantId || getTenantId() }
       );
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch promoter KPIs');
-      }
-
-      return response.json();
     } catch (error) {
       console.error('Error fetching promoter KPIs:', error);
-      // Retourner des données par défaut en cas d'erreur
       return this.getDefaultPromoterKpis();
     }
   }
@@ -62,16 +56,11 @@ class DashboardService {
       const params = new URLSearchParams();
       if (academicYearId) params.append('academicYearId', academicYearId);
 
-      const response = await fetch(
+      return await offlineFetch<DashboardKpi[]>(
         `/api/dashboard/director/kpis?${params.toString()}`,
-        { headers: this.getAuthHeaders() }
+        'dashboard_cache',
+        { tenantId: tenantId || getTenantId() }
       );
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch director KPIs');
-      }
-
-      return response.json();
     } catch (error) {
       console.error('Error fetching director KPIs:', error);
       return this.getDefaultDirectorKpis();
@@ -86,16 +75,11 @@ class DashboardService {
       const params = new URLSearchParams();
       if (academicYearId) params.append('academicYearId', academicYearId);
 
-      const response = await fetch(
+      return await offlineFetch<DashboardKpi[]>(
         `/api/dashboard/accountant/kpis?${params.toString()}`,
-        { headers: this.getAuthHeaders() }
+        'dashboard_cache',
+        { tenantId: tenantId || getTenantId() }
       );
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch accountant KPIs');
-      }
-
-      return response.json();
     } catch (error) {
       console.error('Error fetching accountant KPIs:', error);
       return this.getDefaultAccountantKpis();
@@ -108,16 +92,11 @@ class DashboardService {
   async getTodayFinancials(tenantId: string): Promise<any> {
     try {
       const today = new Date().toISOString().split('T')[0];
-      const response = await fetch(
+      return await offlineFetch<any>(
         `/api/finance/payments/today?date=${today}`,
-        { headers: this.getAuthHeaders() }
+        'dashboard_cache',
+        { tenantId: tenantId || getTenantId() }
       );
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch today financials');
-      }
-
-      return response.json();
     } catch (error) {
       console.error('Error fetching today financials:', error);
       return {
@@ -133,16 +112,11 @@ class DashboardService {
    */
   async getUnpaidInvoices(tenantId: string): Promise<any> {
     try {
-      const response = await fetch(
+      return await offlineFetch<any>(
         `/api/finance/invoices/unpaid`,
-        { headers: this.getAuthHeaders() }
+        'dashboard_cache',
+        { tenantId: tenantId || getTenantId() }
       );
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch unpaid invoices');
-      }
-
-      return response.json();
     } catch (error) {
       console.error('Error fetching unpaid invoices:', error);
       return {
@@ -161,16 +135,11 @@ class DashboardService {
       const params = new URLSearchParams();
       if (academicYearId) params.append('academicYearId', academicYearId);
 
-      const response = await fetch(
+      return await offlineFetch<any>(
         `/api/students/enrollment/by-level?${params.toString()}`,
-        { headers: this.getAuthHeaders() }
+        'dashboard_cache',
+        { tenantId: tenantId || getTenantId() }
       );
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch enrollment by level');
-      }
-
-      return response.json();
     } catch (error) {
       console.error('Error fetching enrollment by level:', error);
       return [];
@@ -185,16 +154,11 @@ class DashboardService {
       const params = new URLSearchParams();
       if (academicYearId) params.append('academicYearId', academicYearId);
 
-      const response = await fetch(
+      return await offlineFetch<any>(
         `/api/absences/critical?${params.toString()}`,
-        { headers: this.getAuthHeaders() }
+        'dashboard_cache',
+        { tenantId: tenantId || getTenantId() }
       );
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch critical absences');
-      }
-
-      return response.json();
     } catch (error) {
       console.error('Error fetching critical absences:', error);
       return {

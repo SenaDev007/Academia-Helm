@@ -2,18 +2,55 @@
  * Offline Indicator Component
  * 
  * Composant pour afficher l'état de connexion et la synchronisation
+ * - Auto-nettoyage des événements obsolètes au montage
+ * - Bouton "Effacer" pour forcer la réinitialisation du badge
  */
 
 'use client';
 
 import { useOffline, useSyncStatus } from '@/hooks/useOffline';
-import { WifiOff, Wifi, RefreshCw, CheckCircle } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { WifiOff, Wifi, RefreshCw, CheckCircle, X } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import { outboxService } from '@/lib/offline/outbox.service';
+
+function getTenantId(): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(/(?:(?:^|.*;\s*)x-tenant-id\s*\=\s*([^;]*).*$)|^.*$/);
+  if (match) return decodeURIComponent(match[1]);
+  try {
+    const session = localStorage.getItem('session');
+    if (session) {
+      const parsed = JSON.parse(session);
+      return parsed.tenantId || parsed.tenant?.id || null;
+    }
+  } catch {}
+  return null;
+}
 
 export default function OfflineIndicator() {
   const isOnline = useOffline();
   const { isSyncing, pendingCount, lastSync } = useSyncStatus();
   const [showConflict, setShowConflict] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+
+  // Auto-nettoyage des événements obsolètes au montage
+  useEffect(() => {
+    const cleanup = async () => {
+      const tenantId = getTenantId();
+      if (!tenantId) return;
+      try {
+        // Supprimer les événements déjà synchronisés ou échoués trop de fois
+        const cleaned = await outboxService.clearStaleEvents(tenantId);
+        if (cleaned > 0) {
+          console.log(`[OfflineIndicator] Auto-cleaned ${cleaned} stale sync events`);
+        }
+      } catch (err) {
+        console.warn('[OfflineIndicator] Cleanup failed:', err);
+      }
+    };
+    cleanup();
+  }, []);
 
   useEffect(() => {
     const handleConflict = (event: CustomEvent) => {
@@ -29,8 +66,31 @@ export default function OfflineIndicator() {
     };
   }, []);
 
+  const handleClear = useCallback(async () => {
+    setIsClearing(true);
+    const tenantId = getTenantId();
+    if (!tenantId) { setIsClearing(false); return; }
+    try {
+      const count = await outboxService.clearAllEvents(tenantId);
+      console.log(`[OfflineIndicator] Cleared ${count} sync events`);
+      setDismissed(true);
+      // Dispatcher un événement pour forcer la mise à jour du compteur
+      window.dispatchEvent(new CustomEvent('sync-end', { detail: { success: true, total: 0 } }));
+    } catch (err) {
+      console.error('[OfflineIndicator] Clear failed:', err);
+    } finally {
+      setIsClearing(false);
+    }
+  }, []);
+
+  // Si tout est OK, ne rien afficher
   if (isOnline && !isSyncing && pendingCount === 0 && !showConflict) {
-    return null; // Tout est OK, ne rien afficher
+    return null;
+  }
+
+  // Si le badge a étédismissé et qu'on est en ligne sans sync en cours
+  if (dismissed && isOnline && !isSyncing) {
+    return null;
   }
 
   return (
@@ -61,8 +121,8 @@ export default function OfflineIndicator() {
         </div>
       )}
 
-      {/* Indicateur Événements en attente */}
-      {isOnline && !isSyncing && pendingCount > 0 && (
+      {/* Indicateur Événements en attente — avec bouton Effacer */}
+      {isOnline && !isSyncing && pendingCount > 0 && !dismissed && (
         <div className="bg-yellow-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center space-x-2 min-w-[300px]">
           <Wifi className="w-5 h-5 flex-shrink-0" />
           <div className="flex-1">
@@ -71,6 +131,21 @@ export default function OfflineIndicator() {
               {pendingCount} événement{pendingCount > 1 ? 's' : ''} à synchroniser
             </p>
           </div>
+          <button
+            onClick={handleClear}
+            disabled={isClearing}
+            className="shrink-0 rounded-md bg-white/20 hover:bg-white/30 px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors disabled:opacity-50"
+            title="Effacer les événements en attente"
+          >
+            {isClearing ? '...' : 'Effacer'}
+          </button>
+          <button
+            onClick={() => setDismissed(true)}
+            className="shrink-0 rounded-md hover:bg-white/20 p-1 transition-colors"
+            title="Masquer"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
@@ -102,4 +177,3 @@ export default function OfflineIndicator() {
     </div>
   );
 }
-

@@ -70,7 +70,13 @@ export class RecruitmentPrismaService {
     return this.prisma.hrCandidate.findMany({
       where: { tenantId },
       include: {
-        applications: true,
+        applications: {
+          include: {
+            job: {
+              select: { id: true, title: true, ref: true, status: true },
+            },
+          },
+        },
         interviews: true,
         academicProfile: true,
         academicScores: true,

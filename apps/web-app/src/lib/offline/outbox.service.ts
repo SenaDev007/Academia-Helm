@@ -242,6 +242,65 @@ class OutboxService {
       return v.toString(16);
     });
   }
+
+  /**
+   * Nettoie les événements obsolètes :
+   * - ACKNOWLEDGED (déjà synchronisés) → supprimés
+   * - FAILED avec retryCount >= maxRetries → supprimés
+   * - PENDING plus anciens que maxAgeMs → supprimés
+   * 
+   * @param tenantId - ID du tenant
+   * @param maxAgeMs - Âge maximum en ms pour les événements PENDING (défaut: 24h)
+   */
+  async clearStaleEvents(tenantId: string, maxAgeMs: number = 24 * 60 * 60 * 1000): Promise<number> {
+    const events = await localDb.query<OutboxEventLocal>('outbox_events');
+    const now = Date.now();
+    let cleaned = 0;
+
+    for (const event of events) {
+      if (event.tenantId !== tenantId) continue;
+
+      const age = now - new Date(event.createdAt).getTime();
+      const shouldRemove =
+        event.status === 'ACKNOWLEDGED' ||
+        event.status === 'SENT' || // Orphelins
+        (event.status === 'FAILED' && event.retryCount >= event.maxRetries) ||
+        (event.status === 'PENDING' && age > maxAgeMs) ||
+        (event.status === 'CONFLICT' && age > maxAgeMs * 2); // Conflits : 48h
+
+      if (shouldRemove) {
+        await localDb.execute('outbox_events', 'delete', event.id);
+        cleaned++;
+      }
+    }
+
+    if (cleaned > 0) {
+      await this.updatePendingCount(tenantId);
+    }
+
+    return cleaned;
+  }
+
+  /**
+   * Supprime TOUS les événements d'un tenant (reset complet)
+   * Utilisé quand l'utilisateur veut forcer la réinitialisation du badge.
+   */
+  async clearAllEvents(tenantId: string): Promise<number> {
+    const events = await localDb.query<OutboxEventLocal>('outbox_events');
+    let count = 0;
+
+    for (const event of events) {
+      if (event.tenantId !== tenantId) continue;
+      await localDb.execute('outbox_events', 'delete', event.id);
+      count++;
+    }
+
+    if (count > 0) {
+      await this.updatePendingCount(tenantId);
+    }
+
+    return count;
+  }
 }
 
 export const outboxService = new OutboxService();

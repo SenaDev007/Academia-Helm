@@ -17,11 +17,33 @@ export class UsersRepository {
     const user = await this.prisma.user.findFirst({ where: { id } });
     if (!user) return null;
 
-    // Charger les rôles via la relation Prisma
+    // Charger les rôles via la relation Prisma (userRoles → role)
+    // Le modèle User a la relation `userRoles UserRole[]`, pas `roles Role[]`
     const userWithRoles = await this.prisma.user.findFirst({
       where: { id },
-      include: { roles: true },
+      include: {
+        userRoles: {
+          include: {
+            role: {
+              include: {
+                rolePermissions: {
+                  include: {
+                    permission: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     });
+
+    // Aplatir les rôles pour faciliter l'accès (jwt.strategy attend user.roles)
+    if (userWithRoles) {
+      (userWithRoles as any).roles = (userWithRoles as any).userRoles?.map(
+        (ur: any) => ur.role,
+      )?.filter(Boolean) || [];
+    }
 
     return userWithRoles;
   }

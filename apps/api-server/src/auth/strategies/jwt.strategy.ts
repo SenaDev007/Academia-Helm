@@ -68,9 +68,23 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   private extractPermissions(roles: any[]): string[] {
     const permissions = new Set<string>();
     for (const role of roles) {
+      // Support des deux formats :
+      // 1. role.rolePermissions[].permission.name (via UserRole → Role → RolePermission → Permission)
+      // 2. role.permissions[].name (format direct, si utilisé ailleurs)
+      if (role.rolePermissions) {
+        for (const rp of role.rolePermissions) {
+          if (rp.permission?.name) {
+            permissions.add(rp.permission.name);
+          }
+        }
+      }
       if (role.permissions) {
         for (const permission of role.permissions) {
-          permissions.add(permission.name);
+          if (typeof permission === 'string') {
+            permissions.add(permission);
+          } else if (permission?.name) {
+            permissions.add(permission.name);
+          }
         }
       }
     }

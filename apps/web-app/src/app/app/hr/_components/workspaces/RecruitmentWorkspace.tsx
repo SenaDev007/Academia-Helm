@@ -1027,7 +1027,7 @@ export function RecruitmentWorkspace() {
                                             review: `Évaluation: ${recruiterRating}/5. Note: ${recruiterComment}`
                                           }
                                         });
-                                        alert('Avis enregistré !');
+                                        toast({ variant: 'success', title: 'Avis enregistré !' });
                                         setRecruiterComment('');
                                         setRecruiterRating(0);
                                         loadData();

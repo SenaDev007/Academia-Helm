@@ -218,7 +218,7 @@ export function AllowancesWorkspace() {
               <button
                 onClick={() => {
                   if (allowanceTypes.length === 0) {
-                    alert('Veuillez d\'abord ajouter des types d\'indemnités via "Gérer les types".');
+                    toast({ variant: 'warning', title: 'Veuillez d\'abord ajouter des types d\'indemnités via "Gérer les types".' });
                     return;
                   }
                   setAssignType(allowanceTypes[0].id);

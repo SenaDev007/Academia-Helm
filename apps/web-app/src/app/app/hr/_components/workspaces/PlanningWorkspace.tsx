@@ -5,6 +5,7 @@ import { CalendarDays, Clock, Search, User, Filter, AlertCircle, Plus, Sparkles,
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { toast } from '@/components/ui/toast';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { cn } from '@/lib/utils';
 
 const PRIMARY = '#1A2BA6';
@@ -42,6 +43,7 @@ interface AssignmentValue {
 
 export function PlanningWorkspace() {
   const { tenant, academicYear } = useModuleContext();
+  const confirmDialog = useConfirmDialog();
   const [staffList, setStaffList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingKey, setSavingKey] = useState<string | null>(null);
@@ -177,6 +179,16 @@ export function PlanningWorkspace() {
         toast({ variant: 'success', title: 'Créneau ajouté au planning' });
       } else if (!staffId && prev?.scheduleId) {
         // Delete schedule
+        const ok = await confirmDialog.warning(
+          'Ce créneau de planning sera définitivement supprimé.',
+          'Supprimer ce créneau ?'
+        );
+        if (!ok) {
+          // Revert optimistic update — reload from server
+          loadSchedules();
+          setSavingKey(null);
+          return;
+        }
         await hrFetch<any>(hrUrl(`schedules/${prev.scheduleId}`, { tenantId: tenant.id }), { method: 'DELETE' });
         toast({ variant: 'success', title: 'Créneau supprimé' });
       }
@@ -207,6 +219,8 @@ export function PlanningWorkspace() {
   });
 
   return (
+    <>
+    {confirmDialog.dialog}
     <div className="space-y-6 pb-12">
       {/* KPI banner */}
       <div className="bg-gradient-to-r from-blue-700 to-indigo-900 text-white rounded-2xl p-6 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
@@ -397,5 +411,6 @@ export function PlanningWorkspace() {
         </div>
       </div>
     </div>
+    </>
   );
 }

@@ -19,7 +19,6 @@ COPY prisma ./prisma/
 COPY prisma.config.ts ./
 RUN test -f prisma/schema.prisma
 
-# Puppeteer: skip Chromium download during npm install (we install it separately in runtime)
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 
 # --ignore-scripts : évite postinstall (prisma generate) avant que prisma soit copié si l'ordre des layers diverge
@@ -33,19 +32,12 @@ RUN npm run build
 
 FROM base
 
-# Install runtime dependencies:
-# - openssl: Required by Prisma
-# - chromium: Required by Puppeteer for PDF generation
-# - fonts-liberation: Minimal font set for PDF rendering
 RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y \
-    openssl \
-    chromium \
-    fonts-liberation \
-    && rm -rf /var/lib/apt/lists /var/cache/apt/archives
+    openssl && \
+    rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
-# Tell Puppeteer where to find Chromium
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+# Puppeteer: Chromium not installed in production — PDF generation disabled until Chromium is added
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 
 COPY --from=build /app/dist ./dist

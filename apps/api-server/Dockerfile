@@ -36,13 +36,11 @@ FROM base
 # Install runtime dependencies:
 # - openssl: Required by Prisma
 # - chromium: Required by Puppeteer for PDF generation
-# - fonts: Required for PDF rendering with proper characters
+# - fonts-liberation: Minimal font set for PDF rendering
 RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y \
     openssl \
     chromium \
-    fonts-noto-color-emoji \
-    fonts-noto-cjk \
     fonts-liberation \
     && rm -rf /var/lib/apt/lists /var/cache/apt/archives
 

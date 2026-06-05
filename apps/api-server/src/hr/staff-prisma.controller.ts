@@ -70,4 +70,13 @@ export class StaffPrismaController {
   async findStaffDocuments(@GetTenant() tenant: any, @Param('id') staffId: string) {
     return this.staffService.findStaffDocuments(staffId, tenant.id);
   }
+
+  @Delete(':staffId/documents/:docId')
+  async deleteStaffDocument(
+    @GetTenant() tenant: any,
+    @Param('staffId') staffId: string,
+    @Param('docId') docId: string,
+  ) {
+    return this.staffService.deleteStaffDocument(docId, staffId, tenant.id);
+  }
 }

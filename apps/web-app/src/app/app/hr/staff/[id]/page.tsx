@@ -94,6 +94,7 @@ export default function StaffDetailPage() {
   // Document upload modal
   const [docOpen, setDocOpen] = useState(false);
   const [docLoading, setDocLoading] = useState(false);
+  const [deleteDocId, setDeleteDocId] = useState<string | null>(null);
   const [docForm, setDocForm] = useState({ documentType: 'CV', fileName: '', filePath: '', mimeType: 'application/pdf' });
 
   async function fetchMember() {
@@ -162,7 +163,7 @@ export default function StaffDetailPage() {
       });
       toast({ variant: 'success', title: 'Fiche collaborateur mise à jour' });
       setEditOpen(false);
-      fetchMember();
+      await fetchMember();
     } catch (err) {
       toast({ variant: 'error', title: 'Erreur lors de la mise à jour' });
     } finally {
@@ -181,11 +182,26 @@ export default function StaffDetailPage() {
       toast({ variant: 'success', title: 'Document ajouté avec succès' });
       setDocOpen(false);
       setDocForm({ documentType: 'CV', fileName: '', filePath: '', mimeType: 'application/pdf' });
-      fetchMember();
+      await fetchMember();
     } catch (err) {
       toast({ variant: 'error', title: 'Erreur lors de l\'ajout du document' });
     } finally {
       setDocLoading(false);
+    }
+  };
+
+  const handleDeleteDocument = async (docId: string) => {
+    try {
+      setDeleteDocId(docId);
+      await hrFetch<any>(hrUrl(`staff/${id}/documents/${docId}`, { tenantId: tenant.id }), {
+        method: 'DELETE',
+      });
+      toast({ variant: 'success', title: 'Document supprimé' });
+      await fetchMember();
+    } catch (err) {
+      toast({ variant: 'error', title: 'Erreur lors de la suppression du document' });
+    } finally {
+      setDeleteDocId(null);
     }
   };
 
@@ -551,9 +567,19 @@ export default function StaffDetailPage() {
                             </p>
                           </div>
                         </div>
-                        <button className="text-gray-400 hover:text-blue-600 transition-colors">
-                          <FileText size={20} />
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button className="text-gray-400 hover:text-blue-600 transition-colors" title="Voir le document">
+                            <FileText size={20} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteDocument(doc.id)}
+                            disabled={deleteDocId === doc.id}
+                            className="text-gray-400 hover:text-red-500 transition-colors"
+                            title="Supprimer le document"
+                          >
+                            {deleteDocId === doc.id ? <Loader2 size={18} className="animate-spin" /> : <X size={18} />}
+                          </button>
+                        </div>
                       </div>
                     ))
                   ) : (

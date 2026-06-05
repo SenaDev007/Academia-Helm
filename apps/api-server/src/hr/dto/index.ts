@@ -86,6 +86,13 @@ export class UpdateStaffDto {
   @IsOptional() @IsUUID() academicYearId?: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
   @IsOptional() @IsString() tenantId?: string;
+  /** Extra fields sent by frontend edit form — stored in notes JSON or ignored if not in Prisma schema */
+  @IsOptional() @IsString() nationality?: string;
+  @IsOptional() @IsString() maritalStatus?: string;
+  @IsOptional() @IsNumber() @Type(() => Number) numberOfChildren?: number;
+  @IsOptional() @IsString() ifuNumber?: string;
+  @IsOptional() @IsString() nationalId?: string;
+  @IsOptional() @IsString() cnssNumber?: string;
 }
 
 // ─── Contract DTOs ───────────────────────────────────────────────────────────

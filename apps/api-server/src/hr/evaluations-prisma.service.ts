@@ -245,6 +245,26 @@ export class EvaluationsPrismaService {
   }
 
   /**
+   * Récupère toutes les formations d'un tenant (pour l'onglet Historique)
+   */
+  async findAllTrainings(tenantId: string) {
+    return this.prisma.staffTraining.findMany({
+      where: { tenantId },
+      include: {
+        staff: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            employeeNumber: true,
+          },
+        },
+      },
+      orderBy: { dateCompleted: 'desc' },
+    });
+  }
+
+  /**
    * Récupère une formation par ID
    */
   async findTrainingById(id: string, tenantId: string) {

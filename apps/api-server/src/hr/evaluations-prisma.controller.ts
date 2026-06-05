@@ -75,6 +75,11 @@ export class EvaluationsPrismaController {
     return this.evaluationsService.findStaffTrainings(staffId, tenant.id);
   }
 
+  @Get('trainings')
+  async findAllTrainings(@GetTenant() tenant: any) {
+    return this.evaluationsService.findAllTrainings(tenant.id);
+  }
+
   @Get('trainings/:id')
   async findTrainingById(@GetTenant() tenant: any, @Param('id') id: string) {
     return this.evaluationsService.findTrainingById(id, tenant.id);

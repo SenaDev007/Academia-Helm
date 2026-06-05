@@ -140,8 +140,8 @@ export function OnboardingWizardModal({ isOpen, onClose, onSuccess, tenantId }: 
         body: {
           staffId,
           contractType: formData.contractType,
-          startDate: new Date(formData.startDate),
-          endDate: formData.endDate ? new Date(formData.endDate) : null,
+          startDate: formData.startDate ? new Date(formData.startDate).toISOString() : new Date().toISOString(),
+          endDate: formData.endDate ? new Date(formData.endDate).toISOString() : null,
           baseSalary: parseFloat(formData.baseSalary),
           paymentMode: formData.paymentMode,
           status: 'ACTIVE',

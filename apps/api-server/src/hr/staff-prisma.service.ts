@@ -171,10 +171,25 @@ export class StaffPrismaService {
       throw new NotFoundException(`Staff with ID ${id} not found`);
     }
 
+    // Extract extra fields stored in notes JSON and expose at top level for frontend
+    let notesExtra: Record<string, any> = {};
+    try {
+      notesExtra = typeof staff.notes === 'string'
+        ? JSON.parse(staff.notes)
+        : (staff.notes as any) || {};
+    } catch { notesExtra = {}; }
+
     return {
       ...staff,
       staffCode: staff.employeeNumber,
       category: Object.entries(CATEGORY_TO_ROLE).find(([, v]) => v === staff.roleType)?.[0] || staff.roleType,
+      // Expose extra fields from notes at top level for frontend compatibility
+      nationality: notesExtra.nationality || null,
+      maritalStatus: notesExtra.maritalStatus || null,
+      numberOfChildren: notesExtra.numberOfChildren || null,
+      ifuNumber: notesExtra.ifuNumber || null,
+      nationalId: notesExtra.nationalId || null,
+      cnssNumber: notesExtra.cnssNumber || null,
     };
   }
 
@@ -185,16 +200,65 @@ export class StaffPrismaService {
     await this.findStaffById(id, tenantId);
 
     // Mapper les champs UI vers Prisma
-    const updateData: any = { ...data };
+    const updateData: any = {};
     if (data.category) {
       updateData.roleType = CATEGORY_TO_ROLE[data.category] || data.category;
-      delete updateData.category;
     }
     if (data.staffCode) {
-      delete updateData.staffCode; // Non modifiable directement
+      // Non modifiable directement — skip
     }
     if (data.birthDate) {
       updateData.birthDate = new Date(data.birthDate);
+    }
+    if (data.dateOfBirth) {
+      updateData.dateOfBirth = new Date(data.dateOfBirth);
+      // Also set birthDate if not explicitly provided (they represent the same info)
+      if (!data.birthDate) {
+        updateData.birthDate = new Date(data.dateOfBirth);
+      }
+    }
+    if (data.hireDate) {
+      updateData.hireDate = new Date(data.hireDate);
+    }
+    if (data.salary !== undefined) {
+      updateData.salary = data.salary;
+    }
+
+    // Direct scalar fields that exist in Prisma schema
+    const scalarFields = [
+      'firstName', 'lastName', 'gender', 'phone', 'email', 'address',
+      'position', 'department', 'contractType', 'qualifications', 'status',
+      'notes', 'emergencyContact', 'bankDetails',
+    ];
+    for (const field of scalarFields) {
+      if (data[field] !== undefined) {
+        updateData[field] = data[field];
+      }
+    }
+
+    // Fields NOT in Prisma Staff model — store them in the `notes` JSON field
+    const extraFields = ['nationality', 'maritalStatus', 'numberOfChildren', 'ifuNumber', 'nationalId', 'cnssNumber'];
+    const extraData: Record<string, any> = {};
+    for (const field of extraFields) {
+      if (data[field] !== undefined) {
+        extraData[field] = data[field];
+      }
+    }
+
+    // Merge extra fields into existing notes
+    if (Object.keys(extraData).length > 0) {
+      const existingStaff = await this.prisma.staff.findUnique({ where: { id } });
+      let existingNotes: any = {};
+      try {
+        existingNotes = typeof existingStaff?.notes === 'string'
+          ? JSON.parse(existingStaff.notes)
+          : (existingStaff?.notes as any) || {};
+      } catch { existingNotes = {}; }
+
+      updateData.notes = JSON.stringify({
+        ...existingNotes,
+        ...extraData,
+      });
     }
 
     return this.prisma.staff.update({
@@ -253,5 +317,18 @@ export class StaffPrismaService {
       where: { staffId, tenantId },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  /**
+   * Supprime un document d'un membre du personnel
+   */
+  async deleteStaffDocument(docId: string, staffId: string, tenantId: string) {
+    const doc = await this.prisma.staffDocument.findFirst({
+      where: { id: docId, staffId, tenantId },
+    });
+    if (!doc) {
+      throw new NotFoundException(`Document ${docId} introuvable`);
+    }
+    return this.prisma.staffDocument.delete({ where: { id: docId } });
   }
 }

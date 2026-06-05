@@ -69,13 +69,13 @@ export function CollaboratorsWorkspace() {
     if (activeTab === 'history') {
       hrFetch<any[]>(hrUrl('contracts', { tenantId: tenant.id }))
         .then(setContractsList)
-        .catch((err) => { toast({ variant: 'error', title: 'Erreur de chargement des données' }); });
+        .catch((err) => { console.error('Error loading contracts:', err); });
       hrFetch<any[]>(hrUrl('evaluations', { tenantId: tenant.id }))
         .then(setEvaluationsList)
-        .catch((err) => { toast({ variant: 'error', title: 'Erreur de chargement des données' }); });
+        .catch((err) => { console.error('Error loading evaluations:', err); });
       hrFetch<any[]>(hrUrl('evaluations/trainings', { tenantId: tenant.id }))
         .then(setTrainingsList)
-        .catch((err) => { toast({ variant: 'error', title: 'Erreur de chargement des données' }); });
+        .catch((err) => { console.error('Error loading trainings:', err); });
     }
   }, [tenant?.id, activeTab]);
 

@@ -114,7 +114,21 @@ export class ContractsPrismaService {
             lastName: true,
             position: true,
             roleType: true,
+            email: true,
+            phone: true,
           },
+        },
+        tenant: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            address: true,
+            country: { select: { name: true, currencyCode: true } },
+          },
+        },
+        academicYear: {
+          select: { id: true, name: true },
         },
         template: { select: { id: true, name: true } },
         amendments: {

@@ -222,6 +222,7 @@ export default function PayrollDetailPage() {
         </div>
 
         <Card className="border-none shadow-sm rounded-3xl bg-white overflow-hidden">
+          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
           <table className="w-full text-left">
             <thead className="bg-gray-50/50">
               <tr>
@@ -308,6 +309,7 @@ export default function PayrollDetailPage() {
               )}
             </tbody>
           </table>
+          </div>
         </Card>
       </div>
     </div>

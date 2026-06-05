@@ -95,6 +95,7 @@ export default function StudentRegimeFinanceContent() {
              </button>
           </div>
         </div>
+        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         <table className="min-w-full divide-y divide-gray-200">
           <thead>
             <tr className="text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">
@@ -138,6 +139,7 @@ export default function StudentRegimeFinanceContent() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

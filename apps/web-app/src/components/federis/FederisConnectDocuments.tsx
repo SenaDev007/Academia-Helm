@@ -74,6 +74,7 @@ export default function FederisConnectDocuments() {
       </div>
 
       <div className="bg-white rounded-3xl border border-gray-100 shadow-xl overflow-hidden">
+        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         <table className="w-full text-left border-collapse">
           <thead className="bg-gray-50/50">
             <tr>
@@ -122,6 +123,7 @@ export default function FederisConnectDocuments() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

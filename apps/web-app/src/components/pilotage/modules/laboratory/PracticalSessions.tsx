@@ -43,6 +43,7 @@ export default function PracticalSessions() {
       </div>
 
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         <table className="w-full text-left">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-100">
@@ -91,6 +92,7 @@ export default function PracticalSessions() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

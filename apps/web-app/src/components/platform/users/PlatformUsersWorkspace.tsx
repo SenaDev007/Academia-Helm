@@ -45,6 +45,7 @@ export default function PlatformUsersWorkspace() {
             />
           </div>
         </div>
+        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         <table className="w-full text-left">
           <thead>
             <tr className="bg-slate-50/50 text-xs font-bold text-slate-500 uppercase tracking-wider">
@@ -88,6 +89,7 @@ export default function PlatformUsersWorkspace() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

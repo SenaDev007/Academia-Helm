@@ -295,6 +295,7 @@ export default function OrionPedagogyPage() {
                           Prévisions Pédagogiques
                         </h3>
                         <div className="rounded-3xl border bg-white overflow-hidden">
+                          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
                           <table className="w-full text-sm">
                             <thead className="bg-gray-50 border-b">
                               <tr>
@@ -327,6 +328,7 @@ export default function OrionPedagogyPage() {
                               ))}
                             </tbody>
                           </table>
+                          </div>
                         </div>
                       </div>
                     </div>

@@ -42,6 +42,7 @@ export default function PlatformSupportWorkspace() {
             <input type="text" placeholder="Rechercher un ticket..." className="w-full pl-10 pr-4 py-2 bg-slate-50 border-none rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20" />
           </div>
         </div>
+        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         <table className="w-full text-left">
           <thead>
             <tr className="bg-slate-50/50 text-xs font-bold text-slate-500 uppercase tracking-wider">
@@ -84,6 +85,7 @@ export default function PlatformSupportWorkspace() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

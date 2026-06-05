@@ -79,6 +79,7 @@ export default function CommunicationHistoryPage() {
 
         {/* Table */}
         <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
           <table className="w-full">
             <thead>
               <tr className="bg-slate-50 text-left border-b border-slate-100">
@@ -107,6 +108,7 @@ export default function CommunicationHistoryPage() {
               ))}
             </tbody>
           </table>
+          </div>
           <div className="p-6 bg-slate-50/50 border-t border-slate-50 flex justify-center">
             <button className="text-xs font-black text-blue-600 uppercase tracking-widest hover:underline">Charger plus d'entrées</button>
           </div>

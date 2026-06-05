@@ -90,6 +90,7 @@ export default function Emergencies() {
           Historique des Incidents (7 derniers jours)
         </h3>
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
           <table className="w-full text-left">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
@@ -126,6 +127,7 @@ export default function Emergencies() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     </div>

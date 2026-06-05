@@ -60,6 +60,7 @@ export default function AdministrativeCommunicationPage() {
             </div>
           </div>
 
+          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
           <table className="w-full">
             <thead>
               <tr className="bg-slate-50 text-left border-b border-slate-100">
@@ -117,6 +118,7 @@ export default function AdministrativeCommunicationPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     </ModuleContentArea>

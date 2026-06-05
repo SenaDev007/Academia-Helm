@@ -194,6 +194,7 @@ function CatalogTab() {
             </div>
          </div>
       </div>
+      <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
       <table className="w-full text-left">
          <thead>
             <tr className="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
@@ -228,6 +229,7 @@ function CatalogTab() {
             ))}
          </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -301,6 +303,7 @@ function ReadersTab() {
   return (
     <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden p-6">
        <h3 className="font-bold text-slate-900 text-lg mb-6">Base des Lecteurs</h3>
+       <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
        <table className="w-full text-left">
           <thead>
              <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">
@@ -325,6 +328,7 @@ function ReadersTab() {
              </tr>
           </tbody>
        </table>
+       </div>
     </div>
   );
 }
@@ -386,6 +390,7 @@ function ResourcesTab() {
          <h3 className="font-bold text-slate-900 text-lg">Livres & Ressources Physiques</h3>
          <button className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold">+ Ajouter Livre</button>
       </div>
+      <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
       <table className="w-full text-left">
          <thead>
             <tr className="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">
@@ -410,6 +415,7 @@ function ResourcesTab() {
             ))}
          </tbody>
       </table>
+      </div>
     </div>
   );
 }

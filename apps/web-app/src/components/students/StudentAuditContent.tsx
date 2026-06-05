@@ -44,6 +44,7 @@ export default function StudentAuditContent() {
 
       {/* Audit Log Table Placeholder */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1">
+        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         <table className="min-w-full divide-y divide-slate-200">
           <thead>
             <tr className="bg-slate-50">
@@ -90,6 +91,7 @@ export default function StudentAuditContent() {
             </tr>
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

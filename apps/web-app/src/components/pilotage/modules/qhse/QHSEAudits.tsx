@@ -32,6 +32,7 @@ export default function QHSEAudits() {
       </div>
 
       <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         <table className="w-full text-left">
           <thead>
             <tr className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">
@@ -89,6 +90,7 @@ export default function QHSEAudits() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

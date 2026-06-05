@@ -694,6 +694,7 @@ export function RecruitmentWorkspace() {
                 </div>
               ) : (
                 <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                  <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
                   <table className="w-full border-collapse text-left text-xs text-slate-600">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider">
@@ -751,6 +752,7 @@ export function RecruitmentWorkspace() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               )}
 
@@ -1368,6 +1370,7 @@ export function RecruitmentWorkspace() {
                 </div>
               ) : (
                 <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                  <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
                   <table className="w-full border-collapse text-left text-xs text-slate-600">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider">
@@ -1404,6 +1407,7 @@ export function RecruitmentWorkspace() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               )}
             </motion.div>

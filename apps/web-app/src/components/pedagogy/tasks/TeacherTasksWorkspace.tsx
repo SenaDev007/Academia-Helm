@@ -466,6 +466,7 @@ function HomeworkList({ homeworks, classes, subjects, onDelete, onEdit }: Homewo
           </div>
         </div>
       </div>
+      <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
       <table className="w-full text-left">
         <thead>
           <tr className="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
@@ -528,6 +529,7 @@ function HomeworkList({ homeworks, classes, subjects, onDelete, onEdit }: Homewo
           )}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -600,6 +602,7 @@ function StudentEngagementFollowup() {
       <div className="p-6 border-b border-slate-50">
         <h3 className="font-bold text-slate-900">Engagement Pédagogique par Élève</h3>
       </div>
+      <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
       <table className="w-full text-left">
         <thead>
           <tr className="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
@@ -639,6 +642,7 @@ function StudentEngagementFollowup() {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -710,6 +714,7 @@ function CorrectionsFeedback() {
   return (
     <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden p-6">
        <h3 className="font-bold text-slate-900 text-lg mb-6">Corrections & Retours Automatisés</h3>
+       <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
        <table className="w-full text-left">
           <thead>
              <tr className="text-[10px] font-bold text-slate-400 uppercase border-b border-slate-100">
@@ -732,6 +737,7 @@ function CorrectionsFeedback() {
              ))}
           </tbody>
        </table>
+       </div>
     </div>
   );
 }

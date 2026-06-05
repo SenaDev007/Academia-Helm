@@ -51,6 +51,7 @@ export default function MedicalRecords() {
 
       {/* Records Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-slate-50/50 border-b border-slate-100">
@@ -125,6 +126,7 @@ export default function MedicalRecords() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Pagination */}

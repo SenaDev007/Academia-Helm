@@ -41,6 +41,7 @@ export default function ShopDiscounts() {
                 </div>
              </div>
              <div className="p-0">
+                <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
                 <table className="w-full text-left">
                    <thead className="bg-gray-50/50">
                       <tr>
@@ -82,6 +83,7 @@ export default function ShopDiscounts() {
                       />
                    </tbody>
                 </table>
+                </div>
              </div>
           </div>
         </div>

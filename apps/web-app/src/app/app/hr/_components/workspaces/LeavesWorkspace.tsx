@@ -224,6 +224,7 @@ export function LeavesWorkspace() {
         </div>
       ) : (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
           <table className="w-full text-left">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50">
@@ -286,6 +287,7 @@ export function LeavesWorkspace() {
               })}
             </tbody>
           </table>
+          </div>
         </motion.div>
       )}
     </div>

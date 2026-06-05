@@ -498,6 +498,7 @@ export default function PricingManagement() {
               )}
 
               <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
@@ -550,6 +551,7 @@ export default function PricingManagement() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             </div>
           )}
@@ -654,6 +656,7 @@ export default function PricingManagement() {
               )}
 
               <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
@@ -717,6 +720,7 @@ export default function PricingManagement() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             </div>
           )}
@@ -727,6 +731,7 @@ export default function PricingManagement() {
               <div className="p-6 border-b border-gray-200">
                 <h2 className="text-xl font-bold text-navy-900">Historique des Configurations</h2>
               </div>
+              <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>
@@ -767,6 +772,7 @@ export default function PricingManagement() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </>

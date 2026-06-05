@@ -47,6 +47,7 @@ export default function LibraryPenalties() {
       </div>
 
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         <table className="w-full text-left">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
@@ -102,6 +103,7 @@ export default function LibraryPenalties() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

@@ -35,6 +35,7 @@ export default function PlatformPaymentsWorkspace() {
             </button>
           </div>
         </div>
+        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         <table className="w-full text-left">
           <thead>
             <tr className="bg-slate-50/50 text-xs font-bold text-slate-500 uppercase tracking-wider">
@@ -71,6 +72,7 @@ export default function PlatformPaymentsWorkspace() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

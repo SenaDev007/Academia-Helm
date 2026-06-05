@@ -191,6 +191,7 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
             )}
 
             <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+              <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
               <table className="w-full text-left border-collapse">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
@@ -260,6 +261,7 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
                   )}
                 </tbody>
               </table>
+              </div>
             </div>
           </div>
         )}

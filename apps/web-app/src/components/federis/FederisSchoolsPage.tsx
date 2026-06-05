@@ -89,6 +89,7 @@ export default function FederisSchoolsPage({ tenantId }: { tenantId: string }) {
 
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         <table className="min-w-full divide-y divide-gray-100">
           <thead className="bg-gray-50/50">
             <tr>
@@ -153,6 +154,7 @@ export default function FederisSchoolsPage({ tenantId }: { tenantId: string }) {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

@@ -784,12 +784,16 @@ export class RecruitmentPrismaService {
 
   // Test Results
   async createTestResult(data: any) {
+    const score = typeof data.score === 'number' ? data.score : parseInt(data.score, 10);
+    if (isNaN(score)) {
+      throw new Error('Score invalide : doit être un nombre entier');
+    }
     return this.prisma.hrTestResult.create({
       data: {
         id: crypto.randomUUID(),
         testId: data.testId,
         candidateId: data.candidateId,
-        score: parseInt(data.score),
+        score,
         result: data.result || 'ADMIS',
       },
     });

@@ -489,15 +489,21 @@ export function RecruitmentWorkspace() {
     try {
       await hrFetch(hrUrl('recruitment/test-results', { tenantId: tenant.id }), {
         method: 'POST',
-        body: newTestResult,
+        body: {
+          testId: newTestResult.testId,
+          candidateId: newTestResult.candidateId,
+          score: Number(newTestResult.score),
+          result: newTestResult.result,
+        },
       });
       toast({ variant: 'success', title: 'Résultat de test enregistré !' });
       setIsAddTestResultOpen(false);
       setNewTestResult({ testId: '', candidateId: '', score: '50', result: 'ADMIS' });
       loadData();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to save test result:', err);
-      toast({ variant: 'error', title: 'Erreur lors de l\'enregistrement du résultat.' });
+      const msg = err?.message || 'Erreur lors de l\'enregistrement du résultat.';
+      toast({ variant: 'error', title: msg });
     }
   };
 

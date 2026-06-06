@@ -5,6 +5,8 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  ListObjectsV2Command,
+  DeleteObjectsCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { put } from '@vercel/blob';
@@ -284,5 +286,92 @@ export class StorageService {
    */
   getStorageType(): StorageType {
     return this.storageType;
+  }
+
+  /**
+   * Delete ALL objects under a given prefix in R2/S3.
+   * Used for cleanup of orphaned files (e.g., when candidates are deleted
+   * directly from the DB without going through the API).
+   *
+   * Returns the list of deleted keys.
+   */
+  async deleteByPrefix(prefix: string): Promise<string[]> {
+    if (!this.s3Client) {
+      throw new Error('deleteByPrefix is only available for R2/S3 storage backends');
+    }
+
+    const deletedKeys: string[] = [];
+    let continuationToken: string | undefined;
+
+    do {
+      const listResponse = await this.s3Client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucketName,
+          Prefix: prefix,
+          ContinuationToken: continuationToken,
+          MaxKeys: 1000,
+        }),
+      );
+
+      const objects = listResponse.Contents || [];
+      if (objects.length === 0) {
+        this.logger.log(`No objects found under prefix: ${prefix}`);
+        break;
+      }
+
+      // Delete in batches of 1000
+      const keys = objects.map((o) => o.Key!).filter(Boolean);
+      if (keys.length > 0) {
+        await this.s3Client.send(
+          new DeleteObjectsCommand({
+            Bucket: this.bucketName,
+            Delete: {
+              Objects: keys.map((k) => ({ Key: k })),
+              Quiet: true,
+            },
+          }),
+        );
+        deletedKeys.push(...keys);
+        this.logger.log(`Deleted ${keys.length} objects under prefix: ${prefix}`);
+      }
+
+      continuationToken = listResponse.IsTruncated
+        ? listResponse.NextContinuationToken
+        : undefined;
+    } while (continuationToken);
+
+    return deletedKeys;
+  }
+
+  /**
+   * List all object keys under a given prefix in R2/S3.
+   */
+  async listByPrefix(prefix: string): Promise<string[]> {
+    if (!this.s3Client) {
+      throw new Error('listByPrefix is only available for R2/S3 storage backends');
+    }
+
+    const keys: string[] = [];
+    let continuationToken: string | undefined;
+
+    do {
+      const listResponse = await this.s3Client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucketName,
+          Prefix: prefix,
+          ContinuationToken: continuationToken,
+          MaxKeys: 1000,
+        }),
+      );
+
+      const objects = listResponse.Contents || [];
+      keys.push(...objects.map((o) => o.Key!).filter(Boolean));
+
+      continuationToken = listResponse.IsTruncated
+        ? listResponse.NextContinuationToken
+        : undefined;
+    } while (continuationToken);
+
+    return keys;
   }
 }

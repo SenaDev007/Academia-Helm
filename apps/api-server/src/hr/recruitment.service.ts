@@ -765,7 +765,8 @@ export class RecruitmentPrismaService {
         res.setHeader('Content-Type', doc.mimeType || 'application/octet-stream');
         res.setHeader('Content-Disposition', `inline; filename="${doc.fileName}"`);
         res.setHeader('Content-Length', String(buffer.length));
-        return buffer;
+        res.send(buffer);
+        return;
       } catch (dlErr) {
         this.logger.error(`Failed to download file from R2: ${doc.filePath} — ${dlErr.message}`);
         throw new NotFoundException(`Fichier non trouvé sur le stockage`);
@@ -787,7 +788,8 @@ export class RecruitmentPrismaService {
           res.setHeader('Content-Type', doc.mimeType || 'application/octet-stream');
           res.setHeader('Content-Disposition', `inline; filename="${doc.fileName}"`);
           res.setHeader('Content-Length', String(buffer.length));
-          return buffer;
+          res.send(buffer);
+          return;
         } catch (dlErr) {
           throw new NotFoundException(`Fichier non trouvé sur le stockage`);
         }

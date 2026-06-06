@@ -188,3 +188,34 @@ Stage Summary:
 - R2 bucket is clean — no orphaned files for tenant 4246cd3c
 - Commits: ef38fbc (main fix), c91fe66 (temp @Public), 154f593 (secure endpoint)
 - Files changed: recruitment.service.ts, recruitment.controller.ts, staff-prisma.service.ts
+---
+Task ID: doc-gen-fix
+Agent: main
+Task: Fix document generation & download bugs in RH module + AI workspace improvements
+
+Work Log:
+- Explored entire RH module document generation/download infrastructure
+- Fixed Bug #1: Contract PDF GET endpoint was re-generating on every request (expensive Puppeteer render)
+  - Added getExistingContractPdf() to ContractPdfService
+  - Controller now tries cached PDF first, only generates if missing
+- Fixed Bug #2: Pay slip download frontend/backend mismatch
+  - POST /payslip-pdf now returns JSON with base64-encoded PDF (pdfBase64)
+  - GET /payslip-pdf auto-generates if missing, serves binary correctly
+  - Frontend uses raw fetch() for binary download, hrFetch for JSON preview
+- Fixed Bug #3: XSS vulnerability in buildHtmlFromArticles()
+  - Added sanitizeTemplateInput() method to strip script/iframe/object/embed tags, event handlers, javascript: URLs
+- Fixed Bug #5: Pay slip PDF orphaned files on regeneration
+  - Old PDF file is now deleted before saving new one
+- Fixed IA Workspace: replaced incorrect 'Clé API Claude' references with 'OpenRouter (OPENROUTER_API_KEY)'
+- Added real file upload for CV parsing (handleFileUpload with FileReader + base64)
+- Removed OPENROUTER_API_KEY from .env (use Railway env vars instead)
+- Cleaned git history to remove secret from old commit
+- Pushed all changes (commit 679b438)
+
+Stage Summary:
+- 6 files changed across backend and frontend
+- Contract PDF download now properly caches (no unnecessary Puppeteer re-renders)
+- Pay slip PDF generation/download flow fixed end-to-end
+- XSS vulnerability patched in contract template builder
+- AI workspace properly references OpenRouter and supports file upload
+- User needs to add OPENROUTER_API_KEY on Railway (see env vars)

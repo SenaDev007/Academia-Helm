@@ -18,7 +18,6 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 import { Public } from '../auth/decorators/public.decorator';
-import { StorageService } from '../common/services/storage.service';
 import {
   CreateJobDto,
   UpdateJobDto,
@@ -38,10 +37,7 @@ import {
 @Controller('hr/recruitment')
 @UseGuards(JwtAuthGuard, TenantGuard)
 export class RecruitmentPrismaController {
-  constructor(
-    private service: RecruitmentPrismaService,
-    private storageService: StorageService,
-  ) {}
+  constructor(private service: RecruitmentPrismaService) {}
 
   // ─── Job Offers ────────────────────────────────────────────────────────────
 
@@ -215,24 +211,5 @@ export class RecruitmentPrismaController {
     @Res({ passthrough: true }) res: any,
   ) {
     return this.service.downloadCandidateDocument(candidateId, docId, res);
-  }
-
-  // ─── R2 Storage Cleanup (admin) ──────────────────────────────────────────
-
-  @Public()
-  @Get('storage/list')
-  async listStorageFiles(@Query('prefix') prefix: string) {
-    const keys = await this.storageService.listByPrefix(prefix || 'candidate-docs/');
-    return { count: keys.length, keys };
-  }
-
-  @Public()
-  @Delete('storage/cleanup')
-  async cleanupStorageFiles(@Query('prefix') prefix: string) {
-    if (!prefix) {
-      return { error: 'prefix query parameter is required (e.g., candidate-docs/4246cd3c...)' };
-    }
-    const deletedKeys = await this.storageService.deleteByPrefix(prefix);
-    return { deletedCount: deletedKeys.length, deletedKeys };
   }
 }

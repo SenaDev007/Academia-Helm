@@ -18,8 +18,18 @@ export async function hrFetch<T>(
     headers?: Record<string, string>;
   },
 ): Promise<T> {
-  const res = await fetch(path, {
-    method: options?.method ?? 'GET',
+  // Cache-busting pour les requêtes GET : ajoute _t=timestamp
+  // pour contourner le cache Cloudflare même si les headers anti-cache
+  // ne sont pas respectés par le CDN
+  let fetchUrl = path;
+  const method = options?.method ?? 'GET';
+  if (method === 'GET') {
+    const separator = fetchUrl.includes('?') ? '&' : '?';
+    fetchUrl = `${fetchUrl}${separator}_t=${Date.now()}`;
+  }
+
+  const res = await fetch(fetchUrl, {
+    method,
     headers: {
       ...(options?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
       ...getClientAuthorizationHeader(),

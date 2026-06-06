@@ -111,7 +111,12 @@ async function forward(
     }
 
     const data = await parseBackendJson(res);
-    return NextResponse.json(data, { status: res.status });
+    const response = NextResponse.json(data, { status: res.status });
+    // Anti-cache headers pour Cloudflare (défense en profondeur)
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('X-Accel-Buffering', 'no');
+    return response;
   } catch (e) {
     console.error('HR API proxy error:', e);
     return NextResponse.json(

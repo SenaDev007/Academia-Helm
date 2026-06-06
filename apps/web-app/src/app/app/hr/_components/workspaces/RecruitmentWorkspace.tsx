@@ -346,7 +346,9 @@ export function RecruitmentWorkspace() {
     try {
       await hrFetch(hrUrl(`recruitment/jobs/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Offre supprimée', description: 'L\'offre d\'emploi et ses candidatures ont été supprimées.' });
-      loadData();
+      // Ne PAS appeler loadData() ici : l'optimistic update a déjà retiré l'élément.
+      // loadData() pourrait réinjecter l'élément supprimé si le cache Cloudflare
+      // retourne une réponse périmée. Le rechargement se fera au prochain changement d'onglet.
     } catch (err) {
       setJobs(previousJobs);
       console.error('Failed to delete job:', err);
@@ -364,14 +366,15 @@ export function RecruitmentWorkspace() {
     if (!ok) return;
 
     // Optimistic update : retirer immédiatement le candidat de l'UI
-    // pour éviter qu'il réapparaisse en cas de cache SW périmé
     const previousCandidates = candidates;
     setCandidates(prev => prev.filter(c => c.id !== id));
 
     try {
       await hrFetch(hrUrl(`recruitment/candidates/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Candidat supprimé', description: 'Le candidat et toutes ses données associées ont été supprimés.' });
-      loadData();
+      // Ne PAS appeler loadData() ici : l'optimistic update a déjà retiré le candidat.
+      // loadData() pourrait réinjecter le candidat supprimé si le cache Cloudflare
+      // retourne une réponse périmée. Le rechargement se fera au prochain changement d'onglet.
     } catch (err: any) {
       // Restaurer l'état précédent en cas d'erreur
       setCandidates(previousCandidates);
@@ -412,7 +415,7 @@ export function RecruitmentWorkspace() {
     try {
       await hrFetch(hrUrl(`recruitment/interviews/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Entretien annulé', description: 'L\'entretien a été supprimé du calendrier.' });
-      loadData();
+      // Ne PAS appeler loadData() : l'optimistic update a déjà retiré l'élément.
     } catch (err) {
       setInterviews(previousInterviews);
       console.error('Failed to delete interview:', err);
@@ -451,7 +454,7 @@ export function RecruitmentWorkspace() {
     try {
       await hrFetch(hrUrl(`recruitment/tests/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Test supprimé', description: 'Le test et ses résultats ont été supprimés.' });
-      loadData();
+      // Ne PAS appeler loadData() : l'optimistic update a déjà retiré l'élément.
     } catch (err) {
       setTests(previousTests);
       console.error('Failed to delete test:', err);
@@ -492,7 +495,7 @@ export function RecruitmentWorkspace() {
     try {
       await hrFetch(hrUrl(`recruitment/test-results/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Résultat supprimé', description: 'Le résultat du test a été supprimé.' });
-      loadData();
+      // Ne PAS appeler loadData() : l'optimistic update a déjà retiré l'élément.
     } catch (err) {
       setTests(previousTests);
       console.error('Failed to delete test result:', err);
@@ -533,7 +536,7 @@ export function RecruitmentWorkspace() {
     try {
       await hrFetch(hrUrl(`recruitment/talent-pool/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Profil retiré', description: 'Le profil a été retiré de la base de talents.' });
-      loadData();
+      // Ne PAS appeler loadData() : l'optimistic update a déjà retiré l'élément.
     } catch (err) {
       setTalentPool(previousTalentPool);
       console.error('Failed to remove from talent pool:', err);

@@ -172,6 +172,16 @@ export async function middleware(request: NextRequest) {
     return patronatMiddleware(request);
   }
 
+  // API routes : ajouter les headers anti-cache Cloudflare uniquement
+  // (pas de résolution de tenant, pas de redirection — logique propre aux route handlers)
+  if (pathname.startsWith('/api/')) {
+    const apiResponse = NextResponse.next();
+    apiResponse.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    apiResponse.headers.set('Pragma', 'no-cache');
+    apiResponse.headers.set('X-Accel-Buffering', 'no');
+    return apiResponse;
+  }
+
   const response = withAntiCacheHeaders(NextResponse.next());
 
   const user = getUserFromSessionCookie(request);
@@ -383,6 +393,8 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!api|_next/static|_next/image|favicon.ico|images/|fonts/|uploads/|sw.js|manifest.json|robots.txt|sitemap.xml).*)',
+    // Inclut /api/* pour ajouter les headers anti-cache Cloudflare
+    // (essentiel après migration Cloudflare pour éviter le cache des réponses API)
+    '/((?!_next/static|_next/image|favicon.ico|images/|fonts/|uploads/|sw.js|manifest.json|robots.txt|sitemap.xml).*)',
   ],
 };

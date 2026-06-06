@@ -790,7 +790,7 @@ export class RecruitmentPrismaService {
         testId: data.testId,
         candidateId: data.candidateId,
         score: parseInt(data.score),
-        result: data.result || 'RÉUSSI',
+        result: data.result || 'ADMIS',
       },
     });
   }

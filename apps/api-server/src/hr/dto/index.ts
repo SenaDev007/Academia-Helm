@@ -560,7 +560,7 @@ export class CreateTestResultDto {
   @IsUUID() testId: string;
   @IsUUID() candidateId: string;
   @IsInt() @Type(() => Number) score: number;
-  @IsOptional() @IsIn(['RÉUSSI', 'ÉCHOUÉ', 'EN_ATTENTE']) result?: string;
+  @IsOptional() @IsIn(['ADMIS', 'REJETÉ', 'RÉSERVE']) result?: string;
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() tenantId?: string;
 }

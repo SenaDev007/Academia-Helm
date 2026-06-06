@@ -16,7 +16,7 @@ export class RecruitmentPrismaService {
   async getJobs(tenantId: string) {
     return this.prisma.hrJob.findMany({
       where: { tenantId },
-      include: { _count: { select: { applications: true } } },
+      include: { _count: { select: { applications: { where: { tenantId } } } } },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -26,9 +26,13 @@ export class RecruitmentPrismaService {
    * Returns: total applicants, breakdown by country, breakdown by city.
    */
   async getJobStats(jobId: string, tenantId?: string) {
-    // Get all applications for this job with candidate info
+    // Get all applications for this job with candidate info, filtered by tenant if provided
+    const whereClause: any = { jobId };
+    if (tenantId) {
+      whereClause.tenantId = tenantId;
+    }
     const applications = await this.prisma.hrApplication.findMany({
-      where: { jobId },
+      where: whereClause,
       include: {
         candidate: {
           select: { country: true, city: true },

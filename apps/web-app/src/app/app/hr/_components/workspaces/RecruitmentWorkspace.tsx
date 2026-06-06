@@ -341,11 +341,14 @@ export function RecruitmentWorkspace() {
       'Les candidats associés ne seront pas supprimés, mais leurs candidatures le seront.'
     );
     if (!ok) return;
+    const previousJobs = jobs;
+    setJobs(prev => prev.filter(j => j.id !== id));
     try {
       await hrFetch(hrUrl(`recruitment/jobs/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Offre supprimée', description: 'L\'offre d\'emploi et ses candidatures ont été supprimées.' });
       loadData();
     } catch (err) {
+      setJobs(previousJobs);
       console.error('Failed to delete job:', err);
       toast({ variant: 'error', title: 'Erreur de suppression', description: 'Impossible de supprimer cette offre. Veuillez réessayer.' });
     }
@@ -359,11 +362,19 @@ export function RecruitmentWorkspace() {
       'Cette action est irréversible et ne peut pas être annulée.'
     );
     if (!ok) return;
+
+    // Optimistic update : retirer immédiatement le candidat de l'UI
+    // pour éviter qu'il réapparaisse en cas de cache SW périmé
+    const previousCandidates = candidates;
+    setCandidates(prev => prev.filter(c => c.id !== id));
+
     try {
       await hrFetch(hrUrl(`recruitment/candidates/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Candidat supprimé', description: 'Le candidat et toutes ses données associées ont été supprimés.' });
       loadData();
     } catch (err: any) {
+      // Restaurer l'état précédent en cas d'erreur
+      setCandidates(previousCandidates);
       console.error('Failed to delete candidate:', err);
       const backendMsg = err?.message || err?.toString() || '';
       toast({ variant: 'error', title: 'Erreur de suppression', description: backendMsg || 'Impossible de supprimer ce candidat. Veuillez réessayer.' });
@@ -396,11 +407,14 @@ export function RecruitmentWorkspace() {
       'Annuler cet entretien ?'
     );
     if (!ok) return;
+    const previousInterviews = interviews;
+    setInterviews(prev => prev.filter(i => i.id !== id));
     try {
       await hrFetch(hrUrl(`recruitment/interviews/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Entretien annulé', description: 'L\'entretien a été supprimé du calendrier.' });
       loadData();
     } catch (err) {
+      setInterviews(previousInterviews);
       console.error('Failed to delete interview:', err);
       toast({ variant: 'error', title: 'Erreur d\'annulation', description: 'Impossible d\'annuler cet entretien. Veuillez réessayer.' });
     }
@@ -432,11 +446,14 @@ export function RecruitmentWorkspace() {
       'Supprimer ce test ?'
     );
     if (!ok) return;
+    const previousTests = tests;
+    setTests(prev => prev.filter(t => t.id !== id));
     try {
       await hrFetch(hrUrl(`recruitment/tests/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Test supprimé', description: 'Le test et ses résultats ont été supprimés.' });
       loadData();
     } catch (err) {
+      setTests(previousTests);
       console.error('Failed to delete test:', err);
       toast({ variant: 'error', title: 'Erreur de suppression', description: 'Impossible de supprimer ce test. Veuillez réessayer.' });
     }
@@ -467,11 +484,17 @@ export function RecruitmentWorkspace() {
       'Supprimer ce résultat ?'
     );
     if (!ok) return;
+    const previousTests = tests;
+    setTests(prev => prev.map(t => ({
+      ...t,
+      results: t.results?.filter(r => r.id !== id) || [],
+    })));
     try {
       await hrFetch(hrUrl(`recruitment/test-results/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Résultat supprimé', description: 'Le résultat du test a été supprimé.' });
       loadData();
     } catch (err) {
+      setTests(previousTests);
       console.error('Failed to delete test result:', err);
       toast({ variant: 'error', title: 'Erreur de suppression', description: 'Impossible de supprimer ce résultat. Veuillez réessayer.' });
     }
@@ -505,11 +528,14 @@ export function RecruitmentWorkspace() {
       'Retirer de la base de talents ?'
     );
     if (!ok) return;
+    const previousTalentPool = talentPool;
+    setTalentPool(prev => prev.filter(t => t.id !== id));
     try {
       await hrFetch(hrUrl(`recruitment/talent-pool/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Profil retiré', description: 'Le profil a été retiré de la base de talents.' });
       loadData();
     } catch (err) {
+      setTalentPool(previousTalentPool);
       console.error('Failed to remove from talent pool:', err);
       toast({ variant: 'error', title: 'Erreur de retrait', description: 'Impossible de retirer ce profil. Veuillez réessayer.' });
     }

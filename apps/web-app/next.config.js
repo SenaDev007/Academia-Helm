@@ -159,13 +159,16 @@ if (process.env.NODE_ENV === 'production') {
       cleanupOutdatedCaches: true,
       cacheId: process.env.VERCEL_GIT_COMMIT_SHA || `local-${Date.now()}`,
       runtimeCaching: [
-        // API calls : StaleWhileRevalidate — réponse instantanée depuis le cache,
-        // mise à jour en arrière-plan. Pas de blocage de l'UI.
+        // API calls : NetworkFirst — on privilégie toujours les données fraîches du serveur.
+        // Le cache n'est utilisé qu'en fallback hors ligne. StaleWhileRevalidate causait
+        // des bugs où des données supprimées réapparaissaient (le SW retournait le cache
+        // périmé au lieu de la réponse réseau à jour).
         {
           urlPattern: /\/api\/(?!auth\/).*/i,
-          handler: 'StaleWhileRevalidate',
+          handler: 'NetworkFirst',
           options: {
             cacheName: 'api-cache',
+            networkTimeoutSeconds: 10,
             expiration: {
               maxEntries: 300,
               maxAgeSeconds: 24 * 60 * 60, // 24 heures

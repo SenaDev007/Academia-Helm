@@ -159,27 +159,61 @@ export class RecruitmentPrismaService {
   }
 
   async deleteJob(id: string) {
-    // Use a transaction to delete related records explicitly
-    return this.prisma.$transaction(async (tx) => {
-      // 1. Get all applications for this job
+    // 1. Collect candidate documents from all applications of this job (for R2 cleanup)
+    let documents: Array<{ id: string; filePath: string; fileName: string }> = [];
+    try {
+      const applications = await this.prisma.hrApplication.findMany({
+        where: { jobId: id },
+        select: { candidateId: true },
+      });
+      if (applications.length > 0) {
+        const candidateIds = applications.map((a) => a.candidateId).filter(Boolean);
+        if (candidateIds.length > 0) {
+          documents = await this.prisma.candidateDocument.findMany({
+            where: { candidateId: { in: candidateIds } },
+            select: { id: true, filePath: true, fileName: true },
+          });
+        }
+      }
+    } catch (err) {
+      this.logger.warn(`Could not fetch candidate documents for job deletion cleanup: ${err.message}`);
+    }
+
+    // 2. Delete DB records in a transaction
+    await this.prisma.$transaction(async (tx) => {
+      // Get all applications for this job
       const applications = await tx.hrApplication.findMany({
         where: { jobId: id },
         select: { id: true },
       });
 
-      // 2. Delete AI reports linked to those applications
+      // Delete AI reports linked to those applications
       if (applications.length > 0) {
         await tx.hrAiReport.deleteMany({
           where: { applicationId: { in: applications.map((a) => a.id) } },
         });
       }
 
-      // 3. Delete the applications themselves
+      // Delete the applications themselves
       await tx.hrApplication.deleteMany({ where: { jobId: id } });
 
-      // 4. Finally, delete the job
-      return tx.hrJob.delete({ where: { id } });
+      // Finally, delete the job
+      await tx.hrJob.delete({ where: { id } });
     });
+
+    // 3. Clean up files from storage (best-effort, after DB deletion)
+    if (documents.length > 0) {
+      for (const doc of documents) {
+        try {
+          await this.storageService.deleteFile(doc.filePath);
+          this.logger.log(`Deleted file from storage: ${doc.filePath}`);
+        } catch (err) {
+          this.logger.warn(`Failed to delete file from storage: ${doc.filePath} — ${err.message}`);
+        }
+      }
+    }
+
+    return { success: true, deletedDocuments: documents.length };
   }
 
   // Candidates CRUD
@@ -355,11 +389,12 @@ export class RecruitmentPrismaService {
       throw err;
     }
 
-    // 5. Clean up files from storage (non-blocking, best-effort)
+    // 5. Clean up files from storage (best-effort, after DB deletion)
     if (documents.length > 0) {
       for (const doc of documents) {
         try {
           await this.storageService.deleteFile(doc.filePath);
+          this.logger.log(`Deleted file from storage: ${doc.filePath}`);
         } catch (err) {
           this.logger.warn(`Failed to delete file from storage: ${doc.filePath} — ${err.message}`);
         }
@@ -367,6 +402,33 @@ export class RecruitmentPrismaService {
     }
 
     return { success: true, deletedDocuments: documents.length };
+  }
+
+  // ─── Candidate Document Deletion ─────────────────────────────────────────
+
+  /**
+   * Supprime un document individuel d'un candidat (DB record + R2/S3 file)
+   */
+  async deleteCandidateDocument(candidateId: string, documentId: string) {
+    const doc = await this.prisma.candidateDocument.findFirst({
+      where: { id: documentId, candidateId },
+    });
+    if (!doc) {
+      throw new NotFoundException(`Document non trouvé`);
+    }
+
+    // 1. Delete DB record
+    await this.prisma.candidateDocument.delete({ where: { id: documentId } });
+
+    // 2. Delete file from storage (best-effort)
+    try {
+      await this.storageService.deleteFile(doc.filePath);
+      this.logger.log(`Deleted file from storage: ${doc.filePath}`);
+    } catch (err) {
+      this.logger.warn(`Failed to delete file from storage: ${doc.filePath} — ${err.message}`);
+    }
+
+    return { success: true, deletedFile: doc.fileName };
   }
 
   // Applications
@@ -567,11 +629,42 @@ export class RecruitmentPrismaService {
   }
 
   async deleteApplication(id: string) {
-    // Use a transaction to delete AI reports first
-    return this.prisma.$transaction(async (tx) => {
+    // 1. Collect candidate documents for R2 cleanup
+    let documents: Array<{ id: string; filePath: string; fileName: string }> = [];
+    try {
+      const application = await this.prisma.hrApplication.findUnique({
+        where: { id },
+        select: { candidateId: true },
+      });
+      if (application?.candidateId) {
+        documents = await this.prisma.candidateDocument.findMany({
+          where: { candidateId: application.candidateId },
+          select: { id: true, filePath: true, fileName: true },
+        });
+      }
+    } catch (err) {
+      this.logger.warn(`Could not fetch candidate documents for application deletion cleanup: ${err.message}`);
+    }
+
+    // 2. Delete DB records in a transaction
+    await this.prisma.$transaction(async (tx) => {
       await tx.hrAiReport.deleteMany({ where: { applicationId: id } });
-      return tx.hrApplication.delete({ where: { id } });
+      await tx.hrApplication.delete({ where: { id } });
     });
+
+    // 3. Clean up files from storage (best-effort, after DB deletion)
+    if (documents.length > 0) {
+      for (const doc of documents) {
+        try {
+          await this.storageService.deleteFile(doc.filePath);
+          this.logger.log(`Deleted file from storage: ${doc.filePath}`);
+        } catch (err) {
+          this.logger.warn(`Failed to delete file from storage: ${doc.filePath} — ${err.message}`);
+        }
+      }
+    }
+
+    return { success: true, deletedDocuments: documents.length };
   }
 
   // Interviews
@@ -985,6 +1078,74 @@ export class RecruitmentPrismaService {
 
     const fileStream = fs.createReadStream(localPath);
     fileStream.pipe(res);
+  }
+
+  // ─── Orphaned File Cleanup ────────────────────────────────────────────────
+
+  /**
+   * Nettoie les fichiers orphelins dans R2/S3 pour un tenant donné.
+   * Compare les clés R2 sous `candidate-docs/{tenantId}/` avec les
+   * enregistrements dans `hr_candidate_documents`, et supprime ceux
+   * qui n'ont plus de ligne DB correspondante.
+   */
+  async cleanupOrphanedFiles(tenantId: string) {
+    const storageType = this.storageService.getStorageType();
+    if (storageType !== 'r2' && storageType !== 's3') {
+      return { skipped: true, reason: `Storage type is ${storageType}, not R2/S3` };
+    }
+
+    // 1. List all files in R2 under this tenant's candidate-docs prefix
+    const prefix = `candidate-docs/${tenantId}/`;
+    let r2Keys: string[];
+    try {
+      r2Keys = await this.storageService.listByPrefix(prefix);
+    } catch (err) {
+      this.logger.error(`Failed to list R2 objects for cleanup: ${err.message}`);
+      return { error: `Failed to list R2 objects: ${err.message}` };
+    }
+
+    if (r2Keys.length === 0) {
+      return { totalR2Files: 0, orphaned: 0, deleted: 0 };
+    }
+
+    // 2. Get all known filePaths from DB
+    const dbDocs = await this.prisma.candidateDocument.findMany({
+      where: { filePath: { startsWith: prefix } },
+      select: { filePath: true },
+    });
+    const dbPaths = new Set(dbDocs.map((d) => d.filePath));
+
+    // 3. Find orphaned keys (in R2 but not in DB)
+    const orphanedKeys = r2Keys.filter((key) => !dbPaths.has(key));
+
+    if (orphanedKeys.length === 0) {
+      return { totalR2Files: r2Keys.length, orphaned: 0, deleted: 0 };
+    }
+
+    // 4. Delete orphaned files (batch)
+    const deletedKeys: string[] = [];
+    const failedKeys: string[] = [];
+    for (const key of orphanedKeys) {
+      try {
+        await this.storageService.deleteFile(key);
+        deletedKeys.push(key);
+      } catch (err) {
+        this.logger.warn(`Failed to delete orphaned file: ${key} — ${err.message}`);
+        failedKeys.push(key);
+      }
+    }
+
+    this.logger.log(`Cleanup complete: ${deletedKeys.length} orphaned files deleted, ${failedKeys.length} failed`);
+
+    return {
+      totalR2Files: r2Keys.length,
+      totalDbRecords: dbPaths.size,
+      orphaned: orphanedKeys.length,
+      deleted: deletedKeys.length,
+      failed: failedKeys.length,
+      deletedKeys,
+      failedKeys,
+    };
   }
 }
 

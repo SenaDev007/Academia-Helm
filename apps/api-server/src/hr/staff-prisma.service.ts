@@ -391,9 +391,31 @@ export class StaffPrismaService {
    */
   async deleteStaffPhoto(staffId: string, tenantId: string): Promise<any> {
     await this.findStaffById(staffId, tenantId);
-    return this.prisma.staffPhoto.deleteMany({
+
+    // Fetch photo records for R2 cleanup before deleting
+    const photos = await this.prisma.staffPhoto.findMany({
       where: { staffId, tenantId },
     });
+
+    await this.prisma.staffPhoto.deleteMany({
+      where: { staffId, tenantId },
+    });
+
+    // Clean up photo files from storage (best-effort)
+    for (const photo of photos) {
+      for (const url of [photo.originalUrl, photo.hdUrl, photo.thumbnailUrl]) {
+        if (!url) continue;
+        // For R2/S3: filePath is the key, not a full URL
+        // For Vercel Blob: filePath is a full URL
+        try {
+          await this.storageService.deleteFile(url);
+        } catch (err: any) {
+          console.warn(`Failed to delete staff photo file from storage: ${url} — ${err.message}`);
+        }
+      }
+    }
+
+    return { success: true };
   }
 
   // ─── STAFF DOCUMENTS ──────────────────────────────────────────────────────
@@ -541,9 +563,18 @@ export class StaffPrismaService {
       throw new NotFoundException(`Document non trouvé`);
     }
 
-    return this.prisma.staffDocument.delete({
-      where: { id: documentId },
-    });
+    // 1. Delete DB record
+    await this.prisma.staffDocument.delete({ where: { id: documentId } });
+
+    // 2. Delete file from storage (best-effort)
+    try {
+      await this.storageService.deleteFile(doc.filePath);
+    } catch (err: any) {
+      // Log but don't fail — the DB record is already deleted
+      console.warn(`Failed to delete staff document file from storage: ${doc.filePath} — ${err.message}`);
+    }
+
+    return { success: true, deletedFile: doc.fileName };
   }
 
   /**

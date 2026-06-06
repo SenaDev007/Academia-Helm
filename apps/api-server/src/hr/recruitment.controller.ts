@@ -202,6 +202,16 @@ export class RecruitmentPrismaController {
     return this.service.applyJob(body, files);
   }
 
+  // ─── Candidate Document Delete ──────────────────────────────────────────
+
+  @Delete('candidates/:candidateId/documents/:docId')
+  async deleteCandidateDocument(
+    @Param('candidateId') candidateId: string,
+    @Param('docId') docId: string,
+  ) {
+    return this.service.deleteCandidateDocument(candidateId, docId);
+  }
+
   // ─── Candidate Document Download ──────────────────────────────────────────
 
   @Get('candidates/:candidateId/documents/:docId/download')
@@ -211,5 +221,12 @@ export class RecruitmentPrismaController {
     @Res({ passthrough: true }) res: any,
   ) {
     return this.service.downloadCandidateDocument(candidateId, docId, res);
+  }
+
+  // ─── Admin: Orphaned File Cleanup ──────────────────────────────────────
+
+  @Post('cleanup/orphaned-files')
+  async cleanupOrphanedFiles(@GetTenant() tenant: any) {
+    return this.service.cleanupOrphanedFiles(tenant.id);
   }
 }

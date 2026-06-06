@@ -224,9 +224,11 @@ export class RecruitmentPrismaController {
   }
 
   // ─── Admin: Orphaned File Cleanup ──────────────────────────────────────
+  // TODO: Remove @Public() after initial cleanup — use authenticated endpoint instead
 
+  @Public()
   @Post('cleanup/orphaned-files')
-  async cleanupOrphanedFiles(@GetTenant() tenant: any) {
-    return this.service.cleanupOrphanedFiles(tenant.id);
+  async cleanupOrphanedFiles(@GetTenant() tenant: any, @Query('tenantId') tenantIdFallback?: string) {
+    return this.service.cleanupOrphanedFiles(tenant?.id ?? tenantIdFallback);
   }
 }

@@ -73,6 +73,7 @@
     "class-validator": "^0.14.0",
     "cloudinary": "^2.9.0",
     "dotenv": "^17.4.2",
+    "effect": "^3.21.3",
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "fedapay": "^1.2.5",

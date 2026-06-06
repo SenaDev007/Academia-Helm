@@ -478,6 +478,8 @@ export class CreateCandidateDto {
   @IsString() email: string;
   @IsString() phone: string;
   @IsOptional() @IsString() address?: string;
+  @IsOptional() @IsString() country?: string;
+  @IsOptional() @IsString() city?: string;
   @IsOptional() @IsString() gender?: string;
   @IsOptional() @IsDateString() dateOfBirth?: string;
   /** Frontend may send tenantId — ignored (resolved server-side) */
@@ -490,6 +492,8 @@ export class UpdateCandidateDto {
   @IsOptional() @IsString() email?: string;
   @IsOptional() @IsString() phone?: string;
   @IsOptional() @IsString() address?: string;
+  @IsOptional() @IsString() country?: string;
+  @IsOptional() @IsString() city?: string;
   @IsOptional() @IsString() gender?: string;
   @IsOptional() @IsDateString() dateOfBirth?: string;
   /** Frontend may send tenantId — ignored */
@@ -575,6 +579,8 @@ export class ApplyJobDto {
   @IsString() email: string;
   @IsString() phone: string;
   @IsOptional() @IsString() address?: string;
+  @IsOptional() @IsString() country?: string;
+  @IsOptional() @IsString() city?: string;
   @IsOptional() @IsString() gender?: string;
   @IsUUID() tenantId: string;
   @IsOptional() @IsString() skills?: string;

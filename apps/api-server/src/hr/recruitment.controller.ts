@@ -47,6 +47,12 @@ export class RecruitmentPrismaController {
     return this.service.getJobs(tenant?.id ?? tenantIdFallback);
   }
 
+  @Public()
+  @Get('jobs/:id/stats')
+  async getJobStats(@Param('id') jobId: string, @Query('tenantId') tenantIdFallback?: string) {
+    return this.service.getJobStats(jobId, tenantIdFallback);
+  }
+
   @Post('jobs')
   async createJob(@GetTenant() tenant: any, @Body() body: CreateJobDto) {
     return this.service.createJob(tenant.id, body);

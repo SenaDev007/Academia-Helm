@@ -21,6 +21,54 @@ export class RecruitmentPrismaService {
     });
   }
 
+  /**
+   * Get application statistics for a specific job offer (public endpoint).
+   * Returns: total applicants, breakdown by country, breakdown by city.
+   */
+  async getJobStats(jobId: string, tenantId?: string) {
+    // Get all applications for this job with candidate info
+    const applications = await this.prisma.hrApplication.findMany({
+      where: { jobId },
+      include: {
+        candidate: {
+          select: { country: true, city: true },
+        },
+      },
+    });
+
+    const totalApplicants = applications.length;
+
+    // Aggregate by country
+    const byCountry: Record<string, number> = {};
+    for (const app of applications) {
+      const country = app.candidate?.country || 'Non spécifié';
+      byCountry[country] = (byCountry[country] || 0) + 1;
+    }
+
+    // Aggregate by city
+    const byCity: Record<string, number> = {};
+    for (const app of applications) {
+      const city = app.candidate?.city || 'Non spécifié';
+      byCity[city] = (byCity[city] || 0) + 1;
+    }
+
+    // Sort by count descending and convert to arrays
+    const countries = Object.entries(byCountry)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+
+    const cities = Object.entries(byCity)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+
+    return {
+      jobId,
+      totalApplicants,
+      countries,
+      cities,
+    };
+  }
+
   async createJob(tenantId: string, data: any) {
     return this.prisma.hrJob.create({
       data: {
@@ -122,6 +170,8 @@ export class RecruitmentPrismaService {
         email: data.email,
         phone: data.phone,
         address: data.address,
+        country: data.country || null,
+        city: data.city || null,
         gender: data.gender,
         dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : null,
       },
@@ -636,6 +686,8 @@ export class RecruitmentPrismaService {
             email: body.email,
             phone: body.phone,
             address: body.address || '',
+            country: body.country || null,
+            city: body.city || null,
             gender: body.gender || 'M',
           }
         });

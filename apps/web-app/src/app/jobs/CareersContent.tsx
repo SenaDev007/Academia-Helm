@@ -22,7 +22,10 @@ import {
   Award,
   Sparkles,
   Send,
-  Linkedin
+  Linkedin,
+  Users,
+  Globe,
+  Map
 } from 'lucide-react';
 import PremiumHeader from '@/components/layout/PremiumHeader';
 import { apiFetch } from '@/lib/api/client';
@@ -55,6 +58,14 @@ interface Job {
   skillsRequired?: string;
   salary?: string;
   contractType?: string;
+  _count?: { applications: number };
+}
+
+interface JobStats {
+  jobId: string;
+  totalApplicants: number;
+  countries: { name: string; count: number }[];
+  cities: { name: string; count: number }[];
 }
 
 interface WorkExperience {
@@ -92,8 +103,11 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
+  const [country, setCountry] = useState('Bénin');
+  const [city, setCity] = useState('');
   const [gender, setGender] = useState('M');
   const [linkedinUrl, setLinkedinUrl] = useState('');
+  const [jobStats, setJobStats] = useState<JobStats | null>(null);
 
   // Step 2: Work Experience List
   const [experiences, setExperiences] = useState<WorkExperience[]>([]);
@@ -157,6 +171,7 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
     setSelectedJob(null);
     setIsApplying(false);
     setSubmitResult(null);
+    setJobStats(null);
     setCurrentStep(1);
     
     // Update path dynamically (personalized tenant URL)
@@ -174,6 +189,27 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
       setLoading(false);
     }
   };
+
+  // Fetch stats when a job is selected
+  useEffect(() => {
+    if (!selectedJob) {
+      setJobStats(null);
+      return;
+    }
+    async function loadStats() {
+      try {
+        const API_URL = getApiBaseUrl();
+        const res = await fetch(`${API_URL}/hr/recruitment/jobs/${selectedJob.id}/stats`);
+        if (res.ok) {
+          const data = await res.json();
+          setJobStats(data);
+        }
+      } catch (err) {
+        console.error('Failed to load job stats:', err);
+      }
+    }
+    loadStats();
+  }, [selectedJob?.id]);
 
   // Auto-select school if query parameter matches
   useEffect(() => {
@@ -241,6 +277,8 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
       formData.append('email', email);
       formData.append('phone', phone);
       formData.append('address', address);
+      formData.append('country', country);
+      formData.append('city', city);
       formData.append('gender', gender);
       formData.append('linkedinUrl', linkedinUrl);
       
@@ -412,6 +450,9 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
                             <div className="mt-3 flex items-center gap-3 text-[10px] text-slate-500">
                               <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {job.loc}</span>
                               <span className="flex items-center gap-1"><Briefcase className="h-3 w-3" /> {job.contractType || 'CDI'}</span>
+                              {job._count?.applications > 0 && (
+                                <span className="flex items-center gap-1 text-blue-600 font-semibold"><Users className="h-3 w-3" /> {job._count.applications} candidat{job._count.applications > 1 ? 's' : ''}</span>
+                              )}
                             </div>
                           </div>
                         ))
@@ -450,7 +491,67 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
                                 <p className="font-semibold text-slate-900 mt-0.5">{selectedJob.experience}</p>
                               </div>
                             )}
+                            {/* Applicant count stat */}
+                            <div>
+                              <span className="text-[10px] text-slate-400 font-bold uppercase">Candidats</span>
+                              <p className="font-semibold text-[#1A2BA6] mt-0.5 flex items-center gap-1">
+                                <Users className="h-3.5 w-3.5" />
+                                {selectedJob._count?.applications || 0} candidat{(selectedJob._count?.applications || 0) > 1 ? 's' : ''}
+                              </p>
+                            </div>
                           </div>
+
+                          {/* LinkedIn-style applicant stats */}
+                          {jobStats && jobStats.totalApplicants > 0 && (
+                            <div className="bg-gradient-to-br from-slate-50 to-blue-50/30 border border-slate-200 rounded-xl p-4 space-y-3">
+                              <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                                <Users className="h-4 w-4 text-[#1A2BA6]" />
+                                Statistiques des candidats
+                              </h4>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* By country */}
+                                {jobStats.countries.length > 0 && (
+                                  <div>
+                                    <span className="text-[10px] text-slate-400 font-bold uppercase flex items-center gap-1"><Globe className="h-3 w-3" /> Par pays</span>
+                                    <div className="mt-1.5 space-y-1">
+                                      {jobStats.countries.map((c) => (
+                                        <div key={c.name} className="flex items-center gap-2">
+                                          <div className="flex-1 bg-slate-200 rounded-full h-2 overflow-hidden">
+                                            <div
+                                              className="bg-[#1A2BA6] h-full rounded-full transition-all duration-500"
+                                              style={{ width: `${Math.round((c.count / jobStats.totalApplicants) * 100)}%` }}
+                                            />
+                                          </div>
+                                          <span className="text-[10px] text-slate-700 font-medium whitespace-nowrap min-w-[70px]">{c.name}</span>
+                                          <span className="text-[10px] text-slate-400 font-bold">{c.count}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                {/* By city */}
+                                {jobStats.cities.length > 0 && jobStats.cities.some(c => c.name !== 'Non spécifié') && (
+                                  <div>
+                                    <span className="text-[10px] text-slate-400 font-bold uppercase flex items-center gap-1"><Map className="h-3 w-3" /> Par ville</span>
+                                    <div className="mt-1.5 space-y-1">
+                                      {jobStats.cities.filter(c => c.name !== 'Non spécifié').map((c) => (
+                                        <div key={c.name} className="flex items-center gap-2">
+                                          <div className="flex-1 bg-slate-200 rounded-full h-2 overflow-hidden">
+                                            <div
+                                              className="bg-emerald-500 h-full rounded-full transition-all duration-500"
+                                              style={{ width: `${Math.round((c.count / jobStats.totalApplicants) * 100)}%` }}
+                                            />
+                                          </div>
+                                          <span className="text-[10px] text-slate-700 font-medium whitespace-nowrap min-w-[70px]">{c.name}</span>
+                                          <span className="text-[10px] text-slate-400 font-bold">{c.count}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
 
                           {selectedJob.description && (
                             <div>
@@ -570,6 +671,33 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
                                   <option value="M">Masculin</option>
                                   <option value="F">Féminin</option>
                                 </select>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Pays</label>
+                                <select value={country} onChange={(e) => setCountry(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs bg-white">
+                                  <option value="Bénin">Bénin</option>
+                                  <option value="Togo">Togo</option>
+                                  <option value="Niger">Niger</option>
+                                  <option value="Nigéria">Nigéria</option>
+                                  <option value="Côte d'Ivoire">Côte d'Ivoire</option>
+                                  <option value="Sénégal">Sénégal</option>
+                                  <option value="Mali">Mali</option>
+                                  <option value="Burkina Faso">Burkina Faso</option>
+                                  <option value="Guinée">Guinée</option>
+                                  <option value="Cameroun">Cameroun</option>
+                                  <option value="Gabon">Gabon</option>
+                                  <option value="Congo">Congo</option>
+                                  <option value="RDC">RDC</option>
+                                  <option value="France">France</option>
+                                  <option value="Autre">Autre</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Ville / Commune</label>
+                                <input type="text" value={city} onChange={(e) => setCity(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="Ex: Cotonou, Parakou..." />
                               </div>
                             </div>
 

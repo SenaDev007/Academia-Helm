@@ -13482,6 +13482,8 @@ model HrCandidate {
   email                  String
   phone                  String
   address                String?
+  country                String?
+  city                   String?
   gender                 String?
   dateOfBirth            DateTime?
   createdAt              DateTime                @default(now())
@@ -13498,6 +13500,8 @@ model HrCandidate {
   tenant                 Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
+  @@index([country])
+  @@index([city])
   @@map("hr_candidates")
 }
 

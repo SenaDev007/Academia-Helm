@@ -196,12 +196,13 @@ export function RecruitmentWorkspace() {
     candidateId: '', category: 'Développement', status: 'Disponible'
   });
 
-  // Load all datasets
+  // Load all datasets — each fetch is independent so one failure doesn't block the others
   const loadData = async () => {
     if (!tenant?.id) return;
+    setLoading(true);
+
+    // Fetch Jobs
     try {
-      setLoading(true);
-      // Fetch Jobs
       const fetchedJobs = await hrFetch<any[]>(hrUrl('recruitment/jobs', { tenantId: tenant.id }));
       if (fetchedJobs) {
         setJobs(fetchedJobs.map(j => ({
@@ -210,8 +211,12 @@ export function RecruitmentWorkspace() {
           candidates: j._count?.applications || 0,
         })));
       }
+    } catch (err) {
+      console.error('Failed to fetch recruitment jobs:', err);
+    }
 
-      // Fetch Candidates
+    // Fetch Candidates
+    try {
       const fetchedCandidates = await hrFetch<any[]>(hrUrl('recruitment/candidates', { tenantId: tenant.id }));
       if (fetchedCandidates) {
         setCandidates(fetchedCandidates.map(c => {
@@ -245,8 +250,12 @@ export function RecruitmentWorkspace() {
           };
         }));
       }
+    } catch (err) {
+      console.error('Failed to fetch recruitment candidates:', err);
+    }
 
-      // Fetch Interviews
+    // Fetch Interviews
+    try {
       const fetchedInterviews = await hrFetch<any[]>(hrUrl('recruitment/interviews', { tenantId: tenant.id }));
       if (fetchedInterviews) {
         setInterviews(fetchedInterviews.map(i => ({
@@ -254,24 +263,31 @@ export function RecruitmentWorkspace() {
           date: i.date ? i.date.split('T')[0] : '',
         })));
       }
+    } catch (err) {
+      console.error('Failed to fetch recruitment interviews:', err);
+    }
 
-      // Fetch Tests
+    // Fetch Tests
+    try {
       const fetchedTests = await hrFetch<any[]>(hrUrl('recruitment/tests', { tenantId: tenant.id }));
       if (fetchedTests) {
         setTests(fetchedTests);
       }
+    } catch (err) {
+      console.error('Failed to fetch recruitment tests:', err);
+    }
 
-      // Fetch Talent Pool
+    // Fetch Talent Pool
+    try {
       const fetchedTalent = await hrFetch<any[]>(hrUrl('recruitment/talent-pool', { tenantId: tenant.id }));
       if (fetchedTalent) {
         setTalentPool(fetchedTalent);
       }
-
     } catch (err) {
-      console.error('Error fetching recruitment datasets:', err);
-    } finally {
-      setLoading(false);
+      console.error('Failed to fetch recruitment talent pool:', err);
     }
+
+    setLoading(false);
   };
 
   useEffect(() => {

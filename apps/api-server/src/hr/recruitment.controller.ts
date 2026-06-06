@@ -71,8 +71,8 @@ export class RecruitmentPrismaController {
   // ─── Candidates CRUD ────────────────────────────────────────────────────────
 
   @Get('candidates')
-  async getCandidates(@GetTenant() tenant: any) {
-    return this.service.getCandidates(tenant.id);
+  async getCandidates(@GetTenant() tenant: any, @Query('tenantId') tenantIdFallback?: string) {
+    return this.service.getCandidates(tenant?.id ?? tenantIdFallback);
   }
 
   @Post('candidates')
@@ -93,8 +93,8 @@ export class RecruitmentPrismaController {
   // ─── Applications ────────────────────────────────────────────────────────────
 
   @Get('applications')
-  async getApplications(@GetTenant() tenant: any) {
-    return this.service.getApplications(tenant.id);
+  async getApplications(@GetTenant() tenant: any, @Query('tenantId') tenantIdFallback?: string) {
+    return this.service.getApplications(tenant?.id ?? tenantIdFallback);
   }
 
   @Post('applications')
@@ -115,8 +115,8 @@ export class RecruitmentPrismaController {
   // ─── Interviews ──────────────────────────────────────────────────────────────
 
   @Get('interviews')
-  async getInterviews(@GetTenant() tenant: any) {
-    return this.service.getInterviews(tenant.id);
+  async getInterviews(@GetTenant() tenant: any, @Query('tenantId') tenantIdFallback?: string) {
+    return this.service.getInterviews(tenant?.id ?? tenantIdFallback);
   }
 
   @Post('interviews')
@@ -137,8 +137,8 @@ export class RecruitmentPrismaController {
   // ─── Tests ────────────────────────────────────────────────────────────────────
 
   @Get('tests')
-  async getTests(@GetTenant() tenant: any) {
-    return this.service.getTests(tenant.id);
+  async getTests(@GetTenant() tenant: any, @Query('tenantId') tenantIdFallback?: string) {
+    return this.service.getTests(tenant?.id ?? tenantIdFallback);
   }
 
   @Post('tests')
@@ -171,8 +171,8 @@ export class RecruitmentPrismaController {
   // ─── Talent Pool ──────────────────────────────────────────────────────────────
 
   @Get('talent-pool')
-  async getTalentPool(@GetTenant() tenant: any) {
-    return this.service.getTalentPool(tenant.id);
+  async getTalentPool(@GetTenant() tenant: any, @Query('tenantId') tenantIdFallback?: string) {
+    return this.service.getTalentPool(tenant?.id ?? tenantIdFallback);
   }
 
   @Post('talent-pool/:candidateId')

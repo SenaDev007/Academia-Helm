@@ -8,6 +8,8 @@ import { PrismaService } from './database/prisma.service';
 
 /** Défaut Express ~100 ko — insuffisant pour identité + logos base64 (POST /settings/identity).
  *  Réduit de 10mb à 5mb pour limiter la consommation mémoire par requête.
+ *  Note: This only applies to JSON/urlencoded bodies, NOT to multipart uploads
+ *  which are handled by Multer with their own limits.
  */
 const BODY_LIMIT = process.env.JSON_BODY_LIMIT ?? '5mb';
 

@@ -679,18 +679,43 @@ export class RecruitmentPrismaService {
   }
 
   async createInterview(tenantId: string, data: any) {
+    // Validate that the candidate exists and belongs to this tenant
+    const candidate = await this.prisma.hrCandidate.findFirst({
+      where: { id: data.candidateId, tenantId },
+    });
+    if (!candidate) {
+      throw new NotFoundException(`Candidat non trouvé pour ce tenant (candidateId: ${data.candidateId})`);
+    }
+
+    // Parse date robustly — handle both "YYYY-MM-DD" and full ISO strings
+    let parsedDate: Date;
+    try {
+      parsedDate = new Date(data.date);
+      if (isNaN(parsedDate.getTime())) {
+        throw new Error(`Invalid date: ${data.date}`);
+      }
+    } catch (err: any) {
+      throw new BadRequestException(`Date invalide : ${data.date}. Utilisez le format YYYY-MM-DD.`);
+    }
+
+    // Parse score — handle both string and number input
+    const score = data.score != null ? (typeof data.score === 'number' ? data.score : parseInt(String(data.score), 10)) : 0;
+    if (isNaN(score)) {
+      throw new BadRequestException(`Score invalide : ${data.score}`);
+    }
+
     return this.prisma.hrInterview.create({
       data: {
         ...prismaCreateDefaults(),
         tenantId,
         candidateId: data.candidateId,
         type: data.type || 'RH',
-        date: new Date(data.date),
-        time: data.time,
+        date: parsedDate,
+        time: data.time || '',
         format: data.format || 'Visioconférence',
-        evaluator: data.evaluator,
-        score: data.score ? parseInt(data.score) : 0,
-        comments: data.comments,
+        evaluator: data.evaluator || '',
+        score,
+        comments: data.comments || null,
       },
     });
   }

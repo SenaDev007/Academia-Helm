@@ -120,8 +120,16 @@ export class RecruitmentPrismaController {
   }
 
   @Post('interviews')
-  async createInterview(@GetTenant() tenant: any, @Body() body: CreateInterviewDto) {
-    return this.service.createInterview(tenant.id, body);
+  async createInterview(
+    @GetTenant() tenant: any,
+    @Body() body: CreateInterviewDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour créer un entretien');
+    }
+    return this.service.createInterview(tid, body);
   }
 
   @Put('interviews/:id')
@@ -194,7 +202,12 @@ export class RecruitmentPrismaController {
     { name: 'cv', maxCount: 1 },
     { name: 'coverLetter', maxCount: 1 },
     { name: 'recommendationLetter', maxCount: 1 }
-  ]))
+  ], {
+    limits: {
+      fileSize: 10 * 1024 * 1024, // 10MB per file
+      fieldSize: 5 * 1024 * 1024,  // 5MB per non-file field (for large JSON payloads)
+    }
+  }))
   async applyJob(
     @Body() body: ApplyJobDto,
     @UploadedFiles() files: { cv?: Express.Multer.File[], coverLetter?: Express.Multer.File[], recommendationLetter?: Express.Multer.File[] }

@@ -4,11 +4,16 @@
  * ============================================================================
  *
  * Dedicated route for the public recruitment apply endpoint.
- * Separated from the catch-all HR proxy to set a larger body size limit
- * (10MB) for file uploads (CV, cover letter, recommendation letter).
+ * Separated from the catch-all HR proxy to handle large file uploads
+ * (CV, cover letter, recommendation letter).
  *
  * This route is called from the public careers page (/jobs) by unauthenticated
  * users, so no auth headers are required.
+ *
+ * IMPORTANT: In Next.js App Router, the `config.api.bodyParser` pattern
+ * from Pages Router does NOT work. The body size limit is controlled by
+ * the deployment platform (Vercel). For larger uploads, configure
+ * `vercel.json` functions config or use the Edge runtime.
  * ============================================================================
  */
 
@@ -19,15 +24,9 @@ import { nestControllerUrl, normalizeApiUrl } from '@/lib/utils/api-urls';
 export const dynamic = 'force-dynamic';
 
 /**
- * 10MB body limit for recruitment file uploads (CV + cover letter + recommendation).
- * Vercel default is 4.5MB which is too small for 3 documents.
+ * Increase max duration for file upload processing (default is 10s on Vercel Hobby).
  */
-export const config = {
-  api: {
-    bodyParser: false,
-    responseLimit: '10mb',
-  },
-};
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   const backendUrl = normalizeApiUrl(nestControllerUrl('hr/recruitment/apply'));
@@ -35,6 +34,8 @@ export async function POST(request: NextRequest) {
   try {
     // Read the raw body (multipart/form-data with files)
     const bodyBuffer = Buffer.from(await request.arrayBuffer());
+
+    console.log(`[apply-proxy] Forwarding ${bodyBuffer.length} bytes to ${backendUrl}`);
 
     const headers: Record<string, string> = {
       // Forward the original Content-Type (includes boundary for multipart)
@@ -55,8 +56,13 @@ export async function POST(request: NextRequest) {
       try {
         data = JSON.parse(text);
       } catch {
-        data = { error: 'Réponse backend invalide', raw: text.substring(0, 200) };
+        data = { error: 'Réponse backend invalide', raw: text.substring(0, 500) };
       }
+    }
+
+    // If the backend returned an error, log it for debugging
+    if (!res.ok) {
+      console.error(`[apply-proxy] Backend error ${res.status}:`, JSON.stringify(data).substring(0, 500));
     }
 
     const response = NextResponse.json(data, { status: res.status });
@@ -69,7 +75,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         message: 'Service de candidature indisponible. Veuillez réessayer dans quelques instants.',
-        error: e?.message || 'Proxy error',
+        detail: e?.message || 'Proxy error',
       },
       { status: 502 },
     );

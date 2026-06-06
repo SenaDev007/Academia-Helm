@@ -417,9 +417,10 @@ export function RecruitmentWorkspace() {
       setIsAddInterviewOpen(false);
       setNewInterview({ candidateId: '', type: 'RH', date: '', time: '', format: 'Visioconférence', evaluator: '', score: '0', comments: '' });
       loadData();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to schedule interview:', err);
-      toast({ variant: 'error', title: 'Erreur lors de la programmation de l\'entretien.' });
+      const backendMsg = err?.message || err?.toString() || '';
+      toast({ variant: 'error', title: 'Erreur lors de la programmation de l\'entretien.', description: backendMsg || 'Veuillez vérifier les données saisies et réessayer.' });
     }
   };
 
@@ -1395,7 +1396,8 @@ export function RecruitmentWorkspace() {
                           <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newInterview.type} onChange={(e) => setNewInterview({ ...newInterview, type: e.target.value })}>
                             <option value="RH">Entretien RH</option>
                             <option value="TECHNIQUE">Entretien Technique</option>
-                            <option value="DIRECTIONS">Entretien de Direction</option>
+                            <option value="DIRECTION">Entretien de Direction</option>
+                            <option value="PEDAGOGIQUE">Entretien Pédagogique</option>
                           </select>
                         </div>
                         <div>

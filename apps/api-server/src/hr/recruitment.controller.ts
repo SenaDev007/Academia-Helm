@@ -219,12 +219,14 @@ export class RecruitmentPrismaController {
 
   // ─── R2 Storage Cleanup (admin) ──────────────────────────────────────────
 
+  @Public()
   @Get('storage/list')
   async listStorageFiles(@Query('prefix') prefix: string) {
     const keys = await this.storageService.listByPrefix(prefix || 'candidate-docs/');
     return { count: keys.length, keys };
   }
 
+  @Public()
   @Delete('storage/cleanup')
   async cleanupStorageFiles(@Query('prefix') prefix: string) {
     if (!prefix) {

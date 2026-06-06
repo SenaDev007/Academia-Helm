@@ -106,10 +106,9 @@ export default function PayrollDetailPage() {
 
   const handlePreviewPayslip = async (itemId: string) => {
     try {
-      const result = await hrFetch<any>(hrUrl(`payroll/${itemId}/payslip-pdf`, { tenantId: tenant.id }));
-      if (result?.url) {
-        window.open(result.url, '_blank');
-      } else if (result?.pdfBase64) {
+      // Use POST to generate and get base64 PDF
+      const result = await hrFetch<any>(hrUrl(`payroll/items/${itemId}/payslip-pdf`, { tenantId: tenant.id }), { method: 'POST' });
+      if (result?.pdfBase64) {
         const byteCharacters = atob(result.pdfBase64);
         const byteNumbers = new Array(byteCharacters.length);
         for (let i = 0; i < byteCharacters.length; i++) {
@@ -129,30 +128,42 @@ export default function PayrollDetailPage() {
 
   const handleDownloadPayslip = async (itemId: string, staffName: string) => {
     try {
-      const result = await hrFetch<any>(hrUrl(`payroll/${itemId}/payslip-pdf`, { tenantId: tenant.id }));
-      if (result?.pdfBase64) {
-        const byteCharacters = atob(result.pdfBase64);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: 'application/pdf' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `bulletin_${staffName.replace(/\s+/g, '_')}.pdf`;
-        a.click();
-        URL.revokeObjectURL(url);
-      } else if (result?.url) {
-        const a = document.createElement('a');
-        a.href = result.url;
-        a.download = `bulletin_${staffName.replace(/\s+/g, '_')}.pdf`;
-        a.target = '_blank';
-        a.click();
+      // Use raw fetch for binary PDF download via GET (avoids hrFetch JSON parsing)
+      const response = await fetch(`/api/hr/payroll/items/${itemId}/payslip-pdf?tenantId=${tenant.id}`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+
+      if (!response.ok) throw new Error('Erreur téléchargement');
+
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/pdf') || contentType.includes('octet-stream')) {
+        const blob = await response.blob();
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `bulletin_${staffName.replace(/\s+/g, '_')}.pdf`;
+        link.click();
+        URL.revokeObjectURL(link.href);
       } else {
-        toast({ variant: 'info', title: 'Téléchargement', description: 'Le PDF sera généré par le serveur.' });
+        // Fallback: try JSON response with pdfBase64
+        const data = await response.json();
+        if (data?.pdfBase64) {
+          const byteCharacters = atob(data.pdfBase64);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: 'application/pdf' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `bulletin_${staffName.replace(/\s+/g, '_')}.pdf`;
+          a.click();
+          URL.revokeObjectURL(url);
+        }
       }
+      toast({ variant: 'success', title: 'Téléchargement du bulletin lancé.' });
     } catch (error) {
       toast({ variant: 'error', title: 'Erreur lors du téléchargement' });
     }

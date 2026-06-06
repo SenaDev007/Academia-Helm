@@ -197,7 +197,13 @@ export class PayrollPrismaController {
     @Param('id') payrollItemId: string,
     @CurrentUser() user: any,
   ) {
-    return this.payrollPdfService.generatePaySlipPdf(payrollItemId, tenant.id, user.id);
+    const result = await this.payrollPdfService.generatePaySlipPdf(payrollItemId, tenant.id, user.id);
+    // Return JSON with base64-encoded PDF for frontend consumption
+    return {
+      ...result,
+      pdfBase64: result.pdfBuffer ? result.pdfBuffer.toString('base64') : null,
+      pdfBuffer: undefined, // Don't serialize raw Buffer in JSON
+    };
   }
 
   @Get('items/:id/payslip-pdf')
@@ -206,17 +212,29 @@ export class PayrollPrismaController {
     @Param('id') payrollItemId: string,
     @Res() res: Response,
   ) {
-    const pdfBuffer = await this.payrollPdfService.getPaySlipPdf(payrollItemId, tenant.id);
+    // Try to get existing PDF, or generate if not found
+    let pdfBuffer = await this.payrollPdfService.getPaySlipPdf(payrollItemId, tenant.id);
 
     if (!pdfBuffer) {
-      return res.status(404).json({ error: 'PDF introuvable' });
+      // No existing PDF — generate one
+      try {
+        const result = await this.payrollPdfService.generatePaySlipPdf(payrollItemId, tenant.id, null);
+        pdfBuffer = result.pdfBuffer;
+      } catch {
+        return res.status(404).json({ error: 'PDF introuvable' });
+      }
     }
+
+    const staffName = (result => {
+      try { return result || 'staff'; } catch { return 'staff'; }
+    })(null);
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="bulletin-${payrollItemId}.pdf"`,
+      `attachment; filename="bulletin-paie-${payrollItemId.substring(0, 8)}.pdf"`,
     );
+    res.setHeader('Content-Length', String(pdfBuffer.length));
     return res.send(pdfBuffer);
   }
 

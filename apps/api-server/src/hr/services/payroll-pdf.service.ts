@@ -104,6 +104,19 @@ export class PayrollPdfService {
     let salarySlip;
 
     if (existingSlip) {
+      // Delete old PDF file before updating (prevent orphaned files)
+      if (existingSlip.filePath) {
+        try {
+          const oldPath = path.join(process.cwd(), existingSlip.filePath);
+          if (fs.existsSync(oldPath)) {
+            fs.unlinkSync(oldPath);
+            this.logger.log(`Deleted old payslip PDF: ${oldPath}`);
+          }
+        } catch (err) {
+          this.logger.warn(`Failed to delete old payslip PDF: ${err}`);
+        }
+      }
+
       salarySlip = await this.prisma.salarySlip.update({
         where: { id: existingSlip.id },
         data: {

@@ -135,7 +135,7 @@ export class ContractsPrismaController {
 
   /**
    * GET /api/hr/contracts/:id/pdf
-   * Télécharge le PDF du contrat (génère si non existant).
+   * Télécharge le PDF du contrat (sert le PDF existant ou le génère si non existant).
    */
   @Get(':id/pdf')
   async downloadPdf(
@@ -143,7 +143,16 @@ export class ContractsPrismaController {
     @Param('id') id: string,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { pdfBuffer, contract } = await this.contractPdfService.generateContractPdf(id, tenant.id);
+    // Try to serve existing PDF first (no re-generation)
+    let result = await this.contractPdfService.getExistingContractPdf(id, tenant.id);
+
+    // If no PDF exists yet, generate one
+    if (!result) {
+      const generated = await this.contractPdfService.generateContractPdf(id, tenant.id);
+      result = { pdfBuffer: generated.pdfBuffer, contract: generated.contract };
+    }
+
+    const { pdfBuffer, contract } = result;
     const staffName = `${contract.staff?.lastName}_${contract.staff?.firstName}`.replace(/\s+/g, '_');
     const filename = `Contrat_${staffName}_${contract.contractType}_${id.substring(0, 8)}.pdf`;
 

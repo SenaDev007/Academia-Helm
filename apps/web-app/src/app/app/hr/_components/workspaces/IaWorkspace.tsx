@@ -120,6 +120,7 @@ export function IaWorkspace() {
   const handleUpload = async () => {
     setParsing(true);
     try {
+      // If a candidate is selected, parse their existing data via the IA service
       const result = await hrFetch<any>(hrUrl('ia/parse-cv', { tenantId: tenant.id }), {
         method: 'POST',
         body: { tenantId: tenant?.id },
@@ -132,15 +133,72 @@ export function IaWorkspace() {
       setParsedData({
         name: '— (IA non configurée)',
         skills: ['Analyse sémantique non disponible'],
-        experience: 'L\'intégration IA nécessite la configuration d\'une clé API Claude.',
+        experience: 'L\'intégration IA nécessite la configuration d\'une clé API OpenRouter.',
         education: 'Connectez votre clé API pour activer l\'analyse de CV automatisée.',
         strengths: 'Le module HDIE est prêt à être activé avec une clé API',
-        weaknesses: 'Clé API Claude requise pour l\'analyse sémantique avancée',
+        weaknesses: 'Clé API OpenRouter requise pour l\'analyse sémantique avancée',
         isPlaceholder: true,
       });
     } finally {
       setParsing(false);
     }
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setParsing(true);
+    try {
+      // Read file as base64 and send to IA parsing endpoint
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64Data = (reader.result as string).split(',')[1]; // Remove data:xxx;base64, prefix
+        try {
+          const result = await hrFetch<any>(hrUrl('ia/parse-cv', { tenantId: tenant.id }), {
+            method: 'POST',
+            body: {
+              tenantId: tenant?.id,
+              base64Data,
+              fileName: file.name,
+              mimeType: file.type,
+            },
+          });
+          setFileUploaded(true);
+          setParsedData(result);
+        } catch (err) {
+          setFileUploaded(true);
+          setParsedData({
+            name: '— (Erreur d\'analyse)',
+            skills: ['Impossible d\'analyser le document'],
+            experience: 'L\'analyse IA n\'a pas pu être effectuée. Vérifiez la configuration OpenRouter.',
+            education: 'Le fichier a été reçu mais le parsing a échoué.',
+            strengths: 'Réessayez après avoir vérifié OPENROUTER_API_KEY',
+            weaknesses: 'Erreur lors de l\'analyse du document',
+            isPlaceholder: true,
+          });
+        } finally {
+          setParsing(false);
+        }
+      };
+      reader.onerror = () => {
+        setParsing(false);
+        setParsedData({
+          name: '— (Erreur de lecture)',
+          skills: ['Impossible de lire le fichier'],
+          experience: 'Le fichier n\'a pas pu être lu.',
+          education: 'Vérifiez le format du fichier (PDF, DOCX, PNG).',
+          strengths: '',
+          weaknesses: 'Erreur de lecture du fichier',
+          isPlaceholder: true,
+        });
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      setParsing(false);
+    }
+    // Reset input so the same file can be re-selected
+    event.target.value = '';
   };
 
   const handleSendMessage = async (textToSend: string) => {
@@ -172,7 +230,7 @@ export function IaWorkspace() {
           ? `Le meilleur candidat est **${best[0].firstName} ${best[0].lastName}** avec un score de **${best[0].applications?.[0]?.score || 0}%**.`
           : "Aucun candidat dans la base.";
       } else {
-        reply = "Je traite votre demande. 💡 *Pour des réponses IA enrichies, une clé API Claude est requise.*\n\nEn attendant, je peux vous fournir les données brutes du système RH.";
+        reply = "Je traite votre demande. *Pour des réponses IA enrichies, une clé API OpenRouter est requise.*\n\nEn attendant, je peux vous fournir les données brutes du système RH.";
       }
       setMessages((prev) => [...prev, { sender: 'bot', text: reply }]);
     } finally {
@@ -376,7 +434,7 @@ export function IaWorkspace() {
             <span className="ml-2 opacity-80">
               {iaStatus.configured
                 ? `• Moteur HDIE v${iaStatus.engine?.replace('HDIE v', '') || '1.0'} actif`
-                : '• Configurez une clé API Claude ou OpenAI pour activer l\'analyse sémantique'}
+                : '• Configurez la clé API OPENROUTER_API_KEY pour activer l\'analyse sémantique'}
             </span>
           </div>
         </div>
@@ -417,7 +475,7 @@ export function IaWorkspace() {
                 <Info className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
                 <div>
                   <p className="font-bold text-amber-900">Intégration IA requise</p>
-                  <p className="text-amber-700 mt-0.5">L&apos;analyse sémantique de CV par intelligence artificielle nécessite la configuration d&apos;une clé API Claude. Le moteur HDIE est prêt à être activé dès que la clé sera fournie.</p>
+                  <p className="text-amber-700 mt-0.5">L&apos;analyse sémantique de CV par intelligence artificielle nécessite la configuration de la clé API OpenRouter (OPENROUTER_API_KEY). Le moteur HDIE est prêt à être activé dès que la clé sera fournie.</p>
                 </div>
               </div>
             )}
@@ -427,14 +485,23 @@ export function IaWorkspace() {
               <h4 className="font-bold text-slate-900 text-sm">Déposer un CV ou une Lettre de motivation</h4>
               <p className="text-xs text-slate-500 mt-1">Formats acceptés : PDF, DOCX, PNG (Max 20 Mo)</p>
 
-              <button
-                onClick={handleUpload}
-                disabled={parsing}
-                className="mt-6 inline-flex items-center gap-2 rounded-xl px-6 py-3 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
-                style={{ backgroundColor: PRIMARY }}
-              >
-                {parsing ? <><Loader2 className="h-4 w-4 animate-spin" /> Analyse par l&apos;IA en cours...</> : <><Upload className="h-4 w-4" /> Téléverser et Analyser</>}
-              </button>
+              <div className="mt-6 flex flex-col items-center gap-3">
+                <label
+                  htmlFor="cv-file-upload"
+                  className="inline-flex items-center gap-2 rounded-xl px-6 py-3 text-xs font-semibold text-white transition hover:opacity-90 cursor-pointer disabled:opacity-50"
+                  style={{ backgroundColor: PRIMARY }}
+                >
+                  {parsing ? <><Loader2 className="h-4 w-4 animate-spin" /> Analyse par l&apos;IA en cours...</> : <><Upload className="h-4 w-4" /> Téléverser et Analyser</>}
+                </label>
+                <input
+                  id="cv-file-upload"
+                  type="file"
+                  accept=".pdf,.docx,.doc,.png,.jpg,.jpeg"
+                  onChange={handleFileUpload}
+                  disabled={parsing}
+                  className="hidden"
+                />
+              </div>
             </div>
 
             {parsedData && (

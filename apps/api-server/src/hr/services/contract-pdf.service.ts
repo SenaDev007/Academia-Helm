@@ -269,6 +269,36 @@ export class ContractPdfService {
     return { pdfBuffer, pdfUrl, contract };
   }
 
+  // ─── Get Existing PDF (no re-generation) ────────────────────────────────────
+
+  /**
+   * Récupère un PDF de contrat déjà généré sans le régénérer.
+   * Retourne null si le PDF n'existe pas encore.
+   */  
+  async getExistingContractPdf(contractId: string, tenantId: string): Promise<{
+    pdfBuffer: Buffer;
+    contract: any;
+  } | null> {
+    const contract = await this.prisma.contract.findFirst({
+      where: { id: contractId, tenantId },
+      include: {
+        staff: { include: { employeeCNSS: true } },
+        tenant: { include: { country: true } },
+      },
+    });
+
+    if (!contract) throw new NotFoundException(`Contrat ${contractId} introuvable`);
+
+    const pdfUrl = (contract.terms as any)?.pdfUrl;
+    if (!pdfUrl) return null;
+
+    const absolutePath = path.join(process.cwd(), pdfUrl);
+    if (!fs.existsSync(absolutePath)) return null;
+
+    const pdfBuffer = fs.readFileSync(absolutePath);
+    return { pdfBuffer, contract };
+  }
+
   // ─── Electronic Signature ───────────────────────────────────────────────────
 
   /**
@@ -758,16 +788,37 @@ export class ContractPdfService {
     ];
   }
 
+  /**
+   * Sanitize user-provided text to prevent XSS in HTML templates.
+   * Escapes HTML special characters but preserves intentional HTML
+   * tags used in default templates (like <strong>).
+   */
+  private sanitizeTemplateInput(text: string): string {
+    if (!text || typeof text !== 'string') return '';
+    // Remove dangerous tags but allow safe formatting tags
+    return text
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+      .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '')
+      .replace(/<embed\b[^>]*>/gi, '')
+      .replace(/on\w+\s*=\s*["'][^"']*["']/gi, '') // Remove event handlers
+      .replace(/javascript\s*:/gi, ''); // Remove javascript: URLs
+  }
+
   buildHtmlFromArticles(articles: any[], contractType: string): string {
     let articlesHtml = '';
     for (const art of articles) {
       if (!art || typeof art !== 'object') continue;
+      const safeTitle = this.sanitizeTemplateInput(art.title || '');
+      // Content is intentionally allowed to contain <strong> and similar
+      // formatting tags used in default templates, but dangerous tags are stripped
+      const safeContent = this.sanitizeTemplateInput(art.content || '');
       articlesHtml += `
-  <!-- ${art.title || 'Article'} -->
+  <!-- ${safeTitle || 'Article'} -->
   <div class="section">
-    <div class="section-title">${art.title || ''}</div>
+    <div class="section-title">${safeTitle}</div>
     <div class="article">
-      <p>${art.content || ''}</p>
+      <p>${safeContent}</p>
     </div>
   </div>`;
     }

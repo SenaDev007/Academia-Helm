@@ -131,3 +131,28 @@ Stage Summary:
 - Full candidature flow verified end-to-end: public form → API → R2 upload → DB records → RH module display → document download
 - 6/7 test steps passed (only issue: test credentials were wrong, used Dev Mode instead)
 - Deployed fix to production
+
+---
+Task ID: 6
+Agent: main
+Task: Add LinkedIn-style applicant statistics to public careers page
+
+Work Log:
+- Added `country` and `city` fields to HrCandidate Prisma model + indexes
+- Created migration 20260606180000_add_country_city_to_hr_candidates
+- Added country/city to ApplyJobDto, CreateCandidateDto, UpdateCandidateDto
+- Added public GET /hr/recruitment/jobs/:id/stats endpoint (returns totalApplicants, countries breakdown, cities breakdown)
+- Updated applyJob service to save country and city from form data
+- Updated CareersContent.tsx frontend:
+  - Added _count to Job interface and JobStats interface
+  - Show applicant count on job cards and job detail view
+  - Display LinkedIn-style stats panel with progress bars by country and city
+  - Added country dropdown (West/Central Africa focused, default Bénin) and city text input
+  - Pass country/city in FormData on form submission
+- Pushed commit 54d70c5 to GitHub, Railway will auto-deploy
+
+Stage Summary:
+- Backend: new stats endpoint + schema migration ready
+- Frontend: stats UI with progress bars + country/city form fields
+- Waiting for Railway to deploy (auto-deploy on push)
+- Also pushed fix for R2 document download (res.send buffer instead of return)

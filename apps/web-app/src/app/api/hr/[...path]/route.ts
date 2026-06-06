@@ -21,6 +21,18 @@ import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 /** Force dynamique — les cookies / session doivent être lus côté serveur. */
 export const dynamic = 'force-dynamic';
 
+/**
+ * Increase body size limit for file uploads (CV, cover letter, recommendation letter).
+ * Vercel default is 4.5MB — recruitment documents can exceed this.
+ * 10MB allows 3 documents of ~3MB each plus form data.
+ */
+export const config = {
+  api: {
+    bodyParser: false,
+    responseLimit: '10mb',
+  },
+};
+
 function buildBackendUrl(pathSegments: string[]): string {
   const path = pathSegments.length ? pathSegments.join('/') : '';
   return nestControllerUrl(`hr${path ? `/${path}` : ''}`);

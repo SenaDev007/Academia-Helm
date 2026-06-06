@@ -29,7 +29,6 @@ import {
 } from 'lucide-react';
 import PremiumHeader from '@/components/layout/PremiumHeader';
 import { apiFetch } from '@/lib/api/client';
-import axios from 'axios';
 import { getApiBaseUrl } from '@/lib/utils/urls';
 
 const PRIMARY = '#1A2BA6';
@@ -293,26 +292,45 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
       if (coverFile) formData.append('coverLetter', coverFile);
       if (recoFile) formData.append('recommendationLetter', recoFile);
 
-      const API_URL = getApiBaseUrl();
-      // NOTE: Do NOT set Content-Type header manually — axios/browser must auto-set
+      // NOTE: Route through the BFF proxy (/api/hr/recruitment/apply) instead of
+      // making a direct cross-origin call to the NestJS API. This avoids CORS issues,
+      // works reliably on mobile devices, and ensures the multipart/form-data body
+      // is forwarded correctly with authentication headers.
+      //
+      // Do NOT set Content-Type header manually — the browser must auto-set
       // "multipart/form-data; boundary=..." so the server can parse the body.
-      // Setting "Content-Type: multipart/form-data" without boundary causes 400 "Boundary not found".
-      const res = await axios.post(`${API_URL}/hr/recruitment/apply`, formData);
+      const res = await fetch('/api/hr/recruitment/apply', {
+        method: 'POST',
+        body: formData,
+      });
 
-      if (res.data) {
+      const data = await res.json();
+
+      if (res.ok && data) {
         setSubmitResult({
           success: true,
           message: 'Candidature Easy Apply transmise ! Notre IA procède à l\'extraction sémantique et à la validation des diplômes/certifications.'
         });
+      } else {
+        // Extract error details from various response formats
+        const serverMsg = data?.message || data?.error || '';
+        const detail = data?.detail || '';
+        const fullMsg = [serverMsg, detail].filter(Boolean).join(' — ');
+        setSubmitResult({
+          success: false,
+          message: fullMsg
+            ? `Erreur : ${fullMsg}`
+            : `Erreur serveur (${res.status}). Veuillez réessayer.`
+        });
       }
     } catch (err: any) {
       console.error('Submission failed:', err);
-      const serverMsg = err?.response?.data?.message || err?.message || '';
+      const errMsg = err?.message || '';
       setSubmitResult({
         success: false,
-        message: serverMsg
-          ? `Erreur : ${serverMsg}`
-          : 'Une erreur est survenue. Veuillez vérifier votre connexion et soumettre à nouveau.'
+        message: errMsg
+          ? `Erreur réseau : ${errMsg}`
+          : 'Une erreur réseau est survenue. Veuillez vérifier votre connexion et soumettre à nouveau.'
       });
     } finally {
       setSubmitting(false);

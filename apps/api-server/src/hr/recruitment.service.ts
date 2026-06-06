@@ -1085,7 +1085,16 @@ Réponds UNIQUEMENT en JSON valide.`,
       });
     } catch (txErr: any) {
       this.logger.error(`applyJob transaction failed: ${txErr.message}`, txErr.stack);
-      throw txErr;
+      // Wrap with a more descriptive error for the PrismaExceptionFilter
+      // to give users a clearer message instead of generic "Erreur interne du serveur"
+      if (txErr.code?.startsWith?.('P')) {
+        // Prisma error — let PrismaExceptionFilter handle it
+        throw txErr;
+      }
+      // Non-Prisma error — wrap in BadRequestException with detail
+      throw new BadRequestException(
+        `Échec de l'enregistrement de la candidature : ${txErr.message || 'erreur inconnue'}`
+      );
     }
   }
 

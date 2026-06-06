@@ -171,7 +171,61 @@ async function bootstrap() {
       }
     }
 
-    logger.log('Recruitment tables ensured successfully');
+    // ─── Ensure missing columns from later migrations (idempotent ALTER) ───
+    // These columns may not exist if migrations 20260606180000 or 20260606200000
+    // were not applied on the production database.
+    const alterStatements = [
+      // country, city on hr_candidates (migration 20260606180000)
+      `ALTER TABLE "hr_candidates" ADD COLUMN IF NOT EXISTS "country" TEXT`,
+      `ALTER TABLE "hr_candidates" ADD COLUMN IF NOT EXISTS "city" TEXT`,
+      `CREATE INDEX IF NOT EXISTS "hr_candidates_country_idx" ON "hr_candidates"("country")`,
+      `CREATE INDEX IF NOT EXISTS "hr_candidates_city_idx" ON "hr_candidates"("city")`,
+      // staffId on hr_applications (migration 20260606200000)
+      `ALTER TABLE "hr_applications" ADD COLUMN IF NOT EXISTS "staffId" TEXT`,
+      `CREATE INDEX IF NOT EXISTS "hr_applications_staffId_idx" ON "hr_applications"("staffId")`,
+    ];
+
+    for (const alterStmt of alterStatements) {
+      try {
+        await prisma.$executeRawUnsafe(alterStmt);
+      } catch (alterErr: any) {
+        if (!alterErr.message?.includes('already exists') && !alterErr.message?.includes('42P07') && !alterErr.message?.includes('42P16')) {
+          logger.warn(`ALTER statement warning: ${alterErr.message}`);
+        }
+      }
+    }
+
+    // Add staffId foreign key idempotently (migration 20260606200000)
+    try {
+      await prisma.$executeRawUnsafe(
+        `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'hr_applications_staffId_fkey') THEN ALTER TABLE "hr_applications" ADD CONSTRAINT "hr_applications_staffId_fkey" FOREIGN KEY ("staffId") REFERENCES "staff"("id") ON DELETE SET NULL ON UPDATE CASCADE; END IF; END $$;`
+      );
+    } catch (fkErr: any) {
+      logger.warn(`staffId FK warning: ${fkErr.message}`);
+    }
+
+    // ─── Ensure job_number_sequences table (migration 20260606220000) ──────
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "job_number_sequences" (
+            "id" TEXT NOT NULL,
+            "tenantId" TEXT NOT NULL,
+            "current" INTEGER NOT NULL DEFAULT 0,
+            "updatedAt" TIMESTAMP(3) NOT NULL,
+            CONSTRAINT "job_number_sequences_pkey" PRIMARY KEY ("id")
+        )
+      `);
+      await prisma.$executeRawUnsafe(
+        `CREATE UNIQUE INDEX IF NOT EXISTS "job_number_sequences_tenantId_key" ON "job_number_sequences"("tenantId")`
+      );
+      await prisma.$executeRawUnsafe(
+        `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'job_number_sequences_tenantId_fkey') THEN ALTER TABLE "job_number_sequences" ADD CONSTRAINT "job_number_sequences_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE; END IF; END $$;`
+      );
+    } catch (seqErr: any) {
+      logger.warn(`job_number_sequences table warning: ${seqErr.message}`);
+    }
+
+    logger.log('Recruitment tables & columns ensured successfully');
   } catch (fallbackErr: any) {
     logger.error(`Recruitment tables fallback failed: ${fallbackErr.message}`);
     logger.warn('Some HR recruitment features may not work');

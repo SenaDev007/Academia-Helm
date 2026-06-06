@@ -61,6 +61,13 @@ export class PrismaExceptionFilter implements ExceptionFilter {
         message = 'Table de base de données introuvable. Veuillez contacter le support technique.';
         this.logger.error(`P2021 — Missing table: ${exception.message}`);
         break;
+      case 'P2022':
+        // Column does not exist — missing migration
+        status = HttpStatus.INTERNAL_SERVER_ERROR;
+        const missingCol = (exception.meta as any)?.column || 'colonne inconnue';
+        message = `Colonne manquante en base de données (${missingCol}). Une migration est probablement manquante.`;
+        this.logger.error(`P2022 — Missing column: ${exception.message}`);
+        break;
       case 'P2024':
         // Transaction timeout
         status = HttpStatus.GATEWAY_TIMEOUT;

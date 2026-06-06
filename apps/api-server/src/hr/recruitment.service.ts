@@ -733,7 +733,12 @@ export class RecruitmentPrismaService {
 
   /**
    * Télécharge un document d'un candidat.
-   * - R2/S3: redirige vers l'URL publique ou télécharge le fichier
+   * - R2: télécharge le fichier depuis R2 et le sert directement (stream)
+   *       On n'utilise PAS de redirect vers S3_PUBLIC_URL car le domaine
+   *       peut ne pas être configuré comme custom domain R2 (ex: docs.academiahelm.com
+   *       pointe vers Vercel). Le streaming via l'API garantit que le fichier
+   *       est toujours accessible, quelle que soit la config DNS.
+   * - S3: redirige vers une presigned URL (7 jours)
    * - Vercel Blob: redirige vers l'URL publique
    * - Local: sert le fichier depuis le disque
    */
@@ -748,19 +753,35 @@ export class RecruitmentPrismaService {
 
     const storageType = this.storageService.getStorageType();
 
-    // For R2/S3: resolve to a URL (public or presigned) and redirect
-    if (storageType === 'r2' || storageType === 's3') {
-      // If filePath is already a full URL, redirect directly
+    // For R2: ALWAYS stream the file directly through the API.
+    // This avoids broken redirects when S3_PUBLIC_URL doesn't point to R2.
+    if (storageType === 'r2') {
+      // If filePath is already a full URL (shouldn't happen for R2 keys, but handle it)
       if (doc.filePath && doc.filePath.startsWith('https://')) {
         return res.redirect(doc.filePath);
       }
-      // Otherwise, resolve the key to a URL via StorageService
+      try {
+        const buffer = await this.storageService.downloadFile(doc.filePath);
+        res.setHeader('Content-Type', doc.mimeType || 'application/octet-stream');
+        res.setHeader('Content-Disposition', `inline; filename="${doc.fileName}"`);
+        res.setHeader('Content-Length', String(buffer.length));
+        return buffer;
+      } catch (dlErr) {
+        this.logger.error(`Failed to download file from R2: ${doc.filePath} — ${dlErr.message}`);
+        throw new NotFoundException(`Fichier non trouvé sur le stockage`);
+      }
+    }
+
+    // For S3: redirect to presigned URL (S3 public URLs are reliable)
+    if (storageType === 's3') {
+      if (doc.filePath && doc.filePath.startsWith('https://')) {
+        return res.redirect(doc.filePath);
+      }
       try {
         const url = await this.storageService.resolveFileUrl(doc.filePath);
         return res.redirect(url);
       } catch (err) {
-        this.logger.warn(`Failed to resolve file URL for ${doc.filePath}: ${err.message}`);
-        // Fallback: try downloading the file directly
+        this.logger.warn(`Failed to resolve S3 URL for ${doc.filePath}: ${err.message}`);
         try {
           const buffer = await this.storageService.downloadFile(doc.filePath);
           res.setHeader('Content-Type', doc.mimeType || 'application/octet-stream');

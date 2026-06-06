@@ -225,14 +225,21 @@ export class PayrollPrismaController {
       }
     }
 
-    const staffName = (result => {
-      try { return result || 'staff'; } catch { return 'staff'; }
-    })(null);
+    // Fetch staff name for the download filename
+    let staffName = 'staff';
+    try {
+      const payrollItem = await this.payrollService.findPayrollItemById(payrollItemId, tenant.id);
+      if (payrollItem?.staff) {
+        staffName = `${payrollItem.staff.lastName}_${payrollItem.staff.firstName}`.replace(/\s+/g, '_');
+      }
+    } catch {
+      // Keep default 'staff' name
+    }
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="bulletin-paie-${payrollItemId.substring(0, 8)}.pdf"`,
+      `attachment; filename="bulletin-paie-${staffName}-${payrollItemId.substring(0, 8)}.pdf"`,
     );
     res.setHeader('Content-Length', String(pdfBuffer.length));
     return res.send(pdfBuffer);

@@ -12,6 +12,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.service';
+import { StorageService } from '../../common/services/storage.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -22,6 +23,7 @@ export class PayrollPdfService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly puppeteerPool: PuppeteerPoolService,
+    private readonly storageService: StorageService,
   ) {}
 
   /**
@@ -104,13 +106,23 @@ export class PayrollPdfService {
     let salarySlip;
 
     if (existingSlip) {
-      // Delete old PDF file before updating (prevent orphaned files)
+      // Delete old PDF file before updating (prevent orphaned files in cloud + local)
       if (existingSlip.filePath) {
         try {
-          const oldPath = path.join(process.cwd(), existingSlip.filePath);
-          if (fs.existsSync(oldPath)) {
-            fs.unlinkSync(oldPath);
-            this.logger.log(`Deleted old payslip PDF: ${oldPath}`);
+          // Try cloud storage deletion first
+          if (this.storageService.getStorageType() === 'r2' || this.storageService.getStorageType() === 's3') {
+            await this.storageService.deleteFile(existingSlip.filePath);
+            this.logger.log(`Deleted old payslip PDF from cloud: ${existingSlip.filePath}`);
+          } else if (existingSlip.filePath.startsWith('https://')) {
+            // Vercel Blob
+            await this.storageService.deleteFile(existingSlip.filePath);
+          } else {
+            // Local filesystem
+            const oldPath = path.join(process.cwd(), existingSlip.filePath);
+            if (fs.existsSync(oldPath)) {
+              fs.unlinkSync(oldPath);
+              this.logger.log(`Deleted old payslip PDF: ${oldPath}`);
+            }
           }
         } catch (err) {
           this.logger.warn(`Failed to delete old payslip PDF: ${err}`);
@@ -327,7 +339,7 @@ export class PayrollPdfService {
   }
 
   /**
-   * Sauvegarde le PDF sur le système de fichiers
+   * Sauvegarde le PDF sur le cloud storage (R2/S3) avec fallback local
    */
   private async savePdf(
     tenantId: string,
@@ -335,19 +347,24 @@ export class PayrollPdfService {
     staffId: string,
     pdfBuffer: Buffer,
   ): Promise<string> {
-    const uploadsDir = path.join(process.cwd(), 'uploads', 'pay-slips', tenantId, payrollId);
-
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
-
     const fileName = `payslip-${staffId}-${Date.now()}.pdf`;
-    const filePath = path.join(uploadsDir, fileName);
+    const storageKey = `pay-slips/${tenantId}/${payrollId}/${fileName}`;
 
-    fs.writeFileSync(filePath, pdfBuffer);
-
-    // Retourner le chemin relatif ou l'URL
-    return `/uploads/pay-slips/${tenantId}/${payrollId}/${fileName}`;
+    try {
+      // Upload to cloud storage (R2/S3/Vercel Blob) for persistence across redeployments
+      const result = await this.storageService.uploadBuffer(pdfBuffer, storageKey, 'application/pdf');
+      return result;
+    } catch (cloudError) {
+      // Fallback to local filesystem if cloud upload fails
+      this.logger.warn(`Cloud upload failed, falling back to local filesystem: ${cloudError.message}`);
+      const uploadsDir = path.join(process.cwd(), 'uploads', 'pay-slips', tenantId, payrollId);
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+      const filePath = path.join(uploadsDir, fileName);
+      fs.writeFileSync(filePath, pdfBuffer);
+      return `/uploads/pay-slips/${tenantId}/${payrollId}/${fileName}`;
+    }
   }
 
   /**
@@ -360,6 +377,21 @@ export class PayrollPdfService {
 
     if (!salarySlip || !salarySlip.filePath) return null;
 
+    // Try cloud storage first (R2/S3)
+    try {
+      if (this.storageService.getStorageType() === 'r2' || this.storageService.getStorageType() === 's3') {
+        return await this.storageService.downloadFile(salarySlip.filePath);
+      }
+    } catch {
+      this.logger.warn(`Cloud download failed for ${salarySlip.filePath}, trying local fallback`);
+    }
+
+    // Vercel Blob (already a URL)
+    if (salarySlip.filePath.startsWith('https://')) {
+      return null;
+    }
+
+    // Local filesystem fallback
     const absolutePath = path.join(process.cwd(), salarySlip.filePath);
     if (!fs.existsSync(absolutePath)) {
       throw new NotFoundException('PDF file not found on filesystem');

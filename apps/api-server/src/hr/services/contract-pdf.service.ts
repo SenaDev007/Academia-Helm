@@ -13,6 +13,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.service';
+import { StorageService } from '../../common/services/storage.service';
 import * as Handlebars from 'handlebars';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -64,6 +65,7 @@ export class ContractPdfService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly puppeteerPool: PuppeteerPoolService,
+    private readonly storageService: StorageService,
   ) {
     this.loadDependencies();
   }
@@ -292,6 +294,23 @@ export class ContractPdfService {
     const pdfUrl = (contract.terms as any)?.pdfUrl;
     if (!pdfUrl) return null;
 
+    // Try cloud storage first (R2/S3)
+    try {
+      if (this.storageService.getStorageType() === 'r2' || this.storageService.getStorageType() === 's3') {
+        const pdfBuffer = await this.storageService.downloadFile(pdfUrl);
+        return { pdfBuffer, contract };
+      }
+    } catch {
+      // Cloud download failed, try local fallback
+      this.logger.warn(`Cloud download failed for ${pdfUrl}, trying local fallback`);
+    }
+
+    // Try Vercel Blob (already a URL, can't download as buffer)
+    if (pdfUrl.startsWith('https://')) {
+      return null; // Can't serve Vercel Blob PDFs from buffer — need to re-generate
+    }
+
+    // Local filesystem fallback
     const absolutePath = path.join(process.cwd(), pdfUrl);
     if (!fs.existsSync(absolutePath)) return null;
 
@@ -361,11 +380,20 @@ export class ContractPdfService {
   }
 
   private async savePdf(tenantId: string, contractId: string, pdfBuffer: Buffer): Promise<string> {
-    const dir = path.join(process.cwd(), 'uploads', 'contracts', tenantId);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const fileName = `contract-${contractId}.pdf`;
-    fs.writeFileSync(path.join(dir, fileName), pdfBuffer);
-    return `/uploads/contracts/${tenantId}/${fileName}`;
+    const storageKey = `contracts/${tenantId}/contract-${contractId}.pdf`;
+    try {
+      // Upload to cloud storage (R2/S3/Vercel Blob) for persistence across redeployments
+      const result = await this.storageService.uploadBuffer(pdfBuffer, storageKey, 'application/pdf');
+      return result;
+    } catch (cloudError) {
+      // Fallback to local filesystem if cloud upload fails
+      this.logger.warn(`Cloud upload failed, falling back to local filesystem: ${cloudError.message}`);
+      const dir = path.join(process.cwd(), 'uploads', 'contracts', tenantId);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const fileName = `contract-${contractId}.pdf`;
+      fs.writeFileSync(path.join(dir, fileName), pdfBuffer);
+      return `/uploads/contracts/${tenantId}/${fileName}`;
+    }
   }
 
   // ─── Default Templates ──────────────────────────────────────────────────────

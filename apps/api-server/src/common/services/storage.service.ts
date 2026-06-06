@@ -133,6 +133,68 @@ export class StorageService {
     return `/${folder}/${fileName}`;
   }
 
+  // ─── Upload Buffer (for generated PDFs, etc.) ─────────────────────────
+
+  /**
+   * Upload a raw Buffer to storage and return its storage path/URL.
+   * Used by PDF generation services (contracts, pay slips) to persist
+   * generated documents to cloud storage (R2/S3) instead of the ephemeral
+   * local filesystem.
+   *
+   * @param buffer  - The file content as a Buffer
+   * @param key     - The full storage key (e.g. "contracts/tenantId/contract-xxx.pdf")
+   * @param contentType - MIME type (default: application/pdf)
+   */
+  async uploadBuffer(
+    buffer: Buffer,
+    key: string,
+    contentType: string = 'application/pdf',
+  ): Promise<string> {
+    // ─── Vercel Blob ───────────────────────────────────────────────────────
+    if (this.storageType === 'vercel-blob') {
+      try {
+        const blob = await put(key, buffer, {
+          access: 'public',
+          contentType,
+          token: this.blobToken,
+        });
+        this.logger.log(`Vercel Blob upload: ${blob.url}`);
+        return blob.url;
+      } catch (error) {
+        this.logger.error(`Vercel Blob Upload Error: ${error.message}`);
+        throw error;
+      }
+    }
+
+    // ─── R2 / S3 ──────────────────────────────────────────────────────────
+    if ((this.storageType === 'r2' || this.storageType === 's3') && this.s3Client) {
+      try {
+        await this.s3Client.send(
+          new PutObjectCommand({
+            Bucket: this.bucketName,
+            Key: key,
+            Body: buffer,
+            ContentType: contentType,
+          }),
+        );
+        this.logger.log(`${this.storageType.toUpperCase()} upload: ${key}`);
+        return key;
+      } catch (error) {
+        this.logger.error(`${this.storageType.toUpperCase()} Upload Error: ${error.message}`);
+        throw error;
+      }
+    }
+
+    // ─── Local Storage Fallback ────────────────────────────────────────────
+    const dir = path.join(process.cwd(), 'public', path.dirname(key));
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const filePath = path.join(process.cwd(), 'public', key);
+    fs.writeFileSync(filePath, buffer);
+    return `/${key}`;
+  }
+
   // ─── Download ───────────────────────────────────────────────────────────
 
   /**

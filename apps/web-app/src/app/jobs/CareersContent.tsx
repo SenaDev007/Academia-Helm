@@ -199,7 +199,8 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
     async function loadStats() {
       try {
         const API_URL = getApiBaseUrl();
-        const res = await fetch(`${API_URL}/hr/recruitment/jobs/${selectedJob.id}/stats`);
+        const jobId = selectedJob!.id;
+        const res = await fetch(`${API_URL}/hr/recruitment/jobs/${jobId}/stats`);
         if (res.ok) {
           const data = await res.json();
           setJobStats(data);

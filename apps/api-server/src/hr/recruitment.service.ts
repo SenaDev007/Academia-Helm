@@ -1,7 +1,21 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { StorageService } from '../common/services/storage.service';
+import { ContractsPrismaService } from './contracts-prisma.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
+
+/**
+ * Valid status transitions for the recruitment pipeline.
+ * A candidate must pass through at least ENTRETIEN or TEST before being hired.
+ */
+const VALID_TRANSITIONS: Record<string, string[]> = {
+  'NOUVEAU':     ['EN_COURS', 'REJETÉ'],
+  'EN_COURS':    ['ENTRETIEN', 'TEST', 'REJETÉ'],
+  'ENTRETIEN':   ['TEST', 'EMBAUCHÉ', 'REJETÉ'],
+  'TEST':        ['EMBAUCHÉ', 'REJETÉ'],
+  'EMBAUCHÉ':    [],   // Terminal state
+  'REJETÉ':      [],   // Terminal state
+};
 
 @Injectable()
 export class RecruitmentPrismaService {
@@ -10,6 +24,7 @@ export class RecruitmentPrismaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
+    private readonly contractsService: ContractsPrismaService,
   ) {}
 
   // Job Offers CRUD
@@ -367,6 +382,25 @@ export class RecruitmentPrismaService {
   }
 
   async updateApplicationStatus(id: string, status: string, review?: string) {
+    // ─── 1. Validate status transition ─────────────────────────────────────
+    const currentApp = await this.prisma.hrApplication.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+    if (!currentApp) {
+      throw new NotFoundException(`Candidature avec l'ID ${id} non trouvée`);
+    }
+
+    const currentStatus = currentApp.status;
+    const allowedNext = VALID_TRANSITIONS[currentStatus] || [];
+    if (!allowedNext.includes(status)) {
+      throw new BadRequestException(
+        `Transition de statut invalide : ${currentStatus} → ${status}. ` +
+        `Transitions autorisées depuis ${currentStatus} : [${allowedNext.join(', ') || 'aucune (état terminal)'}]`
+      );
+    }
+
+    // ─── 2. EMBAUCHÉ — Create Staff + Contract ─────────────────────────────
     if (status === 'EMBAUCHÉ') {
       return this.prisma.$transaction(async (tx) => {
         // Update application status
@@ -388,6 +422,8 @@ export class RecruitmentPrismaService {
           where: { email: updatedApp.candidate.email, tenantId: updatedApp.tenantId }
         });
 
+        let staffRecord = existingStaff;
+
         if (!existingStaff) {
           // Find academic year if available
           const currentYear = await tx.academicYear.findFirst({
@@ -408,7 +444,7 @@ export class RecruitmentPrismaService {
             }
           }
 
-          const staff = await tx.staff.create({
+          staffRecord = await tx.staff.create({
             data: {
               ...prismaCreateDefaults(),
               tenantId: updatedApp.tenantId,
@@ -430,14 +466,44 @@ export class RecruitmentPrismaService {
             }
           });
 
-          return { ...updatedApp, staff };
+          // Link staffId on the application
+          await tx.hrApplication.update({
+            where: { id },
+            data: { staffId: staffRecord.id },
+          });
         }
 
-        return updatedApp;
+        // ─── 3. Auto-create Contract (using existing ContractsPrismaService) ───
+        let contract = null;
+        if (staffRecord) {
+          try {
+            const contractType = updatedApp.job.contractType || 'CDI';
+            const baseSalary = updatedApp.job.salary
+              ? parseFloat(updatedApp.job.salary.match(/\d+/)?.[0] || '0')
+              : 0;
+
+            contract = await this.contractsService.createContract({
+              tenantId: updatedApp.tenantId,
+              staffId: staffRecord.id,
+              contractType,
+              startDate: new Date(),
+              baseSalary,
+              paymentMode: 'BANK',
+              status: 'DRAFT',  // DRAFT until signed — not ACTIVE yet
+            });
+
+            this.logger.log(`Contrat auto-créé pour ${updatedApp.candidate.firstName} ${updatedApp.candidate.lastName} — Contrat ID: ${contract.id}`);
+          } catch (contractErr: any) {
+            // Contract creation failure should NOT block the hire
+            this.logger.error(`Échec de la création auto du contrat: ${contractErr.message}`, contractErr.stack);
+          }
+        }
+
+        return { ...updatedApp, staff: staffRecord, contract };
       });
     }
 
-    // Non-EMBAUCHÉ case - simple update
+    // ─── 4. Non-EMBAUCHÉ — simple status update ────────────────────────────
     return this.prisma.hrApplication.update({
       where: { id },
       data: { 

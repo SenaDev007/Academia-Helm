@@ -4900,6 +4900,7 @@ model Staff {
   updatedAt                 DateTime                   @updatedAt
   employeeCNSS              EmployeeCNSS?
   contracts                 Contract[]
+  hrApplications            HrApplication[]
   libraryLoans              LibraryLoan[]
   overtimeRecords           OvertimeRecord[]
   payrollItems              PayrollItem[]
@@ -13518,16 +13519,19 @@ model HrApplication {
   risks         String       @default("Aucun")
   riskDetail    String?
   matchDetail   String?
+  staffId       String?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
   job           HrJob        @relation(fields: [jobId], references: [id], onDelete: Cascade)
   candidate     HrCandidate  @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   aiReports     HrAiReport[]
+  staff         Staff?       @relation(fields: [staffId], references: [id], onDelete: SetNull)
   tenant        Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@index([jobId])
   @@index([candidateId])
+  @@index([staffId])
   @@map("hr_applications")
 }
 

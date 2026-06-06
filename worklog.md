@@ -219,3 +219,32 @@ Stage Summary:
 - XSS vulnerability patched in contract template builder
 - AI workspace properly references OpenRouter and supports file upload
 - User needs to add OPENROUTER_API_KEY on Railway (see env vars)
+
+---
+Task ID: fix-jobs-page
+Agent: main
+Task: Fix public recruitment page (chunk loading error) + Fix document generation/download in RH module
+
+Work Log:
+- Analyzed screenshot showing "Loading chunk 43270 failed" error on /jobs page
+- Root cause: PWA service worker caching old chunks with CacheFirst strategy for JS/CSS static assets
+- Created /jobs/error.tsx with chunk error auto-detection and auto-reload (clears caches, reloads page)
+- Updated global error.tsx with same chunk error auto-recovery logic
+- Changed PWA runtime caching strategy for _next/static chunks from CacheFirst to StaleWhileRevalidate
+- Separated fonts caching (CacheFirst, stable assets) from JS/CSS chunks (StaleWhileRevalidate, changes per build)
+- Fixed secret leak in worklog.md that was blocking git push (removed API key from commit history via rebase)
+- Pushed fix (commit 569e090)
+- Analyzed full RH document generation infrastructure (contracts, payroll, recruitment documents)
+- Found CRITICAL bug: Contract and payslip PDFs stored only on local filesystem (ephemeral on Railway)
+- Added uploadBuffer() method to StorageService for uploading raw Buffer objects (PDFs) to R2/S3
+- Updated ContractPdfService to use StorageService (cloud-first, local fallback)
+- Updated PayrollPdfService to use StorageService (cloud-first, local fallback)
+- Fixed payslip download filename always showing 'staff' instead of actual staff name
+- Updated payroll PDF cleanup to delete from cloud storage too
+- Pushed fix (commit 9aa839e)
+
+Stage Summary:
+- 2 commits pushed to GitHub, both will auto-deploy to Vercel + Railway
+- Jobs page will auto-recover from chunk loading errors after deployment
+- Generated PDFs (contracts, payslips) are now persisted to R2/S3 cloud storage
+- Payslip download filenames now include actual staff name

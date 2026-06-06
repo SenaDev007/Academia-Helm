@@ -133,6 +133,37 @@ async function bootstrap() {
           "globalScore" INTEGER NOT NULL,
           CONSTRAINT "hr_academic_scores_pkey" PRIMARY KEY ("id")
       );
+
+      -- hr_academic_profiles (required by applyJob)
+      CREATE TABLE IF NOT EXISTS "hr_academic_profiles" (
+          "id" TEXT NOT NULL,
+          "candidateId" TEXT NOT NULL,
+          "teachingLevel" TEXT NOT NULL,
+          "subjects" TEXT[] DEFAULT '{}',
+          "pedagogicalExperience" TEXT,
+          CONSTRAINT "hr_academic_profiles_pkey" PRIMARY KEY ("id")
+      );
+
+      -- hr_ai_reports (required by applyJob)
+      CREATE TABLE IF NOT EXISTS "hr_ai_reports" (
+          "id" TEXT NOT NULL,
+          "candidateId" TEXT NOT NULL,
+          "applicationId" TEXT NOT NULL,
+          "reportType" TEXT NOT NULL,
+          "content" TEXT NOT NULL,
+          "generatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "hr_ai_reports_pkey" PRIMARY KEY ("id")
+      );
+
+      -- hr_talent_pool (required by recruitment module)
+      CREATE TABLE IF NOT EXISTS "hr_talent_pool" (
+          "id" TEXT NOT NULL,
+          "candidateId" TEXT NOT NULL,
+          "category" TEXT NOT NULL,
+          "status" TEXT NOT NULL,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "hr_talent_pool_pkey" PRIMARY KEY ("id")
+      );
     `;
 
     // Split by semicolons and execute each statement separately
@@ -161,6 +192,15 @@ async function bootstrap() {
       `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'hr_teaching_certifications_candidateId_fkey') THEN ALTER TABLE "hr_teaching_certifications" ADD CONSTRAINT "hr_teaching_certifications_candidateId_fkey" FOREIGN KEY ("candidateId") REFERENCES "hr_candidates"("id") ON DELETE CASCADE ON UPDATE CASCADE; END IF; END $$;`,
       `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'hr_academic_scores_candidateId_key') THEN ALTER TABLE "hr_academic_scores" ADD CONSTRAINT "hr_academic_scores_candidateId_key" UNIQUE ("candidateId"); END IF; END $$;`,
       `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'hr_academic_scores_candidateId_fkey') THEN ALTER TABLE "hr_academic_scores" ADD CONSTRAINT "hr_academic_scores_candidateId_fkey" FOREIGN KEY ("candidateId") REFERENCES "hr_candidates"("id") ON DELETE CASCADE ON UPDATE CASCADE; END IF; END $$;`,
+      // FK for hr_academic_profiles
+      `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'hr_academic_profiles_candidateId_key') THEN ALTER TABLE "hr_academic_profiles" ADD CONSTRAINT "hr_academic_profiles_candidateId_key" UNIQUE ("candidateId"); END IF; END $$;`,
+      `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'hr_academic_profiles_candidateId_fkey') THEN ALTER TABLE "hr_academic_profiles" ADD CONSTRAINT "hr_academic_profiles_candidateId_fkey" FOREIGN KEY ("candidateId") REFERENCES "hr_candidates"("id") ON DELETE CASCADE ON UPDATE CASCADE; END IF; END $$;`,
+      // FK for hr_ai_reports
+      `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'hr_ai_reports_candidateId_fkey') THEN ALTER TABLE "hr_ai_reports" ADD CONSTRAINT "hr_ai_reports_candidateId_fkey" FOREIGN KEY ("candidateId") REFERENCES "hr_candidates"("id") ON DELETE CASCADE ON UPDATE CASCADE; END IF; END $$;`,
+      `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'hr_ai_reports_applicationId_fkey') THEN ALTER TABLE "hr_ai_reports" ADD CONSTRAINT "hr_ai_reports_applicationId_fkey" FOREIGN KEY ("applicationId") REFERENCES "hr_applications"("id") ON DELETE CASCADE ON UPDATE CASCADE; END IF; END $$;`,
+      // FK/UQ for hr_talent_pool
+      `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'hr_talent_pool_candidateId_key') THEN ALTER TABLE "hr_talent_pool" ADD CONSTRAINT "hr_talent_pool_candidateId_key" UNIQUE ("candidateId"); END IF; END $$;`,
+      `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'hr_talent_pool_candidateId_fkey') THEN ALTER TABLE "hr_talent_pool" ADD CONSTRAINT "hr_talent_pool_candidateId_fkey" FOREIGN KEY ("candidateId") REFERENCES "hr_candidates"("id") ON DELETE CASCADE ON UPDATE CASCADE; END IF; END $$;`,
     ];
 
     for (const fkStmt of fkStatements) {

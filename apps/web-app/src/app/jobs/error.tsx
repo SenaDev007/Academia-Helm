@@ -1,10 +1,3 @@
-/**
- * Error Boundary
- *
- * Gestion des erreurs globales — inclut la détection automatique
- * des erreurs de chunk (déploiement récent) avec rechargement forcé.
- */
-
 'use client';
 
 import { useEffect } from 'react';
@@ -20,7 +13,7 @@ function isChunkLoadError(message: string): boolean {
   );
 }
 
-export default function Error({
+export default function JobsError({
   error,
   reset,
 }: {
@@ -28,15 +21,17 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error('Application error:', error);
+    console.error('Jobs page error:', error);
 
     // Auto-reload on chunk loading errors (stale cache after deployment)
     if (isChunkLoadError(error?.message || '')) {
+      // Clear the service worker cache and force a full page reload
       if (typeof window !== 'undefined' && 'caches' in window) {
         caches.keys().then((names) => {
           names.forEach((name) => caches.delete(name));
         });
       }
+      // Small delay to let cache clear, then hard reload
       setTimeout(() => {
         window.location.reload();
       }, 500);
@@ -46,9 +41,9 @@ export default function Error({
   const isChunkError = isChunkLoadError(error?.message || '');
 
   return (
-    <div className="min-h-screen bg-white flex items-center justify-center px-4">
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
       <div className="max-w-md w-full text-center">
-        <AlertTriangle className="w-16 h-16 text-red-600 mx-auto mb-6" />
+        <AlertTriangle className="w-16 h-16 text-amber-500 mx-auto mb-6" />
 
         {isChunkError ? (
           <>
@@ -60,35 +55,35 @@ export default function Error({
             </p>
             <button
               onClick={() => window.location.reload()}
-              className="inline-flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-md font-semibold hover:bg-slate-800 transition-colors"
+              className="inline-flex items-center gap-2 bg-[#1A2BA6] text-white px-6 py-3 rounded-xl font-semibold hover:opacity-90 transition-colors"
             >
               <RefreshCw className="h-4 w-4" /> Recharger la page
             </button>
           </>
         ) : (
           <>
-            <h1 className="text-3xl font-bold text-slate-900 mb-4">
+            <h1 className="text-2xl font-bold text-slate-900 mb-3">
               Une erreur s'est produite
             </h1>
-            <p className="text-slate-600 mb-4">
+            <p className="text-sm text-slate-600 mb-4">
               Désolé, une erreur inattendue s'est produite. Veuillez réessayer.
             </p>
             {error?.message && (
               <div className="mb-6 text-left bg-red-50 border border-red-200 rounded-md px-4 py-3 text-xs text-red-800 break-words">
-                <p className="font-semibold mb-1">Détail technique (à copier pour le support) :</p>
+                <p className="font-semibold mb-1">Détail technique :</p>
                 <pre className="whitespace-pre-wrap">{error.message}</pre>
               </div>
             )}
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <button
                 onClick={reset}
-                className="bg-slate-900 text-white px-6 py-3 rounded-md font-semibold hover:bg-slate-800 transition-colors"
+                className="inline-flex items-center gap-2 bg-[#1A2BA6] text-white px-6 py-3 rounded-xl font-semibold hover:opacity-90 transition-colors"
               >
-                Réessayer
+                <RefreshCw className="h-4 w-4" /> Réessayer
               </button>
               <Link
                 href="/"
-                className="bg-gray-200 text-gray-900 px-6 py-3 rounded-md font-semibold hover:bg-gray-300 transition-colors"
+                className="inline-flex items-center justify-center bg-slate-200 text-slate-900 px-6 py-3 rounded-xl font-semibold hover:bg-slate-300 transition-colors"
               >
                 Retour à l'accueil
               </Link>
@@ -99,4 +94,3 @@ export default function Error({
     </div>
   );
 }
-

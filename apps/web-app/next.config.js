@@ -183,15 +183,49 @@ if (process.env.NODE_ENV === 'production') {
           urlPattern: /\/api\/auth\/.*/i,
           handler: 'NetworkOnly',
         },
-        // Static assets (JS, CSS, images) : CacheFirst pour offline complet
+        // Next.js _next/static chunks : StaleWhileRevalidate
+        // CRITICAL: These must NOT use CacheFirst — after a deployment, old chunk hashes
+        // are removed from the server. If the SW serves stale chunks, users get
+        // "Loading chunk XXXXX failed" errors. StaleWhileRevalidate serves cache instantly
+        // but ALWAYS fetches the latest version in the background.
         {
-          urlPattern: /\.(?:js|css|woff2?|ttf|otf|eot)$/i,
+          urlPattern: /\/_next\/static\/.+\.(?:js|css)$/i,
+          handler: 'StaleWhileRevalidate',
+          options: {
+            cacheName: 'next-static-chunks',
+            expiration: {
+              maxEntries: 200,
+              maxAgeSeconds: 7 * 24 * 60 * 60, // 7 jours
+            },
+            cacheableResponse: {
+              statuses: [0, 200],
+            },
+          },
+        },
+        // Fonts : CacheFirst (stable assets, rarely change)
+        {
+          urlPattern: /\.(?:woff2?|ttf|otf|eot)$/i,
           handler: 'CacheFirst',
+          options: {
+            cacheName: 'fonts-cache',
+            expiration: {
+              maxEntries: 30,
+              maxAgeSeconds: 30 * 24 * 60 * 60, // 30 jours
+            },
+            cacheableResponse: {
+              statuses: [0, 200],
+            },
+          },
+        },
+        // Other JS/CSS (not _next/static) : StaleWhileRevalidate
+        {
+          urlPattern: /\.(?:js|css)$/i,
+          handler: 'StaleWhileRevalidate',
           options: {
             cacheName: 'static-assets',
             expiration: {
               maxEntries: 100,
-              maxAgeSeconds: 30 * 24 * 60 * 60, // 30 jours
+              maxAgeSeconds: 7 * 24 * 60 * 60, // 7 jours
             },
             cacheableResponse: {
               statuses: [0, 200],

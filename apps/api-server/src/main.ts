@@ -94,12 +94,81 @@ async function bootstrap() {
   // exist on every startup. Uses CREATE TABLE IF NOT EXISTS (idempotent).
   try {
     const prisma = app.get(PrismaService);
-    const { readFileSync } = await import('fs');
-    const { join } = await import('path');
-    const migrationSqlPath = join(process.cwd(), 'prisma', 'migrations', '20260606160000_recruitment_tables_complete', 'migration.sql');
-    const sql = readFileSync(migrationSqlPath, 'utf8');
-    logger.log('Running idempotent recruitment tables SQL fallback...');
-    await prisma.$executeRawUnsafe(sql);
+
+    // Execute each CREATE TABLE IF NOT EXISTS statement separately
+    // (Prisma $executeRawUnsafe may not handle multi-statement DO $$ blocks)
+    const ensureRecruitmentTables = `
+      -- hr_candidate_documents (may not exist from earlier migration)
+      CREATE TABLE IF NOT EXISTS "hr_candidate_documents" (
+          "id" TEXT NOT NULL,
+          "candidateId" TEXT NOT NULL,
+          "documentType" TEXT NOT NULL,
+          "fileName" TEXT NOT NULL,
+          "filePath" TEXT NOT NULL,
+          "fileSize" INTEGER,
+          "mimeType" TEXT,
+          "category" TEXT NOT NULL DEFAULT 'GENERAL',
+          "description" TEXT,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "hr_candidate_documents_pkey" PRIMARY KEY ("id")
+      );
+      CREATE INDEX IF NOT EXISTS "hr_candidate_documents_candidateId_idx" ON "hr_candidate_documents"("candidateId");
+
+      -- hr_teaching_certifications
+      CREATE TABLE IF NOT EXISTS "hr_teaching_certifications" (
+          "id" TEXT NOT NULL,
+          "candidateId" TEXT NOT NULL,
+          "certificationName" TEXT NOT NULL,
+          "issuer" TEXT NOT NULL,
+          CONSTRAINT "hr_teaching_certifications_pkey" PRIMARY KEY ("id")
+      );
+      CREATE INDEX IF NOT EXISTS "hr_teaching_certifications_candidateId_idx" ON "hr_teaching_certifications"("candidateId");
+
+      -- hr_academic_scores
+      CREATE TABLE IF NOT EXISTS "hr_academic_scores" (
+          "id" TEXT NOT NULL,
+          "candidateId" TEXT NOT NULL,
+          "pedagogicalScore" INTEGER NOT NULL,
+          "academicScore" INTEGER NOT NULL,
+          "globalScore" INTEGER NOT NULL,
+          CONSTRAINT "hr_academic_scores_pkey" PRIMARY KEY ("id")
+      );
+    `;
+
+    // Split by semicolons and execute each statement separately
+    // to avoid issues with DO $$ blocks and multi-statement execution
+    const statements = ensureRecruitmentTables
+      .split(';')
+      .map(s => s.trim())
+      .filter(s => s.length > 0 && !s.startsWith('--'));
+
+    for (const stmt of statements) {
+      try {
+        await prisma.$executeRawUnsafe(stmt);
+      } catch (stmtErr: any) {
+        // Ignore "already exists" errors (42P07 = duplicate_table, 42P16 = duplicate_object)
+        if (!stmtErr.message?.includes('already exists') && !stmtErr.message?.includes('42P07')) {
+          logger.warn(`Recruitment table statement warning: ${stmtErr.message}`);
+        }
+      }
+    }
+
+    // Add foreign keys idempotently
+    const fkStatements = [
+      `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'hr_candidate_documents_candidateId_fkey') THEN ALTER TABLE "hr_candidate_documents" ADD CONSTRAINT "hr_candidate_documents_candidateId_fkey" FOREIGN KEY ("candidateId") REFERENCES "hr_candidates"("id") ON DELETE CASCADE ON UPDATE CASCADE; END IF; END $$;`,
+      `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'hr_teaching_certifications_candidateId_fkey') THEN ALTER TABLE "hr_teaching_certifications" ADD CONSTRAINT "hr_teaching_certifications_candidateId_fkey" FOREIGN KEY ("candidateId") REFERENCES "hr_candidates"("id") ON DELETE CASCADE ON UPDATE CASCADE; END IF; END $$;`,
+      `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'hr_academic_scores_candidateId_key') THEN ALTER TABLE "hr_academic_scores" ADD CONSTRAINT "hr_academic_scores_candidateId_key" UNIQUE ("candidateId"); END IF; END $$;`,
+      `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'hr_academic_scores_candidateId_fkey') THEN ALTER TABLE "hr_academic_scores" ADD CONSTRAINT "hr_academic_scores_candidateId_fkey" FOREIGN KEY ("candidateId") REFERENCES "hr_candidates"("id") ON DELETE CASCADE ON UPDATE CASCADE; END IF; END $$;`,
+    ];
+
+    for (const fkStmt of fkStatements) {
+      try {
+        await prisma.$executeRawUnsafe(fkStmt);
+      } catch (fkErr: any) {
+        logger.warn(`FK statement warning: ${fkErr.message}`);
+      }
+    }
+
     logger.log('Recruitment tables ensured successfully');
   } catch (fallbackErr: any) {
     logger.error(`Recruitment tables fallback failed: ${fallbackErr.message}`);

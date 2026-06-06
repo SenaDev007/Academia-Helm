@@ -98,3 +98,36 @@ Stage Summary:
 - Key fix: deleteCandidate no longer uses $transaction, instead deletes related records individually with try-catch
 - Frontend now shows actual backend error in toast for easier debugging
 - New deployment confirmed live on Railway
+---
+Task ID: 3
+Agent: Main Agent
+Task: Test full candidature flow from public site with real data and documents, verify R2 storage, verify RH module display
+
+Work Log:
+- Examined StorageService (4 backends: r2, s3, vercel-blob, local)
+- Examined public CareersContent.tsx (5-step wizard form)
+- Examined recruitment.service.ts applyJob() method (file upload + DB transaction)
+- Tested R2 connectivity directly via S3 API with provided credentials — connection works
+- Found 12 existing documents already stored in R2 bucket `academiahelm-docs`
+- Uploaded test document to R2 and verified download — works perfectly
+- Created 3 realistic PDF documents (CV, cover letter, recommendation letter)
+- Submitted full candidature via POST /api/hr/recruitment/apply with real data:
+  - Candidate: KOUASSI Aminata (aminata.kouassi@email.com)
+  - Job: Prof Anglais at Eveil d'Afrique Education
+  - 3 documents uploaded to R2 successfully
+- Verified all 3 documents stored in R2 via direct S3 API head_object
+- **CRITICAL BUG FOUND**: docs.academiahelm.com points to Vercel (CNAME cname.vercel-dns.com), NOT to R2 bucket
+  - This caused all document downloads in RH module to fail (redirect → 404)
+  - resolveFileUrl() returned https://docs.academiahelm.com/... which returns 404 from Vercel
+- **FIX**: Changed downloadCandidateDocument() for R2 to ALWAYS stream file directly through API
+  - Instead of redirecting to potentially broken public URL, the API now downloads from R2 and serves the file
+  - This guarantees file access regardless of S3_PUBLIC_URL DNS configuration
+- Committed and pushed fix (b2e4313)
+- Verified via browser test: All 3 documents display in RH module, downloads work correctly (HTTP 200, valid PDF)
+
+Stage Summary:
+- R2 storage is working correctly: files are uploaded and stored with proper paths
+- Document download endpoint fixed: streams from R2 instead of broken redirect
+- Full candidature flow verified end-to-end: public form → API → R2 upload → DB records → RH module display → document download
+- 6/7 test steps passed (only issue: test credentials were wrong, used Dev Mode instead)
+- Deployed fix to production

@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { StorageService } from '../common/services/storage.service';
+import { OpenRouterService } from '../common/services/openrouter.service';
 import { ContractsPrismaService } from './contracts-prisma.service';
 import { StaffMatriculeService } from './staff-matricule.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
@@ -27,6 +28,7 @@ export class RecruitmentPrismaService {
     private readonly storageService: StorageService,
     private readonly contractsService: ContractsPrismaService,
     private readonly matriculeService: StaffMatriculeService,
+    private readonly openRouter: OpenRouterService,
   ) {}
 
   // Job Offers CRUD
@@ -827,20 +829,97 @@ export class RecruitmentPrismaService {
     const hasCV = files?.cv && files.cv.length > 0;
     const hasLetter = files?.coverLetter && files.coverLetter.length > 0;
 
-    // Simulate AI scoring
-    const scoreCV = hasCV ? Math.floor(Math.random() * 15) + 80 : 75;
-    const scoreLetter = hasLetter ? Math.floor(Math.random() * 15) + 80 : 70;
-    const scoreMatching = hasCV ? Math.floor(Math.random() * 20) + 75 : 80;
-
-    const score = Math.round((scoreCV * 0.4) + (scoreLetter * 0.2) + (scoreMatching * 0.4));
-
+    // ─── AI-powered scoring via OpenRouter HDIE ────────────────────────────
+    // If OpenRouter is configured, use real AI analysis. Otherwise, fall back
+    // to heuristic scoring based on the presence of documents and profile data.
     const cvName = hasCV ? files.cv[0].originalname : 'Profil LinkedIn / Candidature Simplifiée';
     const letterName = hasLetter ? files.coverLetter[0].originalname : 'Pitch de motivation intégré';
 
-    const matchDetail = `Candidature Easy Apply analysée. CV/Fiche: ${cvName}. Présentation: ${letterName}. Adéquation avec le profil enseignant validée par HDIE.`;
+    let scoreCV: number;
+    let scoreLetter: number;
+    let scoreMatching: number;
+    let score: number;
+    let matchDetail: string;
+    let risks: string;
+    let riskDetail: string | null;
+    let aiReportContent: string | null = null;
 
-    const risks = Math.random() > 0.9 ? 'Faible' : 'Aucun';
-    const riskDetail = risks === 'Faible' ? 'Léger décalage de dates détecté dans l\'historique professionnel.' : null;
+    if (this.openRouter.isConfigured()) {
+      // Real AI analysis via OpenRouter
+      try {
+        // Fetch job details for context
+        const job = await this.prisma.hrJob.findUnique({
+          where: { id: body.jobId },
+          select: { title: true, dept: true, description: true, skillsRequired: true, experience: true, academicLevel: true },
+        });
+
+        const candidateProfile = [
+          `Nom: ${body.firstName} ${body.lastName}`,
+          `Email: ${body.email}`,
+          skills.length > 0 ? `Compétences: ${skills.join(', ')}` : null,
+          experiences.length > 0 ? `Expériences: ${experiences.map(e => e.title || e.position || '').filter(Boolean).join(', ')}` : null,
+          education.length > 0 ? `Formation: ${education.map(e => e.degree || e.diploma || '').filter(Boolean).join(', ')}` : null,
+          pitch ? `Motivation: ${pitch.substring(0, 300)}` : null,
+          hasCV ? `CV fourni: ${cvName}` : 'CV non fourni',
+          hasLetter ? `Lettre de motivation fournie: ${letterName}` : 'Lettre non fournie',
+        ].filter(Boolean).join('\n');
+
+        const jobContext = job
+          ? `Poste: ${job.title} — Département: ${job.dept || 'N/A'}\nDescription: ${(job.description || '').substring(0, 300)}\nCompétences requises: ${job.skillsRequired || 'N/A'}\nExpérience requise: ${job.experience || 'N/A'}\nNiveau académique: ${job.academicLevel || 'N/A'}`
+          : 'Poste non spécifié';
+
+        const aiResult = await this.openRouter.structuredChat<{
+          scoreCV: number;
+          scoreLetter: number;
+          scoreMatching: number;
+          matchDetail: string;
+          risks: string;
+          riskDetail: string | null;
+          analysis: string;
+        }>(
+          `Analyse ce profil de candidat pour un poste dans l'enseignement et évalue son adéquation.\n\nPROFIL DU CANDIDAT:\n${candidateProfile}\n\nPOSTE VISÉ:\n${jobContext}`,
+          `Tu es le moteur HDIE (Helm Document Intelligence Engine) d'Academia Helm. Tu analyses des candidatures pour des postes dans l'enseignement.
+Tu évalues l'adéquation du candidat au poste en te basant sur les informations fournies.
+
+RÈGLES DE SCORING:
+- scoreCV (0-100): Qualité et pertinence du CV/Profil par rapport au poste. Si pas de CV, base-toi sur les compétences déclarées (max 70).
+- scoreLetter (0-100): Qualité et pertinence de la lettre/motivation. Si pas de lettre mais un pitch, évalue le pitch (max 75). Si rien, max 50.
+- scoreMatching (0-100): Adéquation globale du profil avec les exigences du poste.
+- matchDetail: Résumé en 2-3 phrases de l'analyse d'adéquation.
+- risks: "Aucun", "Faible", "Moyen", ou "Élevé" selon les incohérences détectées.
+- riskDetail: Description du risque si risks !== "Aucun", sinon null.
+- analysis: Analyse détaillée du profil en 3-5 phrases.
+
+Réponds UNIQUEMENT en JSON valide.`,
+          'HDIE',
+        );
+
+        if (aiResult.data && !aiResult.isPlaceholder) {
+          scoreCV = Math.max(0, Math.min(100, aiResult.data.scoreCV));
+          scoreLetter = Math.max(0, Math.min(100, aiResult.data.scoreLetter));
+          scoreMatching = Math.max(0, Math.min(100, aiResult.data.scoreMatching));
+          matchDetail = aiResult.data.matchDetail || `Candidature analysée par HDIE. CV: ${cvName}. Présentation: ${letterName}.`;
+          risks = ['Aucun', 'Faible', 'Moyen', 'Élevé'].includes(aiResult.data.risks) ? aiResult.data.risks : 'Aucun';
+          riskDetail = aiResult.data.riskDetail || null;
+          aiReportContent = JSON.stringify(aiResult.data);
+          this.logger.log(`HDIE AI analysis complete: scoreCV=${scoreCV}, scoreLetter=${scoreLetter}, scoreMatching=${scoreMatching}, risks=${risks}`);
+        } else {
+          // AI call succeeded but JSON parsing failed — use heuristic fallback
+          this.logger.warn('HDIE AI response was not valid JSON, using heuristic scores');
+          ({ scoreCV, scoreLetter, scoreMatching, score, matchDetail, risks, riskDetail } = this.generateHeuristicScores(hasCV, hasLetter, cvName, letterName, skills, experiences, education));
+        }
+      } catch (aiErr: any) {
+        // AI call failed — use heuristic fallback
+        this.logger.warn(`HDIE AI analysis failed: ${aiErr.message}, using heuristic scores`);
+        ({ scoreCV, scoreLetter, scoreMatching, score, matchDetail, risks, riskDetail } = this.generateHeuristicScores(hasCV, hasLetter, cvName, letterName, skills, experiences, education));
+      }
+    } else {
+      // OpenRouter not configured — use heuristic scoring
+      ({ scoreCV, scoreLetter, scoreMatching, score, matchDetail, risks, riskDetail } = this.generateHeuristicScores(hasCV, hasLetter, cvName, letterName, skills, experiences, education));
+    }
+
+    // Calculate final composite score
+    score = Math.round((scoreCV * 0.4) + (scoreLetter * 0.2) + (scoreMatching * 0.4));
 
     // ─── Upload files OUTSIDE the transaction first ───────────────────────
     // Previously, uploads ran inside the Prisma transaction, which caused
@@ -932,7 +1011,23 @@ export class RecruitmentPrismaService {
           }
         });
 
-        // 4. Save document references (paths already uploaded)
+        // 4. Save AI report if available
+        if (aiReportContent) {
+          try {
+            await tx.hrAiReport.create({
+              data: {
+                candidateId: candidate.id,
+                applicationId: application.id,
+                reportType: 'APPLICATION_ANALYSIS',
+                content: aiReportContent,
+              }
+            });
+          } catch (reportErr: any) {
+            this.logger.warn(`Failed to save AI report: ${reportErr.message}`);
+          }
+        }
+
+        // 5. Save document references (paths already uploaded)
         const documentRecords: any[] = [];
 
         if (cvFile && cvPath) {
@@ -1146,6 +1241,65 @@ export class RecruitmentPrismaService {
       deletedKeys,
       failedKeys,
     };
+  }
+
+  // ─── Heuristic Scoring (fallback when AI is not available) ──────────────
+
+  /**
+   * Génère des scores heuristiques basés sur les données du profil.
+   * Utilisé comme fallback quand l'IA (OpenRouter) n'est pas configurée
+   * ou quand l'appel IA échoue.
+   */
+  private generateHeuristicScores(
+    hasCV: boolean,
+    hasLetter: boolean,
+    cvName: string,
+    letterName: string,
+    skills: string[],
+    experiences: any[],
+    education: any[],
+  ): {
+    scoreCV: number;
+    scoreLetter: number;
+    scoreMatching: number;
+    score: number;
+    matchDetail: string;
+    risks: string;
+    riskDetail: string | null;
+  } {
+    // CV score: based on presence and profile richness
+    let scoreCV = 50; // base
+    if (hasCV) scoreCV += 25;
+    if (skills.length > 0) scoreCV += Math.min(15, skills.length * 3);
+    if (experiences.length > 0) scoreCV += Math.min(10, experiences.length * 5);
+
+    // Letter score: based on presence of cover letter or pitch
+    let scoreLetter = 40; // base
+    if (hasLetter) scoreLetter += 30;
+    if (experiences.length > 0) scoreLetter += 10;
+    if (education.length > 0) scoreLetter += 10;
+
+    // Matching score: overall profile completeness
+    let scoreMatching = 45; // base
+    if (hasCV) scoreMatching += 15;
+    if (hasLetter) scoreMatching += 10;
+    if (skills.length >= 3) scoreMatching += 10;
+    if (experiences.length > 0) scoreMatching += 10;
+    if (education.length > 0) scoreMatching += 10;
+
+    // Clamp to 0-100
+    scoreCV = Math.min(100, scoreCV);
+    scoreLetter = Math.min(100, scoreLetter);
+    scoreMatching = Math.min(100, scoreMatching);
+
+    const score = Math.round((scoreCV * 0.4) + (scoreLetter * 0.2) + (scoreMatching * 0.4));
+
+    const matchDetail = `Candidature analysée par heuristiques. CV: ${cvName}. Présentation: ${letterName}. Profil avec ${skills.length} compétence(s), ${experiences.length} expérience(s), ${education.length} formation(s).`;
+
+    const risks = 'Aucun';
+    const riskDetail = null;
+
+    return { scoreCV, scoreLetter, scoreMatching, score, matchDetail, risks, riskDetail };
   }
 }
 

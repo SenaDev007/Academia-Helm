@@ -132,31 +132,30 @@ export class IaPrismaController {
    */
   @Get('status')
   async getStatus() {
-    const hasAnthropicKey = !!process.env.ANTHROPIC_API_KEY;
-    const hasOpenAiKey = !!process.env.OPENAI_API_KEY;
+    const isConfigured = this.iaService.isAiConfigured();
 
     return {
-      configured: hasAnthropicKey || hasOpenAiKey,
-      provider: hasAnthropicKey ? 'Claude (Anthropic)' : hasOpenAiKey ? 'OpenAI' : null,
-      engine: 'HDIE v1.0',
+      configured: isConfigured,
+      provider: isConfigured ? 'OpenRouter (z-ai/glm-4.5-air)' : null,
+      engine: 'HDIE v2.0',
       features: {
         cvParsing: {
-          available: hasAnthropicKey || hasOpenAiKey,
-          mode: (hasAnthropicKey || hasOpenAiKey) ? 'AI-powered' : 'placeholder',
+          available: isConfigured,
+          mode: isConfigured ? 'AI-powered' : 'placeholder',
         },
         matching: {
           available: true,
-          mode: 'rule-based',
-          aiEnhanced: hasAnthropicKey || hasOpenAiKey,
+          mode: 'rule-based + AI-enhanced',
+          aiEnhanced: isConfigured,
         },
         fraudDetection: {
           available: true,
-          mode: 'heuristic',
-          aiEnhanced: hasAnthropicKey || hasOpenAiKey,
+          mode: 'heuristic + AI-enhanced',
+          aiEnhanced: isConfigured,
         },
         copilot: {
           available: true,
-          mode: (hasAnthropicKey || hasOpenAiKey) ? 'AI-powered' : 'rule-based',
+          mode: isConfigured ? 'AI-powered' : 'rule-based',
         },
       },
     };

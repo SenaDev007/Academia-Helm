@@ -53,7 +53,7 @@ export class IaPrismaService {
   /**
    * Vérifie si l'IA est configurée (via OpenRouter)
    */
-  private isAiConfigured(): boolean {
+  isAiConfigured(): boolean {
     return this.openRouter.isConfigured();
   }
 

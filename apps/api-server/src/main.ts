@@ -88,6 +88,24 @@ async function bootstrap() {
     logger.warn('Continuing startup despite migration failure — some features may not work');
   }
 
+  // ─── Ensure recruitment tables exist (idempotent SQL fallback) ──────────
+  // Prisma migrate deploy may silently skip migrations that aren't tracked
+  // in _prisma_migrations. This fallback guarantees the HR recruitment tables
+  // exist on every startup. Uses CREATE TABLE IF NOT EXISTS (idempotent).
+  try {
+    const prisma = app.get(PrismaService);
+    const { readFileSync } = await import('fs');
+    const { join } = await import('path');
+    const migrationSqlPath = join(process.cwd(), 'prisma', 'migrations', '20260606160000_recruitment_tables_complete', 'migration.sql');
+    const sql = readFileSync(migrationSqlPath, 'utf8');
+    logger.log('Running idempotent recruitment tables SQL fallback...');
+    await prisma.$executeRawUnsafe(sql);
+    logger.log('Recruitment tables ensured successfully');
+  } catch (fallbackErr: any) {
+    logger.error(`Recruitment tables fallback failed: ${fallbackErr.message}`);
+    logger.warn('Some HR recruitment features may not work');
+  }
+
   await app.listen(port, '0.0.0.0');
 
   // Log memory info on startup

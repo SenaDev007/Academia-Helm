@@ -556,7 +556,7 @@ export class RecruitmentPrismaService {
       if (body.experiences) experiences = JSON.parse(body.experiences);
       if (body.education) education = JSON.parse(body.education);
     } catch (e) {
-      console.warn('Failed parsing structured profile details:', e);
+      this.logger.warn('Failed parsing structured profile details:', e);
     }
 
     const pitch = body.pitch || '';
@@ -581,118 +581,154 @@ export class RecruitmentPrismaService {
     const risks = Math.random() > 0.9 ? 'Faible' : 'Aucun';
     const riskDetail = risks === 'Faible' ? 'Léger décalage de dates détecté dans l\'historique professionnel.' : null;
 
-    return this.prisma.$transaction(async (tx) => {
-      // 1. Create candidate
-      const candidate = await tx.hrCandidate.create({
-        data: {
-          ...prismaCreateDefaults(),
-          tenantId,
-          firstName: body.firstName,
-          lastName: body.lastName,
-          email: body.email,
-          phone: body.phone,
-          address: body.address || '',
-          gender: body.gender || 'M',
-        }
-      });
+    // ─── Upload files OUTSIDE the transaction first ───────────────────────
+    // Previously, uploads ran inside the Prisma transaction, which caused
+    // transaction timeouts (P2024) or internal errors when the storage backend
+    // (R2/S3/Vercel Blob) was slow or misconfigured.
+    let cvPath: string | null = null;
+    let letterPath: string | null = null;
+    let recoPath: string | null = null;
+    let cvFile: Express.Multer.File | null = null;
+    let letterFile: Express.Multer.File | null = null;
+    let recoFile: Express.Multer.File | null = null;
 
-      // 2. Save to AcademicProfile
-      await tx.academicProfile.create({
-        data: {
-          id: crypto.randomUUID(),
-          candidateId: candidate.id,
-          teachingLevel: education[0]?.degree || 'Non spécifié',
-          subjects: skills,
-          pedagogicalExperience,
-        }
-      });
-
-      // 3. Create application
-      const application = await tx.hrApplication.create({
-        data: {
-          ...prismaCreateDefaults(),
-          tenantId,
-          jobId: body.jobId,
-          candidateId: candidate.id,
-          status: 'NOUVEAU',
-          score,
-          scoreCV,
-          scoreLetter,
-          scoreMatching,
-          risks,
-          riskDetail,
-          matchDetail,
-        }
-      });
-
-      // 4. Save document references
-      const documentRecords: any[] = [];
-
+    try {
       if (hasCV) {
-        const cvFile = files.cv[0];
-        const cvPath = await this.storageService.uploadFile(
+        cvFile = files.cv[0];
+        cvPath = await this.storageService.uploadFile(
           cvFile,
-          `candidate-docs/${tenantId}/${candidate.id}/cv`,
+          `candidate-docs/${tenantId}/pending/cv`,
         );
-        const doc = await tx.candidateDocument.create({
-          data: {
-            id: crypto.randomUUID(),
-            candidateId: candidate.id,
-            documentType: 'CV',
-            fileName: cvFile.originalname,
-            filePath: cvPath,
-            fileSize: cvFile.size,
-            mimeType: cvFile.mimetype,
-            category: 'EXPERIENCE',
-          }
-        });
-        documentRecords.push(doc);
+        this.logger.log(`CV uploaded: ${cvPath}`);
       }
-
       if (hasLetter) {
-        const letterFile = files.coverLetter[0];
-        const letterPath = await this.storageService.uploadFile(
+        letterFile = files.coverLetter[0];
+        letterPath = await this.storageService.uploadFile(
           letterFile,
-          `candidate-docs/${tenantId}/${candidate.id}/cover-letter`,
+          `candidate-docs/${tenantId}/pending/cover-letter`,
         );
-        const doc = await tx.candidateDocument.create({
-          data: {
-            id: crypto.randomUUID(),
-            candidateId: candidate.id,
-            documentType: 'COVER_LETTER',
-            fileName: letterFile.originalname,
-            filePath: letterPath,
-            fileSize: letterFile.size,
-            mimeType: letterFile.mimetype,
-            category: 'EXPERIENCE',
-          }
-        });
-        documentRecords.push(doc);
+        this.logger.log(`Cover letter uploaded: ${letterPath}`);
       }
-
       if (files?.recommendationLetter && files.recommendationLetter.length > 0) {
-        const recoFile = files.recommendationLetter[0];
-        const recoPath = await this.storageService.uploadFile(
+        recoFile = files.recommendationLetter[0];
+        recoPath = await this.storageService.uploadFile(
           recoFile,
-          `candidate-docs/${tenantId}/${candidate.id}/recommendation`,
+          `candidate-docs/${tenantId}/pending/recommendation`,
         );
-        const doc = await tx.candidateDocument.create({
+        this.logger.log(`Recommendation letter uploaded: ${recoPath}`);
+      }
+    } catch (uploadErr: any) {
+      this.logger.error(`File upload failed during applyJob: ${uploadErr.message}`, uploadErr.stack);
+      // Continue without files — the candidate can still be created,
+      // just without the document references
+    }
+
+    // ─── Prisma transaction: DB writes only (fast, no external I/O) ───────
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // 1. Create candidate
+        const candidate = await tx.hrCandidate.create({
+          data: {
+            ...prismaCreateDefaults(),
+            tenantId,
+            firstName: body.firstName,
+            lastName: body.lastName,
+            email: body.email,
+            phone: body.phone,
+            address: body.address || '',
+            gender: body.gender || 'M',
+          }
+        });
+
+        // 2. Save to AcademicProfile
+        await tx.academicProfile.create({
           data: {
             id: crypto.randomUUID(),
             candidateId: candidate.id,
-            documentType: 'RECOMMENDATION',
-            fileName: recoFile.originalname,
-            filePath: recoPath,
-            fileSize: recoFile.size,
-            mimeType: recoFile.mimetype,
-            category: 'DIPLOMES',
+            teachingLevel: education[0]?.degree || 'Non spécifié',
+            subjects: skills,
+            pedagogicalExperience,
           }
         });
-        documentRecords.push(doc);
-      }
 
-      return { candidate, application, documents: documentRecords };
-    });
+        // 3. Create application
+        const application = await tx.hrApplication.create({
+          data: {
+            ...prismaCreateDefaults(),
+            tenantId,
+            jobId: body.jobId,
+            candidateId: candidate.id,
+            status: 'NOUVEAU',
+            score,
+            scoreCV,
+            scoreLetter,
+            scoreMatching,
+            risks,
+            riskDetail,
+            matchDetail,
+          }
+        });
+
+        // 4. Save document references (paths already uploaded)
+        const documentRecords: any[] = [];
+
+        if (cvFile && cvPath) {
+          const doc = await tx.candidateDocument.create({
+            data: {
+              id: crypto.randomUUID(),
+              candidateId: candidate.id,
+              documentType: 'CV',
+              fileName: cvFile.originalname,
+              filePath: cvPath,
+              fileSize: cvFile.size,
+              mimeType: cvFile.mimetype,
+              category: 'EXPERIENCE',
+            }
+          });
+          documentRecords.push(doc);
+        }
+
+        if (letterFile && letterPath) {
+          const doc = await tx.candidateDocument.create({
+            data: {
+              id: crypto.randomUUID(),
+              candidateId: candidate.id,
+              documentType: 'COVER_LETTER',
+              fileName: letterFile.originalname,
+              filePath: letterPath,
+              fileSize: letterFile.size,
+              mimeType: letterFile.mimetype,
+              category: 'EXPERIENCE',
+            }
+          });
+          documentRecords.push(doc);
+        }
+
+        if (recoFile && recoPath) {
+          const doc = await tx.candidateDocument.create({
+            data: {
+              id: crypto.randomUUID(),
+              candidateId: candidate.id,
+              documentType: 'RECOMMENDATION',
+              fileName: recoFile.originalname,
+              filePath: recoPath,
+              fileSize: recoFile.size,
+              mimeType: recoFile.mimetype,
+              category: 'DIPLOMES',
+            }
+          });
+          documentRecords.push(doc);
+        }
+
+        return { candidate, application, documents: documentRecords };
+      }, {
+        maxWait: 10_000,  // max time to acquire a connection
+        timeout: 30_000,  // max time for the entire transaction
+      });
+    } catch (txErr: any) {
+      this.logger.error(`applyJob transaction failed: ${txErr.message}`, txErr.stack);
+      throw txErr;
+    }
   }
 
   /**

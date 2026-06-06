@@ -248,3 +248,28 @@ Stage Summary:
 - Jobs page will auto-recover from chunk loading errors after deployment
 - Generated PDFs (contracts, payslips) are now persisted to R2/S3 cloud storage
 - Payslip download filenames now include actual staff name
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix public recruitment page submission failure (P2022 error)
+
+Work Log:
+- Analyzed screenshot showing "Échec de la soumission - Erreur interne du serveur"
+- Investigated frontend CareersContent.tsx submission flow
+- Tested apply endpoint directly - got P2022 error confirming missing DB columns
+- Root cause: Migrations 20260606180000 (country/city on hr_candidates), 20260606200000 (staffId on hr_applications), and 20260606220000 (job_number_sequences) were NOT applied on Railway
+- Also discovered hr_academic_profiles, hr_ai_reports, hr_talent_pool tables not in startup fallback
+- Added missing columns to startup fallback in main.ts with ALTER TABLE ADD COLUMN IF NOT EXISTS
+- Added missing tables (hr_academic_profiles, hr_ai_reports, hr_talent_pool) to startup fallback
+- Added all foreign keys for new tables
+- Added P2022 error handling to PrismaExceptionFilter
+- Pushed fixes to GitHub - Railway auto-deployed
+- Verified fix: apply endpoint now returns 200 with complete response including documents
+- Tested with 3 file uploads - all working correctly
+
+Stage Summary:
+- Root cause: Missing DB columns (country, city, staffId) due to unapplied migrations on Railway
+- Fix: Added idempotent column/table creation to startup fallback in main.ts
+- All recruitment tables and columns now created automatically on server startup
+- Public recruitment page submission is working again

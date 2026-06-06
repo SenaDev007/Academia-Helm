@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { PrismaService } from '../database/prisma.service';
 import { StorageService } from '../common/services/storage.service';
 import { ContractsPrismaService } from './contracts-prisma.service';
+import { StaffMatriculeService } from './staff-matricule.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 
 /**
@@ -25,6 +26,7 @@ export class RecruitmentPrismaService {
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
     private readonly contractsService: ContractsPrismaService,
+    private readonly matriculeService: StaffMatriculeService,
   ) {}
 
   // Job Offers CRUD
@@ -88,12 +90,36 @@ export class RecruitmentPrismaService {
     };
   }
 
+  /**
+   * Generate a sequential job reference number for a tenant.
+   * Format: OFF-<TENANT_CODE>-<XXXXX> (3-char tenant code + 5-digit zero-padded sequence)
+   * Example: OFF-CSP-00001, OFF-DEF-00002
+   */
+  private async generateJobRef(tenantId: string): Promise<string> {
+    // Get tenant slug prefix (3 chars, uppercase)
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { slug: true },
+    });
+    const prefix = (tenant?.slug || 'AH').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3) || 'AH';
+
+    const seq = await this.prisma.jobNumberSequence.upsert({
+      where: { tenantId },
+      create: { tenantId, current: 1 },
+      update: { current: { increment: 1 } },
+    });
+    const padded = String(seq.current).padStart(5, '0');
+    return `OFF-${prefix}-${padded}`;
+  }
+
   async createJob(tenantId: string, data: any) {
+    // Generate sequential ref if not provided
+    const ref = data.ref || await this.generateJobRef(tenantId);
     return this.prisma.hrJob.create({
       data: {
         ...prismaCreateDefaults(),
         tenantId,
-        ref: data.ref || `OFF-${Date.now().toString().slice(-6)}-${Math.floor(10 + Math.random() * 90)}`,
+        ref,
         title: data.title,
         dept: data.dept,
         loc: data.loc,
@@ -444,12 +470,34 @@ export class RecruitmentPrismaService {
             }
           }
 
+          // Generate sequential matricules using StaffMatriculeService
+          let globalMatricule: string | null = null;
+          let tenantMatricule: string | null = null;
+          try {
+            const schoolCode = await this.matriculeService.getSchoolCode(updatedApp.tenantId);
+            const registrationYear = new Date().getFullYear();
+            globalMatricule = await this.matriculeService.generateGlobalMatriculeInTransaction(tx, registrationYear);
+            tenantMatricule = await this.matriculeService.generateTenantMatriculeInTransaction(tx, updatedApp.tenantId, schoolCode, registrationYear);
+          } catch (err) {
+            this.logger.warn(`Matricule generation failed for hire: ${err.message}`);
+          }
+
+          // Generate a tenant-based employee number (legacy field)
+          const tenantSeq = await tx.staffNumberSequence.upsert({
+            where: { tenantId: updatedApp.tenantId },
+            create: { tenantId: updatedApp.tenantId, current: 1 },
+            update: { current: { increment: 1 } },
+          });
+          const employeeNumber = `EMP-${String(tenantSeq.current).padStart(5, '0')}`;
+
           staffRecord = await tx.staff.create({
             data: {
               ...prismaCreateDefaults(),
               tenantId: updatedApp.tenantId,
               academicYearId: currentYear?.id || null,
-              employeeNumber: `EMP-${Date.now().toString().slice(-6)}`,
+              employeeNumber,
+              globalMatricule,
+              tenantMatricule,
               firstName: updatedApp.candidate.firstName,
               lastName: updatedApp.candidate.lastName,
               gender: updatedApp.candidate.gender,

@@ -358,6 +358,7 @@ model Tenant {
   staffTrainings                   StaffTraining[]
   staffPhotos                      StaffPhoto[]
   staffNumberSequence              StaffNumberSequence?
+  jobNumberSequence                JobNumberSequence?
   hrJobs                           HrJob[]
   hrCandidates                     HrCandidate[]
   hrApplications                   HrApplication[]
@@ -5001,6 +5002,16 @@ model StaffNumberSequence {
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("staff_number_sequences")
+}
+
+model JobNumberSequence {
+  id        String   @id @default(uuid())
+  tenantId  String   @unique
+  current   Int      @default(0)
+  updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("job_number_sequences")
 }
 
 model StaffAssignment {

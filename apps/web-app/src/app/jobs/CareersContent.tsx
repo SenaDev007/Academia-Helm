@@ -451,8 +451,8 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
                             <div className="mt-3 flex items-center gap-3 text-[10px] text-slate-500">
                               <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {job.loc}</span>
                               <span className="flex items-center gap-1"><Briefcase className="h-3 w-3" /> {job.contractType || 'CDI'}</span>
-                              {job._count?.applications > 0 && (
-                                <span className="flex items-center gap-1 text-blue-600 font-semibold"><Users className="h-3 w-3" /> {job._count.applications} candidat{job._count.applications > 1 ? 's' : ''}</span>
+                              {(job._count?.applications ?? 0) > 0 && (
+                                <span className="flex items-center gap-1 text-blue-600 font-semibold"><Users className="h-3 w-3" /> {job._count?.applications ?? 0} candidat{(job._count?.applications ?? 0) > 1 ? 's' : ''}</span>
                               )}
                             </div>
                           </div>
@@ -497,7 +497,7 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
                               <span className="text-[10px] text-slate-400 font-bold uppercase">Candidats</span>
                               <p className="font-semibold text-[#1A2BA6] mt-0.5 flex items-center gap-1">
                                 <Users className="h-3.5 w-3.5" />
-                                {selectedJob._count?.applications || 0} candidat{(selectedJob._count?.applications || 0) > 1 ? 's' : ''}
+                                {selectedJob._count?.applications ?? 0} candidat{((selectedJob._count?.applications ?? 0) > 1) ? 's' : ''}
                               </p>
                             </div>
                           </div>

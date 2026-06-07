@@ -180,7 +180,8 @@ export function RecruitmentWorkspace() {
   const [isAddInterviewOpen, setIsAddInterviewOpen] = useState(false);
   const [editingInterview, setEditingInterview] = useState<Interview | null>(null);
   const [newInterview, setNewInterview] = useState({
-    candidateId: '', type: 'RH', date: '', time: '', format: 'Visioconférence', evaluator: '', score: '0', comments: ''
+    candidateId: '', type: 'RH', date: '', time: '', format: 'Visioconférence', evaluator: '', score: '0', comments: '',
+    status: '', result: '', feedback: '',
   });
 
   // Validate Interview Form State
@@ -445,23 +446,33 @@ export function RecruitmentWorkspace() {
     if (!tenant?.id) return;
     try {
       if (editingInterview) {
-        // Update existing interview
+        // Update existing interview — include status/result/feedback
+        const { status: _s, result: _r, feedback: _f, ...createOnlyFields } = newInterview as any;
+        const updateBody: any = { ...newInterview };
+        // Only include status/result/feedback if they have values
+        if (newInterview.status) updateBody.status = newInterview.status;
+        else delete updateBody.status;
+        if (newInterview.result) updateBody.result = newInterview.result;
+        else delete updateBody.result;
+        if (newInterview.feedback) updateBody.feedback = newInterview.feedback;
+        else delete updateBody.feedback;
         await hrFetch(hrUrl(`recruitment/interviews/${editingInterview.id}`, { tenantId: tenant.id }), {
           method: 'PUT',
-          body: newInterview,
+          body: updateBody,
         });
         toast({ variant: 'success', title: 'Entretien modifié avec succès !' });
       } else {
-        // Create new interview
+        // Create new interview — exclude status/result/feedback (not in CreateInterviewDto)
+        const { status: _s, result: _r, feedback: _f, ...createBody } = newInterview as any;
         await hrFetch(hrUrl('recruitment/interviews', { tenantId: tenant.id }), {
           method: 'POST',
-          body: newInterview,
+          body: createBody,
         });
         toast({ variant: 'success', title: 'Entretien programmé avec succès !' });
       }
       setIsAddInterviewOpen(false);
       setEditingInterview(null);
-      setNewInterview({ candidateId: '', type: 'RH', date: '', time: '', format: 'Visioconférence', evaluator: '', score: '0', comments: '' });
+      setNewInterview({ candidateId: '', type: 'RH', date: '', time: '', format: 'Visioconférence', evaluator: '', score: '0', comments: '', status: '', result: '', feedback: '' });
       loadData();
     } catch (err: any) {
       console.error('Failed to save interview:', err);
@@ -482,6 +493,9 @@ export function RecruitmentWorkspace() {
       evaluator: int.evaluator,
       score: String(int.score || 0),
       comments: int.comments || '',
+      status: int.status || '',
+      result: int.result || '',
+      feedback: int.feedback || '',
     });
     setIsAddInterviewOpen(true);
   };
@@ -513,6 +527,7 @@ export function RecruitmentWorkspace() {
       await hrFetch(hrUrl(`recruitment/interviews/${validatingInterview.id}/validate`, { tenantId: tenant.id }), {
         method: 'PUT',
         body: {
+          status: 'TERMINÉ',
           result: interviewValidation.result,
           score: Number(interviewValidation.score),
           feedback: interviewValidation.feedback,
@@ -1593,6 +1608,39 @@ export function RecruitmentWorkspace() {
                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Commentaires</label>
                         <textarea className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-16" value={newInterview.comments} onChange={(e) => setNewInterview({ ...newInterview, comments: e.target.value })} />
                       </div>
+
+                      {/* Status / Result / Feedback — only shown when editing an existing interview */}
+                      {editingInterview && (
+                        <>
+                          <div className="border-t border-slate-100 pt-4">
+                            <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Statut & Résultat</span>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-1">Statut</label>
+                                <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newInterview.status} onChange={(e) => setNewInterview({ ...newInterview, status: e.target.value })}>
+                                  <option value="">-- Changer le statut --</option>
+                                  <option value="PLANIFIÉ">Planifié</option>
+                                  <option value="EN_COURS">En cours</option>
+                                  <option value="TERMINÉ">Terminé</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-1">Résultat</label>
+                                <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newInterview.result} onChange={(e) => setNewInterview({ ...newInterview, result: e.target.value })}>
+                                  <option value="">-- Changer le résultat --</option>
+                                  <option value="RÉUSSI">Réussi / Validé</option>
+                                  <option value="ÉCHOUÉ">Échoué / Non retenu</option>
+                                  <option value="EN_ATTENTE">En attente</option>
+                                </select>
+                              </div>
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Retour / Feedback</label>
+                            <textarea className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-16" placeholder="Commentaires sur l'entretien, points forts, points à améliorer..." value={newInterview.feedback} onChange={(e) => setNewInterview({ ...newInterview, feedback: e.target.value })} />
+                          </div>
+                        </>
+                      )}
 
                       <div className="flex gap-2 justify-end mt-6">
                         <button type="button" onClick={() => { setIsAddInterviewOpen(false); setEditingInterview(null); }} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs">Annuler</button>

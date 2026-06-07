@@ -139,7 +139,10 @@ export class RecruitmentPrismaController {
   }
 
   @Put('interviews/:id/validate')
-  async validateInterview(@Param('id') id: string, @Body() body: ValidateInterviewDto) {
+  async validateInterview(
+    @Param('id') id: string,
+    @Body() body: ValidateInterviewDto,
+  ) {
     return this.service.validateInterview(id, body);
   }
 
@@ -174,7 +177,12 @@ export class RecruitmentPrismaController {
 
   @Post('test-results')
   async createTestResult(@Body() body: CreateTestResultDto) {
-    return this.service.createTestResult(body);
+    try {
+      return await this.service.createTestResult(body);
+    } catch (error: any) {
+      console.error('[HR] createTestResult error:', error?.message || error);
+      throw error;
+    }
   }
 
   @Delete('test-results/:id')

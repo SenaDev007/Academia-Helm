@@ -13557,7 +13557,7 @@ model HrInterview {
   evaluator   String
   score       Int         @default(0)
   comments    String?
-  status      String?     @default("PLANIFIÉ")
+  status      String      @default("PLANIFIÉ")
   result      String?
   feedback    String?
   createdAt   DateTime    @default(now())

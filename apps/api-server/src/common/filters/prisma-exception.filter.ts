@@ -21,9 +21,16 @@ export class PrismaExceptionFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
 
     // If it's already an HttpException (e.g. BadRequestException from service code),
-    // let NestJS handle it normally — don't interfere.
+    // handle it directly — don't re-throw (would cause infinite loop with @Catch()).
     if (exception instanceof HttpException) {
-      throw exception;
+      const status = exception.getStatus();
+      const exceptionResponse = exception.getResponse();
+      response.status(status).json(
+        typeof exceptionResponse === 'string'
+          ? { statusCode: status, message: exceptionResponse }
+          : exceptionResponse,
+      );
+      return;
     }
 
     // ─── PrismaClientValidationError ───────────────────────────────────────

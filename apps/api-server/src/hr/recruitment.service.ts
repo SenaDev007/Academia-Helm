@@ -4,7 +4,7 @@ import { StorageService } from '../common/services/storage.service';
 import { OpenRouterService } from '../common/services/openrouter.service';
 import { ContractsPrismaService } from './contracts-prisma.service';
 import { StaffMatriculeService } from './staff-matricule.service';
-import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
+import { prismaCreateDefaults, prismaUpdateDefaults, prismaCreateNoCreatedAt, prismaCreateNoUpdatedAt, uuid } from '../common/utils/prisma-helpers';
 import { Prisma } from '@prisma/client';
 
 /**
@@ -108,7 +108,7 @@ export class RecruitmentPrismaService {
 
     const seq = await this.prisma.jobNumberSequence.upsert({
       where: { tenantId },
-      create: { ...prismaCreateDefaults(), tenantId, current: 1 },
+      create: { ...prismaCreateNoCreatedAt(), tenantId, current: 1 },
       update: { current: { increment: 1 } },
     });
     const padded = String(seq.current).padStart(5, '0');
@@ -588,7 +588,7 @@ export class RecruitmentPrismaService {
             // Fallback: matricule generation failed, use sequence directly
             const tenantSeq = await tx.staffNumberSequence.upsert({
               where: { tenantId: updatedApp.tenantId },
-              create: { ...prismaCreateDefaults(), tenantId: updatedApp.tenantId, current: 1 },
+              create: { ...prismaCreateNoCreatedAt(), tenantId: updatedApp.tenantId, current: 1 },
               update: { current: { increment: 1 } },
             });
             employeeNumber = `EMP-${String(tenantSeq.current).padStart(5, '0')}`;
@@ -1033,7 +1033,7 @@ export class RecruitmentPrismaService {
 
     return this.prisma.$transaction(async (tx) => {
       const resultData: any = {
-        ...prismaCreateDefaults(),
+        ...prismaCreateNoUpdatedAt(),  // HrTestResult has no updatedAt
         testId: data.testId,
         candidateId: data.candidateId,
         score,
@@ -1152,7 +1152,7 @@ export class RecruitmentPrismaService {
     return this.prisma.hrTalentPool.upsert({
       where: { candidateId },
       create: {
-        ...prismaCreateDefaults(),
+        ...prismaCreateNoUpdatedAt(),
         candidateId,
         category: data.category || 'Général',
         status: data.status || 'Disponible',
@@ -1345,10 +1345,10 @@ Réponds UNIQUEMENT en JSON valide.`,
           }
         });
 
-        // 2. Save to AcademicProfile
+        // 2. Save to AcademicProfile (no updatedAt field)
         await tx.academicProfile.create({
           data: {
-            ...prismaCreateDefaults(),
+            ...prismaCreateNoUpdatedAt(),
             candidateId: candidate.id,
             teachingLevel: education[0]?.degree || 'Non spécifié',
             subjects: skills,
@@ -1379,11 +1379,12 @@ Réponds UNIQUEMENT en JSON valide.`,
           try {
             await tx.hrAiReport.create({
               data: {
-                ...prismaCreateDefaults(),
+                id: uuid(),  // HrAiReport has only id + generatedAt, no createdAt/updatedAt
                 candidateId: candidate.id,
                 applicationId: application.id,
                 reportType: 'APPLICATION_ANALYSIS',
                 content: aiReportContent,
+                generatedAt: new Date(),
               }
             });
           } catch (reportErr: any) {
@@ -1397,7 +1398,7 @@ Réponds UNIQUEMENT en JSON valide.`,
         if (cvFile && cvPath) {
           const doc = await tx.candidateDocument.create({
             data: {
-              ...prismaCreateDefaults(),
+              ...prismaCreateNoUpdatedAt(),
               candidateId: candidate.id,
               documentType: 'CV',
               fileName: cvFile.originalname,
@@ -1413,7 +1414,7 @@ Réponds UNIQUEMENT en JSON valide.`,
         if (letterFile && letterPath) {
           const doc = await tx.candidateDocument.create({
             data: {
-              ...prismaCreateDefaults(),
+              ...prismaCreateNoUpdatedAt(),
               candidateId: candidate.id,
               documentType: 'COVER_LETTER',
               fileName: letterFile.originalname,
@@ -1429,7 +1430,7 @@ Réponds UNIQUEMENT en JSON valide.`,
         if (recoFile && recoPath) {
           const doc = await tx.candidateDocument.create({
             data: {
-              ...prismaCreateDefaults(),
+              ...prismaCreateNoUpdatedAt(),
               candidateId: candidate.id,
               documentType: 'RECOMMENDATION',
               fileName: recoFile.originalname,

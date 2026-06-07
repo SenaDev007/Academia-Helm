@@ -544,7 +544,7 @@ export class RecruitmentPrismaService {
         if (!existingStaff) {
           // Find academic year if available
           const currentYear = await tx.academicYear.findFirst({
-            where: { tenantId: updatedApp.tenantId, status: 'ACTIVE' }
+            where: { tenantId: updatedApp.tenantId, isActive: true }
           });
 
           // Determine roleType

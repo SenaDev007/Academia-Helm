@@ -795,13 +795,31 @@ export class RecruitmentPrismaService {
         const primaryApp = updated.candidate?.applications?.[0];
         if (primaryApp) {
           const currentStatus = primaryApp.status;
-          const allowed = VALID_TRANSITIONS[currentStatus];
-          if (allowed && allowed.includes('ENTRETIEN')) {
-            await this.prisma.hrApplication.update({
-              where: { id: primaryApp.id },
-              data: { ...prismaUpdateDefaults(), status: 'ENTRETIEN' },
-            });
-            this.logger.log(`Auto-advanced application ${primaryApp.id} to ENTRETIEN after interview update`);
+          // Already at or past ENTRETIEN — nothing to do
+          if (currentStatus !== 'ENTRETIEN' && currentStatus !== 'TEST' && currentStatus !== 'EMBAUCHÉ') {
+            // Advance through all intermediate states to ENTRETIEN
+            let statusToSet = currentStatus;
+            const path: string[] = [];
+            while (statusToSet !== 'ENTRETIEN') {
+              const next = VALID_TRANSITIONS[statusToSet];
+              if (!next || next.length === 0) break;
+              if (next.includes('ENTRETIEN')) {
+                path.push('ENTRETIEN');
+                break;
+              }
+              const intermediate = next.find(s => s !== 'REJETÉ');
+              if (!intermediate) break;
+              path.push(intermediate);
+              statusToSet = intermediate;
+            }
+            if (path.length > 0) {
+              const finalStatus = path[path.length - 1];
+              await this.prisma.hrApplication.update({
+                where: { id: primaryApp.id },
+                data: { ...prismaUpdateDefaults(), status: finalStatus },
+              });
+              this.logger.log(`Auto-advanced application ${primaryApp.id} from ${currentStatus} to ${finalStatus} via [${path.join(' → ')}] after interview update`);
+            }
           }
         }
       } catch (err: any) {
@@ -871,17 +889,35 @@ export class RecruitmentPrismaService {
 
         if (primaryApp) {
           const currentStatus = primaryApp.status;
-          // Advance to ENTRETIEN if the current status allows it
-          const allowed = VALID_TRANSITIONS[currentStatus];
-          if (allowed && allowed.includes('ENTRETIEN')) {
-            await tx.hrApplication.update({
-              where: { id: primaryApp.id },
-              data: { ...prismaUpdateDefaults(), status: 'ENTRETIEN' },
-            });
-          } else if (currentStatus === 'ENTRETIEN') {
-            // Already at ENTRETIEN — nothing to do, candidate is already eligible
-          } else if (currentStatus === 'TEST' || currentStatus === 'EMBAUCHÉ') {
-            // Already past ENTRETIEN — don't regress
+          // Already at or past ENTRETIEN — nothing to do
+          if (currentStatus === 'ENTRETIEN' || currentStatus === 'TEST' || currentStatus === 'EMBAUCHÉ') {
+            // Candidate already eligible or past this stage
+          } else {
+            // Advance through all intermediate states to ENTRETIEN
+            // e.g. NOUVEAU → EN_COURS → ENTRETIEN
+            let statusToSet = currentStatus;
+            const path: string[] = [];
+            while (statusToSet !== 'ENTRETIEN') {
+              const next = VALID_TRANSITIONS[statusToSet];
+              if (!next || next.length === 0) break; // Terminal state or unknown
+              if (next.includes('ENTRETIEN')) {
+                path.push('ENTRETIEN');
+                break;
+              }
+              // Take the first non-REJETÉ transition as intermediate step
+              const intermediate = next.find(s => s !== 'REJETÉ');
+              if (!intermediate) break;
+              path.push(intermediate);
+              statusToSet = intermediate;
+            }
+            if (path.length > 0) {
+              const finalStatus = path[path.length - 1];
+              await tx.hrApplication.update({
+                where: { id: primaryApp.id },
+                data: { ...prismaUpdateDefaults(), status: finalStatus },
+              });
+              this.logger.log(`Auto-advanced application ${primaryApp.id} from ${currentStatus} to ${finalStatus} via [${path.join(' → ')}]`);
+            }
           }
         }
       }
@@ -984,16 +1020,30 @@ export class RecruitmentPrismaService {
 
         if (primaryApp) {
           const currentStatus = primaryApp.status;
-          const allowed = VALID_TRANSITIONS[currentStatus];
-          if (allowed && allowed.includes('TEST')) {
-            await tx.hrApplication.update({
-              where: { id: primaryApp.id },
-              data: { ...prismaUpdateDefaults(), status: 'TEST' },
-            });
-          } else if (currentStatus === 'TEST') {
-            // Already at TEST — nothing to do
-          } else if (currentStatus === 'EMBAUCHÉ') {
-            // Already hired — don't regress
+          // Already at or past TEST — nothing to do
+          if (currentStatus !== 'TEST' && currentStatus !== 'EMBAUCHÉ') {
+            // Advance through all intermediate states to TEST
+            let statusToSet = currentStatus;
+            const path: string[] = [];
+            while (statusToSet !== 'TEST') {
+              const next = VALID_TRANSITIONS[statusToSet];
+              if (!next || next.length === 0) break;
+              if (next.includes('TEST')) {
+                path.push('TEST');
+                break;
+              }
+              const intermediate = next.find(s => s !== 'REJETÉ');
+              if (!intermediate) break;
+              path.push(intermediate);
+              statusToSet = intermediate;
+            }
+            if (path.length > 0) {
+              const finalStatus = path[path.length - 1];
+              await tx.hrApplication.update({
+                where: { id: primaryApp.id },
+                data: { ...prismaUpdateDefaults(), status: finalStatus },
+              });
+            }
           }
         }
       }

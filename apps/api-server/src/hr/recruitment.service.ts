@@ -242,20 +242,38 @@ export class RecruitmentPrismaService {
   }
 
   async createCandidate(tenantId: string, data: any) {
-    return this.prisma.hrCandidate.create({
-      data: {
-        ...prismaCreateDefaults(),
-        tenantId,
-        firstName: data.firstName,
-        lastName: data.lastName,
-        email: data.email,
-        phone: data.phone,
-        address: data.address,
-        country: data.country || null,
-        city: data.city || null,
-        gender: data.gender,
-        dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : null,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const candidate = await tx.hrCandidate.create({
+        data: {
+          ...prismaCreateDefaults(),
+          tenantId,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          email: data.email,
+          phone: data.phone,
+          address: data.address,
+          country: data.country || null,
+          city: data.city || null,
+          gender: data.gender,
+          dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : null,
+        },
+      });
+
+      // Auto-create an HrApplication if jobId is provided
+      // This ensures the candidate has a trackable application status
+      if (data.jobId) {
+        await tx.hrApplication.create({
+          data: {
+            ...prismaCreateDefaults(),
+            tenantId,
+            candidateId: candidate.id,
+            jobId: data.jobId,
+            status: data.status || 'NOUVEAU',
+          },
+        });
+      }
+
+      return candidate;
     });
   }
 
@@ -747,12 +765,13 @@ export class RecruitmentPrismaService {
   /**
    * Validate (complete) an interview: set status=TERMINÉ, result, score, feedback.
    * When an interview is marked as RÉUSSI, auto-advance the candidate's
-   * application status to ENTRETIEN (if currently EN_COURS or NOUVEAU).
+   * application status to ENTRETIEN. Creates an HrApplication if the candidate
+   * doesn't have one yet.
    */
   async validateInterview(id: string, data: { result: string; score?: number; feedback?: string }) {
     const interview = await this.prisma.hrInterview.findUnique({
       where: { id },
-      include: { candidate: { include: { applications: true } } },
+      include: { candidate: { include: { applications: { include: { job: true } } } } },
     });
     if (!interview) {
       throw new NotFoundException(`Entretien ${id} non trouvé`);
@@ -777,16 +796,42 @@ export class RecruitmentPrismaService {
 
       // If interview succeeded, advance the candidate's application status
       if (data.result === 'RÉUSSI') {
-        const primaryApp = interview.candidate?.applications?.[0];
+        let primaryApp = interview.candidate?.applications?.[0];
+
+        // If no application exists, create one automatically
+        if (!primaryApp && interview.candidateId) {
+          // Find a job for this tenant to link the application to
+          const firstJob = await tx.hrJob.findFirst({
+            where: { tenantId: interview.tenantId },
+          });
+
+          if (firstJob) {
+            primaryApp = await tx.hrApplication.create({
+              data: {
+                ...prismaCreateDefaults(),
+                tenantId: interview.tenantId,
+                candidateId: interview.candidateId,
+                jobId: firstJob.id,
+                status: 'EN_COURS',
+              },
+              include: { job: true },
+            });
+          }
+        }
+
         if (primaryApp) {
           const currentStatus = primaryApp.status;
-          // Only advance if the current status allows transitioning to ENTRETIEN
+          // Advance to ENTRETIEN if the current status allows it
           const allowed = VALID_TRANSITIONS[currentStatus];
           if (allowed && allowed.includes('ENTRETIEN')) {
             await tx.hrApplication.update({
               where: { id: primaryApp.id },
               data: { ...prismaUpdateDefaults(), status: 'ENTRETIEN' },
             });
+          } else if (currentStatus === 'ENTRETIEN') {
+            // Already at ENTRETIEN — nothing to do, candidate is already eligible
+          } else if (currentStatus === 'TEST' || currentStatus === 'EMBAUCHÉ') {
+            // Already past ENTRETIEN — don't regress
           }
         }
       }
@@ -860,14 +905,33 @@ export class RecruitmentPrismaService {
       });
 
       // Auto-advance the candidate's application status to TEST
-      // if the current status allows it (from EN_COURS or ENTRETIEN)
       const candidate = await tx.hrCandidate.findUnique({
         where: { id: data.candidateId },
         include: { applications: true },
       });
 
       if (candidate) {
-        const primaryApp = candidate.applications?.[0];
+        let primaryApp = candidate.applications?.[0];
+
+        // If no application exists, create one automatically
+        if (!primaryApp) {
+          const firstJob = await tx.hrJob.findFirst({
+            where: { tenantId: candidate.tenantId },
+          });
+
+          if (firstJob) {
+            primaryApp = await tx.hrApplication.create({
+              data: {
+                ...prismaCreateDefaults(),
+                tenantId: candidate.tenantId,
+                candidateId: candidate.id,
+                jobId: firstJob.id,
+                status: 'EN_COURS',
+              },
+            });
+          }
+        }
+
         if (primaryApp) {
           const currentStatus = primaryApp.status;
           const allowed = VALID_TRANSITIONS[currentStatus];
@@ -876,6 +940,10 @@ export class RecruitmentPrismaService {
               where: { id: primaryApp.id },
               data: { ...prismaUpdateDefaults(), status: 'TEST' },
             });
+          } else if (currentStatus === 'TEST') {
+            // Already at TEST — nothing to do
+          } else if (currentStatus === 'EMBAUCHÉ') {
+            // Already hired — don't regress
           }
         }
       }

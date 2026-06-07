@@ -536,6 +536,9 @@ export class UpdateInterviewDto {
   @IsOptional() @IsString() evaluator?: string;
   @IsOptional() @IsInt() @Type(() => Number) score?: number;
   @IsOptional() @IsString() comments?: string;
+  @IsOptional() @IsIn(['PLANIFIÉ', 'EN_COURS', 'TERMINÉ']) status?: string;
+  @IsOptional() @IsIn(['RÉUSSI', 'ÉCHOUÉ', 'EN_ATTENTE']) result?: string;
+  @IsOptional() @IsString() feedback?: string;
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() tenantId?: string;
 }

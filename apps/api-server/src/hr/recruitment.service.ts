@@ -721,18 +721,77 @@ export class RecruitmentPrismaService {
   }
 
   async updateInterview(id: string, data: any) {
+    // Build update data — only include fields that are provided
+    const updateData: any = { ...prismaUpdateDefaults() };
+
+    if (data.type !== undefined) updateData.type = data.type;
+    if (data.date !== undefined) updateData.date = new Date(data.date);
+    if (data.time !== undefined) updateData.time = data.time;
+    if (data.format !== undefined) updateData.format = data.format;
+    if (data.evaluator !== undefined) updateData.evaluator = data.evaluator;
+    if (data.score !== undefined) {
+      const s = typeof data.score === 'number' ? data.score : parseInt(String(data.score), 10);
+      if (!isNaN(s)) updateData.score = s;
+    }
+    if (data.comments !== undefined) updateData.comments = data.comments;
+    if (data.status !== undefined) updateData.status = data.status;
+    if (data.result !== undefined) updateData.result = data.result;
+    if (data.feedback !== undefined) updateData.feedback = data.feedback;
+
     return this.prisma.hrInterview.update({
       where: { id },
-      data: {
-        ...prismaUpdateDefaults(),
-        type: data.type,
-        date: new Date(data.date),
-        time: data.time,
-        format: data.format,
-        evaluator: data.evaluator,
-        score: data.score ? parseInt(data.score) : 0,
-        comments: data.comments,
-      },
+      data: updateData,
+    });
+  }
+
+  /**
+   * Validate (complete) an interview: set status=TERMINÉ, result, score, feedback.
+   * When an interview is marked as RÉUSSI, auto-advance the candidate's
+   * application status to ENTRETIEN (if currently EN_COURS or NOUVEAU).
+   */
+  async validateInterview(id: string, data: { result: string; score?: number; feedback?: string }) {
+    const interview = await this.prisma.hrInterview.findUnique({
+      where: { id },
+      include: { candidate: { include: { applications: true } } },
+    });
+    if (!interview) {
+      throw new NotFoundException(`Entretien ${id} non trouvé`);
+    }
+
+    const score = data.score != null
+      ? (typeof data.score === 'number' ? data.score : parseInt(String(data.score), 10))
+      : interview.score;
+
+    return this.prisma.$transaction(async (tx) => {
+      // Update the interview
+      const updated = await tx.hrInterview.update({
+        where: { id },
+        data: {
+          ...prismaUpdateDefaults(),
+          status: 'TERMINÉ',
+          result: data.result,
+          score: isNaN(score) ? 0 : score,
+          feedback: data.feedback || null,
+        },
+      });
+
+      // If interview succeeded, advance the candidate's application status
+      if (data.result === 'RÉUSSI') {
+        const primaryApp = interview.candidate?.applications?.[0];
+        if (primaryApp) {
+          const currentStatus = primaryApp.status;
+          // Only advance if the current status allows transitioning to ENTRETIEN
+          const allowed = VALID_TRANSITIONS[currentStatus];
+          if (allowed && allowed.includes('ENTRETIEN')) {
+            await tx.hrApplication.update({
+              where: { id: primaryApp.id },
+              data: { ...prismaUpdateDefaults(), status: 'ENTRETIEN' },
+            });
+          }
+        }
+      }
+
+      return updated;
     });
   }
 
@@ -788,14 +847,40 @@ export class RecruitmentPrismaService {
     if (isNaN(score)) {
       throw new Error('Score invalide : doit être un nombre entier');
     }
-    return this.prisma.hrTestResult.create({
-      data: {
-        id: crypto.randomUUID(),
-        testId: data.testId,
-        candidateId: data.candidateId,
-        score,
-        result: data.result || 'ADMIS',
-      },
+
+    return this.prisma.$transaction(async (tx) => {
+      const testResult = await tx.hrTestResult.create({
+        data: {
+          id: crypto.randomUUID(),
+          testId: data.testId,
+          candidateId: data.candidateId,
+          score,
+          result: data.result || 'ADMIS',
+        },
+      });
+
+      // Auto-advance the candidate's application status to TEST
+      // if the current status allows it (from EN_COURS or ENTRETIEN)
+      const candidate = await tx.hrCandidate.findUnique({
+        where: { id: data.candidateId },
+        include: { applications: true },
+      });
+
+      if (candidate) {
+        const primaryApp = candidate.applications?.[0];
+        if (primaryApp) {
+          const currentStatus = primaryApp.status;
+          const allowed = VALID_TRANSITIONS[currentStatus];
+          if (allowed && allowed.includes('TEST')) {
+            await tx.hrApplication.update({
+              where: { id: primaryApp.id },
+              data: { ...prismaUpdateDefaults(), status: 'TEST' },
+            });
+          }
+        }
+      }
+
+      return testResult;
     });
   }
 

@@ -111,6 +111,9 @@ interface Interview {
   evaluator: string;
   score: number;
   comments?: string;
+  status?: string;
+  result?: string;
+  feedback?: string;
 }
 
 interface Test {
@@ -176,6 +179,12 @@ export function RecruitmentWorkspace() {
   const [isAddInterviewOpen, setIsAddInterviewOpen] = useState(false);
   const [newInterview, setNewInterview] = useState({
     candidateId: '', type: 'RH', date: '', time: '', format: 'Visioconférence', evaluator: '', score: '0', comments: ''
+  });
+
+  // Validate Interview Form State
+  const [validatingInterview, setValidatingInterview] = useState<Interview | null>(null);
+  const [interviewValidation, setInterviewValidation] = useState({
+    result: 'RÉUSSI', score: '0', feedback: ''
   });
 
   // Add Test Form State
@@ -436,11 +445,34 @@ export function RecruitmentWorkspace() {
     try {
       await hrFetch(hrUrl(`recruitment/interviews/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Entretien annulé', description: 'L\'entretien a été supprimé du calendrier.' });
-      // Ne PAS appeler loadData() : l'optimistic update a déjà retiré l'élément.
     } catch (err) {
       setInterviews(previousInterviews);
       console.error('Failed to delete interview:', err);
       toast({ variant: 'error', title: 'Erreur d\'annulation', description: 'Impossible d\'annuler cet entretien. Veuillez réessayer.' });
+    }
+  };
+
+  // Validate Interview (mark as completed with result)
+  const handleValidateInterview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validatingInterview) return;
+    try {
+      await hrFetch(hrUrl(`recruitment/interviews/${validatingInterview.id}/validate`, { tenantId: tenant.id }), {
+        method: 'PUT',
+        body: {
+          result: interviewValidation.result,
+          score: Number(interviewValidation.score),
+          feedback: interviewValidation.feedback,
+        },
+      });
+      toast({ variant: 'success', title: 'Entretien validé !', description: interviewValidation.result === 'RÉUSSI' ? 'Le candidat a été automatiquement avancé à l\'étape Entretien.' : 'L\'entretien a été marqué comme échoué.' });
+      setValidatingInterview(null);
+      setInterviewValidation({ result: 'RÉUSSI', score: '0', feedback: '' });
+      loadData();
+    } catch (err: any) {
+      console.error('Failed to validate interview:', err);
+      const msg = err?.message || 'Erreur lors de la validation de l\'entretien.';
+      toast({ variant: 'error', title: msg });
     }
   };
 
@@ -1354,7 +1386,25 @@ export function RecruitmentWorkspace() {
                     <div key={int.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col justify-between">
                       <div>
                         <div className="flex justify-between items-start">
-                          <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-blue-50 text-blue-700 border border-blue-100">{int.type}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-blue-50 text-blue-700 border border-blue-100">{int.type}</span>
+                            <span className={cn(
+                              'px-2 py-0.5 rounded-full text-[9px] font-bold uppercase',
+                              int.status === 'TERMINÉ'
+                                ? int.result === 'RÉUSSI'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                  : int.result === 'ÉCHOUÉ'
+                                    ? 'bg-red-50 text-red-700 border border-red-100'
+                                    : 'bg-amber-50 text-amber-700 border border-amber-100'
+                                : int.status === 'EN_COURS'
+                                  ? 'bg-violet-50 text-violet-700 border border-violet-100'
+                                  : 'bg-slate-50 text-slate-600 border border-slate-200'
+                            )}>
+                              {int.status === 'TERMINÉ'
+                                ? (int.result === 'RÉUSSI' ? 'Réussi' : int.result === 'ÉCHOUÉ' ? 'Échoué' : 'En attente')
+                                : int.status === 'EN_COURS' ? 'En cours' : 'Planifié'}
+                            </span>
+                          </div>
                           <button onClick={() => handleDeleteInterview(int.id)} className="text-slate-400 hover:text-red-600 transition">
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
@@ -1372,10 +1422,28 @@ export function RecruitmentWorkspace() {
                             {int.comments}
                           </div>
                         )}
+                        {int.feedback && (
+                          <div className="mt-2 bg-blue-50 p-2.5 rounded-lg border border-blue-100 text-[10px] text-blue-700">
+                            <span className="font-bold">Retour : </span>{int.feedback}
+                          </div>
+                        )}
                       </div>
                       <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center">
                         <span className="text-[10px] font-semibold text-slate-400">Note technique :</span>
-                        <span className="font-bold text-[#1A2BA6] bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">{int.score}/100</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-[#1A2BA6] bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">{int.score}/100</span>
+                          {int.status !== 'TERMINÉ' && (
+                            <button
+                              onClick={() => {
+                                setValidatingInterview(int);
+                                setInterviewValidation({ result: 'RÉUSSI', score: String(int.score || 0), feedback: '' });
+                              }}
+                              className="inline-flex items-center gap-1 px-3 py-1 text-white rounded-lg text-[10px] font-bold shadow-sm hover:opacity-90 transition bg-emerald-600"
+                            >
+                              <CheckCircle className="h-3 w-3" /> Valider
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -1446,6 +1514,70 @@ export function RecruitmentWorkspace() {
                       <div className="flex gap-2 justify-end mt-6">
                         <button type="button" onClick={() => setIsAddInterviewOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs">Annuler</button>
                         <button type="submit" className="px-4 py-2 text-white rounded-lg text-xs font-semibold" style={{ backgroundColor: PRIMARY }}>Programmer</button>
+                      </div>
+                    </form>
+                  </motion.div>
+                </div>
+              )}
+
+              {/* Validate Interview Modal */}
+              {validatingInterview && (
+                <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-100">
+                    <div className="bg-emerald-600 -mx-6 -mt-6 px-6 py-4 rounded-t-2xl mb-4">
+                      <h3 className="font-bold text-white text-sm">Valider l'entretien</h3>
+                      <p className="text-emerald-100 text-[10px] mt-0.5">
+                        {validatingInterview.candidate ? `${validatingInterview.candidate.firstName} ${validatingInterview.candidate.lastName}` : 'Candidat'} — {validatingInterview.type}
+                      </p>
+                    </div>
+                    <form onSubmit={handleValidateInterview} className="space-y-4">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Résultat de l'entretien</label>
+                        <select
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs"
+                          value={interviewValidation.result}
+                          onChange={(e) => setInterviewValidation({ ...interviewValidation, result: e.target.value })}
+                        >
+                          <option value="RÉUSSI">Réussi / Validé</option>
+                          <option value="ÉCHOUÉ">Échoué / Non retenu</option>
+                          <option value="EN_ATTENTE">En attente</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Score (/100)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs"
+                          value={interviewValidation.score}
+                          onChange={(e) => setInterviewValidation({ ...interviewValidation, score: e.target.value })}
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Retour / Commentaires</label>
+                        <textarea
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-20"
+                          placeholder="Commentaires sur l'entretien, points forts, points à améliorer..."
+                          value={interviewValidation.feedback}
+                          onChange={(e) => setInterviewValidation({ ...interviewValidation, feedback: e.target.value })}
+                        />
+                      </div>
+
+                      {interviewValidation.result === 'RÉUSSI' && (
+                        <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
+                          <p className="text-[10px] text-blue-700 font-medium">
+                            Le statut de la candidature sera automatiquement avancé à <strong>Entretien</strong>, rendant le candidat éligible pour l'embauche.
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="flex gap-2 justify-end mt-6">
+                        <button type="button" onClick={() => { setValidatingInterview(null); setInterviewValidation({ result: 'RÉUSSI', score: '0', feedback: '' }); }} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs">Annuler</button>
+                        <button type="submit" className="px-4 py-2 text-white rounded-lg text-xs font-semibold bg-emerald-600 hover:opacity-90 transition">Valider l'entretien</button>
                       </div>
                     </form>
                   </motion.div>

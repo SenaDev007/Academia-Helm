@@ -137,6 +137,14 @@ export class RecruitmentPrismaController {
     return this.service.updateInterview(id, body);
   }
 
+  @Put('interviews/:id/validate')
+  async validateInterview(
+    @Param('id') id: string,
+    @Body() body: { result: string; score?: number; feedback?: string },
+  ) {
+    return this.service.validateInterview(id, body);
+  }
+
   @Delete('interviews/:id')
   async deleteInterview(@Param('id') id: string) {
     return this.service.deleteInterview(id);

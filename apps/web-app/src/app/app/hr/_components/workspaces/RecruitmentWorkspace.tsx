@@ -203,6 +203,9 @@ export function RecruitmentWorkspace() {
     status: '', result: '', feedback: '',
   });
 
+  // Interview Filter State
+  const [interviewFilter, setInterviewFilter] = useState<'PLANIFIÉ' | 'EN_COURS' | 'TERMINÉ' | 'TOUS'>('TOUS');
+
   // Validate Interview Form State
   const [validatingInterview, setValidatingInterview] = useState<Interview | null>(null);
   const [interviewValidation, setInterviewValidation] = useState({
@@ -743,7 +746,9 @@ export function RecruitmentWorkspace() {
   // KPI calculations for dashboard cards (Tome 2 & 3)
   const totalJobs = jobs.filter(j => j.status === 'PUBLIÉE').length;
   const totalApplications = candidates.length;
-  const totalInterviews = interviews.length;
+  const totalInterviews = interviews.filter(i => i.status === 'PLANIFIÉ').length;
+  const totalInterviewsInProgress = interviews.filter(i => i.status === 'EN_COURS').length;
+  const totalInterviewsCompleted = interviews.filter(i => i.status === 'TERMINÉ').length;
   const avgIaScore = candidates.length > 0 ? Math.round(candidates.reduce((sum, c) => sum + c.score, 0) / candidates.length) : 0;
   const fraudAlerts = candidates.filter(c => c.risks && c.risks !== 'Aucun').length;
   const totalHired = candidates.filter(c => c.status === 'EMBAUCHÉ').length;
@@ -756,7 +761,7 @@ export function RecruitmentWorkspace() {
         {[
           { label: 'Offres Actives', value: totalJobs, sub: 'Recrutement ouvert', bg: 'bg-indigo-50/50 border-indigo-100/50' },
           { label: 'Candidatures', value: totalApplications, sub: 'Dossiers reçus', bg: 'bg-indigo-50/50 border-indigo-100/50' },
-          { label: 'Entretiens', value: totalInterviews, sub: 'Planifiés', bg: 'bg-indigo-50/50 border-indigo-100/50' },
+          { label: 'Entretiens', value: totalInterviews, sub: `${totalInterviewsInProgress} en cours · ${totalInterviewsCompleted} terminés`, bg: 'bg-indigo-50/50 border-indigo-100/50' },
           { label: 'Score IA Moyen', value: `${avgIaScore}%`, sub: 'Adéquation HTIP', bg: 'bg-amber-50/50 border-amber-100/50' },
           { label: 'Alertes Risque', value: fraudAlerts, sub: 'Détections HDIE', bg: 'bg-rose-50/50 border-rose-100/50' },
           { label: 'Recrutements', value: totalHired, sub: 'Candidats embauchés', bg: 'bg-emerald-50/50 border-emerald-100/50' }
@@ -1472,14 +1477,39 @@ export function RecruitmentWorkspace() {
                 </button>
               </div>
 
-              {interviews.length === 0 ? (
+              {/* Interview Filter Tabs */}
+              <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 w-fit">
+                {[
+                  { key: 'TOUS', label: 'Tous', count: interviews.length },
+                  { key: 'PLANIFIÉ', label: 'Planifiés', count: totalInterviews },
+                  { key: 'EN_COURS', label: 'En cours', count: totalInterviewsInProgress },
+                  { key: 'TERMINÉ', label: 'Terminés', count: totalInterviewsCompleted },
+                ].map(tab => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setInterviewFilter(tab.key as typeof interviewFilter)}
+                    className={cn(
+                      'px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition',
+                      interviewFilter === tab.key
+                        ? 'bg-white text-[#1A2BA6] shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
+                    )}
+                  >
+                    {tab.label} <span className="ml-0.5 text-[9px] font-normal">({tab.count})</span>
+                  </button>
+                ))}
+              </div>
+
+              {interviews.filter(int => interviewFilter === 'TOUS' || int.status === interviewFilter).length === 0 ? (
                 <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
                   <Calendar className="h-10 w-10 text-slate-300 mx-auto mb-3" />
-                  <p className="text-xs text-slate-500 font-semibold">Aucun entretien programmé.</p>
+                  <p className="text-xs text-slate-500 font-semibold">
+                    {interviewFilter === 'PLANIFIÉ' ? 'Aucun entretien planifié.' : interviewFilter === 'EN_COURS' ? 'Aucun entretien en cours.' : interviewFilter === 'TERMINÉ' ? 'Aucun entretien terminé.' : 'Aucun entretien programmé.'}
+                  </p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {interviews.map((int) => (
+                  {interviews.filter(int => interviewFilter === 'TOUS' || int.status === interviewFilter).map((int) => (
                     <div key={int.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col justify-between">
                       <div>
                         <div className="flex justify-between items-start">

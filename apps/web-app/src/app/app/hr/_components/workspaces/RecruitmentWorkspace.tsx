@@ -30,7 +30,16 @@ import {
   UserPlus,
   Star,
   Linkedin,
-  BookOpen
+  BookOpen,
+  HelpCircle,
+  ChevronLeft,
+  ChevronDown,
+  Compass,
+  Eye,
+  MessageSquare,
+  PenTool,
+  HeartHandshake,
+  ShieldCheck
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -194,6 +203,116 @@ export function RecruitmentWorkspace() {
   const [newCandidate, setNewCandidate] = useState({
     firstName: '', lastName: '', email: '', phone: '', address: '', gender: 'M', jobId: '', status: 'NOUVEAU'
   });
+
+  // Onboarding Guide State
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const [guideStep, setGuideStep] = useState(0);
+  const [guideExpanded, setGuideExpanded] = useState<number | null>(null);
+
+  // Pipeline steps data for the onboarding guide
+  const PIPELINE_STEPS = [
+    {
+      id: 'candidature',
+      title: 'Candidature',
+      subtitle: 'Réception & Analyse IA',
+      icon: Users,
+      color: 'bg-blue-500',
+      colorLight: 'bg-blue-50 border-blue-100',
+      textColor: 'text-blue-700',
+      tab: 'candidates',
+      description: 'Le processus commence par la réception d\'une candidature. Le candidat peut postuler via la page publique d\'offres d\'emploi ou être enregistré manuellement par le recruteur.',
+      details: [
+        { label: 'Soumission', text: 'Le candidat soumet son CV, sa lettre de motivation et sa lettre de recommandation via le formulaire de candidature en ligne ou le recruteur crée le dossier manuellement.' },
+        { label: 'Analyse IA (HTIP)', text: 'Notre système d\'intelligence artificielle analyse automatiquement les documents soumis. Il génère un score global composé de : Score CV (40%), Score Lettre de Motivation (10%), Score d\'Adéquation (50%). Ce score reflète la correspondance entre le profil du candidat et les exigences du poste.' },
+        { label: 'Détection des risques (HDIE)', text: 'L\'IA détecte les incohérences potentielles : chevauchement de dates, informations contradictoires, ou signaux d\'alerte dans le parcours du candidat. Ces alertes aident le recruteur à prendre une décision éclairée.' },
+        { label: 'Statut initial', text: 'La candidature démarre au statut NOUVEAU. Le recruteur peut ensuite la faire avancer dans le pipeline en changeant le statut via le menu déroulant.' },
+      ],
+    },
+    {
+      id: 'en-cours',
+      title: 'En cours',
+      subtitle: 'Examen du dossier',
+      icon: Eye,
+      color: 'bg-amber-500',
+      colorLight: 'bg-amber-50 border-amber-100',
+      textColor: 'text-amber-700',
+      tab: 'candidates',
+      description: 'L\'étape "En cours" indique que le dossier du candidat est en cours d\'examen par l\'équipe de recrutement. C\'est une étape de transition avant l\'entretien.',
+      details: [
+        { label: 'Examen du dossier', text: 'Le recruteur consulte les documents du candidat, vérifie les critères d\'éligibilité, et évalue la pertinence du profil par rapport au poste à pourvoir.' },
+        { label: 'Décision', text: 'À cette étape, le recruteur décide soit de convoquer le candidat à un entretien, soit de lui faire passer un test technique, soit de rejeter la candidature si le profil ne correspond pas.' },
+        { label: 'Transition automatique', text: 'Lorsqu\'un entretien est planifié pour un candidat, son statut passe automatiquement à "Entretien". De même, si un test est programmé, le statut avance en conséquence.' },
+      ],
+    },
+    {
+      id: 'entretien',
+      title: 'Entretien',
+      subtitle: 'Évaluation humaine & comportementale',
+      icon: MessageSquare,
+      color: 'bg-violet-500',
+      colorLight: 'bg-violet-50 border-violet-100',
+      textColor: 'text-violet-700',
+      tab: 'interviews',
+      description: 'L\'entretien est l\'étape clé où le recruteur (ou l\'équipe de direction) rencontre le candidat pour évaluer sa personnalité, sa motivation, son fit culturel et ses compétences communicationnelles.',
+      details: [
+        { label: 'Types d\'entretien', text: 'Le système supporte plusieurs types : RH (évaluation générale et motivation), Technique (compétences spécifiques au poste), et Direction (validation finale par la direction de l\'établissement).' },
+        { label: 'Formats', text: 'L\'entretien peut se dérouler en Présentiel, en Visioconférence ou par Téléphone. Le format est choisi lors de la planification et affiché sur la carte de l\'entretien.' },
+        { label: 'Planification', text: 'L\'entretien est planifié avec une date, une heure, un évaluateur désigné et un format. Il commence au statut PLANIFIÉ, passe à EN_COURS le jour J, puis est validé avec un résultat.' },
+        { label: 'Validation', text: 'Après l\'entretien, le recruteur saisit le résultat (Réussi, Échoué ou En attente), un score sur 100, et un feedback détaillé. Si le résultat est "Réussi", la candidature avance automatiquement à l\'étape Entretien dans le pipeline.' },
+        { label: 'Filtrage', text: 'Les entretiens sont organisés par statut : Planifiés, En cours, Terminés. Vous pouvez facilement filtrer pour voir uniquement les entretiens à venir ou ceux déjà complétés.' },
+      ],
+    },
+    {
+      id: 'test',
+      title: 'Test',
+      subtitle: 'Évaluation technique & pratique (optionnel)',
+      icon: PenTool,
+      color: 'bg-orange-500',
+      colorLight: 'bg-orange-50 border-orange-100',
+      textColor: 'text-orange-700',
+      tab: 'tests',
+      description: 'Le test est une étape OPTIONNELLE qui permet d\'évaluer les compétences techniques et pratiques du candidat. Il n\'est pas obligatoire pour embaucher — un candidat peut passer directement de l\'entretien à l\'embauche.',
+      details: [
+        { label: 'Quand utiliser le test ?', text: 'Le test est particulièrement recommandé pour les postes d\'enseignants (démonstration pédagogique, leçon test), les postes techniques (exercices pratiques), ou lorsque l\'établissement souhaite une évaluation complémentaire après l\'entretien.' },
+        { label: 'Types de tests', text: 'Le système supporte les tests Techniques (compétences spécifiques), Pédagogiques (démonstration de cours), Psychométriques (évaluation cognitive), et tous autres types personnalisés.' },
+        { label: 'Résultats', text: 'Chaque test reçoit un score et un résultat (Réussi/Échoué). Si le test est réussi, la candidature avance automatiquement au statut TEST dans le pipeline, rendant le candidat éligible à l\'embauche.' },
+        { label: 'Optionnel', text: 'Important : le test N\'EST PAS obligatoire. Depuis le statut ENTRETIEN, un candidat peut être embauché directement sans passer par un test. Le recruteur choisit selon les besoins du poste.' },
+      ],
+    },
+    {
+      id: 'embauche',
+      title: 'Embauche',
+      subtitle: 'Validation finale & Contrat',
+      icon: HeartHandshake,
+      color: 'bg-emerald-500',
+      colorLight: 'bg-emerald-50 border-emerald-100',
+      textColor: 'text-emerald-700',
+      tab: 'embauches',
+      description: 'L\'embauche est l\'étape finale du processus. Le candidat qui a réussi l\'entretien (et optionnellement le test) est officiellement recruté. Un contrat brouillon est automatiquement créé.',
+      details: [
+        { label: 'Candidats éligibles', text: 'Sont éligibles à l\'embauche tous les candidats ayant le statut ENTRETIEN (entretien réussi) ou TEST (test réussi). Ils apparaissent dans la section "Prêts à embaucher" de l\'onglet Embauches.' },
+        { label: 'Processus d\'embauche', text: 'Le recruteur clique sur "Embaucher", confirme la décision, et le système crée automatiquement : une fiche Personnel (Staff) avec matricule, et un contrat brouillon (DRAFT) avec les informations du poste et le salaire.' },
+        { label: 'Contrat automatique', text: 'Un contrat de travail est généré automatiquement en mode brouillon avec le type de contrat (CDI, CDD...), la date de début, le salaire de base, et les informations du candidat. Le contrat sera finalisé et signé ultérieurement.' },
+        { label: 'Statut final', text: 'Après embauche, le statut de la candidature passe à EMBAUCHÉ (état terminal). Le candidat ne peut plus revenir en arrière dans le pipeline. Il apparaît dans la section "Embauchés" de l\'onglet Embauches.' },
+      ],
+    },
+    {
+      id: 'base-talents',
+      title: 'Base de talents',
+      subtitle: 'Candidats non retenus mais prometteurs',
+      icon: ShieldCheck,
+      color: 'bg-slate-500',
+      colorLight: 'bg-slate-50 border-slate-200',
+      textColor: 'text-slate-700',
+      tab: 'talent_pool',
+      description: 'La base de talents permet de conserver les profils des candidats non retenus lors d\'un processus, mais qui pourraient correspondre à de futures offres d\'emploi.',
+      details: [
+        { label: 'Ajout automatique', text: 'Lorsqu\'un candidat est rejeté, le système propose automatiquement de l\'ajouter à la base de talents plutôt que de simplement le supprimer. Cela permet de capitaliser sur les profils intéressants.' },
+        { label: 'Catégorisation', text: 'Les candidats dans la base de talents peuvent être catégorisés par domaine (Informatique, Administration, Enseignement...) et marqués comme Disponibles, En veille ou Contactés.' },
+        { label: 'Réactivation', text: 'Lorsqu\'une nouvelle offre correspond au profil d\'un candidat dans la base de talents, le recruteur peut le réactiver rapidement sans repasser par tout le processus de candidature.' },
+      ],
+    },
+  ];
 
   // Add/Edit Interview Form State
   const [isAddInterviewOpen, setIsAddInterviewOpen] = useState(false);
@@ -777,13 +896,14 @@ export function RecruitmentWorkspace() {
       </div>
 
       {/* Sub tabs header navigation */}
-      <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
-        {[
-          { id: 'jobs', label: "Offres d'emploi", icon: Briefcase },
-          { id: 'candidates', label: 'Candidatures', icon: Users },
-          { id: 'interviews', label: 'Entretiens', icon: Calendar },
-          { id: 'tests', label: 'Tests', icon: ClipboardList },
-          { id: 'embauches', label: 'Embauches', icon: UserCheck },
+      <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+        <div className="flex flex-wrap gap-2">
+          {[
+            { id: 'jobs', label: "Offres d'emploi", icon: Briefcase },
+            { id: 'candidates', label: 'Candidatures', icon: Users },
+            { id: 'interviews', label: 'Entretiens', icon: Calendar },
+            { id: 'tests', label: 'Tests', icon: ClipboardList },
+            { id: 'embauches', label: 'Embauches', icon: UserCheck },
           { id: 'talent_pool', label: 'Base de talents', icon: Award }
         ].map((tab) => {
           const Icon = tab.icon;
@@ -802,6 +922,15 @@ export function RecruitmentWorkspace() {
             </button>
           );
         })}
+        </div>
+        <button
+          onClick={() => { setIsGuideOpen(true); setGuideStep(0); setGuideExpanded(null); }}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-[#1A2BA6] bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 hover:shadow-sm transition-all"
+          title="Guide du processus de recrutement"
+        >
+          <Compass className="h-4 w-4" />
+          Guide du processus
+        </button>
       </div>
 
       {loading ? (
@@ -2193,6 +2322,211 @@ export function RecruitmentWorkspace() {
       )}
     </div>
     {confirmDialog.dialog}
+
+    {/* ═══ Onboarding Guide Modal ═══ */}
+    {isGuideOpen && (
+      <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setIsGuideOpen(false)}>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl border border-slate-100 overflow-hidden"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="bg-gradient-to-r from-[#1A2BA6] to-[#2D3FE0] p-6 text-white">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2.5 rounded-xl">
+                  <Compass className="h-6 w-6" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold">Guide du Processus de Recrutement</h2>
+                  <p className="text-white/70 text-xs mt-0.5">Comprenez chaque étape du pipeline de recrutement HTIP</p>
+                </div>
+              </div>
+              <button onClick={() => setIsGuideOpen(false)} className="text-white/60 hover:text-white transition p-1">
+                <XCircle className="h-6 w-6" />
+              </button>
+            </div>
+            {/* Pipeline visual bar */}
+            <div className="mt-5 flex items-center gap-1">
+              {PIPELINE_STEPS.map((step, i) => {
+                const StepIcon = step.icon;
+                const isActive = i === guideStep;
+                const isPast = i < guideStep;
+                return (
+                  <button
+                    key={step.id}
+                    onClick={() => setGuideStep(i)}
+                    className="flex-1 flex flex-col items-center gap-1 cursor-pointer group"
+                  >
+                    <div className={cn(
+                      'w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300',
+                      isActive ? 'bg-white text-[#1A2BA6] shadow-lg scale-110' : isPast ? 'bg-white/30 text-white' : 'bg-white/10 text-white/50 group-hover:bg-white/20'
+                    )}>
+                      <StepIcon className="h-4 w-4" />
+                    </div>
+                    <span className={cn(
+                      'text-[9px] font-bold uppercase tracking-wider transition',
+                      isActive ? 'text-white' : isPast ? 'text-white/70' : 'text-white/40'
+                    )}>{step.title}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="p-6 max-h-[60vh] overflow-y-auto">
+            {PIPELINE_STEPS.map((step, i) => {
+              const StepIcon = step.icon;
+              const isActive = i === guideStep;
+              const isExpanded = guideExpanded === i;
+
+              return (
+                <div
+                  key={step.id}
+                  className={cn(
+                    'mb-3 rounded-xl border transition-all duration-300 cursor-pointer',
+                    isActive ? `${step.colorLight} shadow-sm` : 'border-slate-100 bg-slate-50/50 hover:bg-slate-50'
+                  )}
+                  onClick={() => {
+                    setGuideStep(i);
+                    setGuideExpanded(isExpanded ? null : i);
+                  }}
+                >
+                  {/* Step Header */}
+                  <div className="flex items-center gap-3 p-4">
+                    <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center text-white flex-shrink-0', step.color)}>
+                      <StepIcon className="h-5 w-5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase">Étape {i + 1}</span>
+                        {i === 3 && (
+                          <span className="px-1.5 py-0.5 bg-orange-100 text-orange-600 text-[8px] font-bold rounded-full uppercase">Optionnel</span>
+                        )}
+                        {i === 4 && (
+                          <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-600 text-[8px] font-bold rounded-full uppercase">Final</span>
+                        )}
+                      </div>
+                      <h3 className={cn('text-sm font-bold', isActive ? step.textColor : 'text-slate-700')}>{step.title}</h3>
+                      <p className="text-[10px] text-slate-500 font-medium">{step.subtitle}</p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {isActive && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setActiveTab(step.tab as any); setIsGuideOpen(false); }}
+                          className={cn('px-2.5 py-1 rounded-lg text-[9px] font-bold border transition hover:shadow-sm', step.colorLight, step.textColor)}
+                        >
+                          Aller à l'onglet
+                        </button>
+                      )}
+                      <ChevronDown className={cn(
+                        'h-4 w-4 text-slate-400 transition-transform duration-200',
+                        isExpanded && 'rotate-180'
+                      )} />
+                    </div>
+                  </div>
+
+                  {/* Expanded Content */}
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="px-4 pb-4 pt-0">
+                          <div className="border-t border-slate-100 pt-3">
+                            <p className="text-xs text-slate-600 leading-relaxed mb-3">{step.description}</p>
+                            <div className="space-y-2.5">
+                              {step.details.map((detail, j) => (
+                                <div key={j} className="flex gap-2.5">
+                                  <div className={cn('w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0', step.color.replace('bg-', 'bg-'))} />
+                                  <div>
+                                    <span className="text-[10px] font-bold text-slate-700">{detail.label}</span>
+                                    <p className="text-[10px] text-slate-500 leading-relaxed mt-0.5">{detail.text}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })}
+
+            {/* Pipeline flow summary */}
+            <div className="mt-4 bg-slate-50 rounded-xl p-4 border border-slate-100">
+              <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Flux du pipeline</h4>
+              <div className="flex items-center gap-1 flex-wrap">
+                {['NOUVEAU', 'EN_COURS', 'ENTRETIEN', 'TEST', 'EMBAUCHÉ'].map((s, i) => (
+                  <div key={s} className="flex items-center gap-1">
+                    <span className={cn(
+                      'px-2 py-0.5 rounded-full text-[9px] font-bold',
+                      s === 'TEST' ? 'bg-orange-50 text-orange-600 border border-orange-100' :
+                      s === 'EMBAUCHÉ' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                      'bg-slate-100 text-slate-600'
+                    )}>{s}</span>
+                    {i < 4 && <ChevronRight className="h-3 w-3 text-slate-300" />}
+                  </div>
+                ))}
+                <span className="text-[9px] text-slate-400 ml-2">ou</span>
+                <div className="flex items-center gap-1 ml-1">
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-violet-50 text-violet-600 border border-violet-100">ENTRETIEN</span>
+                  <ChevronRight className="h-3 w-3 text-slate-300" />
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-100">EMBAUCHÉ</span>
+                  <span className="text-[9px] text-orange-500 font-bold ml-1">(sans test)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Footer navigation */}
+          <div className="border-t border-slate-100 p-4 flex items-center justify-between bg-slate-50/50">
+            <button
+              onClick={() => { setGuideStep(Math.max(0, guideStep - 1)); setGuideExpanded(guideStep - 1 >= 0 ? guideStep - 1 : null); }}
+              disabled={guideStep === 0}
+              className={cn('flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition', guideStep === 0 ? 'text-slate-300 cursor-not-allowed' : 'text-slate-600 hover:bg-slate-100')}
+            >
+              <ChevronLeft className="h-4 w-4" /> Précédent
+            </button>
+            <div className="flex items-center gap-1.5">
+              {PIPELINE_STEPS.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => { setGuideStep(i); setGuideExpanded(i); }}
+                  className={cn(
+                    'w-2 h-2 rounded-full transition-all',
+                    i === guideStep ? 'bg-[#1A2BA6] scale-125' : 'bg-slate-300 hover:bg-slate-400'
+                  )}
+                />
+              ))}
+            </div>
+            <button
+              onClick={() => {
+                if (guideStep < PIPELINE_STEPS.length - 1) {
+                  setGuideStep(guideStep + 1);
+                  setGuideExpanded(guideStep + 1);
+                } else {
+                  setIsGuideOpen(false);
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-[#1A2BA6] text-white hover:bg-[#1521A0] transition shadow-sm"
+            >
+              {guideStep < PIPELINE_STEPS.length - 1 ? 'Suivant' : 'Compris !'} <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    )}
     </>
   );
 }

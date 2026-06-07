@@ -273,3 +273,33 @@ Stage Summary:
 - Fix: Added idempotent column/table creation to startup fallback in main.ts
 - All recruitment tables and columns now created automatically on server startup
 - Public recruitment page submission is working again
+
+---
+Task ID: test-subtab-overhaul
+Agent: Main
+Task: Complete overhaul of test sub-tab and modals - make exhaustive, complete, connected (frontend-backend-BDD)
+
+Work Log:
+- Analyzed existing test sub-tab (basic 3-field modal, no KPIs, no edit, no filtering)
+- Added new fields to Prisma schema: HrTest (duration, instructions, maxScore, passingScore, status, updatedAt), HrTestResult (notes, evaluatedAt)
+- Updated backend DTOs: CreateTestDto, UpdateTestDto, CreateTestResultDto (added notes, evaluatedAt), added UpdateTestResultDto
+- Updated backend service: createTest handles new fields, updateTest uses partial update pattern, createTestResult saves notes/evaluatedAt, added updateTestResult method
+- Updated backend controller: added PUT test-results/:id endpoint, imported UpdateTestResultDto
+- Complete frontend overhaul of test sub-tab:
+  * KPI cards (total tests, results, pass rate, average score)
+  * Filter tabs by test type (Tous, Technique, RH/Psycho, Anglais, Pédagogique, Comp. transverses)
+  * Search bar for tests
+  * Test cards with statistics (pass rate bar, counts, average score)
+  * Edit test button + modal with all fields
+  * Better result cards with avatar, score bar, notes, edit/delete buttons
+  * Quick "Ajouter un résultat" button per test
+- Create/Edit Test Modal: name, type, description, instructions, duration, status, maxScore, passingScore
+- Create/Edit Test Result Modal: test selector (shows config), candidate selector (shows status/score info), dynamic score labels, date picker, notes, info box about auto-advance
+- Applied SQL migration to Neon database directly
+- Synced both repos and pushed to GitHub
+
+Stage Summary:
+- All test sub-tab features are now exhaustive and fully connected frontend-backend-database
+- New schema fields: duration, instructions, maxScore, passingScore, status on HrTest; notes, evaluatedAt on HrTestResult
+- New endpoint: PUT /hr/recruitment/test-results/:id
+- Both repos synced at HEAD eef05b0

@@ -704,7 +704,7 @@ export class RecruitmentPrismaService {
       throw new BadRequestException(`Score invalide : ${data.score}`);
     }
 
-    return this.prisma.hrInterview.create({
+    const interview = await this.prisma.hrInterview.create({
       data: {
         ...prismaCreateDefaults(),
         tenantId,
@@ -716,8 +716,35 @@ export class RecruitmentPrismaService {
         evaluator: data.evaluator || '',
         score,
         comments: data.comments || null,
+        status: 'PLANIFIÉ',
       },
     });
+
+    // AUTO-ADVANCE: Move candidate's application to ENTRETIEN status
+    try {
+      const application = await this.prisma.hrApplication.findFirst({
+        where: {
+          candidateId: data.candidateId,
+          tenantId,
+          status: { in: ['NOUVEAU', 'EN_COURS'] },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (application) {
+        const allowedNext = VALID_TRANSITIONS[application.status] || [];
+        if (allowedNext.includes('ENTRETIEN')) {
+          await this.prisma.hrApplication.update({
+            where: { id: application.id },
+            data: { ...prismaUpdateDefaults(), status: 'ENTRETIEN' },
+          });
+          this.logger.log(`Application ${application.id} auto-advanced to ENTRETIEN after interview creation`);
+        }
+      }
+    } catch (advanceErr: any) {
+      this.logger.warn(`Failed to auto-advance application to ENTRETIEN: ${advanceErr.message}`);
+    }
+
+    return interview;
   }
 
   async updateInterview(id: string, data: any) {
@@ -740,6 +767,61 @@ export class RecruitmentPrismaService {
     return this.prisma.hrInterview.delete({
       where: { id },
     });
+  }
+
+  /**
+   * Validate an interview: mark it as TERMINÉ with a result (RÉUSSI/ÉCHOUÉ/EN_ATTENTE),
+   * score, and feedback. If the result is RÉUSSI, auto-advance the candidate's
+   * application status to ENTRETIEN so they appear in the "Embauche" tab.
+   */
+  async validateInterview(id: string, data: { status: string; result: string; score?: number; feedback?: string }) {
+    // 1. Find the interview
+    const interview = await this.prisma.hrInterview.findUnique({
+      where: { id },
+    });
+    if (!interview) {
+      throw new NotFoundException(`Entretien avec l'ID ${id} non trouvé`);
+    }
+
+    // 2. Update interview with validation data
+    const updatedInterview = await this.prisma.hrInterview.update({
+      where: { id },
+      data: {
+        ...prismaUpdateDefaults(),
+        status: data.status || 'TERMINÉ',
+        result: data.result,
+        score: data.score != null ? (typeof data.score === 'number' ? data.score : parseInt(String(data.score), 10)) : interview.score,
+        feedback: data.feedback || null,
+      },
+      include: { candidate: true },
+    });
+
+    // 3. If interview is RÉUSSI, auto-advance application to ENTRETIEN
+    if (data.result === 'RÉUSSI') {
+      try {
+        const application = await this.prisma.hrApplication.findFirst({
+          where: {
+            candidateId: interview.candidateId,
+            status: { in: ['NOUVEAU', 'EN_COURS', 'ENTRETIEN'] },
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (application && application.status !== 'ENTRETIEN') {
+          const allowedNext = VALID_TRANSITIONS[application.status] || [];
+          if (allowedNext.includes('ENTRETIEN')) {
+            await this.prisma.hrApplication.update({
+              where: { id: application.id },
+              data: { ...prismaUpdateDefaults(), status: 'ENTRETIEN' },
+            });
+            this.logger.log(`Application ${application.id} auto-advanced to ENTRETIEN after interview validation (RÉUSSI)`);
+          }
+        }
+      } catch (advanceErr: any) {
+        this.logger.warn(`Failed to auto-advance application to ENTRETIEN after interview validation: ${advanceErr.message}`);
+      }
+    }
+
+    return updatedInterview;
   }
 
   // Tests CRUD
@@ -784,7 +866,7 @@ export class RecruitmentPrismaService {
 
   // Test Results
   async createTestResult(data: any) {
-    return this.prisma.hrTestResult.create({
+    const result = await this.prisma.hrTestResult.create({
       data: {
         id: crypto.randomUUID(),
         testId: data.testId,
@@ -793,6 +875,31 @@ export class RecruitmentPrismaService {
         result: data.result || 'RÉUSSI',
       },
     });
+
+    // AUTO-ADVANCE: Move candidate's application to TEST status
+    try {
+      const application = await this.prisma.hrApplication.findFirst({
+        where: {
+          candidateId: data.candidateId,
+          status: { in: ['NOUVEAU', 'EN_COURS', 'ENTRETIEN'] },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (application) {
+        const allowedNext = VALID_TRANSITIONS[application.status] || [];
+        if (allowedNext.includes('TEST')) {
+          await this.prisma.hrApplication.update({
+            where: { id: application.id },
+            data: { ...prismaUpdateDefaults(), status: 'TEST' },
+          });
+          this.logger.log(`Application ${application.id} auto-advanced to TEST after test result creation`);
+        }
+      }
+    } catch (advanceErr: any) {
+      this.logger.warn(`Failed to auto-advance application to TEST: ${advanceErr.message}`);
+    }
+
+    return result;
   }
 
   async deleteTestResult(id: string) {

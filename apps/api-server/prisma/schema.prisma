@@ -13557,6 +13557,9 @@ model HrInterview {
   evaluator   String
   score       Int         @default(0)
   comments    String?
+  status      String?     @default("PLANIFIÉ")
+  result      String?
+  feedback    String?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   candidate   HrCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)

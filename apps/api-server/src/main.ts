@@ -225,6 +225,10 @@ async function bootstrap() {
       // staffId on hr_applications (migration 20260606200000)
       `ALTER TABLE "hr_applications" ADD COLUMN IF NOT EXISTS "staffId" TEXT`,
       `CREATE INDEX IF NOT EXISTS "hr_applications_staffId_idx" ON "hr_applications"("staffId")`,
+      // status, result, feedback on hr_interviews (interview validation feature)
+      `ALTER TABLE "hr_interviews" ADD COLUMN IF NOT EXISTS "status" TEXT DEFAULT 'PLANIFIÉ'`,
+      `ALTER TABLE "hr_interviews" ADD COLUMN IF NOT EXISTS "result" TEXT`,
+      `ALTER TABLE "hr_interviews" ADD COLUMN IF NOT EXISTS "feedback" TEXT`,
     ];
 
     for (const alterStmt of alterStatements) {

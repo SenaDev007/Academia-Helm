@@ -565,6 +565,15 @@ export class CreateTestResultDto {
   @IsOptional() @IsString() tenantId?: string;
 }
 
+export class ValidateInterviewDto {
+  @IsIn(['TERMINÉ', 'ANNULÉ']) status: string;
+  @IsIn(['RÉUSSI', 'ÉCHOUÉ', 'EN_ATTENTE']) result: string;
+  @IsOptional() @IsInt() @Type(() => Number) score?: number;
+  @IsOptional() @IsString() feedback?: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
 export class AddToTalentPoolDto {
   @IsOptional() @IsString() category?: string;
   @IsOptional() @IsString() status?: string;

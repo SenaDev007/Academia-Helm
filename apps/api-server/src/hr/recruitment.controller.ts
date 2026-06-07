@@ -27,6 +27,7 @@ import {
   UpdateApplicationStatusDto,
   CreateInterviewDto,
   UpdateInterviewDto,
+  ValidateInterviewDto,
   CreateTestDto,
   UpdateTestDto,
   CreateTestResultDto,
@@ -135,6 +136,11 @@ export class RecruitmentPrismaController {
   @Put('interviews/:id')
   async updateInterview(@Param('id') id: string, @Body() body: UpdateInterviewDto) {
     return this.service.updateInterview(id, body);
+  }
+
+  @Put('interviews/:id/validate')
+  async validateInterview(@Param('id') id: string, @Body() body: ValidateInterviewDto) {
+    return this.service.validateInterview(id, body);
   }
 
   @Delete('interviews/:id')

@@ -111,6 +111,9 @@ interface Interview {
   evaluator: string;
   score: number;
   comments?: string;
+  status?: string;
+  result?: string;
+  feedback?: string;
 }
 
 interface Test {
@@ -187,8 +190,14 @@ export function RecruitmentWorkspace() {
   // Log Test Result Form State
   const [isAddTestResultOpen, setIsAddTestResultOpen] = useState(false);
   const [newTestResult, setNewTestResult] = useState({
-    testId: '', candidateId: '', score: '50', result: 'ADMIS'
+    testId: '', candidateId: '', score: '50', result: 'RÉUSSI'
   });
+
+  // Interview Validation State
+  const [validatingInterviewId, setValidatingInterviewId] = useState<string | null>(null);
+  const [validationResult, setValidationResult] = useState<string>('RÉUSSI');
+  const [validationScore, setValidationScore] = useState<string>('0');
+  const [validationFeedback, setValidationFeedback] = useState<string>('');
 
   // Add to Talent Pool Form State
   const [isAddTalentOpen, setIsAddTalentOpen] = useState(false);
@@ -444,6 +453,36 @@ export function RecruitmentWorkspace() {
     }
   };
 
+  // Validate Interview
+  const handleValidateInterview = async () => {
+    if (!validatingInterviewId || !tenant?.id) return;
+    try {
+      await hrFetch(hrUrl(`recruitment/interviews/${validatingInterviewId}/validate`, { tenantId: tenant.id }), {
+        method: 'PUT',
+        body: {
+          status: 'TERMINÉ',
+          result: validationResult,
+          score: parseInt(validationScore) || 0,
+          feedback: validationFeedback,
+        },
+      });
+      toast({
+        variant: 'success',
+        title: validationResult === 'RÉUSSI' ? 'Entretien validé avec succès !' : 'Résultat de l\'entretien enregistré',
+        description: validationResult === 'RÉUSSI' ? 'Le candidat est maintenant éligible pour l\'embauche.' : undefined,
+      });
+      setValidatingInterviewId(null);
+      setValidationResult('RÉUSSI');
+      setValidationScore('0');
+      setValidationFeedback('');
+      loadData();
+    } catch (err: any) {
+      console.error('Failed to validate interview:', err);
+      const backendMsg = err?.message || err?.toString() || '';
+      toast({ variant: 'error', title: 'Erreur lors de la validation de l\'entretien.', description: backendMsg || 'Veuillez réessayer.' });
+    }
+  };
+
   // Create Test
   const handleCreateTest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -493,7 +532,7 @@ export function RecruitmentWorkspace() {
       });
       toast({ variant: 'success', title: 'Résultat de test enregistré !' });
       setIsAddTestResultOpen(false);
-      setNewTestResult({ testId: '', candidateId: '', score: '50', result: 'ADMIS' });
+      setNewTestResult({ testId: '', candidateId: '', score: '50', result: 'RÉUSSI' });
       loadData();
     } catch (err) {
       console.error('Failed to save test result:', err);
@@ -1348,7 +1387,20 @@ export function RecruitmentWorkspace() {
                     <div key={int.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col justify-between">
                       <div>
                         <div className="flex justify-between items-start">
-                          <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-blue-50 text-blue-700 border border-blue-100">{int.type}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-blue-50 text-blue-700 border border-blue-100">{int.type}</span>
+                            {int.status && (
+                              <span className={cn(
+                                'px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border',
+                                int.status === 'PLANIFIÉ' ? 'bg-sky-50 text-sky-700 border-sky-200' :
+                                int.status === 'TERMINÉ' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                int.status === 'ANNULÉ' ? 'bg-red-50 text-red-700 border-red-200' :
+                                'bg-slate-50 text-slate-500 border-slate-200'
+                              )}>
+                                {int.status === 'PLANIFIÉ' ? 'Planifié' : int.status === 'TERMINÉ' ? 'Terminé' : int.status === 'ANNULÉ' ? 'Annulé' : int.status}
+                              </span>
+                            )}
+                          </div>
                           <button onClick={() => handleDeleteInterview(int.id)} className="text-slate-400 hover:text-red-600 transition">
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
@@ -1366,10 +1418,38 @@ export function RecruitmentWorkspace() {
                             {int.comments}
                           </div>
                         )}
+                        {int.result && (
+                          <div className="mt-3 flex items-center gap-2">
+                            <span className={cn(
+                              'px-2 py-0.5 rounded-full text-[9px] font-bold border',
+                              int.result === 'RÉUSSI' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                              int.result === 'ÉCHOUÉ' ? 'bg-red-50 text-red-700 border-red-200' :
+                              'bg-amber-50 text-amber-700 border-amber-200'
+                            )}>
+                              {int.result === 'RÉUSSI' ? 'Réussi' : int.result === 'ÉCHOUÉ' ? 'Échoué' : 'En attente'}
+                            </span>
+                            {int.feedback && (
+                              <span className="text-[10px] text-slate-500 italic truncate" title={int.feedback}>{int.feedback}</span>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center">
-                        <span className="text-[10px] font-semibold text-slate-400">Note technique :</span>
-                        <span className="font-bold text-[#1A2BA6] bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">{int.score}/100</span>
+                        <span className="text-[10px] font-semibold text-slate-400">Note :</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-[#1A2BA6] bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">{int.score}/100</span>
+                          {(!int.status || int.status === 'PLANIFIÉ') && (
+                            <button
+                              onClick={() => {
+                                setValidatingInterviewId(int.id);
+                                setValidationScore(String(int.score || 0));
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-white rounded-lg bg-emerald-600 hover:bg-emerald-700 transition"
+                            >
+                              <CheckCircle className="h-3 w-3" /> Valider
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -1442,6 +1522,80 @@ export function RecruitmentWorkspace() {
                         <button type="submit" className="px-4 py-2 text-white rounded-lg text-xs font-semibold" style={{ backgroundColor: PRIMARY }}>Programmer</button>
                       </div>
                     </form>
+                  </motion.div>
+                </div>
+              )}
+
+              {/* Validate Interview Modal */}
+              {validatingInterviewId && (
+                <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-100">
+                    <h3 className="font-bold text-slate-900 text-base mb-4">Valider l'entretien</h3>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Résultat</label>
+                        <select
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs"
+                          value={validationResult}
+                          onChange={(e) => setValidationResult(e.target.value)}
+                        >
+                          <option value="RÉUSSI">Réussi</option>
+                          <option value="ÉCHOUÉ">Échoué</option>
+                          <option value="EN_ATTENTE">En attente</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Score</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs"
+                          value={validationScore}
+                          onChange={(e) => setValidationScore(e.target.value)}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Retour / Commentaire</label>
+                        <textarea
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-20"
+                          value={validationFeedback}
+                          onChange={(e) => setValidationFeedback(e.target.value)}
+                          placeholder="Commentaires sur l'entretien du candidat..."
+                        />
+                      </div>
+
+                      {validationResult === 'RÉUSSI' && (
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-[10px] text-emerald-700 font-medium">
+                          Le candidat sera automatiquement marqué comme éligible pour l'embauche dans l'onglet Embauches.
+                        </div>
+                      )}
+
+                      <div className="flex gap-2 justify-end mt-6">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setValidatingInterviewId(null);
+                            setValidationResult('RÉUSSI');
+                            setValidationScore('0');
+                            setValidationFeedback('');
+                          }}
+                          className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs"
+                        >
+                          Annuler
+                        </button>
+                        <button
+                          onClick={handleValidateInterview}
+                          className="px-4 py-2 text-white rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 transition"
+                        >
+                          <span className="inline-flex items-center gap-1.5">
+                            <CheckCircle className="h-3.5 w-3.5" /> Confirmer
+                          </span>
+                        </button>
+                      </div>
+                    </div>
                   </motion.div>
                 </div>
               )}
@@ -1580,9 +1734,9 @@ export function RecruitmentWorkspace() {
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Résultat final</label>
                           <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newTestResult.result} onChange={(e) => setNewTestResult({ ...newTestResult, result: e.target.value })}>
-                            <option value="ADMIS">Admis / Validé</option>
-                            <option value="REJETÉ">Échec / Non retenu</option>
-                            <option value="RÉSERVE">Liste d'attente</option>
+                            <option value="RÉUSSI">Réussi / Validé</option>
+                            <option value="ÉCHOUÉ">Échoué / Non retenu</option>
+                            <option value="EN_ATTENTE">En attente</option>
                           </select>
                         </div>
                       </div>

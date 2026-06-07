@@ -28,6 +28,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { Prisma } from '@prisma/client';
+import { prismaCreateDefaults } from '../common/utils/prisma-helpers';
 
 const GLOBAL_SEQUENCE_PAD = 6;
 const TENANT_SEQUENCE_PAD = 5;
@@ -60,7 +61,7 @@ export class StaffMatriculeService {
   ): Promise<string> {
     const seq = await tx.staffNumberSequence.upsert({
       where: { tenantId },
-      create: { tenantId, current: 1 },
+      create: { ...prismaCreateDefaults(), tenantId, current: 1 },
       update: { current: { increment: 1 } },
     });
     const padded = String(seq.current).padStart(TENANT_SEQUENCE_PAD, '0');
@@ -81,7 +82,7 @@ export class StaffMatriculeService {
     const globalSeqId = '__GLOBAL_STAFF_SEQ__';
     const seq = await tx.staffNumberSequence.upsert({
       where: { tenantId: globalSeqId },
-      create: { tenantId: globalSeqId, current: 1 },
+      create: { ...prismaCreateDefaults(), tenantId: globalSeqId, current: 1 },
       update: { current: { increment: 1 } },
     });
     const padded = String(seq.current).padStart(GLOBAL_SEQUENCE_PAD, '0');

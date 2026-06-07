@@ -108,7 +108,7 @@ export class RecruitmentPrismaService {
 
     const seq = await this.prisma.jobNumberSequence.upsert({
       where: { tenantId },
-      create: { tenantId, current: 1 },
+      create: { ...prismaCreateDefaults(), tenantId, current: 1 },
       update: { current: { increment: 1 } },
     });
     const padded = String(seq.current).padStart(5, '0');
@@ -578,12 +578,21 @@ export class RecruitmentPrismaService {
           }
 
           // Generate a tenant-based employee number (legacy field)
-          const tenantSeq = await tx.staffNumberSequence.upsert({
-            where: { tenantId: updatedApp.tenantId },
-            create: { tenantId: updatedApp.tenantId, current: 1 },
-            update: { current: { increment: 1 } },
-          });
-          const employeeNumber = `EMP-${String(tenantSeq.current).padStart(5, '0')}`;
+          // NOTE: The tenant matricule already increments the counter above,
+          // so we use a timestamp-based number instead of double-incrementing.
+          let employeeNumber: string;
+          if (tenantMatricule) {
+            // Derive from the matricule sequence already generated
+            employeeNumber = `EMP-${String(Date.now()).slice(-5)}`;
+          } else {
+            // Fallback: matricule generation failed, use sequence directly
+            const tenantSeq = await tx.staffNumberSequence.upsert({
+              where: { tenantId: updatedApp.tenantId },
+              create: { ...prismaCreateDefaults(), tenantId: updatedApp.tenantId, current: 1 },
+              update: { current: { increment: 1 } },
+            });
+            employeeNumber = `EMP-${String(tenantSeq.current).padStart(5, '0')}`;
+          }
 
           staffRecord = await tx.staff.create({
             data: {
@@ -976,7 +985,7 @@ export class RecruitmentPrismaService {
   async createTest(tenantId: string, data: any) {
     return this.prisma.hrTest.create({
       data: {
-        id: crypto.randomUUID(),
+        ...prismaCreateDefaults(),
         tenantId,
         name: data.name,
         type: data.type,
@@ -1024,7 +1033,7 @@ export class RecruitmentPrismaService {
 
     return this.prisma.$transaction(async (tx) => {
       const resultData: any = {
-        id: crypto.randomUUID(),
+        ...prismaCreateDefaults(),
         testId: data.testId,
         candidateId: data.candidateId,
         score,
@@ -1143,7 +1152,7 @@ export class RecruitmentPrismaService {
     return this.prisma.hrTalentPool.upsert({
       where: { candidateId },
       create: {
-        id: crypto.randomUUID(),
+        ...prismaCreateDefaults(),
         candidateId,
         category: data.category || 'Général',
         status: data.status || 'Disponible',
@@ -1339,7 +1348,7 @@ Réponds UNIQUEMENT en JSON valide.`,
         // 2. Save to AcademicProfile
         await tx.academicProfile.create({
           data: {
-            id: crypto.randomUUID(),
+            ...prismaCreateDefaults(),
             candidateId: candidate.id,
             teachingLevel: education[0]?.degree || 'Non spécifié',
             subjects: skills,
@@ -1370,6 +1379,7 @@ Réponds UNIQUEMENT en JSON valide.`,
           try {
             await tx.hrAiReport.create({
               data: {
+                ...prismaCreateDefaults(),
                 candidateId: candidate.id,
                 applicationId: application.id,
                 reportType: 'APPLICATION_ANALYSIS',
@@ -1387,7 +1397,7 @@ Réponds UNIQUEMENT en JSON valide.`,
         if (cvFile && cvPath) {
           const doc = await tx.candidateDocument.create({
             data: {
-              id: crypto.randomUUID(),
+              ...prismaCreateDefaults(),
               candidateId: candidate.id,
               documentType: 'CV',
               fileName: cvFile.originalname,
@@ -1403,7 +1413,7 @@ Réponds UNIQUEMENT en JSON valide.`,
         if (letterFile && letterPath) {
           const doc = await tx.candidateDocument.create({
             data: {
-              id: crypto.randomUUID(),
+              ...prismaCreateDefaults(),
               candidateId: candidate.id,
               documentType: 'COVER_LETTER',
               fileName: letterFile.originalname,
@@ -1419,7 +1429,7 @@ Réponds UNIQUEMENT en JSON valide.`,
         if (recoFile && recoPath) {
           const doc = await tx.candidateDocument.create({
             data: {
-              id: crypto.randomUUID(),
+              ...prismaCreateDefaults(),
               candidateId: candidate.id,
               documentType: 'RECOMMENDATION',
               fileName: recoFile.originalname,

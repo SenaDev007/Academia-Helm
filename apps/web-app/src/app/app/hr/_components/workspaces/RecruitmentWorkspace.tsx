@@ -1450,7 +1450,7 @@ export function RecruitmentWorkspace() {
               <div className="flex justify-between items-center">
                 <h3 className="text-base font-bold text-slate-900">Calendrier des Entretiens</h3>
                 <button
-                  onClick={() => { setEditingInterview(null); setNewInterview({ candidateId: '', type: 'RH', date: '', time: '', format: 'Visioconférence', evaluator: '', score: '0', comments: '' }); setIsAddInterviewOpen(true); }}
+                  onClick={() => { setEditingInterview(null); setNewInterview({ candidateId: '', type: 'RH', date: '', time: '', format: 'Visioconférence', evaluator: '', score: '0', comments: '', status: '', result: '', feedback: '' }); setIsAddInterviewOpen(true); }}
                   className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition"
                   style={{ backgroundColor: PRIMARY }}
                 >

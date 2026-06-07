@@ -948,19 +948,30 @@ export class RecruitmentPrismaService {
         tenantId,
         name: data.name,
         type: data.type,
-        description: data.description,
+        description: data.description || null,
+        duration: data.duration || null,
+        instructions: data.instructions || null,
+        maxScore: data.maxScore ?? 100,
+        passingScore: data.passingScore ?? 50,
+        status: data.status || 'ACTIF',
       },
     });
   }
 
   async updateTest(id: string, data: any) {
+    const updateData: any = {};
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.type !== undefined) updateData.type = data.type;
+    if (data.description !== undefined) updateData.description = data.description || null;
+    if (data.duration !== undefined) updateData.duration = data.duration || null;
+    if (data.instructions !== undefined) updateData.instructions = data.instructions || null;
+    if (data.maxScore !== undefined) updateData.maxScore = data.maxScore;
+    if (data.passingScore !== undefined) updateData.passingScore = data.passingScore;
+    if (data.status !== undefined) updateData.status = data.status;
+
     return this.prisma.hrTest.update({
       where: { id },
-      data: {
-        name: data.name,
-        type: data.type,
-        description: data.description,
-      },
+      data: updateData,
     });
   }
 
@@ -980,14 +991,22 @@ export class RecruitmentPrismaService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const resultData: any = {
+        id: crypto.randomUUID(),
+        testId: data.testId,
+        candidateId: data.candidateId,
+        score,
+        result: data.result || 'RÉUSSI',
+      };
+      if (data.notes) resultData.notes = data.notes;
+      if (data.evaluatedAt) {
+        resultData.evaluatedAt = new Date(data.evaluatedAt);
+      } else {
+        resultData.evaluatedAt = new Date();
+      }
+
       const testResult = await tx.hrTestResult.create({
-        data: {
-          id: crypto.randomUUID(),
-          testId: data.testId,
-          candidateId: data.candidateId,
-          score,
-          result: data.result || 'RÉUSSI',
-        },
+        data: resultData,
       });
 
       // Auto-advance the candidate's application status to TEST
@@ -1049,6 +1068,27 @@ export class RecruitmentPrismaService {
       }
 
       return testResult;
+    });
+  }
+
+  async updateTestResult(id: string, data: any) {
+    const updateData: any = {};
+    if (data.score !== undefined) {
+      const score = typeof data.score === 'number' ? data.score : parseInt(data.score, 10);
+      if (isNaN(score)) {
+        throw new Error('Score invalide : doit être un nombre entier');
+      }
+      updateData.score = score;
+    }
+    if (data.result !== undefined) updateData.result = data.result;
+    if (data.notes !== undefined) updateData.notes = data.notes || null;
+    if (data.evaluatedAt !== undefined) {
+      updateData.evaluatedAt = data.evaluatedAt ? new Date(data.evaluatedAt) : null;
+    }
+
+    return this.prisma.hrTestResult.update({
+      where: { id },
+      data: updateData,
     });
   }
 

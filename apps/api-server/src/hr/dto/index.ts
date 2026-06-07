@@ -549,6 +549,11 @@ export class CreateTestDto {
   @IsString() name: string;
   @IsString() type: string;
   @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsInt() @Type(() => Number) duration?: number; // minutes
+  @IsOptional() @IsString() instructions?: string;
+  @IsOptional() @IsInt() @Type(() => Number) maxScore?: number;
+  @IsOptional() @IsInt() @Type(() => Number) passingScore?: number;
+  @IsOptional() @IsIn(['ACTIF', 'ARCHIVÉ', 'BROUILLON']) status?: string;
   /** Frontend may send tenantId — ignored (resolved server-side) */
   @IsOptional() @IsString() tenantId?: string;
 }
@@ -557,6 +562,11 @@ export class UpdateTestDto {
   @IsOptional() @IsString() name?: string;
   @IsOptional() @IsString() type?: string;
   @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsInt() @Type(() => Number) duration?: number;
+  @IsOptional() @IsString() instructions?: string;
+  @IsOptional() @IsInt() @Type(() => Number) maxScore?: number;
+  @IsOptional() @IsInt() @Type(() => Number) passingScore?: number;
+  @IsOptional() @IsIn(['ACTIF', 'ARCHIVÉ', 'BROUILLON']) status?: string;
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() tenantId?: string;
 }
@@ -566,6 +576,17 @@ export class CreateTestResultDto {
   @IsUUID() candidateId: string;
   @IsInt() @Type(() => Number) score: number;
   @IsOptional() @IsIn(['RÉUSSI', 'ÉCHOUÉ', 'EN_ATTENTE']) result?: string;
+  @IsOptional() @IsString() notes?: string;
+  @IsOptional() @IsString() evaluatedAt?: string; // ISO date string
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+export class UpdateTestResultDto {
+  @IsOptional() @IsInt() @Type(() => Number) score?: number;
+  @IsOptional() @IsIn(['RÉUSSI', 'ÉCHOUÉ', 'EN_ATTENTE']) result?: string;
+  @IsOptional() @IsString() notes?: string;
+  @IsOptional() @IsString() evaluatedAt?: string; // ISO date string
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() tenantId?: string;
 }

@@ -13571,14 +13571,20 @@ model HrInterview {
 }
 
 model HrTest {
-  id          String         @id @default(uuid())
-  tenantId    String
-  name        String
-  type        String
-  description String?
-  createdAt   DateTime       @default(now())
-  results     HrTestResult[]
-  tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id           String         @id @default(uuid())
+  tenantId     String
+  name         String
+  type         String
+  description  String?
+  duration     Int?           // Durée en minutes
+  instructions String?        // Consignes / instructions pour le test
+  maxScore     Int            @default(100) // Score maximum possible
+  passingScore Int            @default(50)  // Score minimum pour réussir
+  status       String         @default("ACTIF") // ACTIF, ARCHIVÉ, BROUILLON
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  results      HrTestResult[]
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@map("hr_tests")
@@ -13590,6 +13596,8 @@ model HrTestResult {
   candidateId String
   score       Int
   result      String
+  notes       String?     // Commentaires / observations de l'évaluateur
+  evaluatedAt DateTime?   // Date à laquelle le test a été passé
   createdAt   DateTime    @default(now())
   test        HrTest      @relation(fields: [testId], references: [id], onDelete: Cascade)
   candidate   HrCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)

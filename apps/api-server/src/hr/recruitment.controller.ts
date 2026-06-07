@@ -31,6 +31,7 @@ import {
   CreateTestDto,
   UpdateTestDto,
   CreateTestResultDto,
+  UpdateTestResultDto,
   AddToTalentPoolDto,
   ApplyJobDto,
 } from './dto';
@@ -181,6 +182,16 @@ export class RecruitmentPrismaController {
       return await this.service.createTestResult(body);
     } catch (error: any) {
       console.error('[HR] createTestResult error:', error?.message || error);
+      throw error;
+    }
+  }
+
+  @Put('test-results/:id')
+  async updateTestResult(@Param('id') id: string, @Body() body: UpdateTestResultDto) {
+    try {
+      return await this.service.updateTestResult(id, body);
+    } catch (error: any) {
+      console.error('[HR] updateTestResult error:', error?.message || error);
       throw error;
     }
   }

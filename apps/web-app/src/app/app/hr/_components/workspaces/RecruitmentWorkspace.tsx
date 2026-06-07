@@ -159,8 +159,9 @@ export function RecruitmentWorkspace() {
   const [recruiterComment, setRecruiterComment] = useState<string>('');
 
 
-  // Add Job Form State
+  // Add/Edit Job Form State
   const [isAddJobOpen, setIsAddJobOpen] = useState(false);
+  const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [newJob, setNewJob] = useState<Partial<Job>>({
     title: '', dept: '', loc: '', status: 'PUBLIÉE', contractType: 'CDI', salary: '', academicLevel: '', experience: '', skillsRequired: '', description: '', missions: '', responsibilities: '',
   });
@@ -175,8 +176,9 @@ export function RecruitmentWorkspace() {
     firstName: '', lastName: '', email: '', phone: '', address: '', gender: 'M', jobId: '', status: 'NOUVEAU'
   });
 
-  // Add Interview Form State
+  // Add/Edit Interview Form State
   const [isAddInterviewOpen, setIsAddInterviewOpen] = useState(false);
+  const [editingInterview, setEditingInterview] = useState<Interview | null>(null);
   const [newInterview, setNewInterview] = useState({
     candidateId: '', type: 'RH', date: '', time: '', format: 'Visioconférence', evaluator: '', score: '0', comments: ''
   });
@@ -303,23 +305,47 @@ export function RecruitmentWorkspace() {
     loadData();
   }, [tenant?.id, activeTab]);
 
-  // Create Job
-  const handleCreateJob = async (e: React.FormEvent) => {
+  // Create or Update Job
+  const handleSaveJob = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!tenant?.id) return;
     try {
-      await hrFetch(hrUrl('recruitment/jobs', { tenantId: tenant.id }), {
-        method: 'POST',
-        body: newJob,
-      });
-      toast({ variant: 'success', title: 'Offre d\'emploi créée avec succès !' });
+      if (editingJob) {
+        // Update existing job
+        await hrFetch(hrUrl(`recruitment/jobs/${editingJob.id}`, { tenantId: tenant.id }), {
+          method: 'PUT',
+          body: newJob,
+        });
+        toast({ variant: 'success', title: 'Offre d\'emploi modifiée avec succès !' });
+      } else {
+        // Create new job
+        await hrFetch(hrUrl('recruitment/jobs', { tenantId: tenant.id }), {
+          method: 'POST',
+          body: newJob,
+        });
+        toast({ variant: 'success', title: 'Offre d\'emploi créée avec succès !' });
+      }
       setIsAddJobOpen(false);
+      setEditingJob(null);
       setNewJob({ title: '', dept: '', loc: '', status: 'PUBLIÉE', contractType: 'CDI', salary: '', academicLevel: '', experience: '', skillsRequired: '', description: '', missions: '', responsibilities: '' });
       loadData();
     } catch (err) {
-      console.error('Failed to create job:', err);
-      toast({ variant: 'error', title: 'Erreur lors de la création de l\'offre d\'emploi.' });
+      console.error('Failed to save job:', err);
+      toast({ variant: 'error', title: editingJob ? 'Erreur lors de la modification de l\'offre.' : 'Erreur lors de la création de l\'offre d\'emploi.' });
     }
+  };
+
+  // Open edit job modal
+  const openEditJob = (job: Job) => {
+    setEditingJob(job);
+    setNewJob({
+      title: job.title, dept: job.dept, loc: job.loc, status: job.status,
+      contractType: job.contractType || 'CDI', salary: job.salary || '',
+      academicLevel: job.academicLevel || '', experience: job.experience || '',
+      skillsRequired: job.skillsRequired || '', description: job.description || '',
+      missions: job.missions || '', responsibilities: job.responsibilities || '',
+    });
+    setIsAddJobOpen(true);
   };
 
   // Create Candidate and Application
@@ -413,24 +439,51 @@ export function RecruitmentWorkspace() {
     }
   };
 
-  // Schedule Interview
-  const handleCreateInterview = async (e: React.FormEvent) => {
+  // Schedule or Update Interview
+  const handleSaveInterview = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!tenant?.id) return;
     try {
-      await hrFetch(hrUrl('recruitment/interviews', { tenantId: tenant.id }), {
-        method: 'POST',
-        body: newInterview,
-      });
-      toast({ variant: 'success', title: 'Entretien programmé avec succès !' });
+      if (editingInterview) {
+        // Update existing interview
+        await hrFetch(hrUrl(`recruitment/interviews/${editingInterview.id}`, { tenantId: tenant.id }), {
+          method: 'PUT',
+          body: newInterview,
+        });
+        toast({ variant: 'success', title: 'Entretien modifié avec succès !' });
+      } else {
+        // Create new interview
+        await hrFetch(hrUrl('recruitment/interviews', { tenantId: tenant.id }), {
+          method: 'POST',
+          body: newInterview,
+        });
+        toast({ variant: 'success', title: 'Entretien programmé avec succès !' });
+      }
       setIsAddInterviewOpen(false);
+      setEditingInterview(null);
       setNewInterview({ candidateId: '', type: 'RH', date: '', time: '', format: 'Visioconférence', evaluator: '', score: '0', comments: '' });
       loadData();
     } catch (err: any) {
-      console.error('Failed to schedule interview:', err);
+      console.error('Failed to save interview:', err);
       const backendMsg = err?.message || err?.toString() || '';
-      toast({ variant: 'error', title: 'Erreur lors de la programmation de l\'entretien.', description: backendMsg || 'Veuillez vérifier les données saisies et réessayer.' });
+      toast({ variant: 'error', title: editingInterview ? 'Erreur lors de la modification de l\'entretien.' : 'Erreur lors de la programmation de l\'entretien.', description: backendMsg || 'Veuillez vérifier les données saisies et réessayer.' });
     }
+  };
+
+  // Open edit interview modal
+  const openEditInterview = (int: Interview) => {
+    setEditingInterview(int);
+    setNewInterview({
+      candidateId: int.candidateId,
+      type: int.type,
+      date: int.date,
+      time: int.time,
+      format: int.format,
+      evaluator: int.evaluator,
+      score: String(int.score || 0),
+      comments: int.comments || '',
+    });
+    setIsAddInterviewOpen(true);
   };
 
   // Delete Interview
@@ -725,7 +778,7 @@ export function RecruitmentWorkspace() {
               <div className="flex justify-between items-center">
                 <h3 className="text-base font-bold text-slate-900">Offres d'emploi actives</h3>
                 <button
-                  onClick={() => setIsAddJobOpen(true)}
+                  onClick={() => { setEditingJob(null); setNewJob({ title: '', dept: '', loc: '', status: 'PUBLIÉE', contractType: 'CDI', salary: '', academicLevel: '', experience: '', skillsRequired: '', description: '', missions: '', responsibilities: '' }); setIsAddJobOpen(true); }}
                   className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition"
                   style={{ backgroundColor: PRIMARY }}
                 >
@@ -747,6 +800,9 @@ export function RecruitmentWorkspace() {
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{job.ref}</span>
                           <div className="flex items-center gap-2">
                             <span className={cn('px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase border', job.status === 'PUBLIÉE' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-200')}>{job.status}</span>
+                            <button onClick={() => openEditJob(job)} className="text-slate-400 hover:text-blue-600 transition">
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </button>
                             <button onClick={() => handleDeleteJob(job.id)} className="text-slate-400 hover:text-red-600 transition">
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
@@ -772,8 +828,8 @@ export function RecruitmentWorkspace() {
               {isAddJobOpen && (
                 <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
                   <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border border-slate-100 my-8">
-                    <h3 className="font-bold text-slate-900 text-base mb-4">Créer une offre d'emploi détaillée</h3>
-                    <form onSubmit={handleCreateJob} className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+                    <h3 className="font-bold text-slate-900 text-base mb-4">{editingJob ? 'Modifier l\'offre d\'emploi' : 'Créer une offre d\'emploi détaillée'}</h3>
+                    <form onSubmit={handleSaveJob} className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Intitulé du poste</label>
@@ -805,6 +861,18 @@ export function RecruitmentWorkspace() {
                         </div>
                       </div>
 
+                      {editingJob && (
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Statut de l'offre</label>
+                          <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newJob.status} onChange={(e) => setNewJob({ ...newJob, status: e.target.value })}>
+                            <option value="BROUILLON">Brouillon</option>
+                            <option value="PUBLIÉE">Publiée</option>
+                            <option value="FERMÉE">Fermée</option>
+                            <option value="ARCHIVÉE">Archivée</option>
+                          </select>
+                        </div>
+                      )}
+
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Niveau académique requis</label>
@@ -833,8 +901,8 @@ export function RecruitmentWorkspace() {
                       </div>
 
                       <div className="flex gap-2 justify-end mt-6">
-                        <button type="button" onClick={() => setIsAddJobOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs">Annuler</button>
-                        <button type="submit" className="px-4 py-2 text-white rounded-lg text-xs font-semibold" style={{ backgroundColor: PRIMARY }}>Enregistrer l'offre</button>
+                        <button type="button" onClick={() => { setIsAddJobOpen(false); setEditingJob(null); }} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs">Annuler</button>
+                        <button type="submit" className="px-4 py-2 text-white rounded-lg text-xs font-semibold" style={{ backgroundColor: PRIMARY }}>{editingJob ? 'Enregistrer les modifications' : 'Enregistrer l\'offre'}</button>
                       </div>
                     </form>
                   </motion.div>
@@ -1367,7 +1435,7 @@ export function RecruitmentWorkspace() {
               <div className="flex justify-between items-center">
                 <h3 className="text-base font-bold text-slate-900">Calendrier des Entretiens</h3>
                 <button
-                  onClick={() => setIsAddInterviewOpen(true)}
+                  onClick={() => { setEditingInterview(null); setNewInterview({ candidateId: '', type: 'RH', date: '', time: '', format: 'Visioconférence', evaluator: '', score: '0', comments: '' }); setIsAddInterviewOpen(true); }}
                   className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition"
                   style={{ backgroundColor: PRIMARY }}
                 >
@@ -1405,9 +1473,14 @@ export function RecruitmentWorkspace() {
                                 : int.status === 'EN_COURS' ? 'En cours' : 'Planifié'}
                             </span>
                           </div>
-                          <button onClick={() => handleDeleteInterview(int.id)} className="text-slate-400 hover:text-red-600 transition">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          <div className="flex items-center gap-1.5">
+                            <button onClick={() => openEditInterview(int)} className="text-slate-400 hover:text-blue-600 transition">
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </button>
+                            <button onClick={() => handleDeleteInterview(int.id)} className="text-slate-400 hover:text-red-600 transition">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </div>
                         <h4 className="font-bold text-slate-900 mt-3 text-xs">
                           {int.candidate ? `${int.candidate.firstName} ${int.candidate.lastName}` : 'Candidat inconnu'}
@@ -1429,10 +1502,10 @@ export function RecruitmentWorkspace() {
                         )}
                       </div>
                       <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center">
-                        <span className="text-[10px] font-semibold text-slate-400">Note technique :</span>
+                        <span className="text-[10px] font-semibold text-slate-400">Note :</span>
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-[#1A2BA6] bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">{int.score}/100</span>
-                          {int.status !== 'TERMINÉ' && (
+                          {int.status !== 'TERMINÉ' ? (
                             <button
                               onClick={() => {
                                 setValidatingInterview(int);
@@ -1441,6 +1514,16 @@ export function RecruitmentWorkspace() {
                               className="inline-flex items-center gap-1 px-3 py-1 text-white rounded-lg text-[10px] font-bold shadow-sm hover:opacity-90 transition bg-emerald-600"
                             >
                               <CheckCircle className="h-3 w-3" /> Valider
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setValidatingInterview(int);
+                                setInterviewValidation({ result: int.result || 'RÉUSSI', score: String(int.score || 0), feedback: int.feedback || '' });
+                              }}
+                              className="inline-flex items-center gap-1 px-3 py-1 text-slate-600 rounded-lg text-[10px] font-bold border border-slate-200 hover:bg-slate-50 transition"
+                            >
+                              <Edit2 className="h-3 w-3" /> Modifier résultat
                             </button>
                           )}
                         </div>
@@ -1454,8 +1537,8 @@ export function RecruitmentWorkspace() {
               {isAddInterviewOpen && (
                 <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
                   <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-100">
-                    <h3 className="font-bold text-slate-900 text-base mb-4">Programmer un entretien</h3>
-                    <form onSubmit={handleCreateInterview} className="space-y-4">
+                    <h3 className="font-bold text-slate-900 text-base mb-4">{editingInterview ? 'Modifier l\'entretien' : 'Programmer un entretien'}</h3>
+                    <form onSubmit={handleSaveInterview} className="space-y-4">
                       <div>
                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Candidat</label>
                         <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newInterview.candidateId} onChange={(e) => setNewInterview({ ...newInterview, candidateId: e.target.value })} required>
@@ -1512,8 +1595,8 @@ export function RecruitmentWorkspace() {
                       </div>
 
                       <div className="flex gap-2 justify-end mt-6">
-                        <button type="button" onClick={() => setIsAddInterviewOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs">Annuler</button>
-                        <button type="submit" className="px-4 py-2 text-white rounded-lg text-xs font-semibold" style={{ backgroundColor: PRIMARY }}>Programmer</button>
+                        <button type="button" onClick={() => { setIsAddInterviewOpen(false); setEditingInterview(null); }} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs">Annuler</button>
+                        <button type="submit" className="px-4 py-2 text-white rounded-lg text-xs font-semibold" style={{ backgroundColor: PRIMARY }}>{editingInterview ? 'Enregistrer' : 'Programmer'}</button>
                       </div>
                     </form>
                   </motion.div>
@@ -1524,8 +1607,8 @@ export function RecruitmentWorkspace() {
               {validatingInterview && (
                 <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
                   <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-100">
-                    <div className="bg-emerald-600 -mx-6 -mt-6 px-6 py-4 rounded-t-2xl mb-4">
-                      <h3 className="font-bold text-white text-sm">Valider l'entretien</h3>
+                    <div className={cn("-mx-6 -mt-6 px-6 py-4 rounded-t-2xl mb-4", validatingInterview.status === 'TERMINÉ' ? "bg-blue-600" : "bg-emerald-600")}>
+                      <h3 className="font-bold text-white text-sm">{validatingInterview.status === 'TERMINÉ' ? 'Modifier le résultat' : 'Valider l\'entretien'}</h3>
                       <p className="text-emerald-100 text-[10px] mt-0.5">
                         {validatingInterview.candidate ? `${validatingInterview.candidate.firstName} ${validatingInterview.candidate.lastName}` : 'Candidat'} — {validatingInterview.type}
                       </p>
@@ -1567,7 +1650,7 @@ export function RecruitmentWorkspace() {
                         />
                       </div>
 
-                      {interviewValidation.result === 'RÉUSSI' && (
+                      {interviewValidation.result === 'RÉUSSI' && validatingInterview.status !== 'TERMINÉ' && (
                         <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
                           <p className="text-[10px] text-blue-700 font-medium">
                             Le statut de la candidature sera automatiquement avancé à <strong>Entretien</strong>, rendant le candidat éligible pour l'embauche.
@@ -1577,7 +1660,7 @@ export function RecruitmentWorkspace() {
 
                       <div className="flex gap-2 justify-end mt-6">
                         <button type="button" onClick={() => { setValidatingInterview(null); setInterviewValidation({ result: 'RÉUSSI', score: '0', feedback: '' }); }} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs">Annuler</button>
-                        <button type="submit" className="px-4 py-2 text-white rounded-lg text-xs font-semibold bg-emerald-600 hover:opacity-90 transition">Valider l'entretien</button>
+                        <button type="submit" className="px-4 py-2 text-white rounded-lg text-xs font-semibold bg-emerald-600 hover:opacity-90 transition">{validatingInterview.status === 'TERMINÉ' ? 'Enregistrer les modifications' : 'Valider l\'entretien'}</button>
                       </div>
                     </form>
                   </motion.div>

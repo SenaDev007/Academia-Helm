@@ -171,10 +171,13 @@ export async function executePostLoginFlow(
 
     // Lancer toutes les opérations asynchrones en parallèle
     const [academicYearResult, offlineResult, orionResult] = await Promise.all([
-      // Année scolaire
+      // Année scolaire (avec timeout 8s pour ne pas bloquer)
       (async () => {
         try {
-          const response = await fetch('/api/academic-years');
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 8000);
+          const response = await fetch('/api/academic-years', { signal: controller.signal });
+          clearTimeout(timeoutId);
           if (response.ok) {
             const years = await response.json();
             const activeYear = years.find((y: any) => y.isCurrent);
@@ -204,17 +207,8 @@ export async function executePostLoginFlow(
 
         const offlineTasks: Promise<void>[] = [];
 
-        if (tenant?.id && isOnline) {
-          offlineTasks.push(
-            import('@/lib/offline/offline-bootstrap.service').then(({ offlineBootstrapService }) => {
-              offlineBootstrapService.ensureBootstrapped(tenant!.id).catch((err) => {
-                console.warn('[PostLogin] Auto-bootstrap failed (non-blocking):', err);
-              });
-            }).catch((err) => console.warn('[PostLogin] Bootstrap import failed:', err))
-          );
-        }
-
         if (tenant?.id) {
+          // Outbox check — rapide, on l'attend
           offlineTasks.push(
             import('@/lib/offline/outbox.service').then(async ({ outboxService }) => {
               const pendingEvents = await outboxService.getPendingEvents(tenant!.id);
@@ -224,14 +218,26 @@ export async function executePostLoginFlow(
         }
 
         await Promise.all(offlineTasks);
+
+        // Bootstrap offline — FIRE-AND-FORGET (ne pas bloquer le chargement)
+        // Lancé APRÈS les tâches critiques pour ne pas les ralentir
+        if (tenant?.id && isOnline) {
+          import('@/lib/offline/offline-bootstrap.service').then(({ offlineBootstrapService }) => {
+            void offlineBootstrapService.ensureBootstrapped(tenant!.id);
+          }).catch(() => { /* non-critical */ });
+        }
+
         return { isOnline, pendingOperations };
       })(),
 
-      // ORION alerts (direction only)
+      // ORION alerts (direction only, timeout 5s)
       (async () => {
         if (['DIRECTOR', 'SUPER_DIRECTOR', 'ADMIN', 'PLATFORM_OWNER'].includes(user!.role) && tenant?.id) {
           try {
-            const rawAlerts = await getOrionAlerts({ level: 'CRITIQUE', acknowledged: false });
+            const rawAlerts = await Promise.race([
+              getOrionAlerts({ level: 'CRITIQUE', acknowledged: false }),
+              new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+            ]);
             const alerts = Array.isArray(rawAlerts) ? rawAlerts : [];
             return alerts.slice(0, 5).map((alert: any) => ({
               id: alert.id, level: alert.level, message: alert.title || alert.message || '',

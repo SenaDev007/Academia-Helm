@@ -139,6 +139,7 @@ interface Test {
   updatedAt?: string;
   results?: Array<{
     id: string;
+    testId: string;
     candidateId: string;
     candidate: { firstName: string; lastName: string };
     score: number;

@@ -49,10 +49,38 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
   if (!isMutation) {
     // GET requests: use offlineFetch for offline support
     try {
-      return await offlineFetch(url, 'settings_cache', {
+      const result = await offlineFetch(url, 'settings_cache', {
         tenantId: getTenantIdFromCookie(),
         fetchOptions: { ...options, credentials: 'include', headers: settingsAuthHeaders(options.headers) },
       });
+      // Si offlineFetch retourne un tableau vide sans erreur, vérifier si c'est légitime
+      // ou si c'est un fallback silencieux (IndexedDB vide ou store inexistant)
+      if (Array.isArray(result) && result.length === 0) {
+        // Essayer le réseau directement comme fallback
+        try {
+          let response = await fetch(url, {
+            ...options,
+            credentials: 'include',
+            headers: settingsAuthHeaders(options.headers),
+          });
+          if (response.status === 401 && (await tryRefreshAccessToken())) {
+            response = await fetch(url, {
+              ...options,
+              credentials: 'include',
+              headers: settingsAuthHeaders(options.headers),
+            });
+          }
+          if (response.ok) {
+            const networkData = await response.json();
+            if (Array.isArray(networkData) && networkData.length > 0) {
+              return networkData;
+            }
+          }
+        } catch {
+          // Le fallback réseau a aussi échoué, on garde le résultat original
+        }
+      }
+      return result;
     } catch {
       // Fallback to original network logic if offlineFetch fails
       let response = await fetch(url, {

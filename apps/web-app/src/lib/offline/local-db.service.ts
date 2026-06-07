@@ -84,6 +84,8 @@ class LocalDbService {
       // Stores ajoutés pour support offline complet
       'fee_structures', 'expenses', 'finance_settings',
       'modules', 'academic_terms',
+      // Store pour le cache des feature flags (offline fallback)
+      'settings_cache',
     ];
 
     entities.forEach(storeName => {
@@ -274,6 +276,6 @@ class LocalDbService {
 // Instance singleton
 export const localDb = new LocalDbService({
   dbName: 'academia-helm-local',
-  version: 9, // + fee_structures, expenses, finance_settings, modules, academic_terms
+  version: 10, // + settings_cache store for offline feature flags fallback
 });
 

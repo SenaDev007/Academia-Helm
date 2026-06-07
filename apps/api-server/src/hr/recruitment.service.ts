@@ -1,10 +1,10 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, HttpException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { StorageService } from '../common/services/storage.service';
 import { OpenRouterService } from '../common/services/openrouter.service';
 import { ContractsPrismaService } from './contracts-prisma.service';
 import { StaffMatriculeService } from './staff-matricule.service';
-import { prismaCreateDefaults, prismaUpdateDefaults, prismaCreateNoCreatedAt, prismaCreateNoUpdatedAt, uuid } from '../common/utils/prisma-helpers';
+import { prismaCreateDefaults, prismaUpdateDefaults, prismaCreateNoCreatedAt, prismaCreateNoUpdatedAt, uuid, now } from '../common/utils/prisma-helpers';
 import { Prisma } from '@prisma/client';
 
 /**
@@ -511,178 +511,208 @@ export class RecruitmentPrismaService {
 
     // ─── 2. EMBAUCHÉ — Create Staff + Contract ─────────────────────────────
     if (status === 'EMBAUCHÉ') {
-      return this.prisma.$transaction(async (tx) => {
-        // Update application status
-        const updatedApp = await tx.hrApplication.update({
-          where: { id },
-          data: { 
-            ...prismaUpdateDefaults(),
-            status,
-            ...(review ? { matchDetail: review } : {})
-          },
-          include: {
-            candidate: true,
-            job: true,
-          }
-        });
-
-        // ─── Pre-validate required data ─────────────────────────────────
-        if (!updatedApp.candidate?.firstName || !updatedApp.candidate?.lastName) {
-          throw new BadRequestException('Impossible d\'embaucher : le nom ou prénom du candidat est manquant.');
-        }
-        if (!updatedApp.job?.title) {
-          throw new BadRequestException('Impossible d\'embaucher : le poste du candidat n\'est pas défini.');
-        }
-
-        // Check if employee already exists with this email
-        const existingStaff = await tx.staff.findFirst({
-          where: { email: updatedApp.candidate.email, tenantId: updatedApp.tenantId }
-        });
-
-        let staffRecord = existingStaff;
-
-        if (!existingStaff) {
-          // Find academic year if available
-          const currentYear = await tx.academicYear.findFirst({
-            where: { tenantId: updatedApp.tenantId, isActive: true }
-          });
-
-          // Determine roleType
-          const jobTitle = (updatedApp.job.title || '').toLowerCase();
-          const isTeacher = jobTitle.includes('enseignant') || jobTitle.includes('prof') || jobTitle.includes('teacher') || jobTitle.includes('instituteur');
-          const roleType = isTeacher ? 'TEACHER' : 'ADMIN';
-
-          // Parse salary (if it's a number like 400000 or "400 000 FCFA")
-          let parsedSalary: Prisma.Decimal | null = null;
-          if (updatedApp.job.salary) {
-            // Extract ALL digits from the salary string (handles "400 000", "400,000", etc.)
-            const allDigits = updatedApp.job.salary.replace(/[^0-9]/g, '');
-            if (allDigits) {
-              const num = Number(allDigits);
-              if (!isNaN(num) && isFinite(num)) {
-                parsedSalary = new Prisma.Decimal(num);
-              }
-            }
-          }
-
-          // Generate sequential matricules using StaffMatriculeService
-          let globalMatricule: string | null = null;
-          let tenantMatricule: string | null = null;
-          try {
-            const schoolCode = await this.matriculeService.getSchoolCode(updatedApp.tenantId);
-            const registrationYear = new Date().getFullYear();
-            globalMatricule = await this.matriculeService.generateGlobalMatriculeInTransaction(tx, registrationYear);
-            tenantMatricule = await this.matriculeService.generateTenantMatriculeInTransaction(tx, updatedApp.tenantId, schoolCode, registrationYear);
-          } catch (err) {
-            this.logger.warn(`Matricule generation failed for hire: ${err.message}`);
-          }
-
-          // Generate a tenant-based employee number (legacy field)
-          // NOTE: The tenant matricule already increments the counter above,
-          // so we use a timestamp-based number instead of double-incrementing.
-          let employeeNumber: string;
-          if (tenantMatricule) {
-            // Derive from the matricule sequence already generated
-            employeeNumber = `EMP-${String(Date.now()).slice(-5)}`;
-          } else {
-            // Fallback: matricule generation failed, use sequence directly
-            const tenantSeq = await tx.staffNumberSequence.upsert({
-              where: { tenantId: updatedApp.tenantId },
-              create: { ...prismaCreateNoCreatedAt(), tenantId: updatedApp.tenantId, current: 1 },
-              update: { current: { increment: 1 } },
-            });
-            employeeNumber = `EMP-${String(tenantSeq.current).padStart(5, '0')}`;
-          }
-
-          const staffData = {
-            ...prismaCreateDefaults(),
-            tenantId: updatedApp.tenantId,
-            academicYearId: currentYear?.id || null,
-            employeeNumber,
-            globalMatricule,
-            tenantMatricule,
-            firstName: updatedApp.candidate.firstName,
-            lastName: updatedApp.candidate.lastName,
-            gender: updatedApp.candidate.gender || null,
-            email: updatedApp.candidate.email || null,
-            phone: updatedApp.candidate.phone || null,
-            address: updatedApp.candidate.address || null,
-            position: updatedApp.job.title || null,
-            department: updatedApp.job.dept || null,
-            roleType,
-            hireDate: new Date(),
-            contractType: updatedApp.job.contractType || 'CDI',
-            status: 'ACTIVE',
-            salary: parsedSalary,
-          };
-
-          // Debug: log exact data being sent to Prisma
-          this.logger.log(`Creating staff with data keys: ${Object.keys(staffData).join(', ')}`);
-          this.logger.debug(`Staff data: ${JSON.stringify(staffData, (key, value) => typeof value === 'bigint' ? value.toString() : value)}`);
-
-          try {
-            staffRecord = await tx.staff.create({ data: staffData });
-          } catch (staffErr: any) {
-            this.logger.error(`Staff creation FAILED: ${staffErr.message}`, staffErr.stack);
-            throw new BadRequestException(
-              `Échec création Employé : ${staffErr.message?.replace(/\n/g, ' ').substring(0, 200)}`
-            );
-          }
-
-          // Link staffId on the application
-          await tx.hrApplication.update({
+      try {
+        return await this.prisma.$transaction(async (tx) => {
+          // Update application status
+          const updatedApp = await tx.hrApplication.update({
             where: { id },
-            data: { staffId: staffRecord.id },
+            data: { 
+              ...prismaUpdateDefaults(),
+              status,
+              ...(review ? { matchDetail: review } : {})
+            },
+            include: {
+              candidate: true,
+              job: true,
+            }
           });
-        }
 
-        // ─── 3. Auto-create Contract (directly in the same transaction) ───
-        let contract = null;
-        if (staffRecord) {
-          try {
-            const contractType = updatedApp.job.contractType || 'CDI';
-            // Extract ALL digits for baseSalary (handles "400 000", "400,000", etc.)
-            let baseSalary = new Prisma.Decimal(0);
+          // ─── Pre-validate required data ─────────────────────────────────
+          if (!updatedApp.candidate?.firstName || !updatedApp.candidate?.lastName) {
+            throw new BadRequestException('Impossible d\'embaucher : le nom ou prénom du candidat est manquant.');
+          }
+          if (!updatedApp.job?.title) {
+            throw new BadRequestException('Impossible d\'embaucher : le poste du candidat n\'est pas défini.');
+          }
+
+          // Check if employee already exists with this email
+          const existingStaff = await tx.staff.findFirst({
+            where: { email: updatedApp.candidate.email, tenantId: updatedApp.tenantId }
+          });
+
+          let staffRecord = existingStaff;
+
+          if (!existingStaff) {
+            // Find academic year if available
+            const currentYear = await tx.academicYear.findFirst({
+              where: { tenantId: updatedApp.tenantId, isActive: true }
+            });
+
+            // Determine roleType
+            const jobTitle = (updatedApp.job.title || '').toLowerCase();
+            const isTeacher = jobTitle.includes('enseignant') || jobTitle.includes('prof') || jobTitle.includes('teacher') || jobTitle.includes('instituteur');
+            const roleType = isTeacher ? 'TEACHER' : 'ADMIN';
+
+            // Parse salary (if it's a number like 400000 or "400 000 FCFA")
+            let parsedSalary: Prisma.Decimal | null = null;
             if (updatedApp.job.salary) {
               const allDigits = updatedApp.job.salary.replace(/[^0-9]/g, '');
               if (allDigits) {
                 const num = Number(allDigits);
                 if (!isNaN(num) && isFinite(num)) {
-                  baseSalary = new Prisma.Decimal(num);
+                  parsedSalary = new Prisma.Decimal(num);
                 }
               }
             }
 
-            // Deactivate any existing active contracts for this staff
-            await tx.contract.updateMany({
-              where: { staffId: staffRecord.id, tenantId: updatedApp.tenantId, status: 'ACTIVE' },
-              data: { status: 'EXPIRED' },
-            });
+            // Generate sequential matricules using StaffMatriculeService
+            let globalMatricule: string | null = null;
+            let tenantMatricule: string | null = null;
+            try {
+              const schoolCode = await this.matriculeService.getSchoolCode(updatedApp.tenantId);
+              const registrationYear = new Date().getFullYear();
+              globalMatricule = await this.matriculeService.generateGlobalMatriculeInTransaction(tx, registrationYear);
+              tenantMatricule = await this.matriculeService.generateTenantMatriculeInTransaction(tx, updatedApp.tenantId, schoolCode, registrationYear);
+            } catch (err: any) {
+              this.logger.warn(`Matricule generation failed for hire: ${err?.message || err}`);
+            }
 
-            // Create contract directly in the same transaction (avoid nested tx)
-            contract = await tx.contract.create({
-              data: {
-                ...prismaCreateDefaults(),
+            // Generate a tenant-based employee number (legacy field)
+            let employeeNumber: string;
+            if (tenantMatricule) {
+              employeeNumber = `EMP-${String(Date.now()).slice(-5)}`;
+            } else {
+              // Fallback: matricule generation failed, use timestamp to avoid upsert issues
+              employeeNumber = `EMP-${String(Date.now()).slice(-8)}`;
+              this.logger.warn(`Using timestamp-based employeeNumber: ${employeeNumber}`);
+            }
+
+            // Build staff data — explicitly list ALL fields to avoid spreading unknown keys
+            const staffData: Record<string, any> = {
+              id: uuid(),
+              createdAt: now(),
+              updatedAt: now(),
+              tenantId: updatedApp.tenantId,
+              academicYearId: currentYear?.id || null,
+              employeeNumber,
+              globalMatricule,
+              tenantMatricule,
+              firstName: updatedApp.candidate.firstName,
+              lastName: updatedApp.candidate.lastName,
+              gender: updatedApp.candidate.gender || null,
+              email: updatedApp.candidate.email || null,
+              phone: updatedApp.candidate.phone || null,
+              address: updatedApp.candidate.address || null,
+              position: updatedApp.job.title || null,
+              department: updatedApp.job.dept || null,
+              roleType,
+              hireDate: new Date(),
+              contractType: updatedApp.job.contractType || 'CDI',
+              status: 'ACTIVE',
+              salary: parsedSalary,
+            };
+
+            // Debug: log exact data being sent to Prisma
+            this.logger.log(`Creating staff with data keys: ${Object.keys(staffData).join(', ')}`);
+            this.logger.debug(`Staff data: ${JSON.stringify(staffData, (key, value) => typeof value === 'bigint' ? value.toString() : value)}`);
+
+            try {
+              staffRecord = await tx.staff.create({ data: staffData });
+              this.logger.log(`Staff created: id=${staffRecord.id}, employeeNumber=${staffRecord.employeeNumber}`);
+            } catch (staffErr: any) {
+              this.logger.error(`Staff creation FAILED [${staffErr?.constructor?.name}]: ${staffErr.message}`, staffErr.stack);
+              throw new BadRequestException(
+                `Échec création Employé [${staffErr?.constructor?.name}]: ${staffErr.message?.replace(/\n/g, ' ').substring(0, 300)}`
+              );
+            }
+
+            // Link staffId on the application
+            await tx.hrApplication.update({
+              where: { id },
+              data: { 
+                ...prismaUpdateDefaults(),
+                staffId: staffRecord.id,
+              },
+            });
+          }
+
+          // ─── 3. Auto-create Contract (directly in the same transaction) ───
+          let contract = null;
+          if (staffRecord) {
+            try {
+              const contractType = updatedApp.job.contractType || 'CDI';
+              let baseSalary = new Prisma.Decimal(0);
+              if (updatedApp.job.salary) {
+                const allDigits = updatedApp.job.salary.replace(/[^0-9]/g, '');
+                if (allDigits) {
+                  const num = Number(allDigits);
+                  if (!isNaN(num) && isFinite(num)) {
+                    baseSalary = new Prisma.Decimal(num);
+                  }
+                }
+              }
+
+              // Deactivate any existing active contracts for this staff
+              await tx.contract.updateMany({
+                where: { staffId: staffRecord.id, tenantId: updatedApp.tenantId, status: 'ACTIVE' },
+                data: { 
+                  status: 'EXPIRED',
+                  ...prismaUpdateDefaults(),
+                },
+              });
+
+              // Build contract data — explicitly list ALL fields
+              const contractData: Record<string, any> = {
+                id: uuid(),
+                createdAt: now(),
+                updatedAt: now(),
                 tenantId: updatedApp.tenantId,
                 staffId: staffRecord.id,
                 contractType,
                 startDate: new Date(),
                 baseSalary,
                 paymentMode: 'BANK',
-                status: 'DRAFT',  // DRAFT until signed — not ACTIVE yet
-              },
-              include: { staff: true },
-            });
+                status: 'DRAFT',
+              };
 
-            this.logger.log(`Contrat auto-créé pour ${updatedApp.candidate.firstName} ${updatedApp.candidate.lastName} — Contrat ID: ${contract.id}`);
-          } catch (contractErr: any) {
-            // Contract creation failure should NOT block the hire
-            this.logger.error(`Échec de la création auto du contrat: ${contractErr.message}`, contractErr.stack);
+              // Only add optional fields if they have values
+              if (updatedApp.tenantId) {
+                const currentYear = await tx.academicYear.findFirst({
+                  where: { tenantId: updatedApp.tenantId, isActive: true }
+                });
+                if (currentYear) {
+                  contractData.academicYearId = currentYear.id;
+                }
+              }
+
+              this.logger.log(`Creating contract with data keys: ${Object.keys(contractData).join(', ')}`);
+              this.logger.debug(`Contract data: ${JSON.stringify(contractData, (key, value) => typeof value === 'bigint' ? value.toString() : value)}`);
+
+              contract = await tx.contract.create({
+                data: contractData,
+                include: { staff: true },
+              });
+
+              this.logger.log(`Contrat auto-créé pour ${updatedApp.candidate.firstName} ${updatedApp.candidate.lastName} — Contrat ID: ${contract.id}`);
+            } catch (contractErr: any) {
+              // Contract creation failure should NOT block the hire
+              this.logger.error(`Échec de la création auto du contrat [${contractErr?.constructor?.name}]: ${contractErr.message}`, contractErr.stack);
+            }
           }
-        }
 
-        return { ...updatedApp, staff: staffRecord, contract };
-      });
+          return { ...updatedApp, staff: staffRecord, contract };
+        });
+      } catch (txErr: any) {
+        // If it's already an HttpException (BadRequestException, etc.), re-throw it
+        if (txErr instanceof HttpException) {
+          throw txErr;
+        }
+        // Otherwise, wrap it in a BadRequestException with full details
+        this.logger.error(`EMBAUCHÉ transaction FAILED [${txErr?.constructor?.name}]: ${txErr.message}`, txErr.stack);
+        throw new BadRequestException(
+          `Erreur lors de l'embauche [${txErr?.constructor?.name}]: ${txErr.message?.replace(/\n/g, ' ').substring(0, 300)}`
+        );
+      }
     }
 
     // ─── 4. Non-EMBAUCHÉ — simple status update ────────────────────────────

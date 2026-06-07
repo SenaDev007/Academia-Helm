@@ -5,6 +5,7 @@ import { OpenRouterService } from '../common/services/openrouter.service';
 import { ContractsPrismaService } from './contracts-prisma.service';
 import { StaffMatriculeService } from './staff-matricule.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
+import { Prisma } from '@prisma/client';
 
 /**
  * Valid status transitions for the recruitment pipeline.
@@ -525,6 +526,14 @@ export class RecruitmentPrismaService {
           }
         });
 
+        // ─── Pre-validate required data ─────────────────────────────────
+        if (!updatedApp.candidate?.firstName || !updatedApp.candidate?.lastName) {
+          throw new BadRequestException('Impossible d\'embaucher : le nom ou prénom du candidat est manquant.');
+        }
+        if (!updatedApp.job?.title) {
+          throw new BadRequestException('Impossible d\'embaucher : le poste du candidat n\'est pas défini.');
+        }
+
         // Check if employee already exists with this email
         const existingStaff = await tx.staff.findFirst({
           where: { email: updatedApp.candidate.email, tenantId: updatedApp.tenantId }
@@ -543,12 +552,16 @@ export class RecruitmentPrismaService {
           const isTeacher = jobTitle.includes('enseignant') || jobTitle.includes('prof') || jobTitle.includes('teacher') || jobTitle.includes('instituteur');
           const roleType = isTeacher ? 'TEACHER' : 'ADMIN';
 
-          // Parse salary (if it's a number like 400000)
-          let parsedSalary = null;
+          // Parse salary (if it's a number like 400000 or "400 000 FCFA")
+          let parsedSalary: Prisma.Decimal | null = null;
           if (updatedApp.job.salary) {
-            const matched = updatedApp.job.salary.match(/\d+/);
-            if (matched) {
-              parsedSalary = parseFloat(matched[0]);
+            // Extract ALL digits from the salary string (handles "400 000", "400,000", etc.)
+            const allDigits = updatedApp.job.salary.replace(/[^0-9]/g, '');
+            if (allDigits) {
+              const num = Number(allDigits);
+              if (!isNaN(num) && isFinite(num)) {
+                parsedSalary = new Prisma.Decimal(num);
+              }
             }
           }
 
@@ -603,23 +616,42 @@ export class RecruitmentPrismaService {
           });
         }
 
-        // ─── 3. Auto-create Contract (using existing ContractsPrismaService) ───
+        // ─── 3. Auto-create Contract (directly in the same transaction) ───
         let contract = null;
         if (staffRecord) {
           try {
             const contractType = updatedApp.job.contractType || 'CDI';
-            const baseSalary = updatedApp.job.salary
-              ? parseFloat(updatedApp.job.salary.match(/\d+/)?.[0] || '0')
-              : 0;
+            // Extract ALL digits for baseSalary (handles "400 000", "400,000", etc.)
+            let baseSalary = new Prisma.Decimal(0);
+            if (updatedApp.job.salary) {
+              const allDigits = updatedApp.job.salary.replace(/[^0-9]/g, '');
+              if (allDigits) {
+                const num = Number(allDigits);
+                if (!isNaN(num) && isFinite(num)) {
+                  baseSalary = new Prisma.Decimal(num);
+                }
+              }
+            }
 
-            contract = await this.contractsService.createContract({
-              tenantId: updatedApp.tenantId,
-              staffId: staffRecord.id,
-              contractType,
-              startDate: new Date(),
-              baseSalary,
-              paymentMode: 'BANK',
-              status: 'DRAFT',  // DRAFT until signed — not ACTIVE yet
+            // Deactivate any existing active contracts for this staff
+            await tx.contract.updateMany({
+              where: { staffId: staffRecord.id, tenantId: updatedApp.tenantId, status: 'ACTIVE' },
+              data: { status: 'EXPIRED' },
+            });
+
+            // Create contract directly in the same transaction (avoid nested tx)
+            contract = await tx.contract.create({
+              data: {
+                ...prismaCreateDefaults(),
+                tenantId: updatedApp.tenantId,
+                staffId: staffRecord.id,
+                contractType,
+                startDate: new Date(),
+                baseSalary,
+                paymentMode: 'BANK',
+                status: 'DRAFT',  // DRAFT until signed — not ACTIVE yet
+              },
+              include: { staff: true },
             });
 
             this.logger.log(`Contrat auto-créé pour ${updatedApp.candidate.firstName} ${updatedApp.candidate.lastName} — Contrat ID: ${contract.id}`);

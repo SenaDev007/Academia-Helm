@@ -2912,7 +2912,7 @@ export function RecruitmentWorkspace() {
                             <div className="space-y-2.5">
                               {step.details.map((detail, j) => (
                                 <div key={j} className="flex gap-2.5">
-                                  <div className={cn('w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0', step.color.replace('bg-', 'bg-'))} />
+                                  <div className={cn('w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0', step.color)} />
                                   <div>
                                     <span className="text-[10px] font-bold text-slate-700">{detail.label}</span>
                                     <p className="text-[10px] text-slate-500 leading-relaxed mt-0.5">{detail.text}</p>

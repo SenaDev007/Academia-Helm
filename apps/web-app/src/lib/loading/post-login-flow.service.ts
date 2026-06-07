@@ -60,6 +60,9 @@ type ProgressCallback = (progress: PostLoginFlowProgress) => void;
 
 /**
  * Exécute le flow post-login complet
+ *
+ * OPTIMISÉ : les étapes indépendantes s'exécutent en parallèle
+ * pour réduire le temps de chargement après authentification.
  */
 export async function executePostLoginFlow(
   onProgress?: ProgressCallback
@@ -84,16 +87,14 @@ export async function executePostLoginFlow(
   let orionAlerts: PostLoginFlowResult['orionAlerts'] = [];
 
   try {
-    // Étape 1 : Initialisation contexte sécurisé
-    const step1Message = getLoadingMessage('INIT_SECURE_CONTEXT');
+    // ─── Phase 1 : Authentification (bloquant) ─────────────
     onProgress?.({
       step: 'INIT_SECURE_CONTEXT',
-      progress: 15,
-      message: step1Message.title,
-      subtitle: step1Message.subtitle,
+      progress: 10,
+      message: getLoadingMessage('INIT_SECURE_CONTEXT').title,
+      subtitle: getLoadingMessage('INIT_SECURE_CONTEXT').subtitle,
     });
 
-    // Vérifier l'authentification
     const authData = await checkAuth();
     if (!authData || !authData.user) {
       throw {
@@ -107,7 +108,6 @@ export async function executePostLoginFlow(
     tenant = authData.tenant || null;
 
     if (!tenant) {
-      // Essayer de charger le tenant depuis le sous-domaine
       const host = typeof window !== 'undefined' ? window.location.host : '';
       const parts = host.split('.');
       const subdomain = parts.length > 2 ? parts[0] : null;
@@ -121,7 +121,6 @@ export async function executePostLoginFlow(
       }
     }
 
-    // PLATFORM_OWNER : accepter un tenant vide (pas de throw)
     const isPlatformOwner = user.role === 'PLATFORM_OWNER' || (user as any).isPlatformOwner;
     if (!tenant && !isPlatformOwner) {
       throw {
@@ -131,7 +130,6 @@ export async function executePostLoginFlow(
       };
     }
 
-    // Créer un tenant virtuel pour PLATFORM_OWNER si nécessaire
     if (isPlatformOwner && !tenant) {
       tenant = {
         id: '',
@@ -147,7 +145,6 @@ export async function executePostLoginFlow(
       };
     }
 
-    // Vérifier l'état du compte
     if (tenant && (tenant.subscriptionStatus === 'PENDING' || tenant.subscriptionStatus === 'TERMINATED')) {
       throw {
         step: 'INIT_SECURE_CONTEXT' as LoadingStep,
@@ -156,165 +153,134 @@ export async function executePostLoginFlow(
       };
     }
 
-    // Pas de délai artificiel — le flow doit être le plus rapide possible
+    onProgress?.({ step: 'INIT_SECURE_CONTEXT', progress: 25, message: 'Contexte sécurisé' });
 
-    // Étape 2 : Vérification année scolaire
-    const step2Message = getLoadingMessage('VERIFY_ACADEMIC_YEAR');
+    // ─── Phase 2 : Étapes indépendantes en PARALLÈLE ──────
+    // Année scolaire, permissions, offline, ORION et préchargement
+    // peuvent tous s'exécuter simultanément (aucune dépendance entre eux)
+
     onProgress?.({
       step: 'VERIFY_ACADEMIC_YEAR',
-      progress: 30,
-      message: step2Message.title,
-      subtitle: step2Message.subtitle,
+      progress: 35,
+      message: 'Chargement des données...',
+      subtitle: 'Initialisation en parallèle',
     });
 
-    try {
-      const academicYearResponse = await fetch('/api/academic-years');
-      if (academicYearResponse.ok) {
-        const years = await academicYearResponse.json();
-        const activeYear = years.find((y: any) => y.isCurrent);
-
-        // PLATFORM_OWNER n'a pas besoin d'une année scolaire active
-        if (!activeYear && !isPlatformOwner) {
-          throw {
-            step: 'VERIFY_ACADEMIC_YEAR' as LoadingStep,
-            message: 'Aucune année scolaire active',
-            code: 'NO_ACADEMIC_YEAR',
-          };
-        }
-
-        academicYear = {
-          id: activeYear.id,
-          name: activeYear.name,
-          startDate: activeYear.startDate,
-          endDate: activeYear.endDate,
-          isCurrent: activeYear.isCurrent,
-        };
-
-        // Vérifier les dates
-        const now = new Date();
-        const startDate = new Date(activeYear.startDate);
-        const endDate = new Date(activeYear.endDate);
-
-        if (now < startDate || now > endDate) {
-          console.warn('Academic year dates are outside current period');
-        }
-      }
-    } catch (error: any) {
-      if (error.code) throw error;
-      console.error('Failed to load academic year:', error);
-    }
-
-    // Pas de délai artificiel
-
-    // Étape 3 : Chargement rôles & permissions
-    const step3Message = getLoadingMessage('LOAD_ROLES_PERMISSIONS');
-    onProgress?.({
-      step: 'LOAD_ROLES_PERMISSIONS',
-      progress: 50,
-      message: step3Message.title,
-      subtitle: step3Message.subtitle,
-    });
-
-    // Déterminer les permissions basées sur le rôle
+    // Permissions — synchrone, résout immédiatement
     permissions = getPermissionsForRole(user.role);
 
-    // Pas de délai artificiel
+    // Lancer toutes les opérations asynchrones en parallèle
+    const [academicYearResult, offlineResult, orionResult] = await Promise.all([
+      // Année scolaire
+      (async () => {
+        try {
+          const response = await fetch('/api/academic-years');
+          if (response.ok) {
+            const years = await response.json();
+            const activeYear = years.find((y: any) => y.isCurrent);
+            if (!activeYear && !isPlatformOwner) {
+              return { error: { step: 'VERIFY_ACADEMIC_YEAR', message: 'Aucune année scolaire active', code: 'NO_ACADEMIC_YEAR' } };
+            }
+            if (activeYear) {
+              return { data: {
+                id: activeYear.id, name: activeYear.name,
+                startDate: activeYear.startDate, endDate: activeYear.endDate,
+                isCurrent: activeYear.isCurrent,
+              }};
+            }
+          }
+          return { data: null };
+        } catch (err: any) {
+          if (err.code) return { error: err };
+          console.error('Failed to load academic year:', err);
+          return { data: null };
+        }
+      })(),
 
-    // Étape 4 : Vérification offline-first
-    const step4Message = getLoadingMessage('CHECK_OFFLINE_STATUS');
-    onProgress?.({
-      step: 'CHECK_OFFLINE_STATUS',
-      progress: 65,
-      message: step4Message.title,
-      subtitle: step4Message.subtitle,
-    });
+      // Offline + Outbox (en parallèle interne)
+      (async () => {
+        const isOnline = networkDetectionService.isConnected();
+        let pendingOperations = 0;
 
-    const isOnline = networkDetectionService.isConnected();
-    let pendingOperations = 0;
+        const offlineTasks: Promise<void>[] = [];
 
-    // Déclencher le bootstrap offline automatiquement si nécessaire
-    if (tenant && tenant.id && isOnline) {
-      try {
-        const { offlineBootstrapService } = await import('@/lib/offline/offline-bootstrap.service');
-        offlineBootstrapService.ensureBootstrapped(tenant.id).catch((err) => {
-          console.warn('[PostLogin] Auto-bootstrap failed (non-blocking):', err);
-        });
-      } catch (err) {
-        console.warn('[PostLogin] Bootstrap import failed:', err);
-      }
-    }
+        if (tenant?.id && isOnline) {
+          offlineTasks.push(
+            import('@/lib/offline/offline-bootstrap.service').then(({ offlineBootstrapService }) => {
+              offlineBootstrapService.ensureBootstrapped(tenant!.id).catch((err) => {
+                console.warn('[PostLogin] Auto-bootstrap failed (non-blocking):', err);
+              });
+            }).catch((err) => console.warn('[PostLogin] Bootstrap import failed:', err))
+          );
+        }
 
-    if (tenant && tenant.id) {
-      try {
-        // Charger dynamiquement pour éviter les problèmes de circular dependency
-        const { outboxService } = await import('@/lib/offline/outbox.service');
-        const pendingEvents = await outboxService.getPendingEvents(tenant.id);
-        pendingOperations = pendingEvents.length;
-      } catch (error) {
-        console.error('Failed to check pending operations:', error);
-      }
-    }
+        if (tenant?.id) {
+          offlineTasks.push(
+            import('@/lib/offline/outbox.service').then(async ({ outboxService }) => {
+              const pendingEvents = await outboxService.getPendingEvents(tenant!.id);
+              pendingOperations = pendingEvents.length;
+            }).catch((error) => console.error('Failed to check pending operations:', error))
+          );
+        }
 
-    // Pas de délai artificiel
+        await Promise.all(offlineTasks);
+        return { isOnline, pendingOperations };
+      })(),
 
-    // Étape 5 : Initialisation ORION (direction uniquement)
-    const step5Message = getLoadingMessage('INIT_ORION');
-    onProgress?.({
-      step: 'INIT_ORION',
-      progress: 80,
-      message: step5Message.title,
-      subtitle: step5Message.subtitle,
-    });
+      // ORION alerts (direction only)
+      (async () => {
+        if (['DIRECTOR', 'SUPER_DIRECTOR', 'ADMIN', 'PLATFORM_OWNER'].includes(user!.role) && tenant?.id) {
+          try {
+            const rawAlerts = await getOrionAlerts({ level: 'CRITIQUE', acknowledged: false });
+            const alerts = Array.isArray(rawAlerts) ? rawAlerts : [];
+            return alerts.slice(0, 5).map((alert: any) => ({
+              id: alert.id, level: alert.level, message: alert.title || alert.message || '',
+            }));
+          } catch (error) {
+            console.error('Failed to load ORION alerts:', error);
+            return [];
+          }
+        }
+        return [];
+      })(),
+    ]);
 
-    // ORION uniquement pour les rôles direction (tenir compte du tenant avec id)
-    if (['DIRECTOR', 'SUPER_DIRECTOR', 'ADMIN', 'PLATFORM_OWNER'].includes(user.role) && tenant?.id) {
-      try {
-        const rawAlerts = await getOrionAlerts({ level: 'CRITIQUE', acknowledged: false });
-        const alerts = Array.isArray(rawAlerts) ? rawAlerts : [];
-        orionAlerts = alerts.slice(0, 5).map((alert: any) => ({
-          id: alert.id,
-          level: alert.level,
-          message: alert.title || alert.message || '',
-        }));
-      } catch (error) {
-        console.error('Failed to load ORION alerts:', error);
-        // Ne pas bloquer le flow si ORION échoue
-      }
-    }
+    // Traiter le résultat de l'année scolaire
+    if (academicYearResult.error) throw academicYearResult.error;
+    academicYear = (academicYearResult as any).data || null;
 
-    // Pas de délai artificiel
+    // Traiter le résultat offline
+    const offlineStatus = (offlineResult as any) || { isOnline: true, pendingOperations: 0 };
 
-    // Étape 6 : Préchargement UI
-    const step6Message = getLoadingMessage('PRELOAD_UI');
+    // Traiter les alertes ORION
+    orionAlerts = orionResult as PostLoginFlowResult['orionAlerts'];
+
+    // ─── Phase 3 : Préchargement UI (non-bloquant) ─────────
+    // Les composants PilotageLayout/TopBar/Sidebar sont déjà
+    // dynamiquement importés dans layout.tsx, ce préchargement
+    // est donc redondant — on le rend non-bloquant.
+
     onProgress?.({
       step: 'PRELOAD_UI',
-      progress: 95,
-      message: step6Message.title,
-      subtitle: step6Message.subtitle,
+      progress: 90,
+      message: 'Presque prêt...',
     });
 
-    // Précharger les composants critiques
-    await Promise.all([
+    // Préchargement en arrière-plan (ne pas await)
+    Promise.all([
       import('@/components/pilotage/PilotageLayout'),
       import('@/components/pilotage/PilotageTopBar'),
       import('@/components/pilotage/PilotageSidebar'),
-    ]);
+    ]).catch(() => { /* non-critical */ });
 
-    // Pas de délai artificiel
+    // Finalisation immédiate
+    onProgress?.({ step: 'PRELOAD_UI', progress: 100, message: 'Prêt' });
 
-    // Finalisation
-    onProgress?.({
-      step: 'PRELOAD_UI',
-      progress: 100,
-      message: 'Prêt',
-    });
-
-    // Enregistrer la métrique de performance
     const duration = performanceAuditService.endTimer(metricId, 'POST_LOGIN', {
       stepsCompleted: steps.length,
       hasOrion: orionAlerts.length > 0,
-      isOnline,
-      pendingOperations,
+      isOnline: offlineStatus.isOnline,
+      pendingOperations: offlineStatus.pendingOperations,
     });
 
     return {
@@ -324,9 +290,9 @@ export async function executePostLoginFlow(
       academicYear,
       permissions,
       offlineStatus: {
-        isOnline,
-        pendingOperations,
-        syncRequired: !isOnline && pendingOperations > 0,
+        isOnline: offlineStatus.isOnline,
+        pendingOperations: offlineStatus.pendingOperations,
+        syncRequired: !offlineStatus.isOnline && offlineStatus.pendingOperations > 0,
       },
       orionAlerts,
     };

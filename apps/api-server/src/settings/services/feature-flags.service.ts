@@ -1,4 +1,4 @@
-import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
+import { prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
@@ -122,7 +122,10 @@ export class FeatureFlagsService {
       toCreate.map((featureCode) =>
         this.prisma.tenantFeature.create({
           data: {
-        ...prismaCreateDefaults(),
+            // ⚠️ TenantFeature n'a PAS de champ 'id' — clé primaire composite (tenantId, featureCode)
+            // On ne peut PAS utiliser prismaCreateDefaults() qui injecte un id
+            ...prismaUpdateDefaults(),
+            createdAt: new Date(),
             tenantId,
             featureCode,
             isEnabled: DEFAULT_ENABLED_FEATURES.has(featureCode),
@@ -240,7 +243,9 @@ export class FeatureFlagsService {
     } else {
       feature = await this.prisma.tenantFeature.create({
         data: {
-        ...prismaCreateDefaults(),
+          // TenantFeature n'a PAS de champ 'id' — clé composite (tenantId, featureCode)
+          ...prismaUpdateDefaults(),
+          createdAt: new Date(),
           tenantId,
           featureCode,
           isEnabled: true,
@@ -298,7 +303,9 @@ export class FeatureFlagsService {
       // Pas de ligne en base mais module activé par défaut : créer une ligne désactivée
       const feature = await this.prisma.tenantFeature.create({
         data: {
-        ...prismaCreateDefaults(),
+          // TenantFeature n'a PAS de champ 'id' — clé composite (tenantId, featureCode)
+          ...prismaUpdateDefaults(),
+          createdAt: new Date(),
           tenantId,
           featureCode,
           isEnabled: false,

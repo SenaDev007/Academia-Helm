@@ -303,3 +303,28 @@ Stage Summary:
 - New schema fields: duration, instructions, maxScore, passingScore, status on HrTest; notes, evaluatedAt on HrTestResult
 - New endpoint: PUT /hr/recruitment/test-results/:id
 - Both repos synced at HEAD eef05b0
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Diagnose and fix modules disappearing from sidebar + slow post-login loading
+
+Work Log:
+- Analyzed uploaded screenshot showing only basic modules in sidebar (Tableau de pilotage, Réunions, Module Général)
+- Used Explore agent to diagnose the full chain: useEnabledFeatureCodes → settingsService.getFeatures → fetchWithAuth → offlineFetch → settings_cache IndexedDB store (MISSING)
+- Found root cause #1: prismaCreateDefaults() injects {id: uuid()} but TenantFeature model has NO id field (composite PK: tenantId+featureCode), causing PrismaClientValidationError → 400 error → empty features list → ALL feature-gated modules hidden
+- Found root cause #2: useEnabledFeatureCodes silently catches errors and returns empty list, no retry, no fail-open
+- Found root cause #3: settings_cache IndexedDB store missing, offline fallback always returns []
+- Found root cause #4: offlineBootstrap was blocking post-login flow instead of being fire-and-forget
+- Found root cause #5: AGGREGATION feature code missing from backend FeatureCode enum
+- Applied 3 commits with fixes (d4ebbdda, 8ef7bf46, 8dd2ce14)
+
+Stage Summary:
+- **CRITICAL FIX**: Removed prismaCreateDefaults() from TenantFeature.create() calls (3 locations) - this was the ROOT CAUSE of all modules disappearing
+- **FAIL-OPEN**: useEnabledFeatureCodes now retries 2x with 2s delay, falls back to DEFAULT_ENABLED_CODES on failure
+- **PERF**: Made offline bootstrap truly fire-and-forget (was blocking Promise.all)
+- **PERF**: Added 8s timeout to academic years fetch, 5s timeout to ORION alerts
+- **ROBUSTNESS**: Added settings_cache to IndexedDB stores (version 9→10)
+- **ROBUSTNESS**: fetchWithAuth double-checks network when offlineFetch returns empty array
+- **COMPLETENESS**: Added AGGREGATION to backend FeatureCode enum, FEATURE_KEYS, DEFAULT_ENABLED_FEATURES
+- Files changed: feature-flags.service.ts, useEnabledFeatureCodes.ts, local-db.service.ts, settings.service.ts, post-login-flow.service.ts

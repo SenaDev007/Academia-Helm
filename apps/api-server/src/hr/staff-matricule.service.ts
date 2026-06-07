@@ -22,10 +22,14 @@
  *
  * Both matricules are generated atomically in a transaction to prevent collisions.
  * The `employeeNumber` field is kept as a legacy/internal reference.
+ *
+ * ⚠️ IMPORTANT: StaffNumberSequence has a FK to Tenant, so we CANNOT use
+ * a fake tenantId like '__GLOBAL_STAFF_SEQ__' for the global sequence.
+ * Instead, we count existing Staff records for the global matricule.
  * ============================================================================
  */
 
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { Prisma } from '@prisma/client';
 import { prismaCreateNoCreatedAt } from '../common/utils/prisma-helpers';
@@ -35,6 +39,8 @@ const TENANT_SEQUENCE_PAD = 5;
 
 @Injectable()
 export class StaffMatriculeService {
+  private readonly logger = new Logger(StaffMatriculeService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   /**
@@ -72,22 +78,41 @@ export class StaffMatriculeService {
   /**
    * Génère un matricule global unique.
    * Format: AH-STF-<YY>-<SEQUENCE_6>
-   * Uses a global atomic counter (tenantId = 'GLOBAL' in StaffNumberSequence).
+   *
+   * ⚠️ IMPORTANT: We CANNOT use StaffNumberSequence with a fake tenantId for
+   * the global counter because StaffNumberSequence has a FK constraint to Tenant.
+   * Instead, we count existing Staff records with matching globalMatricule pattern
+   * and increment the sequence number.
    */
   async generateGlobalMatriculeInTransaction(
     tx: Omit<Prisma.TransactionClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use'>,
     registrationYear: number,
   ): Promise<string> {
-    // Use a special 'GLOBAL' tenant entry for the global sequence
-    const globalSeqId = '__GLOBAL_STAFF_SEQ__';
-    const seq = await tx.staffNumberSequence.upsert({
-      where: { tenantId: globalSeqId },
-      create: { ...prismaCreateNoCreatedAt(), tenantId: globalSeqId, current: 1 },
-      update: { current: { increment: 1 } },
-    });
-    const padded = String(seq.current).padStart(GLOBAL_SEQUENCE_PAD, '0');
     const year2 = registrationYear.toString().slice(-2);
-    return `AH-STF-${year2}-${padded}`;
+    const prefix = `AH-STF-${year2}-`;
+
+    // Count existing Staff records with global matricule matching this year's pattern
+    const existingStaff = await tx.staff.findMany({
+      where: {
+        globalMatricule: { startsWith: prefix },
+      },
+      select: { globalMatricule: true },
+    });
+
+    let maxSeq = 0;
+    for (const s of existingStaff) {
+      if (s.globalMatricule) {
+        const seqStr = s.globalMatricule.replace(prefix, '');
+        const seq = parseInt(seqStr, 10);
+        if (!isNaN(seq) && seq > maxSeq) {
+          maxSeq = seq;
+        }
+      }
+    }
+
+    const nextSeq = maxSeq + 1;
+    const padded = String(nextSeq).padStart(GLOBAL_SEQUENCE_PAD, '0');
+    return `${prefix}${padded}`;
   }
 
   /**

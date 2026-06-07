@@ -61,7 +61,7 @@ async function bootstrap() {
       forbidNonWhitelisted: true, // CDC §16.3.3 — rejeter les champs inconnus
       transform: true,
       transformOptions: { enableImplicitConversion: true },
-      disableErrorMessages: process.env.NODE_ENV === 'production',
+      disableErrorMessages: false, // Always show validation errors for debuggability
     }),
   );
 

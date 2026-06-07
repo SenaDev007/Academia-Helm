@@ -71,62 +71,81 @@ export function OnboardingWizardModal({ isOpen, onClose, onSuccess, tenantId }: 
     try {
       setLoading(true);
       // 1. Create Staff Profile
-      const staffResponse = await hrFetch<any>(hrUrl('staff', { tenantId }), {
-        method: 'POST',
-        body: {
-          firstName: formData.firstName,
-          lastName: formData.lastName,
-          email: formData.email,
-          phone: formData.phone,
-          category: formData.category,
-          position: formData.position,
-          gender: formData.gender,
-          birthDate: formData.birthDate || null,
-          status: 'ACTIVE',
-        },
-      });
-
-      const staffId = staffResponse.id;
+      let staffId: string;
+      try {
+        const staffResponse = await hrFetch<any>(hrUrl('staff', { tenantId }), {
+          method: 'POST',
+          body: {
+            firstName: formData.firstName,
+            lastName: formData.lastName,
+            email: formData.email || undefined,
+            phone: formData.phone || undefined,
+            category: formData.category,
+            position: formData.position || undefined,
+            gender: formData.gender,
+            birthDate: formData.birthDate || null,
+            status: 'ACTIVE',
+          },
+        });
+        staffId = staffResponse.id;
+        if (!staffId) {
+          throw new Error('Réponse invalide : ID du personnel manquant');
+        }
+      } catch (err: any) {
+        throw new Error(`Étape 1 (Identité) : ${err?.message || 'Erreur lors de la création du personnel'}`);
+      }
 
       // 2. Upload Documents using multipart form data (actual file uploads)
-      const docUploads: Promise<any>[] = [];
-      const uploadDoc = async (file: File, documentType: string) => {
-        const docFormData = new FormData();
-        docFormData.append('file', file);
-        docFormData.append('documentType', documentType);
-        return hrFetch(hrUrl(`staff/${staffId}/documents`, { tenantId }), {
-          method: 'POST',
-          body: docFormData,
-        });
-      };
-      if (formData.cvFile) docUploads.push(uploadDoc(formData.cvFile, 'CV'));
-      if (formData.cniFile) docUploads.push(uploadDoc(formData.cniFile, 'CNI'));
-      if (formData.birthCertFile) docUploads.push(uploadDoc(formData.birthCertFile, 'BIRTH_CERTIFICATE'));
+      try {
+        const docUploads: Promise<any>[] = [];
+        const uploadDoc = async (file: File, documentType: string) => {
+          const docFormData = new FormData();
+          docFormData.append('file', file);
+          docFormData.append('documentType', documentType);
+          return hrFetch(hrUrl(`staff/${staffId}/documents`, { tenantId }), {
+            method: 'POST',
+            body: docFormData,
+          });
+        };
+        if (formData.cvFile) docUploads.push(uploadDoc(formData.cvFile, 'CV'));
+        if (formData.cniFile) docUploads.push(uploadDoc(formData.cniFile, 'CNI'));
+        if (formData.birthCertFile) docUploads.push(uploadDoc(formData.birthCertFile, 'BIRTH_CERTIFICATE'));
 
-      if (docUploads.length > 0) {
-        await Promise.all(docUploads);
+        if (docUploads.length > 0) {
+          await Promise.all(docUploads);
+        }
+      } catch (err: any) {
+        throw new Error(`Étape 2 (Documents) : ${err?.message || 'Erreur lors du téléversement des documents'}`);
       }
 
       // 3. Create Employment Contract
-      await hrFetch(hrUrl('contracts', { tenantId }), {
-        method: 'POST',
-        body: {
+      try {
+        const contractBody: any = {
           staffId,
           contractType: formData.contractType,
           startDate: formData.startDate || new Date().toISOString().split('T')[0],
-          endDate: formData.endDate || null,
-          baseSalary: parseFloat(formData.baseSalary),
+          baseSalary: parseFloat(formData.baseSalary) || 0,
           paymentMode: formData.paymentMode,
           status: 'ACTIVE',
-        },
-      });
+        };
+        // Only include endDate if it has a value (avoid empty string validation error)
+        if (formData.endDate) {
+          contractBody.endDate = formData.endDate;
+        }
+        await hrFetch(hrUrl('contracts', { tenantId }), {
+          method: 'POST',
+          body: contractBody,
+        });
+      } catch (err: any) {
+        throw new Error(`Étape 3 (Contrat) : ${err?.message || 'Erreur lors de la création du contrat'}`);
+      }
 
       toast({ variant: 'success', title: 'Recrutement & Onboarding finalisés avec succès' });
       onSuccess();
       onClose();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      toast({ variant: 'error', title: "Erreur lors de la finalisation du recrutement" });
+      toast({ variant: 'error', title: "Erreur lors de la finalisation du recrutement", description: err?.message || 'Veuillez vérifier les données saisies et réessayer.' });
     } finally {
       setLoading(false);
     }

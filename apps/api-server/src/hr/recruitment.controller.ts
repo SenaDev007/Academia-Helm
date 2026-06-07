@@ -257,4 +257,12 @@ export class RecruitmentPrismaController {
   async cleanupOrphanedFiles(@GetTenant() tenant: any, @Query('tenantId') tenantIdFallback?: string) {
     return this.service.cleanupOrphanedFiles(tenant?.id ?? tenantIdFallback);
   }
+
+  // ─── Admin: Fix Application Statuses ──────────────────────────────────
+  // Retroactively correct application statuses based on completed interviews/tests
+
+  @Post('fix/application-statuses')
+  async fixApplicationStatuses(@GetTenant() tenant: any, @Query('tenantId') tenantIdFallback?: string) {
+    return this.service.fixApplicationStatuses(tenant?.id ?? tenantIdFallback);
+  }
 }

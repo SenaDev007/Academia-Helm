@@ -1592,5 +1592,89 @@ Réponds UNIQUEMENT en JSON valide.`,
 
     return { scoreCV, scoreLetter, scoreMatching, score, matchDetail, risks, riskDetail };
   }
+
+  // ─── Fix Application Statuses (retroactive correction) ──────────────────
+  /**
+   * Retroactively fix application statuses based on completed interviews/tests.
+   * For candidates who have TERMINÉ/RÉUSSI interviews but their application
+   * is still at NOUVEAU or EN_COURS, this will advance them to the correct status.
+   */
+  async fixApplicationStatuses(tenantId: string) {
+    const results: { candidateId: string; oldStatus: string; newStatus: string; reason: string }[] = [];
+
+    // Get all applications for this tenant
+    const applications = await this.prisma.hrApplication.findMany({
+      where: { tenantId },
+      include: {
+        candidate: {
+          include: {
+            interviews: true,
+          },
+        },
+      },
+    });
+
+    for (const app of applications) {
+      const currentStatus = app.status;
+      // Skip terminal states
+      if (currentStatus === 'EMBAUCHÉ' || currentStatus === 'REJETÉ') continue;
+
+      const candidate = app.candidate;
+      if (!candidate) continue;
+
+      const interviews = candidate.interviews || [];
+      const hasReussiInterview = interviews.some(i => i.status === 'TERMINÉ' && i.result === 'RÉUSSI');
+      const hasTermineInterview = interviews.some(i => i.status === 'TERMINÉ');
+
+      // Determine the correct status based on interview results
+      let targetStatus: string | null = null;
+      let reason = '';
+
+      if (hasReussiInterview && currentStatus !== 'ENTRETIEN' && currentStatus !== 'TEST') {
+        // Should be at least ENTRETIEN
+        targetStatus = 'ENTRETIEN';
+        reason = 'Has TERMINÉ/RÉUSSI interview';
+      } else if (hasTermineInterview && currentStatus === 'NOUVEAU') {
+        // At least EN_COURS if any interview was done
+        targetStatus = 'EN_COURS';
+        reason = 'Has TERMINÉ interview';
+      }
+
+      if (targetStatus) {
+        // Advance through valid transitions
+        let statusToSet = currentStatus;
+        const path: string[] = [];
+        while (statusToSet !== targetStatus) {
+          const next = VALID_TRANSITIONS[statusToSet];
+          if (!next || next.length === 0) break;
+          if (next.includes(targetStatus)) {
+            path.push(targetStatus);
+            break;
+          }
+          const intermediate = next.find(s => s !== 'REJETÉ');
+          if (!intermediate) break;
+          path.push(intermediate);
+          statusToSet = intermediate;
+        }
+
+        if (path.length > 0) {
+          const finalStatus = path[path.length - 1];
+          await this.prisma.hrApplication.update({
+            where: { id: app.id },
+            data: { ...prismaUpdateDefaults(), status: finalStatus },
+          });
+          results.push({
+            candidateId: candidate.id,
+            oldStatus: currentStatus,
+            newStatus: finalStatus,
+            reason,
+          });
+          this.logger.log(`Fixed application ${app.id}: ${currentStatus} → ${finalStatus} (${reason})`);
+        }
+      }
+    }
+
+    return { fixed: results.length, details: results };
+  }
 }
 

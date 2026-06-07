@@ -594,29 +594,40 @@ export class RecruitmentPrismaService {
             employeeNumber = `EMP-${String(tenantSeq.current).padStart(5, '0')}`;
           }
 
-          staffRecord = await tx.staff.create({
-            data: {
-              ...prismaCreateDefaults(),
-              tenantId: updatedApp.tenantId,
-              academicYearId: currentYear?.id || null,
-              employeeNumber,
-              globalMatricule,
-              tenantMatricule,
-              firstName: updatedApp.candidate.firstName,
-              lastName: updatedApp.candidate.lastName,
-              gender: updatedApp.candidate.gender,
-              email: updatedApp.candidate.email,
-              phone: updatedApp.candidate.phone,
-              address: updatedApp.candidate.address,
-              position: updatedApp.job.title,
-              department: updatedApp.job.dept,
-              roleType,
-              hireDate: new Date(),
-              contractType: updatedApp.job.contractType || 'CDI',
-              status: 'ACTIVE',
-              salary: parsedSalary,
-            }
-          });
+          const staffData = {
+            ...prismaCreateDefaults(),
+            tenantId: updatedApp.tenantId,
+            academicYearId: currentYear?.id || null,
+            employeeNumber,
+            globalMatricule,
+            tenantMatricule,
+            firstName: updatedApp.candidate.firstName,
+            lastName: updatedApp.candidate.lastName,
+            gender: updatedApp.candidate.gender || null,
+            email: updatedApp.candidate.email || null,
+            phone: updatedApp.candidate.phone || null,
+            address: updatedApp.candidate.address || null,
+            position: updatedApp.job.title || null,
+            department: updatedApp.job.dept || null,
+            roleType,
+            hireDate: new Date(),
+            contractType: updatedApp.job.contractType || 'CDI',
+            status: 'ACTIVE',
+            salary: parsedSalary,
+          };
+
+          // Debug: log exact data being sent to Prisma
+          this.logger.log(`Creating staff with data keys: ${Object.keys(staffData).join(', ')}`);
+          this.logger.debug(`Staff data: ${JSON.stringify(staffData, (key, value) => typeof value === 'bigint' ? value.toString() : value)}`);
+
+          try {
+            staffRecord = await tx.staff.create({ data: staffData });
+          } catch (staffErr: any) {
+            this.logger.error(`Staff creation FAILED: ${staffErr.message}`, staffErr.stack);
+            throw new BadRequestException(
+              `Échec création Employé : ${staffErr.message?.replace(/\n/g, ' ').substring(0, 200)}`
+            );
+          }
 
           // Link staffId on the application
           await tx.hrApplication.update({

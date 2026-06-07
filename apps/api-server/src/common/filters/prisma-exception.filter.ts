@@ -19,30 +19,31 @@ export class PrismaExceptionFilter implements ExceptionFilter {
     if (exception instanceof Prisma.PrismaClientValidationError) {
       const rawMsg = exception.message || '';
       const detail = rawMsg.replace(/\n/g, ' ').substring(0, 500);
-      this.logger.warn(`PrismaClientValidationError: ${detail}`);
+      this.logger.error(`PrismaClientValidationError FULL: ${rawMsg}`);
 
       // Extract the specific field name from the Prisma error message
-      // Typical format: "Argument `salary`: Invalid value provided. Expected Decimal, provided ..."
-      // Or: "Unknown arg `xyz` in data.x for model Staff."
       let specificHint = '';
+      const unknownArgMatch = rawMsg.match(/Unknown arg `(\w+)`/i);
       const argMatch = rawMsg.match(/Argument `(\w+)`/i);
       const fieldMatch = rawMsg.match(/field `(\w+)`/i);
       const modelMatch = rawMsg.match(/model (\w+)/i);
       const valueMatch = rawMsg.match(/provided (\S+)/i);
       const expectedMatch = rawMsg.match(/Expected (\w+)/i);
-      const unknownArgMatch = rawMsg.match(/Unknown arg `(\w+)`/i);
+      const didYouMeanMatch = rawMsg.match(/Did you mean `(\w+)`\?/i);
 
       if (unknownArgMatch) {
-        specificHint = `Champ inconnu "${unknownArgMatch[1]}"`;
+        specificHint = `Champ inconnu "${unknownArgMatch[1]}"${modelMatch ? ` sur ${modelMatch[1]}` : ''}${didYouMeanMatch ? ` — vouliez-vous "${didYouMeanMatch[1]}" ?` : ''}`;
       } else if (argMatch) {
-        specificHint = `Champ "${argMatch[1]}"${expectedMatch ? ` : attendu ${expectedMatch[1]}` : ''}${valueMatch ? `, valeur fournie ${valueMatch[1]}` : ''}`;
+        specificHint = `Champ "${argMatch[1]}"${modelMatch ? ` sur ${modelMatch[1]}` : ''}${expectedMatch ? ` : attendu ${expectedMatch[1]}` : ''}${valueMatch ? `, valeur fournie ${valueMatch[1]}` : ''}`;
       } else if (fieldMatch) {
         specificHint = `Champ "${fieldMatch[1]}"${modelMatch ? ` sur ${modelMatch[1]}` : ''}`;
       }
 
+      // Include a short extract of the full error for debugging
+      const shortDetail = detail.substring(0, 200);
       const userMessage = specificHint
-        ? `Données invalides : ${specificHint}`
-        : `Données invalides : vérifiez les formats de champs (dates, nombres, etc.)`;
+        ? `Données invalides : ${specificHint} (${shortDetail})`
+        : `Données invalides : vérifiez les formats de champs (${shortDetail})`;
 
       response.status(HttpStatus.BAD_REQUEST).json({
         statusCode: HttpStatus.BAD_REQUEST,

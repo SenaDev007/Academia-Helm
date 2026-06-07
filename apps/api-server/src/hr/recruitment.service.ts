@@ -783,10 +783,33 @@ export class RecruitmentPrismaService {
     if (data.result !== undefined) updateData.result = data.result;
     if (data.feedback !== undefined) updateData.feedback = data.feedback;
 
-    return this.prisma.hrInterview.update({
+    const updated = await this.prisma.hrInterview.update({
       where: { id },
       data: updateData,
+      include: { candidate: { include: { applications: true } } },
     });
+
+    // Auto-advance application status when interview is completed with RÉUSSI
+    if (data.status === 'TERMINÉ' && data.result === 'RÉUSSI' && updated.candidateId) {
+      try {
+        const primaryApp = updated.candidate?.applications?.[0];
+        if (primaryApp) {
+          const currentStatus = primaryApp.status;
+          const allowed = VALID_TRANSITIONS[currentStatus];
+          if (allowed && allowed.includes('ENTRETIEN')) {
+            await this.prisma.hrApplication.update({
+              where: { id: primaryApp.id },
+              data: { ...prismaUpdateDefaults(), status: 'ENTRETIEN' },
+            });
+            this.logger.log(`Auto-advanced application ${primaryApp.id} to ENTRETIEN after interview update`);
+          }
+        }
+      } catch (err: any) {
+        this.logger.warn(`Failed to auto-advance application after interview update: ${err.message}`);
+      }
+    }
+
+    return updated;
   }
 
   /**

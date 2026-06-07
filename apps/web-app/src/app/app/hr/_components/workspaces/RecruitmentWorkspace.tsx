@@ -142,6 +142,25 @@ interface TalentPool {
 export function RecruitmentWorkspace() {
   const { tenant } = useModuleContext();
   const confirmDialog = useConfirmDialog();
+
+  // Valid status transitions (mirrors backend VALID_TRANSITIONS)
+  const VALID_TRANSITIONS: Record<string, string[]> = {
+    'NOUVEAU':     ['EN_COURS', 'REJETÉ'],
+    'EN_COURS':    ['ENTRETIEN', 'TEST', 'REJETÉ'],
+    'ENTRETIEN':   ['TEST', 'EMBAUCHÉ', 'REJETÉ'],
+    'TEST':        ['EMBAUCHÉ', 'REJETÉ'],
+    'EMBAUCHÉ':    [],
+    'REJETÉ':      [],
+  };
+  const STATUS_LABELS: Record<string, string> = {
+    'NOUVEAU': 'Nouveau',
+    'EN_COURS': 'En cours',
+    'ENTRETIEN': 'Entretien',
+    'TEST': 'Test',
+    'EMBAUCHÉ': 'Embauché',
+    'REJETÉ': 'Rejeté',
+  };
+
   const [activeTab, setActiveTab] = useState<'jobs' | 'candidates' | 'interviews' | 'tests' | 'embauches' | 'talent_pool'>('jobs');
   const [loading, setLoading] = useState(false);
 
@@ -447,15 +466,11 @@ export function RecruitmentWorkspace() {
     try {
       if (editingInterview) {
         // Update existing interview — include status/result/feedback
-        const { status: _s, result: _r, feedback: _f, ...createOnlyFields } = newInterview as any;
-        const updateBody: any = { ...newInterview };
-        // Only include status/result/feedback if they have values
-        if (newInterview.status) updateBody.status = newInterview.status;
-        else delete updateBody.status;
-        if (newInterview.result) updateBody.result = newInterview.result;
-        else delete updateBody.result;
-        if (newInterview.feedback) updateBody.feedback = newInterview.feedback;
-        else delete updateBody.feedback;
+        const updateBody: any = { ...newInterview, score: Number(newInterview.score) || 0 };
+        // Remove empty optional fields to avoid validation errors
+        if (!newInterview.status) delete updateBody.status;
+        if (!newInterview.result) delete updateBody.result;
+        if (!newInterview.feedback) delete updateBody.feedback;
         await hrFetch(hrUrl(`recruitment/interviews/${editingInterview.id}`, { tenantId: tenant.id }), {
           method: 'PUT',
           body: updateBody,
@@ -464,6 +479,7 @@ export function RecruitmentWorkspace() {
       } else {
         // Create new interview — exclude status/result/feedback (not in CreateInterviewDto)
         const { status: _s, result: _r, feedback: _f, ...createBody } = newInterview as any;
+        createBody.score = Number(createBody.score) || 0;
         await hrFetch(hrUrl('recruitment/interviews', { tenantId: tenant.id }), {
           method: 'POST',
           body: createBody,
@@ -990,12 +1006,10 @@ export function RecruitmentWorkspace() {
                               }}
                               className="bg-slate-50 border border-slate-200 text-[10px] font-bold rounded-lg px-2 py-1 uppercase"
                             >
-                              <option value="NOUVEAU">Nouveau</option>
-                              <option value="EN_COURS">En cours</option>
-                              <option value="ENTRETIEN">Entretien</option>
-                              <option value="TEST">Test</option>
-                              <option value="EMBAUCHÉ" disabled>Embauché → Onglet Embauches</option>
-                              <option value="REJETÉ">Rejeté</option>
+                              <option value={c.status}>{STATUS_LABELS[c.status] || c.status}</option>
+                              {(VALID_TRANSITIONS[c.status] || []).map(s => (
+                                <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>
+                              ))}
                             </select>
                           </td>
                           <td className="p-4 text-right flex justify-end gap-3 items-center">

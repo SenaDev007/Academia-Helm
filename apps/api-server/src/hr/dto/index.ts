@@ -529,6 +529,8 @@ export class CreateInterviewDto {
 }
 
 export class UpdateInterviewDto {
+  /** Frontend may send candidateId — ignored (not updatable) */
+  @IsOptional() @IsUUID() candidateId?: string;
   @IsOptional() @IsIn(['RH', 'TECHNIQUE', 'DIRECTION', 'PEDAGOGIQUE']) type?: string;
   @IsOptional() @IsDateString() date?: string;
   @IsOptional() @IsString() time?: string;

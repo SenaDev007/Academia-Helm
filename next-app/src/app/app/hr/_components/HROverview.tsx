@@ -98,6 +98,15 @@ export function HROverview() {
 
   useEffect(() => { fetchData(); }, [tenant?.id, academicYear?.id]);
 
+  // Refresh dashboard data when the tab becomes visible (fixes stale data after actions in other tabs)
+  useEffect(() => {
+    function handleVisibility() {
+      if (document.visibilityState === 'visible') fetchData();
+    }
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [tenant?.id, academicYear?.id]);
+
   const snapshot = data?.snapshot || { totalStaff: 0, totalTeachers: 0, totalAdmin: 0, monthlyPayroll: 0, cnssCharges: 0, leaveCount: 0 };
   const evolution = data?.evolution || [];
   const orionAlerts = data?.orionAlerts || [];

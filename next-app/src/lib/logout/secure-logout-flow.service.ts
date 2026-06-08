@@ -116,8 +116,9 @@ export async function executeSecureLogoutFlow(
       });
 
       // Supprimer le flag post-login pour qu'il s'exécute à la prochaine connexion
+      // Utilise localStorage (cohérent avec PostLoginFlowWrapper)
       try {
-        sessionStorage.removeItem('academia_post_login_done');
+        localStorage.removeItem('academia_post_login_done');
       } catch {}
 
       // Réinitialisation ORION

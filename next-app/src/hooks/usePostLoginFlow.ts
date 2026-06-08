@@ -19,6 +19,7 @@ import {
 import { getLoadingMessage, type LoadingStep } from '@/lib/loading/loading-messages';
 
 const SESSION_KEY = 'academia_post_login_done';
+const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes TTL
 
 export interface UsePostLoginFlowReturn {
   isLoading: boolean;
@@ -58,20 +59,26 @@ export function usePostLoginFlow(): UsePostLoginFlowReturn {
     hasExecutedRef.current = true;
 
     // Vérifier si le flow a déjà été complété dans cette session navigateur
+    // Utilise localStorage (partagé entre sous-domaines) au lieu de sessionStorage
     if (typeof window !== 'undefined') {
       try {
-        if (sessionStorage.getItem(SESSION_KEY) === '1') {
-          // Flow déjà fait — simuler un résultat réussi sans appeler le service
-          setResult({
-            success: true,
-            user: null as any,
-            tenant: null as any,
-            academicYear: null,
-            permissions: [],
-            offlineStatus: { isOnline: true, pendingOperations: 0, syncRequired: false },
-            orionAlerts: [],
-          });
-          return;
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (raw) {
+          const { ts } = JSON.parse(raw);
+          if (Date.now() - ts <= SESSION_TTL_MS) {
+            // Flow déjà fait — simuler un résultat réussi sans appeler le service
+            setResult({
+              success: true,
+              user: null as any,
+              tenant: null as any,
+              academicYear: null,
+              permissions: [],
+              offlineStatus: { isOnline: true, pendingOperations: 0, syncRequired: false },
+              orionAlerts: [],
+            });
+            return;
+          }
+          localStorage.removeItem(SESSION_KEY);
         }
       } catch {}
     }
@@ -92,13 +99,16 @@ export function usePostLoginFlow(): UsePostLoginFlowReturn {
         setError(flowResult.error);
 
         // Gérer les erreurs critiques
+        // IMPORTANT: Toujours utiliser window.location.href (rechargement complet)
+        // pour les redirections critiques, jamais router.push() qui peut causer
+        // une page blanche sur les sous-domaines tenant (race condition RSC/cookies).
         if (flowResult.error.code === 'AUTH_ERROR') {
-          router.push('/login');
+          window.location.href = '/login';
           return;
         }
 
         if (flowResult.error.code === 'TENANT_NOT_FOUND' || flowResult.error.code === 'TENANT_SUSPENDED') {
-          router.push('/tenant-not-found');
+          window.location.href = '/tenant-not-found';
           return;
         }
 

@@ -79,32 +79,87 @@ export class AuthService {
     }
   }
 
-  async login(loginDto: LoginDto, meta?: SessionPersistMeta) {
+  async login(loginDto: LoginDto, meta?: SessionPersistMeta, preValidatedUser?: any) {
     try {
-      // Find user by email
-      const user = await this.usersService.findByEmail(loginDto.email);
+      // Si un utilisateur pré-validé est fourni (via LocalAuthGuard), l'utiliser directement
+      // pour éviter une double validation bcrypt qui peut causer des erreurs 500
+      let user = preValidatedUser;
+      
       if (!user) {
-        throw new UnauthorizedException('Invalid credentials');
-      }
+        // Fallback: validation manuelle (si pas de guard)
+        this.logger.log(`Login attempt for email: ${loginDto.email}`);
+        user = await this.usersService.findByEmail(loginDto.email);
+        if (!user) {
+          this.logger.warn(`Login failed: user not found for email: ${loginDto.email}`);
+          throw new UnauthorizedException('Invalid credentials');
+        }
 
-    // Verify password
-    const isPasswordValid = await bcrypt.compare(loginDto.password, user.passwordHash);
-    if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
+        // Verify password
+        let isPasswordValid: boolean;
+        try {
+          isPasswordValid = await bcrypt.compare(loginDto.password, user.passwordHash);
+        } catch (bcryptErr: any) {
+          this.logger.error(`bcrypt.compare failed: ${bcryptErr.message}`);
+          throw new ServiceUnavailableException('Erreur temporaire d\'authentification. Veuillez réessayer.');
+        }
+        if (!isPasswordValid) {
+          this.logger.warn(`Login failed: invalid password for email: ${loginDto.email}`);
+          throw new UnauthorizedException('Invalid credentials');
+        }
+      } else {
+        this.logger.log(`Login attempt for pre-validated user: ${user.email}`);
+      }
 
     // Vérifier si l'utilisateur est PLATFORM_OWNER
     const isOwner = this.isPlatformOwner(user);
 
-    // Si PLATFORM_OWNER → pas de tenant requis
+    // Si PLATFORM_OWNER → permet la connexion avec ou sans tenant
+    // Nouveau: Le PLATFORM_OWNER peut se connecter directement avec un tenant_id
+    // pour être redirigé vers le sous-domaine professionnel de l'école
     if (isOwner) {
       if (loginDto.portal_type && loginDto.portal_type !== 'PLATFORM') {
         throw new ForbiddenException('PLATFORM_OWNER must use PLATFORM portal type');
       }
+      
+      // Si un tenant_id est fourni, vérifier que le tenant existe et est actif
+      if (loginDto.tenant_id) {
+        const tenant = await this.prisma.tenant.findUnique({
+          where: { id: loginDto.tenant_id },
+        });
+        if (!tenant || tenant.status !== 'active') {
+          throw new ForbiddenException('Tenant not found or inactive');
+        }
+        // Le PLATFORM_OWNER peut accéder à n'importe quel tenant
+        // Générer un token enrichi avec le tenant
+        await this.usersService.updateLastLogin(user.id);
+        const tokens = this.generateEnrichedToken(user, loginDto.tenant_id);
+        const sessionRecord = await this.persistWebSession(user.id, tokens.refreshToken, meta);
+
+        return {
+          user: {
+            id: user.id,
+            email: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            role: this.jwtRole(user),
+            tenantId: loginDto.tenant_id,
+            isPlatformOwner: true,
+          },
+          tenant: {
+            id: tenant.id,
+            name: tenant.name,
+            slug: tenant.slug,
+            subdomain: tenant.subdomain,
+          },
+          ...tokens,
+          ...(sessionRecord ? { serverSessionId: sessionRecord.id } : {}),
+        };
+      }
+      
       // Update last login
       await this.usersService.updateLastLogin(user.id);
       
-      // Generate tokens SANS tenantId pour PLATFORM_OWNER
+      // Generate tokens SANS tenantId pour PLATFORM_OWNER (sélection via /auth/select-tenant)
       const tokens = this.generateTokens(user);
       const sessionRecord = await this.persistWebSession(user.id, tokens.refreshToken, meta);
 
@@ -197,11 +252,11 @@ export class AuthService {
         );
       }
       // Si c'est déjà une exception NestJS, la propager
-      if (error instanceof UnauthorizedException || error instanceof ForbiddenException) {
+      if (error instanceof UnauthorizedException || error instanceof ForbiddenException || error instanceof ServiceUnavailableException) {
         throw error;
       }
-      // Pour les autres erreurs, logger et propager
-      this.logger.error('Login error:', error);
+      // Pour les autres erreurs, logger avec contexte détaillé et propager
+      this.logger.error(`Login error for email=${loginDto.email}: ${error.message}`, error.stack);
       throw error;
     }
   }

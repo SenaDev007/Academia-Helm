@@ -217,19 +217,22 @@ export default function PortalPage() {
   };
 
   const handleContinue = async () => {
+    // Même le portail plateforme exige une sélection d'école — pas de /app/platform sans tenant
+    // Le PLATFORM_OWNER se connecte toujours dans le contexte d'une école spécifique
+    if (!selectedPortal || !selectedSchool) return;
+
     if (selectedPortal === 'PLATFORM') {
-      // Pour le portail plateforme, on redirige directement vers le login global ou avec le tenant sélectionné si applicable
+      // Le portail plateforme nécessite quand même une école sélectionnée
+      // Le PLATFORM_OWNER sera redirigé vers le sous-domaine de l'école
       await redirectToTenant({
-        tenantSlug: selectedSchool?.slug || 'platform', // Par défaut platform si pas d'école choisie
-        tenantId: selectedSchool?.id || 'platform',
+        tenantSlug: selectedSchool.slug,
+        tenantId: selectedSchool.id,
         path: '/login',
         portalType: 'PLATFORM',
         queryParams: { portal: 'platform' },
       });
       return;
     }
-
-    if (!selectedPortal || !selectedSchool) return;
 
     if (selectedPortal === 'PUBLIC') {
       // Pour le portail public, on redirige vers l'espace carrières / offres d'emploi public

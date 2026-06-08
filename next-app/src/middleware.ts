@@ -262,9 +262,11 @@ export async function middleware(request: NextRequest) {
         return NextResponse.redirect(url);
       }
       
-      // Si PLATFORM_OWNER (pas de tenantId mais session valide), autoriser /app
+      // PLATFORM_OWNER sans tenantId → rediriger vers le portail pour sélectionner une école
+      // Même le PLATFORM_OWNER doit toujours être dans le contexte d'un tenant (sous-domaine professionnel)
       if (user?.id && user.isPlatformOwner) {
-        return response; // Autoriser l'accès à /app pour PLATFORM_OWNER
+        const mainDomain = getAppBaseUrl();
+        return NextResponse.redirect(new URL('/portal', mainDomain));
       }
       
       const mainDomain = getAppBaseUrl();

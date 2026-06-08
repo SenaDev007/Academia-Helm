@@ -31,10 +31,12 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(@Body() loginDto: LoginDto, @Req() req: Request) {
+    // Le LocalAuthGuard a déjà validé l'utilisateur via validateUser()
+    // On passe l'utilisateur validé pour éviter une double validation bcrypt
     return this.authService.login(loginDto, {
       ipAddress: req.ip || req.socket?.remoteAddress,
       userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : undefined,
-    });
+    }, (req as any).user);
   }
 
   @UseGuards(JwtAuthGuard)

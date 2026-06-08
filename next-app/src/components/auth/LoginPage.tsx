@@ -9,7 +9,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import {
@@ -64,6 +64,7 @@ function normalizePortal(raw: string | null | undefined): PortalType {
 
 export default function LoginPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const { shouldReduceMotion } = useMotionBudget();
 
   const portalParam = searchParams?.get('portal');
@@ -213,38 +214,20 @@ export default function LoginPage() {
   };
 
   const handlePlatformLogin = async () => {
-    // Le login plateforme est similaire au login standard mais force le contexte plateforme
-    const response = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        email: schoolCredentials.email,
-        password: schoolCredentials.password,
-        portal_type: 'PLATFORM',
-      }),
-    });
+    // Le login plateforme doit TOUJOURS se faire dans le contexte d'une école (tenant)
+    // Le PLATFORM_OWNER sélectionne d'abord une école, puis se connecte sur le sous-domaine de cette école
+    // Il n'y a plus de route /app/platform sans tenant — tout passe par un sous-domaine professionnel
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.message || 'Erreur lors de la connexion plateforme');
+    if (!tenantSlug && !tenantIdFromUrl) {
+      // Pas de tenant/sous-domaine → rediriger vers le portail pour sélectionner une école
+      const mainDomain = getAppBaseUrl();
+      window.location.href = `${mainDomain}/portal`;
+      return;
     }
 
-    persistClientSession({
-      accessToken: data.accessToken,
-      refreshToken: data.refreshToken,
-      serverSessionId: data.serverSessionId,
-      user: data.user,
-      tenant: data.tenant,
-      expiresAt: data.expiresAt,
-    });
-
-    saveEmailForTenant(schoolCredentials.email, 'platform');
-
-    const mainDomain = getAppBaseUrl();
-    window.location.href = `${mainDomain}/app/platform`;
+    // Un tenant est disponible → se connecter comme un utilisateur standard avec ce tenant
+    // Le PLATFORM_OWNER aura accès à toutes les fonctionnalités (y compris admin plateforme) sur le sous-domaine de l'école
+    await handleStandardLogin();
   };
 
   const handleStandardLogin = async () => {
@@ -283,16 +266,25 @@ export default function LoginPage() {
       data.user?.role === 'PLATFORM_OWNER' ||
       (data.user as { isPlatformOwner?: boolean })?.isPlatformOwner;
     const hasNoTenant = !data.tenant?.id;
+    
+    // Le PLATFORM_OWNER doit TOUJOURS être redirigé vers le sous-domaine d'une école
+    // Il n'y a plus de route /app/platform sans tenant — tout est professionnel
     if (isPlatformOwner && hasNoTenant) {
+      // Pas de tenant → rediriger vers le portail pour sélectionner une école d'abord
       const mainDomain = getAppBaseUrl();
-      window.location.href = `${mainDomain}/app/platform`;
+      window.location.href = `${mainDomain}/portal`;
       return;
     }
 
     if (portalType === 'platform') {
-      const mainDomain = getAppBaseUrl();
-      window.location.href = `${mainDomain}/app/platform`;
-      return;
+      // Même chose : le portail plateforme doit toujours avoir un tenant
+      if (hasNoTenant) {
+        const mainDomain = getAppBaseUrl();
+        window.location.href = `${mainDomain}/portal`;
+        return;
+      }
+      // Si on a un tenant, rediriger vers le sous-domaine de l'école normalement
+      // Le PLATFORM_OWNER verra les modules plateforme en plus des modules école
     }
 
     // Compute the best tenant slug for redirect (prefer API response over URL)
@@ -312,6 +304,26 @@ export default function LoginPage() {
         tenantId: resolvedTenantId,
         path: redirectPath,
       });
+      
+      // Optimisation: si la redirection reste sur le même sous-domaine (même host),
+      // utiliser la navigation côté client (router.push) au lieu d'un rechargement complet.
+      // Cela améliore considérablement l'expérience utilisateur après la connexion.
+      try {
+        const redirectUrlObj = new URL(redirectUrl);
+        const currentHost = window.location.host;
+        const redirectHost = redirectUrlObj.host;
+        
+        if (redirectHost === currentHost) {
+          // Même sous-domaine → navigation côté client (rapide)
+          const targetPath = redirectUrlObj.pathname + redirectUrlObj.search;
+          router.push(targetPath);
+          return;
+        }
+      } catch {
+        // URL parsing failed → fallback to window.location
+      }
+      
+      // Sous-domaine différent → rechargement complet nécessaire pour les cookies cross-domain
       window.location.href = redirectUrl;
     } catch {
       // Fallback: redirect with query params
@@ -319,6 +331,13 @@ export default function LoginPage() {
       const url = new URL(redirectPath, baseUrl);
       if (resolvedSlug) url.searchParams.set('tenant', resolvedSlug);
       if (resolvedTenantId) url.searchParams.set('tenant_id', resolvedTenantId);
+      
+      // Même sous-domaine → navigation côté client
+      if (url.host === window.location.host) {
+        router.push(url.pathname + url.search);
+        return;
+      }
+      
       window.location.href = url.toString();
     }
   };

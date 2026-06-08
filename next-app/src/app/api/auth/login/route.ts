@@ -26,6 +26,13 @@ interface BackendLoginResponse {
     lastName?: string;
     tenantId?: string;
     role?: string;
+    isPlatformOwner?: boolean;
+  };
+  tenant?: {
+    id: string;
+    name: string;
+    slug: string;
+    subdomain?: string;
   };
   accessToken: string;
   refreshToken: string;
@@ -94,11 +101,21 @@ export async function POST(request: NextRequest) {
 
     const backendData: BackendLoginResponse = await backendResponse.json();
     
-    const tenantId = backendData.user.tenantId || body.tenant_id || '';
+    // Le backend peut maintenant retourner un tenant directement (y compris pour PLATFORM_OWNER avec tenant_id)
+    const tenantId = backendData.tenant?.id || backendData.user.tenantId || body.tenant_id || '';
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     const token = backendData.accessToken;
     
-    let tenant = await loadTenantFromApi(tenantId, token);
+    let tenant = backendData.tenant ? {
+      id: backendData.tenant.id,
+      name: backendData.tenant.name,
+      slug: backendData.tenant.slug,
+      subdomain: backendData.tenant.subdomain || backendData.tenant.slug,
+      status: 'active' as const,
+      subscriptionStatus: 'ACTIVE_SUBSCRIBED' as const,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } : await loadTenantFromApi(tenantId, token);
     
     if (!tenant) {
       tenant = {
@@ -106,8 +123,8 @@ export async function POST(request: NextRequest) {
         name: tenantId ? 'Mon École' : '',
         slug: body.tenantSubdomain || '',
         subdomain: body.tenantSubdomain || '',
-        status: 'active',
-        subscriptionStatus: 'ACTIVE_SUBSCRIBED',
+        status: 'active' as const,
+        subscriptionStatus: 'ACTIVE_SUBSCRIBED' as const,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       } as Tenant;
@@ -129,7 +146,8 @@ export async function POST(request: NextRequest) {
       accreditations: (backendData.user as any).accreditations || [],
       levelScopes: (backendData.user as any).levelScopes || [],
       classScopes: (backendData.user as any).classScopes || [],
-      tenantId: backendData.user.tenantId || resolvedTenantId,
+      tenantId: tenantId || resolvedTenantId,
+      isPlatformOwner: backendData.user.isPlatformOwner || backendData.user.role === 'PLATFORM_OWNER',
       permissions: [],
       createdAt: new Date().toISOString(),
     };

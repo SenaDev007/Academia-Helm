@@ -51,3 +51,22 @@ Stage Summary:
 - CSPEB tenant completely hidden (WITHDRAWN status + filtered from all endpoints)
 - Job offer creation now works with both short and long field names
 - No regression: short field names still work, all HR flows intact
+---
+Task ID: 1
+Agent: Main
+Task: Fix job offer creation error (regression) — defensive tenant ID checks across all HR controllers
+
+Work Log:
+- Diagnosed the error: when tenantId is missing from request, backend crashes with TypeError (tenant.id on undefined)
+- Root cause: TenantGuard lets PLATFORM_OWNER pass without setting tenantId, then @GetTenant() returns undefined
+- Fixed recruitment.controller.ts: added @Query('tenantId') fallback + BadRequestException check for createJob, createCandidate, createApplication, createTest
+- Fixed all 11 other HR controllers with same defensive pattern (staff, contracts, payroll, leaves, evaluations, attendance, allowances, cnss, ia, hr-overview, schedules)
+- Fixed frontend RecruitmentWorkspace.tsx: show clear error toast instead of silent return when tenant is missing
+- Synced all 3 api-server directories (api-server, Academia-Helm/api-server, Academia-Helm/apps/api-server)
+- Deployed to production and verified: with tenantId → 201, without tenantId → 400 (not 500)
+
+Stage Summary:
+- Bug fixed: job offer creation no longer crashes with 500 when tenant is missing
+- All 12 HR controllers now have defensive tenant ID checks
+- Frontend shows clear error message when tenant is not selected
+- Zero new TypeScript compilation errors introduced

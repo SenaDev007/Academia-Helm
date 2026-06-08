@@ -319,10 +319,11 @@ export class AuthService {
         'Liste des écoles (mode dev portail) indisponible en production sans PLATFORM_OWNER_MODE=true',
       );
     }
-    // Après garde : dev local ou prod avec tests plateforme → tous les tenants SCHOOL (sans filtre status).
+    // Après garde : dev local ou prod avec tests plateforme → tous les tenants SCHOOL actifs (exclut WITHDRAWN).
     const tenants = await this.prisma.tenant.findMany({
       where: {
         type: 'SCHOOL',
+        status: { not: 'WITHDRAWN' },
       },
       include: {
         schools: {

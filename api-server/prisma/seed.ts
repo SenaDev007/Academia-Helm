@@ -103,9 +103,10 @@ async function main() {
     where: { slug: 'default-tenant' },
     update: {
       subdomain: 'app',
+      name: 'Academia Helm',
     },
     create: {
-      name: 'Tenant par Défaut - Academia Helm',
+      name: 'Academia Helm',
       slug: 'default-tenant',
       subdomain: 'app',
       countryId: country.id,

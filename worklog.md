@@ -119,3 +119,27 @@ Stage Summary:
 - All logout flows now properly clear client session + redirect to landing page
 - Files created: SessionManagerContext.tsx, SessionInactivityModal.tsx, SessionLockScreen.tsx
 - Files modified: logout/route.ts, refresh/route.ts, layout-client.tsx, PilotageLayout.tsx, PilotageTopBar.tsx, AdminLayout.tsx, DashboardHeader.tsx, useAuth.ts, client.ts, LoginPage.tsx
+---
+Task ID: currency-standardization
+Agent: Main Agent
+Task: Standardize all currency display to "F CFA" (XOF) across the entire system
+
+Work Log:
+- Enhanced formatCurrency() in lib/utils.ts: "0 FCFA" → "0 F CFA", added options parameter
+- Added formatCurrencyCompact() for KPI/dashboards: "1,5 M F CFA"
+- Added formatPrice alias and useCurrency() hook
+- Replaced 22+ inline formatCurrency/formatXOF (Intl.NumberFormat) in shop/pilotage
+- Replaced 9 inline Intl.NumberFormat('XOF') formatters in finance module
+- Fixed 13 inline toLocaleString + 'XOF'/'FCFA' patterns in HR/payroll
+- Fixed 38 inline currency patterns in admin/onboarding/settings/public
+- Fixed 9 dynamic currency references in dashboards/Orion/platform
+- Changed all static 'FCFA' → 'F CFA' across 29 additional files
+- Fixed number formatting (comma → space per French convention)
+- All monetary values now display consistently: "12 500 F CFA"
+
+Stage Summary:
+- ~50+ files standardized
+- Zero remaining inline formatCurrency/formatXOF definitions
+- Zero remaining "FCFA" display strings (all replaced with "F CFA")
+- SEO priceCurrency: 'XOF' left unchanged (ISO 4217 machine-readable format)
+- Orion KPI currency: 'XOF' left unchanged (structured data field)

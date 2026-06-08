@@ -207,7 +207,7 @@ export function StaffWorkspace() {
           { label: 'Effectif total', value: staff.length },
           { label: 'Enseignants', value: staff.filter((s) => s.category === 'PEDAGOGICAL').length },
           { label: 'Administratifs', value: staff.filter((s) => s.category === 'ADMIN').length },
-          { label: 'Non déclarés CNSS', value: staff.filter((s) => s.cnssStatus === 'NOT_DECLARED').length },
+          { label: 'Non déclarés CNSS', value: staff.filter((s) => !s.cnssNumber).length },
         ].map((k, i) => (
           <div key={i} className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{k.label}</p>

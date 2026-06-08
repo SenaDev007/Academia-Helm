@@ -76,6 +76,26 @@ export class StaffPrismaController {
     return this.staffService.purgeAllStaff(tenant.id);
   }
 
+  // ─── TERMINATE / REACTIVATE ────────────────────────────────────────────────
+
+  @Post(':id/terminate')
+  async terminateStaff(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Body() body: { terminationType: string; terminationDetails?: any; noticePeriodDays?: number; lastWorkingDate?: string },
+  ) {
+    return this.staffService.terminateStaff(id, tenant.id, body);
+  }
+
+  @Post(':id/reactivate')
+  async reactivateStaff(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Body() body?: { reason?: string },
+  ) {
+    return this.staffService.reactivateStaff(id, tenant.id);
+  }
+
   // ─── CRUD ──────────────────────────────────────────────────────────────────
 
   @Get(':id')

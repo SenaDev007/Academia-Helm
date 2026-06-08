@@ -17,8 +17,10 @@ const PRIMARY = '#1A2BA6';
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   ACTIVE:     { label: 'En vigueur',  className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
+  DRAFT:      { label: 'Brouillon',   className: 'bg-amber-50 text-amber-600 border border-amber-200' },
   EXPIRED:    { label: 'Expiré',      className: 'bg-slate-100 text-slate-500 border border-slate-200' },
   TERMINATED: { label: 'Résilié',     className: 'bg-rose-50 text-rose-600 border border-rose-200' },
+  DELETED:    { label: 'Supprimé',    className: 'bg-slate-100 text-slate-400 border border-slate-200' },
 };
 
 const inputClass =
@@ -198,7 +200,7 @@ export function ContractsWorkspace() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: 'Contrats actifs', value: contracts.filter((c) => c.status === 'ACTIVE').length },
-          { label: 'CDI en cours', value: contracts.filter((c) => c.contractType === 'CDI' && c.status === 'ACTIVE').length },
+          { label: 'Brouillons', value: contracts.filter((c) => c.status === 'DRAFT').length },
           { label: 'Non signés', value: contracts.filter((c) => c.status === 'ACTIVE' && !c.signedAt).length },
           { label: 'Échéances J-30', value: expiringSoon.length },
         ].map((k, i) => (
@@ -224,6 +226,7 @@ export function ContractsWorkspace() {
           </div>
           <select className={selectClass} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
             <option value="ACTIVE">Contrats Actifs</option>
+            <option value="DRAFT">Brouillons</option>
             <option value="ALL">Historique Complet</option>
             <option value="EXPIRED">Expirés</option>
             <option value="TERMINATED">Terminés</option>

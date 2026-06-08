@@ -323,6 +323,85 @@ export class StaffPrismaService {
   }
 
   /**
+   * Termine un membre du personnel (débauche)
+   */
+  async terminateStaff(id: string, tenantId: string, data: {
+    terminationType: string;
+    terminationDetails?: any;
+    noticePeriodDays?: number;
+    lastWorkingDate?: string;
+  }) {
+    const staff = await this.findStaffById(id, tenantId);
+
+    // Update staff status and termination info
+    const updated = await this.prisma.staff.update({
+      where: { id },
+      data: {
+        status: 'INACTIVE',
+        terminationType: data.terminationType,
+        terminationDetails: data.terminationDetails || null,
+        terminatedAt: new Date(),
+        noticePeriodDays: data.noticePeriodDays || null,
+        lastWorkingDate: data.lastWorkingDate ? new Date(data.lastWorkingDate) : null,
+      },
+    });
+
+    // Terminate all active contracts for this staff member
+    try {
+      const activeContracts = await this.prisma.contract.findMany({
+        where: { staffId: id, tenantId, status: 'ACTIVE' },
+      });
+      for (const contract of activeContracts) {
+        await this.prisma.contract.update({
+          where: { id: contract.id },
+          data: {
+            status: 'TERMINATED',
+            terminatedAt: new Date(),
+            terminationReason: `Débauche: ${data.terminationType}`,
+          },
+        });
+      }
+    } catch (err: any) {
+      console.error(`Failed to terminate contracts for staff ${id}: ${err.message}`);
+    }
+
+    return {
+      ...updated,
+      staffCode: updated.employeeNumber,
+      category: Object.entries(CATEGORY_TO_ROLE).find(([, v]) => v === updated.roleType)?.[0] || updated.roleType,
+    };
+  }
+
+  /**
+   * Réactive un membre du personnel (réintégration)
+   */
+  async reactivateStaff(id: string, tenantId: string) {
+    const staff = await this.findStaffById(id, tenantId);
+
+    if (staff.status !== 'INACTIVE') {
+      throw new BadRequestException('Seul un membre inactif peut être réactivé');
+    }
+
+    const updated = await this.prisma.staff.update({
+      where: { id },
+      data: {
+        status: 'ACTIVE',
+        terminationType: null,
+        terminationDetails: null,
+        terminatedAt: null,
+        noticePeriodDays: null,
+        lastWorkingDate: null,
+      },
+    });
+
+    return {
+      ...updated,
+      staffCode: updated.employeeNumber,
+      category: Object.entries(CATEGORY_TO_ROLE).find(([, v]) => v === updated.roleType)?.[0] || updated.roleType,
+    };
+  }
+
+  /**
    * Supprime définitivement un membre du personnel et toutes ses données associées
    * (hard delete — photos, documents, contrats, évaluations, etc.)
    */

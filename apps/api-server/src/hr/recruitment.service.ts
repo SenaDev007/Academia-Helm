@@ -819,7 +819,7 @@ export class RecruitmentPrismaService {
               startDate: new Date(),
               baseSalary,
               paymentMode: 'BANK',
-              status: 'DRAFT',
+              status: 'ACTIVE',
             };
 
             if (currentYear?.id) {

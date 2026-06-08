@@ -316,6 +316,22 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/portal', mainDomain));
     }
 
+    // Check if tenant is already cached in cookies — skip API call
+    const cachedTenantId = request.cookies.get('x-resolved-tenant-id')?.value;
+    const cachedTenantSlug = request.cookies.get('x-resolved-tenant-slug')?.value;
+    const cachedTenantForSubdomain = request.cookies.get('x-resolved-tenant-subdomain')?.value;
+
+    if (cachedTenantId && cachedTenantSlug && cachedTenantForSubdomain === tenantIdentifier) {
+      // Use cached tenant data instead of making an API call
+      const cachedResponse = withAntiCacheHeaders(NextResponse.next());
+      cachedResponse.headers.set('X-Tenant-ID', cachedTenantId);
+      cachedResponse.headers.set('X-Tenant-Slug', cachedTenantSlug);
+      if (user) {
+        cachedResponse.headers.set('X-User-ID', user.id);
+      }
+      return cachedResponse;
+    }
+
     try {
       const tenant = await resolveTenant(tenantIdentifier);
 
@@ -359,6 +375,12 @@ export async function middleware(request: NextRequest) {
       if (user) {
         tenantResponse.headers.set('X-User-ID', user.id);
       }
+
+      // Cache the resolved tenant info in cookies for future requests (5 minutes)
+      const maxAge = 5 * 60; // 5 minutes
+      tenantResponse.cookies.set('x-resolved-tenant-id', tenant.id, { path: '/', maxAge, sameSite: 'lax' });
+      tenantResponse.cookies.set('x-resolved-tenant-slug', tenant.slug, { path: '/', maxAge, sameSite: 'lax' });
+      tenantResponse.cookies.set('x-resolved-tenant-subdomain', tenantIdentifier, { path: '/', maxAge, sameSite: 'lax' });
 
       // Logger l'accès réussi
       try {

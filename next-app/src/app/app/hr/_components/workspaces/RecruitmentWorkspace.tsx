@@ -486,7 +486,7 @@ export function RecruitmentWorkspace() {
 
   useEffect(() => {
     loadData();
-  }, [tenant?.id, activeTab]);
+  }, [tenant?.id]);
 
   // Create or Update Job
   const handleSaveJob = async (e: React.FormEvent) => {

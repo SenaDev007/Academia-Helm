@@ -34,6 +34,7 @@ import { persistClientSession } from '@/lib/auth/client-access-token';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getMotionDuration } from '@/lib/motion/presets';
 import { getTenantRedirectUrl } from '@/lib/utils/tenant-redirect';
+import { getAppBaseUrl } from '@/lib/utils/urls';
 
 type PortalType = 'platform' | 'school' | 'teacher' | 'parent' | 'public' | null;
 
@@ -242,7 +243,8 @@ export default function LoginPage() {
 
     saveEmailForTenant(schoolCredentials.email, 'platform');
 
-    window.location.href = '/app/platform';
+    const mainDomain = getAppBaseUrl();
+    window.location.href = `${mainDomain}/app/platform`;
   };
 
   const handleStandardLogin = async () => {
@@ -282,12 +284,14 @@ export default function LoginPage() {
       (data.user as { isPlatformOwner?: boolean })?.isPlatformOwner;
     const hasNoTenant = !data.tenant?.id;
     if (isPlatformOwner && hasNoTenant) {
-      window.location.href = '/app/platform';
+      const mainDomain = getAppBaseUrl();
+      window.location.href = `${mainDomain}/app/platform`;
       return;
     }
 
     if (portalType === 'platform') {
-      window.location.href = '/app/platform';
+      const mainDomain = getAppBaseUrl();
+      window.location.href = `${mainDomain}/app/platform`;
       return;
     }
 
@@ -296,8 +300,9 @@ export default function LoginPage() {
     const resolvedTenantId = tenantIdFromUrl || data.tenant?.id;
 
     if (!resolvedSlug && !resolvedTenantId) {
-      // No tenant info at all — go to /app and let middleware handle it
-      window.location.href = redirectPath;
+      // No tenant info at all — redirect to main domain /app
+      const mainDomain = getAppBaseUrl();
+      window.location.href = `${mainDomain}${redirectPath}`;
       return;
     }
 

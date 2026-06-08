@@ -285,6 +285,28 @@ async function bootstrap() {
       }
     }
 
+    // ─── Ensure publishedAt on hr_jobs (migration 20260609100000) ──────────
+    const publishedAtStatements = [
+      `ALTER TABLE "hr_jobs" ADD COLUMN IF NOT EXISTS "publishedAt" TIMESTAMP(3)`,
+    ];
+    for (const stmt of publishedAtStatements) {
+      try {
+        await prisma.$executeRawUnsafe(stmt);
+      } catch (err: any) {
+        if (!err.message?.includes('already exists') && !err.message?.includes('42P07') && !err.message?.includes('42P16')) {
+          logger.warn(`publishedAt ALTER warning: ${err.message}`);
+        }
+      }
+    }
+    // Backfill: set publishedAt to createdAt for jobs that are already PUBLIÉE
+    try {
+      await prisma.$executeRawUnsafe(
+        `UPDATE "hr_jobs" SET "publishedAt" = "createdAt" WHERE "status" = 'PUBLIÉE' AND "publishedAt" IS NULL`
+      );
+    } catch (backfillErr: any) {
+      logger.warn(`publishedAt backfill warning: ${backfillErr.message}`);
+    }
+
     // ─── Ensure job_number_sequences table (migration 20260606220000) ──────
     try {
       await prisma.$executeRawUnsafe(`

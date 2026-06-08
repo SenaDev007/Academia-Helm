@@ -143,3 +143,34 @@ Stage Summary:
 - Zero remaining "FCFA" display strings (all replaced with "F CFA")
 - SEO priceCurrency: 'XOF' left unchanged (ISO 4217 machine-readable format)
 - Orion KPI currency: 'XOF' left unchanged (structured data field)
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix 3 critical issues — PLATFORM_OWNER login redirect, middleware API caching, RecruitmentWorkspace tab reload
+
+Work Log:
+- ISSUE 1: Fixed PLATFORM_OWNER login redirecting to blank subdomain page
+  - In LoginPage.tsx: added `getAppBaseUrl` import from `@/lib/utils/urls`
+  - Changed all 3 `window.location.href = '/app/platform'` lines to use `${getAppBaseUrl()}/app/platform` (handlePlatformLogin, handleStandardLogin isPlatformOwner branch, handleStandardLogin portalType==='platform' branch)
+  - Changed fallback `window.location.href = redirectPath` in handleStandardLogin to use `${getAppBaseUrl()}${redirectPath}`
+  - This ensures PLATFORM_OWNER users on a subdomain like default-tenant.academiahelm.com get redirected to the main domain instead of staying on the subdomain
+
+- ISSUE 2: Fixed middleware making API call on every /app navigation
+  - Added cookie-based tenant resolution caching in middleware.ts
+  - Before resolveTenant() API call: check for cached cookies (x-resolved-tenant-id, x-resolved-tenant-slug, x-resolved-tenant-subdomain)
+  - If all 3 cookies exist and subdomain matches tenantIdentifier, skip the API call and use cached data
+  - After successful API resolution: set the 3 cache cookies with 5-minute TTL (maxAge=300, sameSite='lax', path='/')
+  - This eliminates 10-30 second delays on every tab navigation within /app routes
+
+- ISSUE 3: Fixed RecruitmentWorkspace reloading ALL data on every tab change
+  - Removed `activeTab` from useEffect dependency array: `[tenant?.id, activeTab]` → `[tenant?.id]`
+  - Data now loads once when tenant becomes available instead of on every tab switch
+  - Eliminates 5 redundant API calls per tab change (jobs, candidates, interviews, tests, talent pool)
+  - Existing `loadData()` calls in mutation handlers (saveJob, createCandidate, etc.) still refresh data after user actions
+
+Stage Summary:
+- PLATFORM_OWNER login now correctly redirects to main domain (no more blank subdomain page)
+- Middleware tenant resolution cached for 5 minutes via cookies (eliminates per-navigation API calls)
+- RecruitmentWorkspace data loads once per tenant, not per tab change
+- Zero new TypeScript compilation errors in changed files
+- Files modified: LoginPage.tsx, middleware.ts, RecruitmentWorkspace.tsx

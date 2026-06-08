@@ -487,7 +487,10 @@ export function RecruitmentWorkspace() {
   // Create or Update Job
   const handleSaveJob = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tenant?.id) return;
+    if (!tenant?.id) {
+      toast({ variant: 'error', title: 'Erreur', description: 'Aucun établissement sélectionné. Veuillez rafraîchir la page ou sélectionner un établissement.' });
+      return;
+    }
     try {
       if (editingJob) {
         // Update existing job
@@ -530,7 +533,10 @@ export function RecruitmentWorkspace() {
   // Create Candidate and Application
   const handleCreateCandidate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tenant?.id) return;
+    if (!tenant?.id) {
+      toast({ variant: 'error', title: 'Erreur', description: 'Aucun établissement sélectionné. Veuillez rafraîchir la page ou sélectionner un établissement.' });
+      return;
+    }
     try {
       // 1. Create Candidate
       const createdCandidate = await hrFetch<any>(hrUrl('recruitment/candidates', { tenantId: tenant.id }), {
@@ -621,7 +627,10 @@ export function RecruitmentWorkspace() {
   // Schedule or Update Interview
   const handleSaveInterview = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tenant?.id) return;
+    if (!tenant?.id) {
+      toast({ variant: 'error', title: 'Erreur', description: 'Aucun établissement sélectionné. Veuillez rafraîchir la page ou sélectionner un établissement.' });
+      return;
+    }
     try {
       if (editingInterview) {
         // Update existing interview — include status/result/feedback
@@ -722,7 +731,10 @@ export function RecruitmentWorkspace() {
   // Create or Update Test
   const handleSaveTest = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tenant?.id) return;
+    if (!tenant?.id) {
+      toast({ variant: 'error', title: 'Erreur', description: 'Aucun établissement sélectionné. Veuillez rafraîchir la page ou sélectionner un établissement.' });
+      return;
+    }
     try {
       const body = {
         name: newTest.name,

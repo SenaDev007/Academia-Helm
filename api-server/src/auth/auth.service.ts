@@ -215,6 +215,15 @@ export class AuthService {
         throw new UnauthorizedException('Invalid refresh token');
       }
 
+      // Preserve tenant context from the refresh token payload
+      // so the new access token keeps the same tenantId/academicYearId
+      const tenantId = payload.tenantId || null;
+      const academicYearId = payload.academicYearId || null;
+
+      if (tenantId) {
+        return this.generateEnrichedToken(user, tenantId, academicYearId);
+      }
+
       return this.generateTokens(user);
     } catch (error) {
       throw new UnauthorizedException('Invalid refresh token');

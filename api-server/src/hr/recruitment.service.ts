@@ -174,6 +174,13 @@ export class RecruitmentPrismaService {
   }
 
   async deleteJob(id: string) {
+    // 0. Capture tenantId before deletion (needed for sequence reset check)
+    const jobForTenant = await this.prisma.hrJob.findUnique({
+      where: { id },
+      select: { tenantId: true },
+    });
+    const tenantId = jobForTenant?.tenantId;
+
     // 1. Collect candidate documents from all applications of this job (for R2 cleanup)
     let documents: Array<{ id: string; filePath: string; fileName: string }> = [];
     try {
@@ -213,10 +220,23 @@ export class RecruitmentPrismaService {
       await tx.hrApplication.deleteMany({ where: { jobId: id } });
 
       // Finally, delete the job
-      await tx.hrJob.delete({ where: { id } });
+      const deleted = await tx.hrJob.delete({ where: { id } });
     });
 
-    // 3. Clean up files from storage (best-effort, after DB deletion)
+    // 3. Reset job number sequence if no more jobs exist for this tenant
+    if (tenantId) {
+      try {
+        const remaining = await this.prisma.hrJob.count({ where: { tenantId } });
+        if (remaining === 0) {
+          await this.prisma.jobNumberSequence.updateMany({
+            where: { tenantId },
+            data: { current: 0 },
+          });
+        }
+      } catch { /* best-effort — sequence reset is non-critical */ }
+    }
+
+    // 4. Clean up files from storage (best-effort, after DB deletion)
     if (documents.length > 0) {
       for (const doc of documents) {
         try {

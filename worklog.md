@@ -70,3 +70,24 @@ Stage Summary:
 - All 12 HR controllers now have defensive tenant ID checks
 - Frontend shows clear error message when tenant is not selected
 - Zero new TypeScript compilation errors introduced
+---
+Task ID: 2
+Agent: Main
+Task: Fix matricule counter not resetting after purge + fix session expiration after 3-5 min
+
+Work Log:
+- Investigated matricule generation: StaffNumberSequence table uses upsert+increment, never reset
+- Added StaffNumberSequence.current reset to 0 in purgeAllStaff()
+- Added JobNumberSequence.current reset to 0 when last job is deleted for a tenant
+- Investigated session expiration: JWT expires at 15min, Axios interceptor redirected to login on 401 without trying refresh
+- Added auto-refresh in Axios interceptor (with queue for concurrent requests)
+- Added auto-refresh in hrFetch (retry once on 401)
+- Fixed refreshToken() in auth.service.ts to preserve tenantId/academicYearId from original token
+- Updated tryRefreshAccessToken() to also update academia_token cookie (not just localStorage)
+- Updated BFF refresh route to update session cookie with new token
+
+Stage Summary:
+- Matricules now reset to 1 after full purge (StaffNumberSequence + JobNumberSequence)
+- Session no longer expires during active use: 401 triggers automatic token refresh
+- Refreshed tokens preserve tenant context (tenantId, academicYearId)
+- Cookie + localStorage both updated after refresh

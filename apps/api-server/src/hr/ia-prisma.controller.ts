@@ -22,6 +22,7 @@ import {
   Body,
   Query,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { IaPrismaService } from './ia-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -57,8 +58,13 @@ export class IaPrismaController {
       mimeType?: string;
       candidateId?: string;
     },
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.iaService.parseCv(tenant.id, body);
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.iaService.parseCv(tid, body);
   }
 
   // ─── Matching & Classement (XAI) ────────────────────────────────────────────
@@ -75,7 +81,7 @@ export class IaPrismaController {
     @GetTenant() tenant: any,
     @Query('jobId') jobId?: string,
   ) {
-    return this.iaService.matchCandidates(tenant.id, jobId);
+    return this.iaService.matchCandidates(tenant?.id, jobId);
   }
 
   // ─── Fraud Detection ────────────────────────────────────────────────────────
@@ -87,7 +93,7 @@ export class IaPrismaController {
    */
   @Get('detect-fraud')
   async detectFraud(@GetTenant() tenant: any) {
-    return this.iaService.detectFraud(tenant.id);
+    return this.iaService.detectFraud(tenant?.id);
   }
 
   // ─── Copilote RH ────────────────────────────────────────────────────────────
@@ -107,6 +113,7 @@ export class IaPrismaController {
       message: string;
       conversationHistory?: Array<{ role: string; content: string }>;
     },
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
     if (!body.message || !body.message.trim()) {
       return {
@@ -116,8 +123,13 @@ export class IaPrismaController {
       };
     }
 
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+
     return this.iaService.copilotChat(
-      tenant.id,
+      tid,
       body.message,
       body.conversationHistory,
     );

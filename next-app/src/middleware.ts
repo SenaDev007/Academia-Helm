@@ -230,7 +230,15 @@ export async function middleware(request: NextRequest) {
       return response;
     }
 
+    // Sur un sous-domaine : les routes publiques sont accessibles si l'utilisateur
+    // a une session valide (ex: /login sur enant.academiahelm.com après auth).
+    // Sans session, on redirige vers le domaine principal pour éviter une boucle
+    // (login sur sous-domaine → session absente → redirect vers login sur sous-domaine).
     if (subdomain && !pathname.startsWith('/app') && !pathname.startsWith('/admin')) {
+      // Si l'utilisateur a une session valide, laisser passer (il est déjà authentifié sur ce sous-domaine)
+      if (user?.id) {
+        return response;
+      }
       const mainDomain = getAppBaseUrl();
       const targetUrl = new URL(pathname, mainDomain);
       if (request.nextUrl.origin !== targetUrl.origin) {

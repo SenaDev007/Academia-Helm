@@ -108,8 +108,8 @@ export function ReportingWorkspace() {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
                   <XAxis dataKey="month" tickLine={false} tick={{ fontSize: 10, fill: '#64748B' }} />
-                  <YAxis tickFormatter={formatCurrency} tickLine={false} tick={{ fontSize: 10, fill: '#64748B' }} />
-                  <Tooltip formatter={(value) => [formatCurrency(value), 'Masse Salariale']} />
+                  <YAxis tickFormatter={(v: any) => formatCurrency(v)} tickLine={false} tick={{ fontSize: 10, fill: '#64748B' }} />
+                  <Tooltip formatter={(value) => [formatCurrency(value as any), 'Masse Salariale']} />
                   <Area type="monotone" dataKey="amount" stroke={PRIMARY} strokeWidth={2.5} fillOpacity={1} fill="url(#colorPayroll)" />
                 </AreaChart>
               </ResponsiveContainer>

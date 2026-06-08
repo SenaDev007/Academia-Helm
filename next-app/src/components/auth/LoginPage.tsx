@@ -9,7 +9,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import {
@@ -64,7 +64,6 @@ function normalizePortal(raw: string | null | undefined): PortalType {
 
 export default function LoginPage() {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const { shouldReduceMotion } = useMotionBudget();
 
   const portalParam = searchParams?.get('portal');
@@ -305,25 +304,17 @@ export default function LoginPage() {
         path: redirectPath,
       });
       
-      // Optimisation: si la redirection reste sur le même sous-domaine (même host),
-      // utiliser la navigation côté client (router.push) au lieu d'un rechargement complet.
-      // Cela améliore considérablement l'expérience utilisateur après la connexion.
-      try {
-        const redirectUrlObj = new URL(redirectUrl);
-        const currentHost = window.location.host;
-        const redirectHost = redirectUrlObj.host;
-        
-        if (redirectHost === currentHost) {
-          // Même sous-domaine → navigation côté client (rapide)
-          const targetPath = redirectUrlObj.pathname + redirectUrlObj.search;
-          router.push(targetPath);
-          return;
-        }
-      } catch {
-        // URL parsing failed → fallback to window.location
-      }
-      
-      // Sous-domaine différent → rechargement complet nécessaire pour les cookies cross-domain
+      // IMPORTANT: Toujours utiliser window.location.href (rechargement complet)
+      // après la connexion, même si la redirection reste sur le même sous-domaine.
+      //
+      // Le Set-Cookie de /api/auth/login (academia_session) doit être traité par
+      // le navigateur AVANT que la page /app soit chargée. Avec router.push(),
+      // la requête RSC est envoyée immédiatement, avant que le navigateur n'ait
+      // traité le Set-Cookie → getServerSession() retourne null → page blanche.
+      //
+      // Le rechargement complet (window.location.href) garantit que le navigateur
+      // traite d'abord le Set-Cookie, puis charge la nouvelle page avec les cookies
+      // à jour.
       window.location.href = redirectUrl;
     } catch {
       // Fallback: redirect with query params
@@ -331,13 +322,6 @@ export default function LoginPage() {
       const url = new URL(redirectPath, baseUrl);
       if (resolvedSlug) url.searchParams.set('tenant', resolvedSlug);
       if (resolvedTenantId) url.searchParams.set('tenant_id', resolvedTenantId);
-      
-      // Même sous-domaine → navigation côté client
-      if (url.host === window.location.host) {
-        router.push(url.pathname + url.search);
-        return;
-      }
-      
       window.location.href = url.toString();
     }
   };

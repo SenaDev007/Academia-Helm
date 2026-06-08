@@ -10,6 +10,7 @@
 
 import { redirect } from 'next/navigation';
 import dynamic from 'next/dynamic';
+import { headers } from 'next/headers';
 import { getServerSession } from '@/lib/auth/session';
 import { ModalProvider } from '@/components/modules/blueprint/modals/ModalProvider';
 import AppLayoutClient from './layout-client';
@@ -31,6 +32,19 @@ export default async function AppLayout({
   const session = await getServerSession();
 
   if (!session?.user) {
+    // Sur un sous-domaine, rediriger vers /login sur le même sous-domaine
+    // (le middleware autorise /login avec session pour éviter les boucles).
+    // Sur le domaine principal, rediriger vers /login normalement.
+    const headersList = await headers();
+    const host = headersList.get('host') || headersList.get('x-forwarded-host') || '';
+    const parts = host.split('.');
+    const hasSubdomain = parts.length >= 3 && !['www', 'dev', 'test', 'staging', 'preview', 'admin', 'api', 'portal', 'app'].includes(parts[0]);
+    
+    if (hasSubdomain) {
+      // Construire l'URL de login sur le même sous-domaine
+      const protocol = headersList.get('x-forwarded-proto') || 'https';
+      redirect(`${protocol}://${host}/login`);
+    }
     redirect('/login');
   }
 

@@ -20,12 +20,20 @@ export class TenantsRepository {
   async findBySubdomainOrSlug(subdomain: string): Promise<any | null> {
     return this.prisma.tenant.findFirst({
       where: {
+        status: { not: 'WITHDRAWN' },
         OR: [{ subdomain: subdomain }, { slug: subdomain }],
       },
     });
   }
 
   async findAll(): Promise<any[]> {
+    // Exclude WITHDRAWN tenants from the default list
+    return this.prisma.tenant.findMany({
+      where: { status: { not: 'WITHDRAWN' } },
+    });
+  }
+
+  async findAllIncludingWithdrawn(): Promise<any[]> {
     return this.prisma.tenant.findMany();
   }
 

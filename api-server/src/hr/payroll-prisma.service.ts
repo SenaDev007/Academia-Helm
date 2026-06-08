@@ -27,19 +27,6 @@ import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/pris
 export class PayrollPrismaService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Resolves the academicYearId: returns the provided value if truthy,
-   * otherwise looks up the active academic year for the tenant.
-   * Returns null if no active academic year is found.
-   */
-  private async resolveAcademicYearId(tenantId: string, academicYearId?: string): Promise<string | null> {
-    if (academicYearId) return academicYearId;
-    const activeYear = await this.prisma.academicYear.findFirst({
-      where: { tenantId, isActive: true },
-    });
-    return activeYear?.id || null;
-  }
-
   // ============================================================================
   // PAYROLL BATCHES (Payroll model = batch mensuel)
   // ============================================================================
@@ -49,7 +36,7 @@ export class PayrollPrismaService {
    */
   async createPayroll(data: {
     tenantId: string;
-    academicYearId?: string;
+    academicYearId: string;
     month: string;
     startDate: Date;
     endDate: Date;
@@ -57,17 +44,11 @@ export class PayrollPrismaService {
     payrollPeriodId?: string;
     notes?: string;
   }) {
-    // Resolve academicYearId if not provided
-    const resolvedAcademicYearId = await this.resolveAcademicYearId(data.tenantId, data.academicYearId);
-    if (!resolvedAcademicYearId) {
-      throw new BadRequestException('Aucune année académique active trouvée. Veuillez en configurer une.');
-    }
-
     // Vérifier qu'il n'y a pas déjà un lot pour ce mois (unique constraint)
     const existing = await this.prisma.payroll.findFirst({
       where: {
         tenantId: data.tenantId,
-        academicYearId: resolvedAcademicYearId,
+        academicYearId: data.academicYearId,
         month: data.month,
       },
     });
@@ -80,7 +61,7 @@ export class PayrollPrismaService {
       data: {
         ...prismaCreateDefaults(),
         tenantId: data.tenantId,
-        academicYearId: resolvedAcademicYearId,
+        academicYearId: data.academicYearId,
         schoolLevelId: data.schoolLevelId ?? null,
         payrollPeriodId: data.payrollPeriodId ?? null,
         month: data.month,
@@ -693,7 +674,7 @@ export class PayrollPrismaService {
    */
   async createPayrollPeriod(data: {
     tenantId: string;
-    academicYearId?: string;
+    academicYearId: string;
     schoolLevelId?: string;
     name: string;
     periodType?: string;
@@ -701,17 +682,11 @@ export class PayrollPrismaService {
     startDate: Date;
     endDate: Date;
   }) {
-    // Resolve academicYearId if not provided
-    const resolvedAcademicYearId = await this.resolveAcademicYearId(data.tenantId, data.academicYearId);
-    if (!resolvedAcademicYearId) {
-      throw new BadRequestException('Aucune année académique active trouvée. Veuillez en configurer une.');
-    }
-
     return this.prisma.payrollPeriod.create({
       data: {
         ...prismaCreateDefaults(),
         tenantId: data.tenantId,
-        academicYearId: resolvedAcademicYearId,
+        academicYearId: data.academicYearId,
         schoolLevelId: data.schoolLevelId ?? null,
         name: data.name,
         periodType: data.periodType ?? 'MONTHLY',
@@ -875,7 +850,7 @@ export class PayrollPrismaService {
    */
   async createOneTimeBonus(data: {
     tenantId: string;
-    academicYearId?: string;
+    academicYearId: string;
     schoolLevelId?: string;
     staffId: string;
     amount: number;
@@ -883,17 +858,11 @@ export class PayrollPrismaService {
     bonusType?: string;
     authorizedBy: string;
   }) {
-    // Resolve academicYearId if not provided
-    const resolvedAcademicYearId = await this.resolveAcademicYearId(data.tenantId, data.academicYearId);
-    if (!resolvedAcademicYearId) {
-      throw new BadRequestException('Aucune année académique active trouvée. Veuillez en configurer une.');
-    }
-
     return this.prisma.oneTimeBonus.create({
       data: {
         ...prismaCreateDefaults(),
         tenantId: data.tenantId,
-        academicYearId: resolvedAcademicYearId,
+        academicYearId: data.academicYearId,
         schoolLevelId: data.schoolLevelId ?? null,
         staffId: data.staffId,
         amount: new Prisma.Decimal(data.amount),

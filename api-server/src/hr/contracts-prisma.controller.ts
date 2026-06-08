@@ -17,7 +17,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 import type { Response, Request } from 'express';
-import { CreateContractDto, UpdateContractDto, CreateAmendmentDto, SignContractDto, CreateContractTemplateDto, UpdateContractTemplateDto } from './dto';
+import { CreateContractDto, UpdateContractDto, CreateAmendmentDto, SignContractDto, CreateContractTemplateDto, UpdateContractTemplateDto, TerminateContractDto } from './dto';
 
 @Controller('hr/contracts')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -98,9 +98,27 @@ export class ContractsPrismaController {
     return this.contractsService.updateContract(id, tenant.id, data);
   }
 
+  /**
+   * PUT /hr/contracts/:id/terminate
+   * Résilie un contrat de manière professionnelle.
+   * Si c'est le dernier contrat actif du staff, son statut est également mis à jour.
+   */
   @Put(':id/terminate')
-  async terminateContract(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.contractsService.terminateContract(id, tenant.id);
+  async terminateContract(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Body() data?: TerminateContractDto,
+  ) {
+    return this.contractsService.terminateContract(
+      id,
+      tenant.id,
+      data?.reason,
+      {
+        terminatedAt: data?.terminatedAt ? new Date(data.terminatedAt) : undefined,
+        terminationType: data?.terminationType,
+        updateStaffStatus: data?.updateStaffStatus,
+      },
+    );
   }
 
   @Delete(':id')

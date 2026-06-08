@@ -30,10 +30,10 @@ import Link from 'next/link';
 
 const PRIMARY = '#1A2BA6';
 
-const CATEGORY_STYLES: Record<string, { bg: string; text: string; borderColor: string; label: string }> = {
-  PEDAGOGICAL: { bg: 'bg-blue-50', text: 'text-blue-700', borderColor: '#bfdbfe', label: 'Enseignant' },
-  ADMIN: { bg: 'bg-purple-50', text: 'text-purple-700', borderColor: '#e9d5ff', label: 'Administratif' },
-  SUPPORT: { bg: 'bg-emerald-50', text: 'text-emerald-700', borderColor: '#a7f3d0', label: 'Appui' },
+const CATEGORY_STYLES: Record<string, { bg: string; text: string; border: string; label: string }> = {
+  PEDAGOGICAL: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', label: 'Enseignant' },
+  ADMIN: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', label: 'Administratif' },
+  SUPPORT: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', label: 'Appui' },
 };
 
 interface HistoryEntry {
@@ -47,7 +47,7 @@ interface HistoryEntry {
 }
 
 export function CollaboratorsWorkspace() {
-  const { tenant, academicYear } = useModuleContext();
+  const { tenant } = useModuleContext();
   const [activeTab, setActiveTab] = useState<'staff' | 'contracts' | 'assignments' | 'history' | 'org_chart'>('staff');
   const [staffList, setStaffList] = useState<any[]>([]);
   const [contractsList, setContractsList] = useState<any[]>([]);
@@ -57,45 +57,40 @@ export function CollaboratorsWorkspace() {
 
   useEffect(() => {
     if (!tenant?.id) return;
-    const queryParams: Record<string, string | undefined> = { tenantId: tenant.id };
-    if (academicYear?.id) queryParams.academicYearId = academicYear.id;
     if (activeTab === 'assignments' || activeTab === 'org_chart' || activeTab === 'history') {
       setLoading(true);
-      hrFetch<any[]>(hrUrl('staff', queryParams))
+      hrFetch<any[]>(hrUrl('staff', { tenantId: tenant.id }))
         .then((data) => {
           setStaffList(Array.isArray(data) ? data : []);
         })
         .catch((err) => {
           console.error('Error loading staff for collaborators:', err);
-          toast({ variant: 'error', title: 'Erreur de chargement du personnel' });
+          toast({ variant: 'error', title: 'Erreur de chargement des données' });
           setStaffList([]);
         })
         .finally(() => setLoading(false));
     }
     if (activeTab === 'history') {
-      hrFetch<any[]>(hrUrl('contracts', queryParams))
+      hrFetch<any[]>(hrUrl('contracts', { tenantId: tenant.id }))
         .then((data) => setContractsList(Array.isArray(data) ? data : []))
         .catch((err) => {
           console.error('Error loading contracts:', err);
-          toast({ variant: 'error', title: 'Erreur de chargement des contrats' });
           setContractsList([]);
         });
-      hrFetch<any[]>(hrUrl('evaluations', queryParams))
+      hrFetch<any[]>(hrUrl('evaluations', { tenantId: tenant.id }))
         .then((data) => setEvaluationsList(Array.isArray(data) ? data : []))
         .catch((err) => {
           console.error('Error loading evaluations:', err);
-          toast({ variant: 'error', title: 'Erreur de chargement des évaluations' });
           setEvaluationsList([]);
         });
-      hrFetch<any[]>(hrUrl('evaluations/trainings', queryParams))
+      hrFetch<any[]>(hrUrl('evaluations/trainings', { tenantId: tenant.id }))
         .then((data) => setTrainingsList(Array.isArray(data) ? data : []))
         .catch((err) => {
           console.error('Error loading trainings:', err);
-          toast({ variant: 'error', title: 'Erreur de chargement des formations' });
           setTrainingsList([]);
         });
     }
-  }, [tenant?.id, academicYear?.id, activeTab]);
+  }, [tenant?.id, activeTab]);
 
   const SUB_TABS = [
     { id: 'staff', label: 'Personnel', icon: Users },
@@ -170,7 +165,7 @@ export function CollaboratorsWorkspace() {
       s.position?.toLowerCase().includes('director') ||
       s.position?.toLowerCase().includes('principal') ||
       s.position?.toLowerCase().includes('proviseur')
-  ) || null;
+  );
   const categoryGroups = Array.from(new Set(staffList.map((s) => s.category).filter(Boolean)));
   const departmentByCategory: Record<string, { dept: string; members: any[] }[]> = {};
   for (const cat of categoryGroups) {
@@ -247,7 +242,7 @@ export function CollaboratorsWorkspace() {
                         'text-[10px] mt-2 inline-block px-2 py-0.5 rounded-full font-semibold uppercase',
                         CATEGORY_STYLES[ass.category]?.bg || 'bg-slate-100',
                         CATEGORY_STYLES[ass.category]?.text || 'text-slate-600',
-                      )} style={{ border: `1px solid ${CATEGORY_STYLES[ass.category]?.borderColor || '#e2e8f0'}` }}>
+                      )} style={{ border: `1px solid ${CATEGORY_STYLES[ass.category]?.border?.replace('border-', '') || 'slate-200'}` }}>
                         {CATEGORY_STYLES[ass.category]?.label || ass.category}
                       </span>
                     )}
@@ -329,7 +324,7 @@ export function CollaboratorsWorkspace() {
               <div className="bg-white border border-slate-200 rounded-xl p-8 flex flex-col items-center">
                 <div className="w-full space-y-8">
                   {/* Director at top */}
-                  {directorStaff ? (
+                  {directorStaff && (
                     <div className="flex flex-col items-center">
                       <div className="relative">
                         <div className="flex flex-col items-center p-4 rounded-2xl border-2 border-amber-300 bg-gradient-to-b from-amber-50 to-white shadow-lg min-w-[180px]">
@@ -344,15 +339,6 @@ export function CollaboratorsWorkspace() {
                       {/* Connector line */}
                       <div className="w-px h-8 bg-slate-300" />
                     </div>
-                  ) : (
-                    <div className="flex flex-col items-center">
-                      <div className="flex flex-col items-center p-4 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 min-w-[180px]">
-                        <Crown className="h-8 w-8 text-slate-300 mb-2" />
-                        <p className="font-semibold text-slate-400 text-xs text-center">Poste de direction non assigné</p>
-                        <p className="text-[10px] text-slate-300 mt-0.5">Ajoutez un poste contenant « Directeur » ou « Principal »</p>
-                      </div>
-                      <div className="w-px h-8 bg-slate-200" />
-                    </div>
                   )}
 
                   {/* Category groups as tree branches */}
@@ -366,7 +352,7 @@ export function CollaboratorsWorkspace() {
                             {/* Category header with connector */}
                             <div className="flex items-center gap-3">
                               <div className="flex-1 h-px bg-slate-200" />
-                              <div className={cn('flex items-center gap-2 px-4 py-2 rounded-xl border', catStyle.bg, catStyle.text)} style={{ borderColor: (CATEGORY_STYLES as any)[cat]?.borderColor || '#e2e8f0' }}>
+                              <div className={cn('flex items-center gap-2 px-4 py-2 rounded-xl border', catStyle.bg, catStyle.text)} style={{ borderColor: 'var(--tw-border-opacity, 1)' }}>
                                 {cat === 'PEDAGOGICAL' ? <GraduationCap className="h-4 w-4" /> : cat === 'ADMIN' ? <UserCog className="h-4 w-4" /> : <Building2 className="h-4 w-4" />}
                                 <span className="text-sm font-bold">{catStyle.label}</span>
                                 <span className="text-[10px] font-semibold opacity-70">({staffList.filter(s => s.category === cat).length})</span>
@@ -388,7 +374,7 @@ export function CollaboratorsWorkspace() {
                                   </div>
                                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 pl-4">
                                     {members.map((m) => (
-                                      <div key={m.id} className={cn('border rounded-lg p-2.5 text-center hover:shadow-sm transition-shadow', catStyle.bg)} style={{ borderColor: (CATEGORY_STYLES as any)[cat]?.borderColor || '#e2e8f0' }}>
+                                      <div key={m.id} className={cn('border rounded-lg p-2.5 text-center hover:shadow-sm transition-shadow', catStyle.bg)} style={{ borderColor: 'var(--tw-border-opacity, 1)' }}>
                                         <div className="w-7 h-7 rounded-lg mx-auto flex items-center justify-center text-[10px] font-bold mb-1.5" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
                                           {m.firstName?.[0]}{m.lastName?.[0]}
                                         </div>

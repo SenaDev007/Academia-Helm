@@ -25,19 +25,6 @@ import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/pris
 export class CNSSPrismaService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Resolves the academicYearId: returns the provided value if truthy,
-   * otherwise looks up the active academic year for the tenant.
-   * Returns null if no active academic year is found.
-   */
-  private async resolveAcademicYearId(tenantId: string, academicYearId?: string): Promise<string | null> {
-    if (academicYearId) return academicYearId;
-    const activeYear = await this.prisma.academicYear.findFirst({
-      where: { tenantId, isActive: true },
-    });
-    return activeYear?.id || null;
-  }
-
   // ============================================================================
   // TAUX CNSS (CNSSRate — global par pays, pas par tenant)
   // ============================================================================
@@ -161,21 +148,15 @@ export class CNSSPrismaService {
    */
   async createCNSSDeclaration(data: {
     tenantId: string;
-    academicYearId?: string;
+    academicYearId: string;
     month: string;
     notes?: string;
   }) {
-    // Resolve academicYearId if not provided
-    const resolvedAcademicYearId = await this.resolveAcademicYearId(data.tenantId, data.academicYearId);
-    if (!resolvedAcademicYearId) {
-      throw new BadRequestException('Aucune année académique active trouvée. Veuillez en configurer une.');
-    }
-
     // Vérifier qu'il n'y a pas déjà une déclaration pour ce mois (unique constraint)
     const existing = await this.prisma.cNSSDeclaration.findFirst({
       where: {
         tenantId: data.tenantId,
-        academicYearId: resolvedAcademicYearId,
+        academicYearId: data.academicYearId,
         month: data.month,
       },
     });
@@ -190,7 +171,7 @@ export class CNSSPrismaService {
     const payroll = await this.prisma.payroll.findFirst({
       where: {
         tenantId: data.tenantId,
-        academicYearId: resolvedAcademicYearId,
+        academicYearId: data.academicYearId,
         month: data.month,
         status: { in: ['VALIDATED', 'PAID'] },
       },
@@ -263,7 +244,7 @@ export class CNSSPrismaService {
         data: {
           ...prismaCreateDefaults(),
           tenantId: data.tenantId,
-          academicYearId: resolvedAcademicYearId,
+          academicYearId: data.academicYearId,
           month: data.month,
           totalEmployeeShare,
           totalEmployerShare,

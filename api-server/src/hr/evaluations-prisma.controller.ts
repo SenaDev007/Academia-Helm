@@ -45,7 +45,7 @@ export class EvaluationsPrismaController {
   @Get('statistics')
   async getEvaluationStatistics(
     @GetTenant() tenant: any,
-    @Query('academicYearId') academicYearId?: string,
+    @Query('academicYearId') academicYearId: string,
   ) {
     return this.evaluationsService.getEvaluationStatistics(tenant.id, academicYearId);
   }

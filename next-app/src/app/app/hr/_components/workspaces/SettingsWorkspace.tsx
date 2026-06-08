@@ -22,7 +22,7 @@ const CONTRACT_TYPES = [
 
 export function SettingsWorkspace() {
   const confirmDialog = useConfirmDialog();
-  const { tenant, academicYear } = useModuleContext();
+  const { tenant } = useModuleContext();
   const [activeTab, setActiveTab] = useState<'payroll' | 'templates'>('payroll');
 
   // ── Payroll Settings ──────────────────────────────────────────────────────
@@ -41,7 +41,6 @@ export function SettingsWorkspace() {
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [showNewTemplate, setShowNewTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<any>(null);
-  const [editingTemplateKey, setEditingTemplateKey] = useState(0);
   const [newTemplate, setNewTemplate] = useState({ name: '', contractType: 'CDI', template: '' });
   const [savingTemplate, setSavingTemplate] = useState(false);
 
@@ -87,7 +86,7 @@ export function SettingsWorkspace() {
         setArticles([{ title: "Contenu du contrat", content: editingTemplate.template }]);
       }
     }
-  }, [editingTemplate?.id, editingTemplateKey]);
+  }, [editingTemplate?.id]);
 
   useEffect(() => {
     if (showNewTemplate) {
@@ -173,14 +172,12 @@ export function SettingsWorkspace() {
           cnssEmployerRate: parseFloat(rates.cnssEmployerRate),
           taxRate: parseFloat(rates.taxRate),
           effectiveFrom: rates.effectiveFrom,
-          ...(academicYear?.id ? { academicYearId: academicYear.id } : {}),
         },
       });
       setSuccess(true);
-      toast({ variant: 'success', title: 'Paramètres enregistrés avec succès.' });
       setTimeout(() => setSuccess(false), 3000);
     } catch (err) {
-      toast({ variant: 'error', title: 'Erreur lors de la sauvegarde des taux.' });
+      toast({ variant: 'error', title: 'Erreur lors de la sauvegarde.' });
     } finally {
       setSaving(false);
     }
@@ -617,7 +614,7 @@ export function SettingsWorkspace() {
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <button
-                        onClick={() => { setEditingTemplate(tmpl); setEditingTemplateKey((k) => k + 1); setShowNewTemplate(false); }}
+                        onClick={() => { setEditingTemplate(tmpl); setShowNewTemplate(false); }}
                         className="p-2 text-slate-400 hover:text-[#1A2BA6] rounded-lg hover:bg-slate-50 transition"
                         title="Modifier"
                       >

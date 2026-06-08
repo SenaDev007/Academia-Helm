@@ -17,26 +17,13 @@
  * ============================================================================
  */
 
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 
 @Injectable()
 export class SchedulesPrismaService {
   constructor(private readonly prisma: PrismaService) {}
-
-  /**
-   * Resolves the academicYearId: returns the provided value if truthy,
-   * otherwise looks up the active academic year for the tenant.
-   * Returns null if no active academic year is found.
-   */
-  private async resolveAcademicYearId(tenantId: string, academicYearId?: string): Promise<string | null> {
-    if (academicYearId) return academicYearId;
-    const activeYear = await this.prisma.academicYear.findFirst({
-      where: { tenantId, isActive: true },
-    });
-    return activeYear?.id || null;
-  }
 
   // ============================================================================
   // STAFF SCHEDULES
@@ -151,17 +138,11 @@ export class SchedulesPrismaService {
       role?: string;
       location?: string;
       notes?: string;
-      academicYearId?: string;
+      academicYearId: string;
       schoolLevelId?: string;
     },
     tenantId: string,
   ) {
-    // Resolve academicYearId if not provided
-    const resolvedAcademicYearId = await this.resolveAcademicYearId(tenantId, data.academicYearId);
-    if (!resolvedAcademicYearId) {
-      throw new BadRequestException('Aucune année académique active trouvée. Veuillez en configurer une.');
-    }
-
     // Verify staff member exists within tenant
     const staff = await this.prisma.staff.findFirst({
       where: { id: data.staffId, tenantId },
@@ -176,7 +157,7 @@ export class SchedulesPrismaService {
         data: {
           ...prismaCreateDefaults(),
           tenantId,
-          academicYearId: resolvedAcademicYearId,
+          academicYearId: data.academicYearId,
           schoolLevelId: data.schoolLevelId ?? null,
           staffId: data.staffId,
           dayOfWeek: data.dayOfWeek,

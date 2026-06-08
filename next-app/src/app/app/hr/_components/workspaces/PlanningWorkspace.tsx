@@ -20,18 +20,10 @@ const SHIFTS = [
   { name: 'Après-midi', type: 'AFTERNOON', startTime: '14:00', endTime: '18:00', time: '14:00 - 18:00' },
 ];
 
-function getMonday(d: Date): Date {
-  const date = new Date(d);
-  const day = date.getDay();
-  const diff = date.getDate() - day + (day === 0 ? -6 : 1); // Adjust for Sunday
-  date.setDate(diff);
-  date.setHours(0, 0, 0, 0);
-  return date;
-}
-
 function getWeekDates(offset: number): Date[] {
-  const monday = getMonday(new Date());
-  monday.setDate(monday.getDate() + offset * 7);
+  const now = new Date();
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - now.getDay() + 1 + offset * 7);
   return DAYS_OF_WEEK.map((_, i) => {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
@@ -85,24 +77,12 @@ export function PlanningWorkspace() {
       const startDate = formatDateKey(weekDates[0]);
       const endDate = formatDateKey(weekDates[5]);
       const data = await hrFetch<any[]>(hrUrl('schedules', { tenantId: tenant.id, startDate, endDate }));
-      const schedules = Array.isArray(data) ? data : [];
 
       // Map API schedules to assignments grid
       const newAssignments: Record<string, AssignmentValue> = {};
-      for (const sched of schedules) {
-        // Use dayOfWeek from API if available, otherwise derive from date
-        let dayIdx: number;
-        if (sched.dayOfWeek) {
-          const dayMap: Record<string, number> = {
-            MONDAY: 0, TUESDAY: 1, WEDNESDAY: 2,
-            THURSDAY: 3, FRIDAY: 4, SATURDAY: 5,
-          };
-          dayIdx = dayMap[sched.dayOfWeek] ?? -1;
-        } else {
-          const schedDate = new Date(sched.date);
-          const jsDay = schedDate.getDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
-          dayIdx = jsDay === 0 ? -1 : jsDay - 1; // Convert to Monday=0 index; skip Sundays
-        }
+      for (const sched of data) {
+        const schedDate = new Date(sched.date);
+        const dayIdx = schedDate.getDay() - 1; // Monday=0
         if (dayIdx < 0 || dayIdx > 5) continue;
         const dayName = DAYS_OF_WEEK[dayIdx];
         const shiftName = sched.shift === 'AFTERNOON' ? 'Après-midi' : 'Matin';
@@ -158,40 +138,38 @@ export function PlanningWorkspace() {
     try {
       if (staffId && prev?.scheduleId) {
         // Update existing schedule
-        const updateBody: Record<string, any> = {
-          staffId,
-          dayOfWeek,
-          shiftType,
-          startTime: shiftObj?.startTime,
-          endTime: shiftObj?.endTime,
-          role,
-          date: formatDateKey(date),
-          shift: shiftType,
-          tenantId: tenant?.id,
-        };
-        if (academicYear?.id) updateBody.academicYearId = academicYear.id;
         await hrFetch<any>(hrUrl(`schedules/${prev.scheduleId}`, { tenantId: tenant.id }), {
           method: 'PUT',
-          body: updateBody,
+          body: {
+            staffId,
+            dayOfWeek,
+            shiftType,
+            startTime: shiftObj?.startTime,
+            endTime: shiftObj?.endTime,
+            role,
+            date: formatDateKey(date),
+            shift: shiftType,
+            academicYearId: academicYear?.id,
+            tenantId: tenant?.id,
+          },
         });
         toast({ variant: 'success', title: 'Planning mis à jour' });
       } else if (staffId && !prev?.scheduleId) {
         // Create new schedule
-        const createBody: Record<string, any> = {
-          staffId,
-          dayOfWeek,
-          shiftType,
-          startTime: shiftObj?.startTime,
-          endTime: shiftObj?.endTime,
-          role,
-          date: formatDateKey(date),
-          shift: shiftType,
-          tenantId: tenant?.id,
-        };
-        if (academicYear?.id) createBody.academicYearId = academicYear.id;
         const result = await hrFetch<any>(hrUrl('schedules', { tenantId: tenant.id }), {
           method: 'POST',
-          body: createBody,
+          body: {
+            staffId,
+            dayOfWeek,
+            shiftType,
+            startTime: shiftObj?.startTime,
+            endTime: shiftObj?.endTime,
+            role,
+            date: formatDateKey(date),
+            shift: shiftType,
+            academicYearId: academicYear?.id,
+            tenantId: tenant?.id,
+          },
         });
         // Store the new schedule ID
         setAssignments((prev) => ({
@@ -214,9 +192,8 @@ export function PlanningWorkspace() {
         await hrFetch<any>(hrUrl(`schedules/${prev.scheduleId}`, { tenantId: tenant.id }), { method: 'DELETE' });
         toast({ variant: 'success', title: 'Créneau supprimé' });
       }
-    } catch (err: any) {
-      const msg = err?.message || err?.data?.message || err?.error || 'Erreur lors de la sauvegarde';
-      toast({ variant: 'error', title: msg });
+    } catch (err) {
+      toast({ variant: 'error', title: 'Erreur lors de la sauvegarde' });
       // Revert optimistic update
       loadSchedules();
     } finally {

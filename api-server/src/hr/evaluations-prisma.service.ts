@@ -8,7 +8,7 @@
  * ============================================================================
  */
 
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { Prisma } from '@prisma/client';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
@@ -16,19 +16,6 @@ import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/pris
 @Injectable()
 export class EvaluationsPrismaService {
   constructor(private readonly prisma: PrismaService) {}
-
-  /**
-   * Resolves the academicYearId: returns the provided value if truthy,
-   * otherwise looks up the active academic year for the tenant.
-   * Returns null if no active academic year is found.
-   */
-  private async resolveAcademicYearId(tenantId: string, academicYearId?: string): Promise<string | null> {
-    if (academicYearId) return academicYearId;
-    const activeYear = await this.prisma.academicYear.findFirst({
-      where: { tenantId, isActive: true },
-    });
-    return activeYear?.id || null;
-  }
 
   // ============================================================================
   // STAFF EVALUATIONS
@@ -39,24 +26,17 @@ export class EvaluationsPrismaService {
    */
   async createEvaluation(data: {
     tenantId: string;
-    academicYearId?: string;
+    academicYearId: string;
     schoolLevelId?: string;
     staffId: string;
     evaluatorId?: string;
     score?: number;
     comments?: string;
   }) {
-    // Resolve academicYearId if not provided
-    const resolvedAcademicYearId = await this.resolveAcademicYearId(data.tenantId, data.academicYearId);
-    if (!resolvedAcademicYearId) {
-      throw new BadRequestException('Aucune année académique active trouvée. Veuillez en configurer une.');
-    }
-
     return this.prisma.staffEvaluation.create({
       data: {
         ...prismaCreateDefaults(),
         ...data,
-        academicYearId: resolvedAcademicYearId,
         score: data.score !== undefined && data.score !== null ? new Prisma.Decimal(data.score) : undefined,
       },
       include: {
@@ -170,18 +150,13 @@ export class EvaluationsPrismaService {
   /**
    * Récupère les statistiques d'évaluation
    */
-  async getEvaluationStatistics(tenantId: string, academicYearId?: string) {
-    const where: any = {
-      tenantId,
-      score: { not: null },
-    };
-
-    if (academicYearId) {
-      where.academicYearId = academicYearId;
-    }
-
+  async getEvaluationStatistics(tenantId: string, academicYearId: string) {
     const evaluations = await this.prisma.staffEvaluation.findMany({
-      where,
+      where: {
+        tenantId,
+        academicYearId,
+        score: { not: null },
+      },
     });
 
     if (evaluations.length === 0) {

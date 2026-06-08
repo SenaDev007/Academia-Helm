@@ -51,11 +51,9 @@ export function PayrollWorkspace() {
     if (!tenant?.id) return;
     try {
       setLoading(true);
-      const statsParams: Record<string, string> = { tenantId: tenant.id };
-      if (academicYear?.id) statsParams.academicYearId = academicYear.id;
       const [payrollData, statsData] = await Promise.all([
         hrFetch<any[]>(hrUrl('payroll/periods', { tenantId: tenant.id })),
-        hrFetch<any>(hrUrl('payroll/statistics', statsParams)),
+        hrFetch<any>(hrUrl('payroll/statistics', { tenantId: tenant.id, academicYearId: academicYear?.id })),
       ]);
       setPayrolls(payrollData);
       setStats(statsData);
@@ -91,7 +89,7 @@ export function PayrollWorkspace() {
           name: `${MONTHS.find(m => m.value === modalForm.month)?.label || ''} ${modalForm.year}`,
           startDate: new Date(modalForm.startDate).toISOString(),
           endDate: new Date(modalForm.endDate).toISOString(),
-          ...(academicYear?.id ? { academicYearId: academicYear.id } : {}),
+          academicYearId: academicYear?.id,
           tenantId: tenant?.id,
         },
       });
@@ -197,41 +195,22 @@ export function PayrollWorkspace() {
         </div>
       ) : (
         <div className="space-y-3">
-          {payrolls.map((payroll, idx) => <PayrollRow key={payroll.id} payroll={payroll} index={idx} onRefresh={fetchData} />)}
+          {payrolls.map((payroll, idx) => <PayrollRow key={payroll.id} payroll={payroll} index={idx} />)}
         </div>
       )}
     </div>
   );
 }
 
-function PayrollRow({ payroll, index, onRefresh }: { payroll: any; index: number; onRefresh: () => void }) {
-  const { tenant } = useModuleContext();
-  const [actionLoading, setActionLoading] = useState(false);
+function PayrollRow({ payroll, index }: { payroll: any; index: number }) {
   const config = STATUS_CONFIG[payroll.status] || STATUS_CONFIG.OPEN;
   const StatusIcon = config.icon;
   const monthLabel = new Date(payroll.startDate).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
 
-  const bulletins = payroll._count?.payrolls ?? payroll.payrollCount ?? payroll.staffCount ?? 0;
-  const totalAmount = payroll.totalAmount != null ? Number(payroll.totalAmount) : null;
-
-  async function handleAction(action: string) {
-    if (!tenant?.id) return;
-    try {
-      setActionLoading(true);
-      await hrFetch(hrUrl(`payroll/periods/${payroll.id}/${action}`, { tenantId: tenant.id }), { method: 'POST' });
-      toast({ variant: 'success', title: `Action "${action}" exécutée avec succès` });
-      onRefresh();
-    } catch (err) {
-      toast({ variant: 'error', title: `Erreur lors de l'action "${action}"` });
-    } finally {
-      setActionLoading(false);
-    }
-  }
-
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }}>
-      <div className="group rounded-xl border border-slate-200 bg-white shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all overflow-hidden">
-        <Link href={`/app/hr/payroll/${payroll.id}`}>
+      <Link href={`/app/hr/payroll/${payroll.id}`}>
+        <div className="group rounded-xl border border-slate-200 bg-white shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all overflow-hidden">
           <div className="p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-xl flex items-center justify-center font-black text-sm shrink-0" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
@@ -243,17 +222,14 @@ function PayrollRow({ payroll, index, onRefresh }: { payroll: any; index: number
                   <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase', config.className)}>
                     <StatusIcon className="h-3 w-3" />{config.label}
                   </span>
-                  <span className="text-[10px] text-slate-400 font-medium">{bulletins} bulletins</span>
+                  <span className="text-[10px] text-slate-400 font-medium">{payroll._count?.payrolls || 0} bulletins</span>
                 </div>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-8 flex-grow max-w-md">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">Net à Payer</p>
-                <p className="text-lg font-black text-slate-900">
-                  {totalAmount != null ? totalAmount.toLocaleString() : '—'}
-                  {totalAmount != null && <span className="text-xs font-bold ml-1 text-slate-400">XOF</span>}
-                </p>
+                <p className="text-lg font-black text-slate-900">{Number(payroll.totalAmount).toLocaleString()}<span className="text-xs font-bold ml-1 text-slate-400">XOF</span></p>
               </div>
               <div className="hidden md:block">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">Période</p>
@@ -267,42 +243,8 @@ function PayrollRow({ payroll, index, onRefresh }: { payroll: any; index: number
               <ChevronRight className="h-5 w-5" />
             </div>
           </div>
-        </Link>
-        {/* Action buttons based on status */}
-        {(payroll.status === 'OPEN' || payroll.status === 'CALCULATED' || payroll.status === 'VALIDATED') && (
-          <div className="px-5 pb-4 flex items-center gap-2 border-t border-slate-100 pt-3">
-            {payroll.status === 'OPEN' && (
-              <button
-                onClick={(e) => { e.preventDefault(); handleAction('calculate'); }}
-                disabled={actionLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 disabled:opacity-50 transition"
-              >
-                <Calculator className="h-3.5 w-3.5" /> Calculer
-              </button>
-            )}
-            {payroll.status === 'CALCULATED' && (
-              <button
-                onClick={(e) => { e.preventDefault(); handleAction('validate'); }}
-                disabled={actionLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50 transition"
-                style={{ backgroundColor: PRIMARY }}
-              >
-                <ShieldCheck className="h-3.5 w-3.5" /> Valider
-              </button>
-            )}
-            {payroll.status === 'VALIDATED' && (
-              <button
-                onClick={(e) => { e.preventDefault(); handleAction('pay'); }}
-                disabled={actionLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition"
-              >
-                <CreditCard className="h-3.5 w-3.5" /> Payer
-              </button>
-            )}
-            {actionLoading && <Loader2 className="h-4 w-4 animate-spin text-slate-400 ml-2" />}
-          </div>
-        )}
-      </div>
+        </div>
+      </Link>
     </motion.div>
   );
 }

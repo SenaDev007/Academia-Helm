@@ -56,21 +56,18 @@ export function AttendanceWorkspace() {
 
   useEffect(() => {
     async function loadStaffStatsAndHistory() {
-      if (!tenant?.id || !selectedStaff?.id) return;
+      if (!tenant?.id || !selectedStaff?.id || !academicYear?.id) return;
       try {
-        const queryParams: Record<string, string> = { tenantId: tenant.id };
-        if (academicYear?.id) queryParams.academicYearId = academicYear.id;
-
         // Load attendance history for selected staff
-        const attHistory = await hrFetch<any[]>(hrUrl(`attendance/staff/${selectedStaff.id}`, queryParams));
+        const attHistory = await hrFetch<any[]>(hrUrl(`attendance/staff/${selectedStaff.id}`, { tenantId: tenant.id, academicYearId: academicYear.id }));
         setAttendances(attHistory);
 
         // Load overtime history for selected staff
-        const otHistory = await hrFetch<any[]>(hrUrl(`attendance/overtime/staff/${selectedStaff.id}`, queryParams));
+        const otHistory = await hrFetch<any[]>(hrUrl(`attendance/overtime/staff/${selectedStaff.id}`, { tenantId: tenant.id, academicYearId: academicYear.id }));
         setOvertimes(otHistory);
 
         // Load stats
-        const statData = await hrFetch<any>(hrUrl('attendance/statistics', { ...queryParams, staffId: selectedStaff.id }));
+        const statData = await hrFetch<any>(hrUrl('attendance/statistics', { tenantId: tenant.id, academicYearId: academicYear.id, staffId: selectedStaff.id }));
         setStats(statData);
       } catch (err) {
         console.error('Error loading staff details:', err);
@@ -82,34 +79,30 @@ export function AttendanceWorkspace() {
 
   async function handleRecordAttendance(e: React.FormEvent) {
     e.preventDefault();
-    if (!tenant?.id || !selectedStaff?.id) return;
+    if (!tenant?.id || !selectedStaff?.id || !academicYear?.id) return;
     try {
       setSavingAttendance(true);
-      const body: Record<string, any> = {
-        staffId: selectedStaff.id,
-        date: new Date(attendanceDate).toISOString(),
-        status: attendanceStatus,
-        hoursWorked: parseFloat(hoursWorked),
-        notes,
-      };
-      if (academicYear?.id) body.academicYearId = academicYear.id;
       await hrFetch(hrUrl('attendance', { tenantId: tenant.id }), {
         method: 'POST',
-        body,
+        body: {
+          academicYearId: academicYear.id,
+          staffId: selectedStaff.id,
+          date: new Date(attendanceDate).toISOString(),
+          status: attendanceStatus,
+          hoursWorked: parseFloat(hoursWorked),
+          notes,
+        },
       });
       // Refresh
-      const queryParams: Record<string, string> = { tenantId: tenant.id };
-      if (academicYear?.id) queryParams.academicYearId = academicYear.id;
-      const attHistory = await hrFetch<any[]>(hrUrl(`attendance/staff/${selectedStaff.id}`, queryParams));
+      const attHistory = await hrFetch<any[]>(hrUrl(`attendance/staff/${selectedStaff.id}`, { tenantId: tenant.id, academicYearId: academicYear.id }));
       setAttendances(attHistory);
-      const statData = await hrFetch<any>(hrUrl('attendance/statistics', { ...queryParams, staffId: selectedStaff.id }));
+      const statData = await hrFetch<any>(hrUrl('attendance/statistics', { tenantId: tenant.id, academicYearId: academicYear.id, staffId: selectedStaff.id }));
       setStats(statData);
       setNotes('');
       toast({ variant: 'success', title: 'Présence enregistrée avec succès' });
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error recording attendance:', err);
-      const msg = err?.message || err?.data?.message || err?.error || 'Erreur: enregistrement de la présence';
-      toast({ variant: 'error', title: msg });
+      toast({ variant: 'error', title: 'Erreur: enregistrement de la présence' });
     } finally {
       setSavingAttendance(false);
     }
@@ -117,31 +110,27 @@ export function AttendanceWorkspace() {
 
   async function handleRecordOvertime(e: React.FormEvent) {
     e.preventDefault();
-    if (!tenant?.id || !selectedStaff?.id) return;
+    if (!tenant?.id || !selectedStaff?.id || !academicYear?.id) return;
     try {
       setSavingOvertime(true);
-      const body: Record<string, any> = {
-        staffId: selectedStaff.id,
-        date: new Date(overtimeDate).toISOString(),
-        hours: parseFloat(overtimeHours),
-        reason: overtimeReason,
-      };
-      if (academicYear?.id) body.academicYearId = academicYear.id;
       await hrFetch(hrUrl('attendance/overtime', { tenantId: tenant.id }), {
         method: 'POST',
-        body,
+        body: {
+          academicYearId: academicYear.id,
+          staffId: selectedStaff.id,
+          date: new Date(overtimeDate).toISOString(),
+          hours: parseFloat(overtimeHours),
+          reason: overtimeReason,
+        },
       });
       // Refresh
-      const queryParams: Record<string, string> = { tenantId: tenant.id };
-      if (academicYear?.id) queryParams.academicYearId = academicYear.id;
-      const otHistory = await hrFetch<any[]>(hrUrl(`attendance/overtime/staff/${selectedStaff.id}`, queryParams));
+      const otHistory = await hrFetch<any[]>(hrUrl(`attendance/overtime/staff/${selectedStaff.id}`, { tenantId: tenant.id, academicYearId: academicYear.id }));
       setOvertimes(otHistory);
       setOvertimeReason('');
       toast({ variant: 'success', title: 'Heures supplémentaires enregistrées avec succès' });
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error recording overtime:', err);
-      const msg = err?.message || err?.data?.message || err?.error || 'Erreur: enregistrement des heures supplémentaires';
-      toast({ variant: 'error', title: msg });
+      toast({ variant: 'error', title: 'Erreur: enregistrement des heures supplémentaires' });
     } finally {
       setSavingOvertime(false);
     }
@@ -172,12 +161,6 @@ export function AttendanceWorkspace() {
               [1, 2, 3].map((i) => (
                 <div key={i} className="h-14 bg-slate-50 animate-pulse rounded-lg mt-1" />
               ))
-            ) : staffList.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <AlertCircle className="h-8 w-8 text-slate-300 mb-2" />
-                <p className="text-sm text-slate-500">Aucun collaborateur enregistré</p>
-                <p className="text-xs text-slate-400 mt-1">Ajoutez du personnel depuis le module Personnel.</p>
-              </div>
             ) : filteredStaff.length === 0 ? (
               <p className="text-sm text-slate-500 text-center py-4">Aucun collaborateur trouvé</p>
             ) : (
@@ -217,13 +200,6 @@ export function AttendanceWorkspace() {
         {selectedStaff ? (
           <>
             {/* Staff Info and Stats */}
-            {/* No-data notice when academicYear is missing */}
-            {!academicYear?.id && (
-              <div className="flex items-center gap-2 px-4 py-3 rounded-xl border border-amber-200 bg-amber-50 text-sm text-amber-700">
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                <span>Aucune année académique sélectionnée — les données peuvent être incomplètes.</span>
-              </div>
-            )}
             <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
               <div className="flex items-start justify-between pb-4 border-b border-slate-100 mb-6">
                 <div>
@@ -420,49 +396,6 @@ export function AttendanceWorkspace() {
                           </td>
                           <td className="px-5 py-3.5 text-slate-600">{att.hoursWorked || 0} hrs</td>
                           <td className="px-5 py-3.5 text-slate-500 max-w-[200px] truncate">{att.notes || '-'}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Overtime History Table */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="px-5 py-4 border-b border-slate-200 bg-slate-50">
-                <h4 className="font-bold text-slate-900 text-sm">Historique des Heures Supplémentaires</h4>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-100 bg-slate-50/50">
-                      <th className="px-5 py-3 text-slate-500 font-semibold">Date</th>
-                      <th className="px-5 py-3 text-slate-500 font-semibold">Heures</th>
-                      <th className="px-5 py-3 text-slate-500 font-semibold">Raison</th>
-                      <th className="px-5 py-3 text-slate-500 font-semibold">Validé</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {overtimes.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="text-center py-6 text-slate-400">Aucune heure supplémentaire enregistrée</td>
-                      </tr>
-                    ) : (
-                      overtimes.map((ot) => (
-                        <tr key={ot.id}>
-                          <td className="px-5 py-3.5 font-medium text-slate-900">
-                            {new Date(ot.date).toLocaleDateString('fr-FR')}
-                          </td>
-                          <td className="px-5 py-3.5 text-slate-600">{ot.hours || 0} hrs</td>
-                          <td className="px-5 py-3.5 text-slate-500 max-w-[200px] truncate">{ot.reason || '-'}</td>
-                          <td className="px-5 py-3.5">
-                            {ot.validated ? (
-                              <span className="px-2 py-0.5 rounded-full text-xs font-bold uppercase bg-emerald-50 text-emerald-700 border border-emerald-100">Oui</span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-full text-xs font-bold uppercase bg-amber-50 text-amber-700 border border-amber-100">En attente</span>
-                            )}
-                          </td>
                         </tr>
                       ))
                     )}

@@ -17,19 +17,6 @@ import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/pris
 export class AttendancePrismaService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Resolves the academicYearId: returns the provided value if truthy,
-   * otherwise looks up the active academic year for the tenant.
-   * Returns null if no active academic year is found.
-   */
-  private async resolveAcademicYearId(tenantId: string, academicYearId?: string): Promise<string | null> {
-    if (academicYearId) return academicYearId;
-    const activeYear = await this.prisma.academicYear.findFirst({
-      where: { tenantId, isActive: true },
-    });
-    return activeYear?.id || null;
-  }
-
   // ============================================================================
   // STAFF ATTENDANCE
   // ============================================================================
@@ -39,7 +26,7 @@ export class AttendancePrismaService {
    */
   async recordAttendance(data: {
     tenantId: string;
-    academicYearId?: string;
+    academicYearId: string;
     schoolLevelId?: string;
     staffId: string;
     date: string | Date;
@@ -53,12 +40,6 @@ export class AttendancePrismaService {
     const date = data.date instanceof Date ? data.date : new Date(data.date);
     const checkIn = data.checkIn ? (data.checkIn instanceof Date ? data.checkIn : new Date(data.checkIn)) : null;
     const checkOut = data.checkOut ? (data.checkOut instanceof Date ? data.checkOut : new Date(data.checkOut)) : null;
-
-    // Resolve academicYearId if not provided
-    const resolvedAcademicYearId = await this.resolveAcademicYearId(data.tenantId, data.academicYearId);
-    if (!resolvedAcademicYearId) {
-      throw new BadRequestException('Aucune année académique active trouvée. Veuillez en configurer une.');
-    }
 
     // Vérifier qu'il n'y a pas déjà une présence pour cette date
     const existing = await this.prisma.staffAttendance.findUnique({
@@ -78,7 +59,7 @@ export class AttendancePrismaService {
       data: {
         ...prismaCreateDefaults(),
         tenantId: data.tenantId,
-        academicYearId: resolvedAcademicYearId,
+        academicYearId: data.academicYearId,
         schoolLevelId: data.schoolLevelId ?? null,
         staffId: data.staffId,
         date,
@@ -151,18 +132,15 @@ export class AttendancePrismaService {
   /**
    * Récupère les statistiques de présence
    */
-  async getAttendanceStatistics(tenantId: string, academicYearId?: string, filters?: {
+  async getAttendanceStatistics(tenantId: string, academicYearId: string, filters?: {
     staffId?: string;
     startDate?: Date;
     endDate?: Date;
   }) {
     const where: any = {
       tenantId,
+      academicYearId,
     };
-
-    if (academicYearId) {
-      where.academicYearId = academicYearId;
-    }
 
     if (filters?.staffId) {
       where.staffId = filters.staffId;
@@ -203,7 +181,7 @@ export class AttendancePrismaService {
    */
   async recordOvertime(data: {
     tenantId: string;
-    academicYearId?: string;
+    academicYearId: string;
     schoolLevelId?: string;
     staffId: string;
     date: string | Date;
@@ -214,17 +192,11 @@ export class AttendancePrismaService {
     // Convert date string to Date object (DTO sends strings via @IsDateString)
     const date = data.date instanceof Date ? data.date : new Date(data.date);
 
-    // Resolve academicYearId if not provided
-    const resolvedAcademicYearId = await this.resolveAcademicYearId(data.tenantId, data.academicYearId);
-    if (!resolvedAcademicYearId) {
-      throw new BadRequestException('Aucune année académique active trouvée. Veuillez en configurer une.');
-    }
-
     return this.prisma.overtimeRecord.create({
       data: {
         ...prismaCreateDefaults(),
         tenantId: data.tenantId,
-        academicYearId: resolvedAcademicYearId,
+        academicYearId: data.academicYearId,
         schoolLevelId: data.schoolLevelId ?? null,
         staffId: data.staffId,
         date,

@@ -85,22 +85,20 @@ export function LeavesWorkspace() {
     e.preventDefault();
     try {
       setModalLoading(true);
-      const body: Record<string, any> = {
-        ...modalForm,
-        tenantId: tenant?.id,
-      };
-      if (academicYear?.id) body.academicYearId = academicYear.id;
       await hrFetch(hrUrl('leaves/requests', { tenantId: tenant.id }), {
         method: 'POST',
-        body,
+        body: {
+          ...modalForm,
+          academicYearId: academicYear?.id,
+          tenantId: tenant?.id,
+        },
       });
       toast({ variant: 'success', title: 'Demande de congé soumise avec succès' });
       setModalOpen(false);
       setModalForm({ staffId: '', type: 'ANNUAL', startDate: new Date().toISOString().split('T')[0], endDate: new Date().toISOString().split('T')[0], reason: '' });
       fetchLeaves();
-    } catch (err: any) {
-      const msg = err?.message || err?.data?.message || err?.error || 'Erreur lors de la soumission de la demande';
-      toast({ variant: 'error', title: msg });
+    } catch (err) {
+      toast({ variant: 'error', title: 'Erreur lors de la soumission de la demande' });
     } finally {
       setModalLoading(false);
     }
@@ -114,9 +112,8 @@ export function LeavesWorkspace() {
       });
       toast({ variant: 'success', title: status === 'APPROVED' ? 'Demande approuvée' : 'Demande rejetée' });
       fetchLeaves();
-    } catch (err: any) {
-      const msg = err?.message || err?.data?.message || err?.error || 'Erreur lors du traitement de la demande';
-      toast({ variant: 'error', title: msg });
+    } catch (err) {
+      toast({ variant: 'error', title: 'Erreur lors du traitement de la demande' });
     }
   };
 
@@ -248,11 +245,11 @@ export function LeavesWorkspace() {
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold shrink-0" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
-                          {request.staff ? `${request.staff.firstName?.[0] || ''}${request.staff.lastName?.[0] || ''}` : '?'}
+                          {request.staff?.firstName?.[0]}{request.staff?.lastName?.[0]}
                         </div>
                         <div>
-                          <p className="text-sm font-bold text-slate-900">{request.staff ? `${request.staff.firstName || ''} ${request.staff.lastName || ''}` : 'Collaborateur inconnu'}</p>
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{request.staff?.staffCode || request.staff?.employeeNumber || '—'}</p>
+                          <p className="text-sm font-bold text-slate-900">{request.staff?.firstName} {request.staff?.lastName}</p>
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{request.staff?.staffCode || request.staff?.employeeNumber}</p>
                         </div>
                       </div>
                     </td>

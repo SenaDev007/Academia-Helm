@@ -16,15 +16,10 @@ export function ReportingWorkspace() {
 
   useEffect(() => {
     async function loadAnalytics() {
-      if (!tenant?.id) {
-        setLoading(false);
-        return;
-      }
+      if (!tenant?.id || !academicYear?.id) return;
       try {
         setLoading(true);
-        const params: Record<string, string> = { tenantId: tenant.id };
-        if (academicYear?.id) params.academicYearId = academicYear.id;
-        const res = await hrFetch<any>(hrUrl('overview/analytics', params));
+        const res = await hrFetch<any>(hrUrl('overview/analytics', { tenantId: tenant.id, academicYearId: academicYear.id }));
         setData(res);
       } catch (err) {
         console.error('Error loading analytics:', err);
@@ -46,7 +41,6 @@ export function ReportingWorkspace() {
   const snapshot = data?.snapshot || {};
   const evolution = data?.evolution || [];
   const distribution = data?.distribution || {};
-  const hasData = data && (snapshot.monthlyPayroll || snapshot.totalStaff || evolution.length > 0);
 
   // Formatter for FCFA
   const formatCurrency = (val: any) => `${Number(val || 0).toLocaleString('fr-FR')} F`;
@@ -57,16 +51,6 @@ export function ReportingWorkspace() {
     { name: 'Administratif', count: distribution.admin || snapshot.totalAdmin || 0 },
     { name: 'Appui', count: distribution.support || 0 },
   ];
-
-  if (!hasData && !loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/30 p-16 text-center">
-        <BarChart3 className="h-12 w-12 text-slate-300 mb-4" />
-        <h3 className="text-base font-bold text-slate-800">Aucune donnée analytique disponible</h3>
-        <p className="text-sm text-slate-500 mt-2">Les statistiques apparaîtront une fois les données RH et de paie renseignées.</p>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6 pb-12">
@@ -79,7 +63,9 @@ export function ReportingWorkspace() {
           </div>
           <div>
             <h3 className="text-2xl font-black text-slate-900">{formatCurrency(snapshot.monthlyPayroll)}</h3>
-            <p className="text-xs text-slate-500 mt-1">Masse salariale du mois en cours</p>
+            <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
+              <TrendingUp className="h-3 w-3" /> Conforme au budget annuel
+            </p>
           </div>
         </div>
 

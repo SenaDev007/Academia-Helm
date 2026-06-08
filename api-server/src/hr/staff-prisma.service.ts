@@ -322,6 +322,232 @@ export class StaffPrismaService {
     });
   }
 
+  // ─── STAFF TERMINATION / DÉBAUCHE ────────────────────────────────────────
+
+  /**
+   * Types de départ avec leur label en français
+   */
+  private static readonly TERMINATION_TYPE_LABELS: Record<string, string> = {
+    RESIGNATION: 'Démission',
+    DISMISSAL: 'Licenciement',
+    MUTUAL_AGREEMENT: 'Rupture conventionnelle',
+    END_OF_CONTRACT: 'Fin de contrat',
+    RETIREMENT: 'Retraite',
+    DEATH: 'Décès',
+    ABANDONMENT: 'Abandon de poste',
+    OTHER: 'Autre',
+  };
+
+  /**
+   * Débauche d'un employé — Processus professionnel de départ.
+   *
+   * Ce processus réalise les opérations suivantes dans une transaction :
+   * 1. Vérifie que le staff existe et est actif
+   * 2. Met à jour le statut du staff (INACTIVE) avec les détails de la débauche
+   * 3. Résilie tous les contrats actifs du staff
+   * 4. Enregistre les métadonnées de la débauche (type, motif, préavis, etc.)
+   * 5. Retourne un récapitulatif complet de la débauche
+   */
+  async terminateStaff(
+    id: string,
+    tenantId: string,
+    data: {
+      terminationType: string;
+      effectiveDate: string;
+      lastWorkingDate?: string;
+      noticePeriodDays?: number;
+      reason?: string;
+      detailedReason?: string;
+      exitInterviewConducted?: boolean;
+      exitInterviewNotes?: string;
+      equipmentReturned?: boolean;
+      exitDocumentsProvided?: boolean;
+      finalSettlementPaid?: boolean;
+      authorizedBy?: string;
+      terminationLetterRef?: string;
+    },
+  ) {
+    // Phase 1: Pre-flight checks (outside transaction)
+    const staff = await this.prisma.staff.findFirst({
+      where: { id, tenantId },
+      include: {
+        contracts: { where: { status: 'ACTIVE' } },
+      },
+    });
+
+    if (!staff) {
+      throw new NotFoundException(`Employé avec l'ID ${id} non trouvé`);
+    }
+
+    if (staff.status === 'INACTIVE' || staff.status === 'TERMINATED') {
+      throw new BadRequestException(
+        `Cet employé est déjà inactif (statut: ${staff.status}). Impossible de procéder à la débauche.`,
+      );
+    }
+
+    const effectiveDate = new Date(data.effectiveDate);
+    const lastWorkingDate = data.lastWorkingDate
+      ? new Date(data.lastWorkingDate)
+      : effectiveDate;
+
+    const terminationLabel =
+      StaffPrismaService.TERMINATION_TYPE_LABELS[data.terminationType] || data.terminationType;
+
+    // Build structured termination details JSON
+    const terminationDetails = {
+      terminationType: data.terminationType,
+      terminationLabel,
+      effectiveDate: effectiveDate.toISOString(),
+      lastWorkingDate: lastWorkingDate.toISOString(),
+      noticePeriodDays: data.noticePeriodDays ?? null,
+      reason: data.reason || null,
+      detailedReason: data.detailedReason || null,
+      exitInterviewConducted: data.exitInterviewConducted ?? false,
+      exitInterviewNotes: data.exitInterviewNotes || null,
+      equipmentReturned: data.equipmentReturned ?? false,
+      exitDocumentsProvided: data.exitDocumentsProvided ?? false,
+      finalSettlementPaid: data.finalSettlementPaid ?? false,
+      authorizedBy: data.authorizedBy || null,
+      terminationLetterRef: data.terminationLetterRef || null,
+      terminatedByName: `${staff.firstName} ${staff.lastName}`,
+      terminatedByEmployeeNumber: staff.employeeNumber,
+      terminatedByGlobalMatricule: staff.globalMatricule,
+      terminatedByTenantMatricule: staff.tenantMatricule,
+      contractsTerminated: staff.contracts.map((c) => ({
+        id: c.id,
+        contractType: c.contractType,
+        startDate: c.startDate,
+        baseSalary: Number(c.baseSalary),
+      })),
+    };
+
+    // Phase 2: All DB operations in a single transaction
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 1. Terminate all active contracts
+      const terminatedContracts: any[] = [];
+      for (const contract of staff.contracts) {
+        const terminated = await tx.contract.update({
+          where: { id: contract.id },
+          data: {
+            ...prismaUpdateDefaults(),
+            status: 'TERMINATED',
+            terminatedAt: effectiveDate,
+            terminationReason: `${terminationLabel}${data.reason ? ': ' + data.reason : ''}`,
+          },
+        });
+        terminatedContracts.push(terminated);
+      }
+
+      // 2. Update staff record with termination details
+      const updatedStaff = await tx.staff.update({
+        where: { id },
+        data: {
+          ...prismaUpdateDefaults(),
+          status: 'INACTIVE',
+          terminationType: data.terminationType,
+          terminationDetails: terminationDetails as any,
+          terminatedAt: effectiveDate,
+          noticePeriodDays: data.noticePeriodDays ?? null,
+          lastWorkingDate: lastWorkingDate,
+        },
+      });
+
+      return { staff: updatedStaff, terminatedContracts };
+    });
+
+    // Return comprehensive termination summary
+    return {
+      success: true,
+      message: `Débauche de ${staff.firstName} ${staff.lastName} enregistrée avec succès`,
+      staff: {
+        id: result.staff.id,
+        firstName: result.staff.firstName,
+        lastName: result.staff.lastName,
+        employeeNumber: result.staff.employeeNumber,
+        globalMatricule: result.staff.globalMatricule,
+        tenantMatricule: result.staff.tenantMatricule,
+        status: result.staff.status,
+        terminationType: result.staff.terminationType,
+        terminatedAt: result.staff.terminatedAt,
+        lastWorkingDate: result.staff.lastWorkingDate,
+      },
+      terminationDetails,
+      contractsTerminated: result.terminatedContracts.length,
+    };
+  }
+
+  /**
+   * Récupère la liste des employés ayant quitté l'entreprise (débauchés)
+   */
+  async findTerminatedStaff(tenantId: string, filters?: {
+    terminationType?: string;
+    from?: string;
+    to?: string;
+  }) {
+    const where: any = { tenantId, terminationType: { not: null } };
+    if (filters?.terminationType) where.terminationType = filters.terminationType;
+    if (filters?.from || filters?.to) {
+      where.terminatedAt = {};
+      if (filters.from) where.terminatedAt.gte = new Date(filters.from);
+      if (filters.to) where.terminatedAt.lte = new Date(filters.to);
+    }
+
+    const staff = await this.prisma.staff.findMany({
+      where,
+      include: {
+        contracts: {
+          where: { status: 'TERMINATED' },
+          orderBy: { terminatedAt: 'desc' },
+          take: 1,
+        },
+        photo: true,
+      },
+      orderBy: { terminatedAt: 'desc' },
+    });
+
+    return staff.map((s) => ({
+      ...s,
+      staffCode: s.employeeNumber,
+      category: Object.entries(CATEGORY_TO_ROLE).find(([, v]) => v === s.roleType)?.[0] || s.roleType,
+      photoUrl: s.photo?.thumbnailUrl || null,
+    }));
+  }
+
+  /**
+   * Réactive un employé précédemment débauché (réintégration)
+   */
+  async reactivateStaff(id: string, tenantId: string, data?: { reason?: string }) {
+    const staff = await this.prisma.staff.findFirst({
+      where: { id, tenantId },
+    });
+
+    if (!staff) {
+      throw new NotFoundException(`Employé avec l'ID ${id} non trouvé`);
+    }
+
+    if (staff.status !== 'INACTIVE') {
+      throw new BadRequestException(
+        `Cet employé n'est pas inactif (statut: ${staff.status}). La réactivation n'est pas nécessaire.`,
+      );
+    }
+
+    return this.prisma.staff.update({
+      where: { id },
+      data: {
+        ...prismaUpdateDefaults(),
+        status: 'ACTIVE',
+        terminationType: null,
+        terminationDetails: null,
+        terminatedAt: null,
+        noticePeriodDays: null,
+        lastWorkingDate: null,
+        notes: data?.reason
+          ? `${staff.notes || ''}\n[Réactivation ${new Date().toISOString().split('T')[0]}] ${data.reason}`.trim()
+          : staff.notes,
+      },
+    });
+  }
+
   // ─── STAFF PHOTO ────────────────────────────────────────────────────────
 
   /**

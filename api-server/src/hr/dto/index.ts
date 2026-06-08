@@ -153,7 +153,7 @@ export class CreateAmendmentDto {
 // ─── Payroll DTOs ────────────────────────────────────────────────────────────
 
 export class CreatePayrollDto {
-  @IsOptional() @IsUUID() academicYearId?: string;
+  @IsUUID() academicYearId: string;
   @IsString() month: string; // "2025-01" format
   @IsDateString() startDate: string;
   @IsDateString() endDate: string;
@@ -169,7 +169,7 @@ export class UpdatePayrollStatusDto {
 }
 
 export class CreatePayrollPeriodDto {
-  @IsOptional() @IsUUID() academicYearId?: string;
+  @IsUUID() academicYearId: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
   /** Name is auto-generated from month/type if not provided */
   @IsOptional() @IsString() name?: string;
@@ -193,7 +193,7 @@ export class UpsertPayrollRateDto {
 }
 
 export class CreateOneTimeBonusDto {
-  @IsOptional() @IsUUID() academicYearId?: string;
+  @IsUUID() academicYearId: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
   @IsUUID() staffId: string;
   @IsNumber() @Min(0) @Type(() => Number) amount: number;
@@ -204,7 +204,7 @@ export class CreateOneTimeBonusDto {
 // ─── Leave DTOs ──────────────────────────────────────────────────────────────
 
 export class CreateLeaveRequestDto {
-  @IsOptional() @IsUUID() academicYearId?: string;
+  @IsUUID() academicYearId: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
   @IsUUID() staffId: string;
   @IsIn(['ANNUAL', 'SICK', 'MATERNITY', 'PATERNITY', 'UNPAID', 'EXCEPTIONAL']) type: string;
@@ -291,7 +291,7 @@ export class UpsertCNSSRateDto {
 }
 
 export class CreateCNSSDeclarationDto {
-  @IsOptional() @IsUUID() academicYearId?: string;
+  @IsUUID() academicYearId: string;
   /** Month in "YYYY-MM" format — auto-derived from periodStart if not provided */
   @IsOptional() @IsString() month?: string;
   /** Frontend CnssWorkspace sends periodStart — mapped to month in service */
@@ -312,7 +312,7 @@ export class RecordAttendanceDto {
   @IsOptional() @IsIn(['PRESENT', 'ABSENT', 'LATE', 'HALF_DAY', 'MISSION']) status?: string;
   @IsOptional() @IsNumber() @Type(() => Number) hoursWorked?: number;
   @IsOptional() @IsString() notes?: string;
-  @IsOptional() @IsUUID() academicYearId?: string;
+  @IsUUID() academicYearId: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() tenantId?: string;
@@ -325,7 +325,7 @@ export class RecordOvertimeDto {
   @IsOptional() @IsString() notes?: string;
   /** Frontend AttendanceWorkspace sends reason — mapped to notes */
   @IsOptional() @IsString() reason?: string;
-  @IsOptional() @IsUUID() academicYearId?: string;
+  @IsUUID() academicYearId: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() tenantId?: string;
@@ -347,7 +347,7 @@ export class CreateEvaluationDto {
   @IsOptional() @IsNumber() @Min(0) @Max(999.99) @Type(() => Number) score?: number;
   @IsOptional() @IsString() comments?: string;
   @IsOptional() @IsUUID() evaluatorId?: string;
-  @IsOptional() @IsUUID() academicYearId?: string;
+  @IsUUID() academicYearId: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
 }
 
@@ -424,7 +424,7 @@ export class CreateScheduleDto {
   @IsOptional() @IsString() role?: string;
   @IsOptional() @IsString() location?: string;
   @IsOptional() @IsString() notes?: string;
-  @IsOptional() @IsString() academicYearId?: string;
+  @IsString() academicYearId!: string;
   @IsOptional() @IsString() schoolLevelId?: string;
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() tenantId?: string;
@@ -674,4 +674,105 @@ export class UpdateTrainingDto {
   @IsOptional() @IsUUID() schoolLevelId?: string;
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() tenantId?: string;
+}
+
+// ─── Termination / Débauche DTOs ────────────────────────────────────────────
+
+/**
+ * DTO pour la débauche d'un employé (départ de l'entreprise).
+ * Ce processus met à jour le statut du personnel, résilie les contrats actifs,
+ * et enregistre les détails de la débauche de manière professionnelle.
+ */
+export class TerminateStaffDto {
+  /** Type de départ */
+  @IsIn([
+    'RESIGNATION',         // Démission
+    'DISMISSAL',           // Licenciement
+    'MUTUAL_AGREEMENT',    // Rupture conventionnelle
+    'END_OF_CONTRACT',     // Fin de contrat
+    'RETIREMENT',          // Retraite
+    'DEATH',               // Décès
+    'ABANDONMENT',         // Abandon de poste
+    'OTHER',               // Autre
+  ])
+  terminationType: string;
+
+  /** Date effective du départ (obligatoire) */
+  @IsDateString()
+  effectiveDate: string;
+
+  /** Dernier jour travaillé (optionnel, par défaut = effectiveDate) */
+  @IsOptional() @IsDateString()
+  lastWorkingDate?: string;
+
+  /** Nombre de jours de préavis (légal ou contractuel) */
+  @IsOptional() @IsInt() @Min(0) @Type(() => Number)
+  noticePeriodDays?: number;
+
+  /** Motif principal de la résiliation (texte libre) */
+  @IsOptional() @IsString() @MaxLength(1000)
+  reason?: string;
+
+  /** Motif détaillé / notes complètes */
+  @IsOptional() @IsString()
+  detailedReason?: string;
+
+  /** Entretien de sortie réalisé ? */
+  @IsOptional() @IsBoolean()
+  exitInterviewConducted?: boolean;
+
+  /** Notes de l'entretien de sortie */
+  @IsOptional() @IsString()
+  exitInterviewNotes?: string;
+
+  /** Remise du matériel effectuée ? */
+  @IsOptional() @IsBoolean()
+  equipmentReturned?: boolean;
+
+  /** Documents de sortie remis ? (certificat de travail, attestation, etc.) */
+  @IsOptional() @IsBoolean()
+  exitDocumentsProvided?: boolean;
+
+  /** Solde de tout compte réglé ? */
+  @IsOptional() @IsBoolean()
+  finalSettlementPaid?: boolean;
+
+  /** Autorisé par (nom du responsable RH ou direction) */
+  @IsOptional() @IsString()
+  authorizedBy?: string;
+
+  /** Référence de la lettre de débauche */
+  @IsOptional() @IsString()
+  terminationLetterRef?: string;
+
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString()
+  tenantId?: string;
+}
+
+/**
+ * DTO pour la résiliation d'un contrat spécifique.
+ * Contrairement à la débauche qui affecte le personnel et tous ses contrats,
+ * la résiliation de contrat ne concerne qu'un seul contrat.
+ */
+export class TerminateContractDto {
+  /** Motif de la résiliation */
+  @IsString() @MaxLength(1000)
+  reason: string;
+
+  /** Date de résiliation (par défaut = aujourd'hui) */
+  @IsOptional() @IsDateString()
+  terminatedAt?: string;
+
+  /** Type de résiliation */
+  @IsOptional() @IsIn(['RESIGNATION', 'DISMISSAL', 'MUTUAL_AGREEMENT', 'END_OF_CONTRACT', 'OTHER'])
+  terminationType?: string;
+
+  /** Mettre à jour également le statut du personnel ? (par défaut true si c'est le seul contrat actif) */
+  @IsOptional() @IsBoolean()
+  updateStaffStatus?: boolean;
+
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString()
+  tenantId?: string;
 }

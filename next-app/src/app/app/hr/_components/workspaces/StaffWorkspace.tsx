@@ -3,12 +3,14 @@
 import { useState, useEffect } from 'react';
 import {
   Plus, Search, Phone, Briefcase, GraduationCap,
-  Users, Loader2, Globe, Building2,
+  Users, Loader2, Globe, Building2, UserX, UserCheck,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
+import { toast } from '@/components/ui/toast';
 import Link from 'next/link';
 import { OnboardingWizardModal } from '../modals/OnboardingWizardModal';
+import { StaffTerminationModal } from '../modals/StaffTerminationModal';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
@@ -18,6 +20,17 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   ACTIVE:    { label: 'En poste',  className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
   INACTIVE:  { label: 'Inactif',   className: 'bg-slate-100 text-slate-500 border border-slate-200' },
   SUSPENDED: { label: 'Suspendu', className: 'bg-amber-50 text-amber-700 border border-amber-200' },
+};
+
+const TERMINATION_TYPE_LABELS: Record<string, string> = {
+  RESIGNATION: 'Démission',
+  DISMISSAL: 'Licenciement',
+  MUTUAL_AGREEMENT: 'Rupture conv.',
+  END_OF_CONTRACT: 'Fin de contrat',
+  RETIREMENT: 'Retraite',
+  DEATH: 'Décès',
+  ABANDONMENT: 'Abandon',
+  OTHER: 'Autre',
 };
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -35,6 +48,14 @@ export function StaffWorkspace() {
   const [filterStatus, setFilterStatus] = useState('ACTIVE');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
+  // Termination modal state
+  const [terminationModalOpen, setTerminationModalOpen] = useState(false);
+  const [selectedStaff, setSelectedStaff] = useState<any>(null);
+
+  // Reactivation confirmation state
+  const [reactivateId, setReactivateId] = useState<string | null>(null);
+  const [reactivateLoading, setReactivateLoading] = useState(false);
+
   useEffect(() => { fetchStaff(); }, [tenant?.id, filterCategory, filterStatus]);
 
   async function fetchStaff() {
@@ -45,19 +66,36 @@ export function StaffWorkspace() {
       if (filterCategory !== 'ALL') query.category = filterCategory;
       if (filterStatus !== 'ALL') query.status = filterStatus;
       const result = await hrFetch<any[]>(hrUrl('staff', query));
-      setStaff(Array.isArray(result) ? result : []);
-    } catch (error: any) {
+      setStaff(result);
+    } catch (error) {
       console.error('Error fetching staff:', error);
-      setStaff([]);
-      // Show error toast only if it's not a 404 (no staff yet)
-      const msg = error?.message || '';
-      if (!msg.includes('404') && !msg.includes('not found')) {
-        // Silently handle — empty staff is a valid state
-      }
     } finally {
       setLoading(false);
     }
   }
+
+  const handleTerminate = (member: any) => {
+    setSelectedStaff(member);
+    setTerminationModalOpen(true);
+  };
+
+  const handleReactivate = async (id: string) => {
+    if (!tenant?.id) return;
+    try {
+      setReactivateLoading(true);
+      await hrFetch<any>(hrUrl(`staff/${id}/reactivate`, { tenantId: tenant.id }), {
+        method: 'POST',
+        body: { reason: 'Réintégration du collaborateur' },
+      });
+      toast({ variant: 'success', title: 'Collaborateur réactivé avec succès' });
+      setReactivateId(null);
+      fetchStaff();
+    } catch (err: any) {
+      toast({ variant: 'error', title: err.message || 'Erreur lors de la réactivation' });
+    } finally {
+      setReactivateLoading(false);
+    }
+  };
 
   const filteredStaff = staff.filter((s) =>
     `${s.firstName} ${s.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -76,6 +114,52 @@ export function StaffWorkspace() {
         onSuccess={fetchStaff}
         tenantId={tenant?.id || ''}
       />
+
+      <StaffTerminationModal
+        isOpen={terminationModalOpen}
+        onClose={() => { setTerminationModalOpen(false); setSelectedStaff(null); }}
+        onSuccess={fetchStaff}
+        staff={selectedStaff}
+        tenantId={tenant?.id || ''}
+      />
+
+      {/* Reactivation Confirmation */}
+      {reactivateId && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="flex items-center gap-3 px-6 py-5 text-white" style={{ background: PRIMARY }}>
+              <div className="rounded-lg bg-white/15 p-2"><UserCheck className="h-5 w-5" /></div>
+              <div>
+                <h3 className="text-base font-bold">Réactivation du collaborateur</h3>
+                <p className="text-xs text-white/70">Remettre le statut à ACTIF</p>
+              </div>
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-slate-700">
+                Voulez-vous réactiver ce collaborateur ? Son statut sera remis à <strong>ACTIF</strong> et les
+                données de débauche seront archivées dans ses notes.
+              </p>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/50">
+              <button
+                onClick={() => setReactivateId(null)}
+                className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-50 transition"
+              >
+                Annuler
+              </button>
+              <button
+                disabled={reactivateLoading}
+                onClick={() => handleReactivate(reactivateId)}
+                className="flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-sm font-bold shadow-sm hover:opacity-90 disabled:opacity-50 transition"
+                style={{ backgroundColor: PRIMARY }}
+              >
+                {reactivateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserCheck className="h-4 w-4" />}
+                Confirmer la réactivation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toolbar */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -159,7 +243,13 @@ export function StaffWorkspace() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredStaff.map((member, idx) => (
-            <StaffCard key={member.id} member={member} index={idx} />
+            <StaffCard
+              key={member.id}
+              member={member}
+              index={idx}
+              onTerminate={handleTerminate}
+              onReactivate={(id) => setReactivateId(id)}
+            />
           ))}
         </div>
       )}
@@ -167,11 +257,24 @@ export function StaffWorkspace() {
   );
 }
 
-function StaffCard({ member, index }: { member: any; index: number }) {
+function StaffCard({
+  member,
+  index,
+  onTerminate,
+  onReactivate,
+}: {
+  member: any;
+  index: number;
+  onTerminate: (member: any) => void;
+  onReactivate: (id: string) => void;
+}) {
   const status = STATUS_CONFIG[member.status] || STATUS_CONFIG.INACTIVE;
+  const isInactive = member.status === 'INACTIVE' && member.terminationType;
+  const terminationLabel = TERMINATION_TYPE_LABELS[member.terminationType] || member.terminationType;
+
   // Collect document badges from the documents array
   const docTypes = [...new Set<string>((member.documents || []).map((d: any) => d.documentType as string))];
-  const docBadges = docTypes.length > 0 
+  const docBadges = docTypes.length > 0
     ? docTypes.slice(0, 4).map((t) => {
         const shortMap: Record<string, string> = {
           CV: 'CV', CNI: 'CNI', PASSPORT: 'PSP', BIRTH_CERTIFICATE: 'NAI',
@@ -187,22 +290,25 @@ function StaffCard({ member, index }: { member: any; index: number }) {
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: index * 0.05 }}
-      className="group rounded-xl border border-slate-200 bg-white shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 overflow-hidden"
+      className={cn(
+        'group rounded-xl border bg-white shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 overflow-hidden',
+        isInactive ? 'border-rose-200' : 'border-slate-200',
+      )}
     >
       <div className="p-5">
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
             {/* Photo or Initials */}
             {member.photoUrl ? (
-              <img 
-                src={member.photoUrl} 
+              <img
+                src={member.photoUrl}
                 alt={`${member.firstName} ${member.lastName}`}
                 className="w-12 h-12 rounded-xl object-cover shadow-sm"
               />
             ) : (
               <div
                 className="w-12 h-12 rounded-xl flex items-center justify-center text-base font-bold shadow-sm"
-                style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}
+                style={{ backgroundColor: isInactive ? '#FEE2E2' : PRIMARY + '15', color: isInactive ? '#DC2626' : PRIMARY }}
               >
                 {member.firstName?.[0]}{member.lastName?.[0]}
               </div>
@@ -235,9 +341,16 @@ function StaffCard({ member, index }: { member: any; index: number }) {
               </div>
             </div>
           </div>
-          <span className={cn('px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase', status.className)}>
-            {status.label}
-          </span>
+          <div className="flex flex-col items-end gap-1">
+            <span className={cn('px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase', status.className)}>
+              {status.label}
+            </span>
+            {isInactive && terminationLabel && (
+              <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-50 text-rose-600 border border-rose-200">
+                {terminationLabel}
+              </span>
+            )}
+          </div>
         </div>
         <div className="space-y-2 mb-4">
           {[
@@ -261,13 +374,33 @@ function StaffCard({ member, index }: { member: any; index: number }) {
               </span>
             ))}
           </div>
-          <Link
-            href={`/app/hr/staff/${member.id}`}
-            className="text-xs font-bold hover:underline"
-            style={{ color: PRIMARY }}
-          >
-            Gérer la fiche →
-          </Link>
+          <div className="flex items-center gap-2">
+            {/* Terminate or Reactivate button */}
+            {member.status === 'ACTIVE' ? (
+              <button
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onTerminate(member); }}
+                className="flex items-center gap-1 text-[10px] font-bold text-rose-600 hover:text-rose-800 px-2 py-1 rounded-lg hover:bg-rose-50 transition"
+                title="Procéder à la débauche"
+              >
+                <UserX className="h-3 w-3" /> Débauche
+              </button>
+            ) : isInactive ? (
+              <button
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onReactivate(member.id); }}
+                className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 hover:text-emerald-800 px-2 py-1 rounded-lg hover:bg-emerald-50 transition"
+                title="Réactiver le collaborateur"
+              >
+                <UserCheck className="h-3 w-3" /> Réactiver
+              </button>
+            ) : null}
+            <Link
+              href={`/app/hr/staff/${member.id}`}
+              className="text-xs font-bold hover:underline"
+              style={{ color: PRIMARY }}
+            >
+              Gérer la fiche →
+            </Link>
+          </div>
         </div>
       </div>
     </motion.div>

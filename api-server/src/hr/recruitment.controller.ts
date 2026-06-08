@@ -276,16 +276,4 @@ export class RecruitmentPrismaController {
   async fixApplicationStatuses(@GetTenant() tenant: any, @Query('tenantId') tenantIdFallback?: string) {
     return this.service.fixApplicationStatuses(tenant?.id ?? tenantIdFallback);
   }
-
-  // ─── Hiring Readiness Check ──────────────────────────────────────────
-  // Check if a candidate application is ready for hiring
-
-  @Get('applications/:id/hiring-readiness')
-  async checkHiringReadiness(
-    @Param('id') applicationId: string,
-    @GetTenant() tenant: any,
-    @Query('tenantId') tenantIdFallback?: string,
-  ) {
-    return this.service.checkHiringReadiness(applicationId, tenant?.id ?? tenantIdFallback);
-  }
 }

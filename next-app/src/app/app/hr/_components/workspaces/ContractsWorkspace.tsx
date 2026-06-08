@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import {
   Plus, Search, FileText, Calendar, DollarSign, AlertCircle,
-  FileCheck, Files, Download, PenTool, Loader2, X,
+  FileCheck, Files, Download, PenTool, Loader2, X, FileX2,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -11,6 +11,7 @@ import { toast } from '@/components/ui/toast';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { ContractTerminationModal } from '../modals/ContractTerminationModal';
 
 const PRIMARY = '#1A2BA6';
 
@@ -45,6 +46,10 @@ export function ContractsWorkspace() {
     baseSalary: '150000',
     paymentMode: 'BANK',
   });
+
+  // Contract termination modal
+  const [terminationModalOpen, setTerminationModalOpen] = useState(false);
+  const [selectedContract, setSelectedContract] = useState<any>(null);
 
   async function fetchContracts() {
     if (!tenant?.id) return;
@@ -252,15 +257,30 @@ export function ContractsWorkspace() {
       ) : (
         <div className="space-y-3">
           {filteredContracts.map((contract, idx) => (
-            <ContractRow key={contract.id} contract={contract} index={idx} tenantId={tenant.id} />
+            <ContractRow
+              key={contract.id}
+              contract={contract}
+              index={idx}
+              tenantId={tenant.id}
+              onTerminate={(c) => { setSelectedContract(c); setTerminationModalOpen(true); }}
+            />
           ))}
         </div>
       )}
+
+      {/* Contract Termination Modal */}
+      <ContractTerminationModal
+        isOpen={terminationModalOpen}
+        onClose={() => { setTerminationModalOpen(false); setSelectedContract(null); }}
+        onSuccess={fetchContracts}
+        contract={selectedContract}
+        tenantId={tenant?.id || ''}
+      />
     </div>
   );
 }
 
-function ContractRow({ contract, index, tenantId }: { contract: any; index: number; tenantId: string }) {
+function ContractRow({ contract, index, tenantId, onTerminate }: { contract: any; index: number; tenantId: string; onTerminate: (contract: any) => void }) {
   const [generating, setGenerating] = useState(false);
 
   const isExpiringSoon = () => {
@@ -344,6 +364,15 @@ function ContractRow({ contract, index, tenantId }: { contract: any; index: numb
           >
             {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
           </button>
+          {contract.status === 'ACTIVE' && (
+            <button
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onTerminate(contract); }}
+              className="flex-shrink-0 p-2 text-rose-400 hover:text-rose-600 transition-colors rounded-lg hover:bg-rose-50"
+              title="Résilier le contrat"
+            >
+              <FileX2 className="h-4 w-4" />
+            </button>
+          )}
           <Link href={`/app/hr/contracts/${contract.id}`} className="flex-grow md:flex-grow-0 flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors" style={{ color: PRIMARY }}>
             <FileCheck className="h-4 w-4" /> Ouvrir le contrat
           </Link>

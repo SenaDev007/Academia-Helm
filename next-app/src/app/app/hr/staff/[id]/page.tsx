@@ -37,6 +37,10 @@ import {
   FolderOpen,
   Globe,
   Building2,
+  UserX,
+  UserCheck,
+  Package,
+  DollarSign,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -45,6 +49,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { motion, AnimatePresence } from 'framer-motion';
+import { StaffTerminationModal } from '../../_components/modals/StaffTerminationModal';
 
 const PRIMARY = '#1A2BA6';
 
@@ -119,6 +124,17 @@ const STATUS_LABELS: Record<string, { label: string; className: string }> = {
   ON_LEAVE:  { label: 'En congé',   className: 'text-blue-600' },
 };
 
+const TERMINATION_TYPE_LABELS: Record<string, string> = {
+  RESIGNATION: 'Démission',
+  DISMISSAL: 'Licenciement',
+  MUTUAL_AGREEMENT: 'Rupture conventionnelle',
+  END_OF_CONTRACT: 'Fin de contrat',
+  RETIREMENT: 'Retraite',
+  DEATH: 'Décès',
+  ABANDONMENT: 'Abandon de poste',
+  OTHER: 'Autre',
+};
+
 export default function StaffDetailPage() {
   const { id } = useParams();
   const router = useRouter();
@@ -151,6 +167,10 @@ export default function StaffDetailPage() {
 
   // Expanded document categories
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+
+  // Termination modal
+  const [terminationModalOpen, setTerminationModalOpen] = useState(false);
+  const [reactivateLoading, setReactivateLoading] = useState(false);
 
   const fetchMember = useCallback(async () => {
     if (!tenant?.id || !id) return;
@@ -383,6 +403,24 @@ export default function StaffDetailPage() {
     });
   };
 
+  // ─── Reactivate Staff ─────────────────────────────────────────────────────
+  const handleReactivate = async () => {
+    if (!tenant?.id || !id) return;
+    try {
+      setReactivateLoading(true);
+      await hrFetch<any>(hrUrl(`staff/${id}/reactivate`, { tenantId: tenant.id }), {
+        method: 'POST',
+        body: { reason: 'Réintégration du collaborateur' },
+      });
+      toast({ variant: 'success', title: 'Collaborateur réactivé avec succès' });
+      fetchMember();
+    } catch (err: any) {
+      toast({ variant: 'error', title: err.message || 'Erreur lors de la réactivation' });
+    } finally {
+      setReactivateLoading(false);
+    }
+  };
+
   if (loading) {
     return <div className="p-8 animate-pulse text-center">Chargement de la fiche...</div>;
   }
@@ -400,6 +438,9 @@ export default function StaffDetailPage() {
 
   const statusInfo = STATUS_LABELS[member.status] || STATUS_LABELS.INACTIVE;
   const hireDate = member.contracts?.[0]?.startDate || member.hireDate || null;
+  const isTerminated = member.status === 'INACTIVE' && member.terminationType;
+  const terminationLabel = TERMINATION_TYPE_LABELS[member.terminationType] || member.terminationType;
+  const terminationDetails = (typeof member.terminationDetails === 'object' && member.terminationDetails) ? member.terminationDetails : null;
 
   // Sort categories by order
   const sortedCategories = Object.entries(DOC_CATEGORIES).sort(([,a], [,b]) => a.order - b.order);
@@ -686,6 +727,22 @@ export default function StaffDetailPage() {
                 </div>
 
                 <div className="mt-8 flex gap-2">
+                  {member.status === 'ACTIVE' ? (
+                    <button
+                      onClick={() => setTerminationModalOpen(true)}
+                      className="flex-1 py-2.5 bg-rose-600 text-white rounded-xl font-bold text-sm hover:bg-rose-700 transition-all flex items-center justify-center gap-2"
+                    >
+                      <UserX size={16} /> Débauche
+                    </button>
+                  ) : isTerminated ? (
+                    <button
+                      onClick={handleReactivate}
+                      disabled={reactivateLoading}
+                      className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-sm hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {reactivateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserCheck size={16} />} Réactiver
+                    </button>
+                  ) : null}
                   <button onClick={openEditModal} className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
                     <Edit3 size={16} /> Modifier
                   </button>
@@ -734,6 +791,85 @@ export default function StaffDetailPage() {
               </div>
             </div>
           </Card>
+
+          {/* Termination Details Card */}
+          {isTerminated && (
+            <Card className="border-none shadow-sm rounded-3xl bg-white p-6">
+              <h4 className="text-xs font-bold text-rose-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                <UserX size={14} /> Détails du départ
+              </h4>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-500">Type</span>
+                  <span className="text-sm font-bold text-rose-600">{terminationLabel}</span>
+                </div>
+                {member.terminatedAt && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-500">Date d'effet</span>
+                    <span className="text-sm font-bold text-gray-900">{new Date(member.terminatedAt).toLocaleDateString('fr-FR')}</span>
+                  </div>
+                )}
+                {member.lastWorkingDate && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-500">Dernier jour travaillé</span>
+                    <span className="text-sm font-bold text-gray-900">{new Date(member.lastWorkingDate).toLocaleDateString('fr-FR')}</span>
+                  </div>
+                )}
+                {member.noticePeriodDays != null && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-500">Préavis</span>
+                    <span className="text-sm font-bold text-gray-900">{member.noticePeriodDays} jour(s)</span>
+                  </div>
+                )}
+                {terminationDetails?.reason && (
+                  <div className="flex justify-between items-start">
+                    <span className="text-sm text-gray-500 shrink-0">Motif</span>
+                    <span className="text-sm font-bold text-gray-900 text-right max-w-[200px]">{terminationDetails.reason}</span>
+                  </div>
+                )}
+                {terminationDetails?.detailedReason && (
+                  <div className="mt-2 p-3 bg-slate-50 rounded-xl">
+                    <p className="text-xs font-semibold text-slate-400 mb-1">Motif détaillé</p>
+                    <p className="text-sm text-slate-700">{terminationDetails.detailedReason}</p>
+                  </div>
+                )}
+                {/* Exit Checklist Summary */}
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Checklist de sortie</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: 'Entretien de sortie', value: terminationDetails?.exitInterviewConducted, icon: FileText },
+                      { label: 'Matériel restitué', value: terminationDetails?.equipmentReturned, icon: Package },
+                      { label: 'Documents fournis', value: terminationDetails?.exitDocumentsProvided, icon: FileText },
+                      { label: 'Solde réglé', value: terminationDetails?.finalSettlementPaid, icon: DollarSign },
+                    ].map(({ label, value, icon: Icon }) => (
+                      <div
+                        key={label}
+                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-semibold ${
+                          value ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-50 text-slate-400'
+                        }`}
+                      >
+                        <Icon className="h-3 w-3" />
+                        {label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {terminationDetails?.authorizedBy && (
+                  <div className="flex justify-between items-center mt-2">
+                    <span className="text-sm text-gray-500">Autorisé par</span>
+                    <span className="text-sm font-bold text-gray-900">{terminationDetails.authorizedBy}</span>
+                  </div>
+                )}
+                {terminationDetails?.terminationLetterRef && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-500">Réf. lettre</span>
+                    <span className="text-xs font-bold text-blue-600">{terminationDetails.terminationLetterRef}</span>
+                  </div>
+                )}
+              </div>
+            </Card>
+          )}
         </div>
 
         {/* ─── Right Column: Tabs Content ────────────────────────────────── */}
@@ -1076,6 +1212,24 @@ export default function StaffDetailPage() {
           </Tabs>
         </div>
       </div>
+
+      {/* Staff Termination Modal */}
+      <StaffTerminationModal
+        isOpen={terminationModalOpen}
+        onClose={() => setTerminationModalOpen(false)}
+        onSuccess={fetchMember}
+        staff={{
+          id: member.id,
+          firstName: member.firstName,
+          lastName: member.lastName,
+          position: member.position,
+          employeeNumber: member.employeeNumber,
+          tenantMatricule: member.tenantMatricule,
+          globalMatricule: member.globalMatricule,
+          status: member.status,
+        }}
+        tenantId={tenant?.id || ''}
+      />
     </div>
   );
 }

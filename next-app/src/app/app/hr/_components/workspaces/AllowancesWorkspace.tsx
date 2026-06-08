@@ -162,7 +162,7 @@ export function AllowancesWorkspace() {
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-12">
       {/* Sidebar - Staff List */}
       <div className="lg:col-span-4 space-y-4">
-          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm space-y-3">
+        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm space-y-3">
           <div className="flex justify-between items-center">
             <h4 className="font-bold text-slate-900 text-sm">Collaborateurs</h4>
             <button
@@ -177,11 +177,7 @@ export function AllowancesWorkspace() {
             {loading ? (
               [1, 2, 3].map((i) => <div key={i} className="h-14 bg-slate-50 animate-pulse rounded-lg mt-1" />)
             ) : staffList.length === 0 ? (
-              <div className="py-8 flex flex-col items-center text-center">
-                <User className="h-8 w-8 text-slate-300 mb-2" />
-                <p className="text-sm text-slate-500">Aucun collaborateur</p>
-                <p className="text-xs text-slate-400 mt-1">Ajoutez du personnel pour gérer les indemnités</p>
-              </div>
+              <p className="text-sm text-slate-500 text-center py-4">Aucun collaborateur</p>
             ) : (
               staffList.map((member) => (
                 <button
@@ -226,7 +222,7 @@ export function AllowancesWorkspace() {
                     return;
                   }
                   setAssignType(allowanceTypes[0].id);
-                  setAssignAmount(allowanceTypes[0].defaultAmount?.toString() || '');
+                  setAssignAmount(allowanceTypes[0].defaultAmount.toString());
                   setIsAssignModalOpen(true);
                 }}
                 className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition"
@@ -239,7 +235,7 @@ export function AllowancesWorkspace() {
             {/* List of assigned allowances */}
             <div className="space-y-4">
               <h4 className="font-bold text-slate-900 text-sm">Indemnités Actives</h4>
-              <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+              <div className="divide-y divide-slate-100 border border-slate-150 rounded-xl overflow-hidden">
                 {staffAllowances.length === 0 ? (
                   <div className="p-8 text-center text-slate-400">
                     <DollarSign className="h-8 w-8 mx-auto mb-2 text-slate-300" />
@@ -305,21 +301,6 @@ export function AllowancesWorkspace() {
                 </div>
               </div>
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Catégorie</label>
-                <select
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:border-[#1A2BA6]"
-                  value={typeCategory}
-                  onChange={(e) => setTypeCategory(e.target.value)}
-                >
-                  <option value="HOUSING">Logement</option>
-                  <option value="TRANSPORT">Transport</option>
-                  <option value="MEAL">Repas</option>
-                  <option value="FAMILY">Familiale</option>
-                  <option value="RISK">Risque / Insalubrité</option>
-                  <option value="OTHER">Autre</option>
-                </select>
-              </div>
-              <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Description</label>
                 <textarea className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm h-20" value={typeDescription} onChange={(e) => setTypeDescription(e.target.value)} />
               </div>
@@ -351,11 +332,11 @@ export function AllowancesWorkspace() {
                   onChange={(e) => {
                     setAssignType(e.target.value);
                     const selected = allowanceTypes.find(t => t.id === e.target.value);
-                    if (selected) setAssignAmount(selected.defaultAmount?.toString() || '');
+                    if (selected) setAssignAmount(selected.defaultAmount.toString());
                   }}
                 >
                   {allowanceTypes.map(t => (
-                    <option key={t.id} value={t.id}>{t.name} ({t.defaultAmount ?? '—'} FCFA)</option>
+                    <option key={t.id} value={t.id}>{t.name} ({t.defaultAmount} FCFA)</option>
                   ))}
                 </select>
               </div>

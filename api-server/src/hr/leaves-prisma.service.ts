@@ -43,22 +43,9 @@ export class LeavesPrismaService {
    * @param data - Leave request creation payload
    * @returns The created LeaveRequest record
    */
-  /**
-   * Resolves the academicYearId: returns the provided value if truthy,
-   * otherwise looks up the active academic year for the tenant.
-   * Returns null if no active academic year is found.
-   */
-  private async resolveAcademicYearId(tenantId: string, academicYearId?: string): Promise<string | null> {
-    if (academicYearId) return academicYearId;
-    const activeYear = await this.prisma.academicYear.findFirst({
-      where: { tenantId, isActive: true },
-    });
-    return activeYear?.id || null;
-  }
-
   async createLeaveRequest(data: {
     tenantId: string;
-    academicYearId?: string;
+    academicYearId: string;
     schoolLevelId?: string;
     staffId: string;
     type: string;
@@ -73,12 +60,6 @@ export class LeavesPrismaService {
     // Validate date ordering
     if (startDate > endDate) {
       throw new BadRequestException('Start date must be before end date');
-    }
-
-    // Resolve academicYearId if not provided
-    const resolvedAcademicYearId = await this.resolveAcademicYearId(data.tenantId, data.academicYearId);
-    if (!resolvedAcademicYearId) {
-      throw new BadRequestException('Aucune année académique active trouvée. Veuillez en configurer une.');
     }
 
     // Verify staff member exists within tenant
@@ -110,7 +91,7 @@ export class LeavesPrismaService {
       data: {
         ...prismaCreateDefaults(),
         tenantId: data.tenantId,
-        academicYearId: resolvedAcademicYearId,
+        academicYearId: data.academicYearId,
         schoolLevelId: data.schoolLevelId ?? null,
         staffId: data.staffId,
         type: data.type,

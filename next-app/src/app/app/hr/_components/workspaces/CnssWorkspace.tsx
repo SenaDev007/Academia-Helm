@@ -34,7 +34,7 @@ export function CnssWorkspace() {
         setDeclarations(decls);
 
         // Load active rate via BFF route (country-aware)
-        const countryCode = (tenant as any)?.country?.code || (tenant as any)?.countryCode || 'BJ';
+        const countryCode = (tenant as any)?.country?.code || 'BJ';
         const rate = await hrFetch<any>(hrUrl('cnss/rates/active', { tenantId: tenant.id, countryCode }));
         setActiveRate(rate);
       } catch (err) {
@@ -49,18 +49,13 @@ export function CnssWorkspace() {
 
   async function handleCreateDeclaration(e: React.FormEvent) {
     e.preventDefault();
-    if (!tenant?.id) return;
-    // Validate period dates
-    if (periodStart && periodEnd && new Date(periodStart) > new Date(periodEnd)) {
-      toast({ variant: 'error', title: 'La date de début doit être antérieure à la date de fin' });
-      return;
-    }
+    if (!tenant?.id || !academicYear?.id) return;
     try {
       setGenerating(true);
       await hrFetch<any>(hrUrl('cnss/declarations', { tenantId: tenant.id }), {
         method: 'POST',
         body: {
-          ...(academicYear?.id ? { academicYearId: academicYear.id } : {}),
+          academicYearId: academicYear.id,
           month: periodStart?.substring(0, 7) || new Date().toISOString().substring(0, 7),
         },
       });
@@ -165,7 +160,7 @@ export function CnssWorkspace() {
                   </div>
                   <div>
                     <p className="font-bold text-slate-900 text-sm">
-                      {decl.month ? (() => { const [y, m] = decl.month.split('-').map(Number); return `Déclaration du ${new Date(y, m - 1, 1).toLocaleDateString('fr-FR')} au ${new Date(y, m, 0).toLocaleDateString('fr-FR')}`; })() : 'Déclaration'}
+                      Déclaration du {(() => { const [y, m] = decl.month.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('fr-FR'); })()} au {(() => { const [y, m] = decl.month.split('-').map(Number); return new Date(y, m, 0).toLocaleDateString('fr-FR'); })()}
                     </p>
                     <p className="text-xs text-slate-500 mt-0.5">
                       Générée le {new Date(decl.createdAt).toLocaleDateString('fr-FR')} · {decl.lines?.length || 0} employé(s) inclus

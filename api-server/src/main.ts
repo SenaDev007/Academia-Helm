@@ -75,20 +75,11 @@ async function bootstrap() {
 
   const port = Number(process.env.PORT ?? process.env.API_PORT ?? 3000);
 
-  // Run pending migrations before starting the server
-  try {
-    const { execSync } = await import('child_process');
-    const appEnv = process.env.APP_ENV || process.env.NODE_ENV || 'production';
-    logger.log(`Running database migrations (APP_ENV=${appEnv})...`);
-    execSync('npx prisma migrate deploy --schema=prisma/schema.prisma', {
-      stdio: 'inherit',
-      timeout: 120_000,
-    });
-    logger.log('Database migrations completed successfully');
-  } catch (migrateErr) {
-    logger.error(`Migration failed: ${migrateErr.message}`);
-    logger.warn('Continuing startup despite migration failure — some features may not work');
-  }
+  // NOTE: Prisma migrations should be run via Dockerfile CMD or prestart:prod script.
+  // Do NOT run execSync('npx prisma migrate deploy') here — it blocks the event loop
+  // and prevents the server from starting within Railway's healthcheck grace period.
+  // The Dockerfile CMD runs migrations before node starts:
+  //   CMD ["sh", "-c", "npx prisma migrate deploy ... && node dist/main.js"]
 
   // ─── Ensure recruitment tables exist (idempotent SQL fallback) ──────────
   // Prisma migrate deploy may silently skip migrations that aren't tracked

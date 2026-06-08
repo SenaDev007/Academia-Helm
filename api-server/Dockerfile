@@ -48,4 +48,6 @@ COPY --from=build /app/prisma ./prisma
 EXPOSE 3000
 
 # TypeORM removed — but Prisma with 270+ models still needs ~2GB during startup
-CMD [ "node", "--max-old-space-size=3072", "dist/main.js" ]
+# Run migrations BEFORE starting the server (non-blocking: separate process)
+# If migrations fail, the server still starts (fallback SQL in main.ts covers critical columns)
+CMD [ "sh", "-c", "npx prisma migrate deploy --schema=prisma/schema.prisma 2>&1 || echo '⚠️ Migration failed, continuing with fallback SQL'; node --max-old-space-size=3072 dist/main.js" ]

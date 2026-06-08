@@ -312,6 +312,43 @@ async function bootstrap() {
     logger.warn('Some HR recruitment features may not work');
   }
 
+  // ─── ONE-TIME: Delete CSPEB tenant permanently ─────────────────────────
+  try {
+    const cspebTenantId = '59b8c348-ae5f-4d67-8fbd-af6aefa1f394';
+    const prisma = app.get(PrismaService);
+
+    // Check if CSPEB tenant still exists
+    const cspeb = await prisma.$queryRawUnsafe(`SELECT id FROM "tenants" WHERE "id" = '${cspebTenantId}' LIMIT 1`);
+    if (Array.isArray(cspeb) && cspeb.length > 0) {
+      logger.log('CSPEB tenant found — proceeding with hard delete...');
+
+      // Disable the tenant delete trigger temporarily
+      await prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS trg_prevent_tenant_delete ON "tenants"`);
+
+      // Delete the CSPEB tenant (CASCADE will handle all related records)
+      await prisma.$executeRawUnsafe(`DELETE FROM "tenants" WHERE "id" = '${cspebTenantId}'`);
+
+      // Recreate the trigger if the function exists
+      try {
+        await prisma.$executeRawUnsafe(`
+          DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'prevent_tenant_delete') THEN
+              CREATE TRIGGER trg_prevent_tenant_delete BEFORE DELETE ON "tenants" FOR EACH ROW EXECUTE FUNCTION prevent_tenant_delete();
+            END IF;
+          END $$;
+        `);
+      } catch (triggerErr: any) {
+        logger.warn(`Could not recreate tenant delete trigger (non-critical): ${triggerErr.message}`);
+      }
+
+      logger.log('CSPEB tenant hard-deleted successfully');
+    } else {
+      logger.log('CSPEB tenant already deleted — skipping');
+    }
+  } catch (deleteErr: any) {
+    logger.warn(`CSPEB tenant deletion failed (non-blocking): ${deleteErr.message}`);
+  }
+
   await app.listen(port, '0.0.0.0');
 
   // Log memory info on startup

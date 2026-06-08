@@ -250,6 +250,41 @@ async function bootstrap() {
       logger.warn(`staffId FK warning: ${fkErr.message}`);
     }
 
+    // ─── Ensure termination fields on staff (migration 20260608) ───────────
+    const terminationAlterStatements = [
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "terminationType" TEXT`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "terminationDetails" JSONB`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "terminatedAt" TIMESTAMPTZ`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "noticePeriodDays" INTEGER`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "lastWorkingDate" TIMESTAMPTZ`,
+      `CREATE INDEX IF NOT EXISTS "staff_terminationType_idx" ON "staff"("terminationType")`,
+      `CREATE INDEX IF NOT EXISTS "staff_terminatedAt_idx" ON "staff"("terminatedAt")`,
+    ];
+    for (const stmt of terminationAlterStatements) {
+      try {
+        await prisma.$executeRawUnsafe(stmt);
+      } catch (err: any) {
+        if (!err.message?.includes('already exists') && !err.message?.includes('42P07') && !err.message?.includes('42P16')) {
+          logger.warn(`Termination ALTER warning: ${err.message}`);
+        }
+      }
+    }
+
+    // ─── Ensure termination fields on contract (migration 20260608) ────────
+    const contractTerminationStatements = [
+      `ALTER TABLE "contract" ADD COLUMN IF NOT EXISTS "terminatedAt" TIMESTAMPTZ`,
+      `ALTER TABLE "contract" ADD COLUMN IF NOT EXISTS "terminationReason" TEXT`,
+    ];
+    for (const stmt of contractTerminationStatements) {
+      try {
+        await prisma.$executeRawUnsafe(stmt);
+      } catch (err: any) {
+        if (!err.message?.includes('already exists') && !err.message?.includes('42P07') && !err.message?.includes('42P16')) {
+          logger.warn(`Contract termination ALTER warning: ${err.message}`);
+        }
+      }
+    }
+
     // ─── Ensure job_number_sequences table (migration 20260606220000) ──────
     try {
       await prisma.$executeRawUnsafe(`

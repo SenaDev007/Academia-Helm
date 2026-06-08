@@ -221,7 +221,7 @@ export class RecruitmentPrismaService {
 
   // Candidates CRUD
   async getCandidates(tenantId: string) {
-    return this.prisma.hrCandidate.findMany({
+    const candidates = await this.prisma.hrCandidate.findMany({
       where: { tenantId },
       include: {
         applications: {
@@ -232,6 +232,7 @@ export class RecruitmentPrismaService {
           },
         },
         interviews: true,
+        testResults: true,
         academicProfile: true,
         academicScores: true,
         documents: {
@@ -239,6 +240,60 @@ export class RecruitmentPrismaService {
         },
       },
       orderBy: { createdAt: 'desc' },
+    });
+
+    // ─── Compute finalScore for each candidate ──────────────────────────
+    // The finalScore combines document analysis (AI/heuristic) with real
+    // interview and test scores. This is the score used for hiring decisions.
+    return candidates.map(candidate => {
+      const primaryApp = candidate.applications?.[0];
+      const docScore = primaryApp?.score || 0; // AI/heuristic document analysis score
+
+      // Average interview score (0-100)
+      const interviewScores = (candidate.interviews || [])
+        .map(i => i.score)
+        .filter(s => s > 0);
+      const avgInterviewScore = interviewScores.length > 0
+        ? Math.round(interviewScores.reduce((a, b) => a + b, 0) / interviewScores.length)
+        : null;
+
+      // Average test score (0-100)
+      const testScores = (candidate.testResults || [])
+        .map(t => t.score)
+        .filter(s => s > 0);
+      const avgTestScore = testScores.length > 0
+        ? Math.round(testScores.reduce((a, b) => a + b, 0) / testScores.length)
+        : null;
+
+      // Compute finalScore based on available data
+      let finalScore: number;
+      let scoreBreakdown: string;
+
+      if (avgInterviewScore !== null && avgTestScore !== null) {
+        // Full evaluation: doc 30% + interview 35% + test 35%
+        finalScore = Math.round((docScore * 0.3) + (avgInterviewScore * 0.35) + (avgTestScore * 0.35));
+        scoreBreakdown = `Documents: ${docScore}% | Entretien: ${avgInterviewScore}% | Test: ${avgTestScore}%`;
+      } else if (avgInterviewScore !== null) {
+        // Interview only: doc 40% + interview 60%
+        finalScore = Math.round((docScore * 0.4) + (avgInterviewScore * 0.6));
+        scoreBreakdown = `Documents: ${docScore}% | Entretien: ${avgInterviewScore}%`;
+      } else if (avgTestScore !== null) {
+        // Test only: doc 40% + test 60%
+        finalScore = Math.round((docScore * 0.4) + (avgTestScore * 0.6));
+        scoreBreakdown = `Documents: ${docScore}% | Test: ${avgTestScore}%`;
+      } else {
+        // No interview/test yet: doc score only
+        finalScore = docScore;
+        scoreBreakdown = `Documents: ${docScore}% (en attente entretien/test)`;
+      }
+
+      return {
+        ...candidate,
+        _finalScore: finalScore,
+        _avgInterviewScore: avgInterviewScore,
+        _avgTestScore: avgTestScore,
+        _scoreBreakdown: scoreBreakdown,
+      };
     });
   }
 
@@ -465,13 +520,70 @@ export class RecruitmentPrismaService {
   }
 
   async createApplication(tenantId: string, data: any) {
-    // Generate mock matching & fraud analysis
-    const scoreCV = Math.floor(Math.random() * 20) + 75; // 75-95
-    const scoreLetter = Math.floor(Math.random() * 20) + 75; // 75-95
-    const scoreMatching = Math.floor(Math.random() * 20) + 75; // 75-95
-    const score = Math.round((scoreCV * 0.4) + (scoreLetter * 0.1) + (scoreMatching * 0.5));
-    const risks = Math.random() > 0.8 ? 'Moyen' : 'Aucun';
+    // ─── Scoring: No more random scores! ─────────────────────────────────
+    // When an application is created internally (not via public apply),
+    // we start with 0 scores. The AI/heuristic document analysis score
+    // will be set when documents are analyzed. Interview and test scores
+    // are entered separately and factored into the final score.
+    const scoreCV = 0;
+    const scoreLetter = 0;
+    const scoreMatching = 0;
+    const score = 0;
+    const risks = 'Aucun';
 
+    // If the candidate already has profile data, use heuristic scoring
+    if (data.candidateId) {
+      try {
+        const candidate = await this.prisma.hrCandidate.findUnique({
+          where: { id: data.candidateId },
+          include: {
+            academicProfile: true,
+            documents: true,
+          },
+        });
+
+        if (candidate) {
+          const hasCV = candidate.documents?.some(d => d.documentType === 'CV') ?? false;
+          const hasLetter = candidate.documents?.some(d => d.documentType === 'COVER_LETTER') ?? false;
+          const skills = candidate.academicProfile?.subjects ?? [];
+          const cvName = hasCV ? 'CV téléchargé' : 'Non fourni';
+          const letterName = hasLetter ? 'Lettre téléchargée' : 'Non fournie';
+
+          // Parse experiences from pedagogicalExperience JSON
+          let experiences: any[] = [];
+          let education: any[] = [];
+          try {
+            if (candidate.academicProfile?.pedagogicalExperience) {
+              const parsed = JSON.parse(candidate.academicProfile.pedagogicalExperience);
+              experiences = parsed.experiences || [];
+              education = parsed.education || [];
+            }
+          } catch {}
+
+          const heuristic = this.generateHeuristicScores(hasCV, hasLetter, cvName, letterName, skills, experiences, education);
+          return this.prisma.hrApplication.create({
+            data: {
+              ...prismaCreateDefaults(),
+              tenantId,
+              jobId: data.jobId,
+              candidateId: data.candidateId,
+              status: data.status || 'NOUVEAU',
+              score: heuristic.score,
+              scoreCV: heuristic.scoreCV,
+              scoreLetter: heuristic.scoreLetter,
+              scoreMatching: heuristic.scoreMatching,
+              risks: heuristic.risks,
+              riskDetail: heuristic.riskDetail,
+              matchDetail: heuristic.matchDetail,
+            },
+          });
+        }
+      } catch (err: any) {
+        this.logger.warn(`Could not compute heuristic scores for internal application: ${err.message}`);
+      }
+    }
+
+    // Fallback: create with 0 scores and pending analysis note
     return this.prisma.hrApplication.create({
       data: {
         ...prismaCreateDefaults(),
@@ -484,8 +596,8 @@ export class RecruitmentPrismaService {
         scoreLetter,
         scoreMatching,
         risks,
-        riskDetail: risks === 'Moyen' ? 'Léger chevauchement de dates sur deux expériences.' : null,
-        matchDetail: 'Adéquation correcte du profil avec les exigences.',
+        riskDetail: null,
+        matchDetail: 'En attente d\'analyse. Le score sera calculé après analyse des documents et passage des entretiens/tests.',
       },
     });
   }

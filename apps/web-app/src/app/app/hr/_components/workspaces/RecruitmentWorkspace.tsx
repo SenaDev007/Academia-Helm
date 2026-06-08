@@ -94,6 +94,16 @@ interface Candidate {
   scoreCV: number;
   scoreLetter: number;
   scoreMatching: number;
+  /** AI/heuristic document analysis score (same as `score`) */
+  docScore: number;
+  /** Average of all interview scores, or null if none */
+  interviewScore: number | null;
+  /** Average of all test result scores, or null if none */
+  testScore: number | null;
+  /** Weighted composite score used for hiring decisions */
+  finalScore: number;
+  /** Human-readable breakdown of the finalScore */
+  scoreBreakdown: string;
   category: string;
   matchDetail: string;
   risks: string;
@@ -393,6 +403,11 @@ export function RecruitmentWorkspace() {
           // Find the primary (first) application with its job data
           const primaryApp = c.applications?.[0] || c.application;
           const jobTitle = primaryApp?.job?.title || primaryApp?.jobTitle || c.jobTitle || '';
+          const docScore = primaryApp?.score || 0;
+          const finalScore = c._finalScore ?? docScore;
+          const interviewScore = c._avgInterviewScore ?? null;
+          const testScore = c._avgTestScore ?? null;
+          const scoreBreakdown = c._scoreBreakdown || `Documents: ${docScore}%`;
           return {
             id: c.id,
             applicationId: primaryApp?.id || c.id,
@@ -404,11 +419,16 @@ export function RecruitmentWorkspace() {
             address: c.address || '',
             gender: c.gender || 'M',
             job: jobTitle || 'Aucun poste',
-            score: primaryApp?.score || 0,
+            score: docScore,
             scoreCV: primaryApp?.scoreCV || 0,
             scoreLetter: primaryApp?.scoreLetter || 0,
             scoreMatching: primaryApp?.scoreMatching || 0,
-            category: primaryApp?.score >= 90 ? 'Excellent' : 'Bon',
+            docScore,
+            interviewScore,
+            testScore,
+            finalScore,
+            scoreBreakdown,
+            category: finalScore >= 80 ? 'Excellent' : finalScore >= 50 ? 'Bon' : 'Insuffisant',
             matchDetail: primaryApp?.matchDetail || '',
             risks: primaryApp?.risks || 'Aucun',
             riskDetail: primaryApp?.riskDetail || '',
@@ -954,14 +974,15 @@ export function RecruitmentWorkspace() {
   // Minimum score threshold for hire eligibility (configurable)
   const MIN_HIRE_SCORE = 50;
 
-  // Candidates with ENTRETIEN or TEST status AND a minimum IA score are truly eligible
+  // Candidates with ENTRETIEN or TEST status AND a minimum finalScore are truly eligible
+  // finalScore = weighted composite of document analysis + interview + test scores
   const readyForHire = candidates.filter(c =>
-    (c.status === 'ENTRETIEN' || c.status === 'TEST') && c.score >= MIN_HIRE_SCORE
+    (c.status === 'ENTRETIEN' || c.status === 'TEST') && c.finalScore >= MIN_HIRE_SCORE
   );
 
-  // Candidates who reached ENTRETIEN/TEST but have a below-average score — shown separately as "not recommended"
+  // Candidates who reached ENTRETIEN/TEST but have a below-threshold finalScore — shown separately as "not recommended"
   const notRecommendedForHire = candidates.filter(c =>
-    (c.status === 'ENTRETIEN' || c.status === 'TEST') && c.score < MIN_HIRE_SCORE
+    (c.status === 'ENTRETIEN' || c.status === 'TEST') && c.finalScore < MIN_HIRE_SCORE
   );
 
   // KPI calculations for dashboard cards (Tome 2 & 3)
@@ -970,7 +991,7 @@ export function RecruitmentWorkspace() {
   const totalInterviews = interviews.filter(i => i.status === 'PLANIFIÉ').length;
   const totalInterviewsInProgress = interviews.filter(i => i.status === 'EN_COURS').length;
   const totalInterviewsCompleted = interviews.filter(i => i.status === 'TERMINÉ').length;
-  const avgIaScore = candidates.length > 0 ? Math.round(candidates.reduce((sum, c) => sum + c.score, 0) / candidates.length) : 0;
+  const avgFinalScore = candidates.length > 0 ? Math.round(candidates.reduce((sum, c) => sum + c.finalScore, 0) / candidates.length) : 0;
   const fraudAlerts = candidates.filter(c => c.risks && c.risks !== 'Aucun').length;
   const totalHired = candidates.filter(c => c.status === 'EMBAUCHÉ').length;
 
@@ -983,7 +1004,7 @@ export function RecruitmentWorkspace() {
           { label: 'Offres Actives', value: totalJobs, sub: 'Recrutement ouvert', bg: 'bg-indigo-50/50 border-indigo-100/50' },
           { label: 'Candidatures', value: totalApplications, sub: 'Dossiers reçus', bg: 'bg-indigo-50/50 border-indigo-100/50' },
           { label: 'Entretiens', value: totalInterviews, sub: `${totalInterviewsInProgress} en cours · ${totalInterviewsCompleted} terminés`, bg: 'bg-indigo-50/50 border-indigo-100/50' },
-          { label: 'Score IA Moyen', value: `${avgIaScore}%`, sub: 'Adéquation HTIP', bg: 'bg-amber-50/50 border-amber-100/50' },
+          { label: 'Score Moyen', value: `${avgFinalScore}%`, sub: 'Score final composite', bg: 'bg-amber-50/50 border-amber-100/50' },
           { label: 'Alertes Risque', value: fraudAlerts, sub: 'Détections HDIE', bg: 'bg-rose-50/50 border-rose-100/50' },
           { label: 'Recrutements', value: totalHired, sub: 'Candidats embauchés', bg: 'bg-emerald-50/50 border-emerald-100/50' }
         ].map((card, i) => (
@@ -1217,7 +1238,7 @@ export function RecruitmentWorkspace() {
                           <td className="p-4 font-bold text-slate-950">{c.name}</td>
                           <td className="p-4 text-slate-600">{c.job}</td>
                           <td className="p-4 text-center">
-                            <span className="font-bold text-[#1A2BA6] bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">{c.score}%</span>
+                            <span className={cn('font-bold px-2 py-0.5 rounded-full border', c.finalScore >= 50 ? 'text-[#1A2BA6] bg-indigo-50 border-indigo-100' : 'text-red-600 bg-red-50 border-red-100')}>{c.finalScore}%</span>
                           </td>
                           <td className="p-4">
                             <span className={cn('inline-flex items-center gap-1 font-semibold px-2 py-0.5 rounded-full text-[10px]', c.risks === 'Aucun' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-amber-50 text-amber-600 border border-amber-100')}>
@@ -1645,6 +1666,35 @@ export function RecruitmentWorkspace() {
                       )}
                       {activeCandidateTab === 'ia' && (
                         <div className="space-y-4">
+                          {/* Final Score - Most prominent */}
+                          <div className="p-4 bg-indigo-50 rounded-lg border border-indigo-100">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="text-[10px] text-indigo-500 font-bold uppercase">Score Final (Composite)</p>
+                                <p className={cn('text-2xl font-extrabold mt-1', selectedCandidate.finalScore >= 50 ? 'text-[#1A2BA6]' : 'text-red-600')}>{selectedCandidate.finalScore}%</p>
+                              </div>
+                              <div className="text-[10px] text-indigo-400 max-w-[200px]">{selectedCandidate.scoreBreakdown}</div>
+                            </div>
+                          </div>
+                          {/* Score breakdown: Documents, Interview, Test */}
+                          <div className="grid grid-cols-3 gap-2 text-center">
+                            <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+                              <p className="text-[10px] text-slate-400 font-bold uppercase">Score Documents</p>
+                              <p className="text-sm font-bold text-slate-900 mt-1">{selectedCandidate.docScore}%</p>
+                              <p className="text-[9px] text-slate-400 mt-0.5">CV / Lettre / Matching</p>
+                            </div>
+                            <div className="p-3 bg-violet-50 rounded-lg border border-violet-100">
+                              <p className="text-[10px] text-violet-400 font-bold uppercase">Score Entretien</p>
+                              <p className="text-sm font-bold text-violet-700 mt-1">{selectedCandidate.interviewScore !== null ? `${selectedCandidate.interviewScore}%` : '—'}</p>
+                              <p className="text-[9px] text-violet-300 mt-0.5">Note réelle</p>
+                            </div>
+                            <div className="p-3 bg-amber-50 rounded-lg border border-amber-100">
+                              <p className="text-[10px] text-amber-400 font-bold uppercase">Score Test</p>
+                              <p className="text-sm font-bold text-amber-700 mt-1">{selectedCandidate.testScore !== null ? `${selectedCandidate.testScore}%` : '—'}</p>
+                              <p className="text-[9px] text-amber-300 mt-0.5">Note réelle</p>
+                            </div>
+                          </div>
+                          {/* Document analysis sub-scores */}
                           <div className="grid grid-cols-3 gap-2 text-center">
                             <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
                               <p className="text-[10px] text-slate-400 font-bold uppercase">Score CV</p>
@@ -2532,14 +2582,14 @@ export function RecruitmentWorkspace() {
                   <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-blue-50 text-blue-700 border border-blue-100">
                     {readyForHire.length} candidat{readyForHire.length !== 1 ? 's' : ''} éligible{readyForHire.length !== 1 ? 's' : ''}
                   </span>
-                  <span className="text-xs text-slate-400 font-medium">Prêts à embaucher (score IA ≥ {MIN_HIRE_SCORE}%)</span>
+                  <span className="text-xs text-slate-400 font-medium">Prêts à embaucher (score final ≥ {MIN_HIRE_SCORE}%)</span>
                 </div>
 
                 {readyForHire.length === 0 ? (
                   <div className="bg-white border border-slate-200 rounded-xl p-8 text-center">
                     <UserCheck className="h-8 w-8 text-slate-300 mx-auto mb-2" />
                     <p className="text-xs text-slate-500 font-semibold">Aucun candidat éligible pour le moment.</p>
-                    <p className="text-[10px] text-slate-400 mt-1">Les candidats doivent avoir un score IA ≥ {MIN_HIRE_SCORE}% et avoir passé les étapes Entretien ou Test.</p>
+                    <p className="text-[10px] text-slate-400 mt-1">Les candidats doivent avoir un score final ≥ {MIN_HIRE_SCORE}% et avoir passé les étapes Entretien ou Test.</p>
                   </div>
                 ) : (
                   <div className="bg-white border border-blue-200 rounded-xl overflow-hidden shadow-sm">
@@ -2550,7 +2600,8 @@ export function RecruitmentWorkspace() {
                           <th className="p-4">Candidat</th>
                           <th className="p-4">Poste</th>
                           <th className="p-4">Étape actuelle</th>
-                          <th className="p-4">Score IA</th>
+                          <th className="p-4">Score Final</th>
+                          <th className="p-4">Détail Scores</th>
                           <th className="p-4">Risque</th>
                           <th className="p-4 text-right">Action</th>
                         </tr>
@@ -2569,7 +2620,21 @@ export function RecruitmentWorkspace() {
                               </span>
                             </td>
                             <td className="p-4">
-                              <span className="font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">{c.score}%</span>
+                              <span className={cn(
+                                'font-semibold px-2 py-0.5 rounded-full border',
+                                c.finalScore >= 50
+                                  ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
+                                  : 'text-red-600 bg-red-50 border-red-100'
+                              )}>
+                                {c.finalScore}%
+                              </span>
+                            </td>
+                            <td className="p-4">
+                              <div className="space-y-0.5 text-[10px]">
+                                <div className="text-slate-500">Docs: <span className="font-semibold text-slate-700">{c.docScore}%</span></div>
+                                {c.interviewScore !== null && <div className="text-slate-500">Entretien: <span className="font-semibold text-violet-700">{c.interviewScore}%</span></div>}
+                                {c.testScore !== null && <div className="text-slate-500">Test: <span className="font-semibold text-amber-700">{c.testScore}%</span></div>}
+                              </div>
                             </td>
                             <td className="p-4">
                               <span className={cn('inline-flex items-center gap-1 font-semibold px-2 py-0.5 rounded-full text-[10px]', c.risks === 'Aucun' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-amber-50 text-amber-600 border border-amber-100')}>
@@ -2600,7 +2665,7 @@ export function RecruitmentWorkspace() {
                     <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-amber-50 text-amber-700 border border-amber-100">
                       {notRecommendedForHire.length} score insuffisant
                     </span>
-                    <span className="text-xs text-slate-400 font-medium">Score IA &lt; {MIN_HIRE_SCORE}% — embauche non recommandée</span>
+                    <span className="text-xs text-slate-400 font-medium">Score final &lt; {MIN_HIRE_SCORE}% — embauche non recommandée</span>
                   </div>
 
                   <div className="bg-white border border-amber-200 rounded-xl overflow-hidden shadow-sm">
@@ -2611,8 +2676,8 @@ export function RecruitmentWorkspace() {
                           <th className="p-4">Candidat</th>
                           <th className="p-4">Poste</th>
                           <th className="p-4">Étape actuelle</th>
-                          <th className="p-4">Score IA</th>
-                          <th className="p-4">Risque</th>
+                          <th className="p-4">Score Final</th>
+                          <th className="p-4">Détail Scores</th>
                           <th className="p-4 text-right">Action</th>
                         </tr>
                       </thead>
@@ -2630,18 +2695,20 @@ export function RecruitmentWorkspace() {
                               </span>
                             </td>
                             <td className="p-4">
-                              <span className="font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">{c.score}%</span>
+                              <span className="font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">{c.finalScore}%</span>
                             </td>
                             <td className="p-4">
-                              <span className={cn('inline-flex items-center gap-1 font-semibold px-2 py-0.5 rounded-full text-[10px]', c.risks === 'Aucun' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-amber-50 text-amber-600 border border-amber-100')}>
-                                {c.risks}
-                              </span>
+                              <div className="space-y-0.5 text-[10px]">
+                                <div className="text-slate-500">Docs: <span className="font-semibold text-slate-700">{c.docScore}%</span></div>
+                                {c.interviewScore !== null && <div className="text-slate-500">Entretien: <span className="font-semibold text-violet-700">{c.interviewScore}%</span></div>}
+                                {c.testScore !== null && <div className="text-slate-500">Test: <span className="font-semibold text-amber-700">{c.testScore}%</span></div>}
+                              </div>
                             </td>
                             <td className="p-4 text-right">
                               <button
                                 onClick={() => setHireCandidate(c)}
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-amber-700 rounded-lg text-xs font-medium border border-amber-200 hover:bg-amber-50 transition"
-                                title="Embauche non recommandée — score IA insuffisant"
+                                title="Embauche non recommandée — score final insuffisant"
                               >
                                 <AlertTriangle className="h-3 w-3" /> Forcer
                               </button>
@@ -2688,7 +2755,8 @@ export function RecruitmentWorkspace() {
                             <td className="p-4 font-bold text-slate-950">{c.name}</td>
                             <td className="p-4 text-slate-600">{c.job}</td>
                             <td className="p-4">
-                              <span className="font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">{c.score}%</span>
+                              <span className="font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">{c.finalScore}%</span>
+                              <div className="text-[10px] text-slate-400 mt-0.5">{c.scoreBreakdown}</div>
                             </td>
                             <td className="p-4 text-slate-500">{c.date}</td>
                             <td className="p-4">
@@ -2730,12 +2798,30 @@ export function RecruitmentWorkspace() {
                             <p className="font-bold text-slate-900 mt-0.5">{hireCandidate.job}</p>
                           </div>
                           <div>
-                            <span className="text-slate-400 font-bold text-[10px] uppercase">Score IA</span>
-                            <p className="font-bold text-emerald-600 mt-0.5">{hireCandidate.score}%</p>
+                            <span className="text-slate-400 font-bold text-[10px] uppercase">Score Final</span>
+                            <p className={cn('font-bold mt-0.5', hireCandidate.finalScore >= MIN_HIRE_SCORE ? 'text-emerald-600' : 'text-red-600')}>{hireCandidate.finalScore}%</p>
                           </div>
                           <div>
                             <span className="text-slate-400 font-bold text-[10px] uppercase">Étape</span>
                             <p className="font-bold text-slate-900 mt-0.5">{hireCandidate.status === 'ENTRETIEN' ? 'Entretien' : 'Test'}</p>
+                          </div>
+                        </div>
+                        {/* Score breakdown */}
+                        <div className="border-t border-slate-200 pt-2 mt-2">
+                          <span className="text-slate-400 font-bold text-[10px] uppercase">Détail des scores</span>
+                          <div className="grid grid-cols-3 gap-2 mt-1.5 text-xs">
+                            <div className="bg-white rounded-lg p-2 text-center border border-slate-100">
+                              <div className="text-[10px] text-slate-400 font-medium">Documents</div>
+                              <div className="font-bold text-slate-700">{hireCandidate.docScore}%</div>
+                            </div>
+                            <div className="bg-white rounded-lg p-2 text-center border border-slate-100">
+                              <div className="text-[10px] text-slate-400 font-medium">Entretien</div>
+                              <div className="font-bold text-violet-700">{hireCandidate.interviewScore ?? '—'}</div>
+                            </div>
+                            <div className="bg-white rounded-lg p-2 text-center border border-slate-100">
+                              <div className="text-[10px] text-slate-400 font-medium">Test</div>
+                              <div className="font-bold text-amber-700">{hireCandidate.testScore ?? '—'}</div>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -2747,13 +2833,13 @@ export function RecruitmentWorkspace() {
                         </p>
                       </div>
 
-                      {hireCandidate.score < MIN_HIRE_SCORE && (
+                      {hireCandidate.finalScore < MIN_HIRE_SCORE && (
                         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
                           <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
                           <div>
-                            <p className="text-[10px] text-amber-800 font-bold">Score IA insuffisant</p>
+                            <p className="text-[10px] text-amber-800 font-bold">Score final insuffisant</p>
                             <p className="text-[10px] text-amber-700">
-                              Le score IA de ce candidat ({hireCandidate.score}%) est inférieur au seuil recommandé ({MIN_HIRE_SCORE}%).
+                              Le score final de ce candidat ({hireCandidate.finalScore}%) est inférieur au seuil recommandé ({MIN_HIRE_SCORE}%).
                               L&apos;embauche n&apos;est pas recommandée. Voulez-vous vraiment continuer ?
                             </p>
                           </div>
@@ -2773,7 +2859,7 @@ export function RecruitmentWorkspace() {
                           disabled={hiring}
                           className={cn(
                             "inline-flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-xs font-bold shadow-sm hover:opacity-90 transition disabled:opacity-50",
-                            hireCandidate.score < MIN_HIRE_SCORE ? "bg-amber-600" : "bg-emerald-600"
+                            hireCandidate.finalScore < MIN_HIRE_SCORE ? "bg-amber-600" : "bg-emerald-600"
                           )}
                         >
                           {hiring ? (

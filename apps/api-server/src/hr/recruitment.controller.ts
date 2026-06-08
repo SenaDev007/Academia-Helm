@@ -73,6 +73,16 @@ export class RecruitmentPrismaController {
     return this.service.updateJob(id, body);
   }
 
+  @Put('jobs/:id/deactivate')
+  async deactivateJob(@Param('id') id: string) {
+    return this.service.deactivateJob(id);
+  }
+
+  @Put('jobs/:id/republish')
+  async republishJob(@Param('id') id: string) {
+    return this.service.republishJob(id);
+  }
+
   @Delete('jobs/:id')
   async deleteJob(@Param('id') id: string) {
     return this.service.deleteJob(id);

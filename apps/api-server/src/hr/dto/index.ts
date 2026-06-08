@@ -447,7 +447,7 @@ export class CreateJobDto {
   /** Alias: frontend RecruitmentWorkspace sends 'location' */
   @IsOptional() @IsString() location?: string;
   @IsOptional() @IsString() ref?: string;
-  @IsOptional() @IsIn(['BROUILLON', 'PUBLIÉE', 'FERMÉE', 'ARCHIVÉE']) status?: string;
+  @IsOptional() @IsIn(['BROUILLON', 'PUBLIÉE', 'FERMÉE', 'ARCHIVÉE', 'DÉSACTIVÉE']) status?: string;
   @IsOptional() @IsString() description?: string;
   /** DB column name — frontend may send 'missions' or 'keyMissions' */
   @IsOptional() @IsString() missions?: string;
@@ -465,6 +465,8 @@ export class CreateJobDto {
   @IsOptional() @IsString() skillsRequired?: string;
   @IsOptional() @IsString() salary?: string;
   @IsOptional() @IsString() contractType?: string;
+  /** Date when the job was published — set automatically on publish/republish */
+  @IsOptional() @IsDateString() publishedAt?: string;
   /** Frontend may send tenantId — ignored (resolved server-side) */
   @IsOptional() @IsString() tenantId?: string;
 }
@@ -476,7 +478,7 @@ export class UpdateJobDto {
   @IsOptional() @IsString() loc?: string;
   @IsOptional() @IsString() location?: string;
   @IsOptional() @IsString() ref?: string;
-  @IsOptional() @IsIn(['BROUILLON', 'PUBLIÉE', 'FERMÉE', 'ARCHIVÉE']) status?: string;
+  @IsOptional() @IsIn(['BROUILLON', 'PUBLIÉE', 'FERMÉE', 'ARCHIVÉE', 'DÉSACTIVÉE']) status?: string;
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsString() missions?: string;
   @IsOptional() @IsString() keyMissions?: string;
@@ -488,6 +490,8 @@ export class UpdateJobDto {
   @IsOptional() @IsString() skillsRequired?: string;
   @IsOptional() @IsString() salary?: string;
   @IsOptional() @IsString() contractType?: string;
+  /** Date when the job was published — updated automatically on republish */
+  @IsOptional() @IsDateString() publishedAt?: string;
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() tenantId?: string;
 }

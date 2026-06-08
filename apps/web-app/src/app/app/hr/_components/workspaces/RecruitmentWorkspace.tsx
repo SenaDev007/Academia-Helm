@@ -39,7 +39,9 @@ import {
   MessageSquare,
   PenTool,
   HeartHandshake,
-  ShieldCheck
+  ShieldCheck,
+  PowerOff,
+  RefreshCw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -58,6 +60,7 @@ interface Job {
   date: string;
   candidates: number;
   status: string;
+  publishedAt?: string;
   description?: string;
   missions?: string;
   responsibilities?: string;
@@ -388,6 +391,7 @@ export function RecruitmentWorkspace() {
         setJobs(fetchedJobs.map(j => ({
           ...j,
           date: j.createdAt ? j.createdAt.split('T')[0] : new Date().toISOString().split('T')[0],
+          publishedAt: j.publishedAt || null,
           candidates: j._count?.applications || 0,
         })));
       }
@@ -487,7 +491,10 @@ export function RecruitmentWorkspace() {
   // Create or Update Job
   const handleSaveJob = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tenant?.id) return;
+    if (!tenant?.id) {
+      toast({ variant: 'error', title: 'Erreur', description: 'Aucun établissement sélectionné. Veuillez rafraîchir la page ou sélectionner un établissement.' });
+      return;
+    }
     try {
       if (editingJob) {
         // Update existing job
@@ -530,7 +537,10 @@ export function RecruitmentWorkspace() {
   // Create Candidate and Application
   const handleCreateCandidate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tenant?.id) return;
+    if (!tenant?.id) {
+      toast({ variant: 'error', title: 'Erreur', description: 'Aucun établissement sélectionné. Veuillez rafraîchir la page ou sélectionner un établissement.' });
+      return;
+    }
     try {
       // 1. Create Candidate
       const createdCandidate = await hrFetch<any>(hrUrl('recruitment/candidates', { tenantId: tenant.id }), {
@@ -590,6 +600,44 @@ export function RecruitmentWorkspace() {
     }
   };
 
+  // Deactivate Job Offer (soft action — does NOT delete the job or its applications)
+  const handleDeactivateJob = async (id: string) => {
+    const ok = await confirmDialog.warning(
+      'L\'offre sera désactivée et ne sera plus visible publiquement. Les candidatures existantes seront conservées.',
+      'Désactiver cette offre ?'
+    );
+    if (!ok) return;
+    try {
+      await hrFetch(hrUrl(`recruitment/jobs/${id}/deactivate`, { tenantId: tenant.id }), { method: 'PUT' });
+      // Optimistic update: change status locally
+      setJobs(prev => prev.map(j => j.id === id ? { ...j, status: 'DÉSACTIVÉE' } : j));
+      toast({ variant: 'success', title: 'Offre désactivée', description: 'L\'offre n\'est plus visible publiquement. Vous pouvez la republier à tout moment.' });
+    } catch (err: any) {
+      console.error('Failed to deactivate job:', err);
+      const msg = err?.message || 'Impossible de désactiver cette offre. Veuillez réessayer.';
+      toast({ variant: 'error', title: 'Erreur', description: msg });
+    }
+  };
+
+  // Republish a deactivated Job Offer (updates publishedAt automatically on backend)
+  const handleRepublishJob = async (id: string) => {
+    const ok = await confirmDialog.warning(
+      'L\'offre sera republiée et redeviendra visible publiquement. La date de publication sera mise à jour.',
+      'Republicaliser cette offre ?'
+    );
+    if (!ok) return;
+    try {
+      const updated = await hrFetch<any>(hrUrl(`recruitment/jobs/${id}/republish`, { tenantId: tenant.id }), { method: 'PUT' });
+      // Optimistic update: change status and publishedAt locally
+      setJobs(prev => prev.map(j => j.id === id ? { ...j, status: 'PUBLIÉE', publishedAt: updated?.publishedAt || new Date().toISOString() } : j));
+      toast({ variant: 'success', title: 'Offre republiée', description: 'L\'offre est à nouveau visible publiquement avec une nouvelle date de publication.' });
+    } catch (err: any) {
+      console.error('Failed to republish job:', err);
+      const msg = err?.message || 'Impossible de republier cette offre. Veuillez réessayer.';
+      toast({ variant: 'error', title: 'Erreur', description: msg });
+    }
+  };
+
   // Delete Candidate
   const handleDeleteCandidate = async (id: string) => {
     const ok = await confirmDialog.danger(
@@ -621,7 +669,10 @@ export function RecruitmentWorkspace() {
   // Schedule or Update Interview
   const handleSaveInterview = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tenant?.id) return;
+    if (!tenant?.id) {
+      toast({ variant: 'error', title: 'Erreur', description: 'Aucun établissement sélectionné. Veuillez rafraîchir la page ou sélectionner un établissement.' });
+      return;
+    }
     try {
       if (editingInterview) {
         // Update existing interview — include status/result/feedback
@@ -722,7 +773,10 @@ export function RecruitmentWorkspace() {
   // Create or Update Test
   const handleSaveTest = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tenant?.id) return;
+    if (!tenant?.id) {
+      toast({ variant: 'error', title: 'Erreur', description: 'Aucun établissement sélectionné. Veuillez rafraîchir la page ou sélectionner un établissement.' });
+      return;
+    }
     try {
       const body = {
         name: newTest.name,
@@ -1082,16 +1136,42 @@ export function RecruitmentWorkspace() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                   {jobs.map((job) => (
-                    <div key={job.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-all relative overflow-hidden flex flex-col justify-between">
+                    <div key={job.id} className={cn(
+                      'bg-white border rounded-xl p-5 shadow-sm hover:shadow-md transition-all relative overflow-hidden flex flex-col justify-between',
+                      job.status === 'DÉSACTIVÉE' ? 'border-amber-200 bg-amber-50/30' : 'border-slate-200'
+                    )}>
                       <div>
                         <div className="flex justify-between items-start">
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{job.ref}</span>
-                          <div className="flex items-center gap-2">
-                            <span className={cn('px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase border', job.status === 'PUBLIÉE' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-200')}>{job.status}</span>
-                            <button onClick={() => openEditJob(job)} className="text-slate-400 hover:text-blue-600 transition">
+                          <div className="flex items-center gap-1.5">
+                            <span className={cn(
+                              'px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase border',
+                              job.status === 'PUBLIÉE' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                              job.status === 'DÉSACTIVÉE' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                              job.status === 'FERMÉE' ? 'bg-red-50 text-red-600 border-red-200' :
+                              job.status === 'ARCHIVÉE' ? 'bg-slate-100 text-slate-400 border-slate-200' :
+                              'bg-slate-50 text-slate-500 border-slate-200'
+                            )}>
+                              {job.status === 'DÉSACTIVÉE' ? 'Désactivée' :
+                               job.status === 'PUBLIÉE' ? 'Publiée' :
+                               job.status === 'FERMÉE' ? 'Fermée' :
+                               job.status === 'ARCHIVÉE' ? 'Archivée' :
+                               job.status === 'BROUILLON' ? 'Brouillon' : job.status}
+                            </span>
+                            <button onClick={() => openEditJob(job)} className="text-slate-400 hover:text-blue-600 transition" title="Modifier">
                               <Edit2 className="h-3.5 w-3.5" />
                             </button>
-                            <button onClick={() => handleDeleteJob(job.id)} className="text-slate-400 hover:text-red-600 transition">
+                            {job.status === 'PUBLIÉE' && (
+                              <button onClick={() => handleDeactivateJob(job.id)} className="text-slate-400 hover:text-amber-600 transition" title="Désactiver l'offre">
+                                <PowerOff className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            {job.status === 'DÉSACTIVÉE' && (
+                              <button onClick={() => handleRepublishJob(job.id)} className="text-emerald-500 hover:text-emerald-600 transition" title="Republicaliser l'offre">
+                                <RefreshCw className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            <button onClick={() => handleDeleteJob(job.id)} className="text-slate-400 hover:text-red-600 transition" title="Supprimer définitivement">
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
                           </div>
@@ -1105,7 +1185,12 @@ export function RecruitmentWorkspace() {
                       </div>
                       <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center">
                         <span className="text-xs font-semibold text-[#1A2BA6]">{job.candidates} Candidats</span>
-                        <span className="text-[10px] text-slate-400">Créé le {job.date}</span>
+                        <div className="flex flex-col items-end gap-0.5">
+                          {job.publishedAt && (
+                            <span className="text-[10px] text-emerald-600 font-medium">Publiée le {job.publishedAt.split('T')[0]}</span>
+                          )}
+                          <span className="text-[10px] text-slate-400">Créé le {job.date}</span>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -1155,6 +1240,7 @@ export function RecruitmentWorkspace() {
                           <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newJob.status} onChange={(e) => setNewJob({ ...newJob, status: e.target.value })}>
                             <option value="BROUILLON">Brouillon</option>
                             <option value="PUBLIÉE">Publiée</option>
+                            <option value="DÉSACTIVÉE">Désactivée</option>
                             <option value="FERMÉE">Fermée</option>
                             <option value="ARCHIVÉE">Archivée</option>
                           </select>

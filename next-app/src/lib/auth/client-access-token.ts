@@ -112,10 +112,20 @@ export async function tryRefreshAccessToken(): Promise<boolean> {
     };
     if (!data.accessToken?.trim()) return false;
 
+    // Update localStorage (used by hrFetch / getClientAuthorizationHeader)
     localStorage.setItem('accessToken', data.accessToken.trim());
     if (data.refreshToken?.trim()) {
       localStorage.setItem('refreshToken', data.refreshToken.trim());
     }
+
+    // Update the academia_token cookie (used by Axios / getClientToken)
+    try {
+      const { setClientToken } = await import('@/lib/auth/session-client');
+      setClientToken(data.accessToken.trim());
+    } catch {
+      // Cookie update is best-effort
+    }
+
     return true;
   } catch {
     return false;

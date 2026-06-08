@@ -5,9 +5,10 @@
  * Inclut un intercepteur offline-aware qui évite les crashes hors ligne
  */
 
-import axios, { AxiosInstance, AxiosError } from 'axios';
+import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { getClientToken } from '@/lib/auth/session-client';
 import { getApiBaseUrl } from '@/lib/utils/urls';
+import { tryRefreshAccessToken } from '@/lib/auth/client-access-token';
 
 const API_URL = getApiBaseUrl();
 
@@ -85,11 +86,22 @@ apiClient.interceptors.request.use(
 );
 
 /**
- * Intercepteur de réponse : Gère les erreurs avec support offline
+ * Intercepteur de réponse : Gère les erreurs avec support offline + auto-refresh
  */
+let isRefreshing = false;
+let failedQueue: Array<{ resolve: (token: string) => void; reject: (err: any) => void }> = [];
+
+function processQueue(error: any, token: string | null = null) {
+  failedQueue.forEach(({ resolve, reject }) => {
+    if (token) resolve(token);
+    else reject(error);
+  });
+  failedQueue = [];
+}
+
 apiClient.interceptors.response.use(
   (response) => response,
-  (error: AxiosError) => {
+  async (error: AxiosError) => {
     // Erreur réseau (pas de réponse = hors ligne ou timeout)
     if (!error.response) {
       // Ne PAS rediriger vers login quand hors ligne
@@ -105,6 +117,8 @@ apiClient.interceptors.response.use(
       return Promise.reject(offlineError);
     }
 
+    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+
     // Erreur 401 : Non authentifié
     if (error.response.status === 401) {
       // Vérifier si on est hors ligne — ne pas rediriger si c'est juste une erreur réseau
@@ -115,10 +129,53 @@ apiClient.interceptors.response.use(
         offlineError.isAuthExpired = true;
         return Promise.reject(offlineError);
       }
-      
-      // En ligne : rediriger vers login
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login';
+
+      // Si c'est déjà une requête retry, ne pas boucler → rediriger vers login
+      if (originalRequest._retry) {
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login';
+        }
+        return Promise.reject(error);
+      }
+
+      // Si un refresh est déjà en cours, mettre en queue
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve: (token: string) => {
+            originalRequest.headers.Authorization = `Bearer ${token}`;
+            resolve(apiClient(originalRequest));
+          }, reject });
+        });
+      }
+
+      // Tenter le refresh du token
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      try {
+        const refreshed = await tryRefreshAccessToken();
+        if (refreshed) {
+          const newToken = localStorage.getItem('accessToken')?.trim();
+          if (newToken) {
+            processQueue(null, newToken);
+            originalRequest.headers.Authorization = `Bearer ${newToken}`;
+            return apiClient(originalRequest);
+          }
+        }
+        // Refresh échoué → rediriger vers login
+        processQueue(error, null);
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login';
+        }
+        return Promise.reject(error);
+      } catch (refreshError) {
+        processQueue(refreshError, null);
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login';
+        }
+        return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
       }
     }
     

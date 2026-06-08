@@ -4,7 +4,7 @@ import { StorageService } from '../common/services/storage.service';
 import { OpenRouterService } from '../common/services/openrouter.service';
 import { ContractsPrismaService } from './contracts-prisma.service';
 import { StaffMatriculeService } from './staff-matricule.service';
-import { prismaCreateDefaults, prismaUpdateDefaults, prismaCreateNoCreatedAt, prismaCreateNoUpdatedAt, uuid, now } from '../common/utils/prisma-helpers';
+import { prismaCreateDefaults, prismaUpdateDefaults, prismaCreateNoCreatedAt, prismaCreateNoUpdatedAt, prismaCreateIdOnly, uuid, now } from '../common/utils/prisma-helpers';
 import { Prisma } from '@prisma/client';
 
 /**
@@ -1412,10 +1412,10 @@ Réponds UNIQUEMENT en JSON valide.`,
           }
         });
 
-        // 2. Save to AcademicProfile (no updatedAt field)
+        // 2. Save to AcademicProfile (has ONLY id — no createdAt, no updatedAt)
         await tx.academicProfile.create({
           data: {
-            ...prismaCreateNoUpdatedAt(),
+            ...prismaCreateIdOnly(),
             candidateId: candidate.id,
             teachingLevel: education[0]?.degree || 'Non spécifié',
             subjects: skills,

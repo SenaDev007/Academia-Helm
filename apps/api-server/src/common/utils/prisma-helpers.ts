@@ -68,7 +68,10 @@ export function prismaCreateNoCreatedAt(): { id: string; updatedAt: Date } {
 
 /**
  * Champs minimaux pour les modèles qui n'ont QUE id + createdAt (SANS updatedAt).
- * Exemples : HrTalentPool, AcademicProfile, CandidateDocument
+ * Exemples : HrTalentPool, CandidateDocument
+ *
+ * ⚠️ IMPORTANT : AcademicProfile n'a QUE id (pas createdAt, pas updatedAt) !
+ * Utilisez prismaCreateIdOnly() pour AcademicProfile à la place.
  *
  * @example
  * tx.hrTalentPool.create({
@@ -77,6 +80,19 @@ export function prismaCreateNoCreatedAt(): { id: string; updatedAt: Date } {
  */
 export function prismaCreateNoUpdatedAt(): { id: string; createdAt: Date } {
   return { id: uuid(), createdAt: now() };
+}
+
+/**
+ * Champs minimaux pour les modèles qui n'ont QUE id (SANS createdAt NI updatedAt).
+ * Exemples : AcademicProfile
+ *
+ * @example
+ * tx.academicProfile.create({
+ *   data: { ...prismaCreateIdOnly(), candidateId, teachingLevel, subjects },
+ * })
+ */
+export function prismaCreateIdOnly(): { id: string } {
+  return { id: uuid() };
 }
 
 /**

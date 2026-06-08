@@ -307,6 +307,47 @@ async function bootstrap() {
     }
 
     logger.log('Recruitment tables & columns ensured successfully');
+
+    // ─── One-time HR data cleanup (INACTIVE staff hard-delete) ───────────
+    // This removes all INACTIVE staff and their associated data from ALL tenants.
+    // Safe to run on every startup — only deletes INACTIVE records.
+    try {
+      // Delete INACTIVE staff's related data first (respecting FK constraints)
+      const inactiveStaff = await prisma.$queryRaw<Array<{id: string, tenantId: string}>>`
+        SELECT id, "tenantId" FROM staff WHERE status = 'INACTIVE'
+      `;
+
+      if (inactiveStaff.length > 0) {
+        logger.log(`Cleaning up ${inactiveStaff.length} INACTIVE staff records...`);
+
+        for (const staff of inactiveStaff) {
+          try {
+            // Delete in FK order
+            await prisma.$executeRawUnsafe(`DELETE FROM "staff_photo" WHERE "staffId" = '${staff.id}'`);
+            await prisma.$executeRawUnsafe(`DELETE FROM "staff_document" WHERE "staffId" = '${staff.id}'`);
+            await prisma.$executeRawUnsafe(`DELETE FROM "staff_evaluation" WHERE "staffId" = '${staff.id}'`);
+            await prisma.$executeRawUnsafe(`DELETE FROM "staff_attendance" WHERE "staffId" = '${staff.id}'`);
+            await prisma.$executeRawUnsafe(`DELETE FROM "staff_schedule" WHERE "staffId" = '${staff.id}'`);
+            await prisma.$executeRawUnsafe(`DELETE FROM "staff_allowance" WHERE "staffId" = '${staff.id}'`);
+            await prisma.$executeRawUnsafe(`DELETE FROM "staff_training" WHERE "staffId" = '${staff.id}'`);
+            await prisma.$executeRawUnsafe(`DELETE FROM "staff_assignment" WHERE "staffId" = '${staff.id}'`);
+            // Contract amendments via contracts
+            await prisma.$executeRawUnsafe(`DELETE FROM "contract_amendment" WHERE "contractId" IN (SELECT id FROM contract WHERE "staffId" = '${staff.id}')`);
+            await prisma.$executeRawUnsafe(`DELETE FROM contract WHERE "staffId" = '${staff.id}'`);
+            // Unlink from HR applications
+            await prisma.$executeRawUnsafe(`UPDATE "hr_applications" SET "staffId" = NULL WHERE "staffId" = '${staff.id}'`);
+            // Finally delete the staff record
+            await prisma.$executeRawUnsafe(`DELETE FROM staff WHERE id = '${staff.id}'`);
+            logger.log(`  Hard-deleted INACTIVE staff: ${staff.id}`);
+          } catch (delErr: any) {
+            logger.warn(`  Failed to hard-delete INACTIVE staff ${staff.id}: ${delErr.message}`);
+          }
+        }
+        logger.log(`HR data cleanup completed`);
+      }
+    } catch (cleanupErr: any) {
+      logger.warn(`HR data cleanup warning: ${cleanupErr.message}`);
+    }
   } catch (fallbackErr: any) {
     logger.error(`Recruitment tables fallback failed: ${fallbackErr.message}`);
     logger.warn('Some HR recruitment features may not work');

@@ -25,5 +25,8 @@
     "cross-env": "^10.1.0",
     "puppeteer": "^24.43.1",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "pg": "^8.21.0"
   }
 }

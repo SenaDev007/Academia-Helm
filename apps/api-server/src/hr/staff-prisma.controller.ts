@@ -1,24 +1,21 @@
 /**
  * ============================================================================
- * STAFF PRISMA CONTROLLER - MODULE 5 (v4 — Termination / Débauche)
+ * STAFF PRISMA CONTROLLER - MODULE 5 (v3 — Photo + Documents + Matricules)
  * ============================================================================
  *
  * Endpoints:
  *   POST   /hr/staff                    — Create staff (with dual matricule auto-gen)
  *   GET    /hr/staff                    — List all staff (with photo)
- *   GET    /hr/staff/terminated/list    — List terminated staff (MUST be before :id)
  *   GET    /hr/staff/:id               — Get staff detail (with photo + documents grouped)
  *   PUT    /hr/staff/:id               — Update staff info
  *   DELETE /hr/staff/:id               — Archive staff
- *
- *   POST   /hr/staff/:id/terminate     — Débauche d'un employé (processus professionnel)
- *   POST   /hr/staff/:id/reactivate    — Réactivation d'un employé débauché
  *
  *   POST   /hr/staff/:id/photo         — Upload/replace staff photo (Multer)
  *   GET    /hr/staff/:id/photo         — Get staff photo
  *   DELETE /hr/staff/:id/photo         — Delete staff photo
  *
  *   POST   /hr/staff/:id/documents     — Upload document (Multer file upload)
+ *   POST   /hr/staff/:id/documents/json— Add document metadata (legacy JSON body)
  *   GET    /hr/staff/:id/documents     — Get all documents (grouped by category)
  *   DELETE /hr/staff/:id/documents/:docId — Delete a document
  *   PUT    /hr/staff/:id/documents/:docId/validate — Validate/reject a document
@@ -29,17 +26,16 @@
 
 import {
   Controller, Get, Post, Put, Delete, Body, Param, Query,
-  UseGuards, UseInterceptors, UploadedFile,
+  UseGuards, UseInterceptors, UploadedFile, UploadedFiles,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { StaffPrismaService } from './staff-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 import {
-  CreateStaffDto, UpdateStaffDto,
+  CreateStaffDto, UpdateStaffDto, AddStaffDocumentDto,
   UploadStaffDocumentDto, ValidateDocumentDto,
-  TerminateStaffDto,
 } from './dto/index';
 
 @Controller('hr/staff')
@@ -73,23 +69,14 @@ export class StaffPrismaController {
     });
   }
 
-  // ─── Static routes (MUST be before @Get(':id')) ────────────────────────────
+  // ─── ADMIN ──────────────────────────────────────────────────────────────────
 
-  /**
-   * GET /hr/staff/terminated/list
-   * Récupère la liste des employés débauchés (ayant quitté l'entreprise).
-   */
-  @Get('terminated/list')
-  async findTerminatedStaff(
-    @GetTenant() tenant: any,
-    @Query('terminationType') terminationType?: string,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
-  ) {
-    return this.staffService.findTerminatedStaff(tenant.id, { terminationType, from, to });
+  @Post('admin/purge-all')
+  async purgeAllStaff(@GetTenant() tenant: any) {
+    return this.staffService.purgeAllStaff(tenant.id);
   }
 
-  // ─── Parameterized routes ──────────────────────────────────────────────────
+  // ─── CRUD ──────────────────────────────────────────────────────────────────
 
   @Get(':id')
   async findStaffById(@GetTenant() tenant: any, @Param('id') id: string) {
@@ -102,37 +89,17 @@ export class StaffPrismaController {
   }
 
   @Delete(':id')
-  async archiveStaff(@GetTenant() tenant: any, @Param('id') id: string) {
+  async deleteStaff(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('force') force?: string,
+  ) {
+    // force=true → hard delete (permanent removal from DB)
+    // No force or force=false → soft delete (archive, status → INACTIVE)
+    if (force === 'true') {
+      return this.staffService.hardDeleteStaff(id, tenant.id);
+    }
     return this.staffService.archiveStaff(id, tenant.id);
-  }
-
-  // ─── TERMINATION / DÉBAUCHE ─────────────────────────────────────────────────
-
-  /**
-   * POST /hr/staff/:id/terminate
-   * Débauche d'un employé — Processus professionnel de départ.
-   * Résilie tous les contrats actifs et met à jour le statut du personnel.
-   */
-  @Post(':id/terminate')
-  async terminateStaff(
-    @GetTenant() tenant: any,
-    @Param('id') id: string,
-    @Body() data: TerminateStaffDto,
-  ) {
-    return this.staffService.terminateStaff(id, tenant.id, data);
-  }
-
-  /**
-   * POST /hr/staff/:id/reactivate
-   * Réactive un employé précédemment débauché (réintégration).
-   */
-  @Post(':id/reactivate')
-  async reactivateStaff(
-    @GetTenant() tenant: any,
-    @Param('id') id: string,
-    @Body() body?: { reason?: string },
-  ) {
-    return this.staffService.reactivateStaff(id, tenant.id, body);
   }
 
   // ─── PHOTO ─────────────────────────────────────────────────────────────────
@@ -166,6 +133,7 @@ export class StaffPrismaController {
 
   /**
    * Upload a document file (Multer multipart/form-data)
+   * Query params: documentType, description?, expiresAt?
    */
   @Post(':id/documents')
   @UseInterceptors(FileInterceptor('file', {

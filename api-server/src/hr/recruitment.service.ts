@@ -124,6 +124,9 @@ export class RecruitmentPrismaService {
     const missions = data.missions || data.keyMissions || null;
     const academicLevel = data.academicLevel || data.requiredEducation || null;
     const experience = data.experience || data.requiredExperience || null;
+    // If status is PUBLIÉE, set publishedAt to now()
+    const publishedAt = data.status === 'PUBLIÉE' ? new Date() : null;
+
     return this.prisma.hrJob.create({
       data: {
         ...prismaCreateDefaults(),
@@ -132,7 +135,7 @@ export class RecruitmentPrismaService {
         title: data.title,
         dept,
         loc,
-        status: data.status || 'BROUILLON', // PUBLIÉE, FERMÉE, ARCHIVÉE
+        status: data.status || 'BROUILLON', // PUBLIÉE, FERMÉE, ARCHIVÉE, DÉSACTIVÉE
         description: data.description,
         missions,
         responsibilities: data.responsibilities,
@@ -141,6 +144,7 @@ export class RecruitmentPrismaService {
         skillsRequired: data.skillsRequired,
         salary: data.salary,
         contractType: data.contractType,
+        publishedAt,
       },
     });
   }
@@ -152,6 +156,11 @@ export class RecruitmentPrismaService {
     const missions = data.missions || data.keyMissions;
     const academicLevel = data.academicLevel || data.requiredEducation;
     const experience = data.experience || data.requiredExperience;
+
+    // If status is being changed to PUBLIÉE, update publishedAt
+    // (unless explicitly provided, e.g. during republish)
+    const publishedAt = data.status === 'PUBLIÉE' ? new Date() : undefined;
+
     return this.prisma.hrJob.update({
       where: { id },
       data: {
@@ -169,6 +178,55 @@ export class RecruitmentPrismaService {
         ...(data.skillsRequired !== undefined && { skillsRequired: data.skillsRequired }),
         ...(data.salary !== undefined && { salary: data.salary }),
         ...(data.contractType !== undefined && { contractType: data.contractType }),
+        ...(publishedAt !== undefined && { publishedAt }),
+      },
+    });
+  }
+
+  /**
+   * Désactiver une offre d'emploi — passe le statut à DÉSACTIVÉE.
+   * L'offre n'est plus visible publiquement mais n'est pas supprimée.
+   * Les candidatures existantes sont préservées.
+   */
+  async deactivateJob(id: string) {
+    const job = await this.prisma.hrJob.findUnique({ where: { id } });
+    if (!job) {
+      throw new NotFoundException(`Offre d'emploi avec l'ID ${id} non trouvée`);
+    }
+    if (job.status !== 'PUBLIÉE') {
+      throw new BadRequestException(
+        `Seule une offre publiée peut être désactivée. Statut actuel : ${job.status}`
+      );
+    }
+    return this.prisma.hrJob.update({
+      where: { id },
+      data: {
+        ...prismaUpdateDefaults(),
+        status: 'DÉSACTIVÉE',
+      },
+    });
+  }
+
+  /**
+   * Republication d'une offre désactivée — repasse le statut à PUBLIÉE
+   * et met à jour la date de publication à maintenant.
+   */
+  async republishJob(id: string) {
+    const job = await this.prisma.hrJob.findUnique({ where: { id } });
+    if (!job) {
+      throw new NotFoundException(`Offre d'emploi avec l'ID ${id} non trouvée`);
+    }
+    if (job.status !== 'DÉSACTIVÉE') {
+      throw new BadRequestException(
+        `Seule une offre désactivée peut être republicquée. Statut actuel : ${job.status}`
+      );
+    }
+    return this.prisma.hrJob.update({
+      where: { id },
+      data: {
+        ...prismaUpdateDefaults(),
+        status: 'PUBLIÉE',
+        publishedAt: new Date(),
       },
     });
   }

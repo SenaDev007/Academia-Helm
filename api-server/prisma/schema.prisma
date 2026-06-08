@@ -13487,6 +13487,7 @@ model HrJob {
   skillsRequired   String?
   salary           String?
   contractType     String?
+  publishedAt      DateTime?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
   applications     HrApplication[]

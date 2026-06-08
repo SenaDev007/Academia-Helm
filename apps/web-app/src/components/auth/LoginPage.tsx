@@ -288,18 +288,33 @@ export default function LoginPage() {
     }
 
     // Compute the best tenant slug for redirect (prefer API response over URL)
-    const resolvedSlug = tenantSlug || data.tenant?.slug || data.tenant?.subdomain;
+    // IMPORTANT: prefer `subdomain` over `slug` for URL construction, because
+    // `slug` may be a placeholder like "default-tenant" that doesn't resolve in DNS,
+    // while `subdomain` is the actual DNS-resolvable value.
+    const resolvedSlug = tenantSlug || data.tenant?.subdomain || data.tenant?.slug;
     const resolvedTenantId = tenantIdFromUrl || data.tenant?.id;
 
-    if (!resolvedSlug && !resolvedTenantId) {
-      // No tenant info at all — go to /app and let middleware handle it
-      window.location.href = redirectPath;
+    // Placeholder/reserved slugs that should NOT be used for subdomain construction.
+    // These would create non-resolving URLs like https://default-tenant.academiahelm.com
+    const RESERVED_SLUGS = ['default-tenant', 'default', 'unknown', 'undefined', 'app', 'www', 'api', 'portal', 'admin'];
+
+    if (!resolvedSlug || RESERVED_SLUGS.includes(resolvedSlug.toLowerCase())) {
+      // Slug is missing or a placeholder — redirect to /app on the current domain.
+      // The middleware will resolve the tenant from the authenticated session
+      // (cookies are set on .academiahelm.com, so they work across all subdomains).
+      if (resolvedTenantId) {
+        const url = new URL(redirectPath, window.location.origin);
+        url.searchParams.set('tenant_id', resolvedTenantId);
+        window.location.href = url.toString();
+      } else {
+        window.location.href = redirectPath;
+      }
       return;
     }
 
     try {
       const redirectUrl = getTenantRedirectUrl({
-        tenantSlug: resolvedSlug || resolvedTenantId || 'unknown',
+        tenantSlug: resolvedSlug,
         tenantId: resolvedTenantId,
         path: redirectPath,
       });

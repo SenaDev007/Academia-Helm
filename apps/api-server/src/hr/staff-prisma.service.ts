@@ -495,6 +495,18 @@ export class StaffPrismaService {
       }
     }
 
+    // Reset the staff number sequence so next created staff starts from 1
+    if (deleted > 0) {
+      try {
+        await this.prisma.staffNumberSequence.updateMany({
+          where: { tenantId },
+          data: { current: 0 },
+        });
+      } catch (seqErr: any) {
+        console.error(`Failed to reset StaffNumberSequence for tenant ${tenantId}: ${seqErr.message}`);
+      }
+    }
+
     return { deleted, errors, total: staff.length };
   }
 

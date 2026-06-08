@@ -118,20 +118,26 @@ export class RecruitmentPrismaService {
   async createJob(tenantId: string, data: any) {
     // Generate sequential ref if not provided
     const ref = data.ref || await this.generateJobRef(tenantId);
+    // Map frontend aliases to DB column names
+    const dept = data.dept || data.department || '';
+    const loc = data.loc || data.location || '';
+    const missions = data.missions || data.keyMissions || null;
+    const academicLevel = data.academicLevel || data.requiredEducation || null;
+    const experience = data.experience || data.requiredExperience || null;
     return this.prisma.hrJob.create({
       data: {
         ...prismaCreateDefaults(),
         tenantId,
         ref,
         title: data.title,
-        dept: data.dept,
-        loc: data.loc,
+        dept,
+        loc,
         status: data.status || 'BROUILLON', // PUBLIÉE, FERMÉE, ARCHIVÉE
         description: data.description,
-        missions: data.missions,
+        missions,
         responsibilities: data.responsibilities,
-        academicLevel: data.academicLevel,
-        experience: data.experience,
+        academicLevel,
+        experience,
         skillsRequired: data.skillsRequired,
         salary: data.salary,
         contractType: data.contractType,
@@ -140,20 +146,26 @@ export class RecruitmentPrismaService {
   }
 
   async updateJob(id: string, data: any) {
+    // Map frontend aliases to DB column names
+    const dept = data.dept || data.department;
+    const loc = data.loc || data.location;
+    const missions = data.missions || data.keyMissions;
+    const academicLevel = data.academicLevel || data.requiredEducation;
+    const experience = data.experience || data.requiredExperience;
     return this.prisma.hrJob.update({
       where: { id },
       data: {
         ...prismaUpdateDefaults(),
         ...(data.title !== undefined && { title: data.title }),
-        ...(data.dept !== undefined && { dept: data.dept }),
-        ...(data.loc !== undefined && { loc: data.loc }),
+        ...(dept !== undefined && { dept }),
+        ...(loc !== undefined && { loc }),
         ...(data.ref !== undefined && { ref: data.ref }),
         ...(data.status !== undefined && { status: data.status }),
         ...(data.description !== undefined && { description: data.description }),
-        ...(data.missions !== undefined && { missions: data.missions }),
+        ...(missions !== undefined && { missions }),
         ...(data.responsibilities !== undefined && { responsibilities: data.responsibilities }),
-        ...(data.academicLevel !== undefined && { academicLevel: data.academicLevel }),
-        ...(data.experience !== undefined && { experience: data.experience }),
+        ...(academicLevel !== undefined && { academicLevel }),
+        ...(experience !== undefined && { experience }),
         ...(data.skillsRequired !== undefined && { skillsRequired: data.skillsRequired }),
         ...(data.salary !== undefined && { salary: data.salary }),
         ...(data.contractType !== undefined && { contractType: data.contractType }),

@@ -9,6 +9,7 @@
 import type { User, Tenant } from '@/types';
 import { LogOut, User as UserIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { clearClientSessionSync } from '@/lib/auth/client-access-token';
 import TenantSwitcher from './TenantSwitcher';
 import AcademicTrackSelector from './AcademicTrackSelector';
 
@@ -23,10 +24,12 @@ export default function DashboardHeader({ user, tenant }: DashboardHeaderProps) 
   const handleLogout = async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
-      router.push('/login');
+      clearClientSessionSync();
+      window.location.href = '/';
     } catch (error) {
       console.error('Error logging out:', error);
-      router.push('/login');
+      clearClientSessionSync();
+      window.location.href = '/';
     }
   };
 

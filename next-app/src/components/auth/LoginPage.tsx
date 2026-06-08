@@ -119,10 +119,14 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Message de déconnexion pour inactivité
+  // Message de déconnexion pour inactivité / expiration
   const reasonParam = searchParams?.get('reason');
-  const idleLogoutMessage = reasonParam === 'idle_timeout'
-    ? 'Vous avez été déconnecté(e) automatiquement après 15 minutes d\'inactivité.'
+  const idleLogoutMessage = reasonParam === 'session_expired'
+    ? 'Votre session a expiré après une période d\'inactivité prolongée. Veuillez vous reconnecter.'
+    : reasonParam === 'session_locked'
+    ? 'Vous avez été déconnecté(e) depuis l\'écran de verrouillage.'
+    : reasonParam === 'idle_timeout'
+    ? 'Vous avez été déconnecté(e) automatiquement après une période d\'inactivité.'
     : null;
 
   const tenantStorageKey = tenantIdFromUrl || tenantSlug || 'platform';

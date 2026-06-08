@@ -25,7 +25,6 @@ import PilotageSidebar from './PilotageSidebar';
 import { OfflineStatusBadge } from '@/components/offline/OfflineStatusBadge';
 import { SyncToast } from '@/components/offline/SyncToast';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
-import { useIdleTimeout } from '@/hooks/useIdleTimeout';
 import type { User, Tenant } from '@/types';
 
 interface PilotageLayoutProps {
@@ -50,13 +49,6 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
   const handleToggleMobileDrawer = useCallback(() => setMobileDrawerOpen(prev => !prev), []);
   const handleCloseMobileDrawer = useCallback(() => setMobileDrawerOpen(false), []);
   const handleToggleSidebar = useCallback(() => setSidebarOpen(prev => !prev), []);
-
-  // Déconnexion automatique après 15 minutes d'inactivité
-  useIdleTimeout({
-    userEmail: user.email,
-    tenantId: tenant.id,
-    tenantSlug: tenant.slug,
-  });
 
   return (
     <OfflineGuard>

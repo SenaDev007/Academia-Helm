@@ -16,6 +16,7 @@ import { usePathname } from 'next/navigation';
 import AppIcon from '@/components/ui/AppIcon';
 import type { IconName } from '@/lib/icons';
 import { offlineBootstrapService } from '@/lib/offline/offline-bootstrap.service';
+import { clearClientSessionSync } from '@/lib/auth/client-access-token';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -45,10 +46,12 @@ export default function AdminLayout({ children, user }: AdminLayoutProps) {
     try {
       await offlineBootstrapService.clearCache();
       await fetch('/api/auth/logout', { method: 'POST' });
-      router.push('/login');
+      clearClientSessionSync();
+      window.location.href = '/';
     } catch (error) {
       console.error('Error logging out:', error);
-      router.push('/login');
+      clearClientSessionSync();
+      window.location.href = '/';
     }
   };
 

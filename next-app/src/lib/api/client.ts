@@ -8,7 +8,7 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { getClientToken } from '@/lib/auth/session-client';
 import { getApiBaseUrl } from '@/lib/utils/urls';
-import { tryRefreshAccessToken } from '@/lib/auth/client-access-token';
+import { tryRefreshAccessToken, clearClientSessionSync } from '@/lib/auth/client-access-token';
 
 const API_URL = getApiBaseUrl();
 
@@ -133,7 +133,8 @@ apiClient.interceptors.response.use(
       // Si c'est déjà une requête retry, ne pas boucler → rediriger vers login
       if (originalRequest._retry) {
         if (typeof window !== 'undefined') {
-          window.location.href = '/login';
+          clearClientSessionSync();
+          window.location.href = '/login?reason=session_expired';
         }
         return Promise.reject(error);
       }
@@ -165,13 +166,15 @@ apiClient.interceptors.response.use(
         // Refresh échoué → rediriger vers login
         processQueue(error, null);
         if (typeof window !== 'undefined') {
-          window.location.href = '/login';
+          clearClientSessionSync();
+          window.location.href = '/login?reason=session_expired';
         }
         return Promise.reject(error);
       } catch (refreshError) {
         processQueue(refreshError, null);
         if (typeof window !== 'undefined') {
-          window.location.href = '/login';
+          clearClientSessionSync();
+          window.location.href = '/login?reason=session_expired';
         }
         return Promise.reject(refreshError);
       } finally {
@@ -221,4 +224,3 @@ export async function apiFetch<T>(url: string, options: any = {}): Promise<T> {
   });
   return response.data;
 }
-

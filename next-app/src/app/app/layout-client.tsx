@@ -14,6 +14,9 @@ import { SettingsBootstrapPrefetch } from '@/components/settings/SettingsBootstr
 import { AppSessionProvider } from '@/contexts/AppSessionContext';
 import { AcademicYearProvider } from '@/contexts/AcademicYearContext';
 import { SchoolLevelProvider } from '@/contexts/SchoolLevelContext';
+import { SessionManagerProvider } from '@/contexts/SessionManagerContext';
+import SessionInactivityModal from '@/components/auth/SessionInactivityModal';
+import SessionLockScreen from '@/components/auth/SessionLockScreen';
 import { motion } from 'framer-motion';
 import { getFadeMotion } from '@/lib/motion/presets';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
@@ -31,6 +34,7 @@ export interface AppLayoutClientProps {
  * 
  * Gère le flow post-login avant d'afficher le contenu.
  * AppSessionProvider expose user/tenant aux pages (ex. paramètres en mode PO).
+ * SessionManagerProvider gère l'inactivité, le verrouillage et le refresh proactif.
  */
 export default function AppLayoutClient({
   children,
@@ -40,29 +44,35 @@ export default function AppLayoutClient({
   const { shouldReduceMotion } = useMotionBudget();
   const fadeMotion = getFadeMotion(shouldReduceMotion);
   return (
-    <motion.div
-      initial={fadeMotion.initial}
-      animate={fadeMotion.animate}
-      transition={fadeMotion.transition}
-    >
-      <QueryProvider>
-        <AppSessionProvider user={user} tenant={tenant}>
-          <Suspense fallback={null}>
-            <SettingsBootstrapPrefetch />
-          </Suspense>
-          <Suspense fallback={null}>
-            <AcademicYearProvider>
-              <SchoolLevelProvider>
-                <ReviewPromptHost user={user} tenant={tenant}>
-                  <PostLoginFlowWrapper user={user} tenant={tenant}>
-                    {children}
-                  </PostLoginFlowWrapper>
-                </ReviewPromptHost>
-              </SchoolLevelProvider>
-            </AcademicYearProvider>
-          </Suspense>
-        </AppSessionProvider>
-      </QueryProvider>
-    </motion.div>
+    <SessionManagerProvider>
+      <motion.div
+        initial={fadeMotion.initial}
+        animate={fadeMotion.animate}
+        transition={fadeMotion.transition}
+      >
+        <QueryProvider>
+          <AppSessionProvider user={user} tenant={tenant}>
+            <Suspense fallback={null}>
+              <SettingsBootstrapPrefetch />
+            </Suspense>
+            <Suspense fallback={null}>
+              <AcademicYearProvider>
+                <SchoolLevelProvider>
+                  <ReviewPromptHost user={user} tenant={tenant}>
+                    <PostLoginFlowWrapper user={user} tenant={tenant}>
+                      {children}
+                    </PostLoginFlowWrapper>
+                  </ReviewPromptHost>
+                </SchoolLevelProvider>
+              </AcademicYearProvider>
+            </Suspense>
+          </AppSessionProvider>
+        </QueryProvider>
+      </motion.div>
+
+      {/* Modaux et écrans de session — montés hors du layout principal */}
+      <SessionInactivityModal />
+      <SessionLockScreen />
+    </SessionManagerProvider>
   );
 }

@@ -1,0 +1,4 @@
+# Ce fichier permet de versionner le dossier uploads/receipts même s'il est vide
+# Les fichiers PDF des reçus seront stockés ici selon la structure :
+# uploads/receipts/{tenantId}/{academicYearId}/receipt-{receiptNumber}.pdf
+

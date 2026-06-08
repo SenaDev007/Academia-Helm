@@ -1,0 +1,123 @@
+/**
+ * ============================================================================
+ * STUDENTS PRISMA CONTROLLER - MODULE 1
+ * ============================================================================
+ * 
+ * Controller pour la gestion des élèves
+ * Module 1 : Gestion des Élèves & Scolarité
+ * 
+ * ============================================================================
+ */
+
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  ParseUUIDPipe,
+} from '@nestjs/common';
+import { StudentsPrismaService } from './students-prisma.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { TenantGuard } from '../common/guards/tenant.guard';
+import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CreateStudentPrismaDto, UpdateStudentPrismaDto, EnrollStudentDto, ArchiveStudentDto } from './dto';
+
+@Controller('students')
+@UseGuards(JwtAuthGuard, TenantGuard)
+export class StudentsPrismaController {
+  constructor(private readonly studentsService: StudentsPrismaService) {}
+
+  @Post()
+  async create(
+    @TenantId() tenantId: string,
+    @Body() createDto: CreateStudentPrismaDto,
+  ) {
+    return this.studentsService.createStudent({
+      ...createDto,
+      tenantId,
+    });
+  }
+
+  @Get()
+  async findAll(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId?: string,
+    @Query('schoolLevelId') schoolLevelId?: string,
+    @Query('status') status?: string,
+    @Query('classId') classId?: string,
+    @Query('search') search?: string,
+    @Query('regimeType') regimeType?: string,
+    @Query('hasArrears') hasArrears?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.studentsService.findAllStudents(tenantId, {
+      academicYearId,
+      schoolLevelId,
+      status,
+      classId,
+      search,
+      regimeType: regimeType || undefined,
+      hasArrears: hasArrears === 'true' ? true : hasArrears === 'false' ? false : undefined,
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
+  }
+
+  @Get('statistics')
+  async getStatistics(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('schoolLevelId') schoolLevelId?: string,
+  ) {
+    return this.studentsService.getStudentStatistics(
+      tenantId,
+      academicYearId,
+      schoolLevelId,
+    );
+  }
+
+  @Get(':id')
+  async findOne(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.studentsService.findStudentById(id, tenantId);
+  }
+
+  @Put(':id')
+  async update(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @TenantId() tenantId: string,
+    @Body() updateDto: UpdateStudentPrismaDto,
+  ) {
+    return this.studentsService.updateStudent(id, tenantId, updateDto);
+  }
+
+  @Post(':id/archive')
+  async archive(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @TenantId() tenantId: string,
+    @Body() body: ArchiveStudentDto,
+  ) {
+    return this.studentsService.archiveStudent(id, tenantId, body.reason);
+  }
+
+  @Post(':id/enroll')
+  async enroll(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @TenantId() tenantId: string,
+    @Body() enrollDto: EnrollStudentDto,
+  ) {
+    return this.studentsService.enrollStudent({
+      ...enrollDto,
+      tenantId,
+      studentId: id,
+    });
+  }
+}

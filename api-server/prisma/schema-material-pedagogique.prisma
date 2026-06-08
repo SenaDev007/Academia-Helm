@@ -1,0 +1,148 @@
+// ============================================================================
+// MODULE 2 - MATÉRIEL & FOURNITURES PÉDAGOGIQUES
+// ============================================================================
+// 
+// Extension du Module 2 (Organisation pédagogique)
+// Ajouté sans modifier les modèles existants
+// 
+// ============================================================================
+
+// Référentiel du matériel pédagogique
+model PedagogicalMaterial {
+  id              String   @id @default(uuid())
+  tenantId        String
+  code            String
+  name            String
+  category        String // BOOK | TEACHER_GUIDE | OFFICIAL_DOCUMENT | DIDACTIC_SUPPORT | LAB_MATERIAL | OTHER
+  description     String?  @db.Text
+  schoolLevelId   String
+  subjectId       String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant          Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  schoolLevel     SchoolLevel              @relation(fields: [schoolLevelId], references: [id], onDelete: Restrict)
+  subject         Subject?                 @relation("PedagogicalMaterialSubject", fields: [subjectId], references: [id], onDelete: SetNull)
+  stocks          MaterialStock[]
+  movements       MaterialMovement[]
+  assignments     TeacherMaterialAssignment[]
+  annualSupplies  AnnualTeacherSupply[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, schoolLevelId])
+  @@index([category])
+  @@index([isActive])
+  @@map("pedagogical_materials")
+}
+
+// Stock pédagogique (vision consolidée par année scolaire)
+model MaterialStock {
+  id                String   @id @default(uuid())
+  tenantId          String
+  academicYearId    String
+  materialId        String
+  schoolLevelId     String
+  classId           String?
+  quantityTotal     Int      @default(0)
+  quantityAvailable Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear  AcademicYear        @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  material      PedagogicalMaterial @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  schoolLevel   SchoolLevel         @relation(fields: [schoolLevelId], references: [id], onDelete: Restrict)
+  class         Class?              @relation("MaterialStockClass", fields: [classId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, academicYearId, materialId, schoolLevelId, classId])
+  @@index([tenantId, academicYearId])
+  @@index([materialId])
+  @@index([schoolLevelId])
+  @@map("material_stocks")
+}
+
+// Mouvements de stock (traçabilité complète)
+model MaterialMovement {
+  id             String   @id @default(uuid())
+  tenantId       String
+  academicYearId String
+  materialId     String
+  movementType   String // PURCHASE | ASSIGNMENT | RETURN | REPLACEMENT | DAMAGE | DECOMMISSION
+  quantity       Int
+  reference      String?
+  notes          String?  @db.Text
+  performedById  String
+  createdAt      DateTime @default(now())
+
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear        @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  material     PedagogicalMaterial @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  performedBy  User                @relation("MaterialMovementPerformedBy", fields: [performedById], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, academicYearId])
+  @@index([materialId])
+  @@index([movementType])
+  @@index([performedById])
+  @@index([createdAt])
+  @@map("material_movements")
+}
+
+// Attribution du matériel aux enseignants
+model TeacherMaterialAssignment {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  teacherId       String
+  materialId      String
+  schoolLevelId   String
+  classId         String?
+  quantity        Int
+  conditionAtIssue String // NEW | GOOD | USED | DAMAGED
+  signed          Boolean  @default(false)
+  signedAt        DateTime?
+  signedBy        String?
+  notes           String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear  AcademicYear        @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  teacher       Teacher             @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+  material      PedagogicalMaterial @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  schoolLevel   SchoolLevel         @relation(fields: [schoolLevelId], references: [id], onDelete: Restrict)
+  class         Class?              @relation("TeacherMaterialAssignmentClass", fields: [classId], references: [id], onDelete: SetNull)
+  signer        User?               @relation("TeacherMaterialAssignmentSigner", fields: [signedBy], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, academicYearId, teacherId])
+  @@index([materialId])
+  @@index([schoolLevelId])
+  @@index([signed])
+  @@map("teacher_material_assignments")
+}
+
+// Fournitures pédagogiques annuelles (vision responsabilité)
+model AnnualTeacherSupply {
+  id             String   @id @default(uuid())
+  tenantId       String
+  academicYearId String
+  teacherId      String
+  schoolLevelId  String
+  classId        String?
+  materialId     String
+  quantity       Int
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear        @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  teacher      Teacher             @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+  schoolLevel  SchoolLevel         @relation(fields: [schoolLevelId], references: [id], onDelete: Restrict)
+  class        Class?              @relation("AnnualTeacherSupplyClass", fields: [classId], references: [id], onDelete: SetNull)
+  material     PedagogicalMaterial @relation(fields: [materialId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, academicYearId, teacherId, materialId, classId])
+  @@index([tenantId, academicYearId, teacherId])
+  @@index([materialId])
+  @@map("annual_teacher_supplies")
+}

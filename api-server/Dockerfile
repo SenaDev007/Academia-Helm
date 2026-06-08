@@ -1,0 +1,51 @@
+# syntax = docker/dockerfile:1
+ARG NODE_VERSION=22.21.1
+FROM node:${NODE_VERSION}-slim AS base
+
+LABEL fly_launch_runtime="NestJS/Prisma"
+WORKDIR /app
+ENV NODE_ENV="production"
+
+FROM base AS build
+
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y \
+    build-essential node-gyp openssl \
+    pkg-config python-is-python3 && \
+    rm -rf /var/lib/apt/lists
+
+COPY package-lock.json package.json ./
+COPY prisma ./prisma/
+COPY prisma.config.ts ./
+RUN test -f prisma/schema.prisma
+
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+
+# --ignore-scripts : évite postinstall (prisma generate) avant que prisma soit copié si l'ordre des layers diverge
+RUN npm ci --ignore-scripts --include=dev
+
+RUN npx prisma generate
+
+COPY . .
+
+RUN npm run build
+
+FROM base
+
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y \
+    openssl && \
+    rm -rf /var/lib/apt/lists /var/cache/apt/archives
+
+# Puppeteer: Chromium not installed in production — PDF generation disabled until Chromium is added
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/package*.json ./
+COPY --from=build /app/prisma ./prisma
+
+EXPOSE 3000
+
+# TypeORM removed — but Prisma with 270+ models still needs ~2GB during startup
+CMD [ "node", "--max-old-space-size=3072", "dist/main.js" ]

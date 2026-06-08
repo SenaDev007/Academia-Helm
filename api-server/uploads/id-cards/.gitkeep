@@ -1,0 +1,4 @@
+# Ce fichier permet de versionner le dossier uploads/id-cards même s'il est vide
+# Les fichiers PDF générés seront stockés ici selon la structure :
+# uploads/id-cards/{tenantId}/{academicYearId}/id-card-{cardNumber}.pdf
+

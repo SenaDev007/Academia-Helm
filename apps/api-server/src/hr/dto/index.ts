@@ -438,15 +438,30 @@ export class CreateScheduleDto {
 
 export class CreateJobDto {
   @IsString() title: string;
-  @IsString() dept: string;
-  @IsString() loc: string;
+  /** DB column name — frontend may send 'dept' or 'department' */
+  @IsOptional() @IsString() dept?: string;
+  /** Alias: frontend RecruitmentWorkspace sends 'department' */
+  @IsOptional() @IsString() department?: string;
+  /** DB column name — frontend may send 'loc' or 'location' */
+  @IsOptional() @IsString() loc?: string;
+  /** Alias: frontend RecruitmentWorkspace sends 'location' */
+  @IsOptional() @IsString() location?: string;
   @IsOptional() @IsString() ref?: string;
   @IsOptional() @IsIn(['BROUILLON', 'PUBLIÉE', 'FERMÉE', 'ARCHIVÉE']) status?: string;
   @IsOptional() @IsString() description?: string;
+  /** DB column name — frontend may send 'missions' or 'keyMissions' */
   @IsOptional() @IsString() missions?: string;
+  /** Alias: frontend forms may send 'keyMissions' */
+  @IsOptional() @IsString() keyMissions?: string;
   @IsOptional() @IsString() responsibilities?: string;
+  /** DB column name — frontend may send 'academicLevel' or 'requiredEducation' */
   @IsOptional() @IsString() academicLevel?: string;
+  /** Alias: frontend forms may send 'requiredEducation' */
+  @IsOptional() @IsString() requiredEducation?: string;
+  /** DB column name — frontend may send 'experience' or 'requiredExperience' */
   @IsOptional() @IsString() experience?: string;
+  /** Alias: frontend forms may send 'requiredExperience' */
+  @IsOptional() @IsString() requiredExperience?: string;
   @IsOptional() @IsString() skillsRequired?: string;
   @IsOptional() @IsString() salary?: string;
   @IsOptional() @IsString() contractType?: string;
@@ -457,14 +472,19 @@ export class CreateJobDto {
 export class UpdateJobDto {
   @IsOptional() @IsString() title?: string;
   @IsOptional() @IsString() dept?: string;
+  @IsOptional() @IsString() department?: string;
   @IsOptional() @IsString() loc?: string;
+  @IsOptional() @IsString() location?: string;
   @IsOptional() @IsString() ref?: string;
   @IsOptional() @IsIn(['BROUILLON', 'PUBLIÉE', 'FERMÉE', 'ARCHIVÉE']) status?: string;
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsString() missions?: string;
+  @IsOptional() @IsString() keyMissions?: string;
   @IsOptional() @IsString() responsibilities?: string;
   @IsOptional() @IsString() academicLevel?: string;
+  @IsOptional() @IsString() requiredEducation?: string;
   @IsOptional() @IsString() experience?: string;
+  @IsOptional() @IsString() requiredExperience?: string;
   @IsOptional() @IsString() skillsRequired?: string;
   @IsOptional() @IsString() salary?: string;
   @IsOptional() @IsString() contractType?: string;

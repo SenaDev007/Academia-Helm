@@ -91,3 +91,31 @@ Stage Summary:
 - Session no longer expires during active use: 401 triggers automatic token refresh
 - Refreshed tokens preserve tenant context (tenantId, academicYearId)
 - Cookie + localStorage both updated after refresh
+---
+Task ID: session-management
+Agent: Main Agent
+Task: Implement professional session management with lock screen, proactive token refresh, and fixed logout
+
+Work Log:
+- Audited entire auth/session system (BFF, NestJS, frontend) — identified 10+ issues
+- Created SessionManagerContext with 3-state lifecycle (active → warning → locked → expired)
+- Created SessionInactivityModal with 30s circular countdown timer
+- Created SessionLockScreen with credential re-entry overlay (preserves app state)
+- Fixed BFF logout to revoke tokens on NestJS backend (was only clearing cookies)
+- Fixed BFF refresh to properly update session cookie
+- Added proactive token refresh every 4 minutes during active use
+- Fixed all 5 logout flows (TopBar, AdminLayout, DashboardHeader, useAuth, apiClient)
+- Updated API client 401 interceptor to clear session before redirect
+- Enhanced login page to handle multiple session expiry reasons
+- Removed old useIdleTimeout from PilotageLayout
+- Pushed to GitHub → Railway deployment triggered
+
+Stage Summary:
+- Root cause of "session expires after 5min": JWT expires at 15min but NO proactive refresh; also BFF logout didn't revoke tokens
+- Root cause of "logout doesn't work": BFF only cleared cookies, didn't call NestJS to add to revoked_tokens
+- New session timeline: 15min idle → warning modal (30s) → lock screen → 30min locked → full logout
+- Proactive refresh: every 4min during active use, token refreshed if expiring in <5min
+- Lock screen: user re-enters credentials, session resumes where they left off
+- All logout flows now properly clear client session + redirect to landing page
+- Files created: SessionManagerContext.tsx, SessionInactivityModal.tsx, SessionLockScreen.tsx
+- Files modified: logout/route.ts, refresh/route.ts, layout-client.tsx, PilotageLayout.tsx, PilotageTopBar.tsx, AdminLayout.tsx, DashboardHeader.tsx, useAuth.ts, client.ts, LoginPage.tsx

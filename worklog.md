@@ -29,3 +29,25 @@ Stage Summary:
 - Employee reintegration (reactivation) capability
 - SQL migration ready: prisma/migrations/add_termination_fields.sql
 - All text in French, consistent with existing HR module
+
+---
+Task ID: 1
+Agent: Main
+Task: Fix job offer creation error + remove CSPEB tenant + rename default tenant
+
+Work Log:
+- Renamed default tenant from "Tenant par Défaut - Academia Helm" to "Academia Helm" via PATCH API + seed.ts update
+- Set CSPEB tenant status to WITHDRAWN to hide from frontend
+- Fixed dev-available-tenants endpoint to exclude WITHDRAWN tenants (auth.service.ts)
+- Added startup code to hard-delete CSPEB tenant (temporarily, then removed after deploy)
+- Investigated job offer creation error: CreateJobDto used short field names (dept, loc) but frontend sent long names (department, location)
+- Fixed CreateJobDto and UpdateJobDto to accept BOTH short and long field names
+- Fixed recruitment.service.ts createJob/updateJob to map aliases (department→dept, location→loc, keyMissions→missions, requiredEducation→academicLevel, requiredExperience→experience)
+- Tested both formats work correctly via API
+- Cleaned up test jobs
+
+Stage Summary:
+- Default tenant now shows "Academia Helm" on frontend
+- CSPEB tenant completely hidden (WITHDRAWN status + filtered from all endpoints)
+- Job offer creation now works with both short and long field names
+- No regression: short field names still work, all HR flows intact

@@ -1,0 +1,125 @@
+{
+  "version": "1.0",
+  "createdAt": "2025-01-01T00:00:00Z",
+  "updatedAt": "2025-01-01T00:00:00Z",
+  "rules": [
+    {
+      "id": "FIN_REV_DROP",
+      "category": "FINANCE",
+      "severity": "CRITICAL",
+      "condition": {
+        "metric": "variation_percent",
+        "operator": "<=",
+        "value": -10
+      },
+      "message": "Baisse des recettes supérieure à 10 % sur la période.",
+      "description": "Détecte une baisse significative des recettes par rapport à la période précédente.",
+      "enabled": true
+    },
+    {
+      "id": "FIN_COLLECTION_LOW",
+      "category": "FINANCE",
+      "severity": "WARNING",
+      "condition": {
+        "metric": "collection_rate",
+        "operator": "<",
+        "value": 70
+      },
+      "message": "Taux de recouvrement inférieur au seuil recommandé.",
+      "description": "Le taux de recouvrement est inférieur à 70%, indiquant des retards de paiement significatifs.",
+      "enabled": true
+    },
+    {
+      "id": "FIN_COLLECTION_CRITICAL",
+      "category": "FINANCE",
+      "severity": "CRITICAL",
+      "condition": {
+        "metric": "collection_rate",
+        "operator": "<",
+        "value": 50
+      },
+      "message": "Taux de recouvrement critique : moins de 50% des recettes attendues sont encaissées.",
+      "description": "Situation critique : moins de la moitié des recettes attendues sont encaissées.",
+      "enabled": true
+    },
+    {
+      "id": "HR_ABSENCE_HIGH",
+      "category": "RH",
+      "severity": "ALERT",
+      "condition": {
+        "metric": "absence_rate",
+        "operator": ">",
+        "value": 10
+      },
+      "message": "Taux d'absence enseignants supérieur au seuil.",
+      "description": "Le taux d'absence des enseignants dépasse 10%, impactant potentiellement la qualité pédagogique.",
+      "enabled": true
+    },
+    {
+      "id": "HR_ABSENCE_CRITICAL",
+      "category": "RH",
+      "severity": "CRITICAL",
+      "condition": {
+        "metric": "absence_rate",
+        "operator": ">",
+        "value": 20
+      },
+      "message": "Taux d'absence enseignants critique : supérieur à 20%.",
+      "description": "Situation critique : plus de 20% d'absences enseignants, impact majeur sur les cours.",
+      "enabled": true
+    },
+    {
+      "id": "PED_SUCCESS_DROP",
+      "category": "PEDAGOGY",
+      "severity": "WARNING",
+      "condition": {
+        "metric": "success_rate",
+        "operator": "<",
+        "value": 60
+      },
+      "message": "Taux de réussite pédagogique faible.",
+      "description": "Le taux de réussite est inférieur à 60%, nécessitant une analyse des causes.",
+      "enabled": true
+    },
+    {
+      "id": "PED_SUCCESS_CRITICAL",
+      "category": "PEDAGOGY",
+      "severity": "CRITICAL",
+      "condition": {
+        "metric": "success_rate",
+        "operator": "<",
+        "value": 40
+      },
+      "message": "Taux de réussite pédagogique critique : inférieur à 40%.",
+      "description": "Situation critique : moins de 40% de réussite, nécessite une intervention immédiate.",
+      "enabled": true
+    },
+    {
+      "id": "SYS_KPI_MISSING",
+      "category": "SYSTEM",
+      "severity": "INFO",
+      "condition": {
+        "metric": "missing_kpi_count",
+        "operator": ">",
+        "value": 0
+      },
+      "message": "Certaines données KPI sont manquantes.",
+      "description": "Des données KPI sont manquantes pour la période, limitant la précision des analyses.",
+      "enabled": true
+    },
+    {
+      "id": "SYS_KPI_MISSING_CRITICAL",
+      "category": "SYSTEM",
+      "severity": "WARNING",
+      "condition": {
+        "metric": "missing_kpi_count",
+        "operator": ">",
+        "value": 5
+      },
+      "message": "Nombre important de données KPI manquantes.",
+      "description": "Plus de 5 KPI sont manquants, impactant significativement la qualité des analyses.",
+      "enabled": true
+    }
+  ]
+}
+

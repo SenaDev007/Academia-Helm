@@ -31,9 +31,9 @@ export class HrOverviewController {
     @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId: string,
   ) {
-    const snapshot = await this.hrKpiService.generateSnapshot(tenant.id, academicYearId);
-    const evolution = await this.hrKpiService.getPayrollEvolution(tenant.id, academicYearId);
-    const orionData = await this.hrOrionService.getPayrollAndTaxKPIs(tenant.id, academicYearId);
+    const snapshot = await this.hrKpiService.generateSnapshot(tenant?.id, academicYearId);
+    const evolution = await this.hrKpiService.getPayrollEvolution(tenant?.id, academicYearId);
+    const orionData = await this.hrOrionService.getPayrollAndTaxKPIs(tenant?.id, academicYearId);
 
     return {
       snapshot,
@@ -51,9 +51,9 @@ export class HrOverviewController {
     @Query('academicYearId') academicYearId: string,
   ) {
     const [evolution, distribution, snapshot] = await Promise.all([
-      this.hrKpiService.getPayrollEvolution(tenant.id, academicYearId),
-      this.hrKpiService.getStaffDistribution(tenant.id),
-      this.hrKpiService.generateSnapshot(tenant.id, academicYearId),
+      this.hrKpiService.getPayrollEvolution(tenant?.id, academicYearId),
+      this.hrKpiService.getStaffDistribution(tenant?.id),
+      this.hrKpiService.generateSnapshot(tenant?.id, academicYearId),
     ]);
 
     return {
@@ -71,6 +71,6 @@ export class HrOverviewController {
     @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId: string,
   ) {
-    return this.hrKpiService.generateSnapshot(tenant.id, academicYearId);
+    return this.hrKpiService.generateSnapshot(tenant?.id, academicYearId);
   }
 }

@@ -11,6 +11,7 @@
 
 import {
   Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { CNSSPrismaService } from './cnss-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -50,16 +51,21 @@ export class CNSSPrismaController {
 
   @Get('employees')
   async findAllEmployeeCNSS(@GetTenant() tenant: any) {
-    return this.cnssService.findAllEmployeeCNSS(tenant.id);
+    return this.cnssService.findAllEmployeeCNSS(tenant?.id);
   }
 
   @Post('employees')
   async findOrCreateEmployeeCNSS(
     @GetTenant() tenant: any,
     @Body() body: { staffId: string; cnssNumber?: string },
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
     return this.cnssService.findOrCreateEmployeeCNSS(
-      body.staffId, tenant.id, body.cnssNumber,
+      body.staffId, tid, body.cnssNumber,
     );
   }
 
@@ -68,11 +74,19 @@ export class CNSSPrismaController {
   // ──────────────────────────────────────────────────────────────────────────
 
   @Post('declarations')
-  async createDeclaration(@GetTenant() tenant: any, @Body() body: CreateCNSSDeclarationDto) {
+  async createDeclaration(
+    @GetTenant() tenant: any,
+    @Body() body: CreateCNSSDeclarationDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
     // Derive month from periodStart if not provided
     const month = body.month || body.periodStart?.substring(0, 7) || new Date().toISOString().substring(0, 7);
     return this.cnssService.createCNSSDeclaration({
-      tenantId: tenant.id,
+      tenantId: tid,
       academicYearId: body.academicYearId,
       month,
       notes: (body as any).notes,
@@ -81,12 +95,12 @@ export class CNSSPrismaController {
 
   @Get('declarations')
   async findAllDeclarations(@GetTenant() tenant: any) {
-    return this.cnssService.findAllDeclarations(tenant.id);
+    return this.cnssService.findAllDeclarations(tenant?.id);
   }
 
   @Get('declarations/:id')
   async findDeclarationById(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.cnssService.findDeclarationById(id, tenant.id);
+    return this.cnssService.findDeclarationById(id, tenant?.id);
   }
 
   @Put('declarations/:id/finalize')
@@ -98,17 +112,30 @@ export class CNSSPrismaController {
       paymentReference?: string;
       paymentProofPath?: string;
     },
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
     // Accept GENERATED status and map to appropriate action
     const finalStatus = body.status === 'GENERATED' ? 'SUBMITTED' : body.status;
     return this.cnssService.finalizeDeclaration(
-      id, tenant.id, finalStatus as 'SUBMITTED' | 'PAID',
+      id, tid, finalStatus as 'SUBMITTED' | 'PAID',
       body.paymentReference, body.paymentProofPath,
     );
   }
 
   @Delete('declarations/:id')
-  async deleteDeclaration(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.cnssService.deleteDeclaration(id, tenant.id);
+  async deleteDeclaration(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.cnssService.deleteDeclaration(id, tid);
   }
 }

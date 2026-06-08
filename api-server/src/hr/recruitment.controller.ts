@@ -56,8 +56,16 @@ export class RecruitmentPrismaController {
   }
 
   @Post('jobs')
-  async createJob(@GetTenant() tenant: any, @Body() body: CreateJobDto) {
-    return this.service.createJob(tenant.id, body);
+  async createJob(
+    @GetTenant() tenant: any,
+    @Body() body: CreateJobDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour créer une offre d\'emploi');
+    }
+    return this.service.createJob(tid, body);
   }
 
   @Put('jobs/:id')
@@ -78,8 +86,16 @@ export class RecruitmentPrismaController {
   }
 
   @Post('candidates')
-  async createCandidate(@GetTenant() tenant: any, @Body() body: CreateCandidateDto) {
-    return this.service.createCandidate(tenant.id, body);
+  async createCandidate(
+    @GetTenant() tenant: any,
+    @Body() body: CreateCandidateDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour créer un candidat');
+    }
+    return this.service.createCandidate(tid, body);
   }
 
   @Put('candidates/:id')
@@ -100,8 +116,16 @@ export class RecruitmentPrismaController {
   }
 
   @Post('applications')
-  async createApplication(@GetTenant() tenant: any, @Body() body: CreateApplicationDto) {
-    return this.service.createApplication(tenant.id, body);
+  async createApplication(
+    @GetTenant() tenant: any,
+    @Body() body: CreateApplicationDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour créer une candidature');
+    }
+    return this.service.createApplication(tid, body);
   }
 
   @Put('applications/:id/status')
@@ -160,8 +184,16 @@ export class RecruitmentPrismaController {
   }
 
   @Post('tests')
-  async createTest(@GetTenant() tenant: any, @Body() body: CreateTestDto) {
-    return this.service.createTest(tenant.id, body);
+  async createTest(
+    @GetTenant() tenant: any,
+    @Body() body: CreateTestDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour créer un test');
+    }
+    return this.service.createTest(tid, body);
   }
 
   @Put('tests/:id')

@@ -11,7 +11,7 @@
 
 import {
   Controller, Get, Post, Put, Delete, Body, Param,
-  Query, UseGuards, Res
+  Query, UseGuards, Res, BadRequestException,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { PayrollPrismaService } from './payroll-prisma.service';
@@ -48,9 +48,17 @@ export class PayrollPrismaController {
   // ──────────────────────────────────────────────────────────────────────────
 
   @Post('batches')
-  async createPayroll(@GetTenant() tenant: any, @Body() body: CreatePayrollDto) {
+  async createPayroll(
+    @GetTenant() tenant: any,
+    @Body() body: CreatePayrollDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
     return this.payrollService.createPayroll({
-      tenantId: tenant.id,
+      tenantId: tid,
       academicYearId: body.academicYearId,
       month: body.month,
       startDate: new Date(body.startDate),
@@ -66,12 +74,12 @@ export class PayrollPrismaController {
     @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId?: string,
   ) {
-    return this.payrollService.findAllPayrolls(tenant.id, academicYearId);
+    return this.payrollService.findAllPayrolls(tenant?.id, academicYearId);
   }
 
   @Get('batches/:id')
   async findPayrollById(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.payrollService.findPayrollById(id, tenant.id);
+    return this.payrollService.findPayrollById(id, tenant?.id);
   }
 
   @Post('batches/:id/generate')
@@ -79,9 +87,14 @@ export class PayrollPrismaController {
     @GetTenant() tenant: any,
     @Param('id') payrollId: string,
     @Query('academicYearId') academicYearId?: string,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
     return this.payrollService.generatePayrollItems(
-      payrollId, tenant.id, academicYearId,
+      payrollId, tid, academicYearId,
     );
   }
 
@@ -90,9 +103,14 @@ export class PayrollPrismaController {
     @GetTenant() tenant: any,
     @Param('id') payrollId: string,
     @Query('academicYearId') academicYearId: string,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
     return this.payrollTaxService.calculatePeriod(
-      payrollId, tenant.id, academicYearId,
+      payrollId, tid, academicYearId,
     );
   }
 
@@ -102,13 +120,26 @@ export class PayrollPrismaController {
     @Param('id') id: string,
     @Body() body: UpdatePayrollStatusDto,
     @CurrentUser() user: any,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.payrollService.updatePayrollStatus(id, tenant.id, body.status, user?.id);
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.payrollService.updatePayrollStatus(id, tid, body.status, user?.id);
   }
 
   @Delete('batches/:id')
-  async deletePayrollBatch(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.payrollService.deletePayrollBatch(id, tenant.id);
+  async deletePayrollBatch(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.payrollService.deletePayrollBatch(id, tid);
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -117,7 +148,7 @@ export class PayrollPrismaController {
 
   @Get('items/:id')
   async findPayrollItemById(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.payrollService.findPayrollItemById(id, tenant.id);
+    return this.payrollService.findPayrollItemById(id, tenant?.id);
   }
 
   @Post('items/:id/calculate')
@@ -126,9 +157,14 @@ export class PayrollPrismaController {
     @Param('id') payrollItemId: string,
     @Query('academicYearId') academicYearId: string,
     @Query('countryCode') countryCode: string = 'BJ',
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
     return this.payrollTaxService.calculatePayroll(
-      tenant.id, academicYearId, payrollItemId,
+      tid, academicYearId, payrollItemId,
     );
   }
 
@@ -164,7 +200,7 @@ export class PayrollPrismaController {
     @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId?: string,
   ) {
-    return this.payrollService.getPayrollStatistics(tenant.id, academicYearId);
+    return this.payrollService.getPayrollStatistics(tenant?.id, academicYearId);
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -176,7 +212,7 @@ export class PayrollPrismaController {
     @GetTenant() tenant: any,
     @Param('id') payrollItemId: string,
   ) {
-    return this.taxService.getTaxWithholdings(payrollItemId, tenant.id);
+    return this.taxService.getTaxWithholdings(payrollItemId, tenant?.id);
   }
 
   @Get('tax-stats')
@@ -184,7 +220,7 @@ export class PayrollPrismaController {
     @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId?: string,
   ) {
-    return this.taxService.getTaxStats(tenant.id, academicYearId);
+    return this.taxService.getTaxStats(tenant?.id, academicYearId);
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -196,8 +232,13 @@ export class PayrollPrismaController {
     @GetTenant() tenant: any,
     @Param('id') payrollItemId: string,
     @CurrentUser() user: any,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    const result = await this.payrollPdfService.generatePaySlipPdf(payrollItemId, tenant.id, user.id);
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    const result = await this.payrollPdfService.generatePaySlipPdf(payrollItemId, tid, user.id);
     // Return JSON with base64-encoded PDF for frontend consumption
     return {
       ...result,
@@ -213,12 +254,12 @@ export class PayrollPrismaController {
     @Res() res: Response,
   ) {
     // Try to get existing PDF, or generate if not found
-    let pdfBuffer = await this.payrollPdfService.getPaySlipPdf(payrollItemId, tenant.id);
+    let pdfBuffer = await this.payrollPdfService.getPaySlipPdf(payrollItemId, tenant?.id);
 
     if (!pdfBuffer) {
       // No existing PDF — generate one
       try {
-        const result = await this.payrollPdfService.generatePaySlipPdf(payrollItemId, tenant.id, null);
+        const result = await this.payrollPdfService.generatePaySlipPdf(payrollItemId, tenant?.id, null);
         pdfBuffer = result.pdfBuffer;
       } catch {
         return res.status(404).json({ error: 'PDF introuvable' });
@@ -228,7 +269,7 @@ export class PayrollPrismaController {
     // Fetch staff name for the download filename
     let staffName = 'staff';
     try {
-      const payrollItem = await this.payrollService.findPayrollItemById(payrollItemId, tenant.id);
+      const payrollItem = await this.payrollService.findPayrollItemById(payrollItemId, tenant?.id);
       if (payrollItem?.staff) {
         staffName = `${payrollItem.staff.lastName}_${payrollItem.staff.firstName}`.replace(/\s+/g, '_');
       }
@@ -254,12 +295,12 @@ export class PayrollPrismaController {
     @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId?: string,
   ) {
-    return this.hrOrionService.getPayrollAndTaxKPIs(tenant.id, academicYearId);
+    return this.hrOrionService.getPayrollAndTaxKPIs(tenant?.id, academicYearId);
   }
 
   @Get('orion/alerts')
   async getPayrollAlerts(@GetTenant() tenant: any) {
-    return this.hrOrionService.generateAlerts(tenant.id);
+    return this.hrOrionService.generateAlerts(tenant?.id);
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -267,7 +308,15 @@ export class PayrollPrismaController {
   // ──────────────────────────────────────────────────────────────────────────
 
   @Post('periods')
-  async createPayrollPeriod(@GetTenant() tenant: any, @Body() body: CreatePayrollPeriodDto) {
+  async createPayrollPeriod(
+    @GetTenant() tenant: any,
+    @Body() body: CreatePayrollPeriodDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
     // Auto-generate name if not provided
     const name = body.name || (() => {
       const start = new Date(body.startDate);
@@ -277,7 +326,7 @@ export class PayrollPrismaController {
     // Auto-derive month if not provided
     const month = body.month || new Date(body.startDate).toISOString().substring(0, 7);
     return this.payrollService.createPayrollPeriod({
-      tenantId: tenant.id,
+      tenantId: tid,
       academicYearId: body.academicYearId,
       schoolLevelId: body.schoolLevelId,
       name,
@@ -293,12 +342,12 @@ export class PayrollPrismaController {
     @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId?: string,
   ) {
-    return this.payrollService.findAllPayrollPeriods(tenant.id, academicYearId);
+    return this.payrollService.findAllPayrollPeriods(tenant?.id, academicYearId);
   }
 
   @Get('periods/:id')
   async findPayrollPeriodById(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.payrollService.findPayrollPeriodById(id, tenant.id);
+    return this.payrollService.findPayrollPeriodById(id, tenant?.id);
   }
 
   @Put('periods/:id/close')
@@ -306,13 +355,26 @@ export class PayrollPrismaController {
     @GetTenant() tenant: any,
     @Param('id') id: string,
     @CurrentUser() user: any,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.payrollService.closePayrollPeriod(id, tenant.id, user?.id);
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.payrollService.closePayrollPeriod(id, tid, user?.id);
   }
 
   @Delete('periods/:id')
-  async deletePayrollPeriod(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.payrollService.deletePayrollPeriod(id, tenant.id);
+  async deletePayrollPeriod(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.payrollService.deletePayrollPeriod(id, tid);
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -320,9 +382,17 @@ export class PayrollPrismaController {
   // ──────────────────────────────────────────────────────────────────────────
 
   @Post('rates')
-  async upsertPayrollRate(@GetTenant() tenant: any, @Body() body: UpsertPayrollRateDto) {
+  async upsertPayrollRate(
+    @GetTenant() tenant: any,
+    @Body() body: UpsertPayrollRateDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
     return this.payrollService.upsertPayrollRate({
-      tenantId: tenant.id,
+      tenantId: tid,
       countryCode: body.countryCode,
       roleType: body.roleType,
       grade: body.grade,
@@ -339,7 +409,7 @@ export class PayrollPrismaController {
     @GetTenant() tenant: any,
     @Query('countryCode') countryCode?: string,
   ) {
-    return this.payrollService.findAllPayrollRates(tenant.id, countryCode);
+    return this.payrollService.findAllPayrollRates(tenant?.id, countryCode);
   }
 
   @Get('rates/active')
@@ -348,7 +418,7 @@ export class PayrollPrismaController {
     @Query('countryCode') countryCode: string = 'BJ',
     @Query('roleType') roleType: string = 'TEACHER',
   ) {
-    return this.payrollService.findActivePayrollRate(tenant.id, countryCode, roleType);
+    return this.payrollService.findActivePayrollRate(tenant?.id, countryCode, roleType);
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -356,9 +426,18 @@ export class PayrollPrismaController {
   // ──────────────────────────────────────────────────────────────────────────
 
   @Post('bonuses')
-  async createOneTimeBonus(@GetTenant() tenant: any, @Body() body: CreateOneTimeBonusDto, @CurrentUser() user: any) {
+  async createOneTimeBonus(
+    @GetTenant() tenant: any,
+    @Body() body: CreateOneTimeBonusDto,
+    @CurrentUser() user: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
     return this.payrollService.createOneTimeBonus({
-      tenantId: tenant.id,
+      tenantId: tid,
       academicYearId: body.academicYearId,
       schoolLevelId: body.schoolLevelId,
       staffId: body.staffId,
@@ -376,7 +455,7 @@ export class PayrollPrismaController {
     @Query('status') status?: string,
     @Query('bonusType') bonusType?: string,
   ) {
-    return this.payrollService.findAllOneTimeBonuses(tenant.id, { staffId, status, bonusType });
+    return this.payrollService.findAllOneTimeBonuses(tenant?.id, { staffId, status, bonusType });
   }
 
   @Put('bonuses/:id/approve')
@@ -384,12 +463,25 @@ export class PayrollPrismaController {
     @GetTenant() tenant: any,
     @Param('id') id: string,
     @CurrentUser() user: any,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.payrollService.approveOneTimeBonus(id, tenant.id, user?.id);
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.payrollService.approveOneTimeBonus(id, tid, user?.id);
   }
 
   @Delete('bonuses/:id')
-  async deleteOneTimeBonus(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.payrollService.deleteOneTimeBonus(id, tenant.id);
+  async deleteOneTimeBonus(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.payrollService.deleteOneTimeBonus(id, tid);
   }
 }

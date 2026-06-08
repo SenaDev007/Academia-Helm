@@ -9,7 +9,7 @@
  * ============================================================================
  */
 
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, BadRequestException } from '@nestjs/common';
 import { AttendancePrismaService } from './attendance-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
@@ -24,16 +24,33 @@ export class AttendancePrismaController {
   // ─── Staff Attendance ────────────────────────────────────────────────────────
 
   @Post()
-  async recordAttendance(@GetTenant() tenant: any, @Body() data: RecordAttendanceDto) {
+  async recordAttendance(
+    @GetTenant() tenant: any,
+    @Body() data: RecordAttendanceDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
     return this.attendanceService.recordAttendance({
       ...data,
-      tenantId: tenant.id,
+      tenantId: tid,
     });
   }
 
   @Put(':id')
-  async updateAttendance(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: UpdateAttendanceDto) {
-    return this.attendanceService.updateAttendance(id, tenant.id, data);
+  async updateAttendance(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Body() data: UpdateAttendanceDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.attendanceService.updateAttendance(id, tid, data);
   }
 
   @Get('staff/:staffId')
@@ -45,7 +62,7 @@ export class AttendancePrismaController {
     @Query('endDate') endDate?: string,
     @Query('status') status?: string,
   ) {
-    return this.attendanceService.findStaffAttendances(staffId, tenant.id, {
+    return this.attendanceService.findStaffAttendances(staffId, tenant?.id, {
       academicYearId,
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
@@ -61,7 +78,7 @@ export class AttendancePrismaController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
-    return this.attendanceService.getAttendanceStatistics(tenant.id, academicYearId, {
+    return this.attendanceService.getAttendanceStatistics(tenant?.id, academicYearId, {
       staffId,
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
@@ -71,10 +88,18 @@ export class AttendancePrismaController {
   // ─── Overtime Records ────────────────────────────────────────────────────────
 
   @Post('overtime')
-  async recordOvertime(@GetTenant() tenant: any, @Body() data: RecordOvertimeDto) {
+  async recordOvertime(
+    @GetTenant() tenant: any,
+    @Body() data: RecordOvertimeDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
     return this.attendanceService.recordOvertime({
       ...data,
-      tenantId: tenant.id,
+      tenantId: tid,
     });
   }
 
@@ -83,20 +108,41 @@ export class AttendancePrismaController {
     @GetTenant() tenant: any,
     @Param('id') id: string,
     @Body() body: { action: 'VALIDATE' | 'REJECT', validatedBy?: string },
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
     return this.attendanceService.processOvertime(
-      id, tenant.id, body.action, body.validatedBy,
+      id, tid, body.action, body.validatedBy,
     );
   }
 
   @Delete(':id')
-  async deleteAttendance(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.attendanceService.deleteAttendance(id, tenant.id);
+  async deleteAttendance(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.attendanceService.deleteAttendance(id, tid);
   }
 
   @Delete('overtime/:id')
-  async deleteOvertime(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.attendanceService.deleteOvertime(id, tenant.id);
+  async deleteOvertime(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.attendanceService.deleteOvertime(id, tid);
   }
 
   @Get('overtime/staff/:staffId')
@@ -108,7 +154,7 @@ export class AttendancePrismaController {
     @Query('endDate') endDate?: string,
     @Query('validated') validated?: string,
   ) {
-    return this.attendanceService.findStaffOvertime(staffId, tenant.id, {
+    return this.attendanceService.findStaffOvertime(staffId, tenant?.id, {
       academicYearId,
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,

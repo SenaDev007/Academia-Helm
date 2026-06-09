@@ -195,12 +195,15 @@ export class StaffPrismaService {
     });
 
     // Ajouter staffCode et category aliases pour compatibilité frontend
-    return staff.map((s) => ({
+    // Resolve photo URLs for R2/S3 storage (thumbnailUrl is a storage key, not a full URL)
+    return Promise.all(staff.map(async (s) => ({
       ...s,
       staffCode: s.employeeNumber,
       category: Object.entries(CATEGORY_TO_ROLE).find(([, v]) => v === s.roleType)?.[0] || s.roleType,
-      photoUrl: s.photo?.thumbnailUrl || null,
-    }));
+      photoUrl: s.photo?.thumbnailUrl
+        ? await this.storageService.resolveFileUrl(s.photo.thumbnailUrl)
+        : null,
+    })));
   }
 
   /**
@@ -223,11 +226,16 @@ export class StaffPrismaService {
       throw new NotFoundException(`Staff with ID ${id} not found`);
     }
 
+    // Resolve photo URLs for R2/S3 storage
+    const resolvedPhotoUrl = staff.photo?.thumbnailUrl
+      ? await this.storageService.resolveFileUrl(staff.photo.thumbnailUrl)
+      : null;
+
     return {
       ...staff,
       staffCode: staff.employeeNumber,
       category: Object.entries(CATEGORY_TO_ROLE).find(([, v]) => v === staff.roleType)?.[0] || staff.roleType,
-      photoUrl: staff.photo?.thumbnailUrl || null,
+      photoUrl: resolvedPhotoUrl,
     };
   }
 
@@ -570,7 +578,13 @@ export class StaffPrismaService {
       },
     });
 
-    return photo;
+    // Resolve URLs before returning to frontend
+    return {
+      ...photo,
+      originalUrl: await this.storageService.resolveFileUrl(photo.originalUrl),
+      hdUrl: await this.storageService.resolveFileUrl(photo.hdUrl),
+      thumbnailUrl: await this.storageService.resolveFileUrl(photo.thumbnailUrl),
+    };
   }
 
   /**
@@ -578,9 +592,18 @@ export class StaffPrismaService {
    */
   async getStaffPhoto(staffId: string, tenantId: string): Promise<any> {
     await this.findStaffById(staffId, tenantId);
-    return this.prisma.staffPhoto.findUnique({
+    const photo = await this.prisma.staffPhoto.findUnique({
       where: { staffId },
     });
+    if (!photo) return null;
+
+    // Resolve all URLs for R2/S3 storage
+    return {
+      ...photo,
+      originalUrl: photo.originalUrl ? await this.storageService.resolveFileUrl(photo.originalUrl) : null,
+      hdUrl: photo.hdUrl ? await this.storageService.resolveFileUrl(photo.hdUrl) : null,
+      thumbnailUrl: photo.thumbnailUrl ? await this.storageService.resolveFileUrl(photo.thumbnailUrl) : null,
+    };
   }
 
   /**

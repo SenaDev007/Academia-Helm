@@ -94,11 +94,23 @@ function formatEmergencyContact(contact: any): string {
   if (!contact) return 'Non renseigné';
   if (typeof contact === 'string') return contact;
   if (typeof contact === 'object') {
+    // Structured format: { name, phone, relationship }
     const parts: string[] = [];
     if (contact.name) parts.push(contact.name);
     if (contact.phone) parts.push(contact.phone);
     if (contact.relationship) parts.push(`(${contact.relationship})`);
-    return parts.length > 0 ? parts.join(' — ') : JSON.stringify(contact);
+    if (parts.length > 0) return parts.join(' — ');
+
+    // Legacy format: { note: "Name — Phone — Relationship" }
+    if (contact.note) {
+      return String(contact.note);
+    }
+
+    // Fallback: try to display any other key values
+    const values = Object.values(contact).filter(v => v != null && v !== '');
+    if (values.length > 0) return values.join(' — ');
+
+    return 'Non renseigné';
   }
   return String(contact);
 }
@@ -291,7 +303,9 @@ export default function StaffDetailPage() {
       dateOfBirth: member.dateOfBirth ? new Date(member.dateOfBirth).toISOString().split('T')[0] : '',
       birthDate: member.birthDate ? new Date(member.birthDate).toISOString().split('T')[0] : '',
       address: member.address || '',
-      emergencyContact: typeof member.emergencyContact === 'object' && member.emergencyContact ? JSON.stringify(member.emergencyContact) : (member.emergencyContact || ''),
+      emergencyContactName: typeof member.emergencyContact === 'object' && member.emergencyContact ? (member.emergencyContact.name || (member.emergencyContact.note ? member.emergencyContact.note.split(' — ')[0] || member.emergencyContact.note.split(' - ')[0] || '' : '')) : '',
+      emergencyContactPhone: typeof member.emergencyContact === 'object' && member.emergencyContact ? (member.emergencyContact.phone || (member.emergencyContact.note ? (member.emergencyContact.note.split(' — ')[1] || member.emergencyContact.note.split(' - ')[1] || '') : '')) : '',
+      emergencyContactRelationship: typeof member.emergencyContact === 'object' && member.emergencyContact ? (member.emergencyContact.relationship || (member.emergencyContact.note ? (member.emergencyContact.note.split(' — ')[2] || member.emergencyContact.note.split(' - ')[2] || '').replace(/[()]/g, '') : '')) : '',
       qualifications: member.qualifications || '',
       notes: member.notes || '',
       // HR fields (fiche personnel complète)
@@ -328,15 +342,16 @@ export default function StaffDetailPage() {
         submitData.numberOfChildren = parseInt(submitData.numberOfChildren, 10) || null;
       }
 
-      // Handle emergencyContact — try to parse as JSON, else wrap as object
-      if (typeof submitData.emergencyContact === 'string' && submitData.emergencyContact.trim()) {
-        try {
-          submitData.emergencyContact = JSON.parse(submitData.emergencyContact);
-        } catch {
-          // Wrap free-form text as structured object for backend compatibility
-          submitData.emergencyContact = { note: submitData.emergencyContact };
-        }
-      } else if (!submitData.emergencyContact || (typeof submitData.emergencyContact === 'string' && !submitData.emergencyContact.trim())) {
+      // Handle emergencyContact — build structured object from 3 fields
+      const ecName = (submitData.emergencyContactName || '').trim();
+      const ecPhone = (submitData.emergencyContactPhone || '').trim();
+      const ecRelationship = (submitData.emergencyContactRelationship || '').trim();
+      delete submitData.emergencyContactName;
+      delete submitData.emergencyContactPhone;
+      delete submitData.emergencyContactRelationship;
+      if (ecName || ecPhone || ecRelationship) {
+        submitData.emergencyContact = { name: ecName, phone: ecPhone, relationship: ecRelationship };
+      } else {
         submitData.emergencyContact = null;
       }
 
@@ -626,6 +641,45 @@ export default function StaffDetailPage() {
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Date de naissance</label>
+                  <input type="date" className={inputClass} value={editForm.birthDate} onChange={(e) => setEditForm({ ...editForm, birthDate: e.target.value })} />
+                </div>
+                <div>
+                  <label className={labelClass}>Adresse</label>
+                  <input type="text" className={inputClass} value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Nom du contact d&apos;urgence</label>
+                  <input type="text" className={inputClass} value={editForm.emergencyContactName} onChange={(e) => setEditForm({ ...editForm, emergencyContactName: e.target.value })} placeholder='Ex: TOKPONWOUE' />
+                </div>
+                <div>
+                  <label className={labelClass}>Tél. d&apos;urgence</label>
+                  <input type="tel" className={inputClass} value={editForm.emergencyContactPhone} onChange={(e) => setEditForm({ ...editForm, emergencyContactPhone: e.target.value })} placeholder='Ex: 0198765445' />
+                </div>
+                <div>
+                  <label className={labelClass}>Lien de parenté</label>
+                  <select className={inputClass} value={editForm.emergencyContactRelationship} onChange={(e) => setEditForm({ ...editForm, emergencyContactRelationship: e.target.value })}>
+                    <option value="">— Non renseigné —</option>
+                    <option value="Époux">Époux</option>
+                    <option value="Épouse">Épouse</option>
+                    <option value="Père">Père</option>
+                    <option value="Mère">Mère</option>
+                    <option value="Frère">Frère</option>
+                    <option value="Sœur">Sœur</option>
+                    <option value="Fils">Fils</option>
+                    <option value="Fille">Fille</option>
+                    <option value="Oncle">Oncle</option>
+                    <option value="Tante">Tante</option>
+                    <option value="Cousin">Cousin</option>
+                    <option value="Cousine">Cousine</option>
+                    <option value="Ami">Ami(e)</option>
+                    <option value="Tuteur">Tuteur/Tutrice</option>
+                    <option value="Autre">Autre</option>
+                  </select>
+                </div>
                 <div>
                   <label className={labelClass}>Qualifications</label>
                   <input type="text" className={inputClass} value={editForm.qualifications} onChange={(e) => setEditForm({ ...editForm, qualifications: e.target.value })} />

@@ -170,9 +170,15 @@ export class ContractPdfService {
     const schoolAbbreviation = schoolSettings?.abbreviation || identityProfile?.schoolAcronym || school?.abbreviation || '';
 
     // Résoudre le logo en URL complète si nécessaire
+    // safety: school?.logo might be a JSON object (Prisma Json field), ensure we only use strings
+    const schoolLogoStr = typeof schoolLogo === 'string' ? schoolLogo : (schoolLogo as any)?.url || '';
     let schoolLogoUrl = '';
-    if (schoolLogo) {
-      schoolLogoUrl = await this.storageService.resolveFileUrl(schoolLogo);
+    if (schoolLogoStr) {
+      try {
+        schoolLogoUrl = await this.storageService.resolveFileUrl(schoolLogoStr);
+      } catch {
+        schoolLogoUrl = schoolLogoStr; // Use raw URL if resolveFileUrl fails
+      }
     }
 
     // 2. Sélectionner le template Handlebars
@@ -256,6 +262,7 @@ export class ContractPdfService {
       staffBankAccountNumber: (contract.staff?.bankDetails as any)?.accountNumber || '',
       staffBankAccountName: (contract.staff?.bankDetails as any)?.accountName || '',
       // Contrat — Utiliser le matricule comme référence (jamais l'ID backend)
+      contractId: contract.id,
       contractReference: contract.staff?.tenantMatricule || contract.staff?.globalMatricule || `CTR-${new Date(contract.startDate).getFullYear()}-${contract.staff?.employeeNumber || ''}`,
       contractType: contract.contractType,
       contractTypeLabel:
@@ -374,8 +381,13 @@ export class ContractPdfService {
     const schoolAbbreviation = schoolSettings?.abbreviation || identityProfile?.schoolAcronym || school?.abbreviation || '';
 
     let schoolLogoUrl = '';
-    if (schoolLogo) {
-      schoolLogoUrl = await this.storageService.resolveFileUrl(schoolLogo);
+    const schoolLogoStr = typeof schoolLogo === 'string' ? schoolLogo : (schoolLogo as any)?.url || '';
+    if (schoolLogoStr) {
+      try {
+        schoolLogoUrl = await this.storageService.resolveFileUrl(schoolLogoStr);
+      } catch {
+        schoolLogoUrl = schoolLogoStr;
+      }
     }
 
     // Sélectionner le template
@@ -436,6 +448,7 @@ export class ContractPdfService {
       staffBankName: (contract.staff?.bankDetails as any)?.bankName || '',
       staffBankAccountNumber: (contract.staff?.bankDetails as any)?.accountNumber || '',
       staffBankAccountName: (contract.staff?.bankDetails as any)?.accountName || '',
+      contractId: contract.id,
       contractReference: contract.staff?.tenantMatricule || contract.staff?.globalMatricule || `CTR-${new Date(contract.startDate).getFullYear()}-${contract.staff?.employeeNumber || ''}`,
       contractType: contract.contractType,
       contractTypeLabel: { CDI: 'Contrat à Durée Indéterminée (CDI)', CDD: 'Contrat à Durée Déterminée (CDD)', VACATAIRE: 'Contrat de Vacation', STAGE: 'Convention de Stage' }[contract.contractType] || contract.contractType,
@@ -1295,7 +1308,7 @@ export class ContractPdfService {
       <p>{{schoolCountry}}</p>
     </div>
     <div class="contract-meta">
-      <div class="ref">Réf. CONTRAT-{{contractId}}</div>
+      <div class="ref">Réf. {{contractReference}}</div>
       <p style="font-size:8pt;color:#888;">Émis le {{generatedAt}} à {{generatedTime}}</p>
       {{#if isSigned}}
         <span class="status-badge">✓ SIGNÉ</span>
@@ -1326,7 +1339,7 @@ export class ContractPdfService {
   </div>
 
   <!-- Articles du contrat générés dynamiquement -->
-  \${articlesHtml}
+  ${articlesHtml}
 
   <!-- Signature Section -->
   <div class="signature-section">

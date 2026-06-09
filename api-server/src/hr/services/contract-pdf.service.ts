@@ -591,7 +591,7 @@ export class ContractPdfService {
       <p>{{schoolCountry}}</p>
     </div>
     <div class="contract-meta">
-      <div class="ref">Réf. CONTRAT-{{contractId}}</div>
+      <div class="ref">Réf. {{contractReference}}</div>
       <p style="font-size:8pt;color:#888;">Émis le {{generatedAt}} à {{generatedTime}}</p>
       {{#if isSigned}}
         <span class="status-badge">✓ SIGNÉ</span>
@@ -768,7 +768,7 @@ export class ContractPdfService {
   <div class="footer">
     <div class="footer-left">
       <p><strong>Academia Hub</strong> — Système de Gestion Scolaire</p>
-      <p>Document généré automatiquement. Réf. : {{contractId}}</p>
+      <p>Document généré automatiquement. Réf. : {{contractReference}}</p>
       <p>Vérification : {{verificationUrl}}</p>
     </div>
     {{#if qrCodeDataUrl}}
@@ -1025,7 +1025,7 @@ export class ContractPdfService {
       <p>{{schoolCountry}}</p>
     </div>
     <div class="contract-meta">
-      <div class="ref">Réf. CONTRAT-{{contractId}}</div>
+      <div class="ref">Réf. {{contractReference}}</div>
       <p style="font-size:8pt;color:#888;">Émis le {{generatedAt}} à {{generatedTime}}</p>
       {{#if isSigned}}
         <span class="status-badge">✓ SIGNÉ</span>
@@ -1056,7 +1056,7 @@ export class ContractPdfService {
   </div>
 
   <!-- Articles du contrat générés dynamiquement -->
-  \${articlesHtml}
+  ${articlesHtml}
 
   <!-- Signature Section -->
   <div class="signature-section">
@@ -1096,7 +1096,7 @@ export class ContractPdfService {
   <div class="footer">
     <div class="footer-left">
       <p><strong>Academia Hub</strong> — Système de Gestion Scolaire</p>
-      <p>Document généré automatiquement. Réf. : {{contractId}}</p>
+      <p>Document généré automatiquement. Réf. : {{contractReference}}</p>
       <p>Vérification : {{verificationUrl}}</p>
     </div>
     {{#if qrCodeDataUrl}}

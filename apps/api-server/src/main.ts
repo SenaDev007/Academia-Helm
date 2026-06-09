@@ -319,7 +319,7 @@ async function bootstrap() {
   logger.log(`Academia Helm API listening on http://0.0.0.0:${port} (PORT=${process.env.PORT ?? 'unset'})`);
   logger.log(`Memory: heapUsed=${Math.round(memUsage.heapUsed / 1024 / 1024)}MB, rss=${Math.round(memUsage.rss / 1024 / 1024)}MB`);
 
-  // FIX OOM: Periodic memory monitoring (every 10 minutes)
+  // Periodic memory monitoring (every 10 minutes) — v2026.06.09
   // Logs heap usage and triggers GC if heap is above 80% of max
   setInterval(() => {
     const mem = process.memoryUsage();

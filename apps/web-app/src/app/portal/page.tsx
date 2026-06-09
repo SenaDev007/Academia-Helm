@@ -21,15 +21,11 @@ import {
   Shield,
   Code2,
   X,
-  MapPin,
-  School,
-  TrendingUp,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import PremiumHeader from '@/components/layout/PremiumHeader';
 import SchoolSearch from '@/components/portal/SchoolSearch';
 import BeninMap from '@/components/portal/BeninMap';
-import { BENIN_DEPARTMENTS, BENIN_TOTALS, type DepartmentData } from '@/data/benin-departments';
 import { useTenantRedirect } from '@/lib/hooks/useTenantRedirect';
 import { BRAND } from '@/lib/brand';
 import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-email';
@@ -38,7 +34,6 @@ import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getModalMotion, getMotionDuration } from '@/lib/motion/presets';
 
 type PortalType = 'PLATFORM' | 'SCHOOL' | 'TEACHER' | 'PARENT' | 'PUBLIC' | null;
-type MapFilterType = 'all' | 'public' | 'private';
 
 interface School {
   id: string;
@@ -74,8 +69,6 @@ export default function PortalPage() {
   const [devEmail, setDevEmail] = useState('');
   const [devPassword, setDevPassword] = useState('');
   const [isDevLoggingIn, setIsDevLoggingIn] = useState(false);
-  const [selectedDepartment, setSelectedDepartment] = useState<DepartmentData | null>(null);
-  const [mapFilter, setMapFilter] = useState<MapFilterType>('all');
   const { redirectToTenant, getTenantRedirectUrl } = useTenantRedirect();
   const { shouldReduceMotion } = useMotionBudget();
 
@@ -646,7 +639,7 @@ export default function PortalPage() {
                     : { opacity: 0, y: -10, transition: { duration: dur * 0.85 } }
                 }
                 transition={{ duration: dur, ease: 'easeOut' }}
-                className="mx-auto mb-12 grid w-full max-w-lg grid-cols-1 gap-4 sm:max-w-none sm:gap-5 md:max-w-5xl md:grid-cols-2 lg:grid-cols-3 md:gap-6 xl:max-w-6xl"
+                className="mx-auto mb-8 grid w-full max-w-lg grid-cols-1 gap-3 sm:max-w-none sm:gap-4 md:max-w-5xl md:grid-cols-3 lg:grid-cols-5 md:gap-4 xl:max-w-6xl"
               >
                 {portalCards.map((card, index) => {
                   const Icon = card.Icon;
@@ -682,19 +675,17 @@ export default function PortalPage() {
                       }}
                       role="button"
                       tabIndex={0}
-                      className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-md outline-none ring-slate-200/60 transition-shadow focus-visible:ring-2 focus-visible:ring-[#C9A84C] focus-visible:ring-offset-2 hover:border-slate-300 hover:shadow-xl md:min-h-[260px] ${
-                        index === 4 && portalCards.length % 3 !== 0
-                          ? 'md:col-span-2 lg:col-span-1 md:mx-auto md:max-w-md lg:mx-0 lg:max-w-none'
-                          : ''
+                      className={`group relative cursor-pointer overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-sm outline-none ring-slate-200/60 transition-shadow focus-visible:ring-2 focus-visible:ring-[#C9A84C] focus-visible:ring-offset-2 hover:border-slate-300 hover:shadow-lg ${
+                        ''
                       }`}
                     >
                       <div
-                        className={`absolute left-0 top-0 h-1 w-full ${card.accentBar} opacity-90`}
+                        className={`absolute left-0 top-0 h-0.5 w-full ${card.accentBar} opacity-90`}
                         aria-hidden
                       />
-                      <div className="flex h-full flex-row items-center gap-4 p-5 sm:p-6 md:flex-col md:items-center md:justify-between md:px-8 md:py-8 md:text-center">
+                      <div className="flex h-full flex-row items-center gap-3 p-3 sm:p-4 md:flex-col md:items-center md:justify-between md:px-4 md:py-5 md:text-center">
                         <motion.div
-                          className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br shadow-inner sm:h-16 sm:w-16 ${card.iconBg} ring-1 ring-white/80 md:mb-1`}
+                          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br shadow-inner sm:h-11 sm:w-11 ${card.iconBg} ring-1 ring-white/80 md:mb-1`}
                           whileHover={
                             shouldReduceMotion
                               ? undefined
@@ -702,20 +693,20 @@ export default function PortalPage() {
                           }
                           transition={cardSpring}
                         >
-                          <Icon className={`h-7 w-7 sm:h-8 sm:w-8 ${card.iconColor}`} />
+                          <Icon className={`h-5 w-5 sm:h-6 sm:w-6 ${card.iconColor}`} />
                         </motion.div>
                         <div className="min-w-0 flex-1 md:flex md:flex-1 md:flex-col md:items-center">
                           <h3
-                            className="text-lg font-bold leading-snug sm:text-xl"
+                            className="text-sm font-bold leading-snug sm:text-base"
                             style={{ color: NAVY }}
                           >
                             {card.title}
                   </h3>
-                          <p className="mt-1.5 text-sm leading-relaxed text-slate-600 md:mt-2">
+                          <p className="mt-0.5 text-xs leading-relaxed text-slate-500 md:mt-1">
                             {card.subtitle}
                           </p>
                           <div
-                            className={`mt-4 inline-flex min-h-[44px] items-center text-sm font-semibold md:mt-auto ${card.cta}`}
+                            className={`mt-2 inline-flex min-h-[32px] items-center text-xs font-semibold md:mt-auto ${card.cta}`}
                           >
                     <span>Accéder</span>
                             <motion.span
@@ -872,78 +863,16 @@ export default function PortalPage() {
             )}
           </AnimatePresence>
 
-          {/* ── Carte interactive du Bénin ─────────────────────────────── */}
+          {/* Benin Map Section - shown when no portal is selected */}
           {!selectedPortal && (
-            <motion.section
+            <motion.div
               initial={shouldReduceMotion ? false : { opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: shouldReduceMotion ? 0 : 0.35, duration: dur, ease: 'easeOut' }}
-              className="mt-16"
+              transition={{ delay: shouldReduceMotion ? 0 : 0.3, duration: dur }}
+              className="mt-10 mx-auto max-w-3xl rounded-2xl border border-slate-200/80 bg-white/80 px-6 py-8 shadow-sm backdrop-blur-sm"
             >
-              <div className="mb-8 text-center">
-                <h2
-                  className="text-2xl font-extrabold tracking-tight md:text-3xl"
-                  style={{ color: NAVY }}
-                >
-                  Nos établissements au Bénin
-                </h2>
-                <p className="mt-2 text-sm text-slate-600">
-                  Explorez la carte pour découvrir les écoles par département
-                </p>
-                <div className="mt-4 flex items-center justify-center gap-6">
-                  <div className="flex items-center gap-1.5 text-xs text-slate-600">
-                    <School className="h-4 w-4" style={{ color: NAVY }} />
-                    <span className="font-semibold">{new Intl.NumberFormat('fr-FR').format(BENIN_TOTALS.schools)}</span>
-                    <span>écoles</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-xs text-slate-600">
-                    <GraduationCap className="h-4 w-4" style={{ color: NAVY }} />
-                    <span className="font-semibold">{new Intl.NumberFormat('fr-FR').format(BENIN_TOTALS.teachers)}</span>
-                    <span>enseignants</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-xs text-slate-600">
-                    <Users className="h-4 w-4" style={{ color: NAVY }} />
-                    <span className="font-semibold">{new Intl.NumberFormat('fr-FR').format(BENIN_TOTALS.students)}</span>
-                    <span>apprenants</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Filtres Public / Privé */}
-              <div className="mb-6 flex items-center justify-center gap-2">
-                {([
-                  { key: 'all' as const, label: 'Tous statuts' },
-                  { key: 'public' as const, label: 'Public' },
-                  { key: 'private' as const, label: 'Privé' },
-                ]).map((f) => (
-                  <button
-                    key={f.key}
-                    type="button"
-                    onClick={() => setMapFilter(f.key)}
-                    className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-colors ${
-                      mapFilter === f.key
-                        ? 'text-white shadow-md'
-                        : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300'
-                    }`}
-                    style={
-                      mapFilter === f.key
-                        ? { background: `linear-gradient(135deg, ${NAVY}, #144798)` }
-                        : undefined
-                    }
-                  >
-                    {f.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-6 shadow-lg backdrop-blur-sm md:p-8">
-                <BeninMap
-                  onDepartmentSelect={setSelectedDepartment}
-                  selectedDepartment={selectedDepartment}
-                  filter={mapFilter}
-                />
-              </div>
-            </motion.section>
+              <BeninMap />
+            </motion.div>
           )}
 
           <motion.div

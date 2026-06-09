@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
+import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { toast } from '@/components/ui/toast';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
@@ -76,40 +77,74 @@ export default function ContractDetailPage() {
     if (!contract) return;
     try {
       setGenerating(true);
-      // Download existing PDF via GET /pdf endpoint (not POST /generate-pdf)
+      // Download existing PDF via GET /pdf endpoint (BFF proxy → NestJS)
+      // Must include Authorization header from localStorage for the BFF proxy to forward to NestJS
       const response = await fetch(`/api/hr/contracts/${contractId}/pdf?tenantId=${tenant.id}`, {
         method: 'GET',
+        headers: {
+          ...getClientAuthorizationHeader(),
+        },
+        credentials: 'include',
+        cache: 'no-store',
       });
 
-      if (!response.ok) throw new Error('Erreur téléchargement');
-
-      // Try to get as blob (binary PDF) first
-      const contentType = response.headers.get('content-type') || '';
-      if (contentType.includes('application/pdf') || contentType.includes('octet-stream')) {
-        const blob = await response.blob();
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        const staffName = `${contract.staff?.lastName}_${contract.staff?.firstName}`.replace(/\s+/g, '_');
-        link.download = `Contrat_${staffName}_${contract.contractType}.pdf`;
-        link.click();
-        URL.revokeObjectURL(link.href);
+      if (!response.ok) {
+        // If we get an error, try generating the PDF first then downloading
+        if (response.status === 404 || response.status === 500) {
+          await handleGeneratePdf();
+          // Retry download after generation
+          const retryResponse = await fetch(`/api/hr/contracts/${contractId}/pdf?tenantId=${tenant.id}`, {
+            method: 'GET',
+            headers: {
+              ...getClientAuthorizationHeader(),
+            },
+            credentials: 'include',
+            cache: 'no-store',
+          });
+          if (!retryResponse.ok) throw new Error('Erreur téléchargement après génération');
+          const blob = await retryResponse.blob();
+          triggerPdfDownload(blob);
+        } else {
+          throw new Error('Erreur téléchargement');
+        }
       } else {
-        // If the response is JSON (e.g., contains a pdfUrl), use it
-        const data = await response.json();
-        if (data.pdfUrl) {
-          const link = document.createElement('a');
-          link.href = data.pdfUrl;
-          const staffName = `${contract.staff?.lastName}_${contract.staff?.firstName}`.replace(/\s+/g, '_');
-          link.download = `Contrat_${staffName}_${contract.contractType}.pdf`;
-          link.click();
+        // Try to get as blob (binary PDF) first
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/pdf') || contentType.includes('octet-stream')) {
+          const blob = await response.blob();
+          triggerPdfDownload(blob);
+        } else {
+          // If the response is JSON (e.g., contains a pdfUrl), use it
+          const data = await response.json();
+          if (data.pdfUrl) {
+            triggerPdfUrlDownload(data.pdfUrl);
+          }
         }
       }
       toast({ variant: 'success', title: 'Téléchargement du PDF lancé.' });
     } catch (err) {
+      console.error('[Contract PDF Download] Error:', err);
       toast({ variant: 'error', title: 'Erreur lors du téléchargement PDF.' });
     } finally {
       setGenerating(false);
     }
+  }
+
+  function triggerPdfDownload(blob: Blob) {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    const staffName = `${contract?.staff?.lastName}_${contract?.staff?.firstName}`.replace(/\s+/g, '_');
+    link.download = `Contrat_${staffName}_${contract?.contractType}.pdf`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  function triggerPdfUrlDownload(pdfUrl: string) {
+    const link = document.createElement('a');
+    link.href = pdfUrl;
+    const staffName = `${contract?.staff?.lastName}_${contract?.staff?.firstName}`.replace(/\s+/g, '_');
+    link.download = `Contrat_${staffName}_${contract?.contractType}.pdf`;
+    link.click();
   }
 
   if (loading) {

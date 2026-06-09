@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapPin, GraduationCap, Users, BookOpen } from 'lucide-react';
+import { BENIN_DEPARTMENTS, type DepartmentData as ExternalDepartmentData } from '@/data/benin-departments';
 
 /* ─── Benin 12 departments with exact SVG paths from emp.educmaster.bj ─── */
 interface DepartmentData {
@@ -152,10 +153,48 @@ function getDepartmentColor(count: number, maxCount: number): string {
 
 type FilterType = 'all' | 'public' | 'private';
 
-export default function BeninMap() {
+interface BeninMapProps {
+  onDepartmentSelect?: (dept: ExternalDepartmentData | null) => void;
+  selectedDepartment?: ExternalDepartmentData | null;
+  filter?: FilterType;
+}
+
+/** Map internal department IDs to external department codes for cross-referencing */
+const INTERNAL_TO_EXTERNAL_CODE: Record<string, string> = {
+  alibori: 'AL',
+  atacora: 'AT',
+  borgou: 'BO',
+  donga: 'DO',
+  collines: 'CO',
+  plateau: 'PL',
+  zou: 'ZO',
+  couffo: 'KO',
+  mono: 'MO',
+  atlantique: 'AQ',
+  oueme: 'OU',
+  littoral: 'LI',
+};
+
+export default function BeninMap({ onDepartmentSelect, selectedDepartment, filter: externalFilter }: BeninMapProps) {
   const [hoveredDept, setHoveredDept] = useState<string | null>(null);
   const [selectedDept, setSelectedDept] = useState<string | null>(null);
-  const [filter, setFilter] = useState<FilterType>('all');
+  const [internalFilter, setInternalFilter] = useState<FilterType>('all');
+
+  // Use external filter when provided, otherwise use internal state
+  const filter = externalFilter ?? internalFilter;
+
+  // Sync external selectedDepartment with internal selected state
+  useEffect(() => {
+    if (selectedDepartment) {
+      const match = DEPARTMENTS.find(d => {
+        const code = INTERNAL_TO_EXTERNAL_CODE[d.id];
+        return code && code === selectedDepartment.code;
+      });
+      setSelectedDept(match?.id ?? null);
+    } else {
+      setSelectedDept(null);
+    }
+  }, [selectedDepartment]);
 
   const maxSchoolCount = useMemo(() =>
     Math.max(...DEPARTMENTS.map(d => d.schoolCount)), []);
@@ -231,7 +270,8 @@ export default function BeninMap() {
         </div>
       </div>
 
-      {/* Filter tabs */}
+      {/* Filter tabs — only show when no external filter is provided */}
+      {!externalFilter && (
       <div className="mb-5 flex justify-center">
         <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
           {[
@@ -241,7 +281,7 @@ export default function BeninMap() {
           ].map(tab => (
             <button
               key={tab.key}
-              onClick={() => setFilter(tab.key)}
+              onClick={() => setInternalFilter(tab.key)}
               className={`px-4 py-1.5 text-xs font-semibold rounded-md transition-all ${
                 filter === tab.key
                   ? 'bg-white text-slate-900 shadow-sm'
@@ -253,6 +293,7 @@ export default function BeninMap() {
           ))}
         </div>
       </div>
+      )}
 
       {/* Map + Info Panel — same row layout as emp.educmaster.bj */}
       <div className="flex flex-col lg:flex-row items-center lg:items-start gap-6 justify-center">
@@ -278,7 +319,21 @@ export default function BeninMap() {
                   key={dept.id}
                   onMouseEnter={() => setHoveredDept(dept.id)}
                   onMouseLeave={() => setHoveredDept(null)}
-                  onClick={() => setSelectedDept(isSelected ? null : dept.id)}
+                  onClick={() => {
+                    const newSelectedId = isSelected ? null : dept.id;
+                    setSelectedDept(newSelectedId);
+                    if (onDepartmentSelect) {
+                      if (newSelectedId) {
+                        const code = INTERNAL_TO_EXTERNAL_CODE[newSelectedId];
+                        const externalDept = code
+                          ? BENIN_DEPARTMENTS.find(d => d.code === code) ?? null
+                          : null;
+                        onDepartmentSelect(externalDept);
+                      } else {
+                        onDepartmentSelect(null);
+                      }
+                    }
+                  }}
                   className="cursor-pointer"
                   role="button"
                   aria-label={`Département ${dept.name}`}

@@ -61,8 +61,10 @@ export class AttendancePrismaController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('status') status?: string,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.attendanceService.findStaffAttendances(staffId, tenant?.id, {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.attendanceService.findStaffAttendances(staffId, tid, {
       academicYearId,
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
@@ -77,8 +79,10 @@ export class AttendancePrismaController {
     @Query('staffId') staffId?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.attendanceService.getAttendanceStatistics(tenant?.id, academicYearId, {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.attendanceService.getAttendanceStatistics(tid, academicYearId, {
       staffId,
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
@@ -153,8 +157,10 @@ export class AttendancePrismaController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('validated') validated?: string,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.attendanceService.findStaffOvertime(staffId, tenant?.id, {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.attendanceService.findStaffOvertime(staffId, tid, {
       academicYearId,
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,

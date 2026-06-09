@@ -52,16 +52,23 @@ export class AllowancesPrismaController {
   async findAllAllowanceTypes(
     @GetTenant() tenant: any,
     @Query('includeInactive') includeInactive?: string,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
+    const tid = tenant?.id ?? tenantIdFallback;
     return this.allowancesService.findAllAllowanceTypes(
-      tenant?.id,
+      tid,
       includeInactive === 'true',
     );
   }
 
   @Get('types/:id')
-  async findAllowanceTypeById(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.allowancesService.findAllowanceTypeById(id, tenant?.id);
+  async findAllowanceTypeById(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.allowancesService.findAllowanceTypeById(id, tid);
   }
 
   @Put('types/:id')
@@ -124,8 +131,10 @@ export class AllowancesPrismaController {
     @Query('staffId') staffId?: string,
     @Query('allowanceTypeId') allowanceTypeId?: string,
     @Query('status') status?: string,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.allowancesService.findAllStaffAllowances(tenant?.id, {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.allowancesService.findAllStaffAllowances(tid, {
       staffId,
       allowanceTypeId,
       status,
@@ -137,9 +146,11 @@ export class AllowancesPrismaController {
     @GetTenant() tenant: any,
     @Param('staffId') staffId: string,
     @Query('includeInactive') includeInactive?: string,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
+    const tid = tenant?.id ?? tenantIdFallback;
     return this.allowancesService.findStaffAllowances(
-      staffId, tenant?.id, includeInactive === 'true',
+      staffId, tid, includeInactive === 'true',
     );
   }
 

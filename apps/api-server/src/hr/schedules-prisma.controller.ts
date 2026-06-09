@@ -55,8 +55,10 @@ export class SchedulesPrismaController {
     @Query('staffId') staffId?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.schedulesService.findAll(tenant?.id, {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.schedulesService.findAll(tid, {
       academicYearId,
       staffId,
       startDate,

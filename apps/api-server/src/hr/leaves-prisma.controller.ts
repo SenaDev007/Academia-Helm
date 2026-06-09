@@ -45,8 +45,10 @@ export class LeavesPrismaController {
     @Query('staffId') staffId?: string,
     @Query('status') status?: string,
     @Query('type') type?: string,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.leavesService.findAllLeaveRequests(tenant?.id, {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.leavesService.findAllLeaveRequests(tid, {
       academicYearId,
       staffId,
       status,
@@ -55,8 +57,13 @@ export class LeavesPrismaController {
   }
 
   @Get('requests/:id')
-  async findLeaveRequestById(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.leavesService.findLeaveRequestById(id, tenant?.id);
+  async findLeaveRequestById(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.leavesService.findLeaveRequestById(id, tid);
   }
 
   @Put('requests/:id/process')
@@ -89,7 +96,12 @@ export class LeavesPrismaController {
   }
 
   @Get('staff/:staffId/balance')
-  async getLeaveBalance(@GetTenant() tenant: any, @Param('staffId') staffId: string) {
-    return this.leavesService.calculateLeaveBalance(staffId, tenant?.id);
+  async getLeaveBalance(
+    @GetTenant() tenant: any,
+    @Param('staffId') staffId: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.leavesService.calculateLeaveBalance(staffId, tid);
   }
 }

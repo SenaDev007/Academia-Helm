@@ -47,8 +47,9 @@ export class HrOverviewController {
   async getDashboardData(
     @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId: string,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    const tenantId = tenant?.id;
+    const tenantId = tenant?.id ?? tenantIdFallback;
 
     // Snapshot KPI — isolé
     let snapshot = DEFAULT_SNAPSHOT;
@@ -95,8 +96,9 @@ export class HrOverviewController {
   async getAnalytics(
     @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId: string,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    const tenantId = tenant?.id;
+    const tenantId = tenant?.id ?? tenantIdFallback;
 
     const results = await Promise.allSettled([
       this.hrKpiService.getPayrollEvolution(tenantId, academicYearId),
@@ -118,7 +120,9 @@ export class HrOverviewController {
   async refreshSnapshot(
     @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId: string,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.hrKpiService.generateSnapshot(tenant?.id, academicYearId);
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.hrKpiService.generateSnapshot(tid, academicYearId);
   }
 }

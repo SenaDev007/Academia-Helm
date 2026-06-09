@@ -32,6 +32,23 @@ export function getClientAuthorizationHeader(): Record<string, string> {
   return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
+/**
+ * Récupère le tenant ID depuis la session locale (localStorage).
+ * Utilisé pour envoyer le header X-Tenant-ID explicite dans les fetch client → proxy BFF,
+ * garantissant que le backend NestJS peut résoudre le tenant même si les cookies ne sont pas propagés.
+ */
+export function getClientTenantId(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem('session')?.trim();
+    if (!raw) return null;
+    const session = JSON.parse(raw) as { tenantId?: string; tenant?: { id?: string }; user?: { tenantId?: string } };
+    return session?.tenantId || session?.tenant?.id || session?.user?.tenantId || null;
+  } catch {
+    return null;
+  }
+}
+
 export function persistClientAccessToken(data: {
   accessToken?: string | null;
   refreshToken?: string | null;

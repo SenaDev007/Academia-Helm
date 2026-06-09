@@ -50,8 +50,12 @@ export class CNSSPrismaController {
   // ──────────────────────────────────────────────────────────────────────────
 
   @Get('employees')
-  async findAllEmployeeCNSS(@GetTenant() tenant: any) {
-    return this.cnssService.findAllEmployeeCNSS(tenant?.id);
+  async findAllEmployeeCNSS(
+    @GetTenant() tenant: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.cnssService.findAllEmployeeCNSS(tid);
   }
 
   @Post('employees')
@@ -94,13 +98,22 @@ export class CNSSPrismaController {
   }
 
   @Get('declarations')
-  async findAllDeclarations(@GetTenant() tenant: any) {
-    return this.cnssService.findAllDeclarations(tenant?.id);
+  async findAllDeclarations(
+    @GetTenant() tenant: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.cnssService.findAllDeclarations(tid);
   }
 
   @Get('declarations/:id')
-  async findDeclarationById(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.cnssService.findDeclarationById(id, tenant?.id);
+  async findDeclarationById(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.cnssService.findDeclarationById(id, tid);
   }
 
   @Put('declarations/:id/finalize')

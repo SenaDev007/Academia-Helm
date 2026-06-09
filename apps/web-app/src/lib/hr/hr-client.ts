@@ -8,7 +8,7 @@
  *   - credentials: 'include' pour relay cookies
  */
 
-import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
+import { getClientAuthorizationHeader, getClientTenantId } from '@/lib/auth/client-access-token';
 
 export async function hrFetch<T>(
   path: string,
@@ -28,11 +28,19 @@ export async function hrFetch<T>(
     fetchUrl = `${fetchUrl}${separator}_t=${Date.now()}`;
   }
 
+  // Construire les headers avec X-Tenant-ID explicite
+  const tenantId = getClientTenantId();
+  const extraHeaders: Record<string, string> = {};
+  if (tenantId) {
+    extraHeaders['x-tenant-id'] = tenantId;
+  }
+
   const res = await fetch(fetchUrl, {
     method,
     headers: {
       ...(options?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
       ...getClientAuthorizationHeader(),
+      ...extraHeaders,
       ...options?.headers,
     },
     credentials: 'include',

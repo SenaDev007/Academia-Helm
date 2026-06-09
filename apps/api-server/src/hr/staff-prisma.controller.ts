@@ -69,8 +69,10 @@ export class StaffPrismaController {
     @Query('category') category?: string,
     @Query('status') status?: string,
     @Query('levelAssigned') levelAssigned?: string,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.staffService.findAllStaff(tenant?.id, {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.staffService.findAllStaff(tid, {
       academicYearId,
       category,
       status,
@@ -125,8 +127,13 @@ export class StaffPrismaController {
   // ─── CRUD ──────────────────────────────────────────────────────────────────
 
   @Get(':id')
-  async findStaffById(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.staffService.findStaffById(id, tenant?.id);
+  async findStaffById(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.staffService.findStaffById(id, tid);
   }
 
   @Put(':id')

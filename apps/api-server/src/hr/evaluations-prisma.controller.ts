@@ -42,8 +42,10 @@ export class EvaluationsPrismaController {
     @Query('academicYearId') academicYearId?: string,
     @Query('staffId') staffId?: string,
     @Query('evaluatorId') evaluatorId?: string,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.evaluationsService.findAllEvaluations(tenant?.id, {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.evaluationsService.findAllEvaluations(tid, {
       academicYearId,
       staffId,
       evaluatorId,
@@ -54,8 +56,10 @@ export class EvaluationsPrismaController {
   async getEvaluationStatistics(
     @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId: string,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.evaluationsService.getEvaluationStatistics(tenant?.id, academicYearId);
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.evaluationsService.getEvaluationStatistics(tid, academicYearId);
   }
 
   // ─── Trainings (MUST be before @Get(':id') to avoid route shadowing) ────────
@@ -77,18 +81,32 @@ export class EvaluationsPrismaController {
   }
 
   @Get('trainings')
-  async findAllTrainings(@GetTenant() tenant: any) {
-    return this.evaluationsService.findAllTrainings(tenant?.id);
+  async findAllTrainings(
+    @GetTenant() tenant: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.evaluationsService.findAllTrainings(tid);
   }
 
   @Get('trainings/staff/:staffId')
-  async findStaffTrainings(@GetTenant() tenant: any, @Param('staffId') staffId: string) {
-    return this.evaluationsService.findStaffTrainings(staffId, tenant?.id);
+  async findStaffTrainings(
+    @GetTenant() tenant: any,
+    @Param('staffId') staffId: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.evaluationsService.findStaffTrainings(staffId, tid);
   }
 
   @Get('trainings/:id')
-  async findTrainingById(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.evaluationsService.findTrainingById(id, tenant?.id);
+  async findTrainingById(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.evaluationsService.findTrainingById(id, tid);
   }
 
   @Put('trainings/:id')
@@ -121,8 +139,13 @@ export class EvaluationsPrismaController {
   // ─── Evaluations (parameterized routes AFTER specific routes) ───────────────
 
   @Get(':id')
-  async findEvaluationById(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.evaluationsService.findEvaluationById(id, tenant?.id);
+  async findEvaluationById(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.evaluationsService.findEvaluationById(id, tid);
   }
 
   @Put(':id')

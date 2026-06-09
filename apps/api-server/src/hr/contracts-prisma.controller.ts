@@ -52,22 +52,33 @@ export class ContractsPrismaController {
     @Query('staffId') staffId?: string,
     @Query('type') type?: string,
     @Query('status') status?: string,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.contractsService.findAllContracts(tenant?.id, { staffId, type, status });
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.contractsService.findAllContracts(tid, { staffId, type, status });
   }
 
   // ─── Staff active contract (MUST be before @Get(':id')) ────────────────────
 
   @Get('staff/:staffId/active')
-  async findActiveContract(@GetTenant() tenant: any, @Param('staffId') staffId: string) {
-    return this.contractsService.findActiveContract(staffId, tenant?.id);
+  async findActiveContract(
+    @GetTenant() tenant: any,
+    @Param('staffId') staffId: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.contractsService.findActiveContract(staffId, tid);
   }
 
   // ─── Contract Templates (MUST be before @Get(':id')) ───────────────────────
 
   @Get('templates/list')
-  async listTemplates(@GetTenant() tenant: any) {
-    return this.contractPdfService.listTemplates(tenant?.id);
+  async listTemplates(
+    @GetTenant() tenant: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.contractPdfService.listTemplates(tid);
   }
 
   @Get('templates/default/:type')
@@ -119,8 +130,13 @@ export class ContractsPrismaController {
   // ─── Parameterized contract routes (AFTER all static routes) ───────────────
 
   @Get(':id')
-  async findContractById(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.contractsService.findContractById(id, tenant?.id);
+  async findContractById(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.contractsService.findContractById(id, tid);
   }
 
   @Put(':id')
@@ -225,13 +241,15 @@ export class ContractsPrismaController {
     @GetTenant() tenant: any,
     @Param('id') id: string,
     @Res({ passthrough: true }) res: Response,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
+    const tid = tenant?.id ?? tenantIdFallback;
     // Try to serve existing PDF first (no re-generation)
-    let result = await this.contractPdfService.getExistingContractPdf(id, tenant?.id);
+    let result = await this.contractPdfService.getExistingContractPdf(id, tid);
 
     // If no PDF exists yet, generate one
     if (!result) {
-      const generated = await this.contractPdfService.generateContractPdf(id, tenant?.id);
+      const generated = await this.contractPdfService.generateContractPdf(id, tid);
       result = { pdfBuffer: generated.pdfBuffer, contract: generated.contract };
     }
 

@@ -93,9 +93,15 @@ export function HROverview() {
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const fetchData = useCallback(async (isRetry = false) => {
-    if (!tenant?.id || !academicYear?.id) {
-      // Attendre que le contexte soit prêt — ne pas afficher d'erreur
-      setLoading(true);
+    if (!tenant?.id) {
+      // Pas de tenant → ne pas rester en chargement permanent
+      setLoading(false);
+      return;
+    }
+    if (!academicYear?.id) {
+      // Pas d'année scolaire → afficher l'état vide au lieu du skeleton permanent
+      setLoading(false);
+      setData(null);
       return;
     }
     try {

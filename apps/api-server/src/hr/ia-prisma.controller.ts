@@ -80,8 +80,10 @@ export class IaPrismaController {
   async matchCandidates(
     @GetTenant() tenant: any,
     @Query('jobId') jobId?: string,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.iaService.matchCandidates(tenant?.id, jobId);
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.iaService.matchCandidates(tid, jobId);
   }
 
   // ─── Fraud Detection ────────────────────────────────────────────────────────
@@ -92,8 +94,12 @@ export class IaPrismaController {
    * Détecte les anomalies et risques de fraude dans les candidatures.
    */
   @Get('detect-fraud')
-  async detectFraud(@GetTenant() tenant: any) {
-    return this.iaService.detectFraud(tenant?.id);
+  async detectFraud(
+    @GetTenant() tenant: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.iaService.detectFraud(tid);
   }
 
   // ─── Copilote RH ────────────────────────────────────────────────────────────

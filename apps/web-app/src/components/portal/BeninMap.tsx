@@ -182,7 +182,7 @@ export default function BeninMap() {
 
   const hovered = useMemo(() =>
     DEPARTMENTS.find(d => d.id === hoveredDept) ?? null,
-    [hoveredDept]);
+    [hhoveredDept]);
 
   const selected = useMemo(() =>
     DEPARTMENTS.find(d => d.id === selectedDept) ?? null,

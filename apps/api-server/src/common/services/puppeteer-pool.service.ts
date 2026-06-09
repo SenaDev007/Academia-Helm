@@ -6,10 +6,12 @@
  * Instead of launching a new Chromium process per PDF request (200-500MB each),
  * this service maintains a SINGLE shared browser instance with a page pool.
  *
- * Benefits:
- * - Eliminates OOM from concurrent browser launches
- * - Reduces PDF generation time (no browser startup overhead)
- * - Limits concurrent pages to prevent resource exhaustion
+ * Supports two modes:
+ * - **Serverless (Vercel/AWS Lambda):** Uses `@sparticuz/chromium` + `puppeteer-core`
+ * - **Traditional server (VPS/Docker):** Uses `puppeteer` with local Chromium
+ *
+ * The mode is auto-detected based on the VERCEL environment variable.
+ * You can override with PUPPETEER_EXECUTABLE_PATH or PUPPETEER_MODE env vars.
  *
  * Usage:
  *   constructor(private browserPool: PuppeteerPoolService) {}
@@ -45,7 +47,8 @@ interface PageWrapper {
 export class PuppeteerPoolService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PuppeteerPoolService.name);
   private browser: any = null;
-  private puppeteer: any = null;
+  private puppeteerCore: any = null;
+  private sparticuzChromium: any = null;
   private activePages: Set<any> = new Set();
   private isLaunching = false;
   private launchPromise: Promise<any> | null = null;
@@ -55,8 +58,20 @@ export class PuppeteerPoolService implements OnModuleInit, OnModuleDestroy {
     timeout: NodeJS.Timeout;
   }> = [];
 
+  /**
+   * Detect if running in a serverless environment (Vercel, AWS Lambda, etc.)
+   */
+  private get isServerless(): boolean {
+    return !!(
+      process.env.VERCEL ||
+      process.env.AWS_LAMBDA_FUNCTION_NAME ||
+      process.env.PUPPETEER_MODE === 'serverless'
+    );
+  }
+
   async onModuleInit() {
-    this.logger.log('PuppeteerPoolService initialized (lazy browser launch)');
+    const mode = this.isServerless ? 'serverless (@sparticuz/chromium)' : 'traditional (puppeteer)';
+    this.logger.log(`PuppeteerPoolService initialized — mode: ${mode} (lazy browser launch)`);
   }
 
   async onModuleDestroy() {
@@ -91,46 +106,88 @@ export class PuppeteerPoolService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async launchBrowser(): Promise<any> {
-    if (!this.puppeteer) {
-      this.puppeteer = await import('puppeteer');
+    // Load puppeteer-core (works everywhere, doesn't bundle Chromium)
+    if (!this.puppeteerCore) {
+      try {
+        this.puppeteerCore = await import('puppeteer-core');
+      } catch {
+        this.logger.warn('puppeteer-core not available, falling back to puppeteer');
+        try {
+          this.puppeteerCore = await import('puppeteer');
+        } catch {
+          throw new Error('Neither puppeteer-core nor puppeteer is available');
+        }
+      }
     }
-
-    const executablePath = this.findChromePath();
-    const userDataDir = path.join(os.tmpdir(), 'academia-puppeteer-pool');
 
     const launchOptions: any = {
       headless: true,
       timeout: BROWSER_LAUNCH_TIMEOUT,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--no-first-run',
-        '--no-default-browser-check',
-        '--disable-extensions',
-        '--disable-background-networking',
-        '--disable-sync',
-        '--metrics-recording-only',
-        '--mute-audio',
-        '--disable-software-rasterizer',
-        '--disable-default-apps',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-        '--disable-component-extensions-with-background-pages',
-        // Memory optimization
-        '--js-flags=--max-old-space-size=256',
-        `--user-data-dir=${userDataDir}`,
-      ],
+      args: [],
     };
 
-    if (executablePath) {
-      launchOptions.executablePath = executablePath;
+    if (this.isServerless) {
+      // ─── Serverless mode: @sparticuz/chromium ───
+      try {
+        if (!this.sparticuzChromium) {
+          this.sparticuzChromium = await import('@sparticuz/chromium');
+        }
+        // Handle both ESM default export and CJS module format
+        const chromium = this.sparticuzChromium.default || this.sparticuzChromium;
+
+        // Disable graphics mode for faster cold starts
+        if ('setGraphicsMode' in chromium) {
+          chromium.setGraphicsMode = false;
+        }
+
+        // @sparticuz/chromium provides the executable path and recommended args
+        // executablePath() is async and inflates the Chromium binary on first call
+        launchOptions.executablePath = await chromium.executablePath();
+
+        // Use chromium.args if available, otherwise use puppeteer.defaultArgs
+        if (Array.isArray(chromium.args)) {
+          launchOptions.args = this.puppeteerCore.defaultArgs
+            ? this.puppeteerCore.defaultArgs({ args: chromium.args, headless: 'shell' })
+            : chromium.args;
+        } else {
+          launchOptions.args = this.getDefaultArgs();
+        }
+
+        // Use "shell" headless mode (new Headless mode in Chromium)
+        launchOptions.headless = 'shell';
+
+        // Ignore HTTPS errors for serverless environments
+        launchOptions.ignoreHTTPSErrors = true;
+
+        this.logger.log('Launching Chromium via @sparticuz/chromium (serverless mode)...');
+      } catch (err: any) {
+        this.logger.error(`Failed to load @sparticuz/chromium: ${err.message}`);
+        this.logger.warn('Falling back to PUPPETEER_EXECUTABLE_PATH or system Chrome...');
+        const fallbackPath = this.findChromePath();
+        if (fallbackPath) {
+          launchOptions.executablePath = fallbackPath;
+          launchOptions.args = this.getDefaultArgs();
+        } else {
+          throw new Error(
+            'Cannot launch Chromium in serverless mode: @sparticuz/chromium failed to load ' +
+            'and no PUPPETEER_EXECUTABLE_PATH is set.'
+          );
+        }
+      }
+    } else {
+      // ─── Traditional mode: local Chromium ───
+      const executablePath = this.findChromePath();
+      if (executablePath) {
+        launchOptions.executablePath = executablePath;
+      }
+      launchOptions.args = this.getDefaultArgs();
+      const userDataDir = path.join(os.tmpdir(), 'academia-puppeteer-pool');
+      launchOptions.args.push(`--user-data-dir=${userDataDir}`);
+
+      this.logger.log('Launching local Chromium browser instance...');
     }
 
-    this.logger.log('Launching shared Chromium browser instance...');
-    const browser = await this.puppeteer.launch(launchOptions);
+    const browser = await this.puppeteerCore.launch(launchOptions);
 
     // Handle unexpected browser disconnection
     browser.on('disconnected', () => {
@@ -139,8 +196,35 @@ export class PuppeteerPoolService implements OnModuleInit, OnModuleDestroy {
       this.activePages.clear();
     });
 
-    this.logger.log('Shared Chromium browser launched successfully');
+    this.logger.log('Chromium browser launched successfully');
     return browser;
+  }
+
+  /**
+   * Default Chromium args for traditional (non-serverless) environments
+   */
+  private getDefaultArgs(): string[] {
+    return [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--disable-extensions',
+      '--disable-background-networking',
+      '--disable-sync',
+      '--metrics-recording-only',
+      '--mute-audio',
+      '--disable-software-rasterizer',
+      '--disable-default-apps',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+      '--disable-component-extensions-with-background-pages',
+      // Memory optimization
+      '--js-flags=--max-old-space-size=256',
+    ];
   }
 
   private findChromePath(): string | undefined {
@@ -259,6 +343,7 @@ export class PuppeteerPoolService implements OnModuleInit, OnModuleDestroy {
       activePages: this.activePages.size,
       maxPages: MAX_CONCURRENT_PAGES,
       pendingAcquires: this.pendingAcquires.length,
+      mode: this.isServerless ? 'serverless' : 'traditional',
     };
   }
 }

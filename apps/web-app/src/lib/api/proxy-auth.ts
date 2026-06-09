@@ -134,9 +134,14 @@ export async function getProxyAuthHeaders(request: NextRequest): Promise<ProxyAu
 
   const token = rawToken ? `Bearer ${rawToken}` : '';
 
-  const headers: ProxyAuthHeaders = {
-    'Content-Type': 'application/json',
-  };
+  const headers: ProxyAuthHeaders = {};
+
+  // Only set Content-Type for requests that have a body (POST, PUT, PATCH)
+  // GET/HEAD/DELETE requests should not have Content-Type: application/json
+  const method = request.method?.toUpperCase();
+  if (method && !['GET', 'HEAD', 'DELETE'].includes(method)) {
+    headers['Content-Type'] = 'application/json';
+  }
   if (token) {
     headers['Authorization'] = token;
   }

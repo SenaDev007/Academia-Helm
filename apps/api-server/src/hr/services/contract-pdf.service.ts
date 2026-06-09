@@ -301,21 +301,35 @@ export class ContractPdfService {
         return { pdfBuffer, contract };
       }
     } catch {
-      // Cloud download failed, try local fallback
-      this.logger.warn(`Cloud download failed for ${pdfUrl}, trying local fallback`);
+      // Cloud download failed, try other methods
+      this.logger.warn(`Cloud download failed for ${pdfUrl}, trying alternative methods`);
     }
 
-    // Try Vercel Blob (already a URL, can't download as buffer)
+    // Try Vercel Blob or any HTTPS URL — fetch the URL server-side and return the buffer
     if (pdfUrl.startsWith('https://')) {
-      return null; // Can't serve Vercel Blob PDFs from buffer — need to re-generate
+      try {
+        const response = await fetch(pdfUrl);
+        if (response.ok) {
+          const arrayBuf = await response.arrayBuffer();
+          const pdfBuffer = Buffer.from(arrayBuf);
+          this.logger.log(`Retrieved PDF from remote URL (${pdfBuffer.length} bytes)`);
+          return { pdfBuffer, contract };
+        }
+        this.logger.warn(`Failed to fetch PDF from ${pdfUrl}: HTTP ${response.status}`);
+      } catch (fetchErr: any) {
+        this.logger.warn(`Failed to fetch PDF from ${pdfUrl}: ${fetchErr.message}`);
+      }
+      // Don't return null immediately — try local filesystem as well
     }
 
     // Local filesystem fallback
     const absolutePath = path.join(process.cwd(), pdfUrl);
-    if (!fs.existsSync(absolutePath)) return null;
+    if (fs.existsSync(absolutePath)) {
+      const pdfBuffer = fs.readFileSync(absolutePath);
+      return { pdfBuffer, contract };
+    }
 
-    const pdfBuffer = fs.readFileSync(absolutePath);
-    return { pdfBuffer, contract };
+    return null;
   }
 
   // ─── Electronic Signature ───────────────────────────────────────────────────

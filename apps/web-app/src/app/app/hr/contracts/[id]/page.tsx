@@ -114,8 +114,9 @@ export default function ContractDetailPage() {
       await hrFetch<any>(hrUrl(`contracts/${contractId}/generate-pdf`, { tenantId: tenant.id }), { method: 'POST' });
       toast({ variant: 'success', title: 'PDF généré avec succès !' });
       fetchContract();
-    } catch (err) {
-      toast({ variant: 'error', title: 'Erreur lors de la génération PDF.' });
+    } catch (err: any) {
+      const msg = err?.message || 'Erreur lors de la génération PDF.';
+      toast({ variant: 'error', title: msg });
     } finally {
       setGenerating(false);
     }

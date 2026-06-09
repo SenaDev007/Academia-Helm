@@ -33,52 +33,81 @@ export function ContractDocumentEditor({ isOpen, onClose, onSuccess, contract }:
   const [loading, setLoading] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
 
-  // Fetch articles from preview endpoint
+  // Fetch articles from the backend (single source of truth)
   const fetchArticles = useCallback(async () => {
     if (!contract?.id || !tenant?.id) return;
     setLoading(true);
     try {
-      // First try to get custom articles from contract terms
+      // Step 1: Try custom articles from contract terms (saved by user)
       const contractData: any = await hrFetch(hrUrl(`contracts/${contract.id}`, { tenantId: tenant.id }));
       const customArticles = contractData?.terms?.customArticles;
 
       if (Array.isArray(customArticles) && customArticles.length > 0) {
         setArticles(customArticles);
-      } else {
-        // Fetch preview to get the default articles
-        const data: any = await hrFetch(hrUrl(`contracts/${contract.id}/preview`, { tenantId: tenant.id }));
+        setHasChanges(false);
+        return;
+      }
 
-        if (data?.html) {
-          setPreviewHtml(data.html);
+      // Step 2: Try articles from linked template
+      if (contractData?.templateId) {
+        try {
+          const templates: any[] = await hrFetch(hrUrl('contracts/templates/list', { tenantId: tenant.id }));
+          const linkedTemplate = templates?.find((t: any) => t.id === contractData.templateId);
+          if (linkedTemplate?.template) {
+            try {
+              const parsed = JSON.parse(linkedTemplate.template);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                setArticles(parsed);
+                setHasChanges(false);
+                return;
+              }
+            } catch { /* not JSON, ignore */ }
+          }
+        } catch { /* ignore template fetch error */ }
+      }
+
+      // Step 3: Fetch default articles from backend API
+      try {
+        const defaultData: any = await hrFetch(hrUrl(`contracts/templates/default/${contract.contractType}`, { tenantId: tenant.id }));
+        if (defaultData?.template) {
+          const parsed = JSON.parse(defaultData.template);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setArticles(parsed);
+            setHasChanges(false);
+            return;
+          }
         }
+      } catch { /* ignore default fetch error */ }
 
-        // Extract articles from templateVars or use default
-        // The preview returns templateVars which we can use
-        if (data?.templateVars) {
-          // Generate default articles based on contract type
-          const isCDI = contract.contractType === 'CDI';
-          const isStage = contract.contractType === 'STAGE';
-          const tv = data.templateVars;
+      // Step 4: Fallback — use preview to extract articles
+      const data: any = await hrFetch(hrUrl(`contracts/${contract.id}/preview`, { tenantId: tenant.id }));
+      if (data?.html) {
+        setPreviewHtml(data.html);
+      }
+      if (data?.templateVars) {
+        const isCDI = contract.contractType === 'CDI';
+        const isStage = contract.contractType === 'STAGE';
+        const isConsultant = contract.contractType === 'CONSULTANT';
+        const tv = data.templateVars;
 
-          setArticles([
-            { title: "Article 1 — Objet du contrat", content: `Le présent contrat a pour objet l'engagement du Salarié en qualité de <strong>${tv.staffPosition || '[Poste]'}</strong> au sein de l'établissement <strong>${tv.schoolName || '[École]'}</strong>. Le Salarié exercera ses fonctions sous l'autorité de la Direction de l'établissement scolaire.` },
-            { title: "Article 2 — Date d'effet", content: `Le présent contrat prend effet à compter du <strong>${tv.startDate || '[Date]'}</strong>.` },
-            { title: "Article 3 — Type de contrat", content: isCDI ? `Le présent contrat est un <strong>Contrat à Durée Indéterminée (CDI)</strong>.` : `Le présent contrat est conclu pour la période du <strong>${tv.startDate || '[Date début]'}</strong> au <strong>${tv.endDate || '[Date fin]'}</strong>.` },
-            { title: "Article 4 — Période d'essai", content: `Le présent contrat est assorti d'une période d'essai de <strong>${tv.probationDuration || 'trois (3) mois'}</strong>. Durant cette période, chacune des parties pourra mettre fin au contrat conformément aux dispositions légales en vigueur.` },
-            { title: "Article 5 — Missions et responsabilités", content: `Le Salarié s'engage à accomplir notamment les missions suivantes : <strong>${tv.jobResponsibilities || '[Missions]'}</strong>. Cette liste n'est pas exhaustive et peut être adaptée en fonction des besoins de l'établissement.` },
-            { title: "Article 6 — Lieu de travail", content: `Le Salarié exercera principalement ses fonctions à : <strong>${tv.workLocation || '[Lieu]'}</strong>. Toute affectation dans un autre lieu de travail pourra être décidée par l'Employeur, après consultation du Salarié, dans l'intérêt du service.` },
-            { title: "Article 7 — Durée du travail", content: `La durée hebdomadaire de travail est fixée à <strong>${tv.weeklyHours || '40'} heures</strong>. Les horaires de travail sont : ${tv.workSchedule || 'Du lundi au vendredi, selon les horaires affichés par la Direction'}. Toute modification des horaires sera portée à la connaissance du Salarié dans un délai raisonnable.` },
-            { title: "Article 8 — Rémunération", content: isStage ? `Le stagiaire percevra une gratification mensuelle nette de <strong>${tv.baseSalary || '0'} ${tv.currency || 'XOF'}</strong>, payée par <strong>${tv.paymentMode || '[Mode]'}</strong>.` : `En contrepartie de son travail, le Salarié percevra un salaire brut mensuel de <strong>${tv.baseSalary || '0'} ${tv.currency || 'XOF'}</strong>, versé mensuellement par <strong>${tv.paymentMode || '[Mode]'}</strong>.` },
-            { title: "Article 9 — Congés", content: `Le Salarié bénéficiera des congés conformément à la législation du travail en vigueur dans le pays (${tv.country || 'Bénin'}). Les périodes de congé seront fixées d'un commun accord entre l'Employeur et le Salarié, dans le respect du fonctionnement de l'établissement scolaire et du calendrier académique.` },
-            { title: "Article 10 — Obligation de confidentialité", content: `Le Salarié s'engage à préserver la confidentialité de toutes les informations dont il aurait connaissance dans l'exercice de ses fonctions, notamment les données relatives aux élèves, aux familles, à la gestion financière et administrative de l'établissement. Cette obligation perdure après la fin du contrat.` },
-            { title: "Article 11 — Protection des données", content: `Conformément à la législation en matière de protection des données personnelles, le Salarié est informé que ses données personnelles sont traitées dans le cadre de la gestion de la relation de travail. Il dispose d'un droit d'accès, de rectification et de suppression de ses données.` },
-            { title: "Article 12 — Discipline et règlement intérieur", content: `Le Salarié s'engage à respecter le règlement intérieur de l'établissement, qui lui a été communiqué et dont il accuse réception. Toute infraction pourra faire l'objet de sanctions disciplinaires conformément aux dispositions légales en vigueur.` },
-            { title: "Article 13 — Absences", content: `Toute absence doit être justifiée et préalablement autorisée par l'Employeur, sauf en cas de force majeure. Les absences injustifiées pourront entraîner une retenue sur salaire et, le cas échéant, des sanctions disciplinaires.` },
-            { title: "Article 14 — Résiliation du contrat", content: isCDI ? `Le présent contrat pourra être résilié par chacune des parties, moyennant un préavis de un (1) mois. En cas de faute grave, le contrat pourra être rompu sans préavis ni indemnités. La démission devra être notifiée par écrit.` : `Le présent contrat prend fin à l'échéance du terme fixé, sans qu'il soit besoin de notification. Il pourra toutefois être résilié avant terme en cas de faute grave ou de force majeure.` },
-            { title: "Article 15 — Droit applicable", content: `Le présent contrat est soumis au droit du travail applicable en <strong>${tv.country || 'Bénin'}</strong>. Toute clause non prévue expressément sera régie par les dispositions légales et conventionnelles en vigueur.` },
-            { title: "Article 16 — Dispositions finales", content: `Le présent contrat est établi en deux (2) exemplaires originaux, dont un remis à chaque partie. Les modifications apportées au présent contrat feront l'objet d'un avenant écrit. Fait à <strong>${tv.city || '[Ville]'}</strong>, le <strong>${tv.signatureDate || '[Date]'}</strong>.` },
-          ]);
-        }
+        setArticles([
+          { title: "Article 1 — Objet du contrat", content: `Le présent contrat a pour objet l'engagement du Salarié en qualité de <strong>{{staffPosition}}</strong> au sein de l'établissement <strong>{{schoolName}}</strong>. Le Salarié exercera ses fonctions sous l'autorité de la Direction de l'établissement scolaire.` },
+          { title: "Article 2 — Date d'effet", content: `Le présent contrat prend effet à compter du <strong>{{startDate}}</strong>.` },
+          { title: "Article 3 — Type de contrat", content: isCDI ? `Le présent contrat est un <strong>Contrat à Durée Indéterminée (CDI)</strong>.` : isConsultant ? `Le présent contrat est un <strong>Contrat de Consultation</strong> pour la période du <strong>{{startDate}}</strong> au <strong>{{endDate}}</strong>.` : `Le présent contrat est conclu pour la période du <strong>{{startDate}}</strong> au <strong>{{endDate}}</strong>.` },
+          { title: "Article 4 — Période d'essai", content: `Le présent contrat est assorti d'une période d'essai de <strong>{{probationDuration}}</strong>. Durant cette période, chacune des parties pourra mettre fin au contrat conformément aux dispositions légales en vigueur.` },
+          { title: "Article 5 — Missions et responsabilités", content: `Le Salarié s'engage à accomplir notamment les missions suivantes : <strong>{{jobResponsibilities}}</strong>. Cette liste n'est pas exhaustive et peut être adaptée en fonction des besoins de l'établissement.` },
+          { title: "Article 6 — Lieu de travail", content: `Le Salarié exercera principalement ses fonctions à : <strong>{{workLocation}}</strong>. Toute affectation dans un autre lieu de travail pourra être décidée par l'Employeur, après consultation du Salarié, dans l'intérêt du service.` },
+          { title: "Article 7 — Durée du travail", content: `La durée hebdomadaire de travail est fixée à <strong>{{weeklyHours}} heures</strong>. Les horaires de travail sont : {{workSchedule}}. Toute modification des horaires sera portée à la connaissance du Salarié dans un délai raisonnable.` },
+          { title: "Article 8 — Rémunération", content: isStage ? `Le stagiaire percevra une gratification mensuelle nette de <strong>{{baseSalary}} {{currency}}</strong>, payée par <strong>{{paymentMode}}</strong>.` : `En contrepartie de son travail, le Salarié percevra une rémunération composée comme suit :<br>- Salaire de base : <strong>{{baseSalary}} {{currency}}</strong><br>- Prime de fonction : <strong>{{functionBonus}} {{currency}}</strong><br>- Indemnité de transport : <strong>{{transportBonus}} {{currency}}</strong><br>- Autres avantages : <strong>{{otherBenefits}}</strong><br><br>Soit un salaire brut mensuel de <strong>{{grossSalary}} {{currency}}</strong>, versé mensuellement par <strong>{{paymentMode}}</strong>.` },
+          { title: "Article 9 — Congés", content: `Le Salarié bénéficiera des congés conformément à la législation du travail en vigueur dans le pays ({{country}}). Les périodes de congé seront fixées d'un commun accord entre l'Employeur et le Salarié, dans le respect du fonctionnement de l'établissement scolaire et du calendrier académique.` },
+          { title: "Article 10 — Obligation de confidentialité", content: `Le Salarié s'engage à préserver la confidentialité de toutes les informations dont il aurait connaissance dans l'exercice de ses fonctions, notamment les données relatives aux élèves, aux familles, à la gestion financière et administrative de l'établissement. Cette obligation perdure après la fin du contrat.` },
+          { title: "Article 11 — Protection des données", content: `Conformément à la législation en matière de protection des données personnelles, le Salarié est informé que ses données personnelles sont traitées dans le cadre de la gestion de la relation de travail. Il dispose d'un droit d'accès, de rectification et de suppression de ses données.` },
+          { title: "Article 12 — Discipline et règlement intérieur", content: `Le Salarié s'engage à respecter le règlement intérieur de l'établissement, qui lui a été communiqué et dont il accuse réception. Toute infraction pourra faire l'objet de sanctions disciplinaires conformément aux dispositions légales en vigueur.` },
+          { title: "Article 13 — Absences", content: `Toute absence doit être justifiée et préalablement autorisée par l'Employeur, sauf en cas de force majeure. Les absences injustifiées pourront entraîner une retenue sur salaire et, le cas échéant, des sanctions disciplinaires.` },
+          { title: "Article 14 — Résiliation du contrat", content: isCDI ? `Le présent contrat pourra être résilié par chacune des parties, moyennant un préavis de un (1) mois. En cas de faute grave, le contrat pourra être rompu sans préavis ni indemnités. La démission devra être notifiée par écrit.` : `Le présent contrat prend fin à l'échéance du terme fixé, sans qu'il soit besoin de notification. Il pourra toutefois être résilié avant terme en cas de faute grave ou de force majeure.` },
+          { title: "Article 15 — Droit applicable", content: `Le présent contrat est soumis au droit du travail applicable en <strong>{{country}}</strong>. Toute clause non prévue expressément sera régie par les dispositions légales et conventionnelles en vigueur.` },
+          { title: "Article 16 — Dispositions finales", content: `Le présent contrat est établi en deux (2) exemplaires originaux, dont un remis à chaque partie. Les modifications apportées au présent contrat feront l'objet d'un avenant écrit. Fait à <strong>{{city}}</strong>, le <strong>{{signatureDate}}</strong>.` },
+        ]);
       }
       setHasChanges(false);
     } catch (err) {

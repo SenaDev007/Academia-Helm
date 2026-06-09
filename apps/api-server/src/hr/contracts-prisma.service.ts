@@ -32,6 +32,7 @@ export class ContractsPrismaService {
     status?: string;
     terms?: any;
     templateId?: string;
+    schoolLevelId?: string;
   }) {
     return this.prisma.$transaction(async (tx) => {
       // Désactiver l'éventuel contrat actif existant

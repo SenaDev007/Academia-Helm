@@ -256,7 +256,7 @@ export class ContractPdfService {
       contractReference: contract.staff?.tenantMatricule || contract.staff?.globalMatricule || `CTR-${new Date(contract.startDate).getFullYear()}-${contract.staff?.employeeNumber || ''}`,
       contractType: contract.contractType,
       contractTypeLabel:
-        { CDI: 'Contrat à Durée Indéterminée (CDI)', CDD: 'Contrat à Durée Déterminée (CDD)', VACATAIRE: 'Contrat de Vacation', STAGE: 'Convention de Stage' }[contract.contractType] || contract.contractType,
+        { CDI: 'Contrat à Durée Indéterminée (CDI)', CDD: 'Contrat à Durée Déterminée (CDD)', VACATAIRE: 'Contrat de Vacation', STAGE: 'Convention de Stage', CONSULTANT: 'Contrat de Consultation' }[contract.contractType] || contract.contractType,
       startDate: new Date(contract.startDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }),
       endDate: contract.endDate
         ? new Date(contract.endDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
@@ -305,7 +305,7 @@ export class ContractPdfService {
     } catch (renderError: any) {
       this.logger.error('PDF rendering failed', renderError?.message || renderError);
       throw new BadRequestException(
-        `Impossible de générer le PDF du contrat. Le service de rendu PDF est indisponible. Détail : ${renderError?.message || 'Erreur inconnue'}`,
+        `Impossible de générer le PDF du contrat. Détail : ${renderError?.message || 'Erreur inconnue'}`,
       );
     }
 
@@ -584,17 +584,41 @@ export class ContractPdfService {
   // ─── Private helpers ────────────────────────────────────────────────────────
 
   private async renderPdf(html: string): Promise<Buffer> {
-    const { page } = await this.puppeteerPool.acquirePage();
     try {
-      await page.setContent(html, { waitUntil: 'networkidle0' });
-      const pdf = await page.pdf({
-        format: 'A4',
-        printBackground: true,
-        margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' },
-      });
-      return Buffer.from(pdf);
-    } finally {
-      await this.puppeteerPool.releasePage(page);
+      const { page } = await this.puppeteerPool.acquirePage();
+      try {
+        await page.setContent(html, { waitUntil: 'networkidle0' });
+        const pdf = await page.pdf({
+          format: 'A4',
+          printBackground: true,
+          margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' },
+        });
+        return Buffer.from(pdf);
+      } finally {
+        await this.puppeteerPool.releasePage(page);
+      }
+    } catch (acquireError: any) {
+      this.logger.error(`Puppeteer acquire/render failed: ${acquireError?.message || acquireError}`);
+      // Try to reset browser pool and retry once
+      try {
+        await this.puppeteerPool.closeBrowser();
+        this.logger.log('Browser pool reset, retrying PDF generation...');
+        const { page } = await this.puppeteerPool.acquirePage();
+        try {
+          await page.setContent(html, { waitUntil: 'networkidle0' });
+          const pdf = await page.pdf({
+            format: 'A4',
+            printBackground: true,
+            margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' },
+          });
+          return Buffer.from(pdf);
+        } finally {
+          await this.puppeteerPool.releasePage(page);
+        }
+      } catch (retryError: any) {
+        this.logger.error(`PDF retry also failed: ${retryError?.message || retryError}`);
+        throw new Error(`Le service de rendu PDF est indisponible. Détail : ${retryError?.message || 'Erreur inconnue'}`);
+      }
     }
   }
 
@@ -1140,6 +1164,7 @@ export class ContractPdfService {
     const isCDD = type === 'CDD';
     const isStage = type === 'STAGE';
     const isVacataire = type === 'VACATAIRE';
+    const isConsultant = type === 'CONSULTANT';
 
     return [
       {
@@ -1158,6 +1183,8 @@ export class ContractPdfService {
           ? `Le présent contrat est un <strong>Contrat à Durée Déterminée (CDD)</strong> pour la période du <strong>{{startDate}}</strong> au <strong>{{endDate}}</strong>.`
           : isVacataire
           ? `Le présent contrat est un <strong>Contrat de Vacation</strong>.`
+          : isConsultant
+          ? `Le présent contrat est un <strong>Contrat de Consultation</strong> pour la période du <strong>{{startDate}}</strong> au <strong>{{endDate}}</strong>.`
           : `Le présent document est une <strong>Convention de Stage</strong> pour la période du <strong>{{startDate}}</strong> au <strong>{{endDate}}</strong>.`
       },
       {

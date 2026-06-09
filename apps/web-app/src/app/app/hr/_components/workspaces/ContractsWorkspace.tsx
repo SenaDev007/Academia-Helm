@@ -304,8 +304,9 @@ function ContractRow({ contract, index, tenantId, onTerminate, onRefresh }: { co
       await hrFetch(hrUrl(`contracts/${contract.id}/generate-pdf`, { tenantId }), { method: 'POST' });
       toast({ variant: 'success', title: 'PDF généré avec succès !' });
       onRefresh(); // Refresh to get the updated pdfUrl
-    } catch {
-      toast({ variant: 'error', title: 'Erreur lors de la génération PDF.' });
+    } catch (err: any) {
+      const msg = err?.message || 'Erreur lors de la génération PDF.';
+      toast({ variant: 'error', title: msg });
     } finally {
       setGenerating(false);
     }

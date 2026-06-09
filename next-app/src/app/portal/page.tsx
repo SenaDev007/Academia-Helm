@@ -8,6 +8,13 @@
  * et sélection de portail — inspirée de EducMaster (emp.educmaster.bj)
  * adaptée à la charte graphique Academia Helm (Navy / Gold).
  * 
+ * Layout inspiré du screenshot EducMaster :
+ * 1. Hero navy foncé : Bienvenue + filtres cycle + stats
+ * 2. Axes SIE : cartes navy foncé
+ * 3. Partenaires
+ * 4. Carte Bénin : section claire avec filtres + carte interactive
+ * 5. Sélection portail : cartes compactes
+ * 
  * ============================================================================
  */
 
@@ -28,8 +35,10 @@ import {
   School,
   MapPin,
   Globe,
+  Handshake,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import Image from 'next/image';
 import PremiumHeader from '@/components/layout/PremiumHeader';
 import SchoolSearch from '@/components/portal/SchoolSearch';
 import BeninMap from '@/components/portal/BeninMap';
@@ -43,8 +52,9 @@ import { BENIN_TOTALS, type DepartmentData } from '@/data/benin-departments';
 
 type PortalType = 'PLATFORM' | 'SCHOOL' | 'TEACHER' | 'PARENT' | 'PUBLIC' | null;
 type FilterType = 'all' | 'public' | 'private';
+type CycleFilterType = 'all' | 'maternelle' | 'ci-cp' | 'ce' | 'cm';
 
-interface School {
+interface SchoolData {
   id: string;
   name: string;
   slug: string;
@@ -65,6 +75,7 @@ interface DevTenant {
 /** Aligné charte Academia Helm (landing / portail) */
 const NAVY = '#1E3A5F';
 const NAVY_DARK = '#0D1F6E';
+const NAVY_DEEP = '#0a1628';
 const GOLD = '#C9A84C';
 const GOLD_LIGHT = '#e4c978';
 
@@ -74,9 +85,10 @@ function formatNumber(n: number): string {
 
 export default function PortalPage() {
   const [selectedPortal, setSelectedPortal] = useState<PortalType>(null);
-  const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
+  const [selectedSchool, setSelectedSchool] = useState<SchoolData | null>(null);
   const [selectedDepartment, setSelectedDepartment] = useState<DepartmentData | null>(null);
   const [mapFilter, setMapFilter] = useState<FilterType>('all');
+  const [cycleFilter, setCycleFilter] = useState<CycleFilterType>('all');
   const [devPanelOpen, setDevPanelOpen] = useState(false);
   const [devTenants, setDevTenants] = useState<DevTenant[]>([]);
   const [devTenantsLoading, setDevTenantsLoading] = useState(false);
@@ -84,7 +96,7 @@ export default function PortalPage() {
   const [devEmail, setDevEmail] = useState('');
   const [devPassword, setDevPassword] = useState('');
   const [isDevLoggingIn, setIsDevLoggingIn] = useState(false);
-  const { redirectToTenant, getTenantRedirectUrl } = useTenantRedirect();
+  const { redirectToTenant } = useTenantRedirect();
   const { shouldReduceMotion } = useMotionBudget();
 
   const dur = useMemo(
@@ -137,53 +149,48 @@ export default function PortalPage() {
       [
         {
           type: 'PLATFORM' as const,
-          title: 'Portail Plateforme',
-          subtitle: 'Administration SaaS • Supervision globale • Business',
+          title: 'Plateforme',
+          subtitle: 'Administration SaaS',
           Icon: Shield,
-          iconBg: 'from-slate-700/20 to-slate-800/10',
-          iconColor: 'text-slate-800',
-          accentBar: 'bg-slate-800',
-          cta: 'text-slate-800 group-hover:text-slate-900',
+          iconBg: 'from-slate-700/30 to-slate-800/20',
+          iconColor: 'text-white',
+          accentBg: NAVY_DARK,
         },
         {
           type: 'SCHOOL' as const,
-          title: 'Portail École',
-          subtitle: 'Direction • Administration • Finances • Scolarité',
+          title: 'École',
+          subtitle: 'Direction & Finances',
           Icon: Building2,
-          iconBg: 'from-blue-500/20 to-blue-600/10',
-          iconColor: 'text-blue-600',
-          accentBar: 'bg-blue-500',
-          cta: 'text-blue-600 group-hover:text-blue-700',
+          iconBg: 'from-blue-500/30 to-blue-600/20',
+          iconColor: 'text-blue-200',
+          accentBg: '#1a4a8a',
         },
         {
           type: 'TEACHER' as const,
-          title: 'Portail Enseignant',
-          subtitle: 'Pédagogie • Suivi • Notes • Cahier de texte',
+          title: 'Enseignant',
+          subtitle: 'Pédagogie & Notes',
           Icon: GraduationCap,
-          iconBg: 'from-emerald-500/20 to-emerald-600/10',
-          iconColor: 'text-emerald-600',
-          accentBar: 'bg-emerald-500',
-          cta: 'text-emerald-600 group-hover:text-emerald-700',
+          iconBg: 'from-emerald-500/30 to-emerald-600/20',
+          iconColor: 'text-emerald-200',
+          accentBg: '#1a5a4a',
         },
         {
           type: 'PARENT' as const,
-          title: 'Portail Parent / Élève',
-          subtitle: 'Suivi scolaire • Paiements • Communication',
+          title: 'Parent / Élève',
+          subtitle: 'Suivi & Paiements',
           Icon: Users,
-          iconBg: 'from-violet-500/20 to-violet-600/10',
-          iconColor: 'text-violet-600',
-          accentBar: 'bg-violet-500',
-          cta: 'text-violet-600 group-hover:text-violet-700',
+          iconBg: 'from-violet-500/30 to-violet-600/20',
+          iconColor: 'text-violet-200',
+          accentBg: '#4a1a6a',
         },
         {
           type: 'PUBLIC' as const,
-          title: 'Portail Public',
-          subtitle: 'Pré-inscription • Admissions • Informations',
+          title: 'Public',
+          subtitle: 'Admissions & Infos',
           Icon: Globe,
-          iconBg: 'from-amber-500/20 to-amber-600/10',
-          iconColor: 'text-amber-600',
-          accentBar: 'bg-amber-500',
-          cta: 'text-amber-600 group-hover:text-amber-700',
+          iconBg: 'from-amber-500/30 to-amber-600/20',
+          iconColor: 'text-amber-200',
+          accentBg: '#6a4a1a',
         },
       ] as const,
     [],
@@ -196,22 +203,41 @@ export default function PortalPage() {
         icon: Eye,
         title: 'Suivre',
         description: 'Apprenants, classes, examens en temps réel',
-        color: NAVY,
         gradient: `linear-gradient(135deg, ${NAVY}, ${NAVY_DARK})`,
       },
       {
         icon: Compass,
         title: 'Piloter',
         description: 'Écoles, ressources humaines, planning',
-        color: GOLD,
-        gradient: `linear-gradient(135deg, ${GOLD}, #b08d3a)`,
+        gradient: `linear-gradient(135deg, ${NAVY_DARK}, #0a2550)`,
       },
       {
         icon: Lightbulb,
         title: 'Décider',
         description: 'Indicateurs clés, tableaux de bord, rapports',
-        color: '#114FC4',
-        gradient: 'linear-gradient(135deg, #114FC4, #0D3B85)',
+        gradient: `linear-gradient(135deg, #0D3B85, ${NAVY_DARK})`,
+      },
+    ],
+    [],
+  );
+
+  /* ── Partenaires ── */
+  const partners = useMemo(
+    () => [
+      {
+        name: 'Budget National',
+        subtitle: 'Bénin',
+        icon: '🇧🇯',
+      },
+      {
+        name: 'PME',
+        subtitle: 'Partenaire Financier',
+        icon: '🏦',
+      },
+      {
+        name: 'UNICEF',
+        subtitle: 'Partenaire Technique',
+        icon: '🤝',
       },
     ],
     [],
@@ -252,7 +278,7 @@ export default function PortalPage() {
     setSelectedSchool(null);
   };
 
-  const handleSchoolSelect = (school: School | null) => {
+  const handleSchoolSelect = (school: SchoolData | null) => {
     setSelectedSchool(school);
   };
 
@@ -395,91 +421,245 @@ export default function PortalPage() {
      RENDU
      ════════════════════════════════════════════════════════════════════════ */
   return (
-    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-white to-blue-50/80 text-slate-900">
-      {/* ── Blobs animés en arrière-plan ── */}
-      <div className="pointer-events-none absolute inset-0 opacity-[0.35]" aria-hidden>
-        {!shouldReduceMotion ? (
-          <>
-            <motion.div
-              className="absolute -left-24 top-24 h-72 w-72 rounded-full bg-blue-400/25 blur-3xl"
-              animate={{ x: [0, 24, 0], y: [0, -12, 0] }}
-              transition={{ duration: 14, repeat: Infinity, ease: 'easeInOut' }}
-            />
-            <motion.div
-              className="absolute -right-20 bottom-32 h-80 w-80 rounded-full bg-amber-300/20 blur-3xl"
-              animate={{ x: [0, -18, 0], y: [0, 16, 0] }}
-              transition={{ duration: 18, repeat: Infinity, ease: 'easeInOut' }}
-            />
-            <motion.div
-              className="absolute left-1/2 top-1/3 h-64 w-64 -translate-x-1/2 rounded-full blur-3xl"
-              style={{ backgroundColor: `${NAVY}1a` }}
-              animate={{ scale: [1, 1.08, 1], opacity: [0.2, 0.32, 0.2] }}
-              transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
-            />
-          </>
-        ) : null}
-      </div>
+    <div className="relative min-h-screen overflow-hidden text-slate-900">
 
       <PremiumHeader />
 
-      <main className="relative z-[1] pb-20 pt-24 md:pt-28">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      {/* ════════════════════════════════════════════════════════════════════════
+          SECTION 1 : HERO NAVY FONCÉ — Bienvenue + Cycle + Stats
+          ════════════════════════════════════════════════════════════════════════ */}
+      <section
+        className="relative overflow-hidden pb-12 pt-28 md:pb-16 md:pt-32"
+        style={{ background: `linear-gradient(160deg, ${NAVY_DEEP} 0%, ${NAVY_DARK} 40%, ${NAVY} 100%)` }}
+      >
+        {/* Blobs décoratifs */}
+        <div className="pointer-events-none absolute inset-0" aria-hidden>
+          {!shouldReduceMotion ? (
+            <>
+              <motion.div
+                className="absolute -left-20 top-20 h-64 w-64 rounded-full opacity-20"
+                style={{ backgroundColor: GOLD }}
+                animate={{ x: [0, 20, 0], y: [0, -10, 0] }}
+                transition={{ duration: 14, repeat: Infinity, ease: 'easeInOut' }}
+              />
+              <motion.div
+                className="absolute -right-16 bottom-16 h-72 w-72 rounded-full bg-blue-400/10 blur-3xl"
+                animate={{ x: [0, -15, 0], y: [0, 12, 0] }}
+                transition={{ duration: 18, repeat: Infinity, ease: 'easeInOut' }}
+              />
+            </>
+          ) : null}
+        </div>
 
-          {/* ════════════════════════════════════════════════════════════
-              SECTION 1 : BIENVENUE + STATS + CARTE DU BÉNIN
-              ════════════════════════════════════════════════════════════ */}
-          <motion.section
-            className="mb-16"
+        <div className="relative z-[1] mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <motion.div
             variants={heroVariants}
             initial="hidden"
             animate="show"
           >
-            {/* ── Bienvenue ── */}
-            <div className="text-center mb-10">
-              <motion.div variants={heroItem}>
-                <span
-                  className="mb-4 inline-flex rounded-full border px-4 py-1 text-xs font-semibold uppercase tracking-wide"
-                  style={{
-                    color: NAVY,
-                    borderColor: `${GOLD}66`,
-                    background: `linear-gradient(90deg, ${GOLD}22, ${GOLD}3d)`,
-                  }}
-                >
-                  Portails sécurisés
-                </span>
-              </motion.div>
+            {/* Bienvenue */}
+            <div className="mb-8 text-center">
               <motion.h1
                 variants={heroItem}
-                className="mb-3 text-4xl font-extrabold tracking-tight md:text-5xl"
-                style={{ color: NAVY }}
+                className="mb-2 text-3xl font-extrabold tracking-tight text-white md:text-5xl"
               >
                 Bienvenue sur {BRAND.name}
               </motion.h1>
               <motion.p
                 variants={heroItem}
-                className="mx-auto max-w-2xl text-lg text-slate-600"
+                className="mx-auto max-w-xl text-base text-slate-300 md:text-lg"
               >
-                {BRAND.subtitle}. Pilotage, suivi et aide à la décision pour les établissements du Bénin.
+                {BRAND.subtitle}. Pilotage, suivi et aide à la décision pour l&apos;enseignement maternel et primaire du Bénin.
               </motion.p>
-              <motion.p
-                variants={heroItem}
-                className="mt-1 text-base font-medium text-slate-500"
-              >
-                {BRAND.slogan}
-              </motion.p>
+
+              {/* Bande tricolore Bénin */}
+              <motion.div variants={heroItem} className="mt-4 flex justify-center">
+                <div className="flex h-1 w-32 overflow-hidden rounded-full">
+                  <div className="flex-1 bg-green-500" />
+                  <div className="flex-1" style={{ backgroundColor: GOLD }} />
+                  <div className="flex-1 bg-red-500" />
+                </div>
+              </motion.div>
             </div>
 
-            {/* ── Bande tricolore Bénin (Vert / Jaune / Rouge) ── */}
-            <motion.div variants={heroItem} className="mb-8">
-              <div className="mx-auto flex h-1.5 w-40 overflow-hidden rounded-full">
-                <div className="flex-1 bg-green-600" />
-                <div className="flex-1" style={{ backgroundColor: GOLD }} />
-                <div className="flex-1 bg-red-600" />
+            {/* Cycle d'enseignement + Filtres */}
+            <motion.div variants={heroItem} className="mb-6 text-center">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-400">
+                Cycle d&apos;enseignement
+              </p>
+              <div className="inline-flex flex-wrap justify-center gap-2">
+                {[
+                  { key: 'all' as CycleFilterType, label: 'Tous' },
+                  { key: 'maternelle' as CycleFilterType, label: 'Maternelle' },
+                  { key: 'ci-cp' as CycleFilterType, label: 'CI-CP' },
+                  { key: 'ce' as CycleFilterType, label: 'CE' },
+                  { key: 'cm' as CycleFilterType, label: 'CM' },
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setCycleFilter(tab.key)}
+                    className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${
+                      cycleFilter === tab.key
+                        ? 'bg-white text-slate-900 shadow-md'
+                        : 'bg-white/10 text-white hover:bg-white/20'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
             </motion.div>
 
-            {/* ── Filtres cycle ── */}
-            <motion.div variants={heroItem} className="mb-6 flex justify-center">
+            {/* Stats globales */}
+            <motion.div
+              variants={heroItem}
+              className="mb-4 flex flex-wrap items-end justify-center gap-6 md:gap-10"
+            >
+              {[
+                { label: 'Apprenants', value: formatNumber(BENIN_TOTALS.students) },
+                { label: 'Enseignants', value: formatNumber(BENIN_TOTALS.teachers) },
+                { label: 'Écoles', value: formatNumber(BENIN_TOTALS.schools) },
+              ].map((stat, i) => (
+                <motion.div
+                  key={stat.label}
+                  initial={shouldReduceMotion ? false : { opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: shouldReduceMotion ? 0 : 0.3 + i * 0.08, duration: dur }}
+                  className="text-center"
+                >
+                  <p className="text-3xl font-extrabold text-white md:text-4xl">{stat.value}</p>
+                  <p className="mt-0.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
+                    {stat.label}
+                  </p>
+                </motion.div>
+              ))}
+            </motion.div>
+
+            {/* Explorer les données */}
+            <motion.div variants={heroItem} className="text-center">
+              <button
+                onClick={() => {
+                  const mapSection = document.getElementById('benin-map-section');
+                  mapSection?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-2.5 text-sm font-semibold text-slate-900 shadow-lg transition-transform hover:scale-105"
+              >
+                Explorer les données
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </motion.div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════════════════════════
+          SECTION 2 : TROIS AXES DU SIE — Cartes navy foncé
+          ════════════════════════════════════════════════════════════════════════ */}
+      <section
+        className="py-10 md:py-14"
+        style={{ background: `linear-gradient(180deg, ${NAVY_DARK}, ${NAVY_DEEP})` }}
+      >
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <motion.div
+            initial={shouldReduceMotion ? false : { opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: shouldReduceMotion ? 0 : 0.2, duration: dur }}
+            className="grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-5"
+          >
+            {axes.map((axe, index) => {
+              const Icon = axe.icon;
+              return (
+                <motion.div
+                  key={axe.title}
+                  initial={shouldReduceMotion ? false : { opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    delay: shouldReduceMotion ? 0 : 0.3 + index * 0.1,
+                    duration: dur,
+                  }}
+                  whileHover={
+                    shouldReduceMotion
+                      ? undefined
+                      : { y: -4, transition: cardSpring }
+                  }
+                  className="group rounded-2xl p-6 text-center shadow-lg transition-shadow hover:shadow-xl"
+                  style={{ background: axe.gradient }}
+                >
+                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-white/10">
+                    <Icon className="h-6 w-6 text-white" />
+                  </div>
+                  <h3 className="text-lg font-bold text-white">{axe.title}</h3>
+                  <p className="mt-1 text-sm text-slate-300">{axe.description}</p>
+                </motion.div>
+              );
+            })}
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════════════════════════
+          SECTION 3 : PARTENAIRES
+          ════════════════════════════════════════════════════════════════════════ */}
+      <section
+        className="py-8 md:py-10"
+        style={{ background: NAVY_DEEP }}
+      >
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <motion.div
+            initial={shouldReduceMotion ? false : { opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: shouldReduceMotion ? 0 : 0.4, duration: dur }}
+          >
+            <p className="mb-5 text-center text-xs font-semibold uppercase tracking-widest text-slate-500">
+              Avec le soutien de
+            </p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 max-w-3xl mx-auto">
+              {partners.map((partner, index) => (
+                <motion.div
+                  key={partner.name}
+                  initial={shouldReduceMotion ? false : { opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    delay: shouldReduceMotion ? 0 : 0.45 + index * 0.08,
+                    duration: dur,
+                  }}
+                  className="flex items-center gap-3 rounded-xl bg-white/5 px-5 py-4"
+                >
+                  <span className="text-2xl">{partner.icon}</span>
+                  <div>
+                    <p className="text-sm font-bold text-white">{partner.name}</p>
+                    <p className="text-xs text-slate-400">{partner.subtitle}</p>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════════════════════════
+          SECTION 4 : CARTE INTERACTIVE DU BÉNIN
+          ════════════════════════════════════════════════════════════════════════ */}
+      <section
+        id="benin-map-section"
+        className="bg-gradient-to-br from-slate-50 via-white to-blue-50/80 py-12 md:py-16"
+      >
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <motion.div
+            initial={shouldReduceMotion ? false : { opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: shouldReduceMotion ? 0 : 0.5, duration: dur }}
+          >
+            {/* Titre + filtres */}
+            <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-xl font-bold md:text-2xl" style={{ color: NAVY }}>
+                  L&apos;éducation du Bénin en un coup d&apos;œil
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Cliquez sur un département pour voir les statistiques détaillées
+                </p>
+              </div>
               <div className="inline-flex rounded-xl border border-slate-200/80 bg-white p-1 shadow-sm">
                 {[
                   { key: 'all' as FilterType, label: 'Tous' },
@@ -504,143 +684,41 @@ export default function PortalPage() {
                   </button>
                 ))}
               </div>
-            </motion.div>
+            </div>
 
-            {/* ── Stats globales ── */}
-            <motion.div
-              variants={heroItem}
-              className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3 max-w-2xl mx-auto"
-            >
-              {[
-                {
-                  icon: <GraduationCap className="h-6 w-6" style={{ color: GOLD }} />,
-                  label: 'APPRENANTS',
-                  value: formatNumber(BENIN_TOTALS.students),
-                },
-                {
-                  icon: <Users className="h-6 w-6" style={{ color: GOLD }} />,
-                  label: 'ENSEIGNANTS',
-                  value: formatNumber(BENIN_TOTALS.teachers),
-                },
-                {
-                  icon: <School className="h-6 w-6" style={{ color: GOLD }} />,
-                  label: 'ÉCOLES',
-                  value: formatNumber(BENIN_TOTALS.schools),
-                },
-              ].map((stat, i) => (
-                <motion.div
-                  key={stat.label}
-                  initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: shouldReduceMotion ? 0 : 0.3 + i * 0.08, duration: dur }}
-                  className="rounded-2xl border border-slate-200/80 bg-white px-5 py-4 text-center shadow-md"
-                  style={{ boxShadow: `0 0 0 1px ${GOLD}15` }}
-                >
-                  <div className="mb-2 flex justify-center">{stat.icon}</div>
-                  <p className="text-2xl font-extrabold" style={{ color: NAVY }}>
-                    {stat.value}
-                  </p>
-                  <p className="mt-0.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    {stat.label}
-                  </p>
-                </motion.div>
-              ))}
-            </motion.div>
-
-            {/* ── Carte interactive du Bénin ── */}
-            <motion.div
-              variants={heroItem}
-              className="rounded-3xl border border-slate-200/60 bg-white/95 p-6 md:p-8 shadow-xl backdrop-blur-sm"
+            {/* Carte */}
+            <div
+              className="rounded-3xl border border-slate-200/60 bg-white/95 p-4 shadow-xl backdrop-blur-sm md:p-6"
               style={{ boxShadow: `0 0 0 1px ${GOLD}10, 0 8px 32px rgba(30,58,95,0.08)` }}
             >
-              <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                  <h2 className="text-xl font-bold" style={{ color: NAVY }}>
-                    L&apos;éducation du Bénin en un coup d&apos;œil
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Cliquez sur un département pour voir les statistiques détaillées
-                  </p>
-                </div>
-              </div>
-
               <BeninMap
                 onDepartmentSelect={setSelectedDepartment}
                 selectedDepartment={selectedDepartment}
                 filter={mapFilter}
               />
-            </motion.div>
-          </motion.section>
+            </div>
+          </motion.div>
+        </div>
+      </section>
 
-          {/* ════════════════════════════════════════════════════════════
-              SECTION 2 : TROIS AXES DU SIGE
-              ════════════════════════════════════════════════════════════ */}
-          <motion.section
+      {/* ════════════════════════════════════════════════════════════════════════
+          SECTION 5 : SÉLECTION DU PORTAIL — Cartes compactes
+          ════════════════════════════════════════════════════════════════════════ */}
+      <section className="bg-gradient-to-br from-slate-50 via-white to-blue-50/80 pb-16 pt-8 md:pb-20">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <motion.div
             initial={shouldReduceMotion ? false : { opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: shouldReduceMotion ? 0 : 0.4, duration: dur }}
-            className="mb-16"
+            transition={{ delay: shouldReduceMotion ? 0 : 0.6, duration: dur }}
           >
-            <div className="text-center mb-8">
-              <h2 className="text-2xl font-bold" style={{ color: NAVY }}>
-                Trois axes du pilotage éducatif
-              </h2>
-              <p className="mt-2 text-slate-500">
-                {BRAND.name} vous accompagne à chaque étape de la gestion éducative
-              </p>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-4xl mx-auto">
-              {axes.map((axe, index) => {
-                const Icon = axe.icon;
-                return (
-                  <motion.div
-                    key={axe.title}
-                    initial={shouldReduceMotion ? false : { opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{
-                      delay: shouldReduceMotion ? 0 : 0.5 + index * 0.1,
-                      duration: dur,
-                    }}
-                    whileHover={
-                      shouldReduceMotion
-                        ? undefined
-                        : { y: -4, transition: cardSpring }
-                    }
-                    className="group rounded-2xl border border-slate-200/80 bg-white p-6 shadow-md hover:shadow-xl transition-shadow text-center"
-                  >
-                    <div
-                      className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl text-white shadow-lg"
-                      style={{ background: axe.gradient }}
-                    >
-                      <Icon className="h-7 w-7" />
-                    </div>
-                    <h3 className="text-lg font-bold" style={{ color: axe.color }}>
-                      {axe.title}
-                    </h3>
-                    <p className="mt-2 text-sm text-slate-600">{axe.description}</p>
-                  </motion.div>
-                );
-              })}
-            </div>
-          </motion.section>
-
-          {/* ════════════════════════════════════════════════════════════
-              SECTION 3 : SÉLECTION DU PORTAIL
-              ════════════════════════════════════════════════════════════ */}
-          <motion.section
-            initial={shouldReduceMotion ? false : { opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: shouldReduceMotion ? 0 : 0.55, duration: dur }}
-            className="mb-10"
-          >
-            <div className="text-center mb-8">
+            <div className="mb-6 text-center">
               <h2 className="text-2xl font-bold" style={{ color: NAVY }}>
                 Accéder à votre portail
               </h2>
-              <p className="mt-2 text-slate-500">
+              <p className="mt-1 text-sm text-slate-500">
                 Sélectionnez votre espace sécurisé {BRAND.name}
               </p>
-              <motion.div variants={heroItem} className="mt-4 flex justify-center">
+              <motion.div className="mt-3 flex justify-center">
                 <motion.button
                   type="button"
                   onClick={(e) => {
@@ -655,17 +733,12 @@ export default function PortalPage() {
                   }
                   whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
                   transition={cardSpring}
-                  className="group relative inline-flex items-center justify-center gap-2 rounded-xl border-2 border-amber-400 bg-gradient-to-r from-amber-500 to-orange-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg"
+                  className="group relative inline-flex items-center justify-center gap-2 rounded-xl border-2 border-amber-400 bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2 text-xs font-semibold text-white shadow-lg"
                   title="Ouvrir la fenêtre : choisir une école puis saisir vos identifiants"
                 >
-                  <motion.span
-                    animate={shouldReduceMotion ? undefined : { rotate: [0, -8, 8, 0] }}
-                    transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
-                  >
-                    <Code2 className="h-4 w-4" />
-                  </motion.span>
-                  <span>Mode Développement</span>
-                  <span className="absolute -right-1 -top-1 rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-md">
+                  <Code2 className="h-3.5 w-3.5" />
+                  <span>Mode Dev</span>
+                  <span className="absolute -right-1 -top-1 rounded-full bg-red-500 px-1 py-0.5 text-[8px] font-bold text-white shadow-md">
                     DEV
                   </span>
                 </motion.button>
@@ -793,22 +866,22 @@ export default function PortalPage() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={shouldReduceMotion ? undefined : { opacity: 0, y: -10, transition: { duration: dur * 0.85 } }}
                   transition={{ duration: dur, ease: 'easeOut' }}
-                  className="mx-auto mb-8 grid w-full max-w-lg grid-cols-1 gap-4 sm:max-w-none sm:gap-5 md:max-w-5xl md:grid-cols-2 lg:grid-cols-3 md:gap-6 xl:max-w-6xl"
+                  className="mx-auto grid w-full max-w-4xl grid-cols-2 gap-3 sm:gap-4 md:grid-cols-5 lg:gap-5"
                 >
                   {portalCards.map((card, index) => {
                     const Icon = card.Icon;
                     return (
                       <motion.div
                         key={card.type}
-                        initial={shouldReduceMotion ? false : { opacity: 0, y: 22 }}
+                        initial={shouldReduceMotion ? false : { opacity: 0, y: 16 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{
-                          delay: shouldReduceMotion ? 0 : 0.08 + index * 0.07,
+                          delay: shouldReduceMotion ? 0 : 0.08 + index * 0.06,
                           duration: dur,
                           ease: 'easeOut',
                         }}
-                        whileHover={shouldReduceMotion ? undefined : { y: -6, transition: cardSpring }}
-                        whileTap={shouldReduceMotion ? undefined : { scale: 0.99 }}
+                        whileHover={shouldReduceMotion ? undefined : { y: -4, transition: cardSpring }}
+                        whileTap={shouldReduceMotion ? undefined : { scale: 0.97 }}
                         onClick={() => handlePortalSelect(card.type)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
@@ -818,33 +891,19 @@ export default function PortalPage() {
                         }}
                         role="button"
                         tabIndex={0}
-                        className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-md outline-none ring-slate-200/60 transition-shadow focus-visible:ring-2 focus-visible:ring-[#C9A84C] focus-visible:ring-offset-2 hover:border-slate-300 hover:shadow-xl md:min-h-[220px] ${
-                          index === 4 && portalCards.length % 3 !== 0
-                            ? 'md:col-span-2 lg:col-span-1 md:mx-auto md:max-w-md lg:mx-0 lg:max-w-none'
-                            : ''
-                        }`}
+                        className="group relative cursor-pointer overflow-hidden rounded-xl p-4 text-center outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-[#C9A84C] focus-visible:ring-offset-2 hover:shadow-lg"
+                        style={{ background: card.accentBg }}
                       >
-                        <div className={`absolute left-0 top-0 h-1 w-full ${card.accentBar} opacity-90`} aria-hidden />
-                        <div className="flex h-full flex-row items-center gap-4 p-5 sm:p-6 md:flex-col md:items-center md:justify-between md:px-8 md:py-7 md:text-center">
-                          <motion.div
-                            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br shadow-inner sm:h-14 sm:w-14 ${card.iconBg} ring-1 ring-white/80 md:mb-1`}
-                            whileHover={shouldReduceMotion ? undefined : { scale: 1.06, rotate: -2 }}
-                            transition={cardSpring}
-                          >
-                            <Icon className={`h-6 w-6 sm:h-7 sm:w-7 ${card.iconColor}`} />
-                          </motion.div>
-                          <div className="min-w-0 flex-1 md:flex md:flex-1 md:flex-col md:items-center">
-                            <h3 className="text-lg font-bold leading-snug" style={{ color: NAVY }}>
-                              {card.title}
-                            </h3>
-                            <p className="mt-1 text-sm leading-relaxed text-slate-600">{card.subtitle}</p>
-                            <div className={`mt-3 inline-flex min-h-[40px] items-center text-sm font-semibold md:mt-auto ${card.cta}`}>
-                              <span>Accéder</span>
-                              <motion.span className="ml-2 inline-flex" initial={false} whileHover={{ x: shouldReduceMotion ? 0 : 4 }}>
-                                <ArrowRight className="h-4 w-4" aria-hidden />
-                              </motion.span>
-                            </div>
-                          </div>
+                        <div
+                          className={`mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${card.iconBg}`}
+                        >
+                          <Icon className={`h-5 w-5 ${card.iconColor}`} />
+                        </div>
+                        <h3 className="text-sm font-bold text-white leading-tight">{card.title}</h3>
+                        <p className="mt-0.5 text-[11px] text-slate-300 leading-snug">{card.subtitle}</p>
+                        <div className="mt-2 inline-flex items-center text-xs font-medium text-slate-300 group-hover:text-white transition-colors">
+                          <span>Accéder</span>
+                          <ArrowRight className="ml-1 h-3 w-3 transition-transform group-hover:translate-x-0.5" />
                         </div>
                       </motion.div>
                     );
@@ -940,59 +999,61 @@ export default function PortalPage() {
                 </motion.div>
               )}
             </AnimatePresence>
-          </motion.section>
+          </motion.div>
+        </div>
+      </section>
 
-          {/* ════════════════════════════════════════════════════════════
-              SECTION 4 : NOTRE MISSION + SÉCURITÉ
-              ════════════════════════════════════════════════════════════ */}
-          <motion.section
+      {/* ════════════════════════════════════════════════════════════════════════
+          SECTION 6 : MISSION + SÉCURITÉ
+          ════════════════════════════════════════════════════════════════════════ */}
+      <section className="pb-10 pt-4 md:pb-14">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <motion.div
             initial={shouldReduceMotion ? false : { opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: shouldReduceMotion ? 0 : 0.7, duration: dur }}
-            className="mb-10"
           >
             <div className="rounded-3xl overflow-hidden" style={{ background: `linear-gradient(135deg, ${NAVY}, ${NAVY_DARK})` }}>
-              <div className="px-8 py-12 md:px-16 md:py-16 text-center">
-                <h2 className="text-2xl md:text-3xl font-bold text-white mb-4">
+              <div className="px-8 py-10 md:px-16 md:py-12 text-center">
+                <h2 className="text-2xl md:text-3xl font-bold text-white mb-3">
                   Notre Mission
                 </h2>
-                <p className="text-slate-300 max-w-2xl mx-auto mb-6 text-lg">
+                <p className="text-slate-300 max-w-2xl mx-auto mb-5">
                   L&apos;éducation est la clé d&apos;un avenir meilleur pour une jeunesse épanouie. {BRAND.name} accompagne les établissements du Bénin vers l&apos;excellence éducative grâce au numérique.
                 </p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-3xl mx-auto mt-8">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl mx-auto">
                   {[
                     { title: 'Développement des compétences pour l\'avenir', icon: '🎓' },
                     { title: 'Accès équitable à l\'éducation', icon: '⚖️' },
                     { title: 'Promotion de l\'épanouissement personnel', icon: '🌟' },
                   ].map((item) => (
                     <div key={item.title} className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.08)' }}>
-                      <div className="text-3xl mb-2">{item.icon}</div>
-                      <p className="text-sm font-medium text-white/90">{item.title}</p>
+                      <div className="text-2xl mb-1">{item.icon}</div>
+                      <p className="text-xs font-medium text-white/90">{item.title}</p>
                     </div>
                   ))}
                 </div>
               </div>
             </div>
-          </motion.section>
+          </motion.div>
 
-          {/* ── Badge sécurité ── */}
+          {/* Badge sécurité */}
           <motion.div
             initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: shouldReduceMotion ? 0 : 0.8, duration: dur }}
-            className="mt-10 flex justify-center"
+            className="mt-6 flex justify-center"
           >
             <div
-              className="relative z-0 inline-flex items-center gap-2 rounded-full border border-slate-200/90 bg-white/90 px-5 py-2.5 text-sm text-slate-600 shadow-sm backdrop-blur-sm"
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200/90 bg-white/90 px-5 py-2 text-sm text-slate-600 shadow-sm"
               style={{ boxShadow: `0 0 0 1px ${GOLD}22` }}
             >
               <Shield className="h-4 w-4 text-emerald-600" />
               <span>Vous êtes sur un portail officiel sécurisé {BRAND.name}</span>
             </div>
           </motion.div>
-
         </div>
-      </main>
+      </section>
     </div>
   );
 }

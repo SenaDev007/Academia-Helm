@@ -241,7 +241,7 @@ export default function BeninMap({
       </div>
 
       {/* ── Panneau de détails ────────────────────────────────────── */}
-      <div className="lg:w-80 xl:w-96 flex-shrink-0">
+      <div className="lg:w-72 xl:w-80 flex-shrink-0">
         <AnimatePresence mode="wait">
           {activeDept ? (
             <motion.div
@@ -254,32 +254,32 @@ export default function BeninMap({
             >
               {/* En-tête département */}
               <div
-                className="px-5 py-4"
+                className="px-4 py-3"
                 style={{ background: `linear-gradient(135deg, ${NAVY}, ${NAVY_DARK})` }}
               >
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs font-medium uppercase tracking-wider" style={{ color: GOLD_LIGHT }}>
+                    <p className="text-[10px] font-medium uppercase tracking-wider" style={{ color: GOLD_LIGHT }}>
                       Département ({BENIN_DEPARTMENTS.indexOf(activeDept) + 1}/{BENIN_DEPARTMENTS.length})
                     </p>
-                    <h3 className="mt-1 text-xl font-bold text-white">{activeDept.name}</h3>
-                    <p className="mt-0.5 text-xs text-slate-300 flex items-center gap-1">
+                    <h3 className="mt-0.5 text-lg font-bold text-white">{activeDept.name}</h3>
+                    <p className="mt-0.5 text-[11px] text-slate-300 flex items-center gap-1">
                       <MapPin className="h-3 w-3" />
                       {activeDept.capital} · {formatNumber(activeDept.area)} km²
                     </p>
                   </div>
                   <div
-                    className="flex h-12 w-12 items-center justify-center rounded-xl"
+                    className="flex h-10 w-10 items-center justify-center rounded-lg"
                     style={{ background: `${GOLD}22` }}
                   >
-                    <School className="h-6 w-6" style={{ color: GOLD }} />
+                    <School className="h-5 w-5" style={{ color: GOLD }} />
                   </div>
                 </div>
               </div>
 
               {/* Statistiques */}
-              <div className="p-5 space-y-4">
-                <div className="grid grid-cols-2 gap-3">
+              <div className="p-4 space-y-3">
+                <div className="grid grid-cols-2 gap-2">
                   <StatCard
                     icon={<School className="h-4 w-4" style={{ color: NAVY }} />}
                     label="Écoles"
@@ -307,7 +307,7 @@ export default function BeninMap({
                 </div>
 
                 {/* Répartition Public / Privé */}
-                <div className="rounded-xl bg-slate-50 p-4 space-y-2">
+                <div className="rounded-lg bg-slate-50 p-3 space-y-2">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Répartition
                   </p>
@@ -353,14 +353,14 @@ export default function BeninMap({
 
                 {/* Communes */}
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
                     Communes ({activeDept.communes.length})
                   </p>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="flex flex-wrap gap-1">
                     {activeDept.communes.map((commune) => (
                       <span
                         key={commune}
-                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700"
+                        className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-700"
                       >
                         <MapPin className="h-3 w-3 text-slate-400" />
                         {commune}
@@ -427,14 +427,14 @@ function StatCard({
 }) {
   return (
     <div
-      className="rounded-xl p-3 border border-slate-100"
+      className="rounded-lg p-2.5 border border-slate-100"
       style={{ background: `linear-gradient(135deg, ${accent}08, ${accent}03)` }}
     >
-      <div className="flex items-center gap-2 mb-1">
+      <div className="flex items-center gap-1.5 mb-0.5">
         {icon}
-        <span className="text-xs text-slate-500">{label}</span>
+        <span className="text-[11px] text-slate-500">{label}</span>
       </div>
-      <p className="text-lg font-bold" style={{ color: accent }}>
+      <p className="text-base font-bold" style={{ color: accent }}>
         {value}
       </p>
     </div>

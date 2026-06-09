@@ -240,7 +240,13 @@ export default function LoginPage() {
 
     // Attendre que la session serveur soit disponible (cookie persisté)
     // Sur mobile, les cookies ne sont pas toujours persistés immédiatement
-    await waitForServerSession();
+    const sessionReady = await waitForServerSession();
+    if (!sessionReady) {
+      // Cookie non encore disponible — recharger la page pour forcer la persistance
+      // au lieu de rediriger vers une page qui ne trouvera pas le cookie
+      window.location.reload();
+      return;
+    }
     window.location.href = '/app/platform';
   };
 
@@ -277,7 +283,12 @@ export default function LoginPage() {
     saveEmailForTenant(schoolCredentials.email, tenantKey);
 
     // Attendre que la session serveur soit disponible (cookie persisté)
-    await waitForServerSession();
+    // Sur mobile, les cookies ne sont pas toujours persistés immédiatement
+    const sessionReady = await waitForServerSession();
+    if (!sessionReady) {
+      window.location.reload();
+      return;
+    }
 
     const isPlatformOwner =
       data.user?.role === 'PLATFORM_OWNER' ||
@@ -370,7 +381,12 @@ export default function LoginPage() {
     saveEmailForTenant(schoolCredentials.email, tenantKey);
 
     // Attendre que la session serveur soit disponible (cookie persisté)
-    await waitForServerSession();
+    // Sur mobile, les cookies ne sont pas toujours persistés immédiatement
+    const sessionReady = await waitForServerSession();
+    if (!sessionReady) {
+      window.location.reload();
+      return;
+    }
 
     const redirectUrl = getTenantRedirectUrl({
       tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,
@@ -412,7 +428,12 @@ export default function LoginPage() {
     });
 
     // Attendre que la session serveur soit disponible (cookie persisté)
-    await waitForServerSession();
+    // Sur mobile, les cookies ne sont pas toujours persistés immédiatement
+    const sessionReady = await waitForServerSession();
+    if (!sessionReady) {
+      window.location.reload();
+      return;
+    }
 
     const redirectUrl = getTenantRedirectUrl({
       tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,
@@ -482,7 +503,12 @@ export default function LoginPage() {
     });
 
     // Attendre que la session serveur soit disponible (cookie persisté)
-    await waitForServerSession();
+    // Sur mobile, les cookies ne sont pas toujours persistés immédiatement
+    const sessionReady = await waitForServerSession();
+    if (!sessionReady) {
+      window.location.reload();
+      return;
+    }
 
     const redirectUrl = getTenantRedirectUrl({
       tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,

@@ -99,6 +99,17 @@ export function PostLoginFlowWrapper({
 
     // Gérer les erreurs critiques
     if (err.code === 'AUTH_ERROR') {
+      // Sur mobile, le cookie de session peut ne pas être encore disponible
+      // après une redirection cross-domain. Essayer un reload avant d'abandonner.
+      if (typeof window !== 'undefined') {
+        const retryCount = parseInt(sessionStorage.getItem('auth_retry_count') || '0');
+        if (retryCount < 2) {
+          sessionStorage.setItem('auth_retry_count', String(retryCount + 1));
+          window.location.reload();
+          return;
+        }
+        sessionStorage.removeItem('auth_retry_count');
+      }
       // IMPORTANT: Utiliser window.location.href au lieu de router.push
       // pour forcer un rechargement complet de la page, ce qui garantit
       // que les cookies sont correctement traités sur mobile.

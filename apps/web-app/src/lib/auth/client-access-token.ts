@@ -176,6 +176,13 @@ export async function waitForServerSession(
         headers: { 'Cache-Control': 'no-cache' },
       });
       if (res.ok) {
+        // Mobile browsers (iOS Safari, Chrome Android) don't always persist
+        // cookies from fetch() immediately. Add a small delay on mobile to
+        // ensure the cookie is written to disk before any cross-domain redirect.
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        if (isMobile) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
         return true;
       }
     } catch {

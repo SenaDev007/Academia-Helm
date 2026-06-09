@@ -8,17 +8,19 @@ import { Controller, Get, Query, Req } from '@nestjs/common';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { Public } from '../../auth/decorators/public.decorator';
 import { SchoolSearchService } from '../services/school-search.service';
+import { MapStatsService } from '../services/map-stats.service';
 
 @Controller('public/schools')
 @Public()
 export class PublicPortalController {
   constructor(
     private readonly schoolSearchService: SchoolSearchService,
+    private readonly mapStatsService: MapStatsService,
   ) {}
 
   /**
    * Liste tous les établissements actifs (pour sélecteur)
-   * SkipThrottle : le front appelle via le BFF Next (Vercel) → Nest voit peu d’IPs sortantes ;
+   * SkipThrottle : le front appelle via le BFF Next (Vercel) → Nest voit peu d'IPs sortantes ;
    * un plafond strict (ex. 10/min) faisait partager le quota entre tous les utilisateurs (portail vide / erreurs).
    */
   @Public() // ✅ Décorateur au niveau méthode pour garantir la détection
@@ -47,5 +49,15 @@ export class PublicPortalController {
 
     return this.schoolSearchService.searchSchools(searchTerm, ipAddress);
   }
-}
 
+  /**
+   * Statistiques de la carte du Bénin — écoles Academia Helm par département.
+   * Données temps réel groupées par département géographique.
+   */
+  @Public()
+  @Get('map-stats')
+  @SkipThrottle()
+  async getMapStats() {
+    return this.mapStatsService.getMapStats();
+  }
+}

@@ -12,6 +12,7 @@ import { SchoolSearchService } from './services/school-search.service';
 import { PortalSessionService } from './services/portal-session.service';
 import { OrionInitService } from './services/orion-init.service';
 import { PortalAuthService } from './services/portal-auth.service';
+import { MapStatsService } from './services/map-stats.service';
 import { PublicPortalController } from './controllers/public-portal.controller';
 import { PublicPlatformReviewsController } from './controllers/public-platform-reviews.controller';
 import { PlatformMarketingReviewService } from './services/platform-marketing-review.service';
@@ -41,6 +42,7 @@ import { OrionModule } from '../orion/orion.module';
     PortalSessionService,
     OrionInitService,
     PortalAuthService,
+    MapStatsService,
   ],
   controllers: [
     PublicPlatformReviewsController,
@@ -54,6 +56,7 @@ import { OrionModule } from '../orion/orion.module';
     PortalSessionService,
     OrionInitService,
     PortalAuthService,
+    MapStatsService,
   ],
 })
 export class PortalModule {}

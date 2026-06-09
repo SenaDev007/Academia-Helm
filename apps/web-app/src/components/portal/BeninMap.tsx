@@ -2,8 +2,12 @@
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MapPin, GraduationCap, Users, BookOpen } from 'lucide-react';
+import { MapPin, GraduationCap, Users, BookOpen, Building2, ExternalLink } from 'lucide-react';
 import { BENIN_DEPARTMENTS, type DepartmentData as ExternalDepartmentData } from '@/data/benin-departments';
+
+/* ─── Couleurs Academia Helm ─── */
+const NAVY = '#1E3A5F';
+const GOLD = '#C9A84C';
 
 /* ─── Benin 12 departments with exact SVG paths from emp.educmaster.bj ─── */
 interface DepartmentData {
@@ -153,6 +157,32 @@ function getDepartmentColor(count: number, maxCount: number): string {
 
 type FilterType = 'all' | 'public' | 'private';
 
+/* ─── Academia Helm real-time data types ─── */
+interface AcademiaSchoolInfo {
+  id: string;
+  name: string;
+  slug: string;
+  logoUrl: string | null;
+  city: string | null;
+  schoolType: string | null;
+}
+
+interface DepartmentMapStats {
+  code: string;
+  name: string;
+  academiaSchoolCount: number;
+  academiaPublicCount: number;
+  academiaPrivateCount: number;
+  schools: AcademiaSchoolInfo[];
+}
+
+interface MapStatsResponse {
+  departments: DepartmentMapStats[];
+  totalSchools: number;
+  totalPublic: number;
+  totalPrivate: number;
+}
+
 interface BeninMapProps {
   onDepartmentSelect?: (dept: ExternalDepartmentData | null) => void;
   selectedDepartment?: ExternalDepartmentData | null;
@@ -180,8 +210,33 @@ export default function BeninMap({ onDepartmentSelect, selectedDepartment, filte
   const [selectedDept, setSelectedDept] = useState<string | null>(null);
   const [internalFilter, setInternalFilter] = useState<FilterType>('all');
 
+  // Academia Helm real-time data
+  const [academiaStats, setAcademiaStats] = useState<MapStatsResponse | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+
   // Use external filter when provided, otherwise use internal state
   const filter = externalFilter ?? internalFilter;
+
+  // Fetch Academia Helm map stats on mount
+  useEffect(() => {
+    let cancelled = false;
+    setStatsLoading(true);
+
+    fetch('/api/public/schools/map-stats')
+      .then((res) => res.json())
+      .then((data: MapStatsResponse) => {
+        if (!cancelled) {
+          setAcademiaStats(data);
+          setStatsLoading(false);
+        }
+      })
+      .catch((err) => {
+        console.warn('[BeninMap] Failed to load Academia Helm stats:', err);
+        if (!cancelled) setStatsLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, []);
 
   // Sync external selectedDepartment with internal selected state
   useEffect(() => {
@@ -195,6 +250,30 @@ export default function BeninMap({ onDepartmentSelect, selectedDepartment, filte
       setSelectedDept(null);
     }
   }, [selectedDepartment]);
+
+  // Build a lookup: dept code → Academia Helm stats
+  const academiaByCode = useMemo(() => {
+    const map = new Map<string, DepartmentMapStats>();
+    if (academiaStats?.departments) {
+      for (const dept of academiaStats.departments) {
+        map.set(dept.code, dept);
+      }
+    }
+    return map;
+  }, [academiaStats]);
+
+  // Get Academia Helm stats for a given internal dept ID
+  const getAcademiaStats = useCallback((deptId: string): DepartmentMapStats | undefined => {
+    const code = INTERNAL_TO_EXTERNAL_CODE[deptId];
+    return code ? academiaByCode.get(code) : undefined;
+  }, [academiaByCode]);
+
+  // Total Academia Helm schools
+  const academiaTotal = useMemo(() => ({
+    schools: academiaStats?.totalSchools ?? 0,
+    public: academiaStats?.totalPublic ?? 0,
+    private: academiaStats?.totalPrivate ?? 0,
+  }), [academiaStats]);
 
   const maxSchoolCount = useMemo(() =>
     Math.max(...DEPARTMENTS.map(d => d.schoolCount)), []);
@@ -244,11 +323,11 @@ export default function BeninMap({ onDepartmentSelect, selectedDepartment, filte
     <div className="w-full">
       {/* Header */}
       <div className="mb-6 text-center">
-        <h2 className="text-2xl font-bold text-slate-900" style={{ color: '#1E3A5F' }}>
+        <h2 className="text-2xl font-bold text-slate-900" style={{ color: NAVY }}>
           La maternelle et le primaire en un coup d&apos;œil
         </h2>
 
-        {/* Stats strip */}
+        {/* Stats strip — National + Academia Helm */}
         <div className="mt-4 flex flex-wrap items-center justify-center gap-4 sm:gap-6">
           <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
             <BookOpen className="h-4 w-4 text-blue-500" />
@@ -267,6 +346,17 @@ export default function BeninMap({ onDepartmentSelect, selectedDepartment, filte
             <span className="text-emerald-700">{totals.teachers.toLocaleString('fr-FR')}</span>
             <span className="text-slate-500 font-normal">enseignants</span>
           </div>
+          {/* Academia Helm total badge */}
+          {academiaTotal.schools > 0 && (
+            <>
+              <div className="text-slate-300 hidden sm:inline">•</div>
+              <div className="flex items-center gap-1.5 text-sm font-semibold" style={{ color: NAVY }}>
+                <Building2 className="h-4 w-4" style={{ color: GOLD }} />
+                <span style={{ color: GOLD }}>{academiaTotal.schools.toLocaleString('fr-FR')}</span>
+                <span className="text-slate-500 font-normal">sur Academia Helm</span>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -313,6 +403,8 @@ export default function BeninMap({ onDepartmentSelect, selectedDepartment, filte
               const isSelected = selectedDept === dept.id;
               const fillColor = getDeptFillColor(dept);
               const isDark = getDepartmentColorIndex(dept.schoolCount, maxSchoolCount) >= 4;
+              const ahStats = getAcademiaStats(dept.id);
+              const hasAcademiaSchools = ahStats && ahStats.academiaSchoolCount > 0;
 
               return (
                 <g
@@ -365,13 +457,58 @@ export default function BeninMap({ onDepartmentSelect, selectedDepartment, filte
                   >
                     {dept.name}
                   </text>
+
+                  {/* Academia Helm marker — school icon badge on departments with AH schools */}
+                  {hasAcademiaSchools && (
+                    <g
+                      className="pointer-events-none"
+                      transform={`translate(${dept.labelX + 18}, ${dept.labelY - 16})`}
+                    >
+                      {/* Badge circle with AH colors */}
+                      <circle
+                        r="10"
+                        fill={NAVY}
+                        stroke={GOLD}
+                        strokeWidth="1.5"
+                        style={{ filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.3))' }}
+                      />
+                      {/* Graduation cap icon (simplified SVG) */}
+                      <path
+                        d="M-5.5 0 L0 -3.5 L5.5 0 L0 2 Z"
+                        fill={GOLD}
+                        transform="translate(0, -1)"
+                      />
+                      <rect
+                        x="-1"
+                        y="-1"
+                        width="2"
+                        height="3.5"
+                        fill={GOLD}
+                        transform="translate(0, 0.5)"
+                      />
+                      {/* Count text for 2+ schools */}
+                      {ahStats.academiaSchoolCount > 1 && (
+                        <text
+                          x="12"
+                          y="3"
+                          fontSize="8"
+                          fontWeight="bold"
+                          fill={GOLD}
+                          className="pointer-events-none select-none"
+                          style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}
+                        >
+                          {ahStats.academiaSchoolCount}
+                        </text>
+                      )}
+                    </g>
+                  )}
                 </g>
               );
             })}
           </svg>
         </div>
 
-        {/* Side info panel — styled like emp.educmaster.bj */}
+        {/* Side info panel — dual: National stats + Academia Helm schools */}
         <AnimatePresence mode="wait">
           {activeDept ? (
             <motion.div
@@ -408,7 +545,12 @@ export default function BeninMap({ onDepartmentSelect, selectedDepartment, filte
                 </h3>
               </div>
 
-              {/* Stats table */}
+              {/* ── Section 1: National stats (EducMaster) ── */}
+              <div className="px-5 pb-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
+                  Statistiques nationales
+                </p>
+              </div>
               <div className="px-5 pb-3">
                 <table className="w-full text-sm">
                   <tbody>
@@ -441,7 +583,7 @@ export default function BeninMap({ onDepartmentSelect, selectedDepartment, filte
               </div>
 
               {/* Public / Private split */}
-              <div className="px-5 pb-4 flex items-center gap-4 text-xs">
+              <div className="px-5 pb-3 flex items-center gap-4 text-xs">
                 <span>
                   <strong className="text-slate-700">Public</strong>{' '}
                   {activeDept.publicCount.toLocaleString('fr-FR')} · {publicPercent(activeDept)} %
@@ -451,6 +593,106 @@ export default function BeninMap({ onDepartmentSelect, selectedDepartment, filte
                   {activeDept.privateCount.toLocaleString('fr-FR')} · {privatePercent(activeDept)} %
                 </span>
               </div>
+
+              {/* ── Section 2: Academia Helm real-time data ── */}
+              {(() => {
+                const ahDeptStats = getAcademiaStats(activeDept.id);
+                const hasAH = ahDeptStats && ahDeptStats.academiaSchoolCount > 0;
+                return (
+                  <>
+                    {/* Divider with AH branding */}
+                    <div className="mx-5 border-t-2 my-1" style={{ borderColor: GOLD }} />
+                    <div className="px-5 pt-2 pb-2">
+                      <div className="flex items-center gap-2">
+                        <Building2 className="h-3.5 w-3.5" style={{ color: GOLD }} />
+                        <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: NAVY }}>
+                          Sur Academia Helm
+                        </p>
+                      </div>
+                    </div>
+
+                    {hasAH ? (
+                      <>
+                        {/* AH school count */}
+                        <div className="px-5 pb-2">
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-2xl font-extrabold" style={{ color: NAVY }}>
+                              {ahDeptStats.academiaSchoolCount}
+                            </span>
+                            <span className="text-sm font-medium text-slate-500">
+                              école{ahDeptStats.academiaSchoolCount > 1 ? 's' : ''} inscrite{ahDeptStats.academiaSchoolCount > 1 ? 's' : ''}
+                            </span>
+                          </div>
+                          {/* AH public/private split */}
+                          <div className="mt-1 flex items-center gap-3 text-xs">
+                            <span className="flex items-center gap-1">
+                              <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: NAVY }} />
+                              <strong className="text-slate-700">Public</strong>{' '}
+                              {ahDeptStats.academiaPublicCount}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: GOLD }} />
+                              <strong className="text-slate-700">Privé</strong>{' '}
+                              {ahDeptStats.academiaPrivateCount}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* AH schools list */}
+                        {ahDeptStats.schools.length > 0 && (
+                          <div className="px-5 pb-3">
+                            <div className="max-h-32 overflow-y-auto space-y-1.5">
+                              {ahDeptStats.schools.map((school) => (
+                                <a
+                                  key={school.id}
+                                  href={`/portal?school=${school.slug}`}
+                                  className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs transition-colors hover:bg-slate-50 group"
+                                >
+                                  {/* School logo or icon */}
+                                  {school.logoUrl ? (
+                                    <img
+                                      src={school.logoUrl}
+                                      alt=""
+                                      className="h-5 w-5 rounded object-cover"
+                                    />
+                                  ) : (
+                                    <div
+                                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[8px] font-bold text-white"
+                                      style={{ backgroundColor: NAVY }}
+                                    >
+                                      {school.name.charAt(0).toUpperCase()}
+                                    </div>
+                                  )}
+                                  <span className="flex-1 truncate font-medium text-slate-700 group-hover:text-slate-900">
+                                    {school.name}
+                                  </span>
+                                  {school.schoolType && (
+                                    <span
+                                      className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold text-white"
+                                      style={{ backgroundColor: school.schoolType === 'PRIMAIRE' ? NAVY : GOLD }}
+                                    >
+                                      {school.schoolType}
+                                    </span>
+                                  )}
+                                  <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-slate-600 shrink-0" />
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="px-5 pb-3">
+                        <p className="text-xs text-slate-400 italic">
+                          {statsLoading
+                            ? 'Chargement...'
+                            : 'Aucune école inscrite sur Academia Helm dans ce département'}
+                        </p>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
 
               {/* Color indicator bar */}
               <div
@@ -474,6 +716,12 @@ export default function BeninMap({ onDepartmentSelect, selectedDepartment, filte
                 <p className="text-xs text-slate-400 mt-1">
                   pour voir les statistiques détaillées
                 </p>
+                {academiaTotal.schools > 0 && (
+                  <div className="mt-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium" style={{ backgroundColor: `${GOLD}22`, color: NAVY }}>
+                    <Building2 className="h-3.5 w-3.5" style={{ color: GOLD }} />
+                    {academiaTotal.schools} école{academiaTotal.schools > 1 ? 's' : ''} sur Academia Helm
+                  </div>
+                )}
               </div>
             </motion.div>
           )}
@@ -481,19 +729,30 @@ export default function BeninMap({ onDepartmentSelect, selectedDepartment, filte
       </div>
 
       {/* Legend */}
-      <div className="mt-5 flex items-center justify-center gap-2 text-xs text-slate-500">
-        <span>Moins</span>
-        <div className="flex h-3 w-32 rounded overflow-hidden">
-          {COLOR_SCALE.map((color, i) => (
-            <div
-              key={i}
-              className="flex-1"
-              style={{ backgroundColor: color }}
-            />
-          ))}
+      <div className="mt-5 flex flex-wrap items-center justify-center gap-3 text-xs text-slate-500">
+        <div className="flex items-center gap-2">
+          <span>Moins</span>
+          <div className="flex h-3 w-32 rounded overflow-hidden">
+            {COLOR_SCALE.map((color, i) => (
+              <div
+                key={i}
+                className="flex-1"
+                style={{ backgroundColor: color }}
+              />
+            ))}
+          </div>
+          <span>Plus</span>
+          <span className="text-slate-400 ml-1">Écoles par département</span>
         </div>
-        <span>Plus</span>
-        <span className="text-slate-400 ml-1">Écoles par département</span>
+        {/* Academia Helm marker legend */}
+        <div className="flex items-center gap-1.5 border-l border-slate-200 pl-3">
+          <svg width="16" height="16" viewBox="0 0 20 20">
+            <circle cx="10" cy="10" r="8" fill={NAVY} stroke={GOLD} strokeWidth="1.5" />
+            <path d="M5.5 10 L10 6.5 L14.5 10 L10 12 Z" fill={GOLD} transform="translate(0, -1)" />
+            <rect x="9" y="10" width="2" height="3.5" fill={GOLD} />
+          </svg>
+          <span style={{ color: NAVY }} className="font-medium">Écoles Academia Helm</span>
+        </div>
       </div>
     </div>
   );

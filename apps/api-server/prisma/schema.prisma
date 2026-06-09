@@ -2108,6 +2108,8 @@ model School {
   motto                    String?
   slogan                   String?
   address                  String?
+  city                     String?
+  department               String?
   primaryPhone             String?
   secondaryPhone           String?
   primaryEmail             String?

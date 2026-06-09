@@ -244,7 +244,7 @@ export class StaffPrismaService {
     const allowedFields = [
       'firstName', 'lastName', 'gender', 'dateOfBirth', 'birthDate',
       'phone', 'email', 'address', 'position', 'department',
-      'contractType', 'status', 'qualifications', 'notes',
+      'hireDate', 'contractType', 'status', 'qualifications', 'notes',
       'academicYearId', 'schoolLevelId',
       'nationality', 'maritalStatus', 'numberOfChildren',
       'nationalId', 'cnssNumber', 'ifuNumber',
@@ -274,6 +274,15 @@ export class StaffPrismaService {
         } else {
           updateData[df] = new Date(updateData[df]);
         }
+      }
+    }
+
+    // Handle integer fields — convert empty strings to null
+    if ('numberOfChildren' in updateData) {
+      if (updateData.numberOfChildren === '' || updateData.numberOfChildren === null || updateData.numberOfChildren === undefined) {
+        updateData.numberOfChildren = null;
+      } else {
+        updateData.numberOfChildren = parseInt(updateData.numberOfChildren, 10) || null;
       }
     }
 

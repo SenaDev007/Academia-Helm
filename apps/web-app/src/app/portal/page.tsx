@@ -21,10 +21,15 @@ import {
   Shield,
   Code2,
   X,
+  MapPin,
+  School,
+  TrendingUp,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import PremiumHeader from '@/components/layout/PremiumHeader';
 import SchoolSearch from '@/components/portal/SchoolSearch';
+import BeninMap from '@/components/portal/BeninMap';
+import { BENIN_DEPARTMENTS, BENIN_TOTALS, type DepartmentData } from '@/data/benin-departments';
 import { useTenantRedirect } from '@/lib/hooks/useTenantRedirect';
 import { BRAND } from '@/lib/brand';
 import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-email';
@@ -33,6 +38,7 @@ import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getModalMotion, getMotionDuration } from '@/lib/motion/presets';
 
 type PortalType = 'PLATFORM' | 'SCHOOL' | 'TEACHER' | 'PARENT' | 'PUBLIC' | null;
+type MapFilterType = 'all' | 'public' | 'private';
 
 interface School {
   id: string;
@@ -68,6 +74,8 @@ export default function PortalPage() {
   const [devEmail, setDevEmail] = useState('');
   const [devPassword, setDevPassword] = useState('');
   const [isDevLoggingIn, setIsDevLoggingIn] = useState(false);
+  const [selectedDepartment, setSelectedDepartment] = useState<DepartmentData | null>(null);
+  const [mapFilter, setMapFilter] = useState<MapFilterType>('all');
   const { redirectToTenant, getTenantRedirectUrl } = useTenantRedirect();
   const { shouldReduceMotion } = useMotionBudget();
 
@@ -863,6 +871,80 @@ export default function PortalPage() {
               </motion.div>
             )}
           </AnimatePresence>
+
+          {/* ── Carte interactive du Bénin ─────────────────────────────── */}
+          {!selectedPortal && (
+            <motion.section
+              initial={shouldReduceMotion ? false : { opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: shouldReduceMotion ? 0 : 0.35, duration: dur, ease: 'easeOut' }}
+              className="mt-16"
+            >
+              <div className="mb-8 text-center">
+                <h2
+                  className="text-2xl font-extrabold tracking-tight md:text-3xl"
+                  style={{ color: NAVY }}
+                >
+                  Nos établissements au Bénin
+                </h2>
+                <p className="mt-2 text-sm text-slate-600">
+                  Explorez la carte pour découvrir les écoles par département
+                </p>
+                <div className="mt-4 flex items-center justify-center gap-6">
+                  <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                    <School className="h-4 w-4" style={{ color: NAVY }} />
+                    <span className="font-semibold">{new Intl.NumberFormat('fr-FR').format(BENIN_TOTALS.schools)}</span>
+                    <span>écoles</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                    <GraduationCap className="h-4 w-4" style={{ color: NAVY }} />
+                    <span className="font-semibold">{new Intl.NumberFormat('fr-FR').format(BENIN_TOTALS.teachers)}</span>
+                    <span>enseignants</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                    <Users className="h-4 w-4" style={{ color: NAVY }} />
+                    <span className="font-semibold">{new Intl.NumberFormat('fr-FR').format(BENIN_TOTALS.students)}</span>
+                    <span>apprenants</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Filtres Public / Privé */}
+              <div className="mb-6 flex items-center justify-center gap-2">
+                {([
+                  { key: 'all' as const, label: 'Tous statuts' },
+                  { key: 'public' as const, label: 'Public' },
+                  { key: 'private' as const, label: 'Privé' },
+                ]).map((f) => (
+                  <button
+                    key={f.key}
+                    type="button"
+                    onClick={() => setMapFilter(f.key)}
+                    className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-colors ${
+                      mapFilter === f.key
+                        ? 'text-white shadow-md'
+                        : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300'
+                    }`}
+                    style={
+                      mapFilter === f.key
+                        ? { background: `linear-gradient(135deg, ${NAVY}, #144798)` }
+                        : undefined
+                    }
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-6 shadow-lg backdrop-blur-sm md:p-8">
+                <BeninMap
+                  onDepartmentSelect={setSelectedDepartment}
+                  selectedDepartment={selectedDepartment}
+                  filter={mapFilter}
+                />
+              </div>
+            </motion.section>
+          )}
 
           <motion.div
             initial={

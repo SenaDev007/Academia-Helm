@@ -577,14 +577,39 @@ export default function StaffDetailPage() {
                   <input type="tel" className={inputClass} value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className={labelClass}>Adresse</label>
+                <input type="text" className={inputClass} value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className={labelClass}>Adresse</label>
-                  <input type="text" className={inputClass} value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
+                  <label className={labelClass}>Nom du contact d&apos;urgence</label>
+                  <input type="text" className={inputClass} value={editForm.emergencyContactName} onChange={(e) => setEditForm({ ...editForm, emergencyContactName: e.target.value })} placeholder='Ex: TOKPONWOUE' />
                 </div>
                 <div>
-                  <label className={labelClass}>Contact d&apos;urgence</label>
-                  <input type="text" className={inputClass} value={editForm.emergencyContact} onChange={(e) => setEditForm({ ...editForm, emergencyContact: e.target.value })} placeholder='Nom — Tél — Lien' />
+                  <label className={labelClass}>Tél. d&apos;urgence</label>
+                  <input type="tel" className={inputClass} value={editForm.emergencyContactPhone} onChange={(e) => setEditForm({ ...editForm, emergencyContactPhone: e.target.value })} placeholder='Ex: 0198765445' />
+                </div>
+                <div>
+                  <label className={labelClass}>Lien de parenté</label>
+                  <select className={inputClass} value={editForm.emergencyContactRelationship} onChange={(e) => setEditForm({ ...editForm, emergencyContactRelationship: e.target.value })}>
+                    <option value="">— Non renseigné —</option>
+                    <option value="Époux">Époux</option>
+                    <option value="Épouse">Épouse</option>
+                    <option value="Père">Père</option>
+                    <option value="Mère">Mère</option>
+                    <option value="Frère">Frère</option>
+                    <option value="Sœur">Sœur</option>
+                    <option value="Fils">Fils</option>
+                    <option value="Fille">Fille</option>
+                    <option value="Oncle">Oncle</option>
+                    <option value="Tante">Tante</option>
+                    <option value="Cousin">Cousin</option>
+                    <option value="Cousine">Cousine</option>
+                    <option value="Ami">Ami(e)</option>
+                    <option value="Tuteur">Tuteur/Tutrice</option>
+                    <option value="Autre">Autre</option>
+                  </select>
                 </div>
               </div>
 
@@ -641,45 +666,6 @@ export default function StaffDetailPage() {
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Date de naissance</label>
-                  <input type="date" className={inputClass} value={editForm.birthDate} onChange={(e) => setEditForm({ ...editForm, birthDate: e.target.value })} />
-                </div>
-                <div>
-                  <label className={labelClass}>Adresse</label>
-                  <input type="text" className={inputClass} value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Nom du contact d&apos;urgence</label>
-                  <input type="text" className={inputClass} value={editForm.emergencyContactName} onChange={(e) => setEditForm({ ...editForm, emergencyContactName: e.target.value })} placeholder='Ex: TOKPONWOUE' />
-                </div>
-                <div>
-                  <label className={labelClass}>Tél. d&apos;urgence</label>
-                  <input type="tel" className={inputClass} value={editForm.emergencyContactPhone} onChange={(e) => setEditForm({ ...editForm, emergencyContactPhone: e.target.value })} placeholder='Ex: 0198765445' />
-                </div>
-                <div>
-                  <label className={labelClass}>Lien de parenté</label>
-                  <select className={inputClass} value={editForm.emergencyContactRelationship} onChange={(e) => setEditForm({ ...editForm, emergencyContactRelationship: e.target.value })}>
-                    <option value="">— Non renseigné —</option>
-                    <option value="Époux">Époux</option>
-                    <option value="Épouse">Épouse</option>
-                    <option value="Père">Père</option>
-                    <option value="Mère">Mère</option>
-                    <option value="Frère">Frère</option>
-                    <option value="Sœur">Sœur</option>
-                    <option value="Fils">Fils</option>
-                    <option value="Fille">Fille</option>
-                    <option value="Oncle">Oncle</option>
-                    <option value="Tante">Tante</option>
-                    <option value="Cousin">Cousin</option>
-                    <option value="Cousine">Cousine</option>
-                    <option value="Ami">Ami(e)</option>
-                    <option value="Tuteur">Tuteur/Tutrice</option>
-                    <option value="Autre">Autre</option>
-                  </select>
-                </div>
                 <div>
                   <label className={labelClass}>Qualifications</label>
                   <input type="text" className={inputClass} value={editForm.qualifications} onChange={(e) => setEditForm({ ...editForm, qualifications: e.target.value })} />

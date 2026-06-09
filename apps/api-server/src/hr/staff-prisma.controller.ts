@@ -27,7 +27,7 @@
 import {
   Controller, Get, Post, Put, Delete, Body, Param, Query,
   UseGuards, UseInterceptors, UploadedFile, UploadedFiles,
-  BadRequestException,
+  BadRequestException, Res,
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { StaffPrismaService } from './staff-prisma.service';
@@ -38,6 +38,7 @@ import {
   CreateStaffDto, UpdateStaffDto, AddStaffDocumentDto,
   UploadStaffDocumentDto, ValidateDocumentDto,
 } from './dto/index';
+import type { Response } from 'express';
 
 @Controller('hr/staff')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -246,6 +247,33 @@ export class StaffPrismaController {
   @Get(':id/documents')
   async findStaffDocuments(@GetTenant() tenant: any, @Param('id') staffId: string) {
     return this.staffService.findStaffDocuments(staffId, tenant?.id);
+  }
+
+  /**
+   * GET /hr/staff/:id/documents/:docId/download
+   * Download a specific staff document file.
+   */
+  @Get(':id/documents/:docId/download')
+  async downloadStaffDocument(
+    @GetTenant() tenant: any,
+    @Param('id') staffId: string,
+    @Param('docId') docId: string,
+    @Res({ passthrough: true }) res: Response,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    const { buffer, fileName, mimeType } = await this.staffService.downloadStaffDocument(docId, staffId, tid);
+
+    res.set({
+      'Content-Type': mimeType || 'application/octet-stream',
+      'Content-Disposition': `inline; filename="${fileName}"`,
+      'Content-Length': buffer.length,
+    });
+
+    return buffer;
   }
 
   @Delete(':id/documents/:docId')

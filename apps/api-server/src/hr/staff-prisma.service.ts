@@ -798,6 +798,69 @@ export class StaffPrismaService {
   }
 
   /**
+   * Télécharge le fichier d'un document d'un membre du personnel
+   */
+  async downloadStaffDocument(documentId: string, staffId: string, tenantId: string): Promise<{ buffer: Buffer; fileName: string; mimeType: string }> {
+    const doc = await this.prisma.staffDocument.findFirst({
+      where: { id: documentId, staffId, tenantId },
+    });
+    if (!doc) {
+      throw new NotFoundException(`Document non trouvé`);
+    }
+
+    // Try to download from storage
+    const filePath = doc.filePath;
+
+    // Try cloud storage first
+    try {
+      const buffer = await this.storageService.downloadFile(filePath);
+      return { buffer, fileName: doc.fileName, mimeType: doc.mimeType || 'application/octet-stream' };
+    } catch {
+      // Cloud download failed, try HTTPS URL
+    }
+
+    // Try fetching from URL (Vercel Blob or any HTTPS URL)
+    if (filePath.startsWith('https://')) {
+      try {
+        const response = await fetch(filePath);
+        if (response.ok) {
+          const arrayBuf = await response.arrayBuffer();
+          const buffer = Buffer.from(arrayBuf);
+          return { buffer, fileName: doc.fileName, mimeType: doc.mimeType || 'application/octet-stream' };
+        }
+      } catch {
+        // URL fetch failed
+      }
+    }
+
+    // Try resolving via storageService.resolveFileUrl and fetching
+    try {
+      const resolvedUrl = await this.storageService.resolveFileUrl(filePath);
+      if (resolvedUrl && resolvedUrl.startsWith('http')) {
+        const response = await fetch(resolvedUrl);
+        if (response.ok) {
+          const arrayBuf = await response.arrayBuffer();
+          const buffer = Buffer.from(arrayBuf);
+          return { buffer, fileName: doc.fileName, mimeType: doc.mimeType || 'application/octet-stream' };
+        }
+      }
+    } catch {
+      // Resolved URL fetch failed
+    }
+
+    // Local filesystem fallback
+    const fs = await import('fs');
+    const path = await import('path');
+    const absolutePath = path.join(process.cwd(), filePath);
+    if (fs.existsSync(absolutePath)) {
+      const buffer = fs.readFileSync(absolutePath);
+      return { buffer, fileName: doc.fileName, mimeType: doc.mimeType || 'application/octet-stream' };
+    }
+
+    throw new NotFoundException(`Fichier du document introuvable: ${doc.fileName}`);
+  }
+
+  /**
    * Valide ou rejette un document
    */
   async validateStaffDocument(documentId: string, staffId: string, tenantId: string, status: 'VALIDATED' | 'REJECTED') {

@@ -41,9 +41,11 @@ import {
   UserCheck,
   Package,
   DollarSign,
+  Eye,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
+import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { toast } from '@/components/ui/toast';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -448,6 +450,33 @@ export default function StaffDetailPage() {
       fetchMember();
     } catch (err: any) {
       toast({ variant: 'error', title: 'Erreur lors de la validation' });
+    }
+  };
+
+  const handleDocView = async (doc: any) => {
+    if (!tenant?.id) return;
+    try {
+      const response = await fetch(`/api/hr/staff/${id}/documents/${doc.id}/download?tenantId=${tenant.id}`, {
+        method: 'GET',
+        headers: { ...getClientAuthorizationHeader() },
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      if (!response.ok) throw new Error('Erreur lors du téléchargement');
+      const blob = await response.blob();
+      // For images and PDFs, open in new tab; for others, trigger download
+      const url = URL.createObjectURL(blob);
+      if (doc.mimeType?.startsWith('image/') || doc.mimeType === 'application/pdf') {
+        window.open(url, '_blank');
+      } else {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = doc.fileName || 'document';
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (err: any) {
+      toast({ variant: 'error', title: err.message || 'Erreur lors de la visualisation du document' });
     }
   };
 
@@ -1236,6 +1265,14 @@ export default function StaffDetailPage() {
                                           </span>
                                           {/* Actions */}
                                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            {/* View/Download button */}
+                                            <button 
+                                              onClick={() => handleDocView(doc)}
+                                              className="p-1 text-blue-500 hover:bg-blue-50 rounded transition-colors"
+                                              title="Voir / Télécharger"
+                                            >
+                                              <Eye className="h-3.5 w-3.5" />
+                                            </button>
                                             {doc.validationStatus === 'PENDING' && (
                                               <>
                                                 <button 

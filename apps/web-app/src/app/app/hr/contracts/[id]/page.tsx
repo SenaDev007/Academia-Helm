@@ -16,6 +16,7 @@ import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { ContractSignModal } from '../../_components/modals/ContractSignModal';
 import { ContractEditModal } from '../../_components/modals/ContractEditModal';
+import { ContractDocumentEditor } from '../../_components/modals/ContractDocumentEditor';
 
 const PRIMARY = '#1A2BA6';
 
@@ -44,6 +45,7 @@ export default function ContractDetailPage() {
   const [generating, setGenerating] = useState(false);
   const [signModalOpen, setSignModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [docEditorOpen, setDocEditorOpen] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
 
@@ -241,6 +243,12 @@ export default function ContractDetailPage() {
         onSuccess={fetchContract}
         contract={contract}
       />
+      <ContractDocumentEditor
+        isOpen={docEditorOpen}
+        onClose={() => setDocEditorOpen(false)}
+        onSuccess={fetchContract}
+        contract={contract}
+      />
 
       {/* Breadcrumb & Back */}
       <div className="flex items-center gap-3">
@@ -326,11 +334,11 @@ export default function ContractDetailPage() {
           </button>
           {!isSigned && (
             <button
-              onClick={() => setEditModalOpen(true)}
+              onClick={() => setDocEditorOpen(true)}
               className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 rounded-xl shadow-sm transition"
             >
               <Pencil className="h-4 w-4" />
-              Modifier le contrat
+              Éditer le document
             </button>
           )}
           {!isSigned && contract.status === 'ACTIVE' && (

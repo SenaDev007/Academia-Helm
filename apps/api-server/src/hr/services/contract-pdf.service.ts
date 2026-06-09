@@ -30,16 +30,6 @@ Handlebars.registerHelper('formatMoney', (amount: any, currency: string = 'XOF')
   return `${Number(amount).toLocaleString('fr-FR')} ${currency}`;
 });
 
-Handlebars.registerHelper('contractTypeLabel', (type: string) => {
-  const labels: Record<string, string> = {
-    CDI: 'Contrat à Durée Indéterminée (CDI)',
-    CDD: 'Contrat à Durée Déterminée (CDD)',
-    VACATAIRE: 'Contrat de Vacation',
-    STAGE: "Convention de Stage",
-  };
-  return labels[type] || type;
-});
-
 Handlebars.registerHelper('paymentModeLabel', (mode: string) => {
   const labels: Record<string, string> = {
     BANK: 'Virement bancaire',
@@ -625,6 +615,84 @@ export class ContractPdfService {
     }
   }
 
+  /**
+   * Sauvegarde les articles personnalisés d'un contrat non signé.
+   * Stocke les articles dans le champ `terms` du contrat sous forme de JSON.
+   * Si un template existe, le met à jour avec les nouveaux articles.
+   */
+  async saveContractArticles(contractId: string, tenantId: string, articles: Array<{ title: string; content: string }>) {
+    const contract = await this.prisma.contract.findFirst({
+      where: { id: contractId, tenantId },
+    });
+
+    if (!contract) throw new NotFoundException(`Contrat ${contractId} introuvable`);
+    if (contract.signedAt) throw new BadRequestException('Impossible de modifier un contrat déjà signé');
+
+    // Validate articles
+    if (!Array.isArray(articles) || articles.length === 0) {
+      throw new BadRequestException('Au moins un article est requis');
+    }
+
+    for (const art of articles) {
+      if (!art.title || typeof art.title !== 'string') {
+        throw new BadRequestException('Chaque article doit avoir un titre valide');
+      }
+      if (!art.content || typeof art.content !== 'string') {
+        throw new BadRequestException('Chaque article doit avoir un contenu valide');
+      }
+    }
+
+    // Store articles as JSON in contract terms
+    const updatedTerms = {
+      ...((contract.terms as any) || {}),
+      customArticles: articles,
+      articlesUpdatedAt: new Date().toISOString(),
+    };
+
+    // Also update or create a ContractTemplate with the custom articles
+    // If the contract has a linked template, update it; otherwise create one
+    let templateId = contract.templateId;
+
+    if (templateId) {
+      // Update existing template
+      await this.prisma.contractTemplate.update({
+        where: { id: templateId },
+        data: {
+          template: JSON.stringify(articles),
+          updatedAt: new Date(),
+        },
+      });
+    } else {
+      // Create a new template linked to this contract type
+      const newTemplate = await this.prisma.contractTemplate.create({
+        data: {
+          name: `Personnalisé - ${contract.contractType} - ${new Date().toLocaleDateString('fr-FR')}`,
+          contractType: contract.contractType,
+          template: JSON.stringify(articles),
+          tenantId,
+          isActive: true,
+        },
+      });
+      templateId = newTemplate.id;
+
+      // Link the template to the contract
+      await this.prisma.contract.update({
+        where: { id: contractId },
+        data: { templateId },
+      });
+    }
+
+    // Update the contract terms
+    const updated = await this.prisma.contract.update({
+      where: { id: contractId },
+      data: { terms: updatedTerms },
+      include: { staff: true, template: true },
+    });
+
+    this.logger.log(`Articles sauvegardés pour le contrat ${contractId}: ${articles.length} articles`);
+    return { success: true, articlesCount: articles.length, contract: updated };
+  }
+
   // ─── Default Templates ──────────────────────────────────────────────────────
 
   getDefaultTemplate(contractType: string): string {
@@ -1069,32 +1137,84 @@ export class ContractPdfService {
 
   getDefaultArticles(type: string): any[] {
     const isCDI = type === 'CDI';
+    const isCDD = type === 'CDD';
     const isStage = type === 'STAGE';
+    const isVacataire = type === 'VACATAIRE';
 
     return [
       {
-        title: "Article 1 — Nature et Objet du Contrat",
-        content: `L'Employé(e) est engagé(e) en qualité de <strong>{{staffPosition}}</strong> au sein de l'établissement <strong>{{schoolName}}</strong> dans le cadre d'un <strong>{{contractTypeLabel}}</strong>.`
+        title: "Article 1 — Objet du contrat",
+        content: `Le présent contrat a pour objet l'engagement du Salarié en qualité de <strong>{{staffPosition}}</strong> au sein de l'établissement <strong>{{schoolName}}</strong>. Le Salarié exercera ses fonctions sous l'autorité de la Direction de l'établissement scolaire.`
       },
       {
-        title: "Article 2 — Durée et Période d'essai",
-        content: isCDI 
-          ? `Le présent contrat est conclu pour une durée indéterminée et prend effet à compter du <strong>{{startDate}}</strong>. Il est soumis à une période d'essai de trois (3) mois.` 
-          : `Le présent contrat est conclu à durée déterminée pour la période du <strong>{{startDate}}</strong> au <strong>{{endDate}}</strong>. Il comprend une période d'essai d'un (1) mois.`
+        title: "Article 2 — Date d'effet",
+        content: `Le présent contrat prend effet à compter du <strong>{{startDate}}</strong>.`
       },
       {
-        title: "Article 3 — Rémunération",
+        title: "Article 3 — Type de contrat",
+        content: isCDI
+          ? `Le présent contrat est un <strong>Contrat à Durée Indéterminée (CDI)</strong>.`
+          : isCDD
+          ? `Le présent contrat est un <strong>Contrat à Durée Déterminée (CDD)</strong> pour la période du <strong>{{startDate}}</strong> au <strong>{{endDate}}</strong>.`
+          : isVacataire
+          ? `Le présent contrat est un <strong>Contrat de Vacation</strong>.`
+          : `Le présent document est une <strong>Convention de Stage</strong> pour la période du <strong>{{startDate}}</strong> au <strong>{{endDate}}</strong>.`
+      },
+      {
+        title: "Article 4 — Période d'essai",
+        content: `Le présent contrat est assorti d'une période d'essai de <strong>{{probationDuration}}</strong>. Durant cette période, chacune des parties pourra mettre fin au contrat conformément aux dispositions légales en vigueur.`
+      },
+      {
+        title: "Article 5 — Missions et responsabilités",
+        content: `Le Salarié s'engage à accomplir notamment les missions suivantes : <strong>{{jobResponsibilities}}</strong>. Cette liste n'est pas exhaustive et peut être adaptée en fonction des besoins de l'établissement.`
+      },
+      {
+        title: "Article 6 — Lieu de travail",
+        content: `Le Salarié exercera principalement ses fonctions à : <strong>{{workLocation}}</strong>. Toute affectation dans un autre lieu de travail pourra être décidée par l'Employeur, après consultation du Salarié, dans l'intérêt du service.`
+      },
+      {
+        title: "Article 7 — Durée du travail",
+        content: `La durée hebdomadaire de travail est fixée à <strong>{{weeklyHours}} heures</strong>. Les horaires de travail sont : {{workSchedule}}. Toute modification des horaires sera portée à la connaissance du Salarié dans un délai raisonnable.`
+      },
+      {
+        title: "Article 8 — Rémunération",
         content: isStage
           ? `Le stagiaire percevra une gratification mensuelle nette de <strong>{{baseSalary}} {{currency}}</strong>, payée par <strong>{{paymentMode}}</strong>.`
-          : `En contrepartie de son travail, l'Employé(e) percevra un salaire brut mensuel de <strong>{{baseSalary}} {{currency}}</strong>, versé mensuellement par <strong>{{paymentMode}}</strong>.`
+          : `En contrepartie de son travail, le Salarié percevra une rémunération composée comme suit :<br>- Salaire de base : <strong>{{baseSalary}} {{currency}}</strong><br>- Prime de fonction : <strong>{{functionBonus}} {{currency}}</strong><br>- Indemnité de transport : <strong>{{transportBonus}} {{currency}}</strong><br>- Autres avantages : <strong>{{otherBenefits}}</strong><br><br>Soit un salaire brut mensuel de <strong>{{grossSalary}} {{currency}}</strong>, versé mensuellement par <strong>{{paymentMode}}</strong>.`
       },
       {
-        title: "Article 4 — Droits et Obligations des Parties",
-        content: `L'Employé(e) s'engage à exercer ses fonctions avec diligence, à respecter le règlement intérieur de l'établissement et à préserver la confidentialité. L'Employeur s'engage à lui fournir les moyens nécessaires à sa mission et à verser la rémunération convenue.`
+        title: "Article 9 — Congés",
+        content: `Le Salarié bénéficiera des congés conformément à la législation du travail en vigueur dans le pays ({{country}}). Les périodes de congé seront fixées d'un commun accord entre l'Employeur et le Salarié, dans le respect du fonctionnement de l'établissement scolaire et du calendrier académique.`
       },
       {
-        title: "Article 5 — Dispositions diverses",
-        content: `Toute modification du présent contrat fera l'objet d'un avenant écrit. Tout litige né de son exécution sera soumis aux autorités compétentes et au droit du travail applicable.`
+        title: "Article 10 — Obligation de confidentialité",
+        content: `Le Salarié s'engage à préserver la confidentialité de toutes les informations dont il aurait connaissance dans l'exercice de ses fonctions, notamment les données relatives aux élèves, aux familles, à la gestion financière et administrative de l'établissement. Cette obligation perdure après la fin du contrat.`
+      },
+      {
+        title: "Article 11 — Protection des données",
+        content: `Conformément à la législation en matière de protection des données personnelles, le Salarié est informé que ses données personnelles sont traitées dans le cadre de la gestion de la relation de travail. Il dispose d'un droit d'accès, de rectification et de suppression de ses données.`
+      },
+      {
+        title: "Article 12 — Discipline et règlement intérieur",
+        content: `Le Salarié s'engage à respecter le règlement intérieur de l'établissement, qui lui a été communiqué et dont il accuse réception. Toute infraction pourra faire l'objet de sanctions disciplinaires conformément aux dispositions légales en vigueur.`
+      },
+      {
+        title: "Article 13 — Absences",
+        content: `Toute absence doit être justifiée et préalablement autorisée par l'Employeur, sauf en cas de force majeure. Les absences injustifiées pourront entraîner une retenue sur salaire et, le cas échéant, des sanctions disciplinaires.`
+      },
+      {
+        title: "Article 14 — Résiliation du contrat",
+        content: isCDI
+          ? `Le présent contrat pourra être résilié par chacune des parties, moyennant un préavis de un (1) mois. En cas de faute grave, le contrat pourra être rompu sans préavis ni indemnités. La démission devra être notifiée par écrit.`
+          : `Le présent contrat prend fin à l'échéance du terme fixé, sans qu'il soit besoin de notification. Il pourra toutefois être résilié avant terme en cas de faute grave ou de force majeure.`
+      },
+      {
+        title: "Article 15 — Droit applicable",
+        content: `Le présent contrat est soumis au droit du travail applicable en <strong>{{country}}</strong>. Toute clause non prévue expressément sera régie par les dispositions légales et conventionnelles en vigueur.`
+      },
+      {
+        title: "Article 16 — Dispositions finales",
+        content: `Le présent contrat est établi en deux (2) exemplaires originaux, dont un remis à chaque partie. Les modifications apportées au présent contrat feront l'objet d'un avenant écrit. Fait à <strong>{{city}}</strong>, le <strong>{{signatureDate}}</strong>.`
       }
     ];
   }
@@ -1297,7 +1417,7 @@ export class ContractPdfService {
   </style>
 </head>
 <body>
-<div class="watermark">ACADEMIA HUB</div>
+<div class="watermark">ACADEMIA HELM</div>
 <div class="page">
 
   <!-- Header -->

@@ -248,6 +248,25 @@ export class ContractsPrismaController {
     return new StreamableFile(pdfBuffer);
   }
 
+  /**
+   * PUT /api/hr/contracts/:id/articles
+   * Sauvegarde le contenu personnalisé des articles d'un contrat non signé.
+   * Permet l'édition complète du document avant signature.
+   */
+  @Put(':id/articles')
+  async saveContractArticles(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Body() body: { articles: Array<{ title: string; content: string }> },
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.contractPdfService.saveContractArticles(id, tid, body.articles);
+  }
+
   // ─── Electronic Signature ─────────────────────────────────────────────────
 
   /**

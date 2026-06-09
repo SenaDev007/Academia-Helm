@@ -285,15 +285,25 @@ export default function StaffDetailPage() {
       email: member.email || '',
       phone: member.phone || '',
       position: member.position || '',
-      category: member.category || 'ADMIN',
+      department: member.department || '',
+      category: member.category || 'PEDAGOGICAL',
       gender: member.gender || 'MALE',
       dateOfBirth: member.dateOfBirth ? new Date(member.dateOfBirth).toISOString().split('T')[0] : '',
       birthDate: member.birthDate ? new Date(member.birthDate).toISOString().split('T')[0] : '',
       address: member.address || '',
       emergencyContact: typeof member.emergencyContact === 'object' && member.emergencyContact ? JSON.stringify(member.emergencyContact) : (member.emergencyContact || ''),
       qualifications: member.qualifications || '',
-      department: member.department || '',
       notes: member.notes || '',
+      // HR fields (fiche personnel complète)
+      nationality: member.nationality || '',
+      maritalStatus: member.maritalStatus || '',
+      numberOfChildren: member.numberOfChildren != null ? String(member.numberOfChildren) : '',
+      nationalId: member.nationalId || '',
+      cnssNumber: member.cnssNumber || '',
+      ifuNumber: member.ifuNumber || '',
+      hireDate: member.hireDate ? new Date(member.hireDate).toISOString().split('T')[0] : '',
+      contractType: member.contractType || member.contracts?.[0]?.contractType || '',
+      status: member.status || 'ACTIVE',
     });
     setEditOpen(true);
   };
@@ -309,6 +319,13 @@ export default function StaffDetailPage() {
         if (submitData[dateField] === '') {
           submitData[dateField] = null;
         }
+      }
+
+      // Handle numberOfChildren — convert empty string to null, valid string to integer
+      if (submitData.numberOfChildren === '' || submitData.numberOfChildren === null || submitData.numberOfChildren === undefined) {
+        submitData.numberOfChildren = null;
+      } else {
+        submitData.numberOfChildren = parseInt(submitData.numberOfChildren, 10) || null;
       }
 
       // Handle emergencyContact — try to parse as JSON, else wrap as object
@@ -462,7 +479,7 @@ export default function StaffDetailPage() {
       {/* ─── Edit Modal ──────────────────────────────────────────────────── */}
       {editOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between px-6 py-5 text-white" style={{ background: PRIMARY }}>
               <div className="flex items-center gap-3">
                 <div className="rounded-lg bg-white/15 p-2"><Edit3 className="h-5 w-5" /></div>
@@ -473,7 +490,12 @@ export default function StaffDetailPage() {
               </div>
               <button onClick={() => setEditOpen(false)} className="rounded-lg p-1.5 hover:bg-white/15 transition-colors"><X className="h-5 w-5" /></button>
             </div>
-            <form onSubmit={handleEditSubmit} className="p-6 space-y-4 max-h-[65vh] overflow-y-auto">
+            <form onSubmit={handleEditSubmit} className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
+              {/* ── Section: Identité ── */}
+              <div className="space-y-1 mb-3">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Identité</h4>
+                <div className="h-px bg-slate-100" />
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Prénom</label>
@@ -486,6 +508,52 @@ export default function StaffDetailPage() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
+                  <label className={labelClass}>Genre</label>
+                  <select className={inputClass} value={editForm.gender} onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}>
+                    <option value="MALE">Masculin</option>
+                    <option value="FEMALE">Féminin</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>Date de naissance</label>
+                  <input type="date" className={inputClass} value={editForm.birthDate} onChange={(e) => setEditForm({ ...editForm, birthDate: e.target.value })} />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Nationalité</label>
+                  <input type="text" className={inputClass} value={editForm.nationality} onChange={(e) => setEditForm({ ...editForm, nationality: e.target.value })} placeholder="Ex: Béninoise" />
+                </div>
+                <div>
+                  <label className={labelClass}>Situation matrimoniale</label>
+                  <select className={inputClass} value={editForm.maritalStatus} onChange={(e) => setEditForm({ ...editForm, maritalStatus: e.target.value })}>
+                    <option value="">— Non renseigné —</option>
+                    <option value="SINGLE">Célibataire</option>
+                    <option value="MARRIED">Marié(e)</option>
+                    <option value="DIVORCED">Divorcé(e)</option>
+                    <option value="WIDOWED">Veuf/Veuve</option>
+                    <option value="SEPARATED">Séparé(e)</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Nombre d&apos;enfants</label>
+                  <input type="number" min="0" className={inputClass} value={editForm.numberOfChildren} onChange={(e) => setEditForm({ ...editForm, numberOfChildren: e.target.value })} placeholder="0" />
+                </div>
+                <div>
+                  <label className={labelClass}>N° pièce d&apos;identité</label>
+                  <input type="text" className={inputClass} value={editForm.nationalId} onChange={(e) => setEditForm({ ...editForm, nationalId: e.target.value })} placeholder="CNI, passeport…" />
+                </div>
+              </div>
+
+              {/* ── Section: Contact ── */}
+              <div className="space-y-1 mb-3 pt-2">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Contact & Localisation</h4>
+                <div className="h-px bg-slate-100" />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
                   <label className={labelClass}>Email</label>
                   <input type="email" className={inputClass} value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
                 </div>
@@ -493,6 +561,22 @@ export default function StaffDetailPage() {
                   <label className={labelClass}>Téléphone</label>
                   <input type="tel" className={inputClass} value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
                 </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Adresse</label>
+                  <input type="text" className={inputClass} value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
+                </div>
+                <div>
+                  <label className={labelClass}>Contact d&apos;urgence</label>
+                  <input type="text" className={inputClass} value={editForm.emergencyContact} onChange={(e) => setEditForm({ ...editForm, emergencyContact: e.target.value })} placeholder='Nom — Tél — Lien' />
+                </div>
+              </div>
+
+              {/* ── Section: Professionnel ── */}
+              <div className="space-y-1 mb-3 pt-2">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Professionnel</h4>
+                <div className="h-px bg-slate-100" />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -514,37 +598,60 @@ export default function StaffDetailPage() {
                   </select>
                 </div>
                 <div>
-                  <label className={labelClass}>Genre</label>
-                  <select className={inputClass} value={editForm.gender} onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}>
-                    <option value="MALE">Masculin</option>
-                    <option value="FEMALE">Féminin</option>
+                  <label className={labelClass}>Date d&apos;embauche</label>
+                  <input type="date" className={inputClass} value={editForm.hireDate} onChange={(e) => setEditForm({ ...editForm, hireDate: e.target.value })} />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Type de contrat</label>
+                  <select className={inputClass} value={editForm.contractType} onChange={(e) => setEditForm({ ...editForm, contractType: e.target.value })}>
+                    <option value="">— Non renseigné —</option>
+                    <option value="CDI">CDI</option>
+                    <option value="CDD">CDD</option>
+                    <option value="STAGE">Stage</option>
+                    <option value="CONSULTANT">Consultant</option>
+                    <option value="INTERIM">Intérim</option>
+                    <option value="BENEFICIAT">Bénéficiaire</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>Statut</label>
+                  <select className={inputClass} value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}>
+                    <option value="ACTIVE">Actif</option>
+                    <option value="INACTIVE">Inactif</option>
+                    <option value="SUSPENDED">Suspendu</option>
+                    <option value="ON_LEAVE">En congé</option>
                   </select>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className={labelClass}>Date de naissance</label>
-                  <input type="date" className={inputClass} value={editForm.birthDate} onChange={(e) => setEditForm({ ...editForm, birthDate: e.target.value })} />
-                </div>
-                <div>
-                  <label className={labelClass}>Adresse</label>
-                  <input type="text" className={inputClass} value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Contact d&apos;urgence</label>
-                  <input type="text" className={inputClass} value={editForm.emergencyContact} onChange={(e) => setEditForm({ ...editForm, emergencyContact: e.target.value })} placeholder='Nom — Tél — Lien' />
-                </div>
-                <div>
                   <label className={labelClass}>Qualifications</label>
                   <input type="text" className={inputClass} value={editForm.qualifications} onChange={(e) => setEditForm({ ...editForm, qualifications: e.target.value })} />
                 </div>
+                <div>
+                  <label className={labelClass}>Notes</label>
+                  <input type="text" className={inputClass} value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
+                </div>
               </div>
-              <div>
-                <label className={labelClass}>Notes</label>
-                <textarea className={inputClass + ' min-h-[80px]'} value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
+
+              {/* ── Section: Identifiants officiels ── */}
+              <div className="space-y-1 mb-3 pt-2">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Identifiants officiels</h4>
+                <div className="h-px bg-slate-100" />
               </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>N° CNSS</label>
+                  <input type="text" className={inputClass} value={editForm.cnssNumber} onChange={(e) => setEditForm({ ...editForm, cnssNumber: e.target.value })} placeholder="Numéro d'immatriculation CNSS" />
+                </div>
+                <div>
+                  <label className={labelClass}>N° IFU</label>
+                  <input type="text" className={inputClass} value={editForm.ifuNumber} onChange={(e) => setEditForm({ ...editForm, ifuNumber: e.target.value })} placeholder="Identifiant Fiscal Unique" />
+                </div>
+              </div>
+
               <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
                 <button type="button" onClick={() => setEditOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-50 transition">Annuler</button>
                 <button type="submit" disabled={editLoading} className="flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-sm font-bold shadow-sm hover:opacity-90 disabled:opacity-50 transition" style={{ backgroundColor: PRIMARY }}>

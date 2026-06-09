@@ -165,7 +165,9 @@ export class ContractPdfService {
     const schoolLogo = schoolSettings?.logoUrl || identityProfile?.logoUrl || school?.logo || '';
     const schoolCity = schoolSettings?.city || identityProfile?.city || '';
     const schoolCountry = schoolSettings?.country || identityProfile?.country || contract.tenant?.country?.name || '';
-    const directorName = schoolSettings?.abbreviation || school?.directorPrimary || identityProfile?.schoolAcronym || '';
+    const directorName = school?.directorPrimary || schoolSettings?.abbreviation || identityProfile?.schoolAcronym || 'Le Directeur';
+    const schoolAuthorizationNumber = schoolSettings?.authorizationNumber || identityProfile?.authorizationNumber || '';
+    const schoolAbbreviation = schoolSettings?.abbreviation || identityProfile?.schoolAcronym || school?.abbreviation || '';
 
     // Résoudre le logo en URL complète si nécessaire
     let schoolLogoUrl = '';
@@ -223,29 +225,38 @@ export class ContractPdfService {
       schoolCountry,
       schoolCity,
       schoolLogoUrl,
-      directorName: school?.directorPrimary || directorName || 'Le Directeur',
+      directorName,
       directorPosition: 'Directeur(rice)',
+      schoolAuthorizationNumber,
+      schoolAbbreviation,
       // Employé
       civilite: contract.staff?.gender === 'FEMALE' ? 'Madame' : 'Monsieur',
       staffFirstName: contract.staff?.firstName || '',
       staffLastName: contract.staff?.lastName || '',
       staffFullName: `${contract.staff?.firstName} ${contract.staff?.lastName}`,
       staffPosition: contract.staff?.position || 'Personnel',
-      employeeNumber: contract.staff?.employeeNumber || contract.staff?.tenantMatricule || '',
+      employeeNumber: contract.staff?.employeeNumber || '',
+      staffMatricule: contract.staff?.tenantMatricule || contract.staff?.globalMatricule || contract.staff?.employeeNumber || '',
       staffRoleType: contract.staff?.roleType || '',
       staffEmail: contract.staff?.email || '',
       staffPhone: contract.staff?.phone || '',
       staffBirthDate: contract.staff?.birthDate
         ? new Date(contract.staff.birthDate).toLocaleDateString('fr-FR')
         : '',
-      staffBirthPlace: contract.staff?.address || '', // Pas de champ birthPlace, fallback
+      staffBirthPlace: contract.staff?.address || '',
       staffNationality: contract.staff?.nationality || '',
+      staffMaritalStatus: contract.staff?.maritalStatus || '',
+      staffNumberOfChildren: contract.staff?.numberOfChildren ?? '',
       staffAddress: contract.staff?.address || '',
       staffIdType: contract.staff?.nationalId ? 'CNI / Passeport' : '',
       staffIdNumber: contract.staff?.nationalId || '',
-      cnssNumber: contract.staff?.employeeCNSS?.cnssNumber || 'Non encore attribué',
-      // Contrat
-      contractReference: contract.staff?.tenantMatricule || contract.staff?.employeeNumber || `CTR-${new Date(contract.startDate).getFullYear()}`,
+      cnssNumber: contract.staff?.employeeCNSS?.cnssNumber || contract.staff?.cnssNumber || 'Non encore attribué',
+      staffIfuNumber: contract.staff?.ifuNumber || '',
+      staffBankName: (contract.staff?.bankDetails as any)?.bankName || '',
+      staffBankAccountNumber: (contract.staff?.bankDetails as any)?.accountNumber || '',
+      staffBankAccountName: (contract.staff?.bankDetails as any)?.accountName || '',
+      // Contrat — Utiliser le matricule comme référence (jamais l'ID backend)
+      contractReference: contract.staff?.tenantMatricule || contract.staff?.globalMatricule || `CTR-${new Date(contract.startDate).getFullYear()}-${contract.staff?.employeeNumber || ''}`,
       contractType: contract.contractType,
       contractTypeLabel:
         { CDI: 'Contrat à Durée Indéterminée (CDI)', CDD: 'Contrat à Durée Déterminée (CDD)', VACATAIRE: 'Contrat de Vacation', STAGE: 'Convention de Stage' }[contract.contractType] || contract.contractType,
@@ -318,6 +329,148 @@ export class ContractPdfService {
 
     this.logger.log(`Contrat PDF généré: ${pdfUrl}`);
     return { pdfBuffer, pdfUrl, contract };
+  }
+
+  // ─── HTML Preview (no PDF generation) ─────────────────────────────────────
+
+  /**
+   * Génère uniquement le HTML du contrat pour prévisualisation,
+   * sans produire de PDF ni mettre à jour l'URL.
+   * Utilisé pour l'édition interactive avant signature.
+   */
+  async generateContractHtml(contractId: string, tenantId: string): Promise<{
+    html: string;
+    contract: any;
+    templateVars: Record<string, any>;
+  }> {
+    const contract = await this.prisma.contract.findFirst({
+      where: { id: contractId, tenantId },
+      include: {
+        staff: { include: { employeeCNSS: true } },
+        tenant: { include: { country: true, schools: true } },
+        academicYear: true,
+        template: true,
+      },
+    });
+
+    if (!contract) throw new NotFoundException(`Contrat ${contractId} introuvable`);
+
+    const schoolSettings = await this.prisma.schoolSettings.findFirst({ where: { tenantId } });
+    const identityProfile = await this.prisma.tenantIdentityProfile.findFirst({
+      where: { tenantId, isActive: true },
+      orderBy: { version: 'desc' },
+    });
+    const school = contract.tenant?.schools?.[0] || await this.prisma.school.findFirst({ where: { tenantId } });
+
+    const schoolName = schoolSettings?.schoolName || identityProfile?.schoolName || school?.name || contract.tenant?.name || "L'École";
+    const schoolAddress = schoolSettings?.address || identityProfile?.address || school?.address || '';
+    const schoolPhone = schoolSettings?.phone || identityProfile?.phonePrimary || school?.primaryPhone || '';
+    const schoolEmail = schoolSettings?.email || identityProfile?.email || school?.primaryEmail || '';
+    const schoolLogo = schoolSettings?.logoUrl || identityProfile?.logoUrl || school?.logo || '';
+    const schoolCity = schoolSettings?.city || identityProfile?.city || '';
+    const schoolCountry = schoolSettings?.country || identityProfile?.country || contract.tenant?.country?.name || '';
+    const directorName = school?.directorPrimary || schoolSettings?.abbreviation || identityProfile?.schoolAcronym || 'Le Directeur';
+    const schoolAuthorizationNumber = schoolSettings?.authorizationNumber || identityProfile?.authorizationNumber || '';
+    const schoolAbbreviation = schoolSettings?.abbreviation || identityProfile?.schoolAcronym || school?.abbreviation || '';
+
+    let schoolLogoUrl = '';
+    if (schoolLogo) {
+      schoolLogoUrl = await this.storageService.resolveFileUrl(schoolLogo);
+    }
+
+    // Sélectionner le template
+    let templateSource: string;
+    if (contract.template?.template) {
+      templateSource = contract.template.template;
+    } else {
+      const activeTemplate = await this.prisma.contractTemplate.findFirst({
+        where: { tenantId, contractType: contract.contractType, isActive: true },
+        orderBy: { createdAt: 'desc' },
+      });
+      templateSource = activeTemplate?.template || JSON.stringify(this.getDefaultArticles(contract.contractType));
+    }
+
+    if (templateSource.trim().startsWith('[')) {
+      try {
+        const articles = JSON.parse(templateSource);
+        templateSource = this.buildHtmlFromArticles(articles, contract.contractType);
+      } catch {
+        templateSource = this.getDefaultTemplate(contract.contractType);
+      }
+    }
+
+    // QR Code
+    const verificationUrl = `${process.env.APP_URL || 'https://academia-helm.app'}/verify/contract/${contractId}`;
+    let qrCodeDataUrl = '';
+    if (this.qrcode) {
+      try {
+        qrCodeDataUrl = await this.qrcode.toDataURL(verificationUrl, { width: 100, margin: 1, color: { dark: '#1A2BA6', light: '#ffffff' } });
+      } catch { /* ignore */ }
+    }
+
+    // Réutiliser les mêmes variables que generateContractPdf
+    const currency = contract.tenant?.country?.currencyCode || schoolSettings?.currency || 'XOF';
+    const templateVars = {
+      schoolName, schoolAddress, schoolPhone, schoolEmail, schoolCountry, schoolCity, schoolLogoUrl,
+      directorName, directorPosition: 'Directeur(rice)', schoolAuthorizationNumber, schoolAbbreviation,
+      civilite: contract.staff?.gender === 'FEMALE' ? 'Madame' : 'Monsieur',
+      staffFirstName: contract.staff?.firstName || '',
+      staffLastName: contract.staff?.lastName || '',
+      staffFullName: `${contract.staff?.firstName} ${contract.staff?.lastName}`,
+      staffPosition: contract.staff?.position || 'Personnel',
+      employeeNumber: contract.staff?.employeeNumber || '',
+      staffMatricule: contract.staff?.tenantMatricule || contract.staff?.globalMatricule || contract.staff?.employeeNumber || '',
+      staffRoleType: contract.staff?.roleType || '',
+      staffEmail: contract.staff?.email || '',
+      staffPhone: contract.staff?.phone || '',
+      staffBirthDate: contract.staff?.birthDate ? new Date(contract.staff.birthDate).toLocaleDateString('fr-FR') : '',
+      staffBirthPlace: contract.staff?.address || '',
+      staffNationality: contract.staff?.nationality || '',
+      staffMaritalStatus: contract.staff?.maritalStatus || '',
+      staffNumberOfChildren: contract.staff?.numberOfChildren ?? '',
+      staffAddress: contract.staff?.address || '',
+      staffIdType: contract.staff?.nationalId ? 'CNI / Passeport' : '',
+      staffIdNumber: contract.staff?.nationalId || '',
+      cnssNumber: contract.staff?.employeeCNSS?.cnssNumber || contract.staff?.cnssNumber || 'Non encore attribué',
+      staffIfuNumber: contract.staff?.ifuNumber || '',
+      staffBankName: (contract.staff?.bankDetails as any)?.bankName || '',
+      staffBankAccountNumber: (contract.staff?.bankDetails as any)?.accountNumber || '',
+      staffBankAccountName: (contract.staff?.bankDetails as any)?.accountName || '',
+      contractReference: contract.staff?.tenantMatricule || contract.staff?.globalMatricule || `CTR-${new Date(contract.startDate).getFullYear()}-${contract.staff?.employeeNumber || ''}`,
+      contractType: contract.contractType,
+      contractTypeLabel: { CDI: 'Contrat à Durée Indéterminée (CDI)', CDD: 'Contrat à Durée Déterminée (CDD)', VACATAIRE: 'Contrat de Vacation', STAGE: 'Convention de Stage' }[contract.contractType] || contract.contractType,
+      startDate: new Date(contract.startDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }),
+      endDate: contract.endDate ? new Date(contract.endDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }) : null,
+      isCDI: contract.contractType === 'CDI',
+      isStage: contract.contractType === 'STAGE',
+      isVacataire: contract.contractType === 'VACATAIRE',
+      probationDuration: contract.contractType === 'CDI' ? 'trois (3) mois' : 'un (1) mois',
+      jobResponsibilities: contract.staff?.qualifications || "Les missions définies par la Direction de l'établissement",
+      workLocation: schoolAddress || schoolCity || "L'établissement",
+      weeklyHours: '40',
+      workSchedule: 'Du lundi au vendredi, selon les horaires affichés par la Direction',
+      baseSalary: Number(contract.baseSalary).toLocaleString('fr-FR'),
+      functionBonus: '0',
+      transportBonus: '0',
+      otherBenefits: 'Aucun',
+      grossSalary: Number(contract.baseSalary).toLocaleString('fr-FR'),
+      currency,
+      paymentMode: { BANK: 'Virement bancaire', CASH: 'Espèces', MOBILE_MONEY: 'Mobile Money' }[contract.paymentMode] || contract.paymentMode,
+      academicYear: contract.academicYear?.name || '',
+      country: schoolCountry || 'Bénin',
+      city: schoolCity || '',
+      signatureDate: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }),
+      signedAt: contract.signedAt ? new Date(contract.signedAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }) : null,
+      signatureData: (contract.terms as any)?.signatureData || null,
+      isSigned: !!contract.signedAt,
+      qrCodeDataUrl,
+      verificationUrl,
+      generatedAt: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }),
+      generatedTime: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+    };
+
+    const html = Handlebars.compile(templateSource)(templateVars);
+    return { html, contract, templateVars };
   }
 
   // ─── Get Existing PDF (no re-generation) ────────────────────────────────────
@@ -1212,8 +1365,8 @@ export class ContractPdfService {
   <!-- Footer -->
   <div class="footer">
     <div class="footer-left">
-      <p><strong>Academia Hub</strong> — Système de Gestion Scolaire</p>
-      <p>Document généré automatiquement. Réf. : {{contractId}}</p>
+      <p><strong>Academia Helm</strong> — Système de Gestion Scolaire</p>
+      <p>Document généré automatiquement. Réf. : {{contractReference}}</p>
       <p>Vérification : {{verificationUrl}}</p>
     </div>
     {{#if qrCodeDataUrl}}

@@ -6,6 +6,7 @@ import {
   ArrowLeft, FileText, Download, PenTool, Calendar, DollarSign,
   User, CheckCircle, Clock, AlertCircle, FileCheck, Loader2,
   RefreshCw, Shield, Hash, Briefcase, Building2, ExternalLink,
+  Pencil, Eye,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -14,6 +15,7 @@ import { toast } from '@/components/ui/toast';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { ContractSignModal } from '../../_components/modals/ContractSignModal';
+import { ContractEditModal } from '../../_components/modals/ContractEditModal';
 
 const PRIMARY = '#1A2BA6';
 
@@ -41,6 +43,9 @@ export default function ContractDetailPage() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [signModalOpen, setSignModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
 
   useEffect(() => {
     if (tenant?.id && contractId) fetchContract();
@@ -51,11 +56,52 @@ export default function ContractDetailPage() {
       setLoading(true);
       const data = await hrFetch<any>(hrUrl(`contracts/${contractId}`, { tenantId: tenant.id }));
       setContract(data);
+      // Reset PDF preview so it's re-fetched with fresh data
+      if (pdfPreviewUrl) {
+        URL.revokeObjectURL(pdfPreviewUrl);
+        setPdfPreviewUrl(null);
+      }
     } catch (err) {
       console.error(err);
       toast({ variant: 'error', title: 'Impossible de charger le contrat.' });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadPdfPreview() {
+    try {
+      setLoadingPreview(true);
+      const response = await fetch(`/api/hr/contracts/${contractId}/pdf?tenantId=${tenant.id}`, {
+        method: 'GET',
+        headers: { ...getClientAuthorizationHeader() },
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      if (!response.ok) {
+        // Try generating first, then retry
+        await hrFetch<any>(hrUrl(`contracts/${contractId}/generate-pdf`, { tenantId: tenant.id }), { method: 'POST' });
+        const retryResponse = await fetch(`/api/hr/contracts/${contractId}/pdf?tenantId=${tenant.id}`, {
+          method: 'GET',
+          headers: { ...getClientAuthorizationHeader() },
+          credentials: 'include',
+          cache: 'no-store',
+        });
+        if (!retryResponse.ok) throw new Error('Impossible de charger l\'aperçu.');
+        const blob = await retryResponse.blob();
+        if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+        setPdfPreviewUrl(URL.createObjectURL(blob));
+      } else {
+        const blob = await response.blob();
+        if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+        setPdfPreviewUrl(URL.createObjectURL(blob));
+      }
+      toast({ variant: 'success', title: 'Aperçu chargé.' });
+    } catch (err) {
+      console.error(err);
+      toast({ variant: 'error', title: 'Impossible de charger l\'aperçu du PDF.' });
+    } finally {
+      setLoadingPreview(false);
     }
   }
 
@@ -189,6 +235,12 @@ export default function ContractDetailPage() {
         onSuccess={fetchContract}
         contract={contract}
       />
+      <ContractEditModal
+        isOpen={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+        onSuccess={fetchContract}
+        contract={contract}
+      />
 
       {/* Breadcrumb & Back */}
       <div className="flex items-center gap-3">
@@ -272,6 +324,15 @@ export default function ContractDetailPage() {
             <RefreshCw className={`h-4 w-4 ${generating ? 'animate-spin' : ''}`} />
             Régénérer
           </button>
+          {!isSigned && (
+            <button
+              onClick={() => setEditModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 rounded-xl shadow-sm transition"
+            >
+              <Pencil className="h-4 w-4" />
+              Modifier le contrat
+            </button>
+          )}
           {!isSigned && contract.status === 'ACTIVE' && (
             <button
               onClick={() => setSignModalOpen(true)}
@@ -318,7 +379,7 @@ export default function ContractDetailPage() {
                 },
                 {
                   label: 'Référence',
-                  value: `CONTRAT-${contractId.substring(0, 8).toUpperCase()}`,
+                  value: contract.staff?.staffCode || contract.staff?.employeeNumber || `CTR-${contractId.substring(0, 8)}`,
                   icon: Hash,
                 },
                 {
@@ -533,6 +594,53 @@ export default function ContractDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* PDF Preview Section */}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
+      >
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Eye className="h-4 w-4" style={{ color: PRIMARY }} />
+            <h2 className="text-sm font-bold text-slate-900">Aperçu du Contrat</h2>
+          </div>
+          {!pdfPreviewUrl && (
+            <button
+              onClick={loadPdfPreview}
+              disabled={loadingPreview}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white rounded-xl hover:opacity-90 disabled:opacity-60 transition"
+              style={{ backgroundColor: PRIMARY }}
+            >
+              {loadingPreview ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+              Charger l&apos;aperçu
+            </button>
+          )}
+        </div>
+        <div className="p-5">
+          {pdfPreviewUrl ? (
+            <iframe
+              src={pdfPreviewUrl}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50"
+              style={{ height: '600px' }}
+              title="Aperçu du contrat PDF"
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
+              <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center">
+                <FileText className="h-7 w-7 text-slate-300" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-slate-700">Aperçu non chargé</p>
+                <p className="text-xs text-slate-400 mt-1 max-w-sm">
+                  Cliquez sur le bouton &quot;Charger l&apos;aperçu&quot; ci-dessus pour visualiser le contrat au format PDF.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </motion.div>
     </div>
   );
 }

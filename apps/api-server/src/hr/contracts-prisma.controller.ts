@@ -215,6 +215,44 @@ export class ContractsPrismaController {
   // ─── PDF Generation ──────────────────────────────────────────────────────────
 
   /**
+   * GET /api/hr/contracts/:id/preview
+   * Retourne le HTML du contrat pour prévisualisation (sans générer de PDF).
+   * Permet de visualiser et vérifier le contenu avant de signer.
+   */
+  @Get(':id/preview')
+  async previewContract(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    const { html, contract, templateVars } = await this.contractPdfService.generateContractHtml(id, tid);
+    // Retourner les variables et le HTML pour la prévisualisation côté frontend
+    // On envoie aussi les infos du contrat pour permettre l'édition
+    return {
+      html,
+      contractReference: templateVars.contractReference,
+      staffMatricule: templateVars.staffMatricule,
+      schoolName: templateVars.schoolName,
+      templateVars: {
+        contractReference: templateVars.contractReference,
+        staffMatricule: templateVars.staffMatricule,
+        staffFullName: templateVars.staffFullName,
+        schoolName: templateVars.schoolName,
+        contractTypeLabel: templateVars.contractTypeLabel,
+        baseSalary: templateVars.baseSalary,
+        currency: templateVars.currency,
+        startDate: templateVars.startDate,
+        endDate: templateVars.endDate,
+        paymentMode: templateVars.paymentMode,
+      },
+    };
+  }
+
+  /**
    * POST /api/hr/contracts/:id/generate-pdf
    * Génère (ou régénère) le PDF du contrat. Retourne { pdfUrl }.
    */

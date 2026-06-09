@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
+import { getClientAuthorizationHeader, tryRefreshAccessToken } from '@/lib/auth/client-access-token';
 import { toast } from '@/components/ui/toast';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
@@ -77,12 +78,39 @@ export default function ContractDetailPage() {
     if (!contract) return;
     try {
       setGenerating(true);
-      // Download existing PDF via GET /pdf endpoint (not POST /generate-pdf)
-      const response = await fetch(`/api/hr/contracts/${contractId}/pdf?tenantId=${tenant.id}`, {
+
+      // Download existing PDF via GET /pdf endpoint with proper auth headers
+      let response = await fetch(`/api/hr/contracts/${contractId}/pdf?tenantId=${tenant.id}`, {
         method: 'GET',
+        headers: {
+          ...getClientAuthorizationHeader(),
+        },
+        credentials: 'include',
       });
 
-      if (!response.ok) throw new Error('Erreur téléchargement');
+      // On 401, attempt token refresh once before giving up
+      if (response.status === 401) {
+        const refreshed = await tryRefreshAccessToken();
+        if (refreshed) {
+          response = await fetch(`/api/hr/contracts/${contractId}/pdf?tenantId=${tenant.id}`, {
+            method: 'GET',
+            headers: {
+              ...getClientAuthorizationHeader(),
+            },
+            credentials: 'include',
+          });
+        }
+      }
+
+      if (!response.ok) {
+        // Try to parse error message from response
+        let errorMsg = 'Erreur lors du téléchargement PDF.';
+        try {
+          const errData = await response.json();
+          errorMsg = errData?.message || errData?.error || errorMsg;
+        } catch { /* binary response, ignore parse error */ }
+        throw new Error(errorMsg);
+      }
 
       // Try to get as blob (binary PDF) first
       const contentType = response.headers.get('content-type') || '';
@@ -107,7 +135,8 @@ export default function ContractDetailPage() {
       }
       toast({ variant: 'success', title: 'Téléchargement du PDF lancé.' });
     } catch (err) {
-      toast({ variant: 'error', title: 'Erreur lors du téléchargement PDF.' });
+      const msg = err instanceof Error ? err.message : 'Erreur lors du téléchargement PDF.';
+      toast({ variant: 'error', title: msg });
     } finally {
       setGenerating(false);
     }

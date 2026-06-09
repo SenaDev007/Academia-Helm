@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
+import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { toast } from '@/components/ui/toast';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
@@ -263,6 +264,7 @@ export function ContractsWorkspace() {
               index={idx}
               tenantId={tenant.id}
               onTerminate={(c) => { setSelectedContract(c); setTerminationModalOpen(true); }}
+              onRefresh={fetchContracts}
             />
           ))}
         </div>
@@ -280,8 +282,9 @@ export function ContractsWorkspace() {
   );
 }
 
-function ContractRow({ contract, index, tenantId, onTerminate }: { contract: any; index: number; tenantId: string; onTerminate: (contract: any) => void }) {
+function ContractRow({ contract, index, tenantId, onTerminate, onRefresh }: { contract: any; index: number; tenantId: string; onTerminate: (contract: any) => void; onRefresh: () => void }) {
   const [generating, setGenerating] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   const isExpiringSoon = () => {
     if (!contract.endDate || contract.status !== 'ACTIVE') return false;
@@ -290,17 +293,80 @@ function ContractRow({ contract, index, tenantId, onTerminate }: { contract: any
   };
   const status = STATUS_CONFIG[contract.status] || STATUS_CONFIG.EXPIRED;
   const isSigned = !!contract.signedAt;
+  const hasPdf = !!(contract.terms as any)?.pdfUrl;
 
   async function handleGeneratePdf() {
     try {
       setGenerating(true);
       await hrFetch(hrUrl(`contracts/${contract.id}/generate-pdf`, { tenantId }), { method: 'POST' });
       toast({ variant: 'success', title: 'PDF généré avec succès !' });
+      onRefresh(); // Refresh to get the updated pdfUrl
     } catch {
       toast({ variant: 'error', title: 'Erreur lors de la génération PDF.' });
     } finally {
       setGenerating(false);
     }
+  }
+
+  async function handleDownloadPdf() {
+    try {
+      setDownloading(true);
+      const response = await fetch(`/api/hr/contracts/${contract.id}/pdf?tenantId=${tenantId}`, {
+        method: 'GET',
+        headers: {
+          ...getClientAuthorizationHeader(),
+        },
+        credentials: 'include',
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        // If PDF doesn't exist yet, generate it first then download
+        if (response.status === 404 || response.status === 500) {
+          await hrFetch(hrUrl(`contracts/${contract.id}/generate-pdf`, { tenantId }), { method: 'POST' });
+          const retryResponse = await fetch(`/api/hr/contracts/${contract.id}/pdf?tenantId=${tenantId}`, {
+            method: 'GET',
+            headers: { ...getClientAuthorizationHeader() },
+            credentials: 'include',
+            cache: 'no-store',
+          });
+          if (!retryResponse.ok) throw new Error('Erreur téléchargement après génération');
+          const blob = await retryResponse.blob();
+          triggerPdfDownload(blob);
+        } else {
+          throw new Error('Erreur téléchargement');
+        }
+      } else {
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/pdf') || contentType.includes('octet-stream')) {
+          const blob = await response.blob();
+          triggerPdfDownload(blob);
+        } else {
+          const data = await response.json();
+          if (data.pdfUrl) {
+            const link = document.createElement('a');
+            link.href = data.pdfUrl;
+            link.download = `Contrat_${contract.staff?.lastName}_${contract.staff?.firstName}_${contract.contractType}.pdf`;
+            link.click();
+          }
+        }
+      }
+      toast({ variant: 'success', title: 'Téléchargement lancé.' });
+    } catch (err) {
+      console.error('[Contract PDF Download] Error:', err);
+      toast({ variant: 'error', title: 'Erreur lors du téléchargement PDF.' });
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  function triggerPdfDownload(blob: Blob) {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    const staffName = `${contract.staff?.lastName}_${contract.staff?.firstName}`.replace(/\s+/g, '_');
+    link.download = `Contrat_${staffName}_${contract.contractType}.pdf`;
+    link.click();
+    URL.revokeObjectURL(link.href);
   }
 
   return (
@@ -357,12 +423,20 @@ function ContractRow({ contract, index, tenantId, onTerminate }: { contract: any
         </div>
         <div className="flex items-center gap-2 border-t md:border-none pt-3 md:pt-0 w-full md:w-auto">
           <button
+            onClick={handleDownloadPdf}
+            disabled={downloading}
+            className="flex-shrink-0 p-2 text-slate-400 hover:text-[#1A2BA6] transition-colors rounded-lg hover:bg-slate-50"
+            title="Télécharger PDF"
+          >
+            {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          </button>
+          <button
             onClick={handleGeneratePdf}
             disabled={generating}
-            className="flex-shrink-0 p-2 text-slate-400 hover:text-[#1A2BA6] transition-colors rounded-lg hover:bg-slate-50"
-            title="Générer PDF"
+            className="flex-shrink-0 p-2 text-slate-400 hover:text-emerald-600 transition-colors rounded-lg hover:bg-emerald-50"
+            title="Générer / Régénérer PDF"
           >
-            {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
           </button>
           {contract.status === 'ACTIVE' && (
             <button

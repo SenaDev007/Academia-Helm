@@ -20,6 +20,14 @@ const PilotageLayout = dynamic(
   () => import('@/components/pilotage/PilotageLayout'),
   {
     ssr: true, // ✅ Garder SSR pour le SEO
+    loading: () => (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center px-4">
+          <div className="w-12 h-12 border-4 border-[#0b2f73] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-sm text-slate-600">Chargement de l&apos;interface...</p>
+        </div>
+      </div>
+    ),
   }
 );
 

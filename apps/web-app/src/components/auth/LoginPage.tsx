@@ -238,6 +238,9 @@ export default function LoginPage() {
 
     saveEmailForTenant(schoolCredentials.email, 'platform');
 
+    // Petit délai pour s'assurer que les cookies Set-Cookie sont bien persistés
+    // par le navigateur avant la redirection (race condition sur mobile)
+    await new Promise(resolve => setTimeout(resolve, 150));
     window.location.href = '/app/platform';
   };
 
@@ -272,6 +275,10 @@ export default function LoginPage() {
 
     const tenantKey = data.tenant?.id || tenantIdFromUrl || tenantSlug || 'platform';
     saveEmailForTenant(schoolCredentials.email, tenantKey);
+
+    // Petit délai pour s'assurer que les cookies Set-Cookie sont bien persistés
+    // par le navigateur avant la redirection (race condition sur mobile)
+    await new Promise(resolve => setTimeout(resolve, 150));
 
     const isPlatformOwner =
       data.user?.role === 'PLATFORM_OWNER' ||
@@ -363,6 +370,10 @@ export default function LoginPage() {
     const tenantKey = data.tenant?.id || tenantIdForApi || 'platform';
     saveEmailForTenant(schoolCredentials.email, tenantKey);
 
+    // Petit délai pour s'assurer que les cookies Set-Cookie sont bien persistés
+    // par le navigateur avant la redirection (race condition sur mobile)
+    await new Promise(resolve => setTimeout(resolve, 150));
+
     const redirectUrl = getTenantRedirectUrl({
       tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,
       tenantId: tenantIdForApi,
@@ -401,6 +412,10 @@ export default function LoginPage() {
       tenant: data.tenant,
       expiresAt: data.expiresAt,
     });
+
+    // Petit délai pour s'assurer que les cookies Set-Cookie sont bien persistés
+    // par le navigateur avant la redirection (race condition sur mobile)
+    await new Promise(resolve => setTimeout(resolve, 150));
 
     const redirectUrl = getTenantRedirectUrl({
       tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,
@@ -468,6 +483,10 @@ export default function LoginPage() {
       tenant: data.tenant,
       expiresAt: data.expiresAt,
     });
+
+    // Petit délai pour s'assurer que les cookies Set-Cookie sont bien persistés
+    // par le navigateur avant la redirection (race condition sur mobile)
+    await new Promise(resolve => setTimeout(resolve, 150));
 
     const redirectUrl = getTenantRedirectUrl({
       tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,

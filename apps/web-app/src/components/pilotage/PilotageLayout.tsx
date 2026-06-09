@@ -60,7 +60,7 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
 
   return (
     <OfflineGuard>
-      <div className="min-h-screen bg-gray-50 flex flex-col">
+      <div className="min-h-screen bg-gray-50 flex flex-col overflow-x-hidden">
         {/* Top Bar - Fixe en haut, toujours visible — hamburger mobile */}
         <PilotageTopBar
           user={user}

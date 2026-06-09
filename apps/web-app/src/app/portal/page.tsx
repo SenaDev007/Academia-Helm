@@ -639,7 +639,7 @@ export default function PortalPage() {
                     : { opacity: 0, y: -10, transition: { duration: dur * 0.85 } }
                 }
                 transition={{ duration: dur, ease: 'easeOut' }}
-                className="mx-auto mb-8 grid w-full max-w-lg grid-cols-1 gap-3 sm:max-w-none sm:gap-4 md:max-w-5xl md:grid-cols-3 lg:grid-cols-5 md:gap-4 xl:max-w-6xl"
+                className="mx-auto mb-8 grid w-full max-w-lg grid-cols-1 gap-2 sm:max-w-none sm:gap-2.5 md:max-w-4xl md:grid-cols-3 lg:grid-cols-5 md:gap-3 xl:max-w-5xl"
               >
                 {portalCards.map((card, index) => {
                   const Icon = card.Icon;
@@ -683,9 +683,9 @@ export default function PortalPage() {
                         className={`absolute left-0 top-0 h-0.5 w-full ${card.accentBar} opacity-90`}
                         aria-hidden
                       />
-                      <div className="flex h-full flex-row items-center gap-3 p-3 sm:p-4 md:flex-col md:items-center md:justify-between md:px-4 md:py-5 md:text-center">
+                      <div className="flex h-full flex-row items-center gap-2.5 p-2.5 sm:p-3 md:flex-col md:items-center md:justify-between md:px-3 md:py-3.5 md:text-center">
                         <motion.div
-                          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br shadow-inner sm:h-11 sm:w-11 ${card.iconBg} ring-1 ring-white/80 md:mb-1`}
+                          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br shadow-inner sm:h-9 sm:w-9 ${card.iconBg} ring-1 ring-white/80 md:mb-1`}
                           whileHover={
                             shouldReduceMotion
                               ? undefined
@@ -693,20 +693,20 @@ export default function PortalPage() {
                           }
                           transition={cardSpring}
                         >
-                          <Icon className={`h-5 w-5 sm:h-6 sm:w-6 ${card.iconColor}`} />
+                          <Icon className={`h-4 w-4 sm:h-5 sm:w-5 ${card.iconColor}`} />
                         </motion.div>
                         <div className="min-w-0 flex-1 md:flex md:flex-1 md:flex-col md:items-center">
                           <h3
-                            className="text-sm font-bold leading-snug sm:text-base"
+                            className="text-xs font-bold leading-snug sm:text-sm"
                             style={{ color: NAVY }}
                           >
                             {card.title}
                   </h3>
-                          <p className="mt-0.5 text-xs leading-relaxed text-slate-500 md:mt-1">
+                          <p className="mt-0.5 text-[10px] leading-relaxed text-slate-500 md:mt-0.5">
                             {card.subtitle}
                           </p>
                           <div
-                            className={`mt-2 inline-flex min-h-[32px] items-center text-xs font-semibold md:mt-auto ${card.cta}`}
+                            className={`mt-1.5 inline-flex min-h-[24px] items-center text-[10px] font-semibold md:mt-auto ${card.cta}`}
                           >
                     <span>Accéder</span>
                             <motion.span

@@ -51,8 +51,33 @@ export function PostLoginLoading({ onComplete, onError }: PostLoginLoadingProps)
     }
   }, [result, isLoading, onComplete, onError]);
 
+  // Quand le flow est terminé (succès ou erreur), afficher le loading screen
+  // jusqu'à ce que le composant parent gère la transition.
+  // NE JAMAIS retourner null — cela causerait une page blanche sur mobile.
   if (!isLoading && result) {
-    return null; // Le composant parent doit gérer l'affichage
+    if (result.success) {
+      // Succès : afficher un court message de transition
+      return (
+        <LoadingScreen
+          message={{ title: 'Prêt !', subtitle: 'Chargement de l\'application...' }}
+          step="PRELOAD_UI"
+          progress={100}
+          showProgress={true}
+          variant="default"
+        />
+      );
+    }
+    // Erreur : afficher un message d'erreur au lieu d'une page blanche
+    // Le parent (PostLoginFlowWrapper) gère la redirection
+    return (
+      <LoadingScreen
+        message={{ title: 'Redirection...', subtitle: result.error?.message || 'Une erreur est survenue' }}
+        step="PRELOAD_UI"
+        progress={100}
+        showProgress={false}
+        variant="default"
+      />
+    );
   }
 
   const message = progress

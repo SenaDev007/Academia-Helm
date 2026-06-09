@@ -32,13 +32,18 @@ RUN npm run build
 
 FROM base
 
+# Install Chromium for Puppeteer PDF generation + openssl for Prisma
 RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y \
-    openssl && \
-    rm -rf /var/lib/apt/lists /var/cache/apt/archives
+    openssl \
+    chromium \
+    fonts-liberation \
+    fonts-noto-color-emoji \
+    && rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
-# Puppeteer: Chromium not installed in production — PDF generation disabled until Chromium is added
+# Puppeteer: use system Chromium (installed above)
 ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/node_modules ./node_modules

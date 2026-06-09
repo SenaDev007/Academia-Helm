@@ -34,3 +34,29 @@ Stage Summary:
 - Color palette: Academia Helm Navy/Gold throughout
 - Animations: Framer Motion for hover, selection, transitions
 - Accessible: keyboard navigation, ARIA labels, reduced motion support
+---
+Task ID: 1
+Agent: main
+Task: Fix mobile blank page after authentication + contract PDF generation + portal card sizes
+
+Work Log:
+- Analyzed the full authentication flow (LoginPage → API → middleware → AppLayout → PostLoginFlowWrapper → PostLoginLoading)
+- Identified root causes: checkAuth() race condition on mobile, router.push() instead of window.location.href, null rendering during error transitions
+- Added retry mechanism (3 attempts, 800ms/1600ms/2400ms delays) for checkAuth()
+- Replaced router.push('/login') with window.location.href in 6 files: PostLoginFlowWrapper, usePostLoginFlow, DashboardGuard, TenantContext, DashboardHeader, AdminLayout
+- Added 150ms delay after persistClientSession before redirect in all LoginPage handlers
+- Fixed PostLoginLoading to never return null (shows fallback loading/error screen)
+- Added loading fallback for dynamic PilotageLayout import
+- Added overflow-x-hidden to PilotageLayout for mobile
+- Installed Chromium in Docker production image for Puppeteer PDF generation
+- Set PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium in Dockerfile
+- Added separate download button in ContractsWorkspace alongside generate button
+- Download auto-generates PDF if not yet created before downloading
+- Added fonts-liberation and fonts-noto-color-emoji for proper PDF rendering
+- Reduced portal card sizes: smaller padding, icons, fonts, gaps, max-widths
+
+Stage Summary:
+- Committed and pushed: 5d0f1265 "fix: mobile blank page after auth, contract PDF generation, portal card sizes"
+- 14 files changed, 230 insertions, 60 deletions
+- Railway should auto-deploy (Dockerfile change triggers rebuild)
+- Vercel should auto-deploy (ignoreCommand was already removed)

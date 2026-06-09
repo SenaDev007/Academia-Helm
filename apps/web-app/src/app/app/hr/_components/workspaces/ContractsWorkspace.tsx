@@ -53,7 +53,10 @@ export function ContractsWorkspace() {
   const [selectedContract, setSelectedContract] = useState<any>(null);
 
   async function fetchContracts() {
-    if (!tenant?.id) return;
+    if (!tenant?.id) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const queryParams: Record<string, string> = { tenantId: tenant.id };

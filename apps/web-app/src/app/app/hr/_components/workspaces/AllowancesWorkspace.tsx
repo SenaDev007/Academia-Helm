@@ -41,7 +41,10 @@ export function AllowancesWorkspace() {
 
   useEffect(() => {
     async function loadData() {
-      if (!tenant?.id) return;
+      if (!tenant?.id) {
+        setLoading(false);
+        return;
+      }
       try {
         setLoading(true);
         // Load allowance types

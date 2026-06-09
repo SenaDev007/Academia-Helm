@@ -35,7 +35,10 @@ export function AttendanceWorkspace() {
 
   useEffect(() => {
     async function loadInitialData() {
-      if (!tenant?.id) return;
+      if (!tenant?.id) {
+        setLoading(false);
+        return;
+      }
       try {
         setLoading(true);
         // Load staff to choose from

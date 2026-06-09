@@ -163,12 +163,15 @@ export class StaffPrismaService {
   /**
    * Récupère tous les membres du personnel
    */
-  async findAllStaff(tenantId: string, filters?: {
+  async findAllStaff(tenantId: string | undefined, filters?: {
     academicYearId?: string;
     category?: string;
     status?: string;
     levelAssigned?: string;
   }) {
+    if (!tenantId) {
+      return [];
+    }
     const where: any = { tenantId };
     if (filters?.academicYearId) where.academicYearId = filters.academicYearId;
     if (filters?.status && filters.status !== 'ALL') where.status = filters.status;
@@ -206,7 +209,10 @@ export class StaffPrismaService {
   /**
    * Récupère un membre du personnel par ID
    */
-  async findStaffById(id: string, tenantId: string) {
+  async findStaffById(id: string, tenantId: string | undefined) {
+    if (!tenantId) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
     const staff = await this.prisma.staff.findFirst({
       where: { id, tenantId },
       include: {

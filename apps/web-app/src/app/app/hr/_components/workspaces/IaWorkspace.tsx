@@ -54,6 +54,7 @@ export function IaWorkspace() {
   // Load IA status on mount
   useEffect(() => {
     async function loadIaStatus() {
+      if (!tenant?.id) return;
       try {
         const status = await hrFetch<any>(hrUrl('ia/status', { tenantId: tenant.id }));
         setIaStatus(status);
@@ -62,7 +63,7 @@ export function IaWorkspace() {
       }
     }
     loadIaStatus();
-  }, []);
+  }, [tenant?.id]);
 
   // Load live data from API
   useEffect(() => {

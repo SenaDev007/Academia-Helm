@@ -65,7 +65,10 @@ export function StaffWorkspace() {
   const [reactivateLoading, setReactivateLoading] = useState(false);
 
   const fetchStaff = useCallback(async (isRetry = false) => {
-    if (!tenant?.id) return;
+    if (!tenant?.id) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       setStaffError(null);

@@ -280,6 +280,8 @@ export default function StaffDetailPage() {
   // ─── Edit Modal ─────────────────────────────────────────────────────────────
   const openEditModal = () => {
     if (!member) return;
+    // Extract bank details if stored as JSON object
+    const bank = (typeof member.bankDetails === 'object' && member.bankDetails) ? member.bankDetails : {};
     setEditForm({
       firstName: member.firstName || '',
       lastName: member.lastName || '',
@@ -290,10 +292,21 @@ export default function StaffDetailPage() {
       gender: member.gender || 'MALE',
       dateOfBirth: member.dateOfBirth ? new Date(member.dateOfBirth).toISOString().split('T')[0] : '',
       birthDate: member.birthDate ? new Date(member.birthDate).toISOString().split('T')[0] : '',
+      nationality: member.nationality || 'Béninoise',
+      maritalStatus: member.maritalStatus || '',
+      numberOfChildren: member.numberOfChildren ?? '',
       address: member.address || '',
       emergencyContact: typeof member.emergencyContact === 'object' && member.emergencyContact ? JSON.stringify(member.emergencyContact) : (member.emergencyContact || ''),
       qualifications: member.qualifications || '',
       department: member.department || '',
+      hireDate: member.hireDate ? new Date(member.hireDate).toISOString().split('T')[0] : (member.contracts?.[0]?.startDate ? new Date(member.contracts[0].startDate).toISOString().split('T')[0] : ''),
+      contractType: member.contractType || '',
+      salary: member.salary ?? '',
+      nationalId: member.nationalId || '',
+      ifuNumber: member.ifuNumber || '',
+      cnssNumber: member.cnssNumber || '',
+      bankName: bank.bankName || '',
+      bankAccountNumber: bank.accountNumber || '',
       notes: member.notes || '',
     });
     setEditOpen(true);
@@ -311,6 +324,35 @@ export default function StaffDetailPage() {
           submitData[dateField] = null;
         }
       }
+
+      // Convert numberOfChildren: empty string → null, else parse as integer
+      if (submitData.numberOfChildren === '' || submitData.numberOfChildren === null || submitData.numberOfChildren === undefined) {
+        submitData.numberOfChildren = null;
+      } else {
+        submitData.numberOfChildren = parseInt(submitData.numberOfChildren, 10);
+        if (isNaN(submitData.numberOfChildren)) submitData.numberOfChildren = null;
+      }
+
+      // Convert salary: empty string → null, else parse as float
+      if (submitData.salary === '' || submitData.salary === null || submitData.salary === undefined) {
+        submitData.salary = null;
+      } else {
+        submitData.salary = parseFloat(submitData.salary);
+        if (isNaN(submitData.salary)) submitData.salary = null;
+      }
+
+      // Build bankDetails object from separate fields
+      if (submitData.bankName || submitData.bankAccountNumber) {
+        submitData.bankDetails = {
+          bankName: submitData.bankName || null,
+          accountNumber: submitData.bankAccountNumber || null,
+        };
+      } else {
+        submitData.bankDetails = null;
+      }
+      // Remove the flat bank fields from payload (they were only for the form UI)
+      delete submitData.bankName;
+      delete submitData.bankAccountNumber;
 
       // Handle emergencyContact — try to parse as JSON, else wrap as object
       if (typeof submitData.emergencyContact === 'string' && submitData.emergencyContact.trim()) {
@@ -474,77 +516,180 @@ export default function StaffDetailPage() {
               </div>
               <button onClick={() => setEditOpen(false)} className="rounded-lg p-1.5 hover:bg-white/15 transition-colors"><X className="h-5 w-5" /></button>
             </div>
-            <form onSubmit={handleEditSubmit} className="p-6 space-y-4 max-h-[65vh] overflow-y-auto">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Prénom</label>
-                  <input required type="text" className={inputClass} value={editForm.firstName} onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })} />
+            <form onSubmit={handleEditSubmit} className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
+              {/* ── Section: Identité ── */}
+              <div className="pb-4 border-b border-slate-100">
+                <h4 className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <User className="h-3.5 w-3.5" /> Identité
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelClass}>Prénom</label>
+                    <input required type="text" className={inputClass} value={editForm.firstName} onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Nom</label>
+                    <input required type="text" className={inputClass} value={editForm.lastName} onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })} />
+                  </div>
                 </div>
-                <div>
-                  <label className={labelClass}>Nom</label>
-                  <input required type="text" className={inputClass} value={editForm.lastName} onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })} />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                  <div>
+                    <label className={labelClass}>Genre</label>
+                    <select className={inputClass} value={editForm.gender} onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}>
+                      <option value="MALE">Masculin</option>
+                      <option value="FEMALE">Féminin</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Date de naissance</label>
+                    <input type="date" className={inputClass} value={editForm.birthDate} onChange={(e) => setEditForm({ ...editForm, birthDate: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Nationalité</label>
+                    <input type="text" className={inputClass} value={editForm.nationality} onChange={(e) => setEditForm({ ...editForm, nationality: e.target.value })} placeholder="Ex: Béninoise" />
+                  </div>
                 </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Email</label>
-                  <input type="email" className={inputClass} value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
-                </div>
-                <div>
-                  <label className={labelClass}>Téléphone</label>
-                  <input type="tel" className={inputClass} value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Poste</label>
-                  <input type="text" className={inputClass} value={editForm.position} onChange={(e) => setEditForm({ ...editForm, position: e.target.value })} />
-                </div>
-                <div>
-                  <label className={labelClass}>Département</label>
-                  <input type="text" className={inputClass} value={editForm.department} onChange={(e) => setEditForm({ ...editForm, department: e.target.value })} />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Catégorie</label>
-                  <select className={inputClass} value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}>
-                    <option value="PEDAGOGICAL">Corps Enseignant</option>
-                    <option value="ADMIN">Administration</option>
-                    <option value="SUPPORT">Personnel d&apos;appui</option>
-                  </select>
-                </div>
-                <div>
-                  <label className={labelClass}>Genre</label>
-                  <select className={inputClass} value={editForm.gender} onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}>
-                    <option value="MALE">Masculin</option>
-                    <option value="FEMALE">Féminin</option>
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Date de naissance</label>
-                  <input type="date" className={inputClass} value={editForm.birthDate} onChange={(e) => setEditForm({ ...editForm, birthDate: e.target.value })} />
-                </div>
-                <div>
-                  <label className={labelClass}>Adresse</label>
-                  <input type="text" className={inputClass} value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <div>
+                    <label className={labelClass}>Situation matrimoniale</label>
+                    <select className={inputClass} value={editForm.maritalStatus} onChange={(e) => setEditForm({ ...editForm, maritalStatus: e.target.value })}>
+                      <option value="">— Non renseigné —</option>
+                      <option value="CELIBATAIRE">Célibataire</option>
+                      <option value="MARIE">Marié(e)</option>
+                      <option value="DIVORCE">Divorcé(e)</option>
+                      <option value="VEUF">Veuf/Veuve</option>
+                      <option value="CONCUBINAGE">Concubinage</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Nombre d&apos;enfants</label>
+                    <input type="number" min="0" className={inputClass} value={editForm.numberOfChildren} onChange={(e) => setEditForm({ ...editForm, numberOfChildren: e.target.value })} placeholder="0" />
+                  </div>
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Contact d&apos;urgence</label>
-                  <input type="text" className={inputClass} value={editForm.emergencyContact} onChange={(e) => setEditForm({ ...editForm, emergencyContact: e.target.value })} placeholder='Nom — Tél — Lien' />
+
+              {/* ── Section: Contact ── */}
+              <div className="pb-4 border-b border-slate-100">
+                <h4 className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <MapPin className="h-3.5 w-3.5" /> Contact & Localisation
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelClass}>Email</label>
+                    <input type="email" className={inputClass} value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Téléphone</label>
+                    <input type="tel" className={inputClass} value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
+                  </div>
                 </div>
-                <div>
-                  <label className={labelClass}>Qualifications</label>
-                  <input type="text" className={inputClass} value={editForm.qualifications} onChange={(e) => setEditForm({ ...editForm, qualifications: e.target.value })} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <div>
+                    <label className={labelClass}>Adresse</label>
+                    <input type="text" className={inputClass} value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Contact d&apos;urgence</label>
+                    <input type="text" className={inputClass} value={editForm.emergencyContact} onChange={(e) => setEditForm({ ...editForm, emergencyContact: e.target.value })} placeholder="Nom — Tél — Lien" />
+                  </div>
                 </div>
               </div>
+
+              {/* ── Section: Professionnel ── */}
+              <div className="pb-4 border-b border-slate-100">
+                <h4 className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <Briefcase className="h-3.5 w-3.5" /> Professionnel
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelClass}>Poste</label>
+                    <input type="text" className={inputClass} value={editForm.position} onChange={(e) => setEditForm({ ...editForm, position: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Département</label>
+                    <input type="text" className={inputClass} value={editForm.department} onChange={(e) => setEditForm({ ...editForm, department: e.target.value })} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                  <div>
+                    <label className={labelClass}>Catégorie</label>
+                    <select className={inputClass} value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}>
+                      <option value="PEDAGOGICAL">Corps Enseignant</option>
+                      <option value="ADMIN">Administration</option>
+                      <option value="SUPPORT">Personnel d&apos;appui</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Date d&apos;embauche</label>
+                    <input type="date" className={inputClass} value={editForm.hireDate} onChange={(e) => setEditForm({ ...editForm, hireDate: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Type de contrat</label>
+                    <select className={inputClass} value={editForm.contractType} onChange={(e) => setEditForm({ ...editForm, contractType: e.target.value })}>
+                      <option value="">— Non défini —</option>
+                      <option value="CDI">CDI</option>
+                      <option value="CDD">CDD</option>
+                      <option value="STAGE">Stage</option>
+                      <option value="INTERIM">Intérim</option>
+                      <option value="CONSULTANT">Consultant</option>
+                      <option value="BENEVOLAT">Bénévolat</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <div>
+                    <label className={labelClass}>Qualifications</label>
+                    <input type="text" className={inputClass} value={editForm.qualifications} onChange={(e) => setEditForm({ ...editForm, qualifications: e.target.value })} placeholder="Ex: Licence, Master..." />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Salaire de base (FCFA)</label>
+                    <input type="number" min="0" step="1000" className={inputClass} value={editForm.salary} onChange={(e) => setEditForm({ ...editForm, salary: e.target.value })} placeholder="0" />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Section: Identifiants Officiels ── */}
+              <div className="pb-4 border-b border-slate-100">
+                <h4 className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <Fingerprint className="h-3.5 w-3.5" /> Identifiants Officiels
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className={labelClass}>Numéro CNI / Passeport</label>
+                    <input type="text" className={inputClass} value={editForm.nationalId} onChange={(e) => setEditForm({ ...editForm, nationalId: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Numéro CNSS</label>
+                    <input type="text" className={inputClass} value={editForm.cnssNumber} onChange={(e) => setEditForm({ ...editForm, cnssNumber: e.target.value })} placeholder="Ex: 123456789" />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Numéro IFU</label>
+                    <input type="text" className={inputClass} value={editForm.ifuNumber} onChange={(e) => setEditForm({ ...editForm, ifuNumber: e.target.value })} />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Section: Banque ── */}
+              <div className="pb-4 border-b border-slate-100">
+                <h4 className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <DollarSign className="h-3.5 w-3.5" /> Coordonnées Bancaires
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelClass}>Banque</label>
+                    <input type="text" className={inputClass} value={editForm.bankName} onChange={(e) => setEditForm({ ...editForm, bankName: e.target.value })} placeholder="Ex: Bank of Africa" />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Numéro de compte</label>
+                    <input type="text" className={inputClass} value={editForm.bankAccountNumber} onChange={(e) => setEditForm({ ...editForm, bankAccountNumber: e.target.value })} placeholder="IBAN ou N° de compte" />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Section: Notes ── */}
               <div>
                 <label className={labelClass}>Notes</label>
-                <textarea className={inputClass + ' min-h-[80px]'} value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
+                <textarea className={inputClass + ' min-h-[80px]'} value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} placeholder="Informations complémentaires..." />
               </div>
               <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
                 <button type="button" onClick={() => setEditOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-50 transition">Annuler</button>
@@ -902,9 +1047,16 @@ export default function StaffDetailPage() {
                     <div className="space-y-6">
                       <InfoField label="Genre" value={member.gender === 'M' || member.gender === 'MALE' ? 'Masculin' : 'Féminin'} />
                       <InfoField label="Date de naissance" value={member.birthDate ? new Date(member.birthDate).toLocaleDateString('fr-FR') : member.dateOfBirth ? new Date(member.dateOfBirth).toLocaleDateString('fr-FR') : 'Non renseignée'} />
-                      <InfoField label="Nationalité" value={member.nationality || 'Béninoise'} />
-                      <InfoField label="Situation Matrimoniale" value={member.maritalStatus || 'Célibataire'} />
-                      <InfoField label="Nombre d'enfants" value={member.numberOfChildren?.toString() || '0'} />
+                      <InfoField label="Nationalité" value={member.nationality || 'Non renseignée'} />
+                      <InfoField label="Situation Matrimoniale" value={
+                        member.maritalStatus === 'CELIBATAIRE' ? 'Célibataire' :
+                        member.maritalStatus === 'MARIE' ? 'Marié(e)' :
+                        member.maritalStatus === 'DIVORCE' ? 'Divorcé(e)' :
+                        member.maritalStatus === 'VEUF' ? 'Veuf/Veuve' :
+                        member.maritalStatus === 'CONCUBINAGE' ? 'Concubinage' :
+                        (member.maritalStatus || 'Non renseignée')
+                      } />
+                      <InfoField label="Nombre d'enfants" value={member.numberOfChildren != null ? member.numberOfChildren.toString() : '0'} />
                     </div>
                   </section>
 
@@ -932,7 +1084,7 @@ export default function StaffDetailPage() {
                       <InfoField label="N° Employé (interne)" value={member.employeeNumber || '—'} />
                       <InfoField label="Numéro CNI / Passeport" value={member.nationalId || 'Non renseigné'} />
                       <InfoField label="Numéro CNSS" value={member.cnssNumber || 'Non renseigné'} />
-                      <InfoField label="Numéro IFU" value={member.ifuNumber || 'N/A'} />
+                      <InfoField label="Numéro IFU" value={member.ifuNumber || 'Non renseigné'} />
                     </div>
                   </section>
                 </div>

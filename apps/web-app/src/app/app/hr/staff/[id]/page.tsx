@@ -318,6 +318,10 @@ export default function StaffDetailPage() {
       hireDate: member.hireDate ? new Date(member.hireDate).toISOString().split('T')[0] : '',
       contractType: member.contractType || member.contracts?.[0]?.contractType || '',
       status: member.status || 'ACTIVE',
+      salary: member.salary != null ? String(member.salary) : '',
+      bankName: member.bankDetails?.bankName || '',
+      bankAccountNumber: member.bankDetails?.accountNumber || '',
+      bankAccountName: member.bankDetails?.accountName || '',
     });
     setEditOpen(true);
   };
@@ -353,6 +357,26 @@ export default function StaffDetailPage() {
         submitData.emergencyContact = { name: ecName, phone: ecPhone, relationship: ecRelationship };
       } else {
         submitData.emergencyContact = null;
+      }
+
+      // Handle salary — convert empty string to null, valid string to float
+      if (submitData.salary === '' || submitData.salary === null || submitData.salary === undefined) {
+        submitData.salary = null;
+      } else {
+        submitData.salary = parseFloat(submitData.salary) || null;
+      }
+
+      // Handle bankDetails — build structured object from 3 fields
+      const bankName = (submitData.bankName || '').trim();
+      const bankAccountNumber = (submitData.bankAccountNumber || '').trim();
+      const bankAccountName = (submitData.bankAccountName || '').trim();
+      delete submitData.bankName;
+      delete submitData.bankAccountNumber;
+      delete submitData.bankAccountName;
+      if (bankName || bankAccountNumber || bankAccountName) {
+        submitData.bankDetails = { bankName, accountNumber: bankAccountNumber, accountName: bankAccountName };
+      } else {
+        submitData.bankDetails = null;
       }
 
       // Remove category from direct submission — it's mapped to roleType server-side
@@ -671,8 +695,32 @@ export default function StaffDetailPage() {
                   <input type="text" className={inputClass} value={editForm.qualifications} onChange={(e) => setEditForm({ ...editForm, qualifications: e.target.value })} />
                 </div>
                 <div>
-                  <label className={labelClass}>Notes</label>
-                  <input type="text" className={inputClass} value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
+                  <label className={labelClass}>Salaire (FCFA)</label>
+                  <input type="number" min="0" step="0.01" className={inputClass} value={editForm.salary} onChange={(e) => setEditForm({ ...editForm, salary: e.target.value })} placeholder="0" />
+                </div>
+              </div>
+              <div>
+                <label className={labelClass}>Notes</label>
+                <textarea className={inputClass + ' min-h-[60px]'} value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
+              </div>
+
+              {/* ── Section: Informations bancaires ── */}
+              <div className="space-y-1 mb-3 pt-2">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Informations bancaires</h4>
+                <div className="h-px bg-slate-100" />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className={labelClass}>Banque</label>
+                  <input type="text" className={inputClass} value={editForm.bankName} onChange={(e) => setEditForm({ ...editForm, bankName: e.target.value })} placeholder="Ex: BDE, Ecobank…" />
+                </div>
+                <div>
+                  <label className={labelClass}>N° de compte</label>
+                  <input type="text" className={inputClass} value={editForm.bankAccountNumber} onChange={(e) => setEditForm({ ...editForm, bankAccountNumber: e.target.value })} placeholder="Numéro de compte bancaire" />
+                </div>
+                <div>
+                  <label className={labelClass}>Titulaire du compte</label>
+                  <input type="text" className={inputClass} value={editForm.bankAccountName} onChange={(e) => setEditForm({ ...editForm, bankAccountName: e.target.value })} placeholder="Nom du titulaire" />
                 </div>
               </div>
 
@@ -1079,6 +1127,18 @@ export default function StaffDetailPage() {
                       <InfoField label="Numéro CNI / Passeport" value={member.nationalId || 'Non renseigné'} />
                       <InfoField label="Numéro CNSS" value={member.cnssNumber || 'Non renseigné'} />
                       <InfoField label="Numéro IFU" value={member.ifuNumber || 'N/A'} />
+                    </div>
+                  </section>
+
+                  <section className="md:col-span-2 pt-6 border-t border-gray-50">
+                    <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+                      <DollarSign size={20} className="text-blue-500" />
+                      Rémunération & Banque
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <InfoField label="Salaire" value={member.salary ? `${Number(member.salary).toLocaleString('fr-FR')} FCFA` : 'Non renseigné'} />
+                      <InfoField label="Banque" value={member.bankDetails?.bankName || 'Non renseignée'} />
+                      <InfoField label="N° de compte" value={member.bankDetails?.accountNumber || 'Non renseigné'} />
                     </div>
                   </section>
                 </div>

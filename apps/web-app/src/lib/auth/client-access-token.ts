@@ -130,3 +130,43 @@ export function hasLocalSessionHints(): boolean {
       localStorage.getItem('session')?.trim(),
   );
 }
+
+/**
+ * Vérifie que la session serveur est disponible via /api/auth/me.
+ *
+ * Sur mobile (iOS Safari, Chrome Android), les cookies Set-Cookie ne sont
+ * pas toujours persistés immédiatement après un fetch(). Un window.location.href
+ * effectué trop tôt provoque une page blanche car getServerSession() ne trouve
+ * pas le cookie.
+ *
+ * Cette fonction interroge le BFF proxy pour confirmer que la session est
+ * lisible côté serveur avant de procéder à la redirection.
+ *
+ * @param maxAttempts Nombre maximal de tentatives (défaut 10)
+ * @param baseDelay Délai initial entre les tentatives en ms (défaut 200)
+ * @returns true si la session est confirmée, false si timeout
+ */
+export async function waitForServerSession(
+  maxAttempts = 10,
+  baseDelay = 200,
+): Promise<boolean> {
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const res = await fetch('/api/auth/me', {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
+      if (res.ok) {
+        return true;
+      }
+    } catch {
+      // Network error — retry
+    }
+    // Progressif : 200ms, 300ms, 400ms, 500ms, … (max 1s)
+    const delay = Math.min(baseDelay + i * 100, 1000);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+  return false;
+}

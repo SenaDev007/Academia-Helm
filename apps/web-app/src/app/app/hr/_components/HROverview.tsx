@@ -2,12 +2,18 @@
  * ============================================================================
  * HR OVERVIEW COMPONENT
  * Design harmonisé avec le pattern pédagogie (SubjectsWorkspace)
+ *
+ * v2: Améliorations résilience
+ *   - Retry automatique en cas d'erreur API (max 3 tentatives)
+ *   - Attente intelligente du contexte (tenant + academicYear)
+ *   - Toast d'erreur uniquement si toutes les tentatives échouent
+ *   - Bouton de rechargement manuel
  * ============================================================================
  */
 
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
   Users,
@@ -37,6 +43,8 @@ import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { toast } from '@/components/ui/toast';
 
 const PRIMARY = '#1A2BA6';
+const MAX_RETRIES = 3;
+const RETRY_DELAYS = [2000, 5000, 10000]; // Progressif : 2s, 5s, 10s
 
 function KpiCard({
   label,
@@ -80,23 +88,57 @@ export function HROverview() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isFetching, setIsFetching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const retryCountRef = useRef(0);
+  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  async function fetchData() {
-    if (!tenant?.id || !academicYear?.id) { setLoading(false); return; }
+  const fetchData = useCallback(async (isRetry = false) => {
+    if (!tenant?.id || !academicYear?.id) {
+      // Attendre que le contexte soit prêt — ne pas afficher d'erreur
+      setLoading(true);
+      return;
+    }
     try {
       setIsFetching(true);
+      setError(null);
       const result = await hrFetch<any>(hrUrl('overview/dashboard', { tenantId: tenant.id, academicYearId: academicYear.id }));
       setData(result);
-    } catch (error) {
-      console.error('Error fetching HR overview:', error);
-      toast({ variant: 'error', title: 'Erreur: chargement du tableau de bord RH' });
+      retryCountRef.current = 0; // Reset retry counter on success
+    } catch (err: any) {
+      console.error('Error fetching HR overview:', err);
+
+      // Retry logic
+      if (!isRetry) retryCountRef.current = 0;
+      retryCountRef.current++;
+
+      if (retryCountRef.current < MAX_RETRIES) {
+        const delay = RETRY_DELAYS[retryCountRef.current - 1] || 10000;
+        console.log(`[HR Overview] Retry ${retryCountRef.current}/${MAX_RETRIES} dans ${delay / 1000}s...`);
+        retryTimeoutRef.current = setTimeout(() => fetchData(true), delay);
+      } else {
+        const errorMessage = err?.message || 'Erreur réseau';
+        setError(errorMessage);
+        // Ne montrer le toast que si toutes les tentatives ont échoué
+        toast({ variant: 'error', title: 'Erreur: chargement du tableau de bord RH' });
+      }
     } finally {
       setLoading(false);
       setIsFetching(false);
     }
-  }
+  }, [tenant?.id, academicYear?.id]);
 
-  useEffect(() => { fetchData(); }, [tenant?.id, academicYear?.id]);
+  useEffect(() => {
+    fetchData();
+    return () => {
+      if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+    };
+  }, [fetchData]);
+
+  const handleRetry = () => {
+    retryCountRef.current = 0;
+    if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+    fetchData();
+  };
 
   const snapshot = data?.snapshot || { totalStaff: 0, totalTeachers: 0, totalAdmin: 0, monthlyPayroll: 0, cnssCharges: 0, leaveCount: 0 };
   const evolution = data?.evolution || [];
@@ -104,12 +146,12 @@ export function HROverview() {
 
   const kpis = [
     { label: 'Effectif Total', value: snapshot.totalStaff, subValue: `${snapshot.totalTeachers} ens. · ${snapshot.totalAdmin} admin`, icon: Users },
-    { label: 'Masse Salariale', value: `${Number(snapshot.monthlyPayroll).toLocaleString()} XOF`, subValue: 'Dernier mois validé', icon: DollarSign },
-    { label: 'Charges Sociales', value: `${Number(snapshot.cnssCharges).toLocaleString()} XOF`, subValue: 'Cotisations CNSS estimées', icon: ShieldCheck },
+    { label: 'Masse Salariale', value: `${Number(snapshot.monthlyPayroll || 0).toLocaleString()} XOF`, subValue: 'Dernier mois validé', icon: DollarSign },
+    { label: 'Charges Sociales', value: `${Number(snapshot.cnssCharges || 0).toLocaleString()} XOF`, subValue: 'Cotisations CNSS estimées', icon: ShieldCheck },
     { label: 'Congés Actifs', value: snapshot.leaveCount, subValue: 'Personnes absentes ce jour', icon: Calendar },
   ];
 
-  if (loading) {
+  if (loading && !data) {
     return (
       <div className="space-y-8">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -125,6 +167,33 @@ export function HROverview() {
 
   return (
     <div className="space-y-8 pb-12">
+      {/* Error banner with retry button */}
+      {error && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-xl border border-rose-200 bg-rose-50 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+        >
+          <div className="flex items-center gap-3">
+            <div className="rounded-lg bg-rose-100 p-2">
+              <BarChart3 className="h-5 w-5 text-rose-600" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-rose-900">Impossible de charger le tableau de bord</p>
+              <p className="text-xs text-rose-600 mt-0.5">{error}</p>
+            </div>
+          </div>
+          <button
+            onClick={handleRetry}
+            disabled={isFetching}
+            className="flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-50 transition shrink-0"
+          >
+            <RefreshCw className={cn('h-3.5 w-3.5', isFetching && 'animate-spin')} />
+            Réessayer
+          </button>
+        </motion.div>
+      )}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {kpis.map((kpi, idx) => (
@@ -230,7 +299,7 @@ export function HROverview() {
 
           <div className="mt-6 pt-4 border-t border-white/10">
             <p className="text-[10px] text-white/30 italic leading-relaxed">
-              "Pensez à générer les déclarations CNSS du mois en cours avant l'échéance légale."
+              &quot;Pensez à générer les déclarations CNSS du mois en cours avant l&apos;échéance légale.&quot;
             </p>
           </div>
 
@@ -278,4 +347,3 @@ export function HROverview() {
     </div>
   );
 }
-

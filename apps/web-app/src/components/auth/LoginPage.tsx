@@ -30,7 +30,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { BRAND } from '@/lib/brand';
 import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-email';
-import { persistClientSession } from '@/lib/auth/client-access-token';
+import { persistClientSession, waitForServerSession } from '@/lib/auth/client-access-token';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getMotionDuration } from '@/lib/motion/presets';
 import { getTenantRedirectUrl } from '@/lib/utils/tenant-redirect';
@@ -238,9 +238,9 @@ export default function LoginPage() {
 
     saveEmailForTenant(schoolCredentials.email, 'platform');
 
-    // Petit délai pour s'assurer que les cookies Set-Cookie sont bien persistés
-    // par le navigateur avant la redirection (race condition sur mobile)
-    await new Promise(resolve => setTimeout(resolve, 150));
+    // Attendre que la session serveur soit disponible (cookie persisté)
+    // Sur mobile, les cookies ne sont pas toujours persistés immédiatement
+    await waitForServerSession();
     window.location.href = '/app/platform';
   };
 
@@ -276,9 +276,8 @@ export default function LoginPage() {
     const tenantKey = data.tenant?.id || tenantIdFromUrl || tenantSlug || 'platform';
     saveEmailForTenant(schoolCredentials.email, tenantKey);
 
-    // Petit délai pour s'assurer que les cookies Set-Cookie sont bien persistés
-    // par le navigateur avant la redirection (race condition sur mobile)
-    await new Promise(resolve => setTimeout(resolve, 150));
+    // Attendre que la session serveur soit disponible (cookie persisté)
+    await waitForServerSession();
 
     const isPlatformOwner =
       data.user?.role === 'PLATFORM_OWNER' ||
@@ -370,9 +369,8 @@ export default function LoginPage() {
     const tenantKey = data.tenant?.id || tenantIdForApi || 'platform';
     saveEmailForTenant(schoolCredentials.email, tenantKey);
 
-    // Petit délai pour s'assurer que les cookies Set-Cookie sont bien persistés
-    // par le navigateur avant la redirection (race condition sur mobile)
-    await new Promise(resolve => setTimeout(resolve, 150));
+    // Attendre que la session serveur soit disponible (cookie persisté)
+    await waitForServerSession();
 
     const redirectUrl = getTenantRedirectUrl({
       tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,
@@ -413,9 +411,8 @@ export default function LoginPage() {
       expiresAt: data.expiresAt,
     });
 
-    // Petit délai pour s'assurer que les cookies Set-Cookie sont bien persistés
-    // par le navigateur avant la redirection (race condition sur mobile)
-    await new Promise(resolve => setTimeout(resolve, 150));
+    // Attendre que la session serveur soit disponible (cookie persisté)
+    await waitForServerSession();
 
     const redirectUrl = getTenantRedirectUrl({
       tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,
@@ -484,9 +481,8 @@ export default function LoginPage() {
       expiresAt: data.expiresAt,
     });
 
-    // Petit délai pour s'assurer que les cookies Set-Cookie sont bien persistés
-    // par le navigateur avant la redirection (race condition sur mobile)
-    await new Promise(resolve => setTimeout(resolve, 150));
+    // Attendre que la session serveur soit disponible (cookie persisté)
+    await waitForServerSession();
 
     const redirectUrl = getTenantRedirectUrl({
       tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,

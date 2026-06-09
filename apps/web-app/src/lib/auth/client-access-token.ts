@@ -181,7 +181,16 @@ export async function waitForServerSession(
         // ensure the cookie is written to disk before any cross-domain redirect.
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
         if (isMobile) {
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          // Mobile browsers (iOS Safari, Chrome Android) need extra time to
+          // persist cookies from fetch() Set-Cookie headers. 1200ms ensures
+          // the cookie is written to disk before any cross-domain redirect.
+          await new Promise((resolve) => setTimeout(resolve, 1200));
+          // Double-check: verify the non-httpOnly token cookie is readable
+          const hasTokenCookie = document.cookie.includes('academia_token');
+          if (!hasTokenCookie) {
+            // Cookie still not visible — wait a bit more
+            await new Promise((resolve) => setTimeout(resolve, 800));
+          }
         }
         return true;
       }

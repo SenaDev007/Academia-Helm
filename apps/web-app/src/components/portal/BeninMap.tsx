@@ -223,10 +223,18 @@ export default function BeninMap({ onDepartmentSelect, selectedDepartment, filte
     setStatsLoading(true);
 
     fetch('/api/public/schools/map-stats')
-      .then((res) => res.json())
-      .then((data: MapStatsResponse) => {
+      .then((res) => {
+        if (!res.ok) {
+          console.warn('[BeninMap] Map stats API returned', res.status);
+          return null;
+        }
+        return res.json();
+      })
+      .then((data: MapStatsResponse | null) => {
         if (!cancelled) {
-          setAcademiaStats(data);
+          if (data && Array.isArray(data.departments)) {
+            setAcademiaStats(data);
+          }
           setStatsLoading(false);
         }
       })

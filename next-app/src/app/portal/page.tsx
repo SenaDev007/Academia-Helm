@@ -645,7 +645,7 @@ export default function PortalPage() {
                 className="mx-auto mb-12 flex w-full max-w-6xl flex-col gap-8 lg:flex-row lg:items-start lg:gap-10"
               >
                 {/* ── Colonne gauche : Cartes portail ── */}
-                <div className="flex flex-col gap-4 lg:w-[55%]">
+                <div className="order-2 flex flex-col gap-4 lg:order-none lg:w-[55%]">
                   {portalCards.map((card, index) => {
                     const Icon = card.Icon;
                     return (
@@ -732,7 +732,7 @@ export default function PortalPage() {
                   initial={shouldReduceMotion ? false : { opacity: 0, x: 24 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: shouldReduceMotion ? 0 : 0.35, duration: dur, ease: 'easeOut' }}
-                  className="lg:w-[45%]"
+                  className="order-1 lg:order-none lg:w-[45%]"
                 >
                   <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-lg">
                     <div className="mb-3 flex items-center justify-between">

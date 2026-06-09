@@ -25,6 +25,8 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import PremiumHeader from '@/components/layout/PremiumHeader';
 import SchoolSearch from '@/components/portal/SchoolSearch';
+import BeninMap from '@/components/portal/BeninMap';
+import { BENIN_DEPARTMENTS, type DepartmentData } from '@/data/benin-departments';
 import { useTenantRedirect } from '@/lib/hooks/useTenantRedirect';
 import { BRAND } from '@/lib/brand';
 import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-email';
@@ -59,6 +61,8 @@ const GOLD = '#C9A84C';
 export default function PortalPage() {
   const [selectedPortal, setSelectedPortal] = useState<PortalType>(null);
   const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
+  const [selectedDepartment, setSelectedDepartment] = useState<DepartmentData | null>(null);
+  const [mapFilter, setMapFilter] = useState<'all' | 'public' | 'private'>('all');
   const [devPanelOpen, setDevPanelOpen] = useState(false);
   const [devTenants, setDevTenants] = useState<DevTenant[]>([]);
   const [devTenantsLoading, setDevTenantsLoading] = useState(false);
@@ -625,7 +629,7 @@ export default function PortalPage() {
           <AnimatePresence mode="wait">
           {!selectedPortal ? (
               <motion.div
-                key="portal-grid"
+                key="portal-layout"
                 initial={
                   shouldReduceMotion
                     ? false
@@ -638,91 +642,131 @@ export default function PortalPage() {
                     : { opacity: 0, y: -10, transition: { duration: dur * 0.85 } }
                 }
                 transition={{ duration: dur, ease: 'easeOut' }}
-                className="mx-auto mb-12 grid w-full max-w-lg grid-cols-1 gap-4 sm:max-w-none sm:gap-5 md:max-w-5xl md:grid-cols-2 lg:grid-cols-3 md:gap-6 xl:max-w-6xl"
+                className="mx-auto mb-12 flex w-full max-w-6xl flex-col gap-8 lg:flex-row lg:items-start lg:gap-10"
               >
-                {portalCards.map((card, index) => {
-                  const Icon = card.Icon;
-                  return (
-                    <motion.div
-                      key={card.type}
-                      initial={
-                        shouldReduceMotion
-                          ? false
-                          : { opacity: 0, y: 22 }
-                      }
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{
-                        delay: shouldReduceMotion ? 0 : 0.08 + index * 0.07,
-                        duration: dur,
-                        ease: 'easeOut',
-                      }}
-                      whileHover={
-                        shouldReduceMotion
-                          ? undefined
-                          : {
-                              y: -6,
-                              transition: cardSpring,
-                            }
-                      }
-                      whileTap={shouldReduceMotion ? undefined : { scale: 0.99 }}
-                      onClick={() => handlePortalSelect(card.type)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          handlePortalSelect(card.type);
+                {/* ── Colonne gauche : Cartes portail ── */}
+                <div className="flex flex-col gap-4 lg:w-[55%]">
+                  {portalCards.map((card, index) => {
+                    const Icon = card.Icon;
+                    return (
+                      <motion.div
+                        key={card.type}
+                        initial={
+                          shouldReduceMotion
+                            ? false
+                            : { opacity: 0, y: 22 }
                         }
-                      }}
-                      role="button"
-                      tabIndex={0}
-                      className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-md outline-none ring-slate-200/60 transition-shadow focus-visible:ring-2 focus-visible:ring-[#C9A84C] focus-visible:ring-offset-2 hover:border-slate-300 hover:shadow-xl md:min-h-[260px] ${
-                        index === 4 && portalCards.length % 3 !== 0
-                          ? 'md:col-span-2 lg:col-span-1 md:mx-auto md:max-w-md lg:mx-0 lg:max-w-none'
-                          : ''
-                      }`}
-                    >
-                      <div
-                        className={`absolute left-0 top-0 h-1 w-full ${card.accentBar} opacity-90`}
-                        aria-hidden
-                      />
-                      <div className="flex h-full flex-row items-center gap-4 p-5 sm:p-6 md:flex-col md:items-center md:justify-between md:px-8 md:py-8 md:text-center">
-                        <motion.div
-                          className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br shadow-inner sm:h-16 sm:w-16 ${card.iconBg} ring-1 ring-white/80 md:mb-1`}
-                          whileHover={
-                            shouldReduceMotion
-                              ? undefined
-                              : { scale: 1.06, rotate: -2 }
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{
+                          delay: shouldReduceMotion ? 0 : 0.08 + index * 0.07,
+                          duration: dur,
+                          ease: 'easeOut',
+                        }}
+                        whileHover={
+                          shouldReduceMotion
+                            ? undefined
+                            : {
+                                y: -4,
+                                transition: cardSpring,
+                              }
+                        }
+                        whileTap={shouldReduceMotion ? undefined : { scale: 0.99 }}
+                        onClick={() => handlePortalSelect(card.type)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handlePortalSelect(card.type);
                           }
-                          transition={cardSpring}
-                        >
-                          <Icon className={`h-7 w-7 sm:h-8 sm:w-8 ${card.iconColor}`} />
-                        </motion.div>
-                        <div className="min-w-0 flex-1 md:flex md:flex-1 md:flex-col md:items-center">
-                          <h3
-                            className="text-lg font-bold leading-snug sm:text-xl"
-                            style={{ color: NAVY }}
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        className="group relative cursor-pointer overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-md outline-none ring-slate-200/60 transition-shadow focus-visible:ring-2 focus-visible:ring-[#C9A84C] focus-visible:ring-offset-2 hover:border-slate-300 hover:shadow-xl"
+                      >
+                        <div
+                          className={`absolute left-0 top-0 h-1 w-full ${card.accentBar} opacity-90`}
+                          aria-hidden
+                        />
+                        <div className="flex items-center gap-4 p-4 sm:p-5">
+                          <motion.div
+                            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br shadow-inner sm:h-14 sm:w-14 ${card.iconBg} ring-1 ring-white/80`}
+                            whileHover={
+                              shouldReduceMotion
+                                ? undefined
+                                : { scale: 1.06, rotate: -2 }
+                            }
+                            transition={cardSpring}
                           >
-                            {card.title}
-                  </h3>
-                          <p className="mt-1.5 text-sm leading-relaxed text-slate-600 md:mt-2">
-                            {card.subtitle}
-                          </p>
+                            <Icon className={`h-6 w-6 sm:h-7 sm:w-7 ${card.iconColor}`} />
+                          </motion.div>
+                          <div className="min-w-0 flex-1">
+                            <h3
+                              className="text-base font-bold leading-snug sm:text-lg"
+                              style={{ color: NAVY }}
+                            >
+                              {card.title}
+                            </h3>
+                            <p className="mt-0.5 text-xs leading-relaxed text-slate-500 sm:text-sm">
+                              {card.subtitle}
+                            </p>
+                          </div>
                           <div
-                            className={`mt-4 inline-flex min-h-[44px] items-center text-sm font-semibold md:mt-auto ${card.cta}`}
+                            className={`shrink-0 inline-flex items-center text-sm font-semibold ${card.cta}`}
                           >
-                    <span>Accéder</span>
+                            <span>Accéder</span>
                             <motion.span
-                              className="ml-2 inline-flex"
+                              className="ml-1.5 inline-flex"
                               initial={false}
                               whileHover={{ x: shouldReduceMotion ? 0 : 4 }}
                             >
                               <ArrowRight className="h-4 w-4" aria-hidden />
                             </motion.span>
-                  </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
                 </div>
-              </div>
-                    </motion.div>
-                  );
-                })}
+
+                {/* ── Colonne droite : Carte du Bénin ── */}
+                <motion.div
+                  initial={shouldReduceMotion ? false : { opacity: 0, x: 24 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: shouldReduceMotion ? 0 : 0.35, duration: dur, ease: 'easeOut' }}
+                  className="lg:w-[45%]"
+                >
+                  <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-lg">
+                    <div className="mb-3 flex items-center justify-between">
+                      <h3 className="text-sm font-bold uppercase tracking-wider" style={{ color: NAVY }}>
+                        Carte du Bénin
+                      </h3>
+                      <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs">
+                        {(['all', 'public', 'private'] as const).map((f) => (
+                          <button
+                            key={f}
+                            onClick={() => setMapFilter(f)}
+                            className={`px-3 py-1.5 font-medium transition-colors ${
+                              mapFilter === f
+                                ? 'text-white'
+                                : 'text-slate-600 hover:bg-slate-50'
+                            }`}
+                            style={
+                              mapFilter === f
+                                ? { background: `linear-gradient(135deg, ${NAVY}, #144798)` }
+                                : undefined
+                            }
+                          >
+                            {f === 'all' ? 'Tous' : f === 'public' ? 'Public' : 'Privé'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <BeninMap
+                      onDepartmentSelect={setSelectedDepartment}
+                      selectedDepartment={selectedDepartment}
+                      filter={mapFilter}
+                    />
+                  </div>
+                </motion.div>
               </motion.div>
             ) : (
               <motion.div

@@ -110,7 +110,7 @@ export class HROrionService {
             { employeeCNSS: { isActive: false } },
             { employeeCNSS: { cnssNumber: null } },
           ],
-          contracts: { some: { status: 'ACTIVE', contractType: 'CDI' } },
+          contracts: { some: { status: { in: ['ACTIVE', 'PENDING'] }, contractType: 'CDI' } },
         },
         select: { id: true, firstName: true, lastName: true },
       });
@@ -137,7 +137,7 @@ export class HROrionService {
       const expiringContracts = await this.prisma.contract.findMany({
         where: {
           tenantId,
-          status: 'ACTIVE',
+          status: { in: ['ACTIVE', 'PENDING'] },
           endDate: { gt: new Date(), lte: thirtyDays },
         },
         include: {
@@ -251,7 +251,7 @@ export class HROrionService {
       this.prisma.staff.count({ where: { tenantId } }),
       this.prisma.staff.count({ where: { tenantId, status: 'ACTIVE' } }),
       this.prisma.leaveRequest.count({ where: { tenantId, status: 'PENDING' } }),
-      this.prisma.contract.count({ where: { tenantId, status: 'ACTIVE' } }),
+      this.prisma.contract.count({ where: { tenantId, status: { in: ['ACTIVE', 'PENDING'] } } }),
     ]);
 
     const totalStaff = results[0].status === 'fulfilled' ? results[0].value : 0;

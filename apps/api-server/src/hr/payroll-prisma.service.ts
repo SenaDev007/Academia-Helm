@@ -205,16 +205,16 @@ export class PayrollPrismaService {
     // Récupérer les tranches IRPP actives
     const taxRates = await this.findActiveTaxRates(countryCode);
 
-    // Trouver le personnel actif avec contrat actif
+    // Trouver le personnel actif avec contrat actif ou en attente
     const staffWithContracts = await this.prisma.staff.findMany({
       where: {
         tenantId,
         status: 'ACTIVE',
-        contracts: { some: { status: 'ACTIVE' } },
+        contracts: { some: { status: { in: ['ACTIVE', 'PENDING'] } } },
       },
       include: {
         contracts: {
-          where: { status: 'ACTIVE' },
+          where: { status: { in: ['ACTIVE', 'PENDING'] } },
           orderBy: { createdAt: 'desc' },
           take: 1,
         },

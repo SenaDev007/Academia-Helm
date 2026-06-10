@@ -395,14 +395,13 @@ export function RecruitmentWorkspace() {
     // Fetch Jobs
     try {
       const fetchedJobs = await hrFetch<any[]>(hrUrl('recruitment/jobs', { tenantId: tenant.id }));
-      if (fetchedJobs) {
-        setJobs(fetchedJobs.map(j => ({
-          ...j,
-          date: j.createdAt ? j.createdAt.split('T')[0] : new Date().toISOString().split('T')[0],
-          publishedAt: j.publishedAt || null,
-          candidates: j._count?.applications || 0,
-        })));
-      }
+      const jobList = Array.isArray(fetchedJobs) ? fetchedJobs : [];
+      setJobs(jobList.map(j => ({
+        ...j,
+        date: j.createdAt ? j.createdAt.split('T')[0] : new Date().toISOString().split('T')[0],
+        publishedAt: j.publishedAt || null,
+        candidates: j._count?.applications || 0,
+      })));
     } catch (err) {
       console.error('Failed to fetch recruitment jobs:', err);
     }
@@ -458,12 +457,11 @@ export function RecruitmentWorkspace() {
     // Fetch Interviews
     try {
       const fetchedInterviews = await hrFetch<any[]>(hrUrl('recruitment/interviews', { tenantId: tenant.id }));
-      if (fetchedInterviews) {
-        setInterviews(fetchedInterviews.map(i => ({
-          ...i,
-          date: i.date ? i.date.split('T')[0] : '',
-        })));
-      }
+      const interviewList = Array.isArray(fetchedInterviews) ? fetchedInterviews : [];
+      setInterviews(interviewList.map(i => ({
+        ...i,
+        date: i.date ? i.date.split('T')[0] : '',
+      })));
     } catch (err) {
       console.error('Failed to fetch recruitment interviews:', err);
     }
@@ -471,9 +469,7 @@ export function RecruitmentWorkspace() {
     // Fetch Tests
     try {
       const fetchedTests = await hrFetch<any[]>(hrUrl('recruitment/tests', { tenantId: tenant.id }));
-      if (fetchedTests) {
-        setTests(fetchedTests);
-      }
+      setTests(Array.isArray(fetchedTests) ? fetchedTests : []);
     } catch (err) {
       console.error('Failed to fetch recruitment tests:', err);
     }
@@ -481,9 +477,7 @@ export function RecruitmentWorkspace() {
     // Fetch Talent Pool
     try {
       const fetchedTalent = await hrFetch<any[]>(hrUrl('recruitment/talent-pool', { tenantId: tenant.id }));
-      if (fetchedTalent) {
-        setTalentPool(fetchedTalent);
-      }
+      setTalentPool(Array.isArray(fetchedTalent) ? fetchedTalent : []);
     } catch (err) {
       console.error('Failed to fetch recruitment talent pool:', err);
     }

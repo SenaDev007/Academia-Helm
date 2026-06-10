@@ -127,12 +127,16 @@ export class StaffPrismaService {
       console.error('Matricule generation failed:', error.message);
     }
 
+    // Use tenantMatricule as employeeNumber (school-code based, e.g. AHACAD-26-00001)
+    // Falls back to the provided employeeNumber if tenantMatricule generation failed
+    const finalEmployeeNumber = tenantMatricule || employeeNumber;
+
     const created = await this.prisma.staff.create({
       data: {
         ...prismaCreateDefaults(),
         tenantId:       data.tenantId,
         academicYearId: data.academicYearId || null,
-        employeeNumber,
+        employeeNumber: finalEmployeeNumber,
         globalMatricule,
         tenantMatricule,
         firstName:      data.firstName,

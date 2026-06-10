@@ -838,8 +838,11 @@ export class RecruitmentPrismaService {
               }
             }
 
-            // Generate employee number (unique, required field)
-            const employeeNumber = `EMP-${String(Date.now()).slice(-8)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+            // Generate employee number based on school code (tenant matricule format)
+            // Format: <CODE_ECOLE>-YY-XXXXX (e.g., AHACAD-26-00001)
+            // Falls back to STF-YY-XXXXX if matricule generation failed
+            const employeeNumber = tenantMatricule
+              || `STF-${new Date().getFullYear().toString().slice(-2)}-${String(Date.now()).slice(-5)}`;
 
             // Build staff data — explicitly list ALL fields to avoid spreading unknown keys
             const staffData: Record<string, any> = {

@@ -44,15 +44,74 @@ export class StaffMatriculeService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Retourne le code école (slug tenant, nettoyé, max 6 caractères)
+   * Retourne le code école basé sur le nom de l'établissement.
+   * Priorité : nom du tenant → slug du tenant → 'AH'
+   * Extrait les initiales des mots du nom, max 6 caractères.
+   * Ex: "Academia Helm" → "AHACAD", "Complexe Scolaire Eveil Afrique" → "CSEAFR"
    */
   async getSchoolCode(tenantId: string): Promise<string> {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { slug: true },
+      select: { name: true, slug: true },
     });
     if (!tenant) throw new NotFoundException('Tenant not found');
-    return (tenant.slug || 'AH').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || 'AH';
+
+    // Try to derive code from the tenant name first
+    if (tenant.name) {
+      const codeFromName = this.deriveSchoolCode(tenant.name);
+      if (codeFromName) return codeFromName;
+    }
+
+    // Fallback: use slug
+    const codeFromSlug = (tenant.slug || 'AH').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+    return codeFromSlug || 'AH';
+  }
+
+  /**
+   * Derive a school code from the establishment name.
+   * Strategy: extract key initials from significant words.
+   * Max 6 characters, uppercase, alphabetic only.
+   *
+   * Examples:
+   *   "Academia Helm" → "AHACAD" (3+3 from 2 words)
+   *   "Eveil Afrique Education" → "EVAEDU" (3+1+2 prioritized)
+   *   "Lycée Saint Michel" → "LYSMIC" (3+3 from 2 significant words)
+   */
+  private deriveSchoolCode(name: string): string | null {
+    if (!name || name.trim().length === 0) return null;
+
+    // Remove common non-significant French words
+    const stopWords = new Set([
+      'DE', 'DU', 'DES', 'LE', 'LA', 'LES', 'ET', 'D', 'L', 'EN',
+      'PRIVÉ', 'PRIVEE', 'PRIVE', 'COMPLEXE', 'SCOLAIRE', 'ETABLISSEMENT',
+    ]);
+    const words = name.toUpperCase()
+      .replace(/[^A-ZÀ-ÿ\s]/g, '')  // Keep only letters and spaces
+      .split(/\s+/)
+      .filter(w => w.length > 0 && !stopWords.has(w));
+
+    if (words.length === 0) return null;
+
+    // Normalize: remove accents
+    const normalize = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+    let code = '';
+    if (words.length === 1) {
+      // Single word: take first 6 letters
+      code = normalize(words[0]).substring(0, 6);
+    } else if (words.length === 2) {
+      // Two words: take first 3 letters of each
+      code = normalize(words[0]).substring(0, 3) + normalize(words[1]).substring(0, 3);
+    } else {
+      // 3+ words: take first 2 letters from first two words, first 1 from the rest
+      code = normalize(words[0]).substring(0, 2) + normalize(words[1]).substring(0, 2);
+      for (let i = 2; i < words.length && code.length < 6; i++) {
+        code += normalize(words[i]).substring(0, 1);
+      }
+    }
+
+    code = code.slice(0, 6);
+    return code.length >= 2 ? code : null;
   }
 
   /**

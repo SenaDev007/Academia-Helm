@@ -125,15 +125,36 @@ export class ContractPdfService {
     contract: any;
   }> {
     // 1. Charger le contrat complet
-    const contract = await this.prisma.contract.findFirst({
-      where: { id: contractId, tenantId },
-      include: {
-        staff: { include: { employeeCNSS: true } },
-        tenant: { include: { country: true, schools: true } },
-        academicYear: true,
-        template: true,
-      },
-    });
+    // NOTE: employeeCNSS relation may not exist if Prisma client is outdated.
+    // We try with the full include first, and fall back to a simpler query if it fails.
+    let contract: any;
+    try {
+      contract = await this.prisma.contract.findFirst({
+        where: { id: contractId, tenantId },
+        include: {
+          staff: { include: { employeeCNSS: true } },
+          tenant: { include: { country: true, schools: true } },
+          academicYear: true,
+          template: true,
+        },
+      });
+    } catch (prismaErr: any) {
+      // P2022 = column does not exist, P2009 = validation error (unknown field/relation)
+      if (prismaErr?.code === 'P2022' || prismaErr?.code === 'P2009' || prismaErr?.message?.includes('column') || prismaErr?.message?.includes('does not exist')) {
+        this.logger.warn(`Full include query failed (likely missing column/relation), falling back to simpler query: ${prismaErr.message}`);
+        contract = await this.prisma.contract.findFirst({
+          where: { id: contractId, tenantId },
+          include: {
+            staff: true,
+            tenant: { include: { country: true, schools: true } },
+            academicYear: true,
+            template: true,
+          },
+        });
+      } else {
+        throw prismaErr;
+      }
+    }
 
     if (!contract) throw new NotFoundException(`Contrat ${contractId} introuvable`);
 
@@ -145,7 +166,7 @@ export class ContractPdfService {
       where: { tenantId, isActive: true },
       orderBy: { version: 'desc' },
     });
-    const school = contract.tenant?.schools?.[0] || await this.prisma.school.findFirst({ where: { tenantId } });
+    const school = contract.tenant?.schools || await this.prisma.school.findFirst({ where: { tenantId } });
 
     // Priorité : SchoolSettings > TenantIdentityProfile > School > Tenant
     const schoolName = schoolSettings?.schoolName || identityProfile?.schoolName || school?.name || contract.tenant?.name || 'L\'École';
@@ -348,6 +369,21 @@ export class ContractPdfService {
         academicYear: true,
         template: true,
       },
+    }).catch(async (prismaErr: any) => {
+      // Fallback if employeeCNSS relation or column is missing
+      if (prismaErr?.code === 'P2022' || prismaErr?.code === 'P2009' || prismaErr?.message?.includes('column') || prismaErr?.message?.includes('does not exist')) {
+        this.logger.warn(`generateContractHtml: Full include failed, falling back: ${prismaErr.message}`);
+        return this.prisma.contract.findFirst({
+          where: { id: contractId, tenantId },
+          include: {
+            staff: true,
+            tenant: { include: { country: true, schools: true } },
+            academicYear: true,
+            template: true,
+          },
+        });
+      }
+      throw prismaErr;
     });
 
     if (!contract) throw new NotFoundException(`Contrat ${contractId} introuvable`);
@@ -357,7 +393,7 @@ export class ContractPdfService {
       where: { tenantId, isActive: true },
       orderBy: { version: 'desc' },
     });
-    const school = contract.tenant?.schools?.[0] || await this.prisma.school.findFirst({ where: { tenantId } });
+    const school = contract.tenant?.schools || await this.prisma.school.findFirst({ where: { tenantId } });
 
     const schoolName = schoolSettings?.schoolName || identityProfile?.schoolName || school?.name || contract.tenant?.name || "L'École";
     const schoolAddress = schoolSettings?.address || identityProfile?.address || school?.address || '';
@@ -492,6 +528,18 @@ export class ContractPdfService {
         staff: { include: { employeeCNSS: true } },
         tenant: { include: { country: true } },
       },
+    }).catch(async (prismaErr: any) => {
+      if (prismaErr?.code === 'P2022' || prismaErr?.code === 'P2009' || prismaErr?.message?.includes('column') || prismaErr?.message?.includes('does not exist')) {
+        this.logger.warn(`getExistingContractPdf: Full include failed, falling back: ${prismaErr.message}`);
+        return this.prisma.contract.findFirst({
+          where: { id: contractId, tenantId },
+          include: {
+            staff: true,
+            tenant: { include: { country: true } },
+          },
+        });
+      }
+      throw prismaErr;
     });
 
     if (!contract) throw new NotFoundException(`Contrat ${contractId} introuvable`);
@@ -572,6 +620,27 @@ export class ContractPdfService {
         },
       },
       include: { staff: { include: { employeeCNSS: true } } },
+    }).catch(async (prismaErr: any) => {
+      if (prismaErr?.code === 'P2022' || prismaErr?.code === 'P2009' || prismaErr?.message?.includes('column') || prismaErr?.message?.includes('does not exist')) {
+        return this.prisma.contract.update({
+          where: { id: contractId },
+          data: {
+            signedAt,
+            signedBy: data.signerName,
+            terms: {
+              ...((contract.terms as any) || {}),
+              signatureData: data.signatureData,
+              signerName: data.signerName,
+              signerRole: data.signerRole || 'Employé',
+              signedAt: signedAt.toISOString(),
+              ipAddress: data.ipAddress || null,
+              signatureMethod: 'ELECTRONIC_CANVAS',
+            },
+          },
+          include: { staff: true },
+        });
+      }
+      throw prismaErr;
     });
 
     // Re-générer le PDF avec la signature

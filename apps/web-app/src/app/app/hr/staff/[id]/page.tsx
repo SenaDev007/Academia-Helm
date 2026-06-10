@@ -41,7 +41,6 @@ import {
   UserCheck,
   Package,
   DollarSign,
-  Eye,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';

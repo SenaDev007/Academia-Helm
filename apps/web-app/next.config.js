@@ -140,143 +140,157 @@ const nextConfig = {
 };
 
 // PWA en prod ; bundle analyzer si ANALYZE=true (audit poids JS pour la perf)
-const withBundleAnalyzer = require('@next/bundle-analyzer')({
-  enabled: process.env.ANALYZE === 'true',
-});
-
 let exportedConfig = nextConfig;
+
+// Bundle analyzer — chargement conditionnel pour éviter MODULE_NOT_FOUND
+// quand @next/bundle-analyzer n'est pas installé (ex: Vercel sans devDependencies)
+if (process.env.ANALYZE === 'true') {
+  try {
+    const withBundleAnalyzer = require('@next/bundle-analyzer')({
+      enabled: true,
+    });
+    exportedConfig = withBundleAnalyzer(exportedConfig);
+  } catch {
+    console.warn('⚠️  @next/bundle-analyzer not installed — skipping bundle analysis');
+  }
+}
+
 if (process.env.NODE_ENV === 'production') {
   // @ducanh2912/next-pwa (Workbox 7) : Stratégie offline-first
   // StaleWhileRevalidate pour les API : réponse immédiate depuis le cache +
   // mise à jour en arrière-plan. Plus de timeout 10s qui bloque l'UI.
-  const withPWA = require('@ducanh2912/next-pwa').default({
-    dest: 'public',
-    register: true,
-    extendDefaultRuntimeCaching: false,
-    workboxOptions: {
-      skipWaiting: true,
-      clientsClaim: true,
-      cleanupOutdatedCaches: true,
-      cacheId: process.env.VERCEL_GIT_COMMIT_SHA || `local-${Date.now()}`,
-      runtimeCaching: [
-        // API calls : NetworkFirst — on privilégie toujours les données fraîches du serveur.
-        // Le cache n'est utilisé qu'en fallback hors ligne. StaleWhileRevalidate causait
-        // des bugs où des données supprimées réapparaissaient (le SW retournait le cache
-        // périmé au lieu de la réponse réseau à jour).
-        {
-          urlPattern: /\/api\/(?!auth\/).*/i,
-          handler: 'NetworkFirst',
-          options: {
-            cacheName: 'api-cache',
-            networkTimeoutSeconds: 10,
-            expiration: {
-              maxEntries: 300,
-              maxAgeSeconds: 24 * 60 * 60, // 24 heures
-            },
-            cacheableResponse: {
-              statuses: [0, 200],
-            },
-          },
-        },
-        // Auth endpoints : NetworkOnly — jamais cacher (sécurité)
-        {
-          urlPattern: /\/api\/auth\/.*/i,
-          handler: 'NetworkOnly',
-        },
-        // Next.js _next/static chunks : StaleWhileRevalidate
-        // CRITICAL: These must NOT use CacheFirst — after a deployment, old chunk hashes
-        // are removed from the server. If the SW serves stale chunks, users get
-        // "Loading chunk XXXXX failed" errors. StaleWhileRevalidate serves cache instantly
-        // but ALWAYS fetches the latest version in the background.
-        {
-          urlPattern: /\/_next\/static\/.+\.(?:js|css)$/i,
-          handler: 'StaleWhileRevalidate',
-          options: {
-            cacheName: 'next-static-chunks',
-            expiration: {
-              maxEntries: 200,
-              maxAgeSeconds: 7 * 24 * 60 * 60, // 7 jours
-            },
-            cacheableResponse: {
-              statuses: [0, 200],
+  try {
+    const withPWA = require('@ducanh2912/next-pwa').default({
+      dest: 'public',
+      register: true,
+      extendDefaultRuntimeCaching: false,
+      workboxOptions: {
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
+        cacheId: process.env.VERCEL_GIT_COMMIT_SHA || `local-${Date.now()}`,
+        runtimeCaching: [
+          // API calls : NetworkFirst — on privilégie toujours les données fraîches du serveur.
+          // Le cache n'est utilisé qu'en fallback hors ligne. StaleWhileRevalidate causait
+          // des bugs où des données supprimées réapparaissaient (le SW retournait le cache
+          // périmé au lieu de la réponse réseau à jour).
+          {
+            urlPattern: /\/api\/(?!auth\/).*/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'api-cache',
+              networkTimeoutSeconds: 10,
+              expiration: {
+                maxEntries: 300,
+                maxAgeSeconds: 24 * 60 * 60, // 24 heures
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
             },
           },
-        },
-        // Fonts : CacheFirst (stable assets, rarely change)
-        {
-          urlPattern: /\.(?:woff2?|ttf|otf|eot)$/i,
-          handler: 'CacheFirst',
-          options: {
-            cacheName: 'fonts-cache',
-            expiration: {
-              maxEntries: 30,
-              maxAgeSeconds: 30 * 24 * 60 * 60, // 30 jours
-            },
-            cacheableResponse: {
-              statuses: [0, 200],
+          // Auth endpoints : NetworkOnly — jamais cacher (sécurité)
+          {
+            urlPattern: /\/api\/auth\/.*/i,
+            handler: 'NetworkOnly',
+          },
+          // Next.js _next/static chunks : StaleWhileRevalidate
+          // CRITICAL: These must NOT use CacheFirst — after a deployment, old chunk hashes
+          // are removed from the server. If the SW serves stale chunks, users get
+          // "Loading chunk XXXXX failed" errors. StaleWhileRevalidate serves cache instantly
+          // but ALWAYS fetches the latest version in the background.
+          {
+            urlPattern: /\/_next\/static\/.+\.(?:js|css)$/i,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'next-static-chunks',
+              expiration: {
+                maxEntries: 200,
+                maxAgeSeconds: 7 * 24 * 60 * 60, // 7 jours
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
             },
           },
-        },
-        // Other JS/CSS (not _next/static) : StaleWhileRevalidate
-        {
-          urlPattern: /\.(?:js|css)$/i,
-          handler: 'StaleWhileRevalidate',
-          options: {
-            cacheName: 'static-assets',
-            expiration: {
-              maxEntries: 100,
-              maxAgeSeconds: 7 * 24 * 60 * 60, // 7 jours
-            },
-            cacheableResponse: {
-              statuses: [0, 200],
-            },
-          },
-        },
-        // Images : CacheFirst
-        {
-          urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|avif|ico)$/i,
-          handler: 'CacheFirst',
-          options: {
-            cacheName: 'images-cache',
-            expiration: {
-              maxEntries: 100,
-              maxAgeSeconds: 30 * 24 * 60 * 60, // 30 jours
-            },
-            cacheableResponse: {
-              statuses: [0, 200],
+          // Fonts : CacheFirst (stable assets, rarely change)
+          {
+            urlPattern: /\.(?:woff2?|ttf|otf|eot)$/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'fonts-cache',
+              expiration: {
+                maxEntries: 30,
+                maxAgeSeconds: 30 * 24 * 60 * 60, // 30 jours
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
             },
           },
-        },
-        // HTML pages : NetworkFirst avec timeout court (3s)
-        {
-          urlPattern: /\.html?$/i,
-          handler: 'NetworkFirst',
-          options: {
-            cacheName: 'html-cache',
-            expiration: {
-              maxEntries: 50,
-              maxAgeSeconds: 24 * 60 * 60,
-            },
-            networkTimeoutSeconds: 3,
-          },
-        },
-        // Default : StaleWhileRevalidate
-        {
-          urlPattern: /^https?.*/,
-          handler: 'StaleWhileRevalidate',
-          options: {
-            cacheName: 'offlineCache',
-            expiration: {
-              maxEntries: 200,
-              maxAgeSeconds: 24 * 60 * 60,
+          // Other JS/CSS (not _next/static) : StaleWhileRevalidate
+          {
+            urlPattern: /\.(?:js|css)$/i,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'static-assets',
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 7 * 24 * 60 * 60, // 7 jours
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
             },
           },
-        },
-      ],
-    },
-  });
-  exportedConfig = withPWA(nextConfig);
+          // Images : CacheFirst
+          {
+            urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|avif|ico)$/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'images-cache',
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 30 * 24 * 60 * 60, // 30 jours
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+          // HTML pages : NetworkFirst avec timeout court (3s)
+          {
+            urlPattern: /\.html?$/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'html-cache',
+              expiration: {
+                maxEntries: 50,
+                maxAgeSeconds: 24 * 60 * 60,
+              },
+              networkTimeoutSeconds: 3,
+            },
+          },
+          // Default : StaleWhileRevalidate
+          {
+            urlPattern: /^https?.*/,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'offlineCache',
+              expiration: {
+                maxEntries: 200,
+                maxAgeSeconds: 24 * 60 * 60,
+              },
+            },
+          },
+        ],
+      },
+    });
+    exportedConfig = withPWA(exportedConfig);
+  } catch {
+    console.warn('⚠️  @ducanh2912/next-pwa not installed — skipping PWA support');
+  }
 }
 
-module.exports = withBundleAnalyzer(exportedConfig);
+module.exports = exportedConfig;
 

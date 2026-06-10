@@ -22,7 +22,7 @@ import { getTestimonialStats } from '@/services/testimonial.service';
 import AppIcon from '@/components/ui/AppIcon';
 import TypingAnimation from '@/components/ui/TypingAnimation';
 import { bgColor, textColor, typo, radius, shadow } from '@/lib/design-tokens';
-import { cn } from '@/lib/utils';
+import { cn, formatCurrency } from '@/lib/utils';
 import { HELM_PLANS, type HelmPlanKey } from '@/lib/services/HelmPricingService';
 
 // Chargement dynamique des composants lourds
@@ -236,20 +236,17 @@ function LandingPlanCard({
           </div>
           <div className="flex items-baseline justify-center gap-2">
             <span className="text-4xl font-extrabold text-blue-700">
-              {price == null ? 'Sur devis' : plan[billingCycle === 'monthly' ? 'monthlyPrice' : 'annualPrice']!.toLocaleString('fr-FR')}
+              {price == null ? 'Sur devis' : formatCurrency(plan[billingCycle === 'monthly' ? 'monthlyPrice' : 'annualPrice'])}
             </span>
             {price != null && (
-              <>
-                <span className="text-xl font-bold text-blue-600">FCFA</span>
-                <span className="text-base text-gray-600 font-medium">
-                  {billingCycle === 'monthly' ? '/ mois' : '/ an'}
-                </span>
-              </>
+              <span className="text-base text-gray-600 font-medium">
+                {billingCycle === 'monthly' ? '/ mois' : '/ an'}
+              </span>
             )}
           </div>
           {billingCycle === 'annual' && price != null && plan.monthlyPrice != null && (
             <p className={`${typo('small')} text-gold-600 text-center font-medium mt-1`}>
-              Équivalent {Math.round(plan.annualPrice! / 12).toLocaleString('fr-FR')} FCFA/mois — 2 mois offerts
+              Équivalent {formatCurrency(Math.round(plan.annualPrice! / 12))}/mois — 2 mois offerts
             </p>
           )}
         </div>
@@ -279,7 +276,7 @@ function LandingPlanCard({
           <p className={`${typo('small')} text-gray-600 text-center leading-relaxed`}>
             Souscription initiale :{' '}
             <span className="font-semibold text-blue-900">
-              {plan.setupFee.toLocaleString('fr-FR')} FCFA
+              {formatCurrency(plan.setupFee)}
             </span>{' '}
             (one-shot à l&apos;ouverture)
           </p>
@@ -635,7 +632,7 @@ export default function CompleteLandingPage() {
                   {/* Background particles container - behind image */}
                   <OrionParticles />
                 <Image
-                  src="/images/ORION-Academia-Hub.png"
+                  src="/images/ORION-Academia-Hub.webp"
                   alt="ORION - Assistant IA de direction pour établissements scolaires"
                   width={224}
                   height={224}
@@ -679,7 +676,7 @@ export default function CompleteLandingPage() {
                     <div className="flex items-center space-x-3 mb-4">
                       <div className="w-10 h-10 bg-gradient-to-br from-gold-500/30 to-gold-600/30 rounded-xl flex items-center justify-center border-2 border-gold-500/40 shadow-lg">
                     <Image
-                      src="/images/ORION-Academia-Hub.png"
+                      src="/images/ORION-Academia-Hub.webp"
                       alt="ORION - Intelligence Artificielle"
                       width={24}
                       height={24}
@@ -1075,7 +1072,7 @@ export default function CompleteLandingPage() {
         isOpen={isVideoModalOpen}
         onClose={() => setIsVideoModalOpen(false)}
         videoUrl="/videos/academia-hub-presentation.mp4"
-        thumbnailUrl="/images/Miniature Présentation Academia Hub.png"
+        thumbnailUrl="/images/Miniature Présentation Academia Hub.webp"
         title="Présentation Academia Helm"
       />
 

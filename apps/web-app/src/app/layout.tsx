@@ -17,7 +17,6 @@ import { buildSiteVerification, getPublicSiteUrl, DEFAULT_OG_IMAGE_PATH } from '
 import { buildHreflangLanguages } from '@/lib/seo/locales';
 import { cn } from "@/lib/utils";
 import { ToastContainer } from '@/components/ui/toast';
-import { CrispChat } from '@/components/CrispChat';
 
 // ✅ POLICES LOCALES - Téléchargées depuis Google Fonts et stockées localement
 // 
@@ -29,23 +28,11 @@ import { CrispChat } from '@/components/CrispChat';
 // 
 // Les fichiers de police sont stockés dans : public/fonts/inter/
 // Pour télécharger de nouvelles polices : node scripts/download-fonts.js
+// ✅ POLICES LOCALES — 4 graisses essentielles uniquement (400/500/600/700)
+// Les graisses 100/200/300/800/900 sont rarement utilisées et ajoutent ~1.3 Mo inutiles.
+// Si une page en a besoin, ajouter un font-face dynamique dans ce composant.
 const inter = localFont({
   src: [
-    {
-      path: '../fonts/inter/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyeMZg.ttf',
-      weight: '100',
-      style: 'normal',
-    },
-    {
-      path: '../fonts/inter/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuDyfMZg.ttf',
-      weight: '200',
-      style: 'normal',
-    },
-    {
-      path: '../fonts/inter/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuOKfMZg.ttf',
-      weight: '300',
-      style: 'normal',
-    },
     {
       path: '../fonts/inter/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfMZg.ttf',
       weight: '400',
@@ -64,16 +51,6 @@ const inter = localFont({
     {
       path: '../fonts/inter/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuFuYMZg.ttf',
       weight: '700',
-      style: 'normal',
-    },
-    {
-      path: '../fonts/inter/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuDyYMZg.ttf',
-      weight: '800',
-      style: 'normal',
-    },
-    {
-      path: '../fonts/inter/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuBWYMZg.ttf',
-      weight: '900',
       style: 'normal',
     },
   ],
@@ -180,9 +157,9 @@ export default function RootLayout({
         <ToastContainer />
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-TG29Y7XL8S"
-          strategy="afterInteractive"
+          strategy="lazyOnload"
         />
-        <Script id="google-analytics" strategy="afterInteractive">
+        <Script id="google-analytics" strategy="lazyOnload">
           {`
             window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}
@@ -190,7 +167,7 @@ export default function RootLayout({
             gtag('config', 'G-TG29Y7XL8S');
           `}
         </Script>
-        <CrispChat />
+        {/* CrispChat déplacé vers app/layout-client.tsx — uniquement pour les pages authentifiées */}
       </body>
     </html>
   );

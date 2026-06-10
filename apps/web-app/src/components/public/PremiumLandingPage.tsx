@@ -207,7 +207,7 @@ export default function PremiumLandingPage() {
 
       <section className="relative overflow-hidden bg-gradient-to-br from-[#0b2f73] via-[#103e91] to-[#1d4fa5]">
         <Image
-          src="/images/AH background.png"
+          src="/images/AH background.webp"
           alt="Fond hero Academia Helm"
           fill
           className="object-cover opacity-45"
@@ -318,7 +318,7 @@ export default function PremiumLandingPage() {
                     controls
                     preload="none"
                     playsInline
-                    poster="/images/Miniature Présentation Academia Hub.png"
+                    poster="/images/Miniature Présentation Academia Hub.webp"
                   >
                     <source src="/videos/academia-hub-presentation.mp4" type="video/mp4" />
                     Votre navigateur ne supporte pas la lecture video.
@@ -547,7 +547,7 @@ export default function PremiumLandingPage() {
             >
               <div className="flex items-center gap-4 mb-4">
                 <Image
-                  src="/images/ORION-Academia-Hub.png"
+                  src="/images/ORION-Academia-Hub.webp"
                   alt="ORION Academia Helm"
                   width={52}
                   height={52}

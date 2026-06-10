@@ -25,8 +25,8 @@ export function buildSiteVerification(): Metadata['verification'] | undefined {
   };
 }
 
-/** Image Open Graph dédiée (1200×630 recommandé) — `public/images/og-academia-helm.png` */
-export const DEFAULT_OG_IMAGE_PATH = '/images/og-academia-helm.png';
+/** Image Open Graph dédiée (1200×630 recommandé) — version WebP optimisée */
+export const DEFAULT_OG_IMAGE_PATH = '/images/og-academia-helm.webp';
 
 const defaultImage = DEFAULT_OG_IMAGE_PATH;
 

@@ -37,7 +37,7 @@ const nextConfig = {
   
   // ✅ Optimisation des bundles
   experimental: {
-    optimizePackageImports: ['lucide-react', '@base-ui/react'], // Tree-shaking (packages lourds côté UI)
+    optimizePackageImports: ['lucide-react', '@base-ui/react', 'date-fns', 'framer-motion'], // Tree-shaking (packages lourds)
   },
   
   // ✅ Optimisation de la compilation

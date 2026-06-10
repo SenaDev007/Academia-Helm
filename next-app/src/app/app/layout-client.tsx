@@ -22,6 +22,7 @@ import { getFadeMotion } from '@/lib/motion/presets';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import type { User, Tenant } from '@/types';
 import { ReviewPromptHost } from '@/components/reviews/ReviewPromptHost';
+import { CrispChat } from '@/components/CrispChat';
 
 export interface AppLayoutClientProps {
   children: React.ReactNode;
@@ -73,6 +74,7 @@ export default function AppLayoutClient({
       {/* Modaux et écrans de session — montés hors du layout principal */}
       <SessionInactivityModal />
       <SessionLockScreen />
+      <CrispChat />
     </SessionManagerProvider>
   );
 }

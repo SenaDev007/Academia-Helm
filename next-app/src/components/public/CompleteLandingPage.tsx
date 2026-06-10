@@ -632,7 +632,7 @@ export default function CompleteLandingPage() {
                   {/* Background particles container - behind image */}
                   <OrionParticles />
                 <Image
-                  src="/images/ORION-Academia-Hub.png"
+                  src="/images/ORION-Academia-Hub.webp"
                   alt="ORION - Assistant IA de direction pour établissements scolaires"
                   width={224}
                   height={224}
@@ -676,7 +676,7 @@ export default function CompleteLandingPage() {
                     <div className="flex items-center space-x-3 mb-4">
                       <div className="w-10 h-10 bg-gradient-to-br from-gold-500/30 to-gold-600/30 rounded-xl flex items-center justify-center border-2 border-gold-500/40 shadow-lg">
                     <Image
-                      src="/images/ORION-Academia-Hub.png"
+                      src="/images/ORION-Academia-Hub.webp"
                       alt="ORION - Intelligence Artificielle"
                       width={24}
                       height={24}
@@ -1072,7 +1072,7 @@ export default function CompleteLandingPage() {
         isOpen={isVideoModalOpen}
         onClose={() => setIsVideoModalOpen(false)}
         videoUrl="/videos/academia-hub-presentation.mp4"
-        thumbnailUrl="/images/Miniature Présentation Academia Hub.png"
+        thumbnailUrl="/images/Miniature Présentation Academia Hub.webp"
         title="Présentation Academia Helm"
       />
 

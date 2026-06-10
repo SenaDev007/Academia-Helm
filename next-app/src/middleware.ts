@@ -101,13 +101,19 @@ function extractSubdomainFromRequest(request: NextRequest): string | null {
 async function resolveTenant(subdomain: string): Promise<{ id: string; slug: string; status: string; subscriptionStatus?: SubscriptionStatus } | null> {
   try {
     const apiUrl = getApiBaseUrl();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout
+
     const response = await fetch(`${apiUrl}/tenants/by-subdomain/${subdomain}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
       },
       cache: 'no-store',
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       return null;
@@ -124,7 +130,7 @@ async function resolveTenant(subdomain: string): Promise<{ id: string; slug: str
 
     return tenant;
   } catch (error) {
-    console.error('Error resolving tenant in middleware:', error);
+    // Timeout ou erreur réseau — ne pas bloquer le rendu
     return null;
   }
 }
@@ -278,24 +284,6 @@ export async function middleware(request: NextRequest) {
       }
       
       const mainDomain = getAppBaseUrl();
-      
-      // Logger la tentative d'accès sans tenant
-      try {
-        const logUrl = `${getApiBaseUrl()}/portal/access-log`;
-        fetch(logUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            path: pathname,
-            reason: 'NO_TENANT',
-            ipAddress: (request as any).ip || request.headers.get('x-forwarded-for'),
-            userAgent: request.headers.get('user-agent'),
-            timestamp: new Date().toISOString(),
-          }),
-          keepalive: true,
-        }).catch(() => {}); // Ne pas bloquer sur erreur de logging
-      } catch {}
-      
       return NextResponse.redirect(new URL('/portal', mainDomain));
     }
 
@@ -347,25 +335,6 @@ export async function middleware(request: NextRequest) {
 
       if (!tenant) {
         const mainDomain = getAppBaseUrl();
-        
-        // Logger la tentative d'accès à un tenant inexistant
-        try {
-          const logUrl = `${getApiBaseUrl()}/portal/access-log`;
-          fetch(logUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              path: pathname,
-              tenantIdentifier,
-              reason: 'TENANT_NOT_FOUND',
-              ipAddress: (request as any).ip || request.headers.get('x-forwarded-for'),
-              userAgent: request.headers.get('user-agent'),
-              timestamp: new Date().toISOString(),
-            }),
-            keepalive: true,
-          }).catch(() => {});
-        } catch {}
-        
         return NextResponse.redirect(new URL('/tenant-not-found', mainDomain));
       }
 
@@ -386,31 +355,11 @@ export async function middleware(request: NextRequest) {
         tenantResponse.headers.set('X-User-ID', user.id);
       }
 
-      // Cache the resolved tenant info in cookies for future requests (5 minutes)
-      const maxAge = 5 * 60; // 5 minutes
+      // Cache the resolved tenant info in cookies for future requests (30 minutes)
+      const maxAge = 30 * 60; // 30 minutes
       tenantResponse.cookies.set('x-resolved-tenant-id', tenant.id, { path: '/', maxAge, sameSite: 'lax' });
       tenantResponse.cookies.set('x-resolved-tenant-slug', tenant.slug, { path: '/', maxAge, sameSite: 'lax' });
       tenantResponse.cookies.set('x-resolved-tenant-subdomain', tenantIdentifier, { path: '/', maxAge, sameSite: 'lax' });
-
-      // Logger l'accès réussi
-      try {
-        const logUrl = `${getApiBaseUrl()}/portal/access-log`;
-        fetch(logUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            path: pathname,
-            tenantId: tenant.id,
-            tenantSlug: tenant.slug,
-            reason: 'SUCCESS',
-            ipAddress: (request as any).ip || request.headers.get('x-forwarded-for'),
-            userAgent: request.headers.get('user-agent'),
-            userId: user?.id,
-            timestamp: new Date().toISOString(),
-          }),
-          keepalive: true,
-        }).catch(() => {});
-      } catch {}
 
       return tenantResponse;
     } catch (error) {

@@ -17,7 +17,7 @@ export const metadata: Metadata = generateSEOMetadata({
   description: 'ORION est l\'assistant de direction intégré à Academia Helm. Analysez vos données, anticipez les risques et prenez des décisions stratégiques éclairées grâce à l\'IA.',
   keywords: ['IA gestion scolaire', 'ORION intelligence artificielle', 'assistant direction école', 'analyse données scolaire'],
   path: '/orion',
-  image: '/images/ORION-Academia-Hub.png',
+  image: '/images/ORION-Academia-Hub.webp',
 });
 
 export default function OrionPage() {

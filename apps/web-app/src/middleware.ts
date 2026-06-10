@@ -12,11 +12,6 @@ import { getApiBaseUrl, getAppBaseUrl } from '@/lib/utils/urls';
 
 const SESSION_COOKIE = 'academia_session';
 
-// ─── Tenant resolution cache (Edge-compatible in-memory Map) ──────────────
-// Tenant data rarely changes — cache for 60s to avoid API call on every navigation.
-const TENANT_CACHE_TTL_MS = 60_000;
-const tenantCache = new Map<string, { data: { id: string; slug: string; status: string; subscriptionStatus?: SubscriptionStatus } | null; ts: number }>();
-
 /** Récupère l'utilisateur et le tenant depuis le cookie de session (Edge). */
 function getUserFromSessionCookie(request: NextRequest): { 
   id: string; 
@@ -105,43 +100,37 @@ function extractSubdomainFromRequest(request: NextRequest): string | null {
 
 async function resolveTenant(subdomain: string): Promise<{ id: string; slug: string; status: string; subscriptionStatus?: SubscriptionStatus } | null> {
   try {
-    // Edge-compatible in-memory cache: tenant data rarely changes
-    const cached = tenantCache.get(subdomain);
-    if (cached && Date.now() - cached.ts < TENANT_CACHE_TTL_MS) {
-      return cached.data;
-    }
-
     const apiUrl = getApiBaseUrl();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout
+
     const response = await fetch(`${apiUrl}/tenants/by-subdomain/${subdomain}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
       },
       cache: 'no-store',
+      signal: controller.signal,
     });
 
+    clearTimeout(timeoutId);
+
     if (!response.ok) {
-      // Cache negative results briefly to avoid hammering the API
-      tenantCache.set(subdomain, { data: null, ts: Date.now() });
       return null;
     }
 
     const tenant = await response.json();
 
     if (tenant.subscriptionStatus === 'PENDING' || tenant.subscriptionStatus === 'TERMINATED') {
-      tenantCache.set(subdomain, { data: null, ts: Date.now() });
       return null;
     }
     if (!tenant.subscriptionStatus && (tenant.status !== 'active' && tenant.status !== 'trial')) {
-      tenantCache.set(subdomain, { data: null, ts: Date.now() });
       return null;
     }
 
-    // Cache positive results for 60 seconds
-    tenantCache.set(subdomain, { data: tenant, ts: Date.now() });
     return tenant;
   } catch (error) {
-    console.error('Error resolving tenant in middleware:', error);
+    // Timeout ou erreur réseau — ne pas bloquer le rendu
     return null;
   }
 }
@@ -164,23 +153,13 @@ const publicRoutes = [
 
 /**
  * Ajoute les headers anti-cache Cloudflare à une réponse.
- * Appliqué uniquement aux routes dynamiques (app, API) — les pages publiques
- * (landing, pricing, blog) bénéficient du cache CDN pour un TTFB plus rapide.
+ * Empêche le buffering et la mise en cache des réponses HTML,
+ * ce qui est essentiel pour le streaming Next.js / Suspense (loading.tsx).
  */
 function withAntiCacheHeaders(response: NextResponse): NextResponse {
   response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   response.headers.set('Pragma', 'no-cache');
   response.headers.set('X-Accel-Buffering', 'no'); // Empêche le buffering par reverse-proxy (nginx/Cloudflare)
-  return response;
-}
-
-/**
- * Headers pour les pages publiques — permet le cache CDN (5 min) pour un TTFB rapide.
- * Le contenu statique (landing, pricing, blog, legal) change rarement.
- */
-function withPublicCacheHeaders(response: NextResponse): NextResponse {
-  response.headers.set('Cache-Control', 'public, max-age=300, s-maxage=300, stale-while-revalidate=60');
-  response.headers.set('X-Accel-Buffering', 'no');
   return response;
 }
 
@@ -211,14 +190,12 @@ export async function middleware(request: NextRequest) {
 
   const response = withAntiCacheHeaders(NextResponse.next());
 
-  // Determine if this is a public (cacheable) page
-  const isPublicPage = pathname === '/' || publicRoutes.some(route => pathname.startsWith(route)) ||
-    pathname.startsWith('/jobs') || pathname.startsWith('/portal');
-
   const user = getUserFromSessionCookie(request);
 
   // Routes admin : pas de vérification de subdomain
   if (pathname.startsWith('/admin')) {
+    // La vérification du rôle SUPER_ADMIN se fait dans le layout
+    // Ajouter le pathname dans les headers pour le layout
     const adminResponse = withAntiCacheHeaders(NextResponse.next());
     adminResponse.headers.set('x-pathname', pathname);
     if (user) {
@@ -233,6 +210,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Assets statiques : ne jamais appliquer le multi-tenant/redirect
+  // (important sur Vercel/Linux + domaines preview)
   if (
     pathname.startsWith('/images/') ||
     pathname.startsWith('/fonts/') ||
@@ -243,22 +221,30 @@ export async function middleware(request: NextRequest) {
     pathname === '/robots.txt' ||
     pathname === '/sitemap.xml'
   ) {
-    return isPublicPage ? withPublicCacheHeaders(NextResponse.next()) : response;
+    return response;
   }
 
-  // Route racine `/` toujours accessible — page publique cacheable
+  // Route racine `/` toujours accessible, même avec subdomain (landing page principale)
   if (pathname === '/') {
-    return withPublicCacheHeaders(NextResponse.next());
+    return response;
   }
 
-  // Routes publiques — cache CDN pour un TTFB rapide
+  // Routes publiques
   if (publicRoutes.some(route => pathname.startsWith(route))) {
     
     if (!subdomain) {
-      return withPublicCacheHeaders(NextResponse.next());
+      return response;
     }
 
+    // Sur un sous-domaine : les routes publiques sont accessibles si l'utilisateur
+    // a une session valide (ex: /login sur enant.academiahelm.com après auth).
+    // Sans session, on redirige vers le domaine principal pour éviter une boucle
+    // (login sur sous-domaine → session absente → redirect vers login sur sous-domaine).
     if (subdomain && !pathname.startsWith('/app') && !pathname.startsWith('/admin')) {
+      // Si l'utilisateur a une session valide, laisser passer (il est déjà authentifié sur ce sous-domaine)
+      if (user?.id) {
+        return response;
+      }
       const mainDomain = getAppBaseUrl();
       const targetUrl = new URL(pathname, mainDomain);
       if (request.nextUrl.origin !== targetUrl.origin) {
@@ -290,30 +276,14 @@ export async function middleware(request: NextRequest) {
         return NextResponse.redirect(url);
       }
       
-      // Si PLATFORM_OWNER (pas de tenantId mais session valide), autoriser /app
+      // PLATFORM_OWNER sans tenantId → rediriger vers le portail pour sélectionner une école
+      // Même le PLATFORM_OWNER doit toujours être dans le contexte d'un tenant (sous-domaine professionnel)
       if (user?.id && user.isPlatformOwner) {
-        return response; // Autoriser l'accès à /app pour PLATFORM_OWNER
+        const mainDomain = getAppBaseUrl();
+        return NextResponse.redirect(new URL('/portal', mainDomain));
       }
       
       const mainDomain = getAppBaseUrl();
-      
-      // Logger la tentative d'accès sans tenant
-      try {
-        const logUrl = `${getApiBaseUrl()}/portal/access-log`;
-        fetch(logUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            path: pathname,
-            reason: 'NO_TENANT',
-            ipAddress: (request as any).ip || request.headers.get('x-forwarded-for'),
-            userAgent: request.headers.get('user-agent'),
-            timestamp: new Date().toISOString(),
-          }),
-          keepalive: true,
-        }).catch(() => {}); // Ne pas bloquer sur erreur de logging
-      } catch {}
-      
       return NextResponse.redirect(new URL('/portal', mainDomain));
     }
 
@@ -344,30 +314,27 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/portal', mainDomain));
     }
 
+    // Check if tenant is already cached in cookies — skip API call
+    const cachedTenantId = request.cookies.get('x-resolved-tenant-id')?.value;
+    const cachedTenantSlug = request.cookies.get('x-resolved-tenant-slug')?.value;
+    const cachedTenantForSubdomain = request.cookies.get('x-resolved-tenant-subdomain')?.value;
+
+    if (cachedTenantId && cachedTenantSlug && cachedTenantForSubdomain === tenantIdentifier) {
+      // Use cached tenant data instead of making an API call
+      const cachedResponse = withAntiCacheHeaders(NextResponse.next());
+      cachedResponse.headers.set('X-Tenant-ID', cachedTenantId);
+      cachedResponse.headers.set('X-Tenant-Slug', cachedTenantSlug);
+      if (user) {
+        cachedResponse.headers.set('X-User-ID', user.id);
+      }
+      return cachedResponse;
+    }
+
     try {
       const tenant = await resolveTenant(tenantIdentifier);
 
       if (!tenant) {
         const mainDomain = getAppBaseUrl();
-        
-        // Logger la tentative d'accès à un tenant inexistant
-        try {
-          const logUrl = `${getApiBaseUrl()}/portal/access-log`;
-          fetch(logUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              path: pathname,
-              tenantIdentifier,
-              reason: 'TENANT_NOT_FOUND',
-              ipAddress: (request as any).ip || request.headers.get('x-forwarded-for'),
-              userAgent: request.headers.get('user-agent'),
-              timestamp: new Date().toISOString(),
-            }),
-            keepalive: true,
-          }).catch(() => {});
-        } catch {}
-        
         return NextResponse.redirect(new URL('/tenant-not-found', mainDomain));
       }
 
@@ -388,25 +355,11 @@ export async function middleware(request: NextRequest) {
         tenantResponse.headers.set('X-User-ID', user.id);
       }
 
-      // Logger l'accès réussi
-      try {
-        const logUrl = `${getApiBaseUrl()}/portal/access-log`;
-        fetch(logUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            path: pathname,
-            tenantId: tenant.id,
-            tenantSlug: tenant.slug,
-            reason: 'SUCCESS',
-            ipAddress: (request as any).ip || request.headers.get('x-forwarded-for'),
-            userAgent: request.headers.get('user-agent'),
-            userId: user?.id,
-            timestamp: new Date().toISOString(),
-          }),
-          keepalive: true,
-        }).catch(() => {});
-      } catch {}
+      // Cache the resolved tenant info in cookies for future requests (30 minutes)
+      const maxAge = 30 * 60; // 30 minutes
+      tenantResponse.cookies.set('x-resolved-tenant-id', tenant.id, { path: '/', maxAge, sameSite: 'lax' });
+      tenantResponse.cookies.set('x-resolved-tenant-slug', tenant.slug, { path: '/', maxAge, sameSite: 'lax' });
+      tenantResponse.cookies.set('x-resolved-tenant-subdomain', tenantIdentifier, { path: '/', maxAge, sameSite: 'lax' });
 
       return tenantResponse;
     } catch (error) {

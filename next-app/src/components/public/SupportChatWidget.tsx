@@ -826,7 +826,7 @@ Ou reformulez votre question, je ferai de mon mieux pour vous aider ! 😊`;
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center bg-white/10">
                 <img 
-                  src="/images/Chatbot Sara.png" 
+                  src="/images/Chatbot Sara.webp" 
                   alt="Sara - Assistant support" 
                   className="w-full h-full object-cover"
                 />

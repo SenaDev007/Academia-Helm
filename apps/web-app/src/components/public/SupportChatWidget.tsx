@@ -54,7 +54,7 @@ const QUICK_REPLIES: QuickReply[] = [
 
 const WELCOME_MESSAGE = `👋 Bonjour ! Je suis **SARA**, l'assistante IA d'Academia Helm.
 
-Je peux vous renseigner sur nos plans (de 14 900 à 39 900 FCFA/mois, tous modules inclus), les 9 modules, le free trial guidé, ou organiser une démonstration pour votre école.
+Je peux vous renseigner sur nos plans (de 14 900 à 39 900 F CFA/mois, tous modules inclus), les 9 modules, le free trial guidé, ou organiser une démonstration pour votre école.
 
 Comment puis-je vous aider aujourd'hui ? 😊`;
 
@@ -416,16 +416,16 @@ export default function SupportChatWidget() {
           answer =
             "📌 **Grille Academia Helm — tout inclus, sans modules cachés**\n\n" +
             "• **HELM SEED** (1–150 élèves)\n" +
-            "  - Souscription initiale : 75 000 FCFA (une seule fois)\n" +
-            "  - Abonnement : 14 900 FCFA / mois ou 149 000 FCFA / an\n\n" +
+            "  - Souscription initiale : 75 000 F CFA (une seule fois)\n" +
+            "  - Abonnement : 14 900 F CFA / mois ou 149 000 F CFA / an\n\n" +
             "• **HELM GROW** (151–400 élèves) — plan le plus choisi\n" +
-            "  - Souscription initiale : 100 000 FCFA\n" +
-            "  - Abonnement : 24 900 FCFA / mois ou 249 000 FCFA / an\n\n" +
+            "  - Souscription initiale : 100 000 F CFA\n" +
+            "  - Abonnement : 24 900 F CFA / mois ou 249 000 F CFA / an\n\n" +
             "• **HELM LEAD** (401–800 élèves)\n" +
-            "  - Souscription initiale : 150 000 FCFA\n" +
-            "  - Abonnement : 39 900 FCFA / mois ou 399 000 FCFA / an\n\n" +
+            "  - Souscription initiale : 150 000 F CFA\n" +
+            "  - Abonnement : 39 900 F CFA / mois ou 399 000 F CFA / an\n\n" +
             "• **HELM NETWORK** (2+ écoles / multi-campus)\n" +
-            "  - Souscription initiale : 200 000 FCFA\n" +
+            "  - Souscription initiale : 200 000 F CFA\n" +
             "  - Tarif sur devis selon le nombre de campus\n\n" +
             "Tous les plans incluent les 9 modules complets (élèves, finances, IA ORION, QHSE, communication, etc.).";
         } else if (faq[category] && faq[category].questions[0]) {
@@ -826,7 +826,7 @@ Ou reformulez votre question, je ferai de mon mieux pour vous aider ! 😊`;
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center bg-white/10">
                 <img 
-                  src="/images/Chatbot Sara.png" 
+                  src="/images/Chatbot Sara.webp" 
                   alt="Sara - Assistant support" 
                   className="w-full h-full object-cover"
                 />

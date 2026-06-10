@@ -12,6 +12,11 @@ import { getApiBaseUrl, getAppBaseUrl } from '@/lib/utils/urls';
 
 const SESSION_COOKIE = 'academia_session';
 
+// ─── Tenant resolution cache (Edge-compatible in-memory Map) ──────────────
+// Tenant data rarely changes — cache for 60s to avoid API call on every navigation.
+const TENANT_CACHE_TTL_MS = 60_000;
+const tenantCache = new Map<string, { data: { id: string; slug: string; status: string; subscriptionStatus?: SubscriptionStatus } | null; ts: number }>();
+
 /** Récupère l'utilisateur et le tenant depuis le cookie de session (Edge). */
 function getUserFromSessionCookie(request: NextRequest): { 
   id: string; 
@@ -100,6 +105,12 @@ function extractSubdomainFromRequest(request: NextRequest): string | null {
 
 async function resolveTenant(subdomain: string): Promise<{ id: string; slug: string; status: string; subscriptionStatus?: SubscriptionStatus } | null> {
   try {
+    // Edge-compatible in-memory cache: tenant data rarely changes
+    const cached = tenantCache.get(subdomain);
+    if (cached && Date.now() - cached.ts < TENANT_CACHE_TTL_MS) {
+      return cached.data;
+    }
+
     const apiUrl = getApiBaseUrl();
     const response = await fetch(`${apiUrl}/tenants/by-subdomain/${subdomain}`, {
       method: 'GET',
@@ -110,18 +121,24 @@ async function resolveTenant(subdomain: string): Promise<{ id: string; slug: str
     });
 
     if (!response.ok) {
+      // Cache negative results briefly to avoid hammering the API
+      tenantCache.set(subdomain, { data: null, ts: Date.now() });
       return null;
     }
 
     const tenant = await response.json();
 
     if (tenant.subscriptionStatus === 'PENDING' || tenant.subscriptionStatus === 'TERMINATED') {
+      tenantCache.set(subdomain, { data: null, ts: Date.now() });
       return null;
     }
     if (!tenant.subscriptionStatus && (tenant.status !== 'active' && tenant.status !== 'trial')) {
+      tenantCache.set(subdomain, { data: null, ts: Date.now() });
       return null;
     }
 
+    // Cache positive results for 60 seconds
+    tenantCache.set(subdomain, { data: tenant, ts: Date.now() });
     return tenant;
   } catch (error) {
     console.error('Error resolving tenant in middleware:', error);
@@ -147,13 +164,23 @@ const publicRoutes = [
 
 /**
  * Ajoute les headers anti-cache Cloudflare à une réponse.
- * Empêche le buffering et la mise en cache des réponses HTML,
- * ce qui est essentiel pour le streaming Next.js / Suspense (loading.tsx).
+ * Appliqué uniquement aux routes dynamiques (app, API) — les pages publiques
+ * (landing, pricing, blog) bénéficient du cache CDN pour un TTFB plus rapide.
  */
 function withAntiCacheHeaders(response: NextResponse): NextResponse {
   response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   response.headers.set('Pragma', 'no-cache');
   response.headers.set('X-Accel-Buffering', 'no'); // Empêche le buffering par reverse-proxy (nginx/Cloudflare)
+  return response;
+}
+
+/**
+ * Headers pour les pages publiques — permet le cache CDN (5 min) pour un TTFB rapide.
+ * Le contenu statique (landing, pricing, blog, legal) change rarement.
+ */
+function withPublicCacheHeaders(response: NextResponse): NextResponse {
+  response.headers.set('Cache-Control', 'public, max-age=300, s-maxage=300, stale-while-revalidate=60');
+  response.headers.set('X-Accel-Buffering', 'no');
   return response;
 }
 
@@ -184,12 +211,14 @@ export async function middleware(request: NextRequest) {
 
   const response = withAntiCacheHeaders(NextResponse.next());
 
+  // Determine if this is a public (cacheable) page
+  const isPublicPage = pathname === '/' || publicRoutes.some(route => pathname.startsWith(route)) ||
+    pathname.startsWith('/jobs') || pathname.startsWith('/portal');
+
   const user = getUserFromSessionCookie(request);
 
   // Routes admin : pas de vérification de subdomain
   if (pathname.startsWith('/admin')) {
-    // La vérification du rôle SUPER_ADMIN se fait dans le layout
-    // Ajouter le pathname dans les headers pour le layout
     const adminResponse = withAntiCacheHeaders(NextResponse.next());
     adminResponse.headers.set('x-pathname', pathname);
     if (user) {
@@ -204,7 +233,6 @@ export async function middleware(request: NextRequest) {
   }
 
   // Assets statiques : ne jamais appliquer le multi-tenant/redirect
-  // (important sur Vercel/Linux + domaines preview)
   if (
     pathname.startsWith('/images/') ||
     pathname.startsWith('/fonts/') ||
@@ -215,19 +243,19 @@ export async function middleware(request: NextRequest) {
     pathname === '/robots.txt' ||
     pathname === '/sitemap.xml'
   ) {
-    return response;
+    return isPublicPage ? withPublicCacheHeaders(NextResponse.next()) : response;
   }
 
-  // Route racine `/` toujours accessible, même avec subdomain (landing page principale)
+  // Route racine `/` toujours accessible — page publique cacheable
   if (pathname === '/') {
-    return response;
+    return withPublicCacheHeaders(NextResponse.next());
   }
 
-  // Routes publiques
+  // Routes publiques — cache CDN pour un TTFB rapide
   if (publicRoutes.some(route => pathname.startsWith(route))) {
     
     if (!subdomain) {
-      return response;
+      return withPublicCacheHeaders(NextResponse.next());
     }
 
     if (subdomain && !pathname.startsWith('/app') && !pathname.startsWith('/admin')) {

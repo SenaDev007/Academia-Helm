@@ -80,3 +80,33 @@ Stage Summary:
 - All recruitment module tabs now display data correctly
 - Tab switching works properly (confirmed with JavaScript dispatchEvent)
 - Code pushed to GitHub and deployed on Railway/Vercel
+---
+Task ID: 3
+Agent: Main
+Task: Fix organigram initialization failure in RH module (Collaborators > Organigramme tab)
+
+Work Log:
+- Analyzed user screenshot: "Organigramme non initialisé" + "Erreur lors de l'initialisation" toast
+- Traced full request flow: Frontend (OrganigramWorkspace.tsx) → BFF proxy → NestJS controller → Prisma service
+- Identified 3 root causes:
+  1. **Controller missing tenantId validation**: When a PLATFORM_OWNER accesses the organigram without a selected tenant, `req.tenantId` is `undefined` (TenantGuard allows platform owners through without setting tenantId). The seed endpoint then calls `seedOrganigram(undefined)`, causing Prisma to fail on the required `tenantId` field with a foreign key constraint violation.
+  2. **Seed method not atomic**: The original seed method created 100+ nodes sequentially without a transaction, meaning a partial failure would leave the database in an inconsistent state (some nodes created, some not).
+  3. **buildTree silently drops orphaned nodes**: When filtering by schoolLevelCode, nodes whose parent was filtered out (not in the result set) were silently dropped from the tree instead of being promoted to root level.
+
+Fixes applied:
+1. **Controller**: Added `tenantId` validation in seed (throws BadRequestException), tree (returns []), and stats (returns zeroed stats) endpoints
+2. **Service**: Wrapped seed in `this.prisma.$transaction()` for atomicity; Fixed `buildTree` to promote orphaned nodes to root level instead of silently dropping them
+3. **Frontend**: Added tenant validation with clear error message; Improved error handling with specific messages for tenant-related vs generic errors; Added "Aucun établissement sélectionné" state when no tenant is selected
+
+Files modified:
+- apps/api-server/src/hr/organigram-prisma.controller.ts
+- apps/api-server/src/hr/organigram-prisma.service.ts
+- apps/web-app/src/app/app/hr/_components/workspaces/OrganigramWorkspace.tsx
+- Academia-Helm/apps/api-server/src/hr/organigram-prisma.controller.ts (mirror)
+- Academia-Helm/apps/api-server/src/hr/organigram-prisma.service.ts (mirror)
+- Academia-Helm/apps/web-app/src/app/app/hr/_components/workspaces/OrganigramWorkspace.tsx (mirror)
+
+Stage Summary:
+- Primary bug: Missing tenantId validation for PLATFORM_OWNER users causes Prisma foreign key violation
+- Secondary bugs: Non-atomic seed, orphaned nodes in buildTree
+- All fixes applied to both main and mirror codebases

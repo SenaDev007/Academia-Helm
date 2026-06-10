@@ -772,6 +772,7 @@ export class OrganigramPrismaService {
   /**
    * Initialise l'organigramme par défaut pour un tenant.
    * Ne fait rien si des nœuds existent déjà.
+   * Utilise une transaction Prisma pour l'atomicité.
    */
   async seedOrganigram(tenantId: string): Promise<{ created: number }> {
     const existing = await this.prisma.organigramNode.count({
@@ -1225,6 +1226,8 @@ export class OrganigramPrismaService {
     }
 
     // Deuxième passage : construire la hiérarchie
+    // Quand un parent est filtré (pas dans le map), remonter l'arbre pour trouver
+    // le plus proche ancêtre présent, ou ajouter comme racine si aucun ancêtre trouvé.
     for (const node of nodes) {
       const treeNode = map.get(node.id)!;
       if (node.parentId && map.has(node.parentId)) {

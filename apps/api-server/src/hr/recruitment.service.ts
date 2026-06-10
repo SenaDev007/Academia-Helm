@@ -407,6 +407,7 @@ export class RecruitmentPrismaService {
 
       // Auto-create an HrApplication if jobId is provided
       // This ensures the candidate has a trackable application status
+      // and follows the same flow as public applications
       if (data.jobId) {
         await tx.hrApplication.create({
           data: {
@@ -419,7 +420,18 @@ export class RecruitmentPrismaService {
         });
       }
 
-      return candidate;
+      // Return the candidate WITH its applications so the frontend
+      // can properly display it in the candidature tab
+      return tx.hrCandidate.findUnique({
+        where: { id: candidate.id },
+        include: {
+          applications: {
+            include: { job: true },
+          },
+          academicProfile: true,
+          documents: true,
+        },
+      });
     });
   }
 

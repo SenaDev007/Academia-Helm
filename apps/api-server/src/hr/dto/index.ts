@@ -514,6 +514,10 @@ export class CreateCandidateDto {
   @IsOptional() @IsString() city?: string;
   @IsOptional() @IsString() gender?: string;
   @IsOptional() @IsDateString() dateOfBirth?: string;
+  /** Optional: if provided, an HrApplication is auto-created for this job */
+  @IsOptional() @IsUUID() jobId?: string;
+  /** Optional: initial application status (defaults to NOUVEAU) */
+  @IsOptional() @IsIn(['NOUVEAU', 'EN_COURS', 'ENTRETIEN', 'TEST', 'EMBAUCHÉ', 'REJETÉ']) status?: string;
   /** Frontend may send tenantId — ignored (resolved server-side) */
   @IsOptional() @IsString() tenantId?: string;
 }

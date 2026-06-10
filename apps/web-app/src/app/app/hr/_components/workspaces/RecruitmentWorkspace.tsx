@@ -534,16 +534,22 @@ export function RecruitmentWorkspace() {
     setIsAddJobOpen(true);
   };
 
-  // Create Candidate and Application
+  // Create Candidate and Application — single atomic API call
+  // The backend creates both the candidate AND the application in one transaction
+  // when jobId is provided, mirroring the public application flow
   const handleCreateCandidate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!tenant?.id) {
       toast({ variant: 'error', title: 'Erreur', description: 'Aucun établissement sélectionné. Veuillez rafraîchir la page ou sélectionner un établissement.' });
       return;
     }
+    if (!newCandidate.jobId) {
+      toast({ variant: 'error', title: 'Offre requise', description: 'Veuillez sélectionner une offre d\'emploi pour créer la candidature.' });
+      return;
+    }
     try {
-      // 1. Create Candidate
-      const createdCandidate = await hrFetch<any>(hrUrl('recruitment/candidates', { tenantId: tenant.id }), {
+      // Single API call: backend creates candidate + application atomically
+      await hrFetch<any>(hrUrl('recruitment/candidates', { tenantId: tenant.id }), {
         method: 'POST',
         body: {
           firstName: newCandidate.firstName,
@@ -552,20 +558,10 @@ export function RecruitmentWorkspace() {
           phone: newCandidate.phone,
           address: newCandidate.address,
           gender: newCandidate.gender,
+          jobId: newCandidate.jobId,
+          status: newCandidate.status || 'NOUVEAU',
         }
       });
-
-      // 2. Create associated application if Job is selected
-      if (newCandidate.jobId && createdCandidate?.id) {
-        await hrFetch(hrUrl('recruitment/applications', { tenantId: tenant.id }), {
-          method: 'POST',
-          body: {
-            jobId: newCandidate.jobId,
-            candidateId: createdCandidate.id,
-            status: newCandidate.status,
-          }
-        });
-      }
 
       toast({ variant: 'success', title: 'Candidat enregistré avec succès !' });
       setIsAddCandidateOpen(false);
@@ -1428,8 +1424,7 @@ export function RecruitmentWorkspace() {
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Statut initial</label>
                           <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newCandidate.status} onChange={(e) => setNewCandidate({ ...newCandidate, status: e.target.value })}>
                             <option value="NOUVEAU">Nouveau</option>
-                            <option value="PRÉSÉLECTIONNÉ">Présélectionné</option>
-                            <option value="ENTRETIEN RH">Entretien RH</option>
+                            <option value="EN_COURS">En cours</option>
                           </select>
                         </div>
                       </div>

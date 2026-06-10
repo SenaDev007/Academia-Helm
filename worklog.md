@@ -44,3 +44,39 @@ Stage Summary:
   1. More time for cookie persistence on mobile (1200ms + verification)
   2. Same-domain redirect on mobile (avoids cross-domain cookie loss)
   3. Graceful session recovery instead of blank redirect
+---
+Task ID: 1
+Agent: Main
+Task: Fix recruitment module display issues (candidatures, tests, embauches not showing)
+
+Work Log:
+- Connected to production app at academiahelm.com using platform owner credentials (dev@academia-hub.local)
+- Navigated to RH module > Recrutement and identified that Candidatures, Tests, and Embauches tabs were not displaying data
+- Checked network requests and found /api/hr/recruitment/candidates and /api/hr/recruitment/tests returning HTTP 500
+- Error was Prisma P2022: "Colonne manquante en base de données (colonne inconnue)" - missing DB columns
+- Root cause: Prisma schema defined columns that were never created in the PostgreSQL database via migration
+- Missing columns:
+  - hr_tests: duration, instructions, maxScore, passingScore, status, updatedAt (6 columns)
+  - hr_test_results: notes, evaluatedAt (2 columns)
+  - hr_jobs: slug already had fallback in main.ts
+- Created migration file: 20260611120000_add_hr_tests_slug_and_missing_columns/migration.sql
+- Added idempotent ALTER TABLE fallback in main.ts startup (ensures columns exist even if migration fails)
+- Committed and pushed to GitHub
+- Waited for Railway to redeploy and apply migration
+- Verified all APIs now return 200:
+  - /api/hr/recruitment/candidates: Returns 10 candidates
+  - /api/hr/recruitment/tests: Returns 11 tests
+  - /api/hr/recruitment/jobs: Returns 6 jobs (already working)
+- Verified all tabs work in the UI:
+  - Candidatures: Shows 10 candidates with names, scores, statuses
+  - Tests: Shows 11 tests with types, descriptions
+  - Embauches: Shows 1 ready-to-hire + 8 recruited candidates
+  - Personnel: Shows 8 staff members
+  - Contrats: Shows 9 contracts
+
+Stage Summary:
+- Root cause was missing database columns (Prisma P2022 error)
+- Fixed by creating migration + adding idempotent ALTER TABLE fallback
+- All recruitment module tabs now display data correctly
+- Tab switching works properly (confirmed with JavaScript dispatchEvent)
+- Code pushed to GitHub and deployed on Railway/Vercel

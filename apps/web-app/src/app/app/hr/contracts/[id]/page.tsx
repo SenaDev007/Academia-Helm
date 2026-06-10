@@ -30,6 +30,7 @@ const CONTRACT_TYPE_LABELS: Record<string, string> = {
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; border: string; icon: any }> = {
   ACTIVE:     { label: 'En vigueur',  color: '#166534', bg: '#dcfce7', border: '#bbf7d0', icon: CheckCircle },
+  PENDING:    { label: 'En attente',  color: '#92400e', bg: '#fef3c7', border: '#fde68a', icon: Clock },
   EXPIRED:    { label: 'Expiré',      color: '#475569', bg: '#f1f5f9', border: '#e2e8f0', icon: Clock },
   TERMINATED: { label: 'Résilié',     color: '#991b1b', bg: '#fee2e2', border: '#fecaca', icon: AlertCircle },
 };
@@ -342,7 +343,7 @@ export default function ContractDetailPage() {
               Éditer le document
             </button>
           )}
-          {!isSigned && contract.status === 'ACTIVE' && (
+          {!isSigned && (contract.status === 'ACTIVE' || contract.status === 'PENDING') && (
             <button
               onClick={() => setSignModalOpen(true)}
               className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 shadow-sm transition"
@@ -478,7 +479,7 @@ export default function ContractDetailPage() {
                       Le contrat doit être signé par l'employé(e) pour être pleinement exécutoire.
                     </p>
                   </div>
-                  {contract.status === 'ACTIVE' && (
+                  {contract.status === 'ACTIVE' || contract.status === 'PENDING' ? (
                     <button
                       onClick={() => setSignModalOpen(true)}
                       className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white rounded-xl shadow-sm hover:opacity-90 transition mt-2"
@@ -487,7 +488,7 @@ export default function ContractDetailPage() {
                       <PenTool className="h-4 w-4" />
                       Procéder à la signature
                     </button>
-                  )}
+                  ) : null}
                 </div>
               )}
             </div>

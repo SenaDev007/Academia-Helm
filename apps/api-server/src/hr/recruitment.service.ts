@@ -943,10 +943,10 @@ export class RecruitmentPrismaService {
               }
             }
 
-            // Deactivate any existing active contracts for this staff
+            // Deactivate any existing active/pending contracts for this staff
             try {
               await tx.contract.updateMany({
-                where: { staffId: staffRecord.id, tenantId: application.tenantId, status: 'ACTIVE' },
+                where: { staffId: staffRecord.id, tenantId: application.tenantId, status: { in: ['ACTIVE', 'PENDING'] } },
                 data: {
                   status: 'EXPIRED',
                   ...prismaUpdateDefaults(),
@@ -968,7 +968,7 @@ export class RecruitmentPrismaService {
               startDate: new Date(),
               baseSalary,
               paymentMode: 'BANK',
-              status: 'ACTIVE',
+              status: 'PENDING',
             };
 
             if (currentYear?.id) {

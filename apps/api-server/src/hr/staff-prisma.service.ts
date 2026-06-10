@@ -186,7 +186,7 @@ export class StaffPrismaService {
       where,
       include: {
         contracts: {
-          where: { status: 'ACTIVE' },
+          where: { status: { in: ['ACTIVE', 'PENDING'] } },
           orderBy: { startDate: 'desc' },
           take: 1,
         },
@@ -383,10 +383,10 @@ export class StaffPrismaService {
       },
     });
 
-    // Terminate all active contracts for this staff member
+    // Terminate all active/pending contracts for this staff member
     try {
       const activeContracts = await this.prisma.contract.findMany({
-        where: { staffId: id, tenantId, status: 'ACTIVE' },
+        where: { staffId: id, tenantId, status: { in: ['ACTIVE', 'PENDING'] } },
       });
       for (const contract of activeContracts) {
         await this.prisma.contract.update({

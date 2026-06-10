@@ -18,6 +18,7 @@ const PRIMARY = '#1A2BA6';
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   ACTIVE:     { label: 'En vigueur',  className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
+  PENDING:    { label: 'En attente',  className: 'bg-amber-50 text-amber-700 border border-amber-200' },
   EXPIRED:    { label: 'Expiré',      className: 'bg-slate-100 text-slate-500 border border-slate-200' },
   TERMINATED: { label: 'Résilié',     className: 'bg-rose-50 text-rose-600 border border-rose-200' },
 };
@@ -94,7 +95,7 @@ export function ContractsWorkspace() {
           endDate: modalForm.endDate ? new Date(modalForm.endDate).toISOString() : null,
           baseSalary: parseFloat(modalForm.baseSalary),
           paymentMode: modalForm.paymentMode,
-          status: 'ACTIVE',
+          status: 'PENDING',
         },
       });
       toast({ variant: 'success', title: 'Contrat créé avec succès' });
@@ -202,8 +203,8 @@ export function ContractsWorkspace() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: 'Contrats actifs', value: contracts.filter((c) => c.status === 'ACTIVE').length },
+          { label: 'En attente de signature', value: contracts.filter((c) => c.status === 'PENDING').length },
           { label: 'CDI en cours', value: contracts.filter((c) => c.contractType === 'CDI' && c.status === 'ACTIVE').length },
-          { label: 'Non signés', value: contracts.filter((c) => c.status === 'ACTIVE' && !c.signedAt).length },
           { label: 'Échéances J-30', value: expiringSoon.length },
         ].map((k, i) => (
           <div key={i} className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
@@ -227,7 +228,8 @@ export function ContractsWorkspace() {
             />
           </div>
           <select className={selectClass} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-            <option value="ACTIVE">Contrats Actifs</option>
+            <option value="ACTIVE">En vigueur</option>
+            <option value="PENDING">En attente</option>
             <option value="ALL">Historique Complet</option>
             <option value="EXPIRED">Expirés</option>
             <option value="TERMINATED">Terminés</option>
@@ -442,7 +444,7 @@ function ContractRow({ contract, index, tenantId, onTerminate, onRefresh }: { co
           >
             {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
           </button>
-          {contract.status === 'ACTIVE' && (
+          {(contract.status === 'ACTIVE' || contract.status === 'PENDING') && (
             <button
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); onTerminate(contract); }}
               className="flex-shrink-0 p-2 text-rose-400 hover:text-rose-600 transition-colors rounded-lg hover:bg-rose-50"

@@ -1353,8 +1353,8 @@ export default function StaffDetailPage() {
                               </p>
                             </div>
                           </div>
-                          <Badge className={contract.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}>
-                            {contract.status === 'ACTIVE' ? 'En vigueur' : contract.status === 'EXPIRED' ? 'Expiré' : contract.status}
+                          <Badge className={contract.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700' : contract.status === 'PENDING' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}>
+                            {contract.status === 'ACTIVE' ? 'En vigueur' : contract.status === 'PENDING' ? 'En attente' : contract.status === 'EXPIRED' ? 'Expiré' : contract.status}
                           </Badge>
                         </div>
                         <div className="grid grid-cols-2 gap-4 mt-4 pt-3 border-t border-slate-50">

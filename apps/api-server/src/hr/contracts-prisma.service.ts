@@ -38,11 +38,11 @@ export class ContractsPrismaService {
     return this.prisma.$transaction(async (tx) => {
       // Désactiver l'éventuel contrat actif existant
       await tx.contract.updateMany({
-        where: { staffId: data.staffId, tenantId: data.tenantId, status: 'ACTIVE' },
+        where: { staffId: data.staffId, tenantId: data.tenantId, status: { in: ['ACTIVE', 'PENDING'] } },
         data: { status: 'EXPIRED' },
       });
 
-      // Créer le nouveau contrat
+      // Créer le nouveau contrat — PENDING par défaut tant que l'employé n'a pas signé
       return tx.contract.create({
         data: {
           ...prismaCreateDefaults(),
@@ -53,7 +53,7 @@ export class ContractsPrismaService {
           endDate: data.endDate ? new Date(data.endDate) : null,
           baseSalary: new Prisma.Decimal(data.baseSalary ?? 0),
           paymentMode: data.paymentMode ?? 'BANK',
-          status: data.status ?? 'ACTIVE',
+          status: data.status ?? 'PENDING',
           terms: data.terms ?? null,
           templateId: data.templateId ?? null,
           academicYearId: data.academicYearId ?? null,
@@ -256,7 +256,7 @@ export class ContractsPrismaService {
         where: {
           staffId: contract.staffId,
           tenantId,
-          status: 'ACTIVE',
+          status: { in: ['ACTIVE', 'PENDING'] },
           id: { not: id },
         },
       });
@@ -315,14 +315,14 @@ export class ContractsPrismaService {
   }
 
   /**
-   * Récupère le contrat actif d'un membre du personnel
+   * Récupère le contrat actif ou en attente d'un membre du personnel
    */
   async findActiveContract(staffId: string, tenantId: string) {
     const contract = await this.prisma.contract.findFirst({
       where: {
         staffId,
         tenantId,
-        status: 'ACTIVE',
+        status: { in: ['ACTIVE', 'PENDING'] },
       },
       include: {
         staff: {

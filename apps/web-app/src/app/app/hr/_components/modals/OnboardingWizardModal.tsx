@@ -126,7 +126,7 @@ export function OnboardingWizardModal({ isOpen, onClose, onSuccess, tenantId }: 
           startDate: formData.startDate || new Date().toISOString().split('T')[0],
           baseSalary: parseFloat(formData.baseSalary) || 0,
           paymentMode: formData.paymentMode,
-          status: 'ACTIVE',
+          status: 'PENDING',
         };
         // Only include endDate if it has a value (avoid empty string validation error)
         if (formData.endDate) {

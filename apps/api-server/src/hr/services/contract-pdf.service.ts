@@ -604,11 +604,13 @@ export class ContractPdfService {
     if (contract.signedAt) throw new BadRequestException('Ce contrat a déjà été signé.');
 
     const signedAt = new Date();
+    // La signature fait passer le contrat de PENDING → ACTIVE (employé officiellement recruté)
     const updatedContract = await this.prisma.contract.update({
       where: { id: contractId },
       data: {
         signedAt,
         signedBy: data.signerName,
+        status: 'ACTIVE',  // Le contrat n'est en vigueur qu'après signature de l'employé
         terms: {
           ...((contract.terms as any) || {}),
           signatureData: data.signatureData,
@@ -627,6 +629,7 @@ export class ContractPdfService {
           data: {
             signedAt,
             signedBy: data.signerName,
+            status: 'ACTIVE',  // Le contrat n'est en vigueur qu'après signature de l'employé
             terms: {
               ...((contract.terms as any) || {}),
               signatureData: data.signatureData,

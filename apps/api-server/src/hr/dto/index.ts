@@ -126,7 +126,7 @@ export class CreateContractDto {
   @IsOptional() terms?: Record<string, any>;
   @IsOptional() @IsUUID() academicYearId?: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
-  /** Frontend ContractsWorkspace sends status: 'ACTIVE' */
+  /** Frontend ContractsWorkspace sends status: 'PENDING' — contract becomes ACTIVE only after signing */
   @IsOptional() @IsString() status?: string;
   /** Frontend may send tenantId — ignored (resolved server-side) */
   @IsOptional() @IsString() tenantId?: string;

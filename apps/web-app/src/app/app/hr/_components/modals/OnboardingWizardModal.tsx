@@ -84,7 +84,7 @@ export function OnboardingWizardModal({ isOpen, onClose, onSuccess, tenantId }: 
             position: formData.position || undefined,
             gender: formData.gender,
             birthDate: formData.birthDate || null,
-            status: 'ACTIVE',
+            status: 'PENDING_SIGNATURE',
           },
         });
         staffId = staffResponse.id;
@@ -126,7 +126,7 @@ export function OnboardingWizardModal({ isOpen, onClose, onSuccess, tenantId }: 
           startDate: formData.startDate || new Date().toISOString().split('T')[0],
           baseSalary: parseFloat(formData.baseSalary) || 0,
           paymentMode: formData.paymentMode,
-          status: 'PENDING',
+          status: 'DRAFT',
         };
         // Only include endDate if it has a value (avoid empty string validation error)
         if (formData.endDate) {

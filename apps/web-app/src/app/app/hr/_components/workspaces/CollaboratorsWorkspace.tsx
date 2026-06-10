@@ -55,17 +55,20 @@ export function CollaboratorsWorkspace() {
   const [evaluationsList, setEvaluationsList] = useState<any[]>([]);
   const [trainingsList, setTrainingsList] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!tenant?.id) return;
     if (activeTab === 'assignments' || activeTab === 'org_chart' || activeTab === 'history') {
       setLoading(true);
+      setError(null);
       hrFetch<any[]>(hrUrl('staff', { tenantId: tenant.id }))
         .then((data) => {
           setStaffList(Array.isArray(data) ? data : []);
         })
         .catch((err) => {
           console.error('Error loading staff for collaborators:', err);
+          setError(err?.message || 'Erreur de chargement des données');
           toast({ variant: 'error', title: 'Erreur de chargement des données' });
           setStaffList([]);
         })

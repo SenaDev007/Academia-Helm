@@ -18,9 +18,10 @@ import { cn } from '@/lib/utils';
 const PRIMARY = '#1A2BA6';
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  ACTIVE:    { label: 'En poste',  className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
-  INACTIVE:  { label: 'Inactif',   className: 'bg-slate-100 text-slate-500 border border-slate-200' },
-  SUSPENDED: { label: 'Suspendu', className: 'bg-amber-50 text-amber-700 border border-amber-200' },
+  ACTIVE:            { label: 'En poste',                className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
+  PENDING_SIGNATURE: { label: 'En attente de signature', className: 'bg-amber-50 text-amber-700 border border-amber-200' },
+  INACTIVE:          { label: 'Inactif',                 className: 'bg-slate-100 text-slate-500 border border-slate-200' },
+  SUSPENDED:         { label: 'Suspendu',                className: 'bg-rose-50 text-rose-700 border border-rose-200' },
 };
 
 const TERMINATION_TYPE_LABELS: Record<string, string> = {
@@ -49,7 +50,7 @@ export function StaffWorkspace() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('ALL');
-  const [filterStatus, setFilterStatus] = useState('ACTIVE');
+  const [filterStatus, setFilterStatus] = useState('ALL');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [staffError, setStaffError] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
@@ -221,7 +222,8 @@ export function StaffWorkspace() {
           </select>
           <select className={selectClass} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
             <option value="ALL">Tous les statuts</option>
-            <option value="ACTIVE">Actif</option>
+            <option value="ACTIVE">Actif / En poste</option>
+            <option value="PENDING_SIGNATURE">En attente de signature</option>
             <option value="INACTIVE">Inactif</option>
             <option value="SUSPENDED">Suspendu</option>
           </select>
@@ -236,14 +238,14 @@ export function StaffWorkspace() {
         </button>
       </div>
 
-      {/* KPI strip — memoized to avoid re-filtering on every render */}
+      {/* KPI strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {useMemo(() => [
+        {[
           { label: 'Effectif total', value: staff.length },
-          { label: 'Enseignants', value: staff.filter((s) => s.category === 'PEDAGOGICAL').length },
-          { label: 'Administratifs', value: staff.filter((s) => s.category === 'ADMIN').length },
-          { label: 'Non déclarés CNSS', value: staff.filter((s) => s.cnssStatus === 'NOT_DECLARED').length },
-        ], [staff]).map((k, i) => (
+          { label: 'En poste', value: staff.filter((s) => s.status === 'ACTIVE').length },
+          { label: 'En attente signature', value: staff.filter((s) => s.status === 'PENDING_SIGNATURE').length },
+          { label: 'Non déclarés CNSS', value: staff.filter((s) => !s.cnssNumber).length },
+        ].map((k, i) => (
           <div key={i} className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{k.label}</p>
             <p className="text-xl font-bold text-slate-900 mt-0.5">{k.value}</p>
@@ -328,6 +330,7 @@ function StaffCard({
 }) {
   const status = STATUS_CONFIG[member.status] || STATUS_CONFIG.INACTIVE;
   const isInactive = member.status === 'INACTIVE' && member.terminationType;
+  const isPendingSignature = member.status === 'PENDING_SIGNATURE';
   const terminationLabel = TERMINATION_TYPE_LABELS[member.terminationType] || member.terminationType;
 
   // Collect document badges from the documents array
@@ -350,7 +353,7 @@ function StaffCard({
       transition={{ duration: 0.3, delay: index * 0.05 }}
       className={cn(
         'group rounded-xl border bg-white shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 overflow-hidden',
-        isInactive ? 'border-rose-200' : 'border-slate-200',
+        isInactive ? 'border-rose-200' : isPendingSignature ? 'border-amber-200' : 'border-slate-200',
       )}
     >
       <div className="p-5">
@@ -366,7 +369,7 @@ function StaffCard({
             ) : (
               <div
                 className="w-12 h-12 rounded-xl flex items-center justify-center text-base font-bold shadow-sm"
-                style={{ backgroundColor: isInactive ? '#FEE2E2' : PRIMARY + '15', color: isInactive ? '#DC2626' : PRIMARY }}
+                style={{ backgroundColor: isInactive ? '#FEE2E2' : isPendingSignature ? '#FEF3C7' : PRIMARY + '15', color: isInactive ? '#DC2626' : isPendingSignature ? '#B45309' : PRIMARY }}
               >
                 {member.firstName?.[0]}{member.lastName?.[0]}
               </div>

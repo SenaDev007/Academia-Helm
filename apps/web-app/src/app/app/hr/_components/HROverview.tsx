@@ -149,12 +149,13 @@ export function HROverview() {
   const snapshot = data?.snapshot || { totalStaff: 0, totalTeachers: 0, totalAdmin: 0, monthlyPayroll: 0, cnssCharges: 0, leaveCount: 0 };
   const evolution = data?.evolution || [];
   const orionAlerts = data?.orionAlerts || [];
+  const pendingSignatureCount = data?.kpi?.pendingSignatureStaff || 0;
 
   const kpis = [
     { label: 'Effectif Total', value: snapshot.totalStaff, subValue: `${snapshot.totalTeachers} ens. · ${snapshot.totalAdmin} admin`, icon: Users },
+    { label: 'En attente signature', value: pendingSignatureCount, subValue: 'Contrats non signés', icon: UserCheck },
     { label: 'Masse Salariale', value: `${Number(snapshot.monthlyPayroll || 0).toLocaleString()} XOF`, subValue: 'Dernier mois validé', icon: DollarSign },
     { label: 'Charges Sociales', value: `${Number(snapshot.cnssCharges || 0).toLocaleString()} XOF`, subValue: 'Cotisations CNSS estimées', icon: ShieldCheck },
-    { label: 'Congés Actifs', value: snapshot.leaveCount, subValue: 'Personnes absentes ce jour', icon: Calendar },
   ];
 
   if (loading && !data) {

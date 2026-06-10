@@ -104,10 +104,14 @@ export class PrismaExceptionFilter implements ExceptionFilter {
           this.logger.error(`P2021 — Missing table: ${exception.message}`);
           break;
         case 'P2022':
+          // Column does not exist — missing migration
           status = HttpStatus.INTERNAL_SERVER_ERROR;
-          const missingCol = (exception.meta as any)?.column || 'colonne inconnue';
-          message = `Colonne manquante en base de données (${missingCol}). Une migration est probablement manquante.`;
-          this.logger.error(`P2022 — Missing column: ${exception.message}`);
+          const p2022Meta = exception.meta as any;
+          const missingCol = p2022Meta?.column || p2022Meta?.columnName || 'colonne inconnue';
+          const missingTable = p2022Meta?.table || p2022Meta?.tableName || '';
+          const missingDetail = missingTable ? ` dans la table ${missingTable}` : '';
+          message = `Colonne manquante en base de données (${missingCol}${missingDetail}). Une migration est probablement manquante.`;
+          this.logger.error(`P2022 — Missing column: ${JSON.stringify(p2022Meta)} | Full: ${exception.message}`);
           break;
         case 'P2024':
           status = HttpStatus.GATEWAY_TIMEOUT;

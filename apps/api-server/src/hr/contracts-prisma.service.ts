@@ -23,6 +23,7 @@ export class ContractsPrismaService {
   async createContract(data: {
     tenantId: string;
     academicYearId?: string;
+    schoolLevelId?: string;
     staffId: string;
     contractType: string;
     startDate: Date;

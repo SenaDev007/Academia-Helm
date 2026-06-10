@@ -850,7 +850,7 @@ export class RecruitmentPrismaService {
               roleType,
               hireDate: new Date(),
               contractType: application.job.contractType || 'CDI',
-              status: 'ACTIVE',
+              status: 'PENDING_SIGNATURE',
               salary: parsedSalary,
             };
 
@@ -909,7 +909,7 @@ export class RecruitmentPrismaService {
               startDate: new Date(),
               baseSalary,
               paymentMode: 'BANK',
-              status: 'ACTIVE',
+              status: 'DRAFT',
             };
 
             if (currentYear?.id) {

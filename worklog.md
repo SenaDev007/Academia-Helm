@@ -110,3 +110,30 @@ Stage Summary:
 - Primary bug: Missing tenantId validation for PLATFORM_OWNER users causes Prisma foreign key violation
 - Secondary bugs: Non-atomic seed, orphaned nodes in buildTree
 - All fixes applied to both main and mirror codebases
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix collaborator status bug - PENDING_SIGNATURE status + organigramme fix
+
+Work Log:
+- Analyzed the full HR module codebase (backend + frontend) to understand status management
+- Identified root cause: No "en attente de signature" status existed; hired candidates were immediately set to ACTIVE/En poste
+- Modified recruitment.service.ts: Staff created with PENDING_SIGNATURE, Contract created with DRAFT when EMBAUCHÉ
+- Modified contract-pdf.service.ts: signContract() now updates Contract status from DRAFT→ACTIVE and Staff status from PENDING_SIGNATURE→ACTIVE
+- Modified OnboardingWizardModal: Staff created with PENDING_SIGNATURE, Contract created with DRAFT
+- Updated StaffWorkspace: Added PENDING_SIGNATURE to STATUS_CONFIG, filter, KPI strip, and card styling (amber color for pending)
+- Updated ContractsWorkspace: Changed DRAFT label to "En attente de signature", updated filters and KPI
+- Updated hr-kpi.service.ts: Included PENDING_SIGNATURE in staff counts
+- Updated hr-orion.service.ts: Added CONTRACT_PENDING_SIGNATURE alert for contracts unsigned >7 days, added pendingSignatureStaff/pendingSignatureContracts KPIs
+- Updated hr-overview.controller.ts: Added KPI data to dashboard response
+- Updated HROverview.tsx: Added "En attente signature" KPI card
+- Updated staff-prisma.service.ts: findAllStaff includes DRAFT contracts in related data
+- Fixed organigramme CSS issues (invalid borderColor style) and added error state with retry button
+- Created SQL migration script for fixing existing data (fix_pending_signature_status.sql)
+- Changed default filters to show all statuses (not just ACTIVE) so pending items are visible
+
+Stage Summary:
+- New status flow: EMBAUCHÉ → Staff:PENDING_SIGNATURE + Contract:DRAFT → Signature → Staff:ACTIVE + Contract:ACTIVE
+- All affected tabs (Personnel, Contrats, Collaborateurs, Overview) now correctly display the pending signature status
+- ORION vigilance now alerts on unsigned contracts older than 7 days
+- Data migration script created at /home/z/my-project/api-server/prisma/migrations/fix_pending_signature_status.sql

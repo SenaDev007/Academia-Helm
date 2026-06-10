@@ -327,11 +327,14 @@ export class ContractPdfService {
     if (contract.signedAt) throw new BadRequestException('Ce contrat a déjà été signé.');
 
     const signedAt = new Date();
+
+    // Update contract: set signedAt, signedBy, and change status from DRAFT → ACTIVE
     const updatedContract = await this.prisma.contract.update({
       where: { id: contractId },
       data: {
         signedAt,
         signedBy: data.signerName,
+        status: 'ACTIVE',
         terms: {
           ...((contract.terms as any) || {}),
           signatureData: data.signatureData,
@@ -344,6 +347,15 @@ export class ContractPdfService {
       },
       include: { staff: { include: { employeeCNSS: true } } },
     });
+
+    // Also update Staff status: PENDING_SIGNATURE → ACTIVE when contract is signed
+    if (updatedContract.staffId && updatedContract.staff?.status === 'PENDING_SIGNATURE') {
+      await this.prisma.staff.update({
+        where: { id: updatedContract.staffId },
+        data: { status: 'ACTIVE' },
+      });
+      this.logger.log(`Staff ${updatedContract.staffId} status updated from PENDING_SIGNATURE to ACTIVE after contract signing`);
+    }
 
     // Re-générer le PDF avec la signature
     await this.generateContractPdf(contractId, tenantId);

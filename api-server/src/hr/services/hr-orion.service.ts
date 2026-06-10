@@ -142,7 +142,39 @@ export class HROrionService {
       });
     }
 
-    // ── 3. Lots de paie DRAFT depuis > 5 jours ─────────────────────────
+    // ── 3. Contrats en attente de signature depuis > 7 jours ──────────────
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const unsignedContracts = await this.prisma.contract.findMany({
+      where: {
+        tenantId,
+        status: 'DRAFT',
+        signedAt: null,
+        createdAt: { lte: sevenDaysAgo },
+      },
+      include: {
+        staff: { select: { firstName: true, lastName: true, status: true } },
+      },
+    });
+
+    if (unsignedContracts.length > 0) {
+      alerts.push({
+        severity: 'HIGH',
+        category: 'CONTRACT_PENDING_SIGNATURE',
+        title: 'Contrats en attente de signature',
+        description: `${unsignedContracts.length} contrat(s) non signé(s) depuis plus de 7 jours. Les collaborateurs concernés ne sont pas encore actifs.`,
+        recommendation: 'Procéder à la signature des contrats pour activer les collaborateurs.',
+        count: unsignedContracts.length,
+        details: unsignedContracts.map((c) => ({
+          name: `${c.staff?.firstName} ${c.staff?.lastName}`,
+          contractType: c.contractType,
+          staffStatus: c.staff?.status,
+        })),
+      });
+    }
+
+    // ── 4. Lots de paie DRAFT depuis > 5 jours ─────────────────────────
     const fiveDaysAgo = new Date();
     fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
 
@@ -219,20 +251,26 @@ export class HROrionService {
     const [
       totalStaff,
       activeStaff,
+      pendingSignatureStaff,
       pendingLeaves,
       activeContracts,
+      pendingSignatureContracts,
     ] = await Promise.all([
       this.prisma.staff.count({ where: { tenantId } }),
       this.prisma.staff.count({ where: { tenantId, status: 'ACTIVE' } }),
+      this.prisma.staff.count({ where: { tenantId, status: 'PENDING_SIGNATURE' } }),
       this.prisma.leaveRequest.count({ where: { tenantId, status: 'PENDING' } }),
       this.prisma.contract.count({ where: { tenantId, status: 'ACTIVE' } }),
+      this.prisma.contract.count({ where: { tenantId, status: 'DRAFT' } }),
     ]);
 
     return {
       totalStaff,
       activeStaff,
+      pendingSignatureStaff,
       pendingLeaves,
       activeContracts,
+      pendingSignatureContracts,
       alerts: await this.generateAlerts(tenantId),
     };
   }

@@ -185,7 +185,7 @@ export class StaffPrismaService {
       where,
       include: {
         contracts: {
-          where: { status: 'ACTIVE' },
+          where: { status: { in: ['ACTIVE', 'DRAFT'] } },
           orderBy: { startDate: 'desc' },
           take: 1,
         },

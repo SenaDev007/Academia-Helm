@@ -28,7 +28,7 @@ export class HrKpiService {
   async generateSnapshot(tenantId: string, academicYearId: string) {
     // 1. Effectifs
     const staff = await this.prisma.staff.findMany({
-      where: { tenantId, status: 'ACTIVE' },
+      where: { tenantId, status: { in: ['ACTIVE', 'PENDING_SIGNATURE'] } },
     });
 
     const totalStaff = staff.length;
@@ -101,7 +101,7 @@ export class HrKpiService {
   async getStaffDistribution(tenantId: string) {
     const groups = await this.prisma.staff.groupBy({
       by: ['roleType'],
-      where: { tenantId, status: 'ACTIVE' },
+      where: { tenantId, status: { in: ['ACTIVE', 'PENDING_SIGNATURE'] } },
       _count: true,
     });
 

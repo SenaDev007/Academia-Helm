@@ -34,11 +34,13 @@ export class HrOverviewController {
     const snapshot = await this.hrKpiService.generateSnapshot(tenant?.id, academicYearId);
     const evolution = await this.hrKpiService.getPayrollEvolution(tenant?.id, academicYearId);
     const orionData = await this.hrOrionService.getPayrollAndTaxKPIs(tenant?.id, academicYearId);
+    const kpi = await this.hrOrionService.getHrKPIs(tenant?.id, academicYearId);
 
     return {
       snapshot,
       evolution,
       orionAlerts: orionData.alerts,
+      kpi,
     };
   }
 

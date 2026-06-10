@@ -54,17 +54,20 @@ export function CollaboratorsWorkspace() {
   const [evaluationsList, setEvaluationsList] = useState<any[]>([]);
   const [trainingsList, setTrainingsList] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!tenant?.id) return;
     if (activeTab === 'assignments' || activeTab === 'org_chart' || activeTab === 'history') {
       setLoading(true);
+      setError(null);
       hrFetch<any[]>(hrUrl('staff', { tenantId: tenant.id }))
         .then((data) => {
           setStaffList(Array.isArray(data) ? data : []);
         })
         .catch((err) => {
           console.error('Error loading staff for collaborators:', err);
+          setError(err?.message || 'Erreur de chargement des données');
           toast({ variant: 'error', title: 'Erreur de chargement des données' });
           setStaffList([]);
         })
@@ -318,6 +321,28 @@ export function CollaboratorsWorkspace() {
             <h3 className="text-base font-bold text-slate-900">Organigramme</h3>
             {loading ? (
               <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>
+            ) : error ? (
+              <div className="text-center py-12 bg-rose-50 rounded-xl border border-rose-200 text-sm text-rose-600">
+                <ShieldAlert className="h-8 w-8 mx-auto mb-3 text-rose-400" />
+                <p className="font-semibold">Erreur de chargement de l&apos;organigramme</p>
+                <p className="text-rose-500 mt-1">{error}</p>
+                <button
+                  onClick={() => {
+                    setError(null);
+                    setLoading(true);
+                    hrFetch<any[]>(hrUrl('staff', { tenantId: tenant?.id }))
+                      .then((data) => setStaffList(Array.isArray(data) ? data : []))
+                      .catch((err) => {
+                        setError(err?.message || 'Erreur de chargement');
+                        setStaffList([]);
+                      })
+                      .finally(() => setLoading(false));
+                  }}
+                  className="mt-4 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-[#1A2BA6] hover:opacity-90 transition"
+                >
+                  Réessayer
+                </button>
+              </div>
             ) : staffList.length === 0 ? (
               <div className="text-center py-12 bg-slate-50 rounded-xl border border-slate-200 text-sm text-slate-400">Aucun collaborateur pour construire l&apos;organigramme.</div>
             ) : (
@@ -352,7 +377,7 @@ export function CollaboratorsWorkspace() {
                             {/* Category header with connector */}
                             <div className="flex items-center gap-3">
                               <div className="flex-1 h-px bg-slate-200" />
-                              <div className={cn('flex items-center gap-2 px-4 py-2 rounded-xl border', catStyle.bg, catStyle.text)} style={{ borderColor: 'var(--tw-border-opacity, 1)' }}>
+                              <div className={cn('flex items-center gap-2 px-4 py-2 rounded-xl border', catStyle.bg, catStyle.text)} style={{ borderColor: 'transparent' }}>
                                 {cat === 'PEDAGOGICAL' ? <GraduationCap className="h-4 w-4" /> : cat === 'ADMIN' ? <UserCog className="h-4 w-4" /> : <Building2 className="h-4 w-4" />}
                                 <span className="text-sm font-bold">{catStyle.label}</span>
                                 <span className="text-[10px] font-semibold opacity-70">({staffList.filter(s => s.category === cat).length})</span>
@@ -374,7 +399,7 @@ export function CollaboratorsWorkspace() {
                                   </div>
                                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 pl-4">
                                     {members.map((m) => (
-                                      <div key={m.id} className={cn('border rounded-lg p-2.5 text-center hover:shadow-sm transition-shadow', catStyle.bg)} style={{ borderColor: 'var(--tw-border-opacity, 1)' }}>
+                                      <div key={m.id} className={cn('border rounded-lg p-2.5 text-center hover:shadow-sm transition-shadow', catStyle.bg)}>
                                         <div className="w-7 h-7 rounded-lg mx-auto flex items-center justify-center text-[10px] font-bold mb-1.5" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
                                           {m.firstName?.[0]}{m.lastName?.[0]}
                                         </div>

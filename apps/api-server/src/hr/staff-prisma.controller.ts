@@ -183,7 +183,7 @@ export class StaffPrismaController {
     @Query('tenantId') tenantIdFallback?: string,
   ) {
     if (!file) {
-      throw new Error('Aucun fichier photo fourni');
+      throw new BadRequestException('Aucun fichier photo fourni');
     }
     const tid = tenant?.id ?? tenantIdFallback;
     if (!tid) {
@@ -228,7 +228,7 @@ export class StaffPrismaController {
     @Query('tenantId') tenantIdFallback?: string,
   ) {
     if (!file) {
-      throw new Error('Aucun fichier fourni');
+      throw new BadRequestException('Aucun fichier fourni');
     }
     const tid = tenant?.id ?? tenantIdFallback;
     if (!tid) {

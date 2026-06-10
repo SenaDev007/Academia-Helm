@@ -234,13 +234,15 @@ export class StaffPrismaController {
     if (!tid) {
       throw new BadRequestException('Tenant ID requis pour cette opération');
     }
+    // Normalize expiresAt: treat empty strings as undefined/null
+    const expiresAt = body.expiresAt && body.expiresAt.trim() !== '' ? body.expiresAt : undefined;
     return this.staffService.uploadStaffDocument(
       staffId,
       tid,
       file,
       body.documentType || 'OTHER',
       body.description,
-      body.expiresAt,
+      expiresAt,
     );
   }
 

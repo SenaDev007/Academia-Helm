@@ -256,6 +256,7 @@ export class StaffPrismaService {
       'academicYearId', 'schoolLevelId',
       'nationality', 'maritalStatus', 'numberOfChildren',
       'nationalId', 'cnssNumber', 'ifuNumber',
+      'terminationType', 'noticePeriodDays',
     ];
 
     for (const field of allowedFields) {
@@ -274,7 +275,7 @@ export class StaffPrismaService {
     }
 
     // Handle date fields — convert empty strings to null, valid strings to Date
-    const dateFields = ['birthDate', 'dateOfBirth', 'hireDate'];
+    const dateFields = ['birthDate', 'dateOfBirth', 'hireDate', 'terminatedAt', 'lastWorkingDate'];
     for (const df of dateFields) {
       if (df in updateData) {
         if (updateData[df] === '' || updateData[df] === null || updateData[df] === undefined) {
@@ -291,6 +292,21 @@ export class StaffPrismaService {
         updateData.numberOfChildren = null;
       } else {
         updateData.numberOfChildren = parseInt(updateData.numberOfChildren, 10) || null;
+      }
+    }
+
+    // Handle terminationDetails (JSON field)
+    if (data.terminationDetails !== undefined) {
+      if (typeof data.terminationDetails === 'string' && data.terminationDetails.trim() !== '') {
+        try {
+          updateData.terminationDetails = JSON.parse(data.terminationDetails);
+        } catch {
+          updateData.terminationDetails = { note: data.terminationDetails };
+        }
+      } else if (typeof data.terminationDetails === 'object') {
+        updateData.terminationDetails = data.terminationDetails;
+      } else {
+        updateData.terminationDetails = null;
       }
     }
 

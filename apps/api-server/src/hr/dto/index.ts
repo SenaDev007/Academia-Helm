@@ -103,6 +103,11 @@ export class UpdateStaffDto {
   @IsOptional() @IsString() nationalId?: string;
   @IsOptional() @IsString() cnssNumber?: string;
   @IsOptional() @IsString() ifuNumber?: string;
+  @IsOptional() @IsString() terminationType?: string;
+  @IsOptional() terminationDetails?: Record<string, any>;
+  @IsOptional() terminatedAt?: string | null;
+  @IsOptional() @IsNumber() @Type(() => Number) noticePeriodDays?: number;
+  @IsOptional() lastWorkingDate?: string | null;
   @IsOptional() @IsUUID() academicYearId?: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
   @IsOptional() @IsString() tenantId?: string;
@@ -391,11 +396,12 @@ export class AddStaffDocumentDto {
  */
 export class UploadStaffDocumentDto {
   /** Document type: CV, CNI, BIRTH_CERTIFICATE, DIPLOMA, CONTRACT, CNSS_CERTIFICATE, MEDICAL_CERTIFICATE, WORK_PERMIT, OTHER */
-  @IsString() documentType: string;
-  @IsOptional() @IsString() description?: string;
-  @IsOptional() @IsDateString() expiresAt?: string;
+  @IsString() @Type(() => String) documentType: string;
+  @IsOptional() @IsString() @Type(() => String) description?: string;
+  /** Accept date string or empty string (empty will be treated as null) */
+  @IsOptional() @Type(() => String) expiresAt?: string;
   /** Frontend may send tenantId — ignored */
-  @IsOptional() @IsString() tenantId?: string;
+  @IsOptional() @IsString() @Type(() => String) tenantId?: string;
 }
 
 /**

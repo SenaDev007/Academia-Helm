@@ -237,10 +237,11 @@ async function bootstrap() {
       `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "globalMatricule" TEXT`,
       `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "tenantMatricule" TEXT`,
       `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "terminationType" TEXT`,
-      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "terminationDetails" TEXT`,
-      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "terminatedAt" TIMESTAMP(3)`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "terminationDetails" JSONB`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "terminatedAt" TIMESTAMP WITH TIME ZONE`,
       `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "noticePeriodDays" INTEGER`,
-      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "lastWorkingDate" DATE`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "lastWorkingDate" TIMESTAMP WITH TIME ZONE`,
+      // Extended staff columns (migration 20260610120000)
       `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "nationality" TEXT`,
       `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "maritalStatus" TEXT`,
       `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "numberOfChildren" INTEGER`,
@@ -253,6 +254,8 @@ async function bootstrap() {
       `CREATE INDEX IF NOT EXISTS "staff_tenantMatricule_idx" ON "staff"("tenantMatricule")`,
       `CREATE INDEX IF NOT EXISTS "staff_status_idx" ON "staff"("status")`,
       `CREATE INDEX IF NOT EXISTS "staff_roleType_idx" ON "staff"("roleType")`,
+      `CREATE INDEX IF NOT EXISTS "staff_nationalId_idx" ON "staff"("nationalId")`,
+      `CREATE INDEX IF NOT EXISTS "staff_cnssNumber_idx" ON "staff"("cnssNumber")`,
 
       // ─── staff_documents columns (migration 20260606120000) ───
       `ALTER TABLE "staff_documents" ADD COLUMN IF NOT EXISTS "category" TEXT NOT NULL DEFAULT 'GENERAL'`,

@@ -90,10 +90,20 @@ async function forward(
         // (which includes the boundary string needed for parsing)
         const bodyBuffer = Buffer.from(await request.arrayBuffer());
         options.body = bodyBuffer as any;
-        // Preserve the multipart content-type with boundary
+        // CRITICAL: Remove the default 'Content-Type: application/json' set by
+        // getProxyAuthHeaders() — JavaScript objects are case-sensitive, so setting
+        // 'content-type' (lowercase) would NOT overwrite 'Content-Type' (titlecase).
+        // Both headers would coexist, causing the backend to pick up application/json
+        // instead of multipart/form-data, which breaks Multer file extraction and
+        // body field parsing (causing "documentType must be a string" and
+        // "Aucun fichier photo fourni" errors).
+        delete (options.headers as Record<string, string>)['Content-Type'];
+        delete (options.headers as Record<string, string>)['content-type'];
+
+        // Set the correct multipart content-type with boundary
         const contentType = request.headers.get('content-type');
         if (contentType) {
-          (options.headers as Record<string, string>)['content-type'] = contentType;
+          (options.headers as Record<string, string>)['Content-Type'] = contentType;
         }
         // Remove content-length from forwarded headers to let fetch set it
         delete (options.headers as Record<string, string>)['content-length'];

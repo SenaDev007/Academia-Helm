@@ -135,15 +135,77 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
   const [submitting, setSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<{ success: boolean; message: string } | null>(null);
 
-  // Fetch available schools on mount
+  // When forcedJobSlug is provided, directly deep-link to the specific job via API.
+  // This avoids the fragile multi-step chain (load schools → match slug → load jobs → match slug)
+  // and works reliably for social sharing links.
+  const [deepLinkResolved, setDeepLinkResolved] = useState(false);
+
+  useEffect(() => {
+    if (!forcedJobSlug || deepLinkResolved) return;
+    let cancelled = false;
+
+    async function resolveDeepLink() {
+      try {
+        setLoading(true);
+        // Call the public getJobBySlug API — returns job with tenant info
+        const res = await fetch(`/api/hr/recruitment/jobs/by-slug/${encodeURIComponent(forcedJobSlug)}`);
+        if (!res.ok) {
+          console.warn('Deep-link: job not found for slug', forcedJobSlug);
+          setDeepLinkResolved(true);
+          return;
+        }
+        const jobData = await res.json();
+        if (cancelled || !jobData?.tenant) return;
+
+        // Build a synthetic school object from the job's tenant info
+        const tenantInfo = jobData.tenant;
+        const syntheticSchool: School = {
+          id: tenantInfo.id,
+          tenantId: tenantInfo.id,
+          name: tenantInfo.name,
+          schoolName: tenantInfo.name,
+          tenantName: tenantInfo.name,
+          slug: tenantInfo.slug,
+        };
+
+        // Set school and job directly
+        setSelectedSchool(syntheticSchool);
+        setSelectedJob(jobData);
+
+        // Also load the full jobs list for this school (for sidebar navigation)
+        try {
+          const jobsRes = await fetch(`/api/hr/recruitment/jobs?tenantId=${tenantInfo.id}`);
+          const jobsData = await jobsRes.json();
+          if (Array.isArray(jobsData) && !cancelled) {
+            setJobs(jobsData.filter((j: any) => j.status === 'PUBLIÉE'));
+          }
+        } catch (e) {
+          console.warn('Deep-link: could not load full jobs list', e);
+        }
+
+        setDeepLinkResolved(true);
+      } catch (err) {
+        console.error('Deep-link resolution failed:', err);
+        setDeepLinkResolved(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    resolveDeepLink();
+    return () => { cancelled = true; };
+  }, [forcedJobSlug, deepLinkResolved]);
+
+  // Fetch available schools on mount (using the public schools list endpoint)
   useEffect(() => {
     async function loadSchools() {
       try {
         setLoading(true);
-        const res = await fetch('/api/auth/dev-available-tenants');
+        // Use the public schools list endpoint (works in production, unlike dev-available-tenants)
+        const res = await fetch('/api/public/schools/list');
         const data = await res.json();
         if (Array.isArray(data)) {
-          // Fetch jobs count for each school in parallel (Tome 2 & 8)
+          // Fetch jobs count for each school in parallel
           const schoolsWithCounts = await Promise.all(data.map(async (school) => {
             try {
               const jobsRes = await fetch(`/api/hr/recruitment/jobs?tenantId=${school.tenantId || school.id}`);
@@ -215,15 +277,16 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
     loadStats();
   }, [selectedJob?.id]);
 
-  // Auto-select school if query parameter matches
+  // Auto-select school if query parameter matches (only if deep-link hasn't already resolved)
   useEffect(() => {
-    if (schools.length > 0 && schoolParam) {
+    if (deepLinkResolved && forcedJobSlug) return; // Deep-link already set the school
+    if (schools.length > 0 && schoolParam && !selectedSchool) {
       const match = schools.find(s => s.slug === schoolParam);
       if (match) {
         handleSelectSchool(match);
       }
     }
-  }, [schools, schoolParam]);
+  }, [schools, schoolParam, deepLinkResolved, forcedJobSlug, selectedSchool]);
 
   // Select a specific job from the jobs list by slug
   const handleSelectJobBySlug = (jobSlug: string) => {
@@ -234,11 +297,12 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
   };
 
   // Auto-select job if forcedJobSlug is provided and jobs are loaded
+  // (fallback for when deep-link resolution didn't set the job directly)
   useEffect(() => {
-    if (forcedJobSlug && jobs.length > 0 && selectedSchool) {
+    if (forcedJobSlug && jobs.length > 0 && selectedSchool && !selectedJob) {
       handleSelectJobBySlug(forcedJobSlug);
     }
-  }, [forcedJobSlug, jobs, selectedSchool]);
+  }, [forcedJobSlug, jobs, selectedSchool, selectedJob]);
 
   // Form helpers
   const addExperience = () => {

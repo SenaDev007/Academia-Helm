@@ -55,6 +55,12 @@ export class RecruitmentPrismaController {
     return this.service.getJobStats(jobId, tenantIdFallback);
   }
 
+  @Public()
+  @Get('jobs/by-slug/:slug')
+  async getJobBySlug(@Param('slug') slug: string) {
+    return this.service.getJobBySlug(slug);
+  }
+
   @Post('jobs')
   async createJob(
     @GetTenant() tenant: any,

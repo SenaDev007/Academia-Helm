@@ -13489,6 +13489,7 @@ model HrJob {
   id               String          @id @default(uuid())
   tenantId         String
   ref              String          @unique
+  slug             String          @unique
   title            String
   dept             String
   loc              String

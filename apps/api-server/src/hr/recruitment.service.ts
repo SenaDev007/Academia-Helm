@@ -115,6 +115,23 @@ export class RecruitmentPrismaService {
     return `OFF-${prefix}-${padded}`;
   }
 
+  /**
+   * Generate a URL-safe slug from a job title + ref combination.
+   * Format: <slugified-title>-<ref-suffix>
+   * Example: "professeur-maths-off-csp-00001"
+   */
+  private generateSlug(title: string, ref: string): string {
+    const slugifiedTitle = title
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Remove accents
+      .replace(/[^a-z0-9]+/g, '-')      // Replace non-alphanumeric with dash
+      .replace(/^-+|-+$/g, '')          // Trim leading/trailing dashes
+      .slice(0, 60);                     // Limit length
+    const refSuffix = ref.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    return `${slugifiedTitle}-${refSuffix}`;
+  }
+
   async createJob(tenantId: string, data: any) {
     // Generate sequential ref if not provided
     const ref = data.ref || await this.generateJobRef(tenantId);
@@ -126,12 +143,13 @@ export class RecruitmentPrismaService {
     const experience = data.experience || data.requiredExperience || null;
     // If status is PUBLIÉE, set publishedAt to now()
     const publishedAt = data.status === 'PUBLIÉE' ? new Date() : null;
-
+    const slug = data.slug || this.generateSlug(data.title, ref);
     return this.prisma.hrJob.create({
       data: {
         ...prismaCreateDefaults(),
         tenantId,
         ref,
+        slug,
         title: data.title,
         dept,
         loc,
@@ -161,11 +179,20 @@ export class RecruitmentPrismaService {
     // (unless explicitly provided, e.g. during republish)
     const publishedAt = data.status === 'PUBLIÉE' ? new Date() : undefined;
 
+    // If title changes, regenerate slug from new title + current ref
+    let slugUpdate: Record<string, string> = {};
+    if (data.title !== undefined) {
+      const current = await this.prisma.hrJob.findUnique({ where: { id }, select: { ref: true } });
+      if (current) {
+        slugUpdate = { slug: this.generateSlug(data.title, current.ref) };
+      }
+    }
     return this.prisma.hrJob.update({
       where: { id },
       data: {
         ...prismaUpdateDefaults(),
         ...(data.title !== undefined && { title: data.title }),
+        ...slugUpdate,
         ...(dept !== undefined && { dept }),
         ...(loc !== undefined && { loc }),
         ...(data.ref !== undefined && { ref: data.ref }),
@@ -229,6 +256,20 @@ export class RecruitmentPrismaService {
         publishedAt: new Date(),
       },
     });
+  }
+
+  async getJobBySlug(slug: string) {
+    const job = await this.prisma.hrJob.findUnique({
+      where: { slug },
+      include: {
+        _count: { select: { applications: true } },
+        tenant: { select: { id: true, name: true, slug: true } },
+      },
+    });
+    if (!job) {
+      throw new NotFoundException(`Offre d'emploi avec le slug "${slug}" non trouvée`);
+    }
+    return job;
   }
 
   async deleteJob(id: string) {

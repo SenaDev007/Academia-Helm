@@ -45,6 +45,7 @@ interface School {
 interface Job {
   id: string;
   ref: string;
+  slug: string;
   title: string;
   dept: string;
   loc: string;
@@ -80,7 +81,7 @@ interface EducationItem {
   year: string;
 }
 
-export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string }) {
+export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedSchoolSlug?: string; forcedJobSlug?: string }) {
   const [schools, setSchools] = useState<any[]>([]);
   const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -220,6 +221,21 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
       }
     }
   }, [schools, schoolParam]);
+
+  // Select a specific job from the jobs list by slug
+  const handleSelectJobBySlug = (jobSlug: string) => {
+    const match = jobs.find(j => j.slug === jobSlug);
+    if (match) {
+      setSelectedJob(match);
+    }
+  };
+
+  // Auto-select job if forcedJobSlug is provided and jobs are loaded
+  useEffect(() => {
+    if (forcedJobSlug && jobs.length > 0 && selectedSchool) {
+      handleSelectJobBySlug(forcedJobSlug);
+    }
+  }, [forcedJobSlug, jobs, selectedSchool]);
 
   // Form helpers
   const addExperience = () => {
@@ -457,7 +473,12 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
                         jobs.map((job) => (
                           <div
                             key={job.id}
-                            onClick={() => setSelectedJob(job)}
+                            onClick={() => {
+                              setSelectedJob(job);
+                              if (selectedSchool?.slug && job.slug) {
+                                router.push(`/jobs/${selectedSchool.slug}/${job.slug}`, { scroll: false });
+                              }
+                            }}
                             className={`cursor-pointer border p-4 rounded-xl transition-all ${
                               selectedJob?.id === job.id 
                                 ? 'bg-indigo-50/50 border-[#1A2BA6] shadow-sm' 

@@ -175,7 +175,10 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
     setCurrentStep(1);
     
     // Update path dynamically (personalized tenant URL)
-    router.push(`/jobs/${school.slug}`);
+    // Preserve the jobSlug if we're coming from a direct link (/jobs/{school}/{job})
+    // so that the auto-select job useEffect can still trigger
+    const jobSlugSegment = forcedJobSlug ? `/${forcedJobSlug}` : '';
+    router.push(`/jobs/${school.slug}${jobSlugSegment}`);
 
     try {
       setLoading(true);

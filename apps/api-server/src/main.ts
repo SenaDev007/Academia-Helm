@@ -279,6 +279,8 @@ async function bootstrap() {
 
       // ─── hr_jobs publishedAt (migration 20260609100000) ───
       `ALTER TABLE "hr_jobs" ADD COLUMN IF NOT EXISTS "publishedAt" TIMESTAMP(3)`,
+      // ─── hr_jobs slug (for public job URL sharing) ───
+      `ALTER TABLE "hr_jobs" ADD COLUMN IF NOT EXISTS "slug" TEXT`,
     ];
 
     for (const alterStmt of alterStatements) {
@@ -439,6 +441,33 @@ async function bootstrap() {
     } catch (err: any) {
       if (!err.message?.includes('already exists') && !err.message?.includes('42P07') && !err.message?.includes('42P16')) {
         logger.warn(`hr_jobs publishedAt warning: ${err.message}`);
+      }
+    }
+
+    // ── Ensure slug on hr_jobs and backfill existing rows ──
+    try {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "hr_jobs" ADD COLUMN IF NOT EXISTS "slug" TEXT`);
+    } catch (err: any) {
+      if (!err.message?.includes('already exists') && !err.message?.includes('42P07') && !err.message?.includes('42P16')) {
+        logger.warn(`hr_jobs slug column warning: ${err.message}`);
+      }
+    }
+    try {
+      // Backfill slug for existing rows that have NULL slug — generate from title + ref suffix
+      const slugPrefix = `lower(regexp_replace(regexp_replace(regexp_replace(title, '[^a-zA-Z0-9\\s]', '', 'g'), '\\s+', '-', 'g'), '^(-+)|(-+)$', '', 'g'))`;
+      await prisma.$executeRawUnsafe(`
+        UPDATE "hr_jobs" SET slug = CONCAT(${slugPrefix}, '-', SUBSTRING(ref FROM POSITION('-' IN reverse(ref)) + 1))
+        WHERE slug IS NULL AND title IS NOT NULL AND ref IS NOT NULL
+      `);
+    } catch (err: any) {
+      logger.warn(`hr_jobs slug backfill warning: ${err.message}`);
+    }
+    try {
+      // Add unique constraint on slug if not already present
+      await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "hr_jobs_slug_key" ON "hr_jobs"("slug")`);
+    } catch (err: any) {
+      if (!err.message?.includes('already exists') && !err.message?.includes('42P07') && !err.message?.includes('42P16')) {
+        logger.warn(`hr_jobs slug unique index warning: ${err.message}`);
       }
     }
 

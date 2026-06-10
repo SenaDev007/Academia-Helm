@@ -410,8 +410,8 @@ export function RecruitmentWorkspace() {
     // Fetch Candidates
     try {
       const fetchedCandidates = await hrFetch<any[]>(hrUrl('recruitment/candidates', { tenantId: tenant.id }));
-      if (fetchedCandidates) {
-        setCandidates(fetchedCandidates.map(c => {
+      const candidateList = Array.isArray(fetchedCandidates) ? fetchedCandidates : [];
+      setCandidates(candidateList.map(c => {
           // Find the primary (first) application with its job data
           const primaryApp = c.applications?.[0] || c.application;
           const jobTitle = primaryApp?.job?.title || primaryApp?.jobTitle || c.jobTitle || '';
@@ -451,7 +451,6 @@ export function RecruitmentWorkspace() {
             documents: c.documents || [],
           };
         }));
-      }
     } catch (err) {
       console.error('Failed to fetch recruitment candidates:', err);
     }

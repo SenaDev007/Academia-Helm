@@ -870,8 +870,11 @@ export class RecruitmentPrismaService {
 
             staffRecord = await tx.staff.create({ data: staffData });
             this.logger.log(`Staff created: id=${staffRecord.id}, employeeNumber=${staffRecord.employeeNumber}`);
+          }
 
-            // Link staffId on the application
+          // Link staffId on the application (whether newly created or existing staff)
+          // This MUST happen regardless — previously it was only inside the `if (!existingStaff)` block
+          if (staffRecord) {
             await tx.hrApplication.update({
               where: { id },
               data: {

@@ -471,6 +471,40 @@ async function bootstrap() {
       }
     }
 
+    // ─── Ensure hr_tests missing columns (duration, instructions, maxScore, passingScore, status, updatedAt) ───
+    const hrTestsAlterStatements = [
+      `ALTER TABLE "hr_tests" ADD COLUMN IF NOT EXISTS "duration" INTEGER`,
+      `ALTER TABLE "hr_tests" ADD COLUMN IF NOT EXISTS "instructions" TEXT`,
+      `ALTER TABLE "hr_tests" ADD COLUMN IF NOT EXISTS "maxScore" INTEGER NOT NULL DEFAULT 100`,
+      `ALTER TABLE "hr_tests" ADD COLUMN IF NOT EXISTS "passingScore" INTEGER NOT NULL DEFAULT 50`,
+      `ALTER TABLE "hr_tests" ADD COLUMN IF NOT EXISTS "status" TEXT NOT NULL DEFAULT 'ACTIF'`,
+      `ALTER TABLE "hr_tests" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+    ];
+    for (const stmt of hrTestsAlterStatements) {
+      try {
+        await prisma.$executeRawUnsafe(stmt);
+      } catch (err: any) {
+        if (!err.message?.includes('already exists') && !err.message?.includes('42P07') && !err.message?.includes('42P16')) {
+          logger.warn(`hr_tests ALTER warning: ${err.message}`);
+        }
+      }
+    }
+
+    // ─── Ensure hr_test_results missing columns (notes, evaluatedAt) ───
+    const hrTestResultsAlterStatements = [
+      `ALTER TABLE "hr_test_results" ADD COLUMN IF NOT EXISTS "notes" TEXT`,
+      `ALTER TABLE "hr_test_results" ADD COLUMN IF NOT EXISTS "evaluatedAt" TIMESTAMP(3)`,
+    ];
+    for (const stmt of hrTestResultsAlterStatements) {
+      try {
+        await prisma.$executeRawUnsafe(stmt);
+      } catch (err: any) {
+        if (!err.message?.includes('already exists') && !err.message?.includes('42P07') && !err.message?.includes('42P16')) {
+          logger.warn(`hr_test_results ALTER warning: ${err.message}`);
+        }
+      }
+    }
+
     // ─── Ensure job_number_sequences table (migration 20260606220000) ──────
     try {
       await prisma.$executeRawUnsafe(`

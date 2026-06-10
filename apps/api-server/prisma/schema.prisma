@@ -446,6 +446,9 @@ model Tenant {
   academicAuditLogs                AcademicAuditLog[]
   gradeCorrectionRequests          GradeCorrectionRequest[]
 
+  // Organigramme
+  organigramNodes                  OrganigramNode[]
+
   @@index([subdomain])
   @@index([slug])
   @@index([countryId])
@@ -4948,6 +4951,7 @@ model Staff {
   photo                     StaffPhoto?
   globalResourceUsages      TenantResourceUsage[]      @relation("StaffResourceUsages")
   globalResourceAnnotations TenantResourceAnnotation[] @relation("StaffResourceAnnotations")
+  organigramNodes           OrganigramNode[]           @relation("StaffOrganigramNodes")
 
   @@index([tenantId])
   @@index([employeeNumber])
@@ -13957,4 +13961,34 @@ model GradeCorrectionRequest {
   @@index([gradeId])
   @@index([status])
   @@map("grade_correction_requests")
+}
+
+// ─── Organigramme ──────────────────────────────────────────────────────────────
+
+model OrganigramNode {
+  id                String    @id @default(uuid())
+  tenantId          String
+  title             String
+  type              String    @default("POSITION")   // DEPARTMENT, SERVICE, POSITION
+  level             Int       @default(0)            // 0 = racine, 1 = direction, etc.
+  order             Int       @default(0)            // Ordre d'affichage parmi les frères
+  schoolLevelCode   String?                          // MAT, PRI, SEC, MAT_PRI, ALL — filtre par niveau scolaire
+  staffId           String?                          // Lien optionnel vers un employé
+  parentId          String?                          // Parent dans l'arbre hiérarchique
+  metadata          Json?                            // Données supplémentaires (couleur, icône, etc.)
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  tenant            Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  staff             Staff?           @relation("StaffOrganigramNodes", fields: [staffId], references: [id], onDelete: SetNull)
+  parent            OrganigramNode?  @relation("OrganigramHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children          OrganigramNode[] @relation("OrganigramHierarchy")
+
+  @@index([tenantId])
+  @@index([parentId])
+  @@index([staffId])
+  @@index([type])
+  @@index([schoolLevelCode])
+  @@map("organigram_nodes")
 }

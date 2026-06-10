@@ -34,7 +34,7 @@ export function ContractsWorkspace() {
   const [contracts, setContracts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterStatus, setFilterStatus] = useState('ACTIVE');
+  const [filterStatus, setFilterStatus] = useState('ALL');
 
   // New contract modal
   const [modalOpen, setModalOpen] = useState(false);
@@ -228,9 +228,9 @@ export function ContractsWorkspace() {
             />
           </div>
           <select className={selectClass} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+            <option value="ALL">Tous les contrats</option>
             <option value="ACTIVE">En vigueur</option>
             <option value="PENDING">En attente</option>
-            <option value="ALL">Historique Complet</option>
             <option value="EXPIRED">Expirés</option>
             <option value="TERMINATED">Terminés</option>
           </select>

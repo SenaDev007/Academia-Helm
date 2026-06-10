@@ -25,7 +25,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     const job = await res.json();
     if (!job) return {};
 
-    const title = `${job.title} — ${job.tenant?.name || 'Offre d\\'emploi'}`;
+    const title = `${job.title} — ${job.tenant?.name || "Offre d'emploi"}`;
     const description = job.description
       ? job.description.slice(0, 200) + (job.description.length > 200 ? '...' : '')
       : `Offre d'emploi : ${job.title}${job.loc ? ` à ${job.loc}` : ''}${job.contractType ? ` — ${job.contractType}` : ''}`;
@@ -33,7 +33,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     return generateSEOMetadata({
       title,
       description,
-      keywords: [job.title, job.contractType, job.loc, job.dept, 'recrutement', 'emploi', 'offre d\\'emploi'].filter(Boolean),
+      keywords: [job.title, job.contractType, job.loc, job.dept, 'recrutement', 'emploi', "offre d'emploi"].filter(Boolean),
       path: `/jobs/${job.tenant?.slug || ''}/${job.slug}`,
     });
   } catch {

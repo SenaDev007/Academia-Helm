@@ -148,7 +148,7 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
       try {
         setLoading(true);
         // Call the public getJobBySlug API — returns job with tenant info
-        const res = await fetch(`/api/hr/recruitment/jobs/by-slug/${encodeURIComponent(forcedJobSlug)}`);
+        const res = await fetch(`/api/hr/recruitment/jobs/by-slug/${encodeURIComponent(forcedJobSlug!)}`);
         if (!res.ok) {
           console.warn('Deep-link: job not found for slug', forcedJobSlug);
           setDeepLinkResolved(true);

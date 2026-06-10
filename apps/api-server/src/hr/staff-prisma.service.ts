@@ -383,21 +383,16 @@ export class StaffPrismaService {
       },
     });
 
-    // Terminate all active/pending contracts for this staff member
+    // Terminate all active/pending contracts for this staff member (batch update — no N+1)
     try {
-      const activeContracts = await this.prisma.contract.findMany({
+      await this.prisma.contract.updateMany({
         where: { staffId: id, tenantId, status: { in: ['ACTIVE', 'PENDING'] } },
+        data: {
+          status: 'TERMINATED',
+          terminatedAt: new Date(),
+          terminationReason: `Débauche: ${data.terminationType}`,
+        },
       });
-      for (const contract of activeContracts) {
-        await this.prisma.contract.update({
-          where: { id: contract.id },
-          data: {
-            status: 'TERMINATED',
-            terminatedAt: new Date(),
-            terminationReason: `Débauche: ${data.terminationType}`,
-          },
-        });
-      }
     } catch (err: any) {
       console.error(`Failed to terminate contracts for staff ${id}: ${err.message}`);
     }

@@ -387,31 +387,37 @@ export function RecruitmentWorkspace() {
     candidateId: '', category: 'Développement', status: 'Disponible'
   });
 
-  // Load all datasets — each fetch is independent so one failure doesn't block the others
+  // Load all datasets in PARALLEL — each fetch is independent so one failure doesn't block the others
   const loadData = async () => {
     if (!tenant?.id) return;
     setLoading(true);
 
-    // Fetch Jobs
-    try {
-      const fetchedJobs = await hrFetch<any[]>(hrUrl('recruitment/jobs', { tenantId: tenant.id }));
-      const jobList = Array.isArray(fetchedJobs) ? fetchedJobs : [];
+    // Fire all 5 API calls in parallel instead of sequentially
+    const [jobsResult, candidatesResult, interviewsResult, testsResult, talentResult] = await Promise.allSettled([
+      hrFetch<any[]>(hrUrl('recruitment/jobs', { tenantId: tenant.id })),
+      hrFetch<any[]>(hrUrl('recruitment/candidates', { tenantId: tenant.id })),
+      hrFetch<any[]>(hrUrl('recruitment/interviews', { tenantId: tenant.id })),
+      hrFetch<any[]>(hrUrl('recruitment/tests', { tenantId: tenant.id })),
+      hrFetch<any[]>(hrUrl('recruitment/talent-pool', { tenantId: tenant.id })),
+    ]);
+
+    // Process Jobs
+    if (jobsResult.status === 'fulfilled') {
+      const jobList = Array.isArray(jobsResult.value) ? jobsResult.value : [];
       setJobs(jobList.map(j => ({
         ...j,
         date: j.createdAt ? j.createdAt.split('T')[0] : new Date().toISOString().split('T')[0],
         publishedAt: j.publishedAt || null,
         candidates: j._count?.applications || 0,
       })));
-    } catch (err) {
-      console.error('Failed to fetch recruitment jobs:', err);
+    } else {
+      console.error('Failed to fetch recruitment jobs:', jobsResult.reason);
     }
 
-    // Fetch Candidates
-    try {
-      const fetchedCandidates = await hrFetch<any[]>(hrUrl('recruitment/candidates', { tenantId: tenant.id }));
-      const candidateList = Array.isArray(fetchedCandidates) ? fetchedCandidates : [];
+    // Process Candidates
+    if (candidatesResult.status === 'fulfilled') {
+      const candidateList = Array.isArray(candidatesResult.value) ? candidatesResult.value : [];
       setCandidates(candidateList.map(c => {
-          // Find the primary (first) application with its job data
           const primaryApp = c.applications?.[0] || c.application;
           const jobTitle = primaryApp?.job?.title || primaryApp?.jobTitle || c.jobTitle || '';
           const docScore = primaryApp?.score || 0;
@@ -450,36 +456,33 @@ export function RecruitmentWorkspace() {
             documents: c.documents || [],
           };
         }));
-    } catch (err) {
-      console.error('Failed to fetch recruitment candidates:', err);
+    } else {
+      console.error('Failed to fetch recruitment candidates:', candidatesResult.reason);
     }
 
-    // Fetch Interviews
-    try {
-      const fetchedInterviews = await hrFetch<any[]>(hrUrl('recruitment/interviews', { tenantId: tenant.id }));
-      const interviewList = Array.isArray(fetchedInterviews) ? fetchedInterviews : [];
+    // Process Interviews
+    if (interviewsResult.status === 'fulfilled') {
+      const interviewList = Array.isArray(interviewsResult.value) ? interviewsResult.value : [];
       setInterviews(interviewList.map(i => ({
         ...i,
         date: i.date ? i.date.split('T')[0] : '',
       })));
-    } catch (err) {
-      console.error('Failed to fetch recruitment interviews:', err);
+    } else {
+      console.error('Failed to fetch recruitment interviews:', interviewsResult.reason);
     }
 
-    // Fetch Tests
-    try {
-      const fetchedTests = await hrFetch<any[]>(hrUrl('recruitment/tests', { tenantId: tenant.id }));
-      setTests(Array.isArray(fetchedTests) ? fetchedTests : []);
-    } catch (err) {
-      console.error('Failed to fetch recruitment tests:', err);
+    // Process Tests
+    if (testsResult.status === 'fulfilled') {
+      setTests(Array.isArray(testsResult.value) ? testsResult.value : []);
+    } else {
+      console.error('Failed to fetch recruitment tests:', testsResult.reason);
     }
 
-    // Fetch Talent Pool
-    try {
-      const fetchedTalent = await hrFetch<any[]>(hrUrl('recruitment/talent-pool', { tenantId: tenant.id }));
-      setTalentPool(Array.isArray(fetchedTalent) ? fetchedTalent : []);
-    } catch (err) {
-      console.error('Failed to fetch recruitment talent pool:', err);
+    // Process Talent Pool
+    if (talentResult.status === 'fulfilled') {
+      setTalentPool(Array.isArray(talentResult.value) ? talentResult.value : []);
+    } else {
+      console.error('Failed to fetch recruitment talent pool:', talentResult.reason);
     }
 
     setLoading(false);

@@ -2088,6 +2088,7 @@ model UserRole {
 
   @@id([userId, roleId])
   @@index([tenantId])
+  @@index([userId, tenantId])
   @@map("user_roles")
 }
 
@@ -2099,6 +2100,7 @@ model RolePermission {
   role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@id([roleId, permissionId])
+  @@index([roleId])
   @@map("role_permissions")
 }
 
@@ -4959,6 +4961,9 @@ model Staff {
   @@index([tenantMatricule])
   @@index([status])
   @@index([roleType])
+  @@index([tenantId, status])
+  @@index([tenantId, academicYearId])
+  @@index([email, tenantId])
   @@map("staff")
 }
 
@@ -5101,6 +5106,8 @@ model Contract {
   @@index([staffId])
   @@index([status])
   @@index([contractType])
+  @@index([tenantId, status])
+  @@index([staffId, tenantId, status])
   @@map("employment_contracts")
 }
 
@@ -13573,6 +13580,7 @@ model HrApplication {
   @@index([jobId])
   @@index([candidateId])
   @@index([staffId])
+  @@index([tenantId, status])
   @@map("hr_applications")
 }
 

@@ -610,58 +610,59 @@ export class PayrollPrismaService {
     const where: Prisma.PayrollItemWhereInput = { tenantId };
     if (academicYearId) where.academicYearId = academicYearId;
 
-    // Utiliser les PayrollItem pour les stats détaillées
-    const items = await this.prisma.payrollItem.findMany({
-      where: {
-        ...where,
-        status: { in: ['VALIDATED', 'PAID'] },
-      },
-    });
+    const itemWhere = {
+      ...where,
+      status: { in: ['VALIDATED', 'PAID'] } as Prisma.PayrollItemWhereInput['status'],
+    };
 
-    const totalNet = items.reduce((s, i) => s + Number(i.netSalary), 0);
-    const totalGross = items.reduce((s, i) => s + Number(i.grossSalary), 0);
-    const totalDeductions = items.reduce(
-      (s, i) => s + Number(i.totalDeductions),
-      0,
-    );
-    const totalCnssEmployee = items.reduce(
-      (s, i) => s + Number(i.cnssEmployee),
-      0,
-    );
-    const totalCnssEmployer = items.reduce(
-      (s, i) => s + Number(i.cnssEmployer),
-      0,
-    );
-    const totalIrpp = items.reduce((s, i) => s + Number(i.irppAmount), 0);
-    const totalStaff = new Set(items.map((i) => i.staffId)).size;
+    // Use Prisma aggregate instead of loading all records into memory
+    const [itemStats, itemCount, distinctStaff] = await Promise.all([
+      this.prisma.payrollItem.aggregate({
+        where: itemWhere,
+        _sum: {
+          netSalary: true,
+          grossSalary: true,
+          totalDeductions: true,
+          cnssEmployee: true,
+          cnssEmployer: true,
+          irppAmount: true,
+        },
+      }),
+      this.prisma.payrollItem.count({ where: itemWhere }),
+      this.prisma.payrollItem.findMany({
+        where: itemWhere,
+        select: { staffId: true },
+        distinct: ['staffId'],
+      }),
+    ]);
 
     // Stats par batch Payroll
     const payrollWhere: Prisma.PayrollWhereInput = { tenantId };
     if (academicYearId) payrollWhere.academicYearId = academicYearId;
+    const payrollItemWhere2 = {
+      ...payrollWhere,
+      status: { in: ['VALIDATED', 'PAID'] } as Prisma.PayrollWhereInput['status'],
+    };
 
-    const payrolls = await this.prisma.payroll.findMany({
-      where: {
-        ...payrollWhere,
-        status: { in: ['VALIDATED', 'PAID'] },
-      },
-    });
-
-    const totalPayrollAmount = payrolls.reduce(
-      (s, p) => s + Number(p.totalAmount),
-      0,
-    );
+    const [payrollStats, payrollCount] = await Promise.all([
+      this.prisma.payroll.aggregate({
+        where: payrollItemWhere2,
+        _sum: { totalAmount: true },
+      }),
+      this.prisma.payroll.count({ where: payrollItemWhere2 }),
+    ]);
 
     return {
-      totalNetSalary: totalNet,
-      totalGrossSalary: totalGross,
-      totalDeductions,
-      totalCnssEmployee,
-      totalCnssEmployer,
-      totalIrpp,
-      totalPayrollAmount,
-      totalStaff,
-      totalPayrollItems: items.length,
-      totalPayrollBatches: payrolls.length,
+      totalNetSalary: Number(itemStats._sum.netSalary ?? 0),
+      totalGrossSalary: Number(itemStats._sum.grossSalary ?? 0),
+      totalDeductions: Number(itemStats._sum.totalDeductions ?? 0),
+      totalCnssEmployee: Number(itemStats._sum.cnssEmployee ?? 0),
+      totalCnssEmployer: Number(itemStats._sum.cnssEmployer ?? 0),
+      totalIrpp: Number(itemStats._sum.irppAmount ?? 0),
+      totalPayrollAmount: Number(payrollStats._sum.totalAmount ?? 0),
+      totalStaff: distinctStaff.length,
+      totalPayrollItems: itemCount,
+      totalPayrollBatches: payrollCount,
     };
   }
 

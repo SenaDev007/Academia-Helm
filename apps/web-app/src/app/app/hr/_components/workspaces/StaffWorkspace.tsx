@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Plus, Search, Phone, Briefcase, GraduationCap,
   Users, Loader2, Globe, Building2, UserX, UserCheck,
@@ -236,14 +236,14 @@ export function StaffWorkspace() {
         </button>
       </div>
 
-      {/* KPI strip */}
+      {/* KPI strip — memoized to avoid re-filtering on every render */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {[
+        {useMemo(() => [
           { label: 'Effectif total', value: staff.length },
           { label: 'Enseignants', value: staff.filter((s) => s.category === 'PEDAGOGICAL').length },
           { label: 'Administratifs', value: staff.filter((s) => s.category === 'ADMIN').length },
           { label: 'Non déclarés CNSS', value: staff.filter((s) => s.cnssStatus === 'NOT_DECLARED').length },
-        ].map((k, i) => (
+        ], [staff]).map((k, i) => (
           <div key={i} className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{k.label}</p>
             <p className="text-xl font-bold text-slate-900 mt-0.5">{k.value}</p>

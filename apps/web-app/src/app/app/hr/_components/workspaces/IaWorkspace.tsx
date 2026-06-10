@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Brain,
@@ -51,71 +51,52 @@ export function IaWorkspace() {
   const [fraudData, setFraudData] = useState<any>(null);
   const [fraudLoading, setFraudLoading] = useState(false);
 
-  // Load IA status on mount
+  // Load IA status + base data on mount (parallelized)
   useEffect(() => {
-    async function loadIaStatus() {
-      if (!tenant?.id) return;
-      try {
-        const status = await hrFetch<any>(hrUrl('ia/status', { tenantId: tenant.id }));
-        setIaStatus(status);
-      } catch (err) {
-        console.error('Failed to load IA status:', err);
-      }
+    if (!tenant?.id) return;
+    async function loadBaseData() {
+      const [statusResult, candidatesResult, jobsResult] = await Promise.allSettled([
+        hrFetch<any>(hrUrl('ia/status', { tenantId: tenant!.id })),
+        hrFetch<any[]>(hrUrl('recruitment/candidates', { tenantId: tenant!.id })),
+        hrFetch<any[]>(hrUrl('recruitment/jobs', { tenantId: tenant!.id })),
+      ]);
+      if (statusResult.status === 'fulfilled') setIaStatus(statusResult.value);
+      else console.error('Failed to load IA status:', statusResult.reason);
+      if (candidatesResult.status === 'fulfilled') setCandidates(candidatesResult.value || []);
+      if (jobsResult.status === 'fulfilled') setJobs(jobsResult.value || []);
     }
-    loadIaStatus();
+    loadBaseData();
   }, [tenant?.id]);
 
-  // Load live data from API
+  // Load tab-specific data only when the relevant tab is active
   useEffect(() => {
-    async function loadData() {
-      if (!tenant?.id) return;
-      try {
-        const fetchedCandidates = await hrFetch<any[]>(hrUrl('recruitment/candidates', { tenantId: tenant.id }));
-        setCandidates(fetchedCandidates || []);
-        const fetchedJobs = await hrFetch<any[]>(hrUrl('recruitment/jobs', { tenantId: tenant.id }));
-        setJobs(fetchedJobs || []);
-      } catch (err) {
-        console.error('Failed to load IA data from API:', err);
+    if (!tenant?.id) return;
+    async function loadTabData() {
+      if (activeTab === 'matching') {
+        setMatchingLoading(true);
+        try {
+          const result = await hrFetch<any>(hrUrl('ia/match-candidates', { tenantId: tenant!.id }));
+          setMatchingData(result);
+        } catch (err) {
+          console.error('Failed to load matching data:', err);
+          setMatchingData(null);
+        } finally {
+          setMatchingLoading(false);
+        }
+      } else if (activeTab === 'fraud') {
+        setFraudLoading(true);
+        try {
+          const result = await hrFetch<any>(hrUrl('ia/detect-fraud', { tenantId: tenant!.id }));
+          setFraudData(result);
+        } catch (err) {
+          console.error('Failed to load fraud data:', err);
+          setFraudData(null);
+        } finally {
+          setFraudLoading(false);
+        }
       }
     }
-    loadData();
-  }, [tenant?.id, activeTab]);
-
-  // Load matching data when matching tab is active
-  useEffect(() => {
-    async function loadMatching() {
-      if (activeTab !== 'matching' || !tenant?.id) return;
-      setMatchingLoading(true);
-      try {
-        const result = await hrFetch<any>(hrUrl('ia/match-candidates', { tenantId: tenant.id }));
-        setMatchingData(result);
-      } catch (err) {
-        console.error('Failed to load matching data:', err);
-        // Fallback: compute matching from candidates data
-        setMatchingData(null);
-      } finally {
-        setMatchingLoading(false);
-      }
-    }
-    loadMatching();
-  }, [activeTab, tenant?.id]);
-
-  // Load fraud data when fraud tab is active
-  useEffect(() => {
-    async function loadFraud() {
-      if (activeTab !== 'fraud' || !tenant?.id) return;
-      setFraudLoading(true);
-      try {
-        const result = await hrFetch<any>(hrUrl('ia/detect-fraud', { tenantId: tenant.id }));
-        setFraudData(result);
-      } catch (err) {
-        console.error('Failed to load fraud data:', err);
-        setFraudData(null);
-      } finally {
-        setFraudLoading(false);
-      }
-    }
-    loadFraud();
+    loadTabData();
   }, [activeTab, tenant?.id]);
 
   const handleUpload = async () => {

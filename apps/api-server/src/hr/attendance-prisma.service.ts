@@ -155,13 +155,21 @@ export class AttendancePrismaService {
       }
     }
 
-    const attendances = await this.prisma.staffAttendance.findMany({
+    // Use Prisma groupBy instead of loading all records into memory
+    const grouped = await this.prisma.staffAttendance.groupBy({
+      by: ['status'],
       where,
+      _count: true,
     });
 
-    const total = attendances.length;
-    const present = attendances.filter(a => a.status === 'PRESENT').length;
-    const absent = attendances.filter(a => a.status === 'ABSENT').length;
+    let total = 0;
+    let present = 0;
+    let absent = 0;
+    for (const g of grouped) {
+      total += g._count;
+      if (g.status === 'PRESENT') present = g._count;
+      if (g.status === 'ABSENT') absent = g._count;
+    }
 
     return {
       total,

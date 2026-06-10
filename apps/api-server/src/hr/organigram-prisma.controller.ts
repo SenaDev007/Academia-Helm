@@ -21,7 +21,7 @@
  */
 
 import {
-  Controller, Get, Post, Put, Delete, Body, Param, Query, Req, UseGuards,
+  Controller, Get, Post, Put, Delete, Body, Param, Query, Req, UseGuards, BadRequestException,
 } from '@nestjs/common';
 import { OrganigramPrismaService } from './organigram-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -38,6 +38,9 @@ export class OrganigramPrismaController {
   @Post('seed')
   async seedOrganigram(@Req() req: any) {
     const tenantId = req.tenantId;
+    if (!tenantId) {
+      throw new BadRequestException('Tenant ID requis pour initialiser l\'organigramme. Veuillez sélectionner un établissement.');
+    }
     return this.organigramService.seedOrganigram(tenantId);
   }
 
@@ -51,6 +54,9 @@ export class OrganigramPrismaController {
     @Query('schoolLevelCode') schoolLevelCode?: string,
   ) {
     const tenantId = req.tenantId;
+    if (!tenantId) {
+      return [];
+    }
     return this.organigramService.getOrganigramTree(tenantId, schoolLevelCode);
   }
 
@@ -60,6 +66,12 @@ export class OrganigramPrismaController {
   @Get('stats')
   async getStats(@Req() req: any) {
     const tenantId = req.tenantId;
+    if (!tenantId) {
+      return {
+        totalNodes: 0, departments: 0, services: 0, positions: 0,
+        assignedPositions: 0, unassignedPositions: 0, occupancyRate: 0,
+      };
+    }
     return this.organigramService.getOrganigramStats(tenantId);
   }
 

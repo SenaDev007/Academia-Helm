@@ -101,7 +101,12 @@ export function OrganigramWorkspace() {
   const [isSeeded, setIsSeeded] = useState(true);
 
   const fetchTree = useCallback(async () => {
-    if (!tenant?.id) return;
+    if (!tenant?.id) {
+      setTree([]);
+      setIsSeeded(false);
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const queryParams: Record<string, string> = {};
@@ -121,6 +126,7 @@ export function OrganigramWorkspace() {
       setExpandedNodes(expanded);
     } catch (err) {
       console.error('Error fetching organigram:', err);
+      setTree([]);
       setIsSeeded(false);
     } finally {
       setLoading(false);
@@ -140,15 +146,27 @@ export function OrganigramWorkspace() {
   useEffect(() => { fetchTree(); fetchStats(); }, [fetchTree, fetchStats]);
 
   const handleSeed = async () => {
-    if (!tenant?.id) return;
+    if (!tenant?.id) {
+      toast({ variant: 'error', title: 'Veuillez sélectionner un établissement avant d\'initialiser l\'organigramme.' });
+      return;
+    }
     try {
       setSeeding(true);
       const result = await hrFetch<{ created: number }>(hrUrl('organigram/seed'), { method: 'POST' });
-      toast({ variant: 'success', title: `Organigramme initialisé : ${result.created} postes créés` });
+      if (result.created === 0) {
+        toast({ variant: 'info', title: 'L\'organigramme est déjà initialisé.' });
+      } else {
+        toast({ variant: 'success', title: `Organigramme initialisé : ${result.created} postes créés` });
+      }
       fetchTree();
       fetchStats();
-    } catch (err) {
-      toast({ variant: 'error', title: 'Erreur lors de l\'initialisation' });
+    } catch (err: any) {
+      const msg = err?.message || '';
+      if (msg.includes('Tenant ID requis') || msg.includes('établissement')) {
+        toast({ variant: 'error', title: 'Veuillez sélectionner un établissement avant d\'initialiser l\'organigramme.' });
+      } else {
+        toast({ variant: 'error', title: 'Erreur lors de l\'initialisation', description: msg || 'Une erreur inattendue est survenue. Veuillez réessayer.' });
+      }
     } finally {
       setSeeding(false);
     }
@@ -204,30 +222,38 @@ export function OrganigramWorkspace() {
 
   // Not seeded yet — show seed button
   if (!isSeeded && tree.length === 0) {
+    const noTenant = !tenant?.id;
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-6">
         <div className="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center">
           <Network className="h-10 w-10 text-slate-300" />
         </div>
         <div className="text-center space-y-2 max-w-md">
-          <h3 className="text-lg font-bold text-slate-800">Organigramme non initialisé</h3>
+          <h3 className="text-lg font-bold text-slate-800">
+            {noTenant ? 'Aucun établissement sélectionné' : 'Organigramme non initialisé'}
+          </h3>
           <p className="text-sm text-slate-500">
-            Initialisez l&apos;organigramme professionnel de votre établissement avec la structure complète
-            couvrant les départements, services et postes.
+            {noTenant
+              ? 'Veuillez sélectionner un établissement dans le sélecteur en haut de page pour accéder à l\'organigramme.'
+              : 'Initialisez l\'organigramme professionnel de votre établissement avec la structure complète couvrant les départements, services et postes.'}
           </p>
         </div>
-        <button
-          onClick={handleSeed}
-          disabled={seeding}
-          className="flex items-center gap-2 px-6 py-3 text-sm font-bold text-white rounded-xl shadow-sm hover:opacity-90 disabled:opacity-50 transition"
-          style={{ backgroundColor: PRIMARY }}
-        >
-          {seeding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Network className="h-4 w-4" />}
-          Initialiser l&apos;organigramme
-        </button>
-        <p className="text-[10px] text-slate-400 mt-2">
-          Structure complète : 17 départements, 40+ services, 100+ postes
-        </p>
+        {!noTenant && (
+          <button
+            onClick={handleSeed}
+            disabled={seeding}
+            className="flex items-center gap-2 px-6 py-3 text-sm font-bold text-white rounded-xl shadow-sm hover:opacity-90 disabled:opacity-50 transition"
+            style={{ backgroundColor: PRIMARY }}
+          >
+            {seeding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Network className="h-4 w-4" />}
+            Initialiser l&apos;organigramme
+          </button>
+        )}
+        {!noTenant && (
+          <p className="text-[10px] text-slate-400 mt-2">
+            Structure complète : 17 départements, 40+ services, 100+ postes
+          </p>
+        )}
       </div>
     );
   }

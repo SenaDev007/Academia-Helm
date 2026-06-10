@@ -781,79 +781,82 @@ export class OrganigramPrismaService {
       return { created: 0 };
     }
 
-    // Créer le nœud racine (l'établissement)
-    const root = await this.prisma.organigramNode.create({
-      data: {
-        ...prismaCreateDefaults(),
-        tenantId,
-        title: 'Établissement',
-        type: 'ROOT',
-        level: 0,
-        order: 0,
-        schoolLevelCode: 'ALL',
-        metadata: { color: '#1A2BA6', icon: 'building' },
-      },
-    });
-
-    let created = 1;
-
-    for (const dept of ORGANIGRAM_TEMPLATE) {
-      const deptColor = DEPARTMENT_COLORS[dept.title] || '#64748B';
-      const deptNode = await this.prisma.organigramNode.create({
+    // Utiliser une transaction interactive pour l'atomicité et les performances
+    return this.prisma.$transaction(async (tx) => {
+      // Créer le nœud racine (l'établissement)
+      const root = await tx.organigramNode.create({
         data: {
           ...prismaCreateDefaults(),
           tenantId,
-          title: dept.title,
-          type: dept.type,
-          level: dept.level,
-          order: dept.order,
-          schoolLevelCode: dept.schoolLevelCode,
-          parentId: root.id,
-          metadata: { color: deptColor, icon: 'department' },
+          title: 'Établissement',
+          type: 'ROOT',
+          level: 0,
+          order: 0,
+          schoolLevelCode: 'ALL',
+          metadata: { color: '#1A2BA6', icon: 'building' },
         },
       });
-      created++;
 
-      if (dept.children) {
-        for (const service of dept.children) {
-          const serviceNode = await this.prisma.organigramNode.create({
-            data: {
-              ...prismaCreateDefaults(),
-              tenantId,
-              title: service.title,
-              type: service.type,
-              level: dept.level + 1,
-              order: service.order,
-              schoolLevelCode: service.schoolLevelCode,
-              parentId: deptNode.id,
-              metadata: { color: deptColor, icon: 'service' },
-            },
-          });
-          created++;
+      let created = 1;
 
-          if (service.children) {
-            for (const position of service.children) {
-              await this.prisma.organigramNode.create({
-                data: {
-                  ...prismaCreateDefaults(),
-                  tenantId,
-                  title: position.title,
-                  type: position.type,
-                  level: dept.level + 2,
-                  order: position.order,
-                  schoolLevelCode: position.schoolLevelCode,
-                  parentId: serviceNode.id,
-                  metadata: { color: deptColor, icon: 'position' },
-                },
-              });
-              created++;
+      for (const dept of ORGANIGRAM_TEMPLATE) {
+        const deptColor = DEPARTMENT_COLORS[dept.title] || '#64748B';
+        const deptNode = await tx.organigramNode.create({
+          data: {
+            ...prismaCreateDefaults(),
+            tenantId,
+            title: dept.title,
+            type: dept.type,
+            level: dept.level,
+            order: dept.order,
+            schoolLevelCode: dept.schoolLevelCode,
+            parentId: root.id,
+            metadata: { color: deptColor, icon: 'department' },
+          },
+        });
+        created++;
+
+        if (dept.children) {
+          for (const service of dept.children) {
+            const serviceNode = await tx.organigramNode.create({
+              data: {
+                ...prismaCreateDefaults(),
+                tenantId,
+                title: service.title,
+                type: service.type,
+                level: dept.level + 1,
+                order: service.order,
+                schoolLevelCode: service.schoolLevelCode,
+                parentId: deptNode.id,
+                metadata: { color: deptColor, icon: 'service' },
+              },
+            });
+            created++;
+
+            if (service.children) {
+              for (const position of service.children) {
+                await tx.organigramNode.create({
+                  data: {
+                    ...prismaCreateDefaults(),
+                    tenantId,
+                    title: position.title,
+                    type: position.type,
+                    level: dept.level + 2,
+                    order: position.order,
+                    schoolLevelCode: position.schoolLevelCode,
+                    parentId: serviceNode.id,
+                    metadata: { color: deptColor, icon: 'position' },
+                  },
+                });
+                created++;
+              }
             }
           }
         }
       }
-    }
 
-    return { created };
+      return { created };
+    });
   }
 
   // ─── Read ─────────────────────────────────────────────────────────────────
@@ -1225,8 +1228,14 @@ export class OrganigramPrismaService {
     for (const node of nodes) {
       const treeNode = map.get(node.id)!;
       if (node.parentId && map.has(node.parentId)) {
+        // Parent présent dans les résultats → attacher normalement
         map.get(node.parentId)!.children.push(treeNode);
-      } else if (!node.parentId) {
+      } else if (node.parentId && !map.has(node.parentId)) {
+        // Parent filtré → le nœud est « orphelin » à cause du filtre schoolLevelCode.
+        // On le remonte comme racine virtuelle pour qu'il apparaisse dans l'arbre.
+        roots.push(treeNode);
+      } else {
+        // Pas de parentId → nœud racine
         roots.push(treeNode);
       }
     }

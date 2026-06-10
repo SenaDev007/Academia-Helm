@@ -400,6 +400,8 @@ export class UploadStaffDocumentDto {
   @IsOptional() @IsString() @Type(() => String) description?: string;
   /** Accept date string or empty string (empty will be treated as null) */
   @IsOptional() @Type(() => String) expiresAt?: string;
+  /** Category for document classification (IDENTITE, DIPLOMES, EXPERIENCE, ADMINISTRATIF, MEDICAL, GENERAL) */
+  @IsOptional() @IsString() @Type(() => String) category?: string;
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() @Type(() => String) tenantId?: string;
 }

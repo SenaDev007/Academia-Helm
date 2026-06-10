@@ -248,6 +248,9 @@ async function bootstrap() {
       `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "nationalId" TEXT`,
       `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "cnssNumber" TEXT`,
       `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "ifuNumber" TEXT`,
+      // Schools: city and department columns (referenced by contract generation P2022)
+      `ALTER TABLE "schools" ADD COLUMN IF NOT EXISTS "city" TEXT`,
+      `ALTER TABLE "schools" ADD COLUMN IF NOT EXISTS "department" TEXT`,
       // staff indexes for new columns
       `CREATE UNIQUE INDEX IF NOT EXISTS "staff_globalMatricule_key" ON "staff"("globalMatricule")`,
       `CREATE INDEX IF NOT EXISTS "staff_globalMatricule_idx" ON "staff"("globalMatricule")`,
@@ -324,6 +327,10 @@ async function bootstrap() {
       `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "cnssNumber" TEXT`,
       `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "ifuNumber" TEXT`,
       `CREATE INDEX IF NOT EXISTS "staff_cnssNumber_idx" ON "staff"("cnssNumber")`,
+
+      // ── Schools: city and department (P2022 fix for contract generation) ──
+      `ALTER TABLE "schools" ADD COLUMN IF NOT EXISTS "city" TEXT`,
+      `ALTER TABLE "schools" ADD COLUMN IF NOT EXISTS "department" TEXT`,
     ];
     for (const stmt of staffAlterStatements) {
       try {

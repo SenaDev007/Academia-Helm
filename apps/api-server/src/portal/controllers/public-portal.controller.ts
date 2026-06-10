@@ -60,4 +60,16 @@ export class PublicPortalController {
   async getMapStats() {
     return this.mapStatsService.getMapStats();
   }
+
+  /**
+   * Liste tous les établissements avec le nombre d'offres d'emploi publiées.
+   * Single-query endpoint for the public careers page (/jobs).
+   * Replaces the old N+1 pattern (fetch schools → fetch jobs per school).
+   */
+  @Public()
+  @Get('with-jobs')
+  @SkipThrottle()
+  async listSchoolsWithJobs() {
+    return this.schoolSearchService.listSchoolsWithJobs();
+  }
 }

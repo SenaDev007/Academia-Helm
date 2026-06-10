@@ -28,8 +28,6 @@ import {
   Map
 } from 'lucide-react';
 import PremiumHeader from '@/components/layout/PremiumHeader';
-import { apiFetch } from '@/lib/api/client';
-import { getApiBaseUrl } from '@/lib/utils/urls';
 
 const PRIMARY = '#1A2BA6';
 
@@ -134,26 +132,22 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
   const [submitting, setSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<{ success: boolean; message: string } | null>(null);
 
-  // Fetch available schools on mount
+  // Fetch available schools with active job counts on mount
+  // Uses the public /api/public/schools/with-jobs endpoint (single query, no auth required)
+  // instead of the old N+1 pattern: fetch schools → fetch jobs per school
   useEffect(() => {
     async function loadSchools() {
       try {
         setLoading(true);
-        const res = await fetch('/api/auth/dev-available-tenants');
+        const res = await fetch('/api/public/schools/with-jobs');
+        if (!res.ok) {
+          console.error('Failed to load schools:', res.status, res.statusText);
+          setSchools([]);
+          return;
+        }
         const data = await res.json();
         if (Array.isArray(data)) {
-          // Fetch jobs count for each school in parallel (Tome 2 & 8)
-          const schoolsWithCounts = await Promise.all(data.map(async (school) => {
-            try {
-              const jobsRes = await fetch(`/api/hr/recruitment/jobs?tenantId=${school.tenantId || school.id}`);
-              const jobsData = await jobsRes.json();
-              const activeCount = Array.isArray(jobsData) ? jobsData.filter((j: any) => j.status === 'PUBLIÉE').length : 0;
-              return { ...school, activeJobsCount: activeCount };
-            } catch (e) {
-              return { ...school, activeJobsCount: 0 };
-            }
-          }));
-          setSchools(schoolsWithCounts);
+          setSchools(data);
         }
       } catch (err) {
         console.error('Failed to load schools:', err);
@@ -164,7 +158,7 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
     loadSchools();
   }, []);
 
-  // Fetch jobs for the selected school
+  // Fetch jobs for the selected school (public endpoint, no auth required)
   const handleSelectSchool = async (school: School) => {
     setSelectedSchool(school);
     setSelectedJob(null);
@@ -178,18 +172,26 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
 
     try {
       setLoading(true);
-      const fetched = await apiFetch<Job[]>(`/hr/recruitment/jobs?tenantId=${school.tenantId || school.id}`);
-      if (fetched) {
-        setJobs(fetched.filter((j: any) => j.status === 'PUBLIÉE'));
+      // Use the BFF proxy which forwards to the @Public() endpoint
+      const res = await fetch(`/api/hr/recruitment/jobs?tenantId=${school.tenantId || school.id}`);
+      if (res.ok) {
+        const jobsData = await res.json();
+        if (Array.isArray(jobsData)) {
+          setJobs(jobsData.filter((j: any) => j.status === 'PUBLIÉE'));
+        }
+      } else {
+        console.error('Failed to load jobs:', res.status);
+        setJobs([]);
       }
     } catch (err) {
       console.error('Failed to load jobs:', err);
+      setJobs([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // Fetch stats when a job is selected
+  // Fetch stats when a job is selected (public endpoint, no auth required)
   useEffect(() => {
     if (!selectedJob) {
       setJobStats(null);
@@ -197,9 +199,10 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
     }
     async function loadStats() {
       try {
-        const API_URL = getApiBaseUrl();
         const jobId = selectedJob!.id;
-        const res = await fetch(`${API_URL}/hr/recruitment/jobs/${jobId}/stats`);
+        const tenantId = selectedSchool?.tenantId || selectedSchool?.id;
+        const url = `/api/hr/recruitment/jobs/${jobId}/stats${tenantId ? `?tenantId=${tenantId}` : ''}`;
+        const res = await fetch(url);
         if (res.ok) {
           const data = await res.json();
           setJobStats(data);

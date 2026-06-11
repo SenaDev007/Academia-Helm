@@ -184,3 +184,32 @@ Stage Summary:
 - 4 tabs enhanced with missing fields (Security: +11, Orion: +5, Atlas: +5, Offline: +4)
 - History tab upgraded from stub to functional with refresh + diff display
 - Root cause of user's 2 reported bugs (Prisma error + wrong version) fully resolved
+---
+Task ID: fix-settings-prisma-helpers
+Agent: Main Agent
+Task: Fix prismaCreateDefaults() mismatch bugs in Settings module services
+
+Work Log:
+- Investigated Identity tab save error + version mismatch (v5 vs v7)
+- Root cause: settings-history.service.ts used prismaCreateDefaults() which injects { id, updatedAt, createdAt } into prisma.settingsHistory.create(), but SettingsHistory model has NO updatedAt/createdAt
+- Fixed settings-history.service.ts: prismaCreateDefaults() → prismaCreateIdOnly()
+- Fixed identity-profile.service.ts: added prismaCreateDefaults() to syncToSchoolSettings upsert create
+- Fixed administrative-seals.service.ts: AdministrativeSealVersion → prismaCreateNoUpdatedAt(), AdministrativeSealUsage → prismaCreateIdOnly()
+- Fixed stamps-signatures.service.ts: TenantSignature → prismaCreateNoUpdatedAt()
+- Fixed electronic-signatures.service.ts: SignedDocument → prismaCreateNoUpdatedAt()
+- Fixed billing-settings.service.ts: BillingEvent → prismaCreateNoUpdatedAt()
+- Fixed roles-permissions.service.ts: UserRole → removed prismaCreateDefaults() (composite key, no id)
+- Fixed education-structure.service.ts: Added prismaCreateDefaults() to EducationLevel, EducationSeries, EducationCycle creates; added prismaUpdateDefaults() to all updates
+- Fixed communication-settings.service.ts: Added prismaCreateDefaults() to fallback create
+- Fixed roles-permissions-bootstrap.service.ts: Added prismaCreateNoUpdatedAt() to Permission upsert create
+- Fixed academic-period-settings.service.ts: Added prismaUpdateDefaults() to ensureSingleActivePeriod, update, close
+- Fixed administrative-seals.service.ts: Added prismaUpdateDefaults() to updateSeal
+
+Stage Summary:
+- 2 commits pushed: 8a127be2, 5c7d2c89
+- 12 files modified total
+- Fixed critical bug causing ALL Settings tab saves to fail
+- Fixed version mismatch (v5 vs v7) in Identity tab
+- Fixed Structure tab initialization on fresh tenants
+- Fixed RBAC bootstrap on fresh tenants
+- All Settings module tabs should now be functional

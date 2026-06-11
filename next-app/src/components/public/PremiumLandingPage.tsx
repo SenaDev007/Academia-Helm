@@ -190,7 +190,7 @@ function RecruitmentBanner() {
       </div>
       <div
         className="flex items-center relative z-10"
-        style={{ animation: 'bannerScroll 18s linear infinite' }}
+        style={{ animation: 'bannerScroll 35s linear infinite' }}
       >
         {Array.from({ length: 4 }).map((_, i) => (
           <span key={i} className="flex items-center gap-2 text-[#0b2f73] text-xs font-bold whitespace-nowrap px-8">

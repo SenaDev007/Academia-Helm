@@ -5,14 +5,18 @@
  * - Aucun écran blanc
  * - Loaders adaptés à l'écran réduit
  * - Skeleton loaders priorisés
+ * - Durée minimale d'affichage : 5 secondes (configurable)
  */
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import type { LoadingMessage } from '@/lib/loading/loading-messages';
 import { getMessageText } from '@/lib/messages/system-messages';
+
+/** Durée minimale par défaut (ms) */
+const DEFAULT_MIN_DURATION_MS = 5000;
 
 export interface LoadingScreenMobileProps {
   message?: LoadingMessage;
@@ -20,10 +24,16 @@ export interface LoadingScreenMobileProps {
   showProgress?: boolean;
   variant?: 'default' | 'pwa';
   className?: string;
+  /** Durée minimale d'affichage en ms (défaut: 5000). Mettre 0 pour désactiver. */
+  minDuration?: number;
 }
 
 /**
  * Écran de chargement optimisé pour mobile
+ * 
+ * Garantit une durée minimale d'affichage de 5 secondes par défaut.
+ * La barre de progression anime de 0% à 85% pendant la durée minimale,
+ * puis monte à 100% quand le contenu est prêt.
  */
 export function LoadingScreenMobile({
   message,
@@ -31,9 +41,12 @@ export function LoadingScreenMobile({
   showProgress = true,
   variant = 'default',
   className,
+  minDuration = DEFAULT_MIN_DURATION_MS,
 }: LoadingScreenMobileProps) {
   const [displayProgress, setDisplayProgress] = useState(0);
   const [isPWA, setIsPWA] = useState(false);
+  const [minElapsed, setMinElapsed] = useState(false);
+  const startTimeRef = useRef(Date.now());
 
   useEffect(() => {
     // Détecter si l'app est installée en PWA
@@ -44,19 +57,42 @@ export function LoadingScreenMobile({
     }
   }, []);
 
-  // Animation fluide de la barre de progression
+  // Timer pour la durée minimale de 5 secondes
   useEffect(() => {
+    if (minDuration <= 0) {
+      setMinElapsed(true);
+      return;
+    }
+
+    startTimeRef.current = Date.now();
+
+    const totalSteps = 85;
+    const stepDuration = minDuration / totalSteps;
+    let currentStep = 0;
+
     const interval = setInterval(() => {
-      setDisplayProgress((prev) => {
-        if (prev < progress) {
-          return Math.min(prev + 2, progress);
-        }
-        return prev;
-      });
-    }, 50);
+      currentStep++;
+      const elapsed = Date.now() - startTimeRef.current;
+
+      if (elapsed >= minDuration) {
+        setMinElapsed(true);
+        setDisplayProgress(85);
+        clearInterval(interval);
+      } else {
+        const baseProgress = (currentStep / totalSteps) * 85;
+        setDisplayProgress(Math.min(Math.round(baseProgress), 85));
+      }
+    }, stepDuration);
 
     return () => clearInterval(interval);
-  }, [progress]);
+  }, [minDuration]);
+
+  // Quand le contenu est prêt ET la durée minimale écoulée, monter à 100%
+  useEffect(() => {
+    if (minElapsed && progress >= 100) {
+      setDisplayProgress(100);
+    }
+  }, [minElapsed, progress]);
 
   const variants = {
     default: 'bg-white',
@@ -105,6 +141,7 @@ export function LoadingScreenMobile({
                 style={{ width: `${displayProgress}%` }}
               />
             </div>
+            <p className="text-xs text-gray-500 mt-1">{Math.round(displayProgress)}%</p>
           </div>
         )}
 

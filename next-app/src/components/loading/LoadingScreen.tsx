@@ -163,8 +163,42 @@ export function LoadingScreen({
 
 /**
  * LoadingScreen minimal pour les transitions rapides
+ * 
+ * Intègre une durée minimale d'affichage de 5 secondes par défaut.
+ * Le contenu est rendu via la prop `children` après la durée minimale.
+ * Si pas de children, affiche simplement le spinner pendant minDuration.
  */
-export function MinimalLoadingScreen({ message }: { message?: string }) {
+export function MinimalLoadingScreen({ 
+  message,
+  minDuration = 5000,
+  children,
+}: { 
+  message?: string;
+  /** Durée minimale d'affichage en ms (défaut: 5000). Mettre 0 pour désactiver. */
+  minDuration?: number;
+  /** Contenu à afficher après la durée minimale */
+  children?: React.ReactNode;
+}) {
+  const [minElapsed, setMinElapsed] = useState(false);
+
+  useEffect(() => {
+    if (minDuration <= 0) {
+      setMinElapsed(true);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setMinElapsed(true);
+    }, minDuration);
+
+    return () => clearTimeout(timer);
+  }, [minDuration]);
+
+  // Si la durée minimale est écoulée et qu'on a du contenu, l'afficher
+  if (minElapsed && children) {
+    return <>{children}</>;
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm">
       <div className="text-center">

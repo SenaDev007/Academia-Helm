@@ -137,3 +137,25 @@ Stage Summary:
 - All affected tabs (Personnel, Contrats, Collaborateurs, Overview) now correctly display the pending signature status
 - ORION vigilance now alerts on unsigned contracts older than 7 days
 - Data migration script created at /home/z/my-project/api-server/prisma/migrations/fix_pending_signature_status.sql
+
+---
+Task ID: 1
+Agent: main
+Task: Intégration illustration RecruitmentPlaceholder sur page recrutement
+
+Work Log:
+- Créé le composant RecruitmentPlaceholder.tsx dans components/recruitment/
+- L'illustration utilise Image de next/image avec object-contain, centrage, et animation fade-in via framer-motion
+- Remplacé l'ancien état vide (texte "Veuillez sélectionner un poste...") par <RecruitmentPlaceholder />
+- Ajouté l'import du composant dans CareersContent.tsx
+- Vérifié TypeScript compilation sans erreur
+- Commité et poussé sur GitHub
+- Vérifié sur le site live : l'illustration s'affiche correctement quand aucun poste n'est sélectionné
+- Vérifié la transition : cliquer sur une offre masque l'illustration et affiche les détails du poste
+
+Stage Summary:
+- Nouveau composant: apps/web-app/src/components/recruitment/RecruitmentPlaceholder.tsx
+- Image: /public/images/AcademiaHelm_RecruitmentPortal.jpeg
+- L'illustration est centrée, responsive, avec animation fade-in
+- La transition illustration → détail du poste est fluide
+- Plus de "zone vide" sur la page recrutement

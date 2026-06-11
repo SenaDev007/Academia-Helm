@@ -161,6 +161,7 @@ const featuredBlogPosts = BLOG_POSTS.slice(0, 3);
 /** Bande défilante animée — alerte recrutement sur le landing page */
 function RecruitmentBanner() {
   const [activeSchoolsCount, setActiveSchoolsCount] = useState<number | null>(null);
+  const [isPaused, setIsPaused] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -183,7 +184,16 @@ function RecruitmentBanner() {
   if (!activeSchoolsCount || activeSchoolsCount === 0) return null;
 
   return (
-    <div className="overflow-hidden relative bg-gradient-to-r from-[#f5b335] via-[#ffd166] to-[#f5b335] py-2.5 shadow-lg">
+    <div
+      className="overflow-hidden relative bg-gradient-to-r from-[#f5b335] via-[#ffd166] to-[#f5b335] py-2.5 shadow-lg cursor-pointer select-none"
+      onMouseEnter={() => setIsPaused(true)}
+      onMouseLeave={() => setIsPaused(false)}
+      onTouchStart={() => setIsPaused(true)}
+      onTouchEnd={() => {
+        // Reprend après 2s sur mobile pour ne pas bloquer définitivement
+        setTimeout(() => setIsPaused(false), 2000);
+      }}
+    >
       <div className="absolute inset-0 opacity-20">
         <div
           className="h-full w-1/3 bg-gradient-to-r from-transparent via-white/50 to-transparent"
@@ -192,9 +202,12 @@ function RecruitmentBanner() {
       </div>
       <div
         className="flex items-center relative z-10"
-        style={{ animation: 'bannerScroll 55s linear infinite' }}
+        style={{
+          animation: 'bannerScroll 120s linear infinite',
+          animationPlayState: isPaused ? 'paused' : 'running',
+        }}
       >
-        {Array.from({ length: 4 }).map((_, i) => (
+        {Array.from({ length: 8 }).map((_, i) => (
           <span key={i} className="flex items-center gap-2 text-[#0b2f73] text-xs font-bold whitespace-nowrap px-8">
             <Megaphone className="h-4 w-4" />
             Appels d&apos;offres en cours — {activeSchoolsCount} établissement{activeSchoolsCount > 1 ? 's' : ''} recrutent actuellement

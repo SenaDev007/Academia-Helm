@@ -90,7 +90,7 @@ interface EducationItem {
   year: string;
 }
 
-export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string }) {
+export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedSchoolSlug?: string; forcedJobSlug?: string }) {
   const [schools, setSchools] = useState<any[]>([]);
   const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -101,6 +101,7 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
   const router = useRouter();
   const searchParams = useSearchParams();
   const schoolParam = forcedSchoolSlug || searchParams.get('school');
+  const jobParam = forcedJobSlug || searchParams.get('job');
 
   // Multi-Step Form States
   const [isApplying, setIsApplying] = useState(false);
@@ -229,7 +230,18 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
         handleSelectSchool(match);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [schools, schoolParam]);
+
+  // Auto-select job if forcedJobSlug is provided and jobs are loaded
+  useEffect(() => {
+    if (jobs.length > 0 && jobParam) {
+      const match = jobs.find(j => j.ref === jobParam || j.id === jobParam);
+      if (match) {
+        setSelectedJob(match);
+      }
+    }
+  }, [jobs, jobParam]);
 
   // Form helpers
   const addExperience = () => {

@@ -9,7 +9,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
 import { motion, useScroll, useSpring, useTransform } from 'framer-motion';
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import {
   ShieldCheck,
   Brain,
@@ -20,6 +20,7 @@ import {
   ArrowRight,
   Sparkles,
   BookOpen,
+  Megaphone,
 } from 'lucide-react';
 import PremiumHeader from '../layout/PremiumHeader';
 import InstitutionalFooter from './InstitutionalFooter';
@@ -154,6 +155,63 @@ const modules = [
 
 /** Aperçu blog sur la landing (les articles MDX auto-générés apparaissent aussi sur /blog). */
 const featuredBlogPosts = BLOG_POSTS.slice(0, 3);
+
+/** Bande défilante animée — alerte recrutement sur le landing page */
+function RecruitmentBanner() {
+  const [activeSchoolsCount, setActiveSchoolsCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchActiveSchools() {
+      try {
+        const res = await fetch('/api/public/schools/with-jobs');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data) && !cancelled) {
+          setActiveSchoolsCount(data.filter((s: any) => (s.activeJobsCount ?? 0) > 0).length);
+        }
+      } catch {
+        // Silently fail — banner is non-critical
+      }
+    }
+    fetchActiveSchools();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!activeSchoolsCount || activeSchoolsCount === 0) return null;
+
+  return (
+    <div className="overflow-hidden relative bg-gradient-to-r from-[#f5b335] via-[#ffd166] to-[#f5b335] py-2.5 shadow-lg">
+      <div className="absolute inset-0 opacity-20">
+        <div
+          className="h-full w-1/3 bg-gradient-to-r from-transparent via-white/50 to-transparent"
+          style={{ animation: 'bannerShimmer 3s ease-in-out infinite' }}
+        />
+      </div>
+      <div
+        className="flex items-center relative z-10"
+        style={{ animation: 'bannerScroll 18s linear infinite' }}
+      >
+        {Array.from({ length: 4 }).map((_, i) => (
+          <span key={i} className="flex items-center gap-2 text-[#0b2f73] text-xs font-bold whitespace-nowrap px-8">
+            <Megaphone className="h-4 w-4" />
+            Appels d&apos;offres en cours — {activeSchoolsCount} établissement{activeSchoolsCount > 1 ? 's' : ''} recrutent actuellement
+          </span>
+        ))}
+      </div>
+      <style>{`
+        @keyframes bannerShimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(300%); }
+        }
+        @keyframes bannerScroll {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+      `}</style>
+    </div>
+  );
+}
 
 export default function PremiumLandingPage() {
   const { scrollYProgress } = useScroll();
@@ -339,6 +397,9 @@ export default function PremiumLandingPage() {
           </motion.div>
         </div>
       </section>
+
+      {/* Animated recruitment banner — fetching active job offers count */}
+      <RecruitmentBanner />
 
       <section className="py-16 md:py-24 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

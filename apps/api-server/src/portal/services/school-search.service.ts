@@ -133,6 +133,9 @@ export class SchoolSearchService {
             name: true,
             logo: true,
             address: true,
+            city: true,
+            primaryPhone: true,
+            primaryEmail: true,
             educationLevels: true,
           },
         },
@@ -152,7 +155,7 @@ export class SchoolSearchService {
       const results = tenants.map((tenant) => {
         const school = tenant.schools;
         const address = school?.address || '';
-        const city = this.extractCityFromAddress(address);
+        const city = school?.city || this.extractCityFromAddress(address);
 
         return {
           id: tenant.id,
@@ -161,6 +164,9 @@ export class SchoolSearchService {
           subdomain: tenant.subdomain || null,
           logoUrl: school?.logo || null,
           city: city || null,
+          primaryPhone: school?.primaryPhone || null,
+          primaryEmail: school?.primaryEmail || null,
+          address: school?.address || null,
           schoolType: this.getSchoolTypeFromLevels(school?.educationLevels || []),
           country: tenant.country?.name || null,
         };
@@ -201,6 +207,9 @@ export class SchoolSearchService {
               name: true,
               logo: true,
               address: true,
+              city: true,
+              primaryPhone: true,
+              primaryEmail: true,
               educationLevels: true,
             },
           },
@@ -239,7 +248,7 @@ export class SchoolSearchService {
       const results = tenants.map((tenant) => {
         const school = tenant.schools;
         const address = school?.address || '';
-        const city = this.extractCityFromAddress(address);
+        const city = school?.city || this.extractCityFromAddress(address);
 
         return {
           id: tenant.id,
@@ -251,6 +260,9 @@ export class SchoolSearchService {
           subdomain: tenant.subdomain || null,
           logoUrl: school?.logo || null,
           city: city || null,
+          primaryPhone: school?.primaryPhone || null,
+          primaryEmail: school?.primaryEmail || null,
+          address: school?.address || null,
           schoolType: this.getSchoolTypeFromLevels(school?.educationLevels || []),
           country: tenant.country?.name || null,
           activeJobsCount: countMap.get(tenant.id) || 0,

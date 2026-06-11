@@ -28,8 +28,7 @@ import {
   Globe,
   Map,
   Mail,
-  Phone,
-  Megaphone
+  Phone
 } from 'lucide-react';
 import PremiumHeader from '@/components/layout/PremiumHeader';
 import { apiFetch } from '@/lib/api/client';
@@ -213,27 +212,26 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
     return () => { cancelled = true; };
   }, [forcedJobSlug, deepLinkResolved]);
 
-  // Fetch available schools on mount (using the public schools list endpoint)
+  // Fetch available schools on mount (using the optimized endpoint)
   useEffect(() => {
     async function loadSchools() {
       try {
         setLoading(true);
-        // Use the public schools list endpoint (works in production, unlike dev-available-tenants)
-        const res = await fetch('/api/public/schools/list');
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          // Fetch jobs count for each school in parallel
-          const schoolsWithCounts = await Promise.all(data.map(async (school) => {
-            try {
-              const jobsRes = await fetch(`/api/hr/recruitment/jobs?tenantId=${school.tenantId || school.id}`);
-              const jobsData = await jobsRes.json();
-              const activeCount = Array.isArray(jobsData) ? jobsData.filter((j: any) => j.status === 'PUBLIÉE').length : 0;
-              return { ...school, activeJobsCount: activeCount };
-            } catch (e) {
-              return { ...school, activeJobsCount: 0 };
-            }
-          }));
-          setSchools(schoolsWithCounts);
+        // Use the optimized endpoint that returns schools with active job counts
+        // and includes logo, contact info, etc.
+        const res = await fetch('/api/public/schools/with-jobs');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setSchools(data);
+          }
+        } else {
+          // Fallback to the basic list endpoint
+          const fallbackRes = await fetch('/api/public/schools/list');
+          const fallbackData = await fallbackRes.json();
+          if (Array.isArray(fallbackData)) {
+            setSchools(fallbackData);
+          }
         }
       } catch (err) {
         console.error('Failed to load schools:', err);
@@ -446,16 +444,6 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
       <PremiumHeader />
 
       <main className="flex-grow pt-28 pb-20 px-4 md:px-8 max-w-6xl mx-auto w-full">
-        <style>{`
-          @keyframes shimmerSlide {
-            0% { transform: translateX(-100%); }
-            100% { transform: translateX(300%); }
-          }
-          @keyframes marqueeScroll {
-            0% { transform: translateX(0); }
-            100% { transform: translateX(-50%); }
-          }
-        `}</style>
         {/* Banner Section */}
         <div className="text-center mb-10">
           <span className="px-4 py-1.5 rounded-full border text-xs font-bold uppercase tracking-wider bg-indigo-50 border-indigo-200 text-[#1A2BA6] mb-4 inline-block">
@@ -467,28 +455,6 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
           <p className="text-sm md:text-base text-slate-500 mt-2 max-w-xl mx-auto">
             Postulez instantanément grâce à notre parcours de candidature simplifiée intégrant l&apos;analyse IA.
           </p>
-          {/* Animated recruitment marquee banner — visible when schools have active offers */}
-          {schools.some(s => (s.activeJobsCount ?? 0) > 0) && (
-            <div className="mt-6 overflow-hidden relative rounded-xl bg-gradient-to-r from-[#1A2BA6] via-blue-700 to-[#1A2BA6] py-3 shadow-lg border border-blue-400/30">
-              <div className="absolute inset-0 opacity-20">
-                <div className="h-full w-1/3 bg-gradient-to-r from-transparent via-white/40 to-transparent" style={{ animation: 'shimmerSlide 3s ease-in-out infinite' }} />
-              </div>
-              <div className="flex items-center relative z-10" style={{ animation: 'marqueeScroll 15s linear infinite' }}>
-                <span className="flex items-center gap-2 text-white text-xs font-bold whitespace-nowrap px-8">
-                  <Megaphone className="h-4 w-4" /> Appels d&apos;offres en cours — {schools.filter(s => (s.activeJobsCount ?? 0) > 0).length} établissement{schools.filter(s => (s.activeJobsCount ?? 0) > 0).length > 1 ? 's' : ''} recrutent actuellement
-                </span>
-                <span className="flex items-center gap-2 text-white text-xs font-bold whitespace-nowrap px-8">
-                  <Sparkles className="h-4 w-4" /> Candidature simplifiée avec analyse IA intégrée
-                </span>
-                <span className="flex items-center gap-2 text-white text-xs font-bold whitespace-nowrap px-8">
-                  <Megaphone className="h-4 w-4" /> Appels d&apos;offres en cours — {schools.filter(s => (s.activeJobsCount ?? 0) > 0).length} établissement{schools.filter(s => (s.activeJobsCount ?? 0) > 0).length > 1 ? 's' : ''} recrutent actuellement
-                </span>
-                <span className="flex items-center gap-2 text-white text-xs font-bold whitespace-nowrap px-8">
-                  <Sparkles className="h-4 w-4" /> Candidature simplifiée avec analyse IA intégrée
-                </span>
-              </div>
-            </div>
-          )}
         </div>
 
         {loading && (

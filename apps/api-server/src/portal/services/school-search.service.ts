@@ -5,6 +5,9 @@
  * 
  * Service pour la recherche publique d'établissements avec rate limiting
  * 
+ * SOURCE DE VÉRITÉ : TenantIdentityProfile (versionnée, active)
+ * Rétrocompatibilité : School (table legacy, fallback si pas de profil actif)
+ * 
  * ============================================================================
  */
 
@@ -12,6 +15,35 @@ import { Injectable, Logger, BadRequestException, ServiceUnavailableException } 
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+
+/** Champs sélectionnés sur le profil d'identité actif */
+const IDENTITY_PROFILE_SELECT = {
+  schoolName: true,
+  schoolAcronym: true,
+  schoolType: true,
+  logoUrl: true,
+  address: true,
+  city: true,
+  department: true,
+  phonePrimary: true,
+  phoneSecondary: true,
+  email: true,
+  website: true,
+  slogan: true,
+  country: true,
+  version: true,
+};
+
+/** Champs sélectionnés sur la table School (fallback) */
+const SCHOOL_SELECT = {
+  name: true,
+  logo: true,
+  address: true,
+  city: true,
+  primaryPhone: true,
+  primaryEmail: true,
+  educationLevels: true,
+};
 
 @Injectable()
 export class SchoolSearchService {
@@ -25,7 +57,7 @@ export class SchoolSearchService {
   /**
    * Liste publique portail : en prod, seuls les tenants `status: active` sauf si
    * PLATFORM_OWNER_MODE=true ou environnement non-production (tests / plateforme).
-   * (Le modèle Tenant n’a pas deletedAt / isActive — le filtre métier est `status`.)
+   * (Le modèle Tenant n'a pas deletedAt / isActive — le filtre métier est `status`.)
    */
   private buildPublicSchoolListWhere(): Prisma.TenantWhereInput {
     const platformOwner =
@@ -35,6 +67,34 @@ export class SchoolSearchService {
       return {};
     }
     return { status: 'active' };
+  }
+
+  /**
+   * Extrait les données d'identité d'un tenant en privilégiant le profil actif
+   * (TenantIdentityProfile) par rapport à la table School (legacy).
+   * Le profil d'identité est la source légale de vérité — il est versionné et
+   * mis à jour via l'onglet Identité des Paramètres.
+   */
+  private extractSchoolData(tenant: any) {
+    const identity = tenant.identityProfiles?.[0] ?? null;
+    const school = tenant.schools ?? null;
+
+    return {
+      schoolName: identity?.schoolName || school?.name || tenant.name,
+      schoolAcronym: identity?.schoolAcronym || school?.abbreviation || null,
+      logoUrl: identity?.logoUrl || school?.logo || null,
+      address: identity?.address || school?.address || null,
+      city: identity?.city || school?.city || this.extractCityFromAddress(school?.address || '') || null,
+      phonePrimary: identity?.phonePrimary || school?.primaryPhone || null,
+      phoneSecondary: identity?.phoneSecondary || school?.secondaryPhone || null,
+      primaryEmail: identity?.email || school?.primaryEmail || null,
+      website: identity?.website || school?.website || null,
+      schoolType: identity?.schoolType || this.getSchoolTypeFromLevels(school?.educationLevels || []),
+      slogan: identity?.slogan || school?.slogan || null,
+      department: identity?.department || school?.department || null,
+      country: identity?.country || null,
+      identityVersion: identity?.version ?? null,
+    };
   }
 
   /**
@@ -56,45 +116,42 @@ export class SchoolSearchService {
     try {
       // Recherche dans tous les tenants actifs (même critère que listAllSchools)
       const tenants = await this.prisma.tenant.findMany({
-      where: {
-        status: 'active',
-        OR: [
-          { name: { contains: searchTerm, mode: 'insensitive' } },
-          { slug: { contains: searchTerm, mode: 'insensitive' } },
-        ],
-      },
-      include: {
-        schools: {
-          select: {
-            name: true,
-            logo: true,
-            address: true,
-            educationLevels: true,
+        where: {
+          status: 'active',
+          OR: [
+            { name: { contains: searchTerm, mode: 'insensitive' } },
+            { slug: { contains: searchTerm, mode: 'insensitive' } },
+          ],
+        },
+        include: {
+          schools: { select: SCHOOL_SELECT },
+          identityProfiles: {
+            where: { isActive: true },
+            take: 1,
+            orderBy: { version: 'desc' },
+            select: IDENTITY_PROFILE_SELECT,
+          },
+          country: {
+            select: {
+              name: true,
+              code: true,
+            },
           },
         },
-        country: {
-          select: {
-            name: true,
-            code: true,
-          },
-        },
-      },
-      take: 20, // Limiter à 20 résultats
-    });
+        take: 20, // Limiter à 20 résultats
+      });
 
-      // Formater les résultats (schools est une relation 1-1, donc un objet ou null)
+      // Formater les résultats
       const results = tenants.map((tenant) => {
-        const school = tenant.schools;
-        const address = school?.address || '';
-        const city = this.extractCityFromAddress(address);
+        const data = this.extractSchoolData(tenant);
 
         return {
           id: tenant.id,
           name: tenant.name,
           slug: tenant.slug,
-          logoUrl: school?.logo || null,
-          city: city || null,
-          schoolType: this.getSchoolTypeFromLevels(school?.educationLevels || []),
+          logoUrl: data.logoUrl,
+          city: data.city,
+          schoolType: data.schoolType,
         };
       });
 
@@ -126,49 +183,43 @@ export class SchoolSearchService {
 
     try {
       const tenants = await this.prisma.tenant.findMany({
-      where: this.buildPublicSchoolListWhere(),
-      include: {
-        schools: {
-          select: {
-            name: true,
-            logo: true,
-            address: true,
-            city: true,
-            primaryPhone: true,
-            primaryEmail: true,
-            educationLevels: true,
+        where: this.buildPublicSchoolListWhere(),
+        include: {
+          schools: { select: SCHOOL_SELECT },
+          identityProfiles: {
+            where: { isActive: true },
+            take: 1,
+            orderBy: { version: 'desc' },
+            select: IDENTITY_PROFILE_SELECT,
+          },
+          country: {
+            select: {
+              name: true,
+              code: true,
+            },
           },
         },
-        country: {
-          select: {
-            name: true,
-            code: true,
-          },
+        orderBy: {
+          name: 'asc',
         },
-      },
-      orderBy: {
-        name: 'asc',
-      },
-    });
+      });
 
-      // Formater les résultats (schools est une relation 1-1, donc un objet ou null)
+      // Formater les résultats
       const results = tenants.map((tenant) => {
-        const school = tenant.schools;
-        const address = school?.address || '';
-        const city = school?.city || this.extractCityFromAddress(address);
+        const data = this.extractSchoolData(tenant);
 
         return {
           id: tenant.id,
           name: tenant.name,
           slug: tenant.slug,
           subdomain: tenant.subdomain || null,
-          logoUrl: school?.logo || null,
-          city: city || null,
-          primaryPhone: school?.primaryPhone || null,
-          primaryEmail: school?.primaryEmail || null,
-          address: school?.address || null,
-          schoolType: this.getSchoolTypeFromLevels(school?.educationLevels || []),
-          country: tenant.country?.name || null,
+          logoUrl: data.logoUrl,
+          city: data.city,
+          primaryPhone: data.phonePrimary,
+          primaryEmail: data.primaryEmail,
+          address: data.address,
+          schoolType: data.schoolType,
+          country: tenant.country?.name || data.country || null,
         };
       });
 
@@ -190,6 +241,8 @@ export class SchoolSearchService {
    * Liste tous les établissements actifs avec le nombre d'offres d'emploi publiées.
    * Single-query approach: fetches all schools then counts active (PUBLIÉE) jobs per tenant.
    * Used by the public /jobs careers page to avoid N+1 parallel API calls.
+   *
+   * SOURCE DE VÉRITÉ : TenantIdentityProfile (profil actif) > School (legacy)
    */
   async listSchoolsWithJobs(): Promise<any[]> {
     this.logger.log('Listing all schools with active job counts');
@@ -202,16 +255,12 @@ export class SchoolSearchService {
           type: 'SCHOOL',
         },
         include: {
-          schools: {
-            select: {
-              name: true,
-              logo: true,
-              address: true,
-              city: true,
-              primaryPhone: true,
-              primaryEmail: true,
-              educationLevels: true,
-            },
+          schools: { select: SCHOOL_SELECT },
+          identityProfiles: {
+            where: { isActive: true },
+            take: 1,
+            orderBy: { version: 'desc' },
+            select: IDENTITY_PROFILE_SELECT,
           },
           country: {
             select: {
@@ -244,27 +293,26 @@ export class SchoolSearchService {
         countMap.set(row.tenantId, row._count.id);
       }
 
-      // 3. Merge school data with job counts
+      // 3. Merge school data with job counts — TenantIdentityProfile first
       const results = tenants.map((tenant) => {
-        const school = tenant.schools;
-        const address = school?.address || '';
-        const city = school?.city || this.extractCityFromAddress(address);
+        const data = this.extractSchoolData(tenant);
 
         return {
           id: tenant.id,
           tenantId: tenant.id,
           name: tenant.name,
-          schoolName: school?.name || tenant.name,
+          schoolName: data.schoolName,
           tenantName: tenant.name,
           slug: tenant.slug,
           subdomain: tenant.subdomain || null,
-          logoUrl: school?.logo || null,
-          city: city || null,
-          primaryPhone: school?.primaryPhone || null,
-          primaryEmail: school?.primaryEmail || null,
-          address: school?.address || null,
-          schoolType: this.getSchoolTypeFromLevels(school?.educationLevels || []),
-          country: tenant.country?.name || null,
+          logoUrl: data.logoUrl,
+          city: data.city,
+          primaryPhone: data.phonePrimary,
+          primaryEmail: data.primaryEmail,
+          address: data.address,
+          schoolType: data.schoolType,
+          slogan: data.slogan,
+          country: tenant.country?.name || data.country || null,
           activeJobsCount: countMap.get(tenant.id) || 0,
         };
       });
@@ -337,4 +385,3 @@ export class SchoolSearchService {
     }
   }
 }
-

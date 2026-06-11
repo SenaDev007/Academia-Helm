@@ -1,11 +1,11 @@
 {
   "version": 2,
   "functions": {
-    "apps/web-app/src/app/api/hr/recruitment/apply/route.ts": {
+    "next-app/src/app/api/hr/recruitment/apply/route.ts": {
       "maxDuration": 60,
       "memory": 1024
     },
-    "apps/web-app/src/app/api/hr/[...path]/route.ts": {
+    "next-app/src/app/api/hr/[...path]/route.ts": {
       "maxDuration": 30,
       "memory": 1024
     }

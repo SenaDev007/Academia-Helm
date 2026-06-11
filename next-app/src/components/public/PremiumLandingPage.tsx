@@ -203,7 +203,7 @@ function RecruitmentBanner() {
       <div
         className="flex items-center relative z-10"
         style={{
-          animation: 'bannerScroll 120s linear infinite',
+          animation: 'bannerScroll 200s linear infinite',
           animationPlayState: isPaused ? 'paused' : 'running',
         }}
       >

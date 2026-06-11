@@ -51,6 +51,14 @@ interface School {
   primaryEmail?: string;
   address?: string;
   activeJobsCount?: number;
+  /** Nested school object from API — school-level contact info takes priority over tenant-level */
+  school?: {
+    primaryPhone?: string;
+    primaryEmail?: string;
+    city?: string;
+    country?: string;
+    logo?: string;
+  };
 }
 
 interface Job {
@@ -200,8 +208,8 @@ export function CareersContent({
           logoUrl: tenantInfo.logoUrl || tenantInfo.school?.logo || undefined,
           city: tenantInfo.city || tenantInfo.school?.city || undefined,
           country: tenantInfo.country || tenantInfo.school?.country || undefined,
-          primaryPhone: tenantInfo.primaryPhone || tenantInfo.school?.primaryPhone || undefined,
-          primaryEmail: tenantInfo.primaryEmail || tenantInfo.school?.primaryEmail || undefined,
+          primaryPhone: tenantInfo.school?.primaryPhone || tenantInfo.primaryPhone || undefined,
+          primaryEmail: tenantInfo.school?.primaryEmail || tenantInfo.primaryEmail || undefined,
           address: tenantInfo.address || tenantInfo.school?.address || undefined,
         };
 
@@ -482,6 +490,14 @@ export function CareersContent({
     (s.schoolName || s.tenantName || s.name || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  /**
+   * Resolve contact info with school-level priority over tenant-level.
+   * Prevents the wrong email/phone from being displayed when tenant-level
+   * data belongs to a different entity than the school.
+   */
+  const getSchoolEmail = (s: School) => s.school?.primaryEmail || s.primaryEmail;
+  const getSchoolPhone = (s: School) => s.school?.primaryPhone || s.primaryPhone;
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between">
       <PremiumHeader />
@@ -661,11 +677,11 @@ export function CareersContent({
                         {(selectedSchool.city || selectedSchool.country) && (
                           <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {[selectedSchool.city, selectedSchool.country].filter(Boolean).join(', ')}</span>
                         )}
-                        {selectedSchool.primaryPhone && (
-                          <a href={`tel:${selectedSchool.primaryPhone}`} className="flex items-center gap-1 hover:text-[#1A2BA6] transition-colors"><Phone className="h-3 w-3" /> {selectedSchool.primaryPhone}</a>
+                        {getSchoolPhone(selectedSchool) && (
+                          <a href={`tel:${getSchoolPhone(selectedSchool)}`} className="flex items-center gap-1 hover:text-[#1A2BA6] transition-colors"><Phone className="h-3 w-3" /> {getSchoolPhone(selectedSchool)}</a>
                         )}
-                        {selectedSchool.primaryEmail && (
-                          <a href={`mailto:${selectedSchool.primaryEmail}`} className="flex items-center gap-1 hover:text-[#1A2BA6] transition-colors"><Mail className="h-3 w-3" /> {selectedSchool.primaryEmail}</a>
+                        {getSchoolEmail(selectedSchool) && (
+                          <a href={`mailto:${getSchoolEmail(selectedSchool)}`} className="flex items-center gap-1 hover:text-[#1A2BA6] transition-colors"><Mail className="h-3 w-3" /> {getSchoolEmail(selectedSchool)}</a>
                         )}
                       </div>
                     </div>

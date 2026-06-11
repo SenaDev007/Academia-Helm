@@ -383,7 +383,7 @@ export default function CompleteLandingPage() {
         {/* Background Image with Overlay */}
         <div className="absolute inset-0 z-0">
           <Image
-            src="/images/school-background.png"
+            src="/images/1school-background.webp"
             alt="École moderne avec élèves en classe - Academia Helm"
             fill
             className="object-cover"

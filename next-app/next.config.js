@@ -2,6 +2,8 @@ const path = require('path');
 
 /** Netlify (@netlify/plugin-nextjs) : pas de mode standalone (Docker/VPS uniquement). */
 const isNetlify = !!process.env.NETLIFY;
+/** Vercel détecté — ne pas utiliser standalone ni PWA (Vercel gère son propre cache). */
+const isVercel = !!process.env.VERCEL;
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -101,8 +103,8 @@ const nextConfig = {
     NEXT_PUBLIC_PLATFORM: process.env.NEXT_PUBLIC_PLATFORM || 'web',
   },
   
-  // Build standalone pour déploiement Node (OVH, VPS, Docker) — pas sur Netlify
-  output: isNetlify ? undefined : 'standalone',
+  // Build standalone pour déploiement Node (OVH, VPS, Docker) — pas sur Netlify ni Vercel
+  output: (isNetlify || isVercel) ? undefined : 'standalone',
 
   // Timeout plus long pour la génération des pages statiques (build volumineux)
   staticPageGenerationTimeout: 180,
@@ -155,10 +157,14 @@ if (process.env.ANALYZE === 'true') {
   }
 }
 
-if (process.env.NODE_ENV === 'production') {
+if (process.env.NODE_ENV === 'production' && !isVercel) {
   // @ducanh2912/next-pwa (Workbox 7) : Stratégie offline-first
   // StaleWhileRevalidate pour les API : réponse immédiate depuis le cache +
   // mise à jour en arrière-plan. Plus de timeout 10s qui bloque l'UI.
+  // ⚠️ Désactivé sur Vercel : le plugin PWA injecte une config webpack qui
+  // conflite avec Turbopack (Next.js 16 par défaut), et Vercel gère déjà le
+  // cache via ses Edge Functions. Sur Vercel, le build utilise --webpack mais
+  // le PWA Service Worker n'est pas nécessaire.
   try {
     const withPWA = require('@ducanh2912/next-pwa').default({
       dest: 'public',

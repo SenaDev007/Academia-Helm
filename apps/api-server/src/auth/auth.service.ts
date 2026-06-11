@@ -329,6 +329,20 @@ export class AuthService {
           select: {
             name: true,
             logo: true,
+            primaryPhone: true,
+            primaryEmail: true,
+            address: true,
+          },
+        },
+        schoolSettings: {
+          select: {
+            logoUrl: true,
+            phone: true,
+            email: true,
+            address: true,
+            city: true,
+            country: true,
+            website: true,
           },
         },
         country: {
@@ -350,8 +364,13 @@ export class AuthService {
       name: tenant.name,
       slug: tenant.slug,
       subdomain: tenant.subdomain,
-      logoUrl: tenant.schools?.logo ?? null,
+      logoUrl: tenant.schoolSettings?.logoUrl || tenant.schools?.logo || null,
       country: tenant.country?.name || null,
+      primaryPhone: tenant.schoolSettings?.phone || tenant.schools?.primaryPhone || null,
+      primaryEmail: tenant.schoolSettings?.email || tenant.schools?.primaryEmail || null,
+      address: tenant.schoolSettings?.address || tenant.schools?.address || null,
+      city: tenant.schoolSettings?.city || null,
+      website: tenant.schoolSettings?.website || null,
     }));
   }
 

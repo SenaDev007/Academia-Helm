@@ -25,7 +25,9 @@ import {
   Linkedin,
   Users,
   Globe,
-  Map
+  Map,
+  Mail,
+  Phone
 } from 'lucide-react';
 import PremiumHeader from '@/components/layout/PremiumHeader';
 import { apiFetch } from '@/lib/api/client';
@@ -40,6 +42,14 @@ interface School {
   schoolName: string;
   tenantName: string;
   slug: string;
+  logoUrl?: string | null;
+  primaryPhone?: string | null;
+  primaryEmail?: string | null;
+  address?: string | null;
+  city?: string | null;
+  country?: string | null;
+  website?: string | null;
+  activeJobsCount?: number;
 }
 
 interface Job {
@@ -390,8 +400,16 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
                     >
                       <div>
                         <div className="flex justify-between items-start mb-4">
-                          <div className="h-12 w-12 rounded-xl bg-blue-50/80 border border-blue-100 flex items-center justify-center text-[#1A2BA6]">
-                            <Building2 className="h-6 w-6" />
+                          <div className="h-12 w-12 rounded-xl bg-blue-50/80 border border-blue-100 flex items-center justify-center text-[#1A2BA6] overflow-hidden">
+                            {school.logoUrl ? (
+                              <img
+                                src={school.logoUrl}
+                                alt={`Logo ${school.schoolName || school.name}`}
+                                className="w-full h-full object-contain p-1"
+                              />
+                            ) : (
+                              <Building2 className="h-6 w-6" />
+                            )}
                           </div>
                           {school.activeJobsCount > 0 ? (
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 shadow-sm relative">
@@ -410,7 +428,26 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
                         <h3 className="font-bold text-slate-900 text-sm leading-snug group-hover:text-[#1A2BA6] transition-colors">
                           {school.schoolName || school.tenantName || school.name}
                         </h3>
-                        <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider mt-1">{school.slug}</p>
+                        {(school.city || school.country) && (
+                          <p className="text-[10px] text-slate-500 font-medium flex items-center gap-1 mt-1">
+                            <MapPin className="h-3 w-3" />
+                            {[school.city, school.country].filter(Boolean).join(', ')}
+                          </p>
+                        )}
+                        {(school.primaryPhone || school.primaryEmail) && (
+                          <div className="mt-2 flex flex-col gap-0.5">
+                            {school.primaryPhone && (
+                              <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                                <Phone className="h-2.5 w-2.5" /> {school.primaryPhone}
+                              </span>
+                            )}
+                            {school.primaryEmail && (
+                              <span className="text-[10px] text-slate-500 flex items-center gap-1 truncate">
+                                <Mail className="h-2.5 w-2.5 shrink-0" /> {school.primaryEmail}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div className="mt-6 pt-4 border-t border-slate-50 flex items-center justify-between text-xs font-bold text-[#1A2BA6]">
                         <span>Découvrir les offres</span>
@@ -439,10 +476,40 @@ export function CareersContent({ forcedSchoolSlug }: { forcedSchoolSlug?: string
 
                 <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
                   <div className="flex items-center gap-3">
-                    <Building2 className="h-5 w-5 text-[#1A2BA6]" />
-                    <h2 className="font-extrabold text-slate-900 text-lg">
-                      {selectedSchool.schoolName || selectedSchool.tenantName || selectedSchool.name}
-                    </h2>
+                    <div className="h-10 w-10 rounded-xl bg-blue-50/80 border border-blue-100 flex items-center justify-center overflow-hidden">
+                      {selectedSchool.logoUrl ? (
+                        <img
+                          src={selectedSchool.logoUrl}
+                          alt={`Logo ${selectedSchool.schoolName || selectedSchool.name}`}
+                          className="w-full h-full object-contain p-0.5"
+                        />
+                      ) : (
+                        <Building2 className="h-5 w-5 text-[#1A2BA6]" />
+                      )}
+                    </div>
+                    <div>
+                      <h2 className="font-extrabold text-slate-900 text-lg">
+                        {selectedSchool.schoolName || selectedSchool.tenantName || selectedSchool.name}
+                      </h2>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5">
+                        {(selectedSchool.city || selectedSchool.country) && (
+                          <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                            <MapPin className="h-3 w-3" />
+                            {[selectedSchool.city, selectedSchool.country].filter(Boolean).join(', ')}
+                          </span>
+                        )}
+                        {selectedSchool.primaryPhone && (
+                          <a href={`tel:${selectedSchool.primaryPhone}`} className="text-[10px] text-blue-600 hover:underline flex items-center gap-1">
+                            <Phone className="h-3 w-3" /> {selectedSchool.primaryPhone}
+                          </a>
+                        )}
+                        {selectedSchool.primaryEmail && (
+                          <a href={`mailto:${selectedSchool.primaryEmail}`} className="text-[10px] text-blue-600 hover:underline flex items-center gap-1">
+                            <Mail className="h-3 w-3" /> {selectedSchool.primaryEmail}
+                          </a>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
 

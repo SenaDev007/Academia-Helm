@@ -9,7 +9,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
 import { motion, useScroll, useSpring, useTransform } from 'framer-motion';
-import { useMemo } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import {
   ShieldCheck,
   Brain,
@@ -20,6 +20,7 @@ import {
   ArrowRight,
   Sparkles,
   BookOpen,
+  Megaphone,
 } from 'lucide-react';
 import PremiumHeader from '../layout/PremiumHeader';
 import InstitutionalFooter from './InstitutionalFooter';
@@ -167,6 +168,33 @@ export default function PremiumLandingPage() {
   const cinemaBlueOpacity = useTransform(scrollYProgress, [0.05, 0.35], [0, 0.26]);
   const cinemaGoldOpacity = useTransform(scrollYProgress, [0.3, 0.7], [0, 0.2]);
   const cinemaNavyOpacity = useTransform(scrollYProgress, [0.62, 0.98], [0, 0.24]);
+
+  // ---- Recruitment announcements marquee ----
+  const [recruitAnnouncements, setRecruitAnnouncements] = useState<string[]>([]);
+  useEffect(() => {
+    async function loadAnnouncements() {
+      try {
+        const res = await fetch('/api/auth/dev-available-tenants');
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          // Fetch active jobs count for each school
+          const withCounts = await Promise.all(data.map(async (school: any) => {
+            try {
+              const jobsRes = await fetch(`/api/hr/recruitment/jobs?tenantId=${school.tenantId || school.id}`);
+              const jobsData = await jobsRes.json();
+              const activeCount = Array.isArray(jobsData) ? jobsData.filter((j: any) => j.status === 'PUBLIÉE').length : 0;
+              return { ...school, activeJobsCount: activeCount };
+            } catch { return { ...school, activeJobsCount: 0 }; }
+          }));
+          const msgs = withCounts
+            .filter((s: any) => s.activeJobsCount > 0)
+            .map((s: any) => `${s.schoolName || s.tenantName || s.name} recrute ! ${s.activeJobsCount} poste${s.activeJobsCount > 1 ? 's' : ''} ouvert${s.activeJobsCount > 1 ? 's' : ''}`);
+          setRecruitAnnouncements(msgs);
+        }
+      } catch { /* silently ignore */ }
+    }
+    loadAnnouncements();
+  }, []);
   const heroParticles = useMemo(
     () =>
       Array.from({ length: 18 }).map((_, index) => {
@@ -183,7 +211,30 @@ export default function PremiumLandingPage() {
   return (
     <div className="min-h-screen overflow-x-hidden bg-white text-slate-900 [word-break:normal] [overflow-wrap:normal] hyphens-none">
       <PremiumHeader />
-      
+
+      {/* Animated recruitment banner - just after navbar */}
+      {recruitAnnouncements.length > 0 && (
+        <div className="relative z-30 bg-gradient-to-r from-[#f5b335] via-[#ffd166] to-[#f5b335] overflow-hidden">
+          <div className="flex items-center py-2">
+            <div className="flex animate-[marquee_40s_linear_infinite] whitespace-nowrap">
+              {[...recruitAnnouncements, ...recruitAnnouncements, ...recruitAnnouncements, ...recruitAnnouncements].map((msg, i) => (
+                <span key={i} className="inline-flex items-center gap-2 mx-8 text-sm font-bold text-[#0b2f73]">
+                  <Megaphone className="h-4 w-4 shrink-0" />
+                  <Link href="/jobs" className="hover:underline">{msg}</Link>
+                  <span className="mx-2 text-[#0b2f73]/40">|</span>
+                </span>
+              ))}
+            </div>
+          </div>
+          <style>{`
+            @keyframes marquee {
+              0% { transform: translateX(0); }
+              100% { transform: translateX(-25%); }
+            }
+          `}</style>
+        </div>
+      )}
+
       <motion.div
         style={{ scaleX: progress }}
         className="fixed top-14 md:top-16 left-0 right-0 h-1 bg-gradient-to-r from-[#f5b335] via-[#ffd166] to-[#0b2f73] origin-left z-50"

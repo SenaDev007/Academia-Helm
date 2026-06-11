@@ -260,9 +260,9 @@ export default function PremiumLandingPage() {
         />
       </div>
 
-      <div className="h-14 md:h-16" aria-hidden />
-
       <section className="relative overflow-hidden bg-gradient-to-br from-[#0b2f73] via-[#103e91] to-[#1d4fa5]">
+        {/* Spacer pour compenser la navbar fixe — même fond que le hero */}
+        <div className="h-14 md:h-16" aria-hidden />
         <Image
           src="/images/AH background.png"
           alt="Fond hero Academia Helm"

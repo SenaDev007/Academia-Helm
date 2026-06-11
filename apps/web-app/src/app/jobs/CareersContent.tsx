@@ -30,6 +30,7 @@ import {
   Phone
 } from 'lucide-react';
 import PremiumHeader from '@/components/layout/PremiumHeader';
+import RecruitmentPlaceholder from '@/components/recruitment/RecruitmentPlaceholder';
 import { apiFetch } from '@/lib/api/client';
 import { getApiBaseUrl } from '@/lib/utils/urls';
 
@@ -680,10 +681,7 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
                           </button>
                         </div>
                       ) : (
-                        <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-sm">
-                          <Briefcase className="h-10 w-10 text-slate-300 mx-auto mb-3" />
-                          <p className="text-xs text-slate-400 italic">Veuillez sélectionner un poste dans la liste pour afficher les détails.</p>
-                        </div>
+                        <RecruitmentPlaceholder />
                       )}
                     </div>
                   </div>

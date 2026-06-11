@@ -11,12 +11,9 @@
  * 5. Initialisation ORION (direction uniquement)
  * 6. Préchargement UI
  *
- * DURÉE MINIMALE : Le loading screen dure au moins 5 secondes
- * pour une expérience visuelle agréable (progression fluide).
+ * NOTE: La durée minimale d'affichage du loading (5s) est gérée
+ * par le composant <MinDurationScreen>, pas par ce service.
  */
-
-/** Durée minimale d'affichage du loading screen (ms) */
-const MIN_LOADING_DURATION_MS = 5000;
 
 import type { User, Tenant } from '@/types';
 import { getLoadingMessage, type LoadingStep } from './loading-messages';
@@ -85,16 +82,6 @@ export async function executePostLoginFlow(
   // Démarrer le timer de performance
   const metricId = `post-login-${Date.now()}`;
   performanceAuditService.startTimer(metricId);
-
-  // Garantir un minimum de 5 secondes pour le loading screen
-  const startTime = Date.now();
-  const ensureMinDuration = async () => {
-    const elapsed = Date.now() - startTime;
-    const remaining = MIN_LOADING_DURATION_MS - elapsed;
-    if (remaining > 0) {
-      await new Promise(resolve => setTimeout(resolve, remaining));
-    }
-  };
 
   let user: User | null = null;
   let tenant: Tenant | null = null;
@@ -295,25 +282,9 @@ export async function executePostLoginFlow(
       import('@/components/pilotage/PilotageSidebar'),
     ]).catch(() => { /* non-critical */ });
 
-    // Finalisation — attendre la durée minimale de 5 secondes
-    // avec une progression fluide de 90% à 100%
-    const preFinalProgress = 90;
-    const remainingTime = Math.max(0, MIN_LOADING_DURATION_MS - (Date.now() - startTime));
-    if (remainingTime > 0) {
-      // Animer la progression de 90% à 100% pendant le temps restant
-      const progressSteps = 10;
-      const stepDuration = remainingTime / progressSteps;
-      for (let i = 1; i <= progressSteps; i++) {
-        await new Promise(resolve => setTimeout(resolve, stepDuration));
-        onProgress?.({
-          step: 'PRELOAD_UI',
-          progress: preFinalProgress + i,
-          message: i >= progressSteps ? 'Prêt' : 'Presque prêt...',
-        });
-      }
-    } else {
-      onProgress?.({ step: 'PRELOAD_UI', progress: 100, message: 'Prêt' });
-    }
+    // Finalisation immédiate
+    // (La durée minimale d'affichage est gérée par <MinDurationScreen>)
+    onProgress?.({ step: 'PRELOAD_UI', progress: 100, message: 'Prêt' });
 
     const duration = performanceAuditService.endTimer(metricId, 'POST_LOGIN', {
       stepsCompleted: steps.length,
@@ -336,9 +307,6 @@ export async function executePostLoginFlow(
       orionAlerts,
     };
   } catch (error: any) {
-    // Même en cas d'erreur, respecter la durée minimale d'affichage
-    await ensureMinDuration();
-
     return {
       success: false,
       user: user!,

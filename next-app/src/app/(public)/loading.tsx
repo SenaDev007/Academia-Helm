@@ -1,10 +1,16 @@
-import { Loader2 } from 'lucide-react';
+/**
+ * Loading Component - Public Pages
+ *
+ * Affiché pendant le chargement des pages publiques.
+ * Durée minimale de 5 secondes pour une expérience visuelle professionnelle.
+ */
+
+'use client';
+
+import { MinDurationScreen } from '@/components/loading/MinDurationScreen';
 
 export default function PublicLoading() {
   return (
-    <div className="flex items-center justify-center min-h-screen">
-      <Loader2 className="w-6 h-6 text-blue-600 animate-spin mr-3" />
-      <span className="text-gray-500">Chargement…</span>
-    </div>
+    <MinDurationScreen ready={false} />
   );
 }

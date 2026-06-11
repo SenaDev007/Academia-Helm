@@ -16,6 +16,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { MinDurationScreen } from './MinDurationScreen';
 import { PostLoginLoading } from './PostLoginLoading';
 import type { PostLoginFlowResult } from '@/lib/loading/post-login-flow.service';
 
@@ -158,8 +159,13 @@ export function PostLoginFlowWrapper({
   };
 
   // Si le flow a déjà été complété dans cette session, afficher directement le contenu
+  // mais en garantissant un minimum de 5 secondes de loading pour la première visite
   if (flowResult) {
-    return <>{children}</>;
+    return (
+      <MinDurationScreen ready={true}>
+        {children}
+      </MinDurationScreen>
+    );
   }
 
   // Sinon, exécuter le flow post-login (une seule fois)

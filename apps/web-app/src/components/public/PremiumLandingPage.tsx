@@ -214,14 +214,14 @@ export default function PremiumLandingPage() {
 
       {/* Bande défilante recrutement — uniquement si des offres sont publiées */}
       {recruitAnnouncements.length > 0 && (
-        <div className="relative z-30 overflow-hidden select-none bg-gradient-to-r from-[#0b2f73] via-[#103e91] to-[#0b2f73] border-b border-amber-400/25">
-          <div className="marquee-track flex items-center py-2">
+        <div className="mt-16 md:mt-20 relative z-30 overflow-hidden select-none bg-gradient-to-r from-[#0b2f73] via-[#103e91] to-[#0b2f73] border-y border-amber-400/20 shadow-md">
+          <div className="marquee-track flex items-center py-2.5">
             <div className="marquee-content flex items-center whitespace-nowrap">
               {[...recruitAnnouncements, ...recruitAnnouncements, ...recruitAnnouncements, ...recruitAnnouncements, ...recruitAnnouncements, ...recruitAnnouncements, ...recruitAnnouncements, ...recruitAnnouncements].map((msg, i) => (
-                <span key={i} className="inline-flex items-center gap-2 mx-6 text-[13px] font-semibold tracking-wide text-amber-100">
+                <span key={i} className="inline-flex items-center gap-2.5 mx-8 text-[13px] font-semibold tracking-wide text-amber-100">
                   <Megaphone className="h-3.5 w-3.5 text-[#f5b335] shrink-0" />
                   <Link href="/jobs" className="hover:text-[#f5b335] transition-colors">{msg}</Link>
-                  <span className="ml-6 text-[#f5b335]/30 text-xs">&#9670;</span>
+                  <span className="ml-8 text-[#f5b335]/30 text-sm">&#9670;</span>
                 </span>
               ))}
             </div>

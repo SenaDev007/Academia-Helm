@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import PremiumHeader from '../layout/PremiumHeader';
 import InstitutionalFooter from './InstitutionalFooter';
+import { LoadingScreen } from '@/components/loading/LoadingScreen';
 import { BLOG_POSTS } from '@/content/blog/posts';
 
 const SaraWidget = dynamic(() => import('./SaraWidget'), {
@@ -190,7 +191,7 @@ function RecruitmentBanner() {
       </div>
       <div
         className="flex items-center relative z-10"
-        style={{ animation: 'bannerScroll 35s linear infinite' }}
+        style={{ animation: 'bannerScroll 55s linear infinite' }}
       >
         {Array.from({ length: 4 }).map((_, i) => (
           <span key={i} className="flex items-center gap-2 text-[#0b2f73] text-xs font-bold whitespace-nowrap px-8">
@@ -213,7 +214,37 @@ function RecruitmentBanner() {
   );
 }
 
+const LANDING_MIN_LOADING_MS = 5000;
+
 export default function PremiumLandingPage() {
+  const [showContent, setShowContent] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+
+  // Loading minimum de 5 secondes avant d'afficher le contenu
+  useEffect(() => {
+    const startTime = Date.now();
+    const totalSteps = 90;
+    const stepDuration = LANDING_MIN_LOADING_MS / totalSteps;
+    let currentStep = 0;
+
+    const interval = setInterval(() => {
+      currentStep++;
+      const elapsed = Date.now() - startTime;
+
+      if (elapsed >= LANDING_MIN_LOADING_MS) {
+        setLoadingProgress(100);
+        clearInterval(interval);
+        // Petit délai pour l'animation de 100%
+        setTimeout(() => setShowContent(true), 300);
+      } else {
+        const baseProgress = (currentStep / totalSteps) * 90;
+        setLoadingProgress(Math.min(Math.round(baseProgress), 90));
+      }
+    }, stepDuration);
+
+    return () => clearInterval(interval);
+  }, []);
+
   const { scrollYProgress } = useScroll();
   const progress = useSpring(scrollYProgress, {
     stiffness: 120,
@@ -237,6 +268,18 @@ export default function PremiumLandingPage() {
       }),
     []
   );
+
+  // Afficher le loading screen pendant 5 secondes minimum
+  if (!showContent) {
+    return (
+      <LoadingScreen
+        message={{ title: 'Bienvenue sur Academia Helm', subtitle: 'Plateforme de pilotage éducatif nouvelle génération' }}
+        progress={loadingProgress}
+        showProgress={true}
+        variant="orion"
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-white text-slate-900 [word-break:normal] [overflow-wrap:normal] hyphens-none">

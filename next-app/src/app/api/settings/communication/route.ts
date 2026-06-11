@@ -23,6 +23,7 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const response = await fetchSettingsBackend(request, 'settings/communication', {
       method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     const data = await response.json().catch(() => ({}));

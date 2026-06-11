@@ -139,6 +139,8 @@ export default function SettingsPage() {
   }>>([]);
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
+  const [historyCategoryFilter, setHistoryCategoryFilter] = useState<string | null>(null);
+  const [historySearchFilter, setHistorySearchFilter] = useState<string | null>(null);
   const [academicYears, setAcademicYears] = useState<any[]>([]);
   const [activeAcademicYear, setActiveAcademicYear] = useState<any>(null);
   const [academicYearAction, setAcademicYearAction] = useState<'activate' | 'close' | 'generate' | null>(null);
@@ -525,7 +527,7 @@ export default function SettingsPage() {
     if (activeTab !== 'appareils') return;
     let cancelled = false;
     setDevicesLoading(true);
-    fetch('/api/sync/devices', { credentials: 'include' })
+    settingsService.getDevices(effectiveTenantId)
       .then((r) => r.json())
       .then((data) => {
         if (!cancelled && data?.devices) setDevicesList(data.devices);
@@ -533,7 +535,7 @@ export default function SettingsPage() {
       .catch(() => { if (!cancelled) setDevicesList([]); })
       .finally(() => { if (!cancelled) setDevicesLoading(false); });
     return () => { cancelled = true; };
-  }, [activeTab]);
+  }, [activeTab, effectiveTenantId]);
 
   const handleSaveIdentity = async () => {
     if (!changeReason.trim()) {
@@ -3768,35 +3770,76 @@ export default function SettingsPage() {
       case 'security':
         return (
           <div className="space-y-6">
+            {/* ── Politique de mots de passe ── */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Paramètres de sécurité</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Longueur minimale du mot de passe
-                    </label>
+              <h3 className="text-lg font-semibold text-gray-800 mb-1">Politique de mots de passe</h3>
+              <p className="text-sm text-gray-500 mb-4">Configurez les exigences de complexité et d&#39;expiration des mots de passe.</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Longueur minimale du mot de passe
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={securityForm.passwordMinLength ?? 8}
+                    onChange={(e) => setSecurityForm({ ...securityForm, passwordMinLength: parseInt(e.target.value) || 8 })}
+                    min={6}
+                    max={20}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Expiration mot de passe (jours, 0 = jamais)
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={securityForm.passwordExpirationDays ?? 0}
+                    onChange={(e) => setSecurityForm({ ...securityForm, passwordExpirationDays: parseInt(e.target.value) || 0 })}
+                    min={0}
+                    max={365}
+                  />
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  { key: 'passwordRequireUppercase', label: 'Majuscule requise' },
+                  { key: 'passwordRequireLowercase', label: 'Minuscule requise' },
+                  { key: 'passwordRequireNumbers', label: 'Chiffre requis' },
+                  { key: 'passwordRequireSpecial', label: 'Caractère spécial requis' },
+                ].map((item) => (
+                  <label key={item.key} className="flex items-center gap-2 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
                     <input
-                      type="number"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={securityForm.passwordMinLength || 8}
-                    onChange={(e) => setSecurityForm({ ...securityForm, passwordMinLength: parseInt(e.target.value) })}
-                      min={6}
-                      max={20}
+                      type="checkbox"
+                      checked={!!securityForm[item.key]}
+                      onChange={(e) => setSecurityForm({ ...securityForm, [item.key]: e.target.checked })}
+                      className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                     />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Durée de session (minutes)
-                    </label>
-                    <input
-                      type="number"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={securityForm.sessionTimeoutMinutes || 30}
-                    onChange={(e) => setSecurityForm({ ...securityForm, sessionTimeoutMinutes: parseInt(e.target.value) })}
-                      min={5}
-                      max={480}
-                    />
-                  </div>
+                    <span className="text-sm text-gray-700">{item.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Session et verrouillage ── */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-1">Session et verrouillage</h3>
+              <p className="text-sm text-gray-500 mb-4">Gérez la durée des sessions et les règles de blocage après échecs.</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Durée de session (minutes)
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={securityForm.sessionTimeoutMinutes ?? 30}
+                    onChange={(e) => setSecurityForm({ ...securityForm, sessionTimeoutMinutes: parseInt(e.target.value) || 30 })}
+                    min={5}
+                    max={480}
+                  />
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Tentatives de connexion max
@@ -3804,8 +3847,8 @@ export default function SettingsPage() {
                   <input
                     type="number"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={securityForm.maxLoginAttempts || 5}
-                    onChange={(e) => setSecurityForm({ ...securityForm, maxLoginAttempts: parseInt(e.target.value) })}
+                    value={securityForm.maxLoginAttempts ?? 5}
+                    onChange={(e) => setSecurityForm({ ...securityForm, maxLoginAttempts: parseInt(e.target.value) || 5 })}
                     min={3}
                     max={10}
                   />
@@ -3817,24 +3860,134 @@ export default function SettingsPage() {
                   <input
                     type="number"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={securityForm.lockoutDurationMinutes || 15}
-                    onChange={(e) => setSecurityForm({ ...securityForm, lockoutDurationMinutes: parseInt(e.target.value) })}
+                    value={securityForm.lockoutDurationMinutes ?? 15}
+                    onChange={(e) => setSecurityForm({ ...securityForm, lockoutDurationMinutes: parseInt(e.target.value) || 15 })}
                     min={5}
                     max={60}
                   />
                 </div>
               </div>
-              <div className="mt-6 flex justify-end">
-                <button
-                  onClick={handleSaveSecurity}
-                  disabled={saving}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    Enregistrer
+            </div>
+
+            {/* ── Authentification avancée ── */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-1">Authentification avancée</h3>
+              <p className="text-sm text-gray-500 mb-4">Activez l&#39;authentification à deux facteurs et la vérification d&#39;e-mail.</p>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                  <div>
+                    <h4 className="font-semibold text-gray-800">Authentification à deux facteurs (2FA)</h4>
+                    <p className="text-sm text-gray-600">Exiger une vérification supplémentaire lors de la connexion</p>
+                  </div>
+                  <button
+                    onClick={() => setSecurityForm({ ...securityForm, twoFactorEnabled: !securityForm.twoFactorEnabled })}
+                    className="p-2"
+                  >
+                    {securityForm.twoFactorEnabled ? (
+                      <ToggleRight className="w-6 h-6 text-green-600" />
+                    ) : (
+                      <ToggleLeft className="w-6 h-6 text-gray-400" />
+                    )}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                  <div>
+                    <h4 className="font-semibold text-gray-800">Vérification d&#39;e-mail obligatoire</h4>
+                    <p className="text-sm text-gray-600">Les utilisateurs doivent vérifier leur adresse e-mail avant d&#39;accéder à l&#39;application</p>
+                  </div>
+                  <button
+                    onClick={() => setSecurityForm({ ...securityForm, requireEmailVerification: !securityForm.requireEmailVerification })}
+                    className="p-2"
+                  >
+                    {securityForm.requireEmailVerification ? (
+                      <ToggleRight className="w-6 h-6 text-green-600" />
+                    ) : (
+                      <ToggleLeft className="w-6 h-6 text-gray-400" />
+                    )}
                   </button>
                 </div>
               </div>
+            </div>
+
+            {/* ── Conformité et rétention ── */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-1">Conformité et rétention des données</h3>
+              <p className="text-sm text-gray-500 mb-4">Gérez la conservation des données et la conformité réglementaire.</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Rétention des logs d&#39;audit (jours)
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={securityForm.auditLogRetentionDays ?? 90}
+                    onChange={(e) => setSecurityForm({ ...securityForm, auditLogRetentionDays: parseInt(e.target.value) || 90 })}
+                    min={30}
+                    max={365}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Durée de conservation des données (années)
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={securityForm.dataRetentionYears ?? 5}
+                    onChange={(e) => setSecurityForm({ ...securityForm, dataRetentionYears: parseInt(e.target.value) || 5 })}
+                    min={1}
+                    max={20}
+                  />
+                </div>
+              </div>
+              <div className="mt-4 space-y-3">
+                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                  <div>
+                    <h4 className="font-semibold text-gray-800">Conformité RGPD</h4>
+                    <p className="text-sm text-gray-600">Activer les fonctionnalités de conformité au Règlement Général sur la Protection des Données</p>
+                  </div>
+                  <button
+                    onClick={() => setSecurityForm({ ...securityForm, gdprCompliant: !securityForm.gdprCompliant })}
+                    className="p-2"
+                  >
+                    {securityForm.gdprCompliant ? (
+                      <ToggleRight className="w-6 h-6 text-green-600" />
+                    ) : (
+                      <ToggleLeft className="w-6 h-6 text-gray-400" />
+                    )}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                  <div>
+                    <h4 className="font-semibold text-gray-800">Accès inspection académique</h4>
+                    <p className="text-sm text-gray-600">Autoriser l&#39;accès en lecture seule aux inspecteurs de l&#39;académie</p>
+                  </div>
+                  <button
+                    onClick={() => setSecurityForm({ ...securityForm, allowInspectionAccess: !securityForm.allowInspectionAccess })}
+                    className="p-2"
+                  >
+                    {securityForm.allowInspectionAccess ? (
+                      <ToggleRight className="w-6 h-6 text-green-600" />
+                    ) : (
+                      <ToggleLeft className="w-6 h-6 text-gray-400" />
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Bouton de sauvegarde ── */}
+            <div className="flex justify-end">
+              <button
+                onClick={handleSaveSecurity}
+                disabled={saving}
+                className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Enregistrer les paramètres de sécurité
+              </button>
+            </div>
           </div>
         );
 
@@ -3851,12 +4004,13 @@ export default function SettingsPage() {
         return (
           <div className="space-y-6">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Paramètres ORION</h3>
+              <h3 className="text-lg font-semibold text-gray-800 mb-1">Paramètres ORION</h3>
+              <p className="text-sm text-gray-500 mb-4">Configurez l&#39;IA de pilotage ORION pour l&#39;analyse prédictive et les alertes.</p>
               <div className="space-y-4">
                 <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                   <div>
                     <h4 className="font-semibold text-gray-800">Activer ORION</h4>
-                    <p className="text-sm text-gray-600">Activez l'IA de pilotage ORION</p>
+                    <p className="text-sm text-gray-600">Activez l&#39;IA de pilotage ORION pour votre établissement</p>
                   </div>
                   <button
                     onClick={() => setOrionForm({ ...orionForm, isEnabled: !orionForm.isEnabled })}
@@ -3868,42 +4022,161 @@ export default function SettingsPage() {
                       <ToggleLeft className="w-6 h-6 text-gray-400" />
                     )}
                   </button>
-                  </div>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Seuil d'alerte critique
+                      Seuil d&#39;alerte critique
                     </label>
                     <input
                       type="number"
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={orionForm.alertThresholdCritical || 5}
-                      onChange={(e) => setOrionForm({ ...orionForm, alertThresholdCritical: parseInt(e.target.value) })}
+                      value={orionForm.alertThresholdCritical ?? 5}
+                      onChange={(e) => setOrionForm({ ...orionForm, alertThresholdCritical: parseInt(e.target.value) || 5 })}
+                      min={1}
+                      max={100}
                     />
-                </div>
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Seuil d'alerte warning
+                      Seuil d&#39;alerte warning
                     </label>
                     <input
                       type="number"
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={orionForm.alertThresholdWarning || 10}
-                      onChange={(e) => setOrionForm({ ...orionForm, alertThresholdWarning: parseInt(e.target.value) })}
+                      value={orionForm.alertThresholdWarning ?? 10}
+                      onChange={(e) => setOrionForm({ ...orionForm, alertThresholdWarning: parseInt(e.target.value) || 10 })}
+                      min={1}
+                      max={100}
                     />
                   </div>
                 </div>
-                <div className="mt-4 flex justify-end">
-                  <button
-                    onClick={handleSaveOrion}
-                    disabled={saving}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-1">Fréquence et insights</h3>
+              <p className="text-sm text-gray-500 mb-4">Configurez la fréquence de calcul des KPI et la génération automatique d&#39;insights.</p>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Fréquence de calcul des KPI
+                  </label>
+                  <select
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    value={orionForm.kpiCalculationFrequency ?? 'daily'}
+                    onChange={(e) => setOrionForm({ ...orionForm, kpiCalculationFrequency: e.target.value })}
                   >
-                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    Enregistrer
+                    <option value="realtime">Temps réel</option>
+                    <option value="hourly">Toutes les heures</option>
+                    <option value="daily">Quotidien</option>
+                    <option value="weekly">Hebdomadaire</option>
+                  </select>
+                </div>
+                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                  <div>
+                    <h4 className="font-semibold text-gray-800">Génération automatique d&#39;insights</h4>
+                    <p className="text-sm text-gray-600">ORION génère automatiquement des analyses et recommandations</p>
+                  </div>
+                  <button
+                    onClick={() => setOrionForm({ ...orionForm, autoGenerateInsights: !orionForm.autoGenerateInsights })}
+                    className="p-2"
+                  >
+                    {orionForm.autoGenerateInsights ? (
+                      <ToggleRight className="w-6 h-6 text-green-600" />
+                    ) : (
+                      <ToggleLeft className="w-6 h-6 text-gray-400" />
+                    )}
+                  </button>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Fréquence des insights
+                  </label>
+                  <select
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    value={orionForm.insightsFrequency ?? 'daily'}
+                    onChange={(e) => setOrionForm({ ...orionForm, insightsFrequency: e.target.value })}
+                  >
+                    <option value="hourly">Toutes les heures</option>
+                    <option value="daily">Quotidien</option>
+                    <option value="weekly">Hebdomadaire</option>
+                    <option value="monthly">Mensuel</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-1">Catégories KPI et exports</h3>
+              <p className="text-sm text-gray-500 mb-4">Sélectionnez les catégories de KPI visibles et autorisez les exports de données.</p>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Catégories KPI visibles
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+                    {[
+                      { value: 'attendance', label: 'Présence' },
+                      { value: 'grades', label: 'Notes' },
+                      { value: 'finance', label: 'Finance' },
+                      { value: 'discipline', label: 'Discipline' },
+                      { value: 'pedagogy', label: 'Pédagogie' },
+                      { value: 'hr', label: 'RH' },
+                      { value: 'enrollment', label: 'Inscriptions' },
+                      { value: 'exams', label: 'Examens' },
+                      { value: 'communication', label: 'Communication' },
+                      { value: 'infrastructure', label: 'Infrastructure' },
+                    ].map((cat) => {
+                      const selected = Array.isArray(orionForm.visibleKPICategories) ? orionForm.visibleKPICategories.includes(cat.value) : false;
+                      return (
+                        <label key={cat.value} className="flex items-center gap-2 p-2 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={(e) => {
+                              const current = Array.isArray(orionForm.visibleKPICategories) ? orionForm.visibleKPICategories : [];
+                              const updated = e.target.checked
+                                ? [...current, cat.value]
+                                : current.filter((c: string) => c !== cat.value);
+                              setOrionForm({ ...orionForm, visibleKPICategories: updated });
+                            }}
+                            className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">{cat.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                  <div>
+                    <h4 className="font-semibold text-gray-800">Autoriser les exports ORION</h4>
+                    <p className="text-sm text-gray-600">Permettre l&#39;export des données et rapports générés par ORION</p>
+                  </div>
+                  <button
+                    onClick={() => setOrionForm({ ...orionForm, allowOrionExports: !orionForm.allowOrionExports })}
+                    className="p-2"
+                  >
+                    {orionForm.allowOrionExports ? (
+                      <ToggleRight className="w-6 h-6 text-green-600" />
+                    ) : (
+                      <ToggleLeft className="w-6 h-6 text-gray-400" />
+                    )}
                   </button>
                 </div>
               </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                onClick={handleSaveOrion}
+                disabled={saving}
+                className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Enregistrer les paramètres ORION
+              </button>
             </div>
           </div>
         );
@@ -3912,12 +4185,13 @@ export default function SettingsPage() {
         return (
           <div className="space-y-6">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Paramètres ATLAS</h3>
+              <h3 className="text-lg font-semibold text-gray-800 mb-1">Paramètres ATLAS</h3>
+              <p className="text-sm text-gray-500 mb-4">Configurez le chatbot IA ATLAS pour l&#39;assistance aux utilisateurs.</p>
               <div className="space-y-4">
                 <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                   <div>
                     <h4 className="font-semibold text-gray-800">Activer ATLAS</h4>
-                    <p className="text-sm text-gray-600">Activez le chatbot IA ATLAS</p>
+                    <p className="text-sm text-gray-600">Activez le chatbot IA ATLAS pour votre établissement</p>
                   </div>
                   <button
                     onClick={() => setAtlasForm({ ...atlasForm, isEnabled: !atlasForm.isEnabled })}
@@ -3929,12 +4203,79 @@ export default function SettingsPage() {
                       <ToggleLeft className="w-6 h-6 text-gray-400" />
                     )}
                   </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-1">Portée et modules</h3>
+              <p className="text-sm text-gray-500 mb-4">Définissez le périmètre d&#39;action d&#39;ATLAS et les modules accessibles.</p>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Portée d&#39;ATLAS
+                  </label>
+                  <select
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    value={atlasForm.scope ?? 'all'}
+                    onChange={(e) => setAtlasForm({ ...atlasForm, scope: e.target.value })}
+                  >
+                    <option value="all">Tous les modules</option>
+                    <option value="students">Élèves et scolarité uniquement</option>
+                    <option value="finance">Finances uniquement</option>
+                    <option value="pedagogy">Pédagogie uniquement</option>
+                    <option value="hr">RH uniquement</option>
+                    <option value="custom">Personnalisé</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Modules autorisés
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                    {[
+                      { value: 'students', label: 'Élèves' },
+                      { value: 'finance', label: 'Finances' },
+                      { value: 'pedagogy', label: 'Pédagogie' },
+                      { value: 'hr', label: 'RH & Paie' },
+                      { value: 'exams', label: 'Examens' },
+                      { value: 'communication', label: 'Communication' },
+                      { value: 'discipline', label: 'Discipline' },
+                      { value: 'attendance', label: 'Présence' },
+                    ].map((mod) => {
+                      const selected = Array.isArray(atlasForm.allowedModules) ? atlasForm.allowedModules.includes(mod.value) : false;
+                      return (
+                        <label key={mod.value} className="flex items-center gap-2 p-2 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={(e) => {
+                              const current = Array.isArray(atlasForm.allowedModules) ? atlasForm.allowedModules : [];
+                              const updated = e.target.checked
+                                ? [...current, mod.value]
+                                : current.filter((m: string) => m !== mod.value);
+                              setAtlasForm({ ...atlasForm, allowedModules: updated });
+                            }}
+                            className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">{mod.label}</span>
+                        </label>
+                      );
+                    })}
                   </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-1">Conversation et langue</h3>
+              <p className="text-sm text-gray-500 mb-4">Configurez les limites de conversation et les options de transfert.</p>
+              <div className="space-y-4">
                 <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                   <div>
                     <h4 className="font-semibold text-gray-800">Transfert humain</h4>
-                    <p className="text-sm text-gray-600">Permettre le transfert vers un opérateur humain</p>
-                </div>
+                    <p className="text-sm text-gray-600">Permettre le transfert vers un opérateur humain quand ATLAS ne peut répondre</p>
+                  </div>
                   <button
                     onClick={() => setAtlasForm({ ...atlasForm, allowHumanHandoff: !atlasForm.allowHumanHandoff })}
                     className="p-2"
@@ -3946,17 +4287,63 @@ export default function SettingsPage() {
                     )}
                   </button>
                 </div>
-                <div className="mt-4 flex justify-end">
-                  <button
-                    onClick={handleSaveAtlas}
-                    disabled={saving}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Historique de conversation (jours)
+                    </label>
+                    <input
+                      type="number"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={atlasForm.conversationHistoryDays ?? 30}
+                      onChange={(e) => setAtlasForm({ ...atlasForm, conversationHistoryDays: parseInt(e.target.value) || 30 })}
+                      min={7}
+                      max={365}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Max conversations par jour
+                    </label>
+                    <input
+                      type="number"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={atlasForm.maxConversationsPerDay ?? 50}
+                      onChange={(e) => setAtlasForm({ ...atlasForm, maxConversationsPerDay: parseInt(e.target.value) || 50 })}
+                      min={1}
+                      max={1000}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Langue principale
+                  </label>
+                  <select
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    value={atlasForm.language ?? 'fr'}
+                    onChange={(e) => setAtlasForm({ ...atlasForm, language: e.target.value })}
                   >
-                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    Enregistrer
-                  </button>
+                    <option value="fr">Français</option>
+                    <option value="en">Anglais</option>
+                    <option value="ar">Arabe</option>
+                    <option value="es">Espagnol</option>
+                    <option value="pt">Portugais</option>
+                    <option value="bilingual">Bilingue (FR/EN)</option>
+                  </select>
                 </div>
               </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                onClick={handleSaveAtlas}
+                disabled={saving}
+                className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Enregistrer les paramètres ATLAS
+              </button>
             </div>
           </div>
         );
@@ -3965,12 +4352,13 @@ export default function SettingsPage() {
         return (
           <div className="space-y-6">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Synchronisation Offline</h3>
+              <h3 className="text-lg font-semibold text-gray-800 mb-1">Synchronisation Offline</h3>
+              <p className="text-sm text-gray-500 mb-4">Configurez le mode hors ligne pour permettre l&#39;utilisation de l&#39;application sans connexion internet.</p>
               <div className="space-y-4">
                 <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                   <div>
                     <h4 className="font-semibold text-gray-800">Activer le mode offline</h4>
-                    <p className="text-sm text-gray-600">Permet l'utilisation de l'application hors ligne</p>
+                    <p className="text-sm text-gray-600">Permet l&#39;utilisation de l&#39;application hors ligne avec synchronisation automatique</p>
                   </div>
                   <button
                     onClick={() => setOfflineForm({ ...offlineForm, isEnabled: !offlineForm.isEnabled })}
@@ -3991,10 +4379,12 @@ export default function SettingsPage() {
                     <input
                       type="number"
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={offlineForm.syncFrequencyMinutes || 15}
-                      onChange={(e) => setOfflineForm({ ...offlineForm, syncFrequencyMinutes: parseInt(e.target.value) })}
+                      value={offlineForm.syncFrequencyMinutes ?? 15}
+                      onChange={(e) => setOfflineForm({ ...offlineForm, syncFrequencyMinutes: parseInt(e.target.value) || 15 })}
+                      min={1}
+                      max={60}
                     />
-              </div>
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Durée max hors ligne (jours)
@@ -4002,22 +4392,97 @@ export default function SettingsPage() {
                     <input
                       type="number"
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={offlineForm.maxOfflineDays || 7}
-                      onChange={(e) => setOfflineForm({ ...offlineForm, maxOfflineDays: parseInt(e.target.value) })}
+                      value={offlineForm.maxOfflineDays ?? 7}
+                      onChange={(e) => setOfflineForm({ ...offlineForm, maxOfflineDays: parseInt(e.target.value) || 7 })}
+                      min={1}
+                      max={30}
                     />
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-                <div className="mt-4 flex justify-end">
-                  <button
-                    onClick={handleSaveOffline}
-                    disabled={saving}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-1">Résolution de conflits et comportement</h3>
+              <p className="text-sm text-gray-500 mb-4">Définissez comment les conflits de données sont résolus et le comportement de la synchronisation.</p>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Stratégie de résolution de conflits
+                  </label>
+                  <select
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    value={offlineForm.conflictResolution ?? 'SERVER_WINS'}
+                    onChange={(e) => setOfflineForm({ ...offlineForm, conflictResolution: e.target.value })}
                   >
-                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    Enregistrer
+                    <option value="SERVER_WINS">Le serveur a priorité (SERVER_WINS)</option>
+                    <option value="CLIENT_WINS">Le client a priorité (CLIENT_WINS)</option>
+                    <option value="LAST_WRITE_WINS">Dernière écriture gagne (LAST_WRITE_WINS)</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    En cas de données modifiées simultanément en local et sur le serveur, cette stratégie détermine quelle version est conservée.
+                  </p>
+                </div>
+                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                  <div>
+                    <h4 className="font-semibold text-gray-800">Sync automatique à la reconnexion</h4>
+                    <p className="text-sm text-gray-600">Synchroniser automatiquement les données locales dès que la connexion est rétablie</p>
+                  </div>
+                  <button
+                    onClick={() => setOfflineForm({ ...offlineForm, autoSyncOnConnect: !offlineForm.autoSyncOnConnect })}
+                    className="p-2"
+                  >
+                    {offlineForm.autoSyncOnConnect ? (
+                      <ToggleRight className="w-6 h-6 text-green-600" />
+                    ) : (
+                      <ToggleLeft className="w-6 h-6 text-gray-400" />
+                    )}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                  <div>
+                    <h4 className="font-semibold text-gray-800">Autoriser les modifications hors ligne</h4>
+                    <p className="text-sm text-gray-600">Permettre la création et modification de données en mode hors ligne</p>
+                  </div>
+                  <button
+                    onClick={() => setOfflineForm({ ...offlineForm, allowOfflineModification: !offlineForm.allowOfflineModification })}
+                    className="p-2"
+                  >
+                    {offlineForm.allowOfflineModification ? (
+                      <ToggleRight className="w-6 h-6 text-green-600" />
+                    ) : (
+                      <ToggleLeft className="w-6 h-6 text-gray-400" />
+                    )}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                  <div>
+                    <h4 className="font-semibold text-gray-800">Synchronisation en arrière-plan</h4>
+                    <p className="text-sm text-gray-600">Continuer la synchronisation même quand l&#39;application est en arrière-plan</p>
+                  </div>
+                  <button
+                    onClick={() => setOfflineForm({ ...offlineForm, syncOnBackground: !offlineForm.syncOnBackground })}
+                    className="p-2"
+                  >
+                    {offlineForm.syncOnBackground ? (
+                      <ToggleRight className="w-6 h-6 text-green-600" />
+                    ) : (
+                      <ToggleLeft className="w-6 h-6 text-gray-400" />
+                    )}
                   </button>
                 </div>
               </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                onClick={handleSaveOffline}
+                disabled={saving}
+                className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Enregistrer les paramètres offline
+              </button>
             </div>
           </div>
         );
@@ -4080,7 +4545,7 @@ export default function SettingsPage() {
                                 const ok = await confirmDialog.warning('Les sessions et la sync offline de cet appareil seront invalidées. Voulez-vous continuer ?', 'Révoquer l\'appareil');
                                 if (!ok) return;
                                 try {
-                                  const res = await fetch(`/api/auth/devices/${d.id}`, { method: 'DELETE', credentials: 'include' });
+                                  const res = await settingsService.revokeDevice(d.id);
                                   const data = await res.json().catch(() => ({}));
                                   if (res.ok) {
                                     showToast('success', data?.message || 'Appareil révoqué');
@@ -4110,32 +4575,92 @@ export default function SettingsPage() {
           <div className="space-y-6">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               <h3 className="text-lg font-semibold text-gray-800 mb-4">Historique des modifications</h3>
-                {history.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <History className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+              <div className="flex flex-wrap gap-3 mb-4">
+                <select
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  value={historyCategoryFilter ?? ''}
+                  onChange={(e) => setHistoryCategoryFilter(e.target.value || null)}
+                >
+                  <option value="">Toutes les catégories</option>
+                  <option value="identity">Identité</option>
+                  <option value="academic">Année scolaire</option>
+                  <option value="structure">Structure</option>
+                  <option value="bilingual">Bilingue</option>
+                  <option value="features">Modules</option>
+                  <option value="security">Sécurité</option>
+                  <option value="communication">Communication</option>
+                  <option value="orion">ORION</option>
+                  <option value="atlas">ATLAS</option>
+                  <option value="offline">Offline</option>
+                  <option value="billing">Facturation</option>
+                  <option value="roles">Rôles</option>
+                </select>
+                <input
+                  type="text"
+                  placeholder="Rechercher par clé..."
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={historySearchFilter ?? ''}
+                  onChange={(e) => setHistorySearchFilter(e.target.value || null)}
+                />
+              </div>
+              {history.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <History className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                   <p>Aucune modification enregistrée.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {history.map((item) => (
-                      <div
-                        key={item.id}
-                        className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50"
-                      >
-                        <div className="flex justify-between items-start">
-                          <div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {history
+                    .filter((item) => {
+                      if (historyCategoryFilter && item.category !== historyCategoryFilter) return false;
+                      if (historySearchFilter && !item.key?.toLowerCase().includes(historySearchFilter.toLowerCase())) return false;
+                      return true;
+                    })
+                    .map((item) => (
+                    <div
+                      key={item.id}
+                      className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50"
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
                             <h4 className="font-semibold text-gray-800">{item.key}</h4>
-                            <p className="text-sm text-gray-600">{item.category}</p>
-                            <p className="text-xs text-gray-500 mt-1">
+                            {item.category && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                {item.category}
+                              </span>
+                            )}
+                          </div>
+                          {(item.oldValue !== undefined || item.newValue !== undefined) && (
+                            <div className="mt-2 text-sm grid grid-cols-1 md:grid-cols-2 gap-2">
+                              {item.oldValue !== undefined && (
+                                <div className="p-2 bg-red-50 border border-red-200 rounded">
+                                  <span className="text-xs font-medium text-red-700">Ancienne valeur</span>
+                                  <p className="text-gray-700 mt-0.5">
+                                    {typeof item.oldValue === 'object' ? JSON.stringify(item.oldValue, null, 2) : String(item.oldValue)}
+                                  </p>
+                                </div>
+                              )}
+                              {item.newValue !== undefined && (
+                                <div className="p-2 bg-green-50 border border-green-200 rounded">
+                                  <span className="text-xs font-medium text-green-700">Nouvelle valeur</span>
+                                  <p className="text-gray-700 mt-0.5">
+                                    {typeof item.newValue === 'object' ? JSON.stringify(item.newValue, null, 2) : String(item.newValue)}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          <p className="text-xs text-gray-500 mt-2">
                             {new Date(item.changedAt).toLocaleString('fr-FR')}
                             {item.user && ` par ${item.user.firstName} ${item.user.lastName}`}
-                            </p>
-                          </div>
+                          </p>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         );

@@ -1,23 +1,15 @@
 /**
  * ============================================================================
  * API PROXY - SETTINGS BILINGUAL (Option bilingue)
- * Même pattern que education/structure et education/classrooms.
  * ============================================================================
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
-import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
-
-const API_BASE_URL = getApiBaseUrlForRoutes();
+import { fetchSettingsBackend } from '@/lib/api/settings-proxy-fetch';
 
 export async function GET(request: NextRequest) {
   try {
-    const headers = await getProxyAuthHeaders(request);
-    const url = new URL(`${API_BASE_URL}/settings/bilingual`);
-    const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
-    if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
-    const response = await fetch(url.toString(), { headers });
+    const response = await fetchSettingsBackend(request, 'settings/bilingual');
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
@@ -28,18 +20,10 @@ export async function GET(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const headers = await getProxyAuthHeaders(request);
-    const hasAuth = headers['Authorization'] || headers['Cookie'];
-    if (!hasAuth) {
-      return NextResponse.json({ error: 'Non authentifié', code: 'UNAUTHORIZED' }, { status: 401 });
-    }
-    const body = await request.json().catch(() => ({}));
-    const url = new URL(`${API_BASE_URL}/settings/bilingual`);
-    const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
-    if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
-    const response = await fetch(url.toString(), {
+    const body = await request.json();
+    const response = await fetchSettingsBackend(request, 'settings/bilingual', {
       method: 'PUT',
-      headers,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     const data = await response.json().catch(() => ({}));

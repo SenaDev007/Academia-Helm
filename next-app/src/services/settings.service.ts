@@ -1111,3 +1111,16 @@ export async function getFeaturesBillingImpact(tenantId?: string | null) {
   const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
   return fetchWithAuth(`${BASE_URL}/billing/features-impact${qs}`);
 }
+
+// ─── Devices / Appareils autorisés ───
+
+export async function getDevices(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`/api/sync/devices${qs}`);
+}
+
+export async function revokeDevice(deviceId: string) {
+  return fetchWithAuth(`/api/auth/devices/${deviceId}`, {
+    method: 'DELETE',
+  });
+}

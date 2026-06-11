@@ -72,6 +72,17 @@ export class SchoolSearchService {
             educationLevels: true,
           },
         },
+        identityProfiles: {
+          where: { isActive: true },
+          select: {
+            logoUrl: true,
+            city: true,
+            country: true,
+            phonePrimary: true,
+            email: true,
+          },
+          take: 1,
+        },
         country: {
           select: {
             name: true,
@@ -85,14 +96,16 @@ export class SchoolSearchService {
       // Formater les résultats (schools est une relation 1-1, donc un objet ou null)
       const results = tenants.map((tenant) => {
         const school = tenant.schools;
-        const address = school?.address || '';
-        const city = this.extractCityFromAddress(address);
+        const activeProfile = tenant.identityProfiles?.[0];
+        // Priorité : TenantIdentityProfile (source de vérité) > School.logo (fallback)
+        const logoUrl = activeProfile?.logoUrl || school?.logo || null;
+        const city = activeProfile?.city || this.extractCityFromAddress(school?.address || '');
 
         return {
           id: tenant.id,
           name: tenant.name,
           slug: tenant.slug,
-          logoUrl: school?.logo || null,
+          logoUrl,
           city: city || null,
           schoolType: this.getSchoolTypeFromLevels(school?.educationLevels || []),
         };
@@ -136,6 +149,17 @@ export class SchoolSearchService {
             educationLevels: true,
           },
         },
+        identityProfiles: {
+          where: { isActive: true },
+          select: {
+            logoUrl: true,
+            city: true,
+            country: true,
+            phonePrimary: true,
+            email: true,
+          },
+          take: 1,
+        },
         country: {
           select: {
             name: true,
@@ -151,15 +175,17 @@ export class SchoolSearchService {
       // Formater les résultats (schools est une relation 1-1, donc un objet ou null)
       const results = tenants.map((tenant) => {
         const school = tenant.schools;
-        const address = school?.address || '';
-        const city = this.extractCityFromAddress(address);
+        const activeProfile = tenant.identityProfiles?.[0];
+        // Priorité : TenantIdentityProfile (source de vérité) > School.logo (fallback)
+        const logoUrl = activeProfile?.logoUrl || school?.logo || null;
+        const city = activeProfile?.city || this.extractCityFromAddress(school?.address || '');
 
         return {
           id: tenant.id,
           name: tenant.name,
           slug: tenant.slug,
           subdomain: tenant.subdomain || null,
-          logoUrl: school?.logo || null,
+          logoUrl,
           city: city || null,
           schoolType: this.getSchoolTypeFromLevels(school?.educationLevels || []),
           country: tenant.country?.name || null,
@@ -204,6 +230,17 @@ export class SchoolSearchService {
               educationLevels: true,
             },
           },
+          identityProfiles: {
+            where: { isActive: true },
+            select: {
+              logoUrl: true,
+              city: true,
+              country: true,
+              phonePrimary: true,
+              email: true,
+            },
+            take: 1,
+          },
           country: {
             select: {
               name: true,
@@ -238,8 +275,13 @@ export class SchoolSearchService {
       // 3. Merge school data with job counts
       const results = tenants.map((tenant) => {
         const school = tenant.schools;
-        const address = school?.address || '';
-        const city = this.extractCityFromAddress(address);
+        const activeProfile = tenant.identityProfiles?.[0];
+        // Priorité : TenantIdentityProfile (source de vérité) > School.logo (fallback)
+        const logoUrl = activeProfile?.logoUrl || school?.logo || null;
+        const city = activeProfile?.city || this.extractCityFromAddress(school?.address || '');
+        const country = activeProfile?.country || tenant.country?.name || null;
+        const phone = activeProfile?.phonePrimary || null;
+        const email = activeProfile?.email || null;
 
         return {
           id: tenant.id,
@@ -249,10 +291,12 @@ export class SchoolSearchService {
           tenantName: tenant.name,
           slug: tenant.slug,
           subdomain: tenant.subdomain || null,
-          logoUrl: school?.logo || null,
+          logoUrl,
           city: city || null,
+          country,
+          primaryPhone: phone,
+          primaryEmail: email,
           schoolType: this.getSchoolTypeFromLevels(school?.educationLevels || []),
-          country: tenant.country?.name || null,
           activeJobsCount: countMap.get(tenant.id) || 0,
         };
       });

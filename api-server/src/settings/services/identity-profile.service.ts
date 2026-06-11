@@ -430,6 +430,7 @@ export class IdentityProfileService {
 
   /**
    * Synchronise les données vers SchoolSettings pour rétrocompatibilité
+   * ET vers School.logo pour les endpoints publics qui lisent directement School
    */
   private async syncToSchoolSettings(tenantId: string, profile: any) {
     await this.prisma.schoolSettings.upsert({
@@ -484,6 +485,23 @@ export class IdentityProfileService {
         version: profile.version,
       },
     });
+
+    // Synchroniser aussi School.logo pour les endpoints publics (SchoolSearchService, etc.)
+    // qui lisent directement tenant.schools.logo au lieu de TenantIdentityProfile.logoUrl
+    if (profile.logoUrl !== undefined) {
+      try {
+        await this.prisma.school.updateMany({
+          where: { tenantId },
+          data: {
+            ...prismaUpdateDefaults(),
+            logo: profile.logoUrl,
+          },
+        });
+      } catch (err) {
+        // Non-bloquant : School peut ne pas exister pour ce tenant
+        console.warn(`[syncToSchoolSettings] Could not sync School.logo for tenant ${tenantId}:`, err?.message);
+      }
+    }
   }
 
   /**

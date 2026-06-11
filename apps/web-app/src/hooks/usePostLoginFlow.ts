@@ -10,7 +10,6 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import {
   executePostLoginFlow,
   type PostLoginFlowResult,
@@ -45,7 +44,6 @@ export interface UsePostLoginFlowReturn {
  * ```
  */
 export function usePostLoginFlow(): UsePostLoginFlowReturn {
-  const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState<PostLoginFlowProgress | null>(null);
   const [result, setResult] = useState<PostLoginFlowResult | null>(null);
@@ -92,13 +90,16 @@ export function usePostLoginFlow(): UsePostLoginFlowReturn {
         setError(flowResult.error);
 
         // Gérer les erreurs critiques
+        // IMPORTANT: Utiliser window.location.href au lieu de router.push
+        // pour forcer un rechargement complet de la page, ce qui garantit
+        // que les cookies sont correctement traités sur mobile.
         if (flowResult.error.code === 'AUTH_ERROR') {
-          router.push('/login');
+          window.location.href = '/login';
           return;
         }
 
         if (flowResult.error.code === 'TENANT_NOT_FOUND' || flowResult.error.code === 'TENANT_SUSPENDED') {
-          router.push('/tenant-not-found');
+          window.location.href = '/tenant-not-found';
           return;
         }
 
@@ -117,7 +118,7 @@ export function usePostLoginFlow(): UsePostLoginFlowReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [router]);
+  }, []);
 
   return {
     isLoading,

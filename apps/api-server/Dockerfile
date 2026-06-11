@@ -32,13 +32,18 @@ RUN npm run build
 
 FROM base
 
+# Install Chromium for Puppeteer PDF generation + openssl for Prisma
 RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y \
-    openssl && \
-    rm -rf /var/lib/apt/lists /var/cache/apt/archives
+    openssl \
+    chromium \
+    fonts-liberation \
+    fonts-noto-color-emoji \
+    && rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
-# Puppeteer: Chromium not installed in production — PDF generation disabled until Chromium is added
+# Puppeteer: use system Chromium (installed above)
 ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/node_modules ./node_modules
@@ -48,4 +53,14 @@ COPY --from=build /app/prisma ./prisma
 EXPOSE 3000
 
 # TypeORM removed — but Prisma with 270+ models still needs ~2GB during startup
-CMD [ "node", "--max-old-space-size=3072", "dist/main.js" ]
+# Run migrations BEFORE starting the server (non-blocking: separate process)
+# If migrations fail, the server still starts (fallback SQL in main.ts covers critical columns)
+#
+# MIGRATION STRATEGY:
+# 1. First, try `prisma migrate deploy` to apply all pending migrations.
+# 2. If it fails, use `prisma migrate resolve --applied` to mark conflicted
+#    migrations as applied (tables/columns may already exist from fallback SQL
+#    in main.ts during previous server starts).
+# 3. Retry `prisma migrate deploy` after resolving conflicts.
+# 4. If still failing, continue with fallback SQL (non-blocking).
+CMD [ "sh", "-c", "echo '📦 Running Prisma migrations...' && if npx prisma migrate deploy --schema=prisma/schema.prisma 2>&1; then echo '✅ All migrations applied'; else echo '⚠️ Migration failed, resolving conflicts...'; for m in 20260606120000_add_staff_photo_matricule_document_structuring 20260606140000_add_candidate_documents 20260606160000_recruitment_tables_complete 20260606180000_add_country_city_to_hr_candidates 20260606200000_add_staffId_to_hr_applications 20260606220000_add_job_number_sequence 20260607080000_add_interview_status_result_feedback 20260608120000_add_staff_termination_fields 20260609100000_add_published_at_to_hr_jobs 20260609120000_add_staff_hr_fields; do npx prisma migrate resolve --applied $m 2>/dev/null || true; done; echo '📦 Retrying migrations after conflict resolution...'; npx prisma migrate deploy --schema=prisma/schema.prisma 2>&1 || echo '⚠️ Migration still failed, continuing with fallback SQL'; fi && echo '🚀 Starting API server...' && node --max-old-space-size=3072 dist/main.js" ]

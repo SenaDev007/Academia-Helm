@@ -2,17 +2,25 @@
  * Appels client vers les proxies Next — Structure académique & séries (Module 2)
  */
 
-import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
+import { getClientAuthorizationHeader, getClientTenantId } from '@/lib/auth/client-access-token';
 
 export async function pedagogyFetch<T>(
   path: string,
   options?: { method?: string; body?: any; headers?: Record<string, string> },
 ): Promise<T> {
+  // Construire les headers avec X-Tenant-ID explicite
+  const tenantId = getClientTenantId();
+  const extraHeaders: Record<string, string> = {};
+  if (tenantId) {
+    extraHeaders['x-tenant-id'] = tenantId;
+  }
+
   const res = await fetch(path, {
     method: options?.method ?? 'GET',
     headers: {
       ...(options?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
       ...getClientAuthorizationHeader(),
+      ...extraHeaders,
       ...options?.headers,
     },
     credentials: 'include',

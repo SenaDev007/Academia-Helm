@@ -10,7 +10,7 @@
  * ============================================================================
  */
 
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, BadRequestException } from '@nestjs/common';
 import { LeavesPrismaService } from './leaves-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
@@ -23,10 +23,18 @@ export class LeavesPrismaController {
   constructor(private readonly leavesService: LeavesPrismaService) {}
 
   @Post('requests')
-  async createLeaveRequest(@GetTenant() tenant: any, @Body() data: CreateLeaveRequestDto) {
+  async createLeaveRequest(
+    @GetTenant() tenant: any,
+    @Body() data: CreateLeaveRequestDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
     return this.leavesService.createLeaveRequest({
       ...data,
-      tenantId: tenant.id,
+      tenantId: tid,
     });
   }
 
@@ -37,8 +45,10 @@ export class LeavesPrismaController {
     @Query('staffId') staffId?: string,
     @Query('status') status?: string,
     @Query('type') type?: string,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.leavesService.findAllLeaveRequests(tenant.id, {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.leavesService.findAllLeaveRequests(tid, {
       academicYearId,
       staffId,
       status,
@@ -47,8 +57,13 @@ export class LeavesPrismaController {
   }
 
   @Get('requests/:id')
-  async findLeaveRequestById(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.leavesService.findLeaveRequestById(id, tenant.id);
+  async findLeaveRequestById(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.leavesService.findLeaveRequestById(id, tid);
   }
 
   @Put('requests/:id/process')
@@ -56,19 +71,37 @@ export class LeavesPrismaController {
     @GetTenant() tenant: any,
     @Param('id') id: string,
     @Body() body: ProcessLeaveRequestDto,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
     return this.leavesService.processLeaveRequest(
-      id, tenant.id, body.status, body.approvedBy, body.rejectedReason,
+      id, tid, body.status, body.approvedBy, body.rejectedReason,
     );
   }
 
   @Delete('requests/:id')
-  async deleteLeaveRequest(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.leavesService.deleteLeaveRequest(id, tenant.id);
+  async deleteLeaveRequest(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.leavesService.deleteLeaveRequest(id, tid);
   }
 
   @Get('staff/:staffId/balance')
-  async getLeaveBalance(@GetTenant() tenant: any, @Param('staffId') staffId: string) {
-    return this.leavesService.calculateLeaveBalance(staffId, tenant.id);
+  async getLeaveBalance(
+    @GetTenant() tenant: any,
+    @Param('staffId') staffId: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.leavesService.calculateLeaveBalance(staffId, tid);
   }
 }

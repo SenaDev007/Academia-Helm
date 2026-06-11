@@ -60,7 +60,7 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
 
   return (
     <OfflineGuard>
-      <div className="min-h-screen bg-gray-50 flex flex-col">
+      <div className="min-h-screen bg-gray-50 flex flex-col overflow-x-hidden">
         {/* Top Bar - Fixe en haut, toujours visible — hamburger mobile */}
         <PilotageTopBar
           user={user}
@@ -99,18 +99,12 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
               sidebarOpen ? 'lg:ml-64' : 'lg:ml-16'
             }`}
           >
-            <AnimatePresence mode="wait">
-              <motion.div
+            <div
               className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto w-full"
               key={`${pathname}-${currentLevel?.id ?? 'no-level'}`}
-              initial={pageMotion.initial}
-              animate={pageMotion.animate}
-              exit={pageMotion.exit}
-              transition={pageMotion.transition}
-              >
-                {children}
-              </motion.div>
-            </AnimatePresence>
+            >
+              {children}
+            </div>
           </main>
         </div>
 

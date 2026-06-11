@@ -1,10 +1,11 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, HttpException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { StorageService } from '../common/services/storage.service';
 import { OpenRouterService } from '../common/services/openrouter.service';
 import { ContractsPrismaService } from './contracts-prisma.service';
 import { StaffMatriculeService } from './staff-matricule.service';
-import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
+import { prismaCreateDefaults, prismaUpdateDefaults, prismaCreateNoCreatedAt, prismaCreateNoUpdatedAt, prismaCreateIdOnly, uuid, now } from '../common/utils/prisma-helpers';
+import { Prisma } from '@prisma/client';
 
 /**
  * Valid status transitions for the recruitment pipeline.
@@ -107,60 +108,178 @@ export class RecruitmentPrismaService {
 
     const seq = await this.prisma.jobNumberSequence.upsert({
       where: { tenantId },
-      create: { tenantId, current: 1 },
+      create: { ...prismaCreateNoCreatedAt(), tenantId, current: 1 },
       update: { current: { increment: 1 } },
     });
     const padded = String(seq.current).padStart(5, '0');
     return `OFF-${prefix}-${padded}`;
   }
 
+  /**
+   * Generate a URL-safe slug from a job title + ref combination.
+   * Format: <slugified-title>-<ref-suffix>
+   * Example: "professeur-maths-off-csp-00001"
+   */
+  private generateSlug(title: string, ref: string): string {
+    const slugifiedTitle = title
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Remove accents
+      .replace(/[^a-z0-9]+/g, '-')      // Replace non-alphanumeric with dash
+      .replace(/^-+|-+$/g, '')          // Trim leading/trailing dashes
+      .slice(0, 60);                     // Limit length
+    const refSuffix = ref.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    return `${slugifiedTitle}-${refSuffix}`;
+  }
+
   async createJob(tenantId: string, data: any) {
     // Generate sequential ref if not provided
     const ref = data.ref || await this.generateJobRef(tenantId);
+    // Map frontend aliases to DB column names
+    const dept = data.dept || data.department || '';
+    const loc = data.loc || data.location || '';
+    const missions = data.missions || data.keyMissions || null;
+    const academicLevel = data.academicLevel || data.requiredEducation || null;
+    const experience = data.experience || data.requiredExperience || null;
+    // If status is PUBLIÉE, set publishedAt to now()
+    const publishedAt = data.status === 'PUBLIÉE' ? new Date() : null;
+    const slug = data.slug || this.generateSlug(data.title, ref);
     return this.prisma.hrJob.create({
       data: {
         ...prismaCreateDefaults(),
         tenantId,
         ref,
+        slug,
         title: data.title,
-        dept: data.dept,
-        loc: data.loc,
-        status: data.status || 'BROUILLON', // PUBLIÉE, FERMÉE, ARCHIVÉE
+        dept,
+        loc,
+        status: data.status || 'BROUILLON', // PUBLIÉE, FERMÉE, ARCHIVÉE, DÉSACTIVÉE
         description: data.description,
-        missions: data.missions,
+        missions,
         responsibilities: data.responsibilities,
-        academicLevel: data.academicLevel,
-        experience: data.experience,
+        academicLevel,
+        experience,
         skillsRequired: data.skillsRequired,
         salary: data.salary,
         contractType: data.contractType,
+        publishedAt,
       },
     });
   }
 
   async updateJob(id: string, data: any) {
+    // Map frontend aliases to DB column names
+    const dept = data.dept || data.department;
+    const loc = data.loc || data.location;
+    const missions = data.missions || data.keyMissions;
+    const academicLevel = data.academicLevel || data.requiredEducation;
+    const experience = data.experience || data.requiredExperience;
+
+    // If status is being changed to PUBLIÉE, update publishedAt
+    // (unless explicitly provided, e.g. during republish)
+    const publishedAt = data.status === 'PUBLIÉE' ? new Date() : undefined;
+
+    // If title changes, regenerate slug from new title + current ref
+    let slugUpdate: Record<string, string> = {};
+    if (data.title !== undefined) {
+      const current = await this.prisma.hrJob.findUnique({ where: { id }, select: { ref: true } });
+      if (current) {
+        slugUpdate = { slug: this.generateSlug(data.title, current.ref) };
+      }
+    }
     return this.prisma.hrJob.update({
       where: { id },
       data: {
         ...prismaUpdateDefaults(),
         ...(data.title !== undefined && { title: data.title }),
-        ...(data.dept !== undefined && { dept: data.dept }),
-        ...(data.loc !== undefined && { loc: data.loc }),
+        ...slugUpdate,
+        ...(dept !== undefined && { dept }),
+        ...(loc !== undefined && { loc }),
         ...(data.ref !== undefined && { ref: data.ref }),
         ...(data.status !== undefined && { status: data.status }),
         ...(data.description !== undefined && { description: data.description }),
-        ...(data.missions !== undefined && { missions: data.missions }),
+        ...(missions !== undefined && { missions }),
         ...(data.responsibilities !== undefined && { responsibilities: data.responsibilities }),
-        ...(data.academicLevel !== undefined && { academicLevel: data.academicLevel }),
-        ...(data.experience !== undefined && { experience: data.experience }),
+        ...(academicLevel !== undefined && { academicLevel }),
+        ...(experience !== undefined && { experience }),
         ...(data.skillsRequired !== undefined && { skillsRequired: data.skillsRequired }),
         ...(data.salary !== undefined && { salary: data.salary }),
         ...(data.contractType !== undefined && { contractType: data.contractType }),
+        ...(publishedAt !== undefined && { publishedAt }),
       },
     });
   }
 
+  /**
+   * Désactiver une offre d'emploi — passe le statut à DÉSACTIVÉE.
+   * L'offre n'est plus visible publiquement mais n'est pas supprimée.
+   * Les candidatures existantes sont préservées.
+   */
+  async deactivateJob(id: string) {
+    const job = await this.prisma.hrJob.findUnique({ where: { id } });
+    if (!job) {
+      throw new NotFoundException(`Offre d'emploi avec l'ID ${id} non trouvée`);
+    }
+    if (job.status !== 'PUBLIÉE') {
+      throw new BadRequestException(
+        `Seule une offre publiée peut être désactivée. Statut actuel : ${job.status}`
+      );
+    }
+    return this.prisma.hrJob.update({
+      where: { id },
+      data: {
+        ...prismaUpdateDefaults(),
+        status: 'DÉSACTIVÉE',
+      },
+    });
+  }
+
+  /**
+   * Republication d'une offre désactivée — repasse le statut à PUBLIÉE
+   * et met à jour la date de publication à maintenant.
+   */
+  async republishJob(id: string) {
+    const job = await this.prisma.hrJob.findUnique({ where: { id } });
+    if (!job) {
+      throw new NotFoundException(`Offre d'emploi avec l'ID ${id} non trouvée`);
+    }
+    if (job.status !== 'DÉSACTIVÉE') {
+      throw new BadRequestException(
+        `Seule une offre désactivée peut être republicquée. Statut actuel : ${job.status}`
+      );
+    }
+    return this.prisma.hrJob.update({
+      where: { id },
+      data: {
+        ...prismaUpdateDefaults(),
+        status: 'PUBLIÉE',
+        publishedAt: new Date(),
+      },
+    });
+  }
+
+  async getJobBySlug(slug: string) {
+    const job = await this.prisma.hrJob.findUnique({
+      where: { slug },
+      include: {
+        _count: { select: { applications: true } },
+        tenant: { select: { id: true, name: true, slug: true } },
+      },
+    });
+    if (!job) {
+      throw new NotFoundException(`Offre d'emploi avec le slug "${slug}" non trouvée`);
+    }
+    return job;
+  }
+
   async deleteJob(id: string) {
+    // 0. Capture tenantId before deletion (needed for sequence reset check)
+    const jobForTenant = await this.prisma.hrJob.findUnique({
+      where: { id },
+      select: { tenantId: true },
+    });
+    const tenantId = jobForTenant?.tenantId;
+
     // 1. Collect candidate documents from all applications of this job (for R2 cleanup)
     let documents: Array<{ id: string; filePath: string; fileName: string }> = [];
     try {
@@ -200,10 +319,23 @@ export class RecruitmentPrismaService {
       await tx.hrApplication.deleteMany({ where: { jobId: id } });
 
       // Finally, delete the job
-      await tx.hrJob.delete({ where: { id } });
+      const deleted = await tx.hrJob.delete({ where: { id } });
     });
 
-    // 3. Clean up files from storage (best-effort, after DB deletion)
+    // 3. Reset job number sequence if no more jobs exist for this tenant
+    if (tenantId) {
+      try {
+        const remaining = await this.prisma.hrJob.count({ where: { tenantId } });
+        if (remaining === 0) {
+          await this.prisma.jobNumberSequence.updateMany({
+            where: { tenantId },
+            data: { current: 0 },
+          });
+        }
+      } catch { /* best-effort — sequence reset is non-critical */ }
+    }
+
+    // 4. Clean up files from storage (best-effort, after DB deletion)
     if (documents.length > 0) {
       for (const doc of documents) {
         try {
@@ -220,7 +352,7 @@ export class RecruitmentPrismaService {
 
   // Candidates CRUD
   async getCandidates(tenantId: string) {
-    return this.prisma.hrCandidate.findMany({
+    const candidates = await this.prisma.hrCandidate.findMany({
       where: { tenantId },
       include: {
         applications: {
@@ -231,6 +363,7 @@ export class RecruitmentPrismaService {
           },
         },
         interviews: true,
+        testResults: true,
         academicProfile: true,
         academicScores: true,
         documents: {
@@ -239,23 +372,107 @@ export class RecruitmentPrismaService {
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    // ─── Compute finalScore for each candidate ──────────────────────────
+    // The finalScore combines document analysis (AI/heuristic) with real
+    // interview and test scores. This is the score used for hiring decisions.
+    return candidates.map(candidate => {
+      const primaryApp = candidate.applications?.[0];
+      const docScore = primaryApp?.score || 0; // AI/heuristic document analysis score
+
+      // Average interview score (0-100)
+      const interviewScores = (candidate.interviews || [])
+        .map(i => i.score)
+        .filter(s => s > 0);
+      const avgInterviewScore = interviewScores.length > 0
+        ? Math.round(interviewScores.reduce((a, b) => a + b, 0) / interviewScores.length)
+        : null;
+
+      // Average test score (0-100)
+      const testScores = (candidate.testResults || [])
+        .map(t => t.score)
+        .filter(s => s > 0);
+      const avgTestScore = testScores.length > 0
+        ? Math.round(testScores.reduce((a, b) => a + b, 0) / testScores.length)
+        : null;
+
+      // Compute finalScore based on available data
+      let finalScore: number;
+      let scoreBreakdown: string;
+
+      if (avgInterviewScore !== null && avgTestScore !== null) {
+        // Full evaluation: doc 30% + interview 35% + test 35%
+        finalScore = Math.round((docScore * 0.3) + (avgInterviewScore * 0.35) + (avgTestScore * 0.35));
+        scoreBreakdown = `Documents: ${docScore}% | Entretien: ${avgInterviewScore}% | Test: ${avgTestScore}%`;
+      } else if (avgInterviewScore !== null) {
+        // Interview only: doc 40% + interview 60%
+        finalScore = Math.round((docScore * 0.4) + (avgInterviewScore * 0.6));
+        scoreBreakdown = `Documents: ${docScore}% | Entretien: ${avgInterviewScore}%`;
+      } else if (avgTestScore !== null) {
+        // Test only: doc 40% + test 60%
+        finalScore = Math.round((docScore * 0.4) + (avgTestScore * 0.6));
+        scoreBreakdown = `Documents: ${docScore}% | Test: ${avgTestScore}%`;
+      } else {
+        // No interview/test yet: doc score only
+        finalScore = docScore;
+        scoreBreakdown = `Documents: ${docScore}% (en attente entretien/test)`;
+      }
+
+      return {
+        ...candidate,
+        _finalScore: finalScore,
+        _avgInterviewScore: avgInterviewScore,
+        _avgTestScore: avgTestScore,
+        _scoreBreakdown: scoreBreakdown,
+      };
+    });
   }
 
   async createCandidate(tenantId: string, data: any) {
-    return this.prisma.hrCandidate.create({
-      data: {
-        ...prismaCreateDefaults(),
-        tenantId,
-        firstName: data.firstName,
-        lastName: data.lastName,
-        email: data.email,
-        phone: data.phone,
-        address: data.address,
-        country: data.country || null,
-        city: data.city || null,
-        gender: data.gender,
-        dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : null,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const candidate = await tx.hrCandidate.create({
+        data: {
+          ...prismaCreateDefaults(),
+          tenantId,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          email: data.email,
+          phone: data.phone,
+          address: data.address,
+          country: data.country || null,
+          city: data.city || null,
+          gender: data.gender,
+          dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : null,
+        },
+      });
+
+      // Auto-create an HrApplication if jobId is provided
+      // This ensures the candidate has a trackable application status
+      // and follows the same flow as public applications
+      if (data.jobId) {
+        await tx.hrApplication.create({
+          data: {
+            ...prismaCreateDefaults(),
+            tenantId,
+            candidateId: candidate.id,
+            jobId: data.jobId,
+            status: data.status || 'NOUVEAU',
+          },
+        });
+      }
+
+      // Return the candidate WITH its applications so the frontend
+      // can properly display it in the candidature tab
+      return tx.hrCandidate.findUnique({
+        where: { id: candidate.id },
+        include: {
+          applications: {
+            include: { job: true },
+          },
+          academicProfile: true,
+          documents: true,
+        },
+      });
     });
   }
 
@@ -446,13 +663,70 @@ export class RecruitmentPrismaService {
   }
 
   async createApplication(tenantId: string, data: any) {
-    // Generate mock matching & fraud analysis
-    const scoreCV = Math.floor(Math.random() * 20) + 75; // 75-95
-    const scoreLetter = Math.floor(Math.random() * 20) + 75; // 75-95
-    const scoreMatching = Math.floor(Math.random() * 20) + 75; // 75-95
-    const score = Math.round((scoreCV * 0.4) + (scoreLetter * 0.1) + (scoreMatching * 0.5));
-    const risks = Math.random() > 0.8 ? 'Moyen' : 'Aucun';
+    // ─── Scoring: No more random scores! ─────────────────────────────────
+    // When an application is created internally (not via public apply),
+    // we start with 0 scores. The AI/heuristic document analysis score
+    // will be set when documents are analyzed. Interview and test scores
+    // are entered separately and factored into the final score.
+    const scoreCV = 0;
+    const scoreLetter = 0;
+    const scoreMatching = 0;
+    const score = 0;
+    const risks = 'Aucun';
 
+    // If the candidate already has profile data, use heuristic scoring
+    if (data.candidateId) {
+      try {
+        const candidate = await this.prisma.hrCandidate.findUnique({
+          where: { id: data.candidateId },
+          include: {
+            academicProfile: true,
+            documents: true,
+          },
+        });
+
+        if (candidate) {
+          const hasCV = candidate.documents?.some(d => d.documentType === 'CV') ?? false;
+          const hasLetter = candidate.documents?.some(d => d.documentType === 'COVER_LETTER') ?? false;
+          const skills = candidate.academicProfile?.subjects ?? [];
+          const cvName = hasCV ? 'CV téléchargé' : 'Non fourni';
+          const letterName = hasLetter ? 'Lettre téléchargée' : 'Non fournie';
+
+          // Parse experiences from pedagogicalExperience JSON
+          let experiences: any[] = [];
+          let education: any[] = [];
+          try {
+            if (candidate.academicProfile?.pedagogicalExperience) {
+              const parsed = JSON.parse(candidate.academicProfile.pedagogicalExperience);
+              experiences = parsed.experiences || [];
+              education = parsed.education || [];
+            }
+          } catch {}
+
+          const heuristic = this.generateHeuristicScores(hasCV, hasLetter, cvName, letterName, skills, experiences, education);
+          return this.prisma.hrApplication.create({
+            data: {
+              ...prismaCreateDefaults(),
+              tenantId,
+              jobId: data.jobId,
+              candidateId: data.candidateId,
+              status: data.status || 'NOUVEAU',
+              score: heuristic.score,
+              scoreCV: heuristic.scoreCV,
+              scoreLetter: heuristic.scoreLetter,
+              scoreMatching: heuristic.scoreMatching,
+              risks: heuristic.risks,
+              riskDetail: heuristic.riskDetail,
+              matchDetail: heuristic.matchDetail,
+            },
+          });
+        }
+      } catch (err: any) {
+        this.logger.warn(`Could not compute heuristic scores for internal application: ${err.message}`);
+      }
+    }
+
+    // Fallback: create with 0 scores and pending analysis note
     return this.prisma.hrApplication.create({
       data: {
         ...prismaCreateDefaults(),
@@ -465,8 +739,8 @@ export class RecruitmentPrismaService {
         scoreLetter,
         scoreMatching,
         risks,
-        riskDetail: risks === 'Moyen' ? 'Léger chevauchement de dates sur deux expériences.' : null,
-        matchDetail: 'Adéquation correcte du profil avec les exigences.',
+        riskDetail: null,
+        matchDetail: 'En attente d\'analyse. Le score sera calculé après analyse des documents et passage des entretiens/tests.',
       },
     });
   }
@@ -492,127 +766,240 @@ export class RecruitmentPrismaService {
 
     // ─── 2. EMBAUCHÉ — Create Staff + Contract ─────────────────────────────
     if (status === 'EMBAUCHÉ') {
-      return this.prisma.$transaction(async (tx) => {
-        // Update application status
-        const updatedApp = await tx.hrApplication.update({
+      try {
+        // ═══════════════════════════════════════════════════════════════════
+        // PHASE 1: Pre-flight checks & data preparation (OUTSIDE transaction)
+        // ═══════════════════════════════════════════════════════════════════
+        // Any failure here does NOT kill the main transaction.
+
+        const application = await this.prisma.hrApplication.findUnique({
           where: { id },
-          data: { 
-            ...prismaUpdateDefaults(),
-            status,
-            ...(review ? { matchDetail: review } : {})
-          },
-          include: {
-            candidate: true,
-            job: true,
-          }
+          include: { candidate: true, job: true },
         });
+        if (!application) {
+          throw new NotFoundException(`Candidature avec l'ID ${id} non trouvée`);
+        }
+
+        if (!application.candidate?.firstName || !application.candidate?.lastName) {
+          throw new BadRequestException('Impossible d\'embaucher : le nom ou prénom du candidat est manquant.');
+        }
+        if (!application.job?.title) {
+          throw new BadRequestException('Impossible d\'embaucher : le poste du candidat n\'est pas défini.');
+        }
 
         // Check if employee already exists with this email
-        const existingStaff = await tx.staff.findFirst({
-          where: { email: updatedApp.candidate.email, tenantId: updatedApp.tenantId }
+        const existingStaff = await this.prisma.staff.findFirst({
+          where: { email: application.candidate.email, tenantId: application.tenantId }
         });
 
-        let staffRecord = existingStaff;
+        // Find academic year if available (outside transaction — read-only)
+        const currentYear = await this.prisma.academicYear.findFirst({
+          where: { tenantId: application.tenantId, isActive: true }
+        });
+
+        // ─── Generate matricules (OUTSIDE the main transaction) ─────────
+        // This is critical: if matricule generation fails, it must NOT
+        // abort the main PostgreSQL transaction (which would cascade-fail
+        // all subsequent operations).
+        let globalMatricule: string | null = null;
+        let tenantMatricule: string | null = null;
 
         if (!existingStaff) {
-          // Find academic year if available
-          const currentYear = await tx.academicYear.findFirst({
-            where: { tenantId: updatedApp.tenantId, status: 'ACTIVE' }
-          });
-
-          // Determine roleType
-          const jobTitle = (updatedApp.job.title || '').toLowerCase();
-          const isTeacher = jobTitle.includes('enseignant') || jobTitle.includes('prof') || jobTitle.includes('teacher') || jobTitle.includes('instituteur');
-          const roleType = isTeacher ? 'TEACHER' : 'ADMIN';
-
-          // Parse salary (if it's a number like 400000)
-          let parsedSalary = null;
-          if (updatedApp.job.salary) {
-            const matched = updatedApp.job.salary.match(/\d+/);
-            if (matched) {
-              parsedSalary = parseFloat(matched[0]);
-            }
-          }
-
-          // Generate sequential matricules using StaffMatriculeService
-          let globalMatricule: string | null = null;
-          let tenantMatricule: string | null = null;
           try {
-            const schoolCode = await this.matriculeService.getSchoolCode(updatedApp.tenantId);
+            const schoolCode = await this.matriculeService.getSchoolCode(application.tenantId);
             const registrationYear = new Date().getFullYear();
-            globalMatricule = await this.matriculeService.generateGlobalMatriculeInTransaction(tx, registrationYear);
-            tenantMatricule = await this.matriculeService.generateTenantMatriculeInTransaction(tx, updatedApp.tenantId, schoolCode, registrationYear);
-          } catch (err) {
-            this.logger.warn(`Matricule generation failed for hire: ${err.message}`);
+
+            // Generate global matricule by counting existing Staff records
+            const year2 = registrationYear.toString().slice(-2);
+            const prefix = `AH-STF-${year2}-`;
+            const existingGlobal = await this.prisma.staff.findMany({
+              where: { globalMatricule: { startsWith: prefix } },
+              select: { globalMatricule: true },
+            });
+            let maxSeq = 0;
+            for (const s of existingGlobal) {
+              if (s.globalMatricule) {
+                const seq = parseInt(s.globalMatricule.replace(prefix, ''), 10);
+                if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
+              }
+            }
+            globalMatricule = `${prefix}${String(maxSeq + 1).padStart(6, '0')}`;
+
+            // Generate tenant matricule via StaffNumberSequence upsert (real tenantId — FK is satisfied)
+            const seq = await this.prisma.staffNumberSequence.upsert({
+              where: { tenantId: application.tenantId },
+              create: { ...prismaCreateNoCreatedAt(), tenantId: application.tenantId, current: 1 },
+              update: { current: { increment: 1 } },
+            });
+            const tenantPadded = String(seq.current).padStart(5, '0');
+            tenantMatricule = `${schoolCode}-${year2}-${tenantPadded}`;
+
+            this.logger.log(`Matricules generated: global=${globalMatricule}, tenant=${tenantMatricule}`);
+          } catch (matErr: any) {
+            this.logger.warn(`Matricule generation failed (non-blocking): ${matErr?.message || matErr}`);
+            // Continue without matricules — the hire can still proceed
           }
+        }
 
-          // Generate a tenant-based employee number (legacy field)
-          const tenantSeq = await tx.staffNumberSequence.upsert({
-            where: { tenantId: updatedApp.tenantId },
-            create: { tenantId: updatedApp.tenantId, current: 1 },
-            update: { current: { increment: 1 } },
-          });
-          const employeeNumber = `EMP-${String(tenantSeq.current).padStart(5, '0')}`;
-
-          staffRecord = await tx.staff.create({
+        // ═══════════════════════════════════════════════════════════════════
+        // PHASE 2: Main transaction — create Staff + Contract
+        // ═══════════════════════════════════════════════════════════════════
+        return await this.prisma.$transaction(async (tx) => {
+          // Update application status to EMBAUCHÉ
+          const updatedApp = await tx.hrApplication.update({
+            where: { id },
             data: {
-              ...prismaCreateDefaults(),
-              tenantId: updatedApp.tenantId,
+              ...prismaUpdateDefaults(),
+              status,
+              ...(review ? { matchDetail: review } : {})
+            },
+            include: {
+              candidate: true,
+              job: true,
+            }
+          });
+
+          let staffRecord = existingStaff;
+
+          if (!existingStaff) {
+            // Determine roleType
+            const jobTitle = (application.job.title || '').toLowerCase();
+            const isTeacher = jobTitle.includes('enseignant') || jobTitle.includes('prof') || jobTitle.includes('teacher') || jobTitle.includes('instituteur');
+            const roleType = isTeacher ? 'TEACHER' : 'ADMIN';
+
+            // Parse salary (if it's a number like 400000 or "400 000 FCFA")
+            let parsedSalary: Prisma.Decimal | null = null;
+            if (application.job.salary) {
+              const allDigits = application.job.salary.replace(/[^0-9]/g, '');
+              if (allDigits) {
+                const num = Number(allDigits);
+                if (!isNaN(num) && isFinite(num)) {
+                  parsedSalary = new Prisma.Decimal(num);
+                }
+              }
+            }
+
+            // Generate employee number based on school code (tenant matricule format)
+            // Format: <CODE_ECOLE>-YY-XXXXX (e.g., AHACAD-26-00001)
+            // Falls back to STF-YY-XXXXX if matricule generation failed
+            const employeeNumber = tenantMatricule
+              || `STF-${new Date().getFullYear().toString().slice(-2)}-${String(Date.now()).slice(-5)}`;
+
+            // Build staff data — explicitly list ALL fields to avoid spreading unknown keys
+            const staffData: Record<string, any> = {
+              id: uuid(),
+              createdAt: now(),
+              updatedAt: now(),
+              tenantId: application.tenantId,
               academicYearId: currentYear?.id || null,
               employeeNumber,
               globalMatricule,
               tenantMatricule,
-              firstName: updatedApp.candidate.firstName,
-              lastName: updatedApp.candidate.lastName,
-              gender: updatedApp.candidate.gender,
-              email: updatedApp.candidate.email,
-              phone: updatedApp.candidate.phone,
-              address: updatedApp.candidate.address,
-              position: updatedApp.job.title,
-              department: updatedApp.job.dept,
+              firstName: application.candidate.firstName,
+              lastName: application.candidate.lastName,
+              gender: application.candidate.gender || null,
+              email: application.candidate.email || null,
+              phone: application.candidate.phone || null,
+              address: application.candidate.address || null,
+              position: application.job.title || null,
+              department: application.job.dept || null,
               roleType,
               hireDate: new Date(),
-              contractType: updatedApp.job.contractType || 'CDI',
+              contractType: application.job.contractType || 'CDI',
               status: 'ACTIVE',
               salary: parsedSalary,
+            };
+
+            this.logger.log(`Creating staff: employeeNumber=${employeeNumber}, globalMatricule=${globalMatricule}, tenantMatricule=${tenantMatricule}`);
+
+            staffRecord = await tx.staff.create({ data: staffData });
+            this.logger.log(`Staff created: id=${staffRecord.id}, employeeNumber=${staffRecord.employeeNumber}`);
+          }
+
+          // Link staffId on the application (whether newly created or existing staff)
+          // This MUST happen regardless — previously it was only inside the `if (!existingStaff)` block
+          if (staffRecord) {
+            await tx.hrApplication.update({
+              where: { id },
+              data: {
+                ...prismaUpdateDefaults(),
+                staffId: staffRecord.id,
+              },
+            });
+          }
+
+          // ─── 3. Auto-create Contract (directly in the same transaction) ───
+          let contract = null;
+          if (staffRecord) {
+            const contractType = application.job.contractType || 'CDI';
+            let baseSalary = new Prisma.Decimal(0);
+            if (application.job.salary) {
+              const allDigits = application.job.salary.replace(/[^0-9]/g, '');
+              if (allDigits) {
+                const num = Number(allDigits);
+                if (!isNaN(num) && isFinite(num)) {
+                  baseSalary = new Prisma.Decimal(num);
+                }
+              }
             }
-          });
 
-          // Link staffId on the application
-          await tx.hrApplication.update({
-            where: { id },
-            data: { staffId: staffRecord.id },
-          });
-        }
+            // Deactivate any existing active/pending contracts for this staff
+            try {
+              await tx.contract.updateMany({
+                where: { staffId: staffRecord.id, tenantId: application.tenantId, status: { in: ['ACTIVE', 'PENDING'] } },
+                data: {
+                  status: 'EXPIRED',
+                  ...prismaUpdateDefaults(),
+                },
+              });
+            } catch (deactErr: any) {
+              this.logger.warn(`Failed to deactivate existing contracts: ${deactErr?.message}`);
+              // Non-blocking: continue to create new contract
+            }
 
-        // ─── 3. Auto-create Contract (using existing ContractsPrismaService) ───
-        let contract = null;
-        if (staffRecord) {
-          try {
-            const contractType = updatedApp.job.contractType || 'CDI';
-            const baseSalary = updatedApp.job.salary
-              ? parseFloat(updatedApp.job.salary.match(/\d+/)?.[0] || '0')
-              : 0;
-
-            contract = await this.contractsService.createContract({
-              tenantId: updatedApp.tenantId,
+            // Build contract data — explicitly list ALL fields
+            const contractData: Record<string, any> = {
+              id: uuid(),
+              createdAt: now(),
+              updatedAt: now(),
+              tenantId: application.tenantId,
               staffId: staffRecord.id,
               contractType,
               startDate: new Date(),
               baseSalary,
               paymentMode: 'BANK',
-              status: 'DRAFT',  // DRAFT until signed — not ACTIVE yet
-            });
+              status: 'PENDING',
+            };
 
-            this.logger.log(`Contrat auto-créé pour ${updatedApp.candidate.firstName} ${updatedApp.candidate.lastName} — Contrat ID: ${contract.id}`);
-          } catch (contractErr: any) {
-            // Contract creation failure should NOT block the hire
-            this.logger.error(`Échec de la création auto du contrat: ${contractErr.message}`, contractErr.stack);
+            if (currentYear?.id) {
+              contractData.academicYearId = currentYear.id;
+            }
+
+            try {
+              contract = await tx.contract.create({
+                data: contractData,
+                include: { staff: true },
+              });
+              this.logger.log(`Contrat auto-créé pour ${application.candidate.firstName} ${application.candidate.lastName} — Contrat ID: ${contract.id}`);
+            } catch (contractErr: any) {
+              // Contract creation failure should NOT block the hire
+              this.logger.error(`Échec création contrat [${contractErr?.constructor?.name}]: ${contractErr.message}`, contractErr.stack);
+            }
           }
-        }
 
-        return { ...updatedApp, staff: staffRecord, contract };
-      });
+          return { ...updatedApp, staff: staffRecord, contract };
+        });
+      } catch (txErr: any) {
+        // If it's already an HttpException (BadRequestException, etc.), re-throw it
+        if (txErr instanceof HttpException) {
+          throw txErr;
+        }
+        // Otherwise, wrap it in a BadRequestException with full details
+        this.logger.error(`EMBAUCHÉ transaction FAILED [${txErr?.constructor?.name}]: ${txErr.message}`, txErr.stack);
+        throw new BadRequestException(
+          `Erreur lors de l'embauche [${txErr?.constructor?.name}]: ${txErr.message?.replace(/\n/g, ' ').substring(0, 500)}`
+        );
+      }
     }
 
     // ─── 4. Non-EMBAUCHÉ — simple status update ────────────────────────────
@@ -704,7 +1091,7 @@ export class RecruitmentPrismaService {
       throw new BadRequestException(`Score invalide : ${data.score}`);
     }
 
-    return this.prisma.hrInterview.create({
+    const interview = await this.prisma.hrInterview.create({
       data: {
         ...prismaCreateDefaults(),
         tenantId,
@@ -716,23 +1103,195 @@ export class RecruitmentPrismaService {
         evaluator: data.evaluator || '',
         score,
         comments: data.comments || null,
+        status: 'PLANIFIÉ',
       },
     });
+
+    // AUTO-ADVANCE: Move candidate's application to ENTRETIEN status
+    try {
+      const application = await this.prisma.hrApplication.findFirst({
+        where: {
+          candidateId: data.candidateId,
+          tenantId,
+          status: { in: ['NOUVEAU', 'EN_COURS'] },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (application) {
+        const allowedNext = VALID_TRANSITIONS[application.status] || [];
+        if (allowedNext.includes('ENTRETIEN')) {
+          await this.prisma.hrApplication.update({
+            where: { id: application.id },
+            data: { ...prismaUpdateDefaults(), status: 'ENTRETIEN' },
+          });
+          this.logger.log(`Application ${application.id} auto-advanced to ENTRETIEN after interview creation`);
+        }
+      }
+    } catch (advanceErr: any) {
+      this.logger.warn(`Failed to auto-advance application to ENTRETIEN: ${advanceErr.message}`);
+    }
+
+    return interview;
   }
 
   async updateInterview(id: string, data: any) {
-    return this.prisma.hrInterview.update({
+    // Build update data — only include fields that are provided
+    const updateData: any = { ...prismaUpdateDefaults() };
+
+    if (data.type !== undefined) updateData.type = data.type;
+    if (data.date !== undefined) updateData.date = new Date(data.date);
+    if (data.time !== undefined) updateData.time = data.time;
+    if (data.format !== undefined) updateData.format = data.format;
+    if (data.evaluator !== undefined) updateData.evaluator = data.evaluator;
+    if (data.score !== undefined) {
+      const s = typeof data.score === 'number' ? data.score : parseInt(String(data.score), 10);
+      if (!isNaN(s)) updateData.score = s;
+    }
+    if (data.comments !== undefined) updateData.comments = data.comments;
+    if (data.status !== undefined) updateData.status = data.status;
+    if (data.result !== undefined) updateData.result = data.result;
+    if (data.feedback !== undefined) updateData.feedback = data.feedback;
+
+    const updated = await this.prisma.hrInterview.update({
       where: { id },
-      data: {
-        ...prismaUpdateDefaults(),
-        type: data.type,
-        date: new Date(data.date),
-        time: data.time,
-        format: data.format,
-        evaluator: data.evaluator,
-        score: data.score ? parseInt(data.score) : 0,
-        comments: data.comments,
-      },
+      data: updateData,
+      include: { candidate: { include: { applications: true } } },
+    });
+
+    // Auto-advance application status when interview is completed with RÉUSSI
+    if (data.status === 'TERMINÉ' && data.result === 'RÉUSSI' && updated.candidateId) {
+      try {
+        const primaryApp = updated.candidate?.applications?.[0];
+        if (primaryApp) {
+          const currentStatus = primaryApp.status;
+          // Already at or past ENTRETIEN — nothing to do
+          if (currentStatus !== 'ENTRETIEN' && currentStatus !== 'TEST' && currentStatus !== 'EMBAUCHÉ') {
+            // Advance through all intermediate states to ENTRETIEN
+            let statusToSet = currentStatus;
+            const path: string[] = [];
+            while (statusToSet !== 'ENTRETIEN') {
+              const next = VALID_TRANSITIONS[statusToSet];
+              if (!next || next.length === 0) break;
+              if (next.includes('ENTRETIEN')) {
+                path.push('ENTRETIEN');
+                break;
+              }
+              const intermediate = next.find(s => s !== 'REJETÉ');
+              if (!intermediate) break;
+              path.push(intermediate);
+              statusToSet = intermediate;
+            }
+            if (path.length > 0) {
+              const finalStatus = path[path.length - 1];
+              await this.prisma.hrApplication.update({
+                where: { id: primaryApp.id },
+                data: { ...prismaUpdateDefaults(), status: finalStatus },
+              });
+              this.logger.log(`Auto-advanced application ${primaryApp.id} from ${currentStatus} to ${finalStatus} via [${path.join(' → ')}] after interview update`);
+            }
+          }
+        }
+      } catch (err: any) {
+        this.logger.warn(`Failed to auto-advance application after interview update: ${err.message}`);
+      }
+    }
+
+    return updated;
+  }
+
+  /**
+   * Validate (complete) an interview: set status=TERMINÉ, result, score, feedback.
+   * When an interview is marked as RÉUSSI, auto-advance the candidate's
+   * application status to ENTRETIEN. Creates an HrApplication if the candidate
+   * doesn't have one yet.
+   */
+  async validateInterview(id: string, data: { result: string; score?: number; feedback?: string }) {
+    const interview = await this.prisma.hrInterview.findUnique({
+      where: { id },
+      include: { candidate: { include: { applications: { include: { job: true } } } } },
+    });
+    if (!interview) {
+      throw new NotFoundException(`Entretien ${id} non trouvé`);
+    }
+
+    const score = data.score != null
+      ? (typeof data.score === 'number' ? data.score : parseInt(String(data.score), 10))
+      : interview.score;
+
+    return this.prisma.$transaction(async (tx) => {
+      // Update the interview
+      const updated = await tx.hrInterview.update({
+        where: { id },
+        data: {
+          ...prismaUpdateDefaults(),
+          status: 'TERMINÉ',
+          result: data.result,
+          score: isNaN(score) ? 0 : score,
+          feedback: data.feedback || null,
+        },
+      });
+
+      // If interview succeeded, advance the candidate's application status
+      if (data.result === 'RÉUSSI') {
+        let primaryApp = interview.candidate?.applications?.[0];
+
+        // If no application exists, create one automatically
+        if (!primaryApp && interview.candidateId) {
+          // Find a job for this tenant to link the application to
+          const firstJob = await tx.hrJob.findFirst({
+            where: { tenantId: interview.tenantId },
+          });
+
+          if (firstJob) {
+            primaryApp = await tx.hrApplication.create({
+              data: {
+                ...prismaCreateDefaults(),
+                tenantId: interview.tenantId,
+                candidateId: interview.candidateId,
+                jobId: firstJob.id,
+                status: 'EN_COURS',
+              },
+              include: { job: true },
+            });
+          }
+        }
+
+        if (primaryApp) {
+          const currentStatus = primaryApp.status;
+          // Already at or past ENTRETIEN — nothing to do
+          if (currentStatus === 'ENTRETIEN' || currentStatus === 'TEST' || currentStatus === 'EMBAUCHÉ') {
+            // Candidate already eligible or past this stage
+          } else {
+            // Advance through all intermediate states to ENTRETIEN
+            // e.g. NOUVEAU → EN_COURS → ENTRETIEN
+            let statusToSet = currentStatus;
+            const path: string[] = [];
+            while (statusToSet !== 'ENTRETIEN') {
+              const next = VALID_TRANSITIONS[statusToSet];
+              if (!next || next.length === 0) break; // Terminal state or unknown
+              if (next.includes('ENTRETIEN')) {
+                path.push('ENTRETIEN');
+                break;
+              }
+              // Take the first non-REJETÉ transition as intermediate step
+              const intermediate = next.find(s => s !== 'REJETÉ');
+              if (!intermediate) break;
+              path.push(intermediate);
+              statusToSet = intermediate;
+            }
+            if (path.length > 0) {
+              const finalStatus = path[path.length - 1];
+              await tx.hrApplication.update({
+                where: { id: primaryApp.id },
+                data: { ...prismaUpdateDefaults(), status: finalStatus },
+              });
+              this.logger.log(`Auto-advanced application ${primaryApp.id} from ${currentStatus} to ${finalStatus} via [${path.join(' → ')}]`);
+            }
+          }
+        }
+      }
+
+      return updated;
     });
   }
 
@@ -754,23 +1313,34 @@ export class RecruitmentPrismaService {
   async createTest(tenantId: string, data: any) {
     return this.prisma.hrTest.create({
       data: {
-        id: crypto.randomUUID(),
+        ...prismaCreateDefaults(),
         tenantId,
         name: data.name,
         type: data.type,
-        description: data.description,
+        description: data.description || null,
+        duration: data.duration || null,
+        instructions: data.instructions || null,
+        maxScore: data.maxScore ?? 100,
+        passingScore: data.passingScore ?? 50,
+        status: data.status || 'ACTIF',
       },
     });
   }
 
   async updateTest(id: string, data: any) {
+    const updateData: any = {};
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.type !== undefined) updateData.type = data.type;
+    if (data.description !== undefined) updateData.description = data.description || null;
+    if (data.duration !== undefined) updateData.duration = data.duration || null;
+    if (data.instructions !== undefined) updateData.instructions = data.instructions || null;
+    if (data.maxScore !== undefined) updateData.maxScore = data.maxScore;
+    if (data.passingScore !== undefined) updateData.passingScore = data.passingScore;
+    if (data.status !== undefined) updateData.status = data.status;
+
     return this.prisma.hrTest.update({
       where: { id },
-      data: {
-        name: data.name,
-        type: data.type,
-        description: data.description,
-      },
+      data: updateData,
     });
   }
 
@@ -784,14 +1354,110 @@ export class RecruitmentPrismaService {
 
   // Test Results
   async createTestResult(data: any) {
-    return this.prisma.hrTestResult.create({
-      data: {
-        id: crypto.randomUUID(),
+    const score = typeof data.score === 'number' ? data.score : parseInt(data.score, 10);
+    if (isNaN(score)) {
+      throw new Error('Score invalide : doit être un nombre entier');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const resultData: any = {
+        ...prismaCreateNoUpdatedAt(),  // HrTestResult has no updatedAt
         testId: data.testId,
         candidateId: data.candidateId,
-        score: parseInt(data.score),
+        score,
         result: data.result || 'RÉUSSI',
-      },
+      };
+      if (data.notes) resultData.notes = data.notes;
+      if (data.evaluatedAt) {
+        resultData.evaluatedAt = new Date(data.evaluatedAt);
+      } else {
+        resultData.evaluatedAt = new Date();
+      }
+
+      const testResult = await tx.hrTestResult.create({
+        data: resultData,
+      });
+
+      // Auto-advance the candidate's application status to TEST
+      const candidate = await tx.hrCandidate.findUnique({
+        where: { id: data.candidateId },
+        include: { applications: true },
+      });
+
+      if (candidate) {
+        let primaryApp = candidate.applications?.[0];
+
+        // If no application exists, create one automatically
+        if (!primaryApp) {
+          const firstJob = await tx.hrJob.findFirst({
+            where: { tenantId: candidate.tenantId },
+          });
+
+          if (firstJob) {
+            primaryApp = await tx.hrApplication.create({
+              data: {
+                ...prismaCreateDefaults(),
+                tenantId: candidate.tenantId,
+                candidateId: candidate.id,
+                jobId: firstJob.id,
+                status: 'EN_COURS',
+              },
+            });
+          }
+        }
+
+        if (primaryApp) {
+          const currentStatus = primaryApp.status;
+          // Already at or past TEST — nothing to do
+          if (currentStatus !== 'TEST' && currentStatus !== 'EMBAUCHÉ') {
+            // Advance through all intermediate states to TEST
+            let statusToSet = currentStatus;
+            const path: string[] = [];
+            while (statusToSet !== 'TEST') {
+              const next = VALID_TRANSITIONS[statusToSet];
+              if (!next || next.length === 0) break;
+              if (next.includes('TEST')) {
+                path.push('TEST');
+                break;
+              }
+              const intermediate = next.find(s => s !== 'REJETÉ');
+              if (!intermediate) break;
+              path.push(intermediate);
+              statusToSet = intermediate;
+            }
+            if (path.length > 0) {
+              const finalStatus = path[path.length - 1];
+              await tx.hrApplication.update({
+                where: { id: primaryApp.id },
+                data: { ...prismaUpdateDefaults(), status: finalStatus },
+              });
+            }
+          }
+        }
+      }
+
+      return testResult;
+    });
+  }
+
+  async updateTestResult(id: string, data: any) {
+    const updateData: any = {};
+    if (data.score !== undefined) {
+      const score = typeof data.score === 'number' ? data.score : parseInt(data.score, 10);
+      if (isNaN(score)) {
+        throw new Error('Score invalide : doit être un nombre entier');
+      }
+      updateData.score = score;
+    }
+    if (data.result !== undefined) updateData.result = data.result;
+    if (data.notes !== undefined) updateData.notes = data.notes || null;
+    if (data.evaluatedAt !== undefined) {
+      updateData.evaluatedAt = data.evaluatedAt ? new Date(data.evaluatedAt) : null;
+    }
+
+    return this.prisma.hrTestResult.update({
+      where: { id },
+      data: updateData,
     });
   }
 
@@ -814,7 +1480,7 @@ export class RecruitmentPrismaService {
     return this.prisma.hrTalentPool.upsert({
       where: { candidateId },
       create: {
-        id: crypto.randomUUID(),
+        ...prismaCreateNoUpdatedAt(),
         candidateId,
         category: data.category || 'Général',
         status: data.status || 'Disponible',
@@ -1007,10 +1673,10 @@ Réponds UNIQUEMENT en JSON valide.`,
           }
         });
 
-        // 2. Save to AcademicProfile
+        // 2. Save to AcademicProfile (has ONLY id — no createdAt, no updatedAt)
         await tx.academicProfile.create({
           data: {
-            id: crypto.randomUUID(),
+            ...prismaCreateIdOnly(),
             candidateId: candidate.id,
             teachingLevel: education[0]?.degree || 'Non spécifié',
             subjects: skills,
@@ -1041,10 +1707,12 @@ Réponds UNIQUEMENT en JSON valide.`,
           try {
             await tx.hrAiReport.create({
               data: {
+                id: uuid(),  // HrAiReport has only id + generatedAt, no createdAt/updatedAt
                 candidateId: candidate.id,
                 applicationId: application.id,
                 reportType: 'APPLICATION_ANALYSIS',
                 content: aiReportContent,
+                generatedAt: new Date(),
               }
             });
           } catch (reportErr: any) {
@@ -1058,7 +1726,7 @@ Réponds UNIQUEMENT en JSON valide.`,
         if (cvFile && cvPath) {
           const doc = await tx.candidateDocument.create({
             data: {
-              id: crypto.randomUUID(),
+              ...prismaCreateNoUpdatedAt(),
               candidateId: candidate.id,
               documentType: 'CV',
               fileName: cvFile.originalname,
@@ -1074,7 +1742,7 @@ Réponds UNIQUEMENT en JSON valide.`,
         if (letterFile && letterPath) {
           const doc = await tx.candidateDocument.create({
             data: {
-              id: crypto.randomUUID(),
+              ...prismaCreateNoUpdatedAt(),
               candidateId: candidate.id,
               documentType: 'COVER_LETTER',
               fileName: letterFile.originalname,
@@ -1090,7 +1758,7 @@ Réponds UNIQUEMENT en JSON valide.`,
         if (recoFile && recoPath) {
           const doc = await tx.candidateDocument.create({
             data: {
-              id: crypto.randomUUID(),
+              ...prismaCreateNoUpdatedAt(),
               candidateId: candidate.id,
               documentType: 'RECOMMENDATION',
               fileName: recoFile.originalname,
@@ -1334,6 +2002,90 @@ Réponds UNIQUEMENT en JSON valide.`,
     const riskDetail = null;
 
     return { scoreCV, scoreLetter, scoreMatching, score, matchDetail, risks, riskDetail };
+  }
+
+  // ─── Fix Application Statuses (retroactive correction) ──────────────────
+  /**
+   * Retroactively fix application statuses based on completed interviews/tests.
+   * For candidates who have TERMINÉ/RÉUSSI interviews but their application
+   * is still at NOUVEAU or EN_COURS, this will advance them to the correct status.
+   */
+  async fixApplicationStatuses(tenantId: string) {
+    const results: { candidateId: string; oldStatus: string; newStatus: string; reason: string }[] = [];
+
+    // Get all applications for this tenant
+    const applications = await this.prisma.hrApplication.findMany({
+      where: { tenantId },
+      include: {
+        candidate: {
+          include: {
+            interviews: true,
+          },
+        },
+      },
+    });
+
+    for (const app of applications) {
+      const currentStatus = app.status;
+      // Skip terminal states
+      if (currentStatus === 'EMBAUCHÉ' || currentStatus === 'REJETÉ') continue;
+
+      const candidate = app.candidate;
+      if (!candidate) continue;
+
+      const interviews = candidate.interviews || [];
+      const hasReussiInterview = interviews.some(i => i.status === 'TERMINÉ' && i.result === 'RÉUSSI');
+      const hasTermineInterview = interviews.some(i => i.status === 'TERMINÉ');
+
+      // Determine the correct status based on interview results
+      let targetStatus: string | null = null;
+      let reason = '';
+
+      if (hasReussiInterview && currentStatus !== 'ENTRETIEN' && currentStatus !== 'TEST') {
+        // Should be at least ENTRETIEN
+        targetStatus = 'ENTRETIEN';
+        reason = 'Has TERMINÉ/RÉUSSI interview';
+      } else if (hasTermineInterview && currentStatus === 'NOUVEAU') {
+        // At least EN_COURS if any interview was done
+        targetStatus = 'EN_COURS';
+        reason = 'Has TERMINÉ interview';
+      }
+
+      if (targetStatus) {
+        // Advance through valid transitions
+        let statusToSet = currentStatus;
+        const path: string[] = [];
+        while (statusToSet !== targetStatus) {
+          const next = VALID_TRANSITIONS[statusToSet];
+          if (!next || next.length === 0) break;
+          if (next.includes(targetStatus)) {
+            path.push(targetStatus);
+            break;
+          }
+          const intermediate = next.find(s => s !== 'REJETÉ');
+          if (!intermediate) break;
+          path.push(intermediate);
+          statusToSet = intermediate;
+        }
+
+        if (path.length > 0) {
+          const finalStatus = path[path.length - 1];
+          await this.prisma.hrApplication.update({
+            where: { id: app.id },
+            data: { ...prismaUpdateDefaults(), status: finalStatus },
+          });
+          results.push({
+            candidateId: candidate.id,
+            oldStatus: currentStatus,
+            newStatus: finalStatus,
+            reason,
+          });
+          this.logger.log(`Fixed application ${app.id}: ${currentStatus} → ${finalStatus} (${reason})`);
+        }
+      }
+    }
+
+    return { fixed: results.length, details: results };
   }
 }
 

@@ -19,8 +19,14 @@
     "migrate:sqlite-to-postgresql": "ts-node database/migrations/sqlite-to-postgresql-migration.ts"
   },
   "devDependencies": {
+    "@ducanh2912/next-pwa": "^10.2.9",
+    "@next/bundle-analyzer": "^16.2.7",
     "concurrently": "^8.2.2",
     "cross-env": "^10.1.0",
-    "puppeteer": "^24.43.1"
+    "puppeteer": "^24.43.1",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "pg": "^8.21.0"
   }
 }

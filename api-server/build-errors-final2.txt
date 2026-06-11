@@ -1,0 +1,54 @@
+
+> academia-hub-api@1.0.0 build
+> nest build
+
+[96msrc/hr/payroll-prisma.service.ts[0m:[93m260[0m:[93m7[0m - [91merror[0m[90m TS2322: [0mType '{ payrollItemId: string; receiptNumber: string; issuedBy: string; issuedAt: Date; tenant: { connect: { id: string; }; }; }' is not assignable to type '(Without<SalarySlipCreateInput, SalarySlipUncheckedCreateInput> & SalarySlipUncheckedCreateInput) | (Without<...> & SalarySlipCreateInput)'.
+  Type '{ payrollItemId: string; receiptNumber: string; issuedBy: string; issuedAt: Date; tenant: { connect: { id: string; }; }; }' is not assignable to type 'Without<SalarySlipUncheckedCreateInput, SalarySlipCreateInput> & SalarySlipCreateInput'.
+    Type '{ payrollItemId: string; receiptNumber: string; issuedBy: string; issuedAt: Date; tenant: { connect: { id: string; }; }; }' is not assignable to type 'Without<SalarySlipUncheckedCreateInput, SalarySlipCreateInput>'.
+      Types of property 'issuedBy' are incompatible.
+        Type 'string' is not assignable to type 'never'.
+
+[7m260[0m       data: {
+[7m   [0m [91m      ~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m175301[0m:[93m5[0m
+    [7m175301[0m     data: XOR<SalarySlipCreateInput, SalarySlipUncheckedCreateInput>
+    [7m      [0m [96m    ~~~~[0m
+    The expected type comes from property 'data' which is declared here on type '{ select?: SalarySlipSelect<DefaultArgs>; include?: SalarySlipInclude<DefaultArgs>; data: (Without<SalarySlipCreateInput, SalarySlipUncheckedCreateInput> & SalarySlipUncheckedCreateInput) | (Without<...> & SalarySlipCreateInput); }'
+[96msrc/hr/services/payroll-pdf.service.ts[0m:[93m82[0m:[93m9[0m - [91merror[0m[90m TS2322: [0mType '{ payrollItemId: string; receiptNumber: string; period: string; issuedBy: string; tenant: { connect: { id: string; }; }; }' is not assignable to type '(Without<SalarySlipCreateInput, SalarySlipUncheckedCreateInput> & SalarySlipUncheckedCreateInput) | (Without<...> & SalarySlipCreateInput)'.
+  Type '{ payrollItemId: string; receiptNumber: string; period: string; issuedBy: string; tenant: { connect: { id: string; }; }; }' is not assignable to type 'Without<SalarySlipUncheckedCreateInput, SalarySlipCreateInput> & SalarySlipCreateInput'.
+    Type '{ payrollItemId: string; receiptNumber: string; period: string; issuedBy: string; tenant: { connect: { id: string; }; }; }' is not assignable to type 'Without<SalarySlipUncheckedCreateInput, SalarySlipCreateInput>'.
+      Types of property 'issuedBy' are incompatible.
+        Type 'string' is not assignable to type 'never'.
+
+[7m82[0m         data: {
+[7m  [0m [91m        ~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m175301[0m:[93m5[0m
+    [7m175301[0m     data: XOR<SalarySlipCreateInput, SalarySlipUncheckedCreateInput>
+    [7m      [0m [96m    ~~~~[0m
+    The expected type comes from property 'data' which is declared here on type '{ select?: SalarySlipSelect<DefaultArgs>; include?: SalarySlipInclude<DefaultArgs>; data: (Without<SalarySlipCreateInput, SalarySlipUncheckedCreateInput> & SalarySlipUncheckedCreateInput) | (Without<...> & SalarySlipCreateInput); }'
+[96msrc/orion/services/kpi-calculation.service.ts[0m:[93m115[0m:[93m17[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'totalAmount' does not exist in type 'PaymentSumAggregateInputType'.
+
+[7m115[0m         _sum: { totalAmount: true },
+[7m   [0m [91m                ~~~~~~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m81763[0m:[93m5[0m
+    [7m81763[0m     _sum?: PaymentSumAggregateInputType
+    [7m     [0m [96m    ~~~~[0m
+    The expected type comes from property '_sum' which is declared here on type 'Subset<PaymentAggregateArgs<DefaultArgs>, PaymentAggregateArgs<DefaultArgs>>'
+[96msrc/orion/services/kpi-calculation.service.ts[0m:[93m119[0m:[93m47[0m - [91merror[0m[90m TS2339: [0mProperty 'totalAmount' does not exist on type '{ amount?: Decimal; }'.
+
+[7m119[0m       const paidAmount = Number(paidFees._sum.totalAmount || 0);
+[7m   [0m [91m                                              ~~~~~~~~~~~[0m
+[96msrc/payment-flows/payment-flows.repository.ts[0m:[93m15[0m:[93m78[0m - [91merror[0m[90m TS2304: [0mCannot find name 'PaymentDestination'.
+
+[7m15[0m   async create(data: CreatePaymentFlowDto & { tenantId: string; destination: PaymentDestination; initiatedBy?: string; status?: PaymentFlowStatus }): Promise<PaymentFlow> {
+[7m  [0m [91m                                                                             ~~~~~~~~~~~~~~~~~~[0m
+[96msrc/payment-flows/payment-flows.repository.ts[0m:[93m18[0m:[93m40[0m - [91merror[0m[90m TS2304: [0mCannot find name 'PaymentDestination'.
+
+[7m18[0m       destination: data.destination as PaymentDestination, // S'assurer que c'est un enum
+[7m  [0m [91m                                       ~~~~~~~~~~~~~~~~~~[0m
+
+Found 6 error(s).
+

@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
 import { UsersService } from '../../users/users.service';
 import { PrismaService } from '../../database/prisma.service';
+import { CacheService } from '../../common/services/cache.service';
 
 const TOKEN_COOKIE = 'academia_token';
 
@@ -21,6 +22,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private configService: ConfigService,
     private usersService: UsersService,
     private prisma: PrismaService,
+    private cacheService: CacheService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
@@ -36,13 +38,34 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(req: Request, payload: any) {
     const token = ExtractJwt.fromAuthHeaderAsBearerToken()(req) || tokenFromCookie(req);
     if (token) {
-      const isRevoked = await this.prisma.revokedToken.findUnique({ where: { token } });
-      if (isRevoked) {
+      // Check revoked token with short-lived cache (1 min) to avoid DB hit on every request
+      const cacheKey = `revoked:${token.slice(-16)}`;
+      const cachedRevoked = this.cacheService.get<boolean>(cacheKey);
+      if (cachedRevoked === true) {
         throw new UnauthorizedException('Token has been revoked');
+      }
+      if (cachedRevoked === null) {
+        // Not in cache — check DB
+        const isRevoked = await this.prisma.revokedToken.findUnique({ where: { token } });
+        if (isRevoked) {
+          this.cacheService.set(cacheKey, true, 60 * 1000); // cache revoked for 1 min
+          throw new UnauthorizedException('Token has been revoked');
+        }
+        // Cache non-revoked status briefly to reduce DB load
+        this.cacheService.set(cacheKey, false, 60 * 1000);
       }
     }
 
-    const user = await this.usersService.findOneWithRoles(payload.sub);
+    // Cache user+roles+permissions for 2 minutes to eliminate repeated heavy queries
+    const userCacheKey = `user:roles:${payload.sub}`;
+    let user = this.cacheService.get<any>(userCacheKey);
+    if (!user) {
+      user = await this.usersService.findOneWithRoles(payload.sub);
+      if (user) {
+        this.cacheService.set(userCacheKey, user, 2 * 60 * 1000); // 2 min TTL
+      }
+    }
+
     if (!user) {
       throw new UnauthorizedException();
     }
@@ -91,4 +114,3 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     return Array.from(permissions);
   }
 }
-

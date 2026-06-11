@@ -1,0 +1,17 @@
+import { IsString, IsDateString, IsBoolean, IsOptional } from 'class-validator';
+
+export class CreateAcademicYearDto {
+  @IsString()
+  name: string;
+
+  @IsDateString()
+  startDate: string;
+
+  @IsDateString()
+  endDate: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isCurrent?: boolean;
+}
+

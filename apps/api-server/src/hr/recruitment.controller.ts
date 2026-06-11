@@ -10,7 +10,7 @@
  * ============================================================================
  */
 
-import { Controller, Get, Post, Put, Body, Query, Param, Delete, UseGuards, UseInterceptors, UploadedFiles, Res, StreamableFile } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Query, Param, Delete, UseGuards, UseInterceptors, UploadedFiles, Res, StreamableFile, BadRequestException } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { RecruitmentPrismaService } from './recruitment.service';
@@ -27,9 +27,11 @@ import {
   UpdateApplicationStatusDto,
   CreateInterviewDto,
   UpdateInterviewDto,
+  ValidateInterviewDto,
   CreateTestDto,
   UpdateTestDto,
   CreateTestResultDto,
+  UpdateTestResultDto,
   AddToTalentPoolDto,
   ApplyJobDto,
 } from './dto';
@@ -53,14 +55,38 @@ export class RecruitmentPrismaController {
     return this.service.getJobStats(jobId, tenantIdFallback);
   }
 
+  @Public()
+  @Get('jobs/by-slug/:slug')
+  async getJobBySlug(@Param('slug') slug: string) {
+    return this.service.getJobBySlug(slug);
+  }
+
   @Post('jobs')
-  async createJob(@GetTenant() tenant: any, @Body() body: CreateJobDto) {
-    return this.service.createJob(tenant.id, body);
+  async createJob(
+    @GetTenant() tenant: any,
+    @Body() body: CreateJobDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour créer une offre d\'emploi');
+    }
+    return this.service.createJob(tid, body);
   }
 
   @Put('jobs/:id')
   async updateJob(@Param('id') id: string, @Body() body: UpdateJobDto) {
     return this.service.updateJob(id, body);
+  }
+
+  @Put('jobs/:id/deactivate')
+  async deactivateJob(@Param('id') id: string) {
+    return this.service.deactivateJob(id);
+  }
+
+  @Put('jobs/:id/republish')
+  async republishJob(@Param('id') id: string) {
+    return this.service.republishJob(id);
   }
 
   @Delete('jobs/:id')
@@ -76,8 +102,16 @@ export class RecruitmentPrismaController {
   }
 
   @Post('candidates')
-  async createCandidate(@GetTenant() tenant: any, @Body() body: CreateCandidateDto) {
-    return this.service.createCandidate(tenant.id, body);
+  async createCandidate(
+    @GetTenant() tenant: any,
+    @Body() body: CreateCandidateDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour créer un candidat');
+    }
+    return this.service.createCandidate(tid, body);
   }
 
   @Put('candidates/:id')
@@ -98,8 +132,16 @@ export class RecruitmentPrismaController {
   }
 
   @Post('applications')
-  async createApplication(@GetTenant() tenant: any, @Body() body: CreateApplicationDto) {
-    return this.service.createApplication(tenant.id, body);
+  async createApplication(
+    @GetTenant() tenant: any,
+    @Body() body: CreateApplicationDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour créer une candidature');
+    }
+    return this.service.createApplication(tid, body);
   }
 
   @Put('applications/:id/status')
@@ -137,6 +179,14 @@ export class RecruitmentPrismaController {
     return this.service.updateInterview(id, body);
   }
 
+  @Put('interviews/:id/validate')
+  async validateInterview(
+    @Param('id') id: string,
+    @Body() body: ValidateInterviewDto,
+  ) {
+    return this.service.validateInterview(id, body);
+  }
+
   @Delete('interviews/:id')
   async deleteInterview(@Param('id') id: string) {
     return this.service.deleteInterview(id);
@@ -150,8 +200,16 @@ export class RecruitmentPrismaController {
   }
 
   @Post('tests')
-  async createTest(@GetTenant() tenant: any, @Body() body: CreateTestDto) {
-    return this.service.createTest(tenant.id, body);
+  async createTest(
+    @GetTenant() tenant: any,
+    @Body() body: CreateTestDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour créer un test');
+    }
+    return this.service.createTest(tid, body);
   }
 
   @Put('tests/:id')
@@ -168,7 +226,22 @@ export class RecruitmentPrismaController {
 
   @Post('test-results')
   async createTestResult(@Body() body: CreateTestResultDto) {
-    return this.service.createTestResult(body);
+    try {
+      return await this.service.createTestResult(body);
+    } catch (error: any) {
+      console.error('[HR] createTestResult error:', error?.message || error);
+      throw error;
+    }
+  }
+
+  @Put('test-results/:id')
+  async updateTestResult(@Param('id') id: string, @Body() body: UpdateTestResultDto) {
+    try {
+      return await this.service.updateTestResult(id, body);
+    } catch (error: any) {
+      console.error('[HR] updateTestResult error:', error?.message || error);
+      throw error;
+    }
   }
 
   @Delete('test-results/:id')
@@ -242,5 +315,13 @@ export class RecruitmentPrismaController {
   @Post('cleanup/orphaned-files')
   async cleanupOrphanedFiles(@GetTenant() tenant: any, @Query('tenantId') tenantIdFallback?: string) {
     return this.service.cleanupOrphanedFiles(tenant?.id ?? tenantIdFallback);
+  }
+
+  // ─── Admin: Fix Application Statuses ──────────────────────────────────
+  // Retroactively correct application statuses based on completed interviews/tests
+
+  @Post('fix/application-statuses')
+  async fixApplicationStatuses(@GetTenant() tenant: any, @Query('tenantId') tenantIdFallback?: string) {
+    return this.service.fixApplicationStatuses(tenant?.id ?? tenantIdFallback);
   }
 }

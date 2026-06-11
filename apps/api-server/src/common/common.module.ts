@@ -5,6 +5,7 @@
  */
 
 import { Module, Global, Controller } from '@nestjs/common';
+import { CacheService } from './services/cache.service';
 import { PermissionsService } from './services/permissions.service';
 import { DashboardService } from './services/dashboard.service';
 import { StrictPermissionsService } from './services/strict-permissions.service';
@@ -26,6 +27,7 @@ import { SecurityModule } from '../security/security.module';
   ],
   controllers: [PermissionsController, DashboardController],
   providers: [
+    CacheService,
     PermissionsService,
     DashboardService,
     StrictPermissionsService,
@@ -34,6 +36,7 @@ import { SecurityModule } from '../security/security.module';
     PuppeteerPoolService,
   ],
   exports: [
+    CacheService,
     PermissionsService,
     DashboardService,
     StrictPermissionsService,

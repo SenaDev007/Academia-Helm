@@ -536,7 +536,7 @@ RÈGLES :
         paidPayrolls,
       ] = await Promise.all([
         this.prisma.contract.count({
-          where: { tenantId, status: 'ACTIVE' },
+          where: { tenantId, status: { in: ['ACTIVE', 'PENDING'] } },
         }),
         this.prisma.leaveRequest.count({
           where: { tenantId, status: 'PENDING' },

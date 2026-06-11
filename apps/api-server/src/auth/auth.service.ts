@@ -215,6 +215,15 @@ export class AuthService {
         throw new UnauthorizedException('Invalid refresh token');
       }
 
+      // Preserve tenant context from the refresh token payload
+      // so the new access token keeps the same tenantId/academicYearId
+      const tenantId = payload.tenantId || null;
+      const academicYearId = payload.academicYearId || null;
+
+      if (tenantId) {
+        return this.generateEnrichedToken(user, tenantId, academicYearId);
+      }
+
       return this.generateTokens(user);
     } catch (error) {
       throw new UnauthorizedException('Invalid refresh token');
@@ -319,10 +328,11 @@ export class AuthService {
         'Liste des écoles (mode dev portail) indisponible en production sans PLATFORM_OWNER_MODE=true',
       );
     }
-    // Après garde : dev local ou prod avec tests plateforme → tous les tenants SCHOOL (sans filtre status).
+    // Après garde : dev local ou prod avec tests plateforme → tous les tenants SCHOOL actifs (exclut WITHDRAWN).
     const tenants = await this.prisma.tenant.findMany({
       where: {
         type: 'SCHOOL',
+        status: { not: 'WITHDRAWN' },
       },
       include: {
         schools: {

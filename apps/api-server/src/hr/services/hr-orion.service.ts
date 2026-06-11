@@ -7,6 +7,9 @@
  * Aligné sur les modèles Payroll (batch), PayrollItem (lignes),
  * CNSSRate, EmployeeCNSS, CNSSDeclaration.
  *
+ * v3: Chaque vérification d'alerte est isolée dans un try/catch pour
+ * éviter qu'une erreur sur une requête Prisma ne bloque toutes les alertes.
+ *
  * ============================================================================
  */
 
@@ -25,7 +28,12 @@ export class HROrionService {
     if (academicYearId) where.academicYearId = academicYearId;
 
     // Utiliser PayrollItem pour les KPIs détaillés
-    const payrollItems = await this.prisma.payrollItem.findMany({ where });
+    let payrollItems: any[] = [];
+    try {
+      payrollItems = await this.prisma.payrollItem.findMany({ where });
+    } catch (err: any) {
+      console.error('[ORION] payrollItem.findMany failed:', err?.message || err);
+    }
 
     const totalLines = payrollItems.length;
     const validatedLines = payrollItems.filter((p) => p.status === 'VALIDATED').length;
@@ -67,17 +75,23 @@ export class HROrionService {
   }
 
   /**
-   * Génère les alertes ORION pour la paie, les contrats et la conformité sociale
+   * Génère les alertes ORION pour la paie, les contrats et la conformité sociale.
+   * Chaque vérification est isolée pour éviter qu'un crash ne bloque les autres.
    */
   async generateAlerts(tenantId: string) {
     const alerts: any[] = [];
 
     // Récupérer le code pays du tenant
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: tenantId },
-      include: { country: true },
-    });
-    const countryCode = tenant?.country?.code || 'BJ';
+    let countryCode = 'BJ';
+    try {
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        include: { country: true },
+      });
+      countryCode = tenant?.country?.code || 'BJ';
+    } catch (err: any) {
+      console.error('[ORION] tenant lookup failed:', err?.message || err);
+    }
 
     const socialLabels: Record<string, string> = {
       'BJ': 'CNSS', 'TG': 'CNSS', 'SN': 'IPRES',
@@ -86,124 +100,144 @@ export class HROrionService {
     const socialLabel = socialLabels[countryCode] || 'Sécurité Sociale';
 
     // ── 1. Agents actifs CDI sans affiliation CNSS ──────────────────────────
-    const agentsSansCNSS = await this.prisma.staff.findMany({
-      where: {
-        tenantId,
-        status: 'ACTIVE',
-        OR: [
-          { employeeCNSS: null },
-          { employeeCNSS: { isActive: false } },
-          { employeeCNSS: { cnssNumber: null } },
-        ],
-        contracts: { some: { status: 'ACTIVE', contractType: 'CDI' } },
-      },
-      select: { id: true, firstName: true, lastName: true },
-    });
-
-    if (agentsSansCNSS.length > 0) {
-      alerts.push({
-        severity: 'HIGH',
-        category: 'COMPLIANCE',
-        title: `Numéros ${socialLabel} manquants`,
-        description: `${agentsSansCNSS.length} agent(s) CDI sans numéro ${socialLabel} enregistré.`,
-        recommendation: 'Mettre à jour les fiches personnel pour conformité légale.',
-        count: agentsSansCNSS.length,
+    try {
+      const agentsSansCNSS = await this.prisma.staff.findMany({
+        where: {
+          tenantId,
+          status: 'ACTIVE',
+          OR: [
+            { employeeCNSS: null },
+            { employeeCNSS: { isActive: false } },
+            { employeeCNSS: { cnssNumber: null } },
+          ],
+          contracts: { some: { status: { in: ['ACTIVE', 'PENDING'] }, contractType: 'CDI' } },
+        },
+        select: { id: true, firstName: true, lastName: true },
       });
+
+      if (agentsSansCNSS.length > 0) {
+        alerts.push({
+          severity: 'HIGH',
+          category: 'COMPLIANCE',
+          title: `Numéros ${socialLabel} manquants`,
+          description: `${agentsSansCNSS.length} agent(s) CDI sans numéro ${socialLabel} enregistré.`,
+          recommendation: 'Mettre à jour les fiches personnel pour conformité légale.',
+          count: agentsSansCNSS.length,
+        });
+      }
+    } catch (err: any) {
+      console.error('[ORION] Alert CNSS affiliation check failed:', err?.message || err);
     }
 
     // ── 2. Contrats expirant dans 30 jours ────────────────────────────────
-    const thirtyDays = new Date();
-    thirtyDays.setDate(thirtyDays.getDate() + 30);
+    try {
+      const thirtyDays = new Date();
+      thirtyDays.setDate(thirtyDays.getDate() + 30);
 
-    const expiringContracts = await this.prisma.contract.findMany({
-      where: {
-        tenantId,
-        status: 'ACTIVE',
-        endDate: { gt: new Date(), lte: thirtyDays },
-      },
-      include: {
-        staff: { select: { firstName: true, lastName: true } },
-      },
-    });
-
-    if (expiringContracts.length > 0) {
-      alerts.push({
-        severity: 'MEDIUM',
-        category: 'CONTRACT_EXPIRATION',
-        title: 'Contrats expirant bientôt',
-        description: `${expiringContracts.length} contrat(s) se terminent dans moins de 30 jours.`,
-        recommendation: 'Préparer les avenants ou renouvellements.',
-        count: expiringContracts.length,
-        details: expiringContracts.map((c) => ({
-          name: `${c.staff.firstName} ${c.staff.lastName}`,
-          endDate: c.endDate,
-          type: c.contractType,
-        })),
+      const expiringContracts = await this.prisma.contract.findMany({
+        where: {
+          tenantId,
+          status: { in: ['ACTIVE', 'PENDING'] },
+          endDate: { gt: new Date(), lte: thirtyDays },
+        },
+        include: {
+          staff: { select: { firstName: true, lastName: true } },
+        },
       });
+
+      if (expiringContracts.length > 0) {
+        alerts.push({
+          severity: 'MEDIUM',
+          category: 'CONTRACT_EXPIRATION',
+          title: 'Contrats expirant bientôt',
+          description: `${expiringContracts.length} contrat(s) se terminent dans moins de 30 jours.`,
+          recommendation: 'Préparer les avenants ou renouvellements.',
+          count: expiringContracts.length,
+          details: expiringContracts.map((c) => ({
+            name: `${c.staff?.firstName || ''} ${c.staff?.lastName || ''}`.trim(),
+            endDate: c.endDate,
+            type: c.contractType,
+          })),
+        });
+      }
+    } catch (err: any) {
+      console.error('[ORION] Alert contract expiration check failed:', err?.message || err);
     }
 
     // ── 3. Lots de paie DRAFT depuis > 5 jours ─────────────────────────
-    const fiveDaysAgo = new Date();
-    fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
+    try {
+      const fiveDaysAgo = new Date();
+      fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
 
-    const staleDraftPayrolls = await this.prisma.payroll.count({
-      where: {
-        tenantId,
-        status: 'DRAFT',
-        createdAt: { lte: fiveDaysAgo },
-      },
-    });
-
-    if (staleDraftPayrolls > 0) {
-      alerts.push({
-        severity: 'MEDIUM',
-        category: 'PAYROLL_PENDING',
-        title: 'Paie en attente de calcul',
-        description: `${staleDraftPayrolls} lot(s) de paie non calculés depuis plus de 5 jours.`,
-        recommendation: 'Lancer le calcul fiscal (CNSS + IRPP) pour finaliser la paie.',
-        count: staleDraftPayrolls,
+      const staleDraftPayrolls = await this.prisma.payroll.count({
+        where: {
+          tenantId,
+          status: 'DRAFT',
+          createdAt: { lte: fiveDaysAgo },
+        },
       });
+
+      if (staleDraftPayrolls > 0) {
+        alerts.push({
+          severity: 'MEDIUM',
+          category: 'PAYROLL_PENDING',
+          title: 'Paie en attente de calcul',
+          description: `${staleDraftPayrolls} lot(s) de paie non calculés depuis plus de 5 jours.`,
+          recommendation: 'Lancer le calcul fiscal (CNSS + IRPP) pour finaliser la paie.',
+          count: staleDraftPayrolls,
+        });
+      }
+    } catch (err: any) {
+      console.error('[ORION] Alert stale payroll check failed:', err?.message || err);
     }
 
     // ── 4. Aucun taux social configuré pour le pays ───────────────────────
-    const cnssRate = await this.prisma.cNSSRate.findFirst({
-      where: {
-        countryCode,
-        effectiveFrom: { lte: new Date() },
-        OR: [{ effectiveTo: null }, { effectiveTo: { gte: new Date() } }],
-      },
-    });
-
-    if (!cnssRate) {
-      alerts.push({
-        severity: 'CRITICAL',
-        category: 'CONFIGURATION',
-        title: `Taux ${socialLabel} non configuré`,
-        description: `Aucun taux ${socialLabel} actif trouvé pour le pays ${countryCode}.`,
-        recommendation: `Configurer les taux ${socialLabel} dans les paramètres RH.`,
+    try {
+      const cnssRate = await this.prisma.cNSSRate.findFirst({
+        where: {
+          countryCode,
+          effectiveFrom: { lte: new Date() },
+          OR: [{ effectiveTo: null }, { effectiveTo: { gte: new Date() } }],
+        },
       });
+
+      if (!cnssRate) {
+        alerts.push({
+          severity: 'CRITICAL',
+          category: 'CONFIGURATION',
+          title: `Taux ${socialLabel} non configuré`,
+          description: `Aucun taux ${socialLabel} actif trouvé pour le pays ${countryCode}.`,
+          recommendation: `Configurer les taux ${socialLabel} dans les paramètres RH.`,
+        });
+      }
+    } catch (err: any) {
+      console.error('[ORION] Alert CNSS rate check failed:', err?.message || err);
     }
 
     // ── 5. Déclaration sociale du mois dernier non finalisée ────────────────
-    const now = new Date();
-    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const lastMonthStr = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}`;
+    try {
+      const now = new Date();
+      const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const lastMonthStr = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}`;
 
-    const lastMonthDeclaration = await this.prisma.cNSSDeclaration.findFirst({
-      where: {
-        tenantId,
-        month: lastMonthStr,
-      },
-    });
-
-    if (!lastMonthDeclaration || lastMonthDeclaration.status === 'DRAFT') {
-      alerts.push({
-        severity: 'HIGH',
-        category: 'CNSS_COMPLIANCE',
-        title: `Déclaration ${socialLabel} mensuelle manquante`,
-        description: `La déclaration ${socialLabel} de ${lastMonth.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })} n'est pas finalisée.`,
-        recommendation: `Générer et soumettre la déclaration nominative ${socialLabel}.`,
+      const lastMonthDeclaration = await this.prisma.cNSSDeclaration.findFirst({
+        where: {
+          tenantId,
+          month: lastMonthStr,
+        },
       });
+
+      if (!lastMonthDeclaration || lastMonthDeclaration.status === 'DRAFT') {
+        alerts.push({
+          severity: 'HIGH',
+          category: 'CNSS_COMPLIANCE',
+          title: `Déclaration ${socialLabel} mensuelle manquante`,
+          description: `La déclaration ${socialLabel} de ${lastMonth.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })} n'est pas finalisée.`,
+          recommendation: `Générer et soumettre la déclaration nominative ${socialLabel}.`,
+        });
+      }
+    } catch (err: any) {
+      console.error('[ORION] Alert CNSS declaration check failed:', err?.message || err);
     }
 
     return alerts;
@@ -213,20 +247,17 @@ export class HROrionService {
    * KPIs RH généraux (pour le dashboard principal)
    */
   async getHrKPIs(tenantId: string, academicYearId?: string) {
-    const where: any = { tenantId };
-    if (academicYearId) where.academicYearId = academicYearId;
-
-    const [
-      totalStaff,
-      activeStaff,
-      pendingLeaves,
-      activeContracts,
-    ] = await Promise.all([
+    const results = await Promise.allSettled([
       this.prisma.staff.count({ where: { tenantId } }),
       this.prisma.staff.count({ where: { tenantId, status: 'ACTIVE' } }),
       this.prisma.leaveRequest.count({ where: { tenantId, status: 'PENDING' } }),
-      this.prisma.contract.count({ where: { tenantId, status: 'ACTIVE' } }),
+      this.prisma.contract.count({ where: { tenantId, status: { in: ['ACTIVE', 'PENDING'] } } }),
     ]);
+
+    const totalStaff = results[0].status === 'fulfilled' ? results[0].value : 0;
+    const activeStaff = results[1].status === 'fulfilled' ? results[1].value : 0;
+    const pendingLeaves = results[2].status === 'fulfilled' ? results[2].value : 0;
+    const activeContracts = results[3].status === 'fulfilled' ? results[3].value : 0;
 
     return {
       totalStaff,

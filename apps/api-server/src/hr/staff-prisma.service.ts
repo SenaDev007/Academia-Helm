@@ -127,12 +127,16 @@ export class StaffPrismaService {
       console.error('Matricule generation failed:', error.message);
     }
 
+    // Use tenantMatricule as employeeNumber (school-code based, e.g. AHACAD-26-00001)
+    // Falls back to the provided employeeNumber if tenantMatricule generation failed
+    const finalEmployeeNumber = tenantMatricule || employeeNumber;
+
     const created = await this.prisma.staff.create({
       data: {
         ...prismaCreateDefaults(),
         tenantId:       data.tenantId,
         academicYearId: data.academicYearId || null,
-        employeeNumber,
+        employeeNumber: finalEmployeeNumber,
         globalMatricule,
         tenantMatricule,
         firstName:      data.firstName,
@@ -182,7 +186,7 @@ export class StaffPrismaService {
       where,
       include: {
         contracts: {
-          where: { status: 'ACTIVE' },
+          where: { status: { in: ['ACTIVE', 'PENDING'] } },
           orderBy: { startDate: 'desc' },
           take: 1,
         },
@@ -195,12 +199,15 @@ export class StaffPrismaService {
     });
 
     // Ajouter staffCode et category aliases pour compatibilité frontend
-    return staff.map((s) => ({
+    // Resolve photo URLs for R2/S3 storage (thumbnailUrl is a storage key, not a full URL)
+    return Promise.all(staff.map(async (s) => ({
       ...s,
       staffCode: s.employeeNumber,
       category: Object.entries(CATEGORY_TO_ROLE).find(([, v]) => v === s.roleType)?.[0] || s.roleType,
-      photoUrl: s.photo?.thumbnailUrl || null,
-    }));
+      photoUrl: s.photo?.thumbnailUrl
+        ? await this.storageService.resolveFileUrl(s.photo.thumbnailUrl)
+        : null,
+    })));
   }
 
   /**
@@ -223,11 +230,16 @@ export class StaffPrismaService {
       throw new NotFoundException(`Staff with ID ${id} not found`);
     }
 
+    // Resolve photo URLs for R2/S3 storage
+    const resolvedPhotoUrl = staff.photo?.thumbnailUrl
+      ? await this.storageService.resolveFileUrl(staff.photo.thumbnailUrl)
+      : null;
+
     return {
       ...staff,
       staffCode: staff.employeeNumber,
       category: Object.entries(CATEGORY_TO_ROLE).find(([, v]) => v === staff.roleType)?.[0] || staff.roleType,
-      photoUrl: staff.photo?.thumbnailUrl || null,
+      photoUrl: resolvedPhotoUrl,
     };
   }
 
@@ -244,10 +256,11 @@ export class StaffPrismaService {
     const allowedFields = [
       'firstName', 'lastName', 'gender', 'dateOfBirth', 'birthDate',
       'phone', 'email', 'address', 'position', 'department',
-      'contractType', 'status', 'qualifications', 'notes',
+      'hireDate', 'contractType', 'status', 'qualifications', 'notes',
       'academicYearId', 'schoolLevelId',
       'nationality', 'maritalStatus', 'numberOfChildren',
       'nationalId', 'cnssNumber', 'ifuNumber',
+      'terminationType', 'noticePeriodDays',
     ];
 
     for (const field of allowedFields) {
@@ -266,7 +279,7 @@ export class StaffPrismaService {
     }
 
     // Handle date fields — convert empty strings to null, valid strings to Date
-    const dateFields = ['birthDate', 'dateOfBirth', 'hireDate'];
+    const dateFields = ['birthDate', 'dateOfBirth', 'hireDate', 'terminatedAt', 'lastWorkingDate'];
     for (const df of dateFields) {
       if (df in updateData) {
         if (updateData[df] === '' || updateData[df] === null || updateData[df] === undefined) {
@@ -274,6 +287,30 @@ export class StaffPrismaService {
         } else {
           updateData[df] = new Date(updateData[df]);
         }
+      }
+    }
+
+    // Handle integer fields — convert empty strings to null
+    if ('numberOfChildren' in updateData) {
+      if (updateData.numberOfChildren === '' || updateData.numberOfChildren === null || updateData.numberOfChildren === undefined) {
+        updateData.numberOfChildren = null;
+      } else {
+        updateData.numberOfChildren = parseInt(updateData.numberOfChildren, 10) || null;
+      }
+    }
+
+    // Handle terminationDetails (JSON field)
+    if (data.terminationDetails !== undefined) {
+      if (typeof data.terminationDetails === 'string' && data.terminationDetails.trim() !== '') {
+        try {
+          updateData.terminationDetails = JSON.parse(data.terminationDetails);
+        } catch {
+          updateData.terminationDetails = { note: data.terminationDetails };
+        }
+      } else if (typeof data.terminationDetails === 'object') {
+        updateData.terminationDetails = data.terminationDetails;
+      } else {
+        updateData.terminationDetails = null;
       }
     }
 
@@ -312,7 +349,7 @@ export class StaffPrismaService {
   }
 
   /**
-   * Archive un membre du personnel
+   * Archive un membre du personnel (soft delete)
    */
   async archiveStaff(id: string, tenantId: string) {
     await this.findStaffById(id, tenantId);
@@ -320,6 +357,189 @@ export class StaffPrismaService {
       where: { id },
       data: { ...prismaUpdateDefaults(), status: 'INACTIVE' },
     });
+  }
+
+  /**
+   * Termine un membre du personnel (débauche)
+   */
+  async terminateStaff(id: string, tenantId: string, data: {
+    terminationType: string;
+    terminationDetails?: any;
+    noticePeriodDays?: number;
+    lastWorkingDate?: string;
+  }) {
+    const staff = await this.findStaffById(id, tenantId);
+
+    // Update staff status and termination info
+    const updated = await this.prisma.staff.update({
+      where: { id },
+      data: {
+        status: 'INACTIVE',
+        terminationType: data.terminationType,
+        terminationDetails: data.terminationDetails || null,
+        terminatedAt: new Date(),
+        noticePeriodDays: data.noticePeriodDays || null,
+        lastWorkingDate: data.lastWorkingDate ? new Date(data.lastWorkingDate) : null,
+      },
+    });
+
+    // Terminate all active/pending contracts for this staff member (batch update — no N+1)
+    try {
+      await this.prisma.contract.updateMany({
+        where: { staffId: id, tenantId, status: { in: ['ACTIVE', 'PENDING'] } },
+        data: {
+          status: 'TERMINATED',
+          terminatedAt: new Date(),
+          terminationReason: `Débauche: ${data.terminationType}`,
+        },
+      });
+    } catch (err: any) {
+      console.error(`Failed to terminate contracts for staff ${id}: ${err.message}`);
+    }
+
+    return {
+      ...updated,
+      staffCode: updated.employeeNumber,
+      category: Object.entries(CATEGORY_TO_ROLE).find(([, v]) => v === updated.roleType)?.[0] || updated.roleType,
+    };
+  }
+
+  /**
+   * Réactive un membre du personnel (réintégration)
+   */
+  async reactivateStaff(id: string, tenantId: string) {
+    const staff = await this.findStaffById(id, tenantId);
+
+    if (staff.status !== 'INACTIVE') {
+      throw new BadRequestException('Seul un membre inactif peut être réactivé');
+    }
+
+    const updated = await this.prisma.staff.update({
+      where: { id },
+      data: {
+        status: 'ACTIVE',
+        terminationType: null,
+        terminationDetails: null,
+        terminatedAt: null,
+        noticePeriodDays: null,
+        lastWorkingDate: null,
+      },
+    });
+
+    return {
+      ...updated,
+      staffCode: updated.employeeNumber,
+      category: Object.entries(CATEGORY_TO_ROLE).find(([, v]) => v === updated.roleType)?.[0] || updated.roleType,
+    };
+  }
+
+  /**
+   * Supprime définitivement un membre du personnel et toutes ses données associées
+   * (hard delete — photos, documents, contrats, évaluations, etc.)
+   */
+  async hardDeleteStaff(id: string, tenantId: string) {
+    // Verify staff exists in this tenant
+    await this.findStaffById(id, tenantId);
+
+    // Delete related records in order (respecting FK constraints)
+    // 1. Staff photo
+    try {
+      const photos = await this.prisma.staffPhoto.findMany({ where: { staffId: id, tenantId } });
+      await this.prisma.staffPhoto.deleteMany({ where: { staffId: id, tenantId } });
+      for (const photo of photos) {
+        for (const url of [photo.originalUrl, photo.hdUrl, photo.thumbnailUrl]) {
+          if (!url) continue;
+          try { await this.storageService.deleteFile(url); } catch {}
+        }
+      }
+    } catch {}
+
+    // 2. Staff documents
+    try {
+      const docs = await this.prisma.staffDocument.findMany({ where: { staffId: id, tenantId } });
+      await this.prisma.staffDocument.deleteMany({ where: { staffId: id, tenantId } });
+      for (const doc of docs) {
+        try { await this.storageService.deleteFile(doc.filePath); } catch {}
+      }
+    } catch {}
+
+    // 3. Staff evaluations
+    try { await this.prisma.staffEvaluation.deleteMany({ where: { staffId: id, tenantId } }); } catch {}
+
+    // 4. Staff attendance
+    try { await this.prisma.staffAttendance.deleteMany({ where: { staffId: id, tenantId } }); } catch {}
+
+    // 5. Staff schedules
+    try { await this.prisma.staffSchedule.deleteMany({ where: { staffId: id, tenantId } }); } catch {}
+
+    // 6. Staff allowances
+    try { await this.prisma.staffAllowance.deleteMany({ where: { staffId: id, tenantId } }); } catch {}
+
+    // 7. Staff trainings
+    try { await this.prisma.staffTraining.deleteMany({ where: { staffId: id, tenantId } }); } catch {}
+
+    // 8. Staff assignments
+    try { await this.prisma.staffAssignment.deleteMany({ where: { staffId: id, tenantId } }); } catch {}
+
+    // 9. Contract amendments (via contracts)
+    try {
+      const contracts = await this.prisma.contract.findMany({ where: { staffId: id, tenantId }, select: { id: true } });
+      for (const c of contracts) {
+        try { await this.prisma.contractAmendment.deleteMany({ where: { contractId: c.id } }); } catch {}
+      }
+    } catch {}
+
+    // 10. Contracts
+    try { await this.prisma.contract.deleteMany({ where: { staffId: id, tenantId } }); } catch {}
+
+    // 11. Unlink from HR applications
+    try {
+      await this.prisma.hrApplication.updateMany({
+        where: { staffId: id, tenantId },
+        data: { staffId: null },
+      });
+    } catch {}
+
+    // 12. Finally, delete the staff record
+    await this.prisma.staff.delete({ where: { id } });
+
+    return { success: true, deletedId: id };
+  }
+
+  /**
+   * Purge tous les staff d'un tenant (hard delete massif)
+   */
+  async purgeAllStaff(tenantId: string) {
+    const staff = await this.prisma.staff.findMany({
+      where: { tenantId },
+      select: { id: true },
+    });
+
+    let deleted = 0;
+    let errors = 0;
+    for (const s of staff) {
+      try {
+        await this.hardDeleteStaff(s.id, tenantId);
+        deleted++;
+      } catch (err: any) {
+        errors++;
+        console.error(`Failed to hard-delete staff ${s.id}: ${err.message}`);
+      }
+    }
+
+    // Reset the staff number sequence so next created staff starts from 1
+    if (deleted > 0) {
+      try {
+        await this.prisma.staffNumberSequence.updateMany({
+          where: { tenantId },
+          data: { current: 0 },
+        });
+      } catch (seqErr: any) {
+        console.error(`Failed to reset StaffNumberSequence for tenant ${tenantId}: ${seqErr.message}`);
+      }
+    }
+
+    return { deleted, errors, total: staff.length };
   }
 
   // ─── STAFF PHOTO ────────────────────────────────────────────────────────
@@ -373,7 +593,13 @@ export class StaffPrismaService {
       },
     });
 
-    return photo;
+    // Resolve URLs before returning to frontend
+    return {
+      ...photo,
+      originalUrl: await this.storageService.resolveFileUrl(photo.originalUrl),
+      hdUrl: await this.storageService.resolveFileUrl(photo.hdUrl),
+      thumbnailUrl: await this.storageService.resolveFileUrl(photo.thumbnailUrl),
+    };
   }
 
   /**
@@ -381,9 +607,18 @@ export class StaffPrismaService {
    */
   async getStaffPhoto(staffId: string, tenantId: string): Promise<any> {
     await this.findStaffById(staffId, tenantId);
-    return this.prisma.staffPhoto.findUnique({
+    const photo = await this.prisma.staffPhoto.findUnique({
       where: { staffId },
     });
+    if (!photo) return null;
+
+    // Resolve all URLs for R2/S3 storage
+    return {
+      ...photo,
+      originalUrl: photo.originalUrl ? await this.storageService.resolveFileUrl(photo.originalUrl) : null,
+      hdUrl: photo.hdUrl ? await this.storageService.resolveFileUrl(photo.hdUrl) : null,
+      thumbnailUrl: photo.thumbnailUrl ? await this.storageService.resolveFileUrl(photo.thumbnailUrl) : null,
+    };
   }
 
   /**
@@ -575,6 +810,69 @@ export class StaffPrismaService {
     }
 
     return { success: true, deletedFile: doc.fileName };
+  }
+
+  /**
+   * Télécharge le fichier d'un document d'un membre du personnel
+   */
+  async downloadStaffDocument(documentId: string, staffId: string, tenantId: string): Promise<{ buffer: Buffer; fileName: string; mimeType: string }> {
+    const doc = await this.prisma.staffDocument.findFirst({
+      where: { id: documentId, staffId, tenantId },
+    });
+    if (!doc) {
+      throw new NotFoundException(`Document non trouvé`);
+    }
+
+    // Try to download from storage
+    const filePath = doc.filePath;
+
+    // Try cloud storage first
+    try {
+      const buffer = await this.storageService.downloadFile(filePath);
+      return { buffer, fileName: doc.fileName, mimeType: doc.mimeType || 'application/octet-stream' };
+    } catch {
+      // Cloud download failed, try HTTPS URL
+    }
+
+    // Try fetching from URL (Vercel Blob or any HTTPS URL)
+    if (filePath.startsWith('https://')) {
+      try {
+        const response = await fetch(filePath);
+        if (response.ok) {
+          const arrayBuf = await response.arrayBuffer();
+          const buffer = Buffer.from(arrayBuf);
+          return { buffer, fileName: doc.fileName, mimeType: doc.mimeType || 'application/octet-stream' };
+        }
+      } catch {
+        // URL fetch failed
+      }
+    }
+
+    // Try resolving via storageService.resolveFileUrl and fetching
+    try {
+      const resolvedUrl = await this.storageService.resolveFileUrl(filePath);
+      if (resolvedUrl && resolvedUrl.startsWith('http')) {
+        const response = await fetch(resolvedUrl);
+        if (response.ok) {
+          const arrayBuf = await response.arrayBuffer();
+          const buffer = Buffer.from(arrayBuf);
+          return { buffer, fileName: doc.fileName, mimeType: doc.mimeType || 'application/octet-stream' };
+        }
+      }
+    } catch {
+      // Resolved URL fetch failed
+    }
+
+    // Local filesystem fallback
+    const fs = await import('fs');
+    const path = await import('path');
+    const absolutePath = path.join(process.cwd(), filePath);
+    if (fs.existsSync(absolutePath)) {
+      const buffer = fs.readFileSync(absolutePath);
+      return { buffer, fileName: doc.fileName, mimeType: doc.mimeType || 'application/octet-stream' };
+    }
+
+    throw new NotFoundException(`Fichier du document introuvable: ${doc.fileName}`);
   }
 
   /**

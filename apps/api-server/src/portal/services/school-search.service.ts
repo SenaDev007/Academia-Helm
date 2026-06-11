@@ -133,6 +133,9 @@ export class SchoolSearchService {
             name: true,
             logo: true,
             address: true,
+            city: true,
+            primaryPhone: true,
+            primaryEmail: true,
             educationLevels: true,
           },
         },
@@ -152,7 +155,7 @@ export class SchoolSearchService {
       const results = tenants.map((tenant) => {
         const school = tenant.schools;
         const address = school?.address || '';
-        const city = this.extractCityFromAddress(address);
+        const city = school?.city || this.extractCityFromAddress(address);
 
         return {
           id: tenant.id,
@@ -161,6 +164,9 @@ export class SchoolSearchService {
           subdomain: tenant.subdomain || null,
           logoUrl: school?.logo || null,
           city: city || null,
+          primaryPhone: school?.primaryPhone || null,
+          primaryEmail: school?.primaryEmail || null,
+          address: school?.address || null,
           schoolType: this.getSchoolTypeFromLevels(school?.educationLevels || []),
           country: tenant.country?.name || null,
         };
@@ -176,6 +182,101 @@ export class SchoolSearchService {
         );
       }
       // Propager les autres erreurs
+      throw error;
+    }
+  }
+
+  /**
+   * Liste tous les établissements actifs avec le nombre d'offres d'emploi publiées.
+   * Single-query approach: fetches all schools then counts active (PUBLIÉE) jobs per tenant.
+   * Used by the public /jobs careers page to avoid N+1 parallel API calls.
+   */
+  async listSchoolsWithJobs(): Promise<any[]> {
+    this.logger.log('Listing all schools with active job counts');
+
+    try {
+      // 1. Fetch all active tenants (single query)
+      const tenants = await this.prisma.tenant.findMany({
+        where: {
+          ...this.buildPublicSchoolListWhere(),
+          type: 'SCHOOL',
+        },
+        include: {
+          schools: {
+            select: {
+              name: true,
+              logo: true,
+              address: true,
+              city: true,
+              primaryPhone: true,
+              primaryEmail: true,
+              educationLevels: true,
+            },
+          },
+          country: {
+            select: {
+              name: true,
+              code: true,
+            },
+          },
+        },
+        orderBy: {
+          name: 'asc',
+        },
+      });
+
+      if (tenants.length === 0) return [];
+
+      // 2. Count active (PUBLIÉE) jobs per tenant in a single groupBy query
+      const tenantIds = tenants.map((t) => t.id);
+      const jobCounts = await this.prisma.hrJob.groupBy({
+        by: ['tenantId'],
+        where: {
+          tenantId: { in: tenantIds },
+          status: 'PUBLIÉE',
+        },
+        _count: { id: true },
+      });
+
+      // Build a lookup map: tenantId → activeJobsCount
+      const countMap = new Map<string, number>();
+      for (const row of jobCounts) {
+        countMap.set(row.tenantId, row._count.id);
+      }
+
+      // 3. Merge school data with job counts
+      const results = tenants.map((tenant) => {
+        const school = tenant.schools;
+        const address = school?.address || '';
+        const city = school?.city || this.extractCityFromAddress(address);
+
+        return {
+          id: tenant.id,
+          tenantId: tenant.id,
+          name: tenant.name,
+          schoolName: school?.name || tenant.name,
+          tenantName: tenant.name,
+          slug: tenant.slug,
+          subdomain: tenant.subdomain || null,
+          logoUrl: school?.logo || null,
+          city: city || null,
+          primaryPhone: school?.primaryPhone || null,
+          primaryEmail: school?.primaryEmail || null,
+          address: school?.address || null,
+          schoolType: this.getSchoolTypeFromLevels(school?.educationLevels || []),
+          country: tenant.country?.name || null,
+          activeJobsCount: countMap.get(tenant.id) || 0,
+        };
+      });
+
+      return results;
+    } catch (error: any) {
+      if (error?.code === 'P1001' || error?.message?.includes('Can\'t reach database server')) {
+        this.logger.error('Database connection failed:', error.message);
+        throw new ServiceUnavailableException(
+          'Service temporairement indisponible. Veuillez réessayer plus tard.',
+        );
+      }
       throw error;
     }
   }

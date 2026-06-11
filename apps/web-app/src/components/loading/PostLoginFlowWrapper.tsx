@@ -11,7 +11,6 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import { PostLoginLoading } from './PostLoginLoading';
 import type { PostLoginFlowResult } from '@/lib/loading/post-login-flow.service';
 
@@ -62,8 +61,6 @@ export function PostLoginFlowWrapper({
   user,
   tenant,
 }: PostLoginFlowWrapperProps) {
-  const router = useRouter();
-
   // Vérifier immédiatement si le flow a déjà été fait (pas de loading flash)
   const alreadyDone = wasFlowCompletedThisSession() || moduleLevelFlowDone;
 
@@ -71,6 +68,7 @@ export function PostLoginFlowWrapper({
     alreadyDone ? { success: true, user, tenant, academicYear: null, permissions: [], offlineStatus: { isOnline: true, pendingOperations: 0, syncRequired: false }, orionAlerts: [] } : null
   );
   const [error, setError] = useState<any>(null);
+  const [isRedirecting, setIsRedirecting] = useState(false);
   const hasRunRef = useRef(false);
 
   // Réinitialiser le flag module-level lors du logout
@@ -101,12 +99,28 @@ export function PostLoginFlowWrapper({
 
     // Gérer les erreurs critiques
     if (err.code === 'AUTH_ERROR') {
-      router.push('/login');
+      // Sur mobile, le cookie de session peut ne pas être encore disponible
+      // après une redirection cross-domain. Essayer un reload avant d'abandonner.
+      if (typeof window !== 'undefined') {
+        const retryCount = parseInt(sessionStorage.getItem('auth_retry_count') || '0');
+        if (retryCount < 2) {
+          sessionStorage.setItem('auth_retry_count', String(retryCount + 1));
+          window.location.reload();
+          return;
+        }
+        sessionStorage.removeItem('auth_retry_count');
+      }
+      // IMPORTANT: Utiliser window.location.href au lieu de router.push
+      // pour forcer un rechargement complet de la page, ce qui garantit
+      // que les cookies sont correctement traités sur mobile.
+      setIsRedirecting(true);
+      window.location.href = '/login';
       return;
     }
 
     if (err.code === 'TENANT_NOT_FOUND' || err.code === 'TENANT_SUSPENDED') {
-      router.push('/tenant-not-found');
+      setIsRedirecting(true);
+      window.location.href = '/tenant-not-found';
       return;
     }
 
@@ -128,6 +142,19 @@ export function PostLoginFlowWrapper({
   // Si le flow a déjà été complété dans cette session, afficher directement le contenu
   if (flowResult) {
     return <>{children}</>;
+  }
+
+  // Si on est en train de rediriger (erreur critique), afficher un message de transition
+  // au lieu d'une page blanche pendant que la redirection s'effectue
+  if (isRedirecting) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-white">
+        <div className="text-center px-4">
+          <div className="w-12 h-12 border-4 border-[#0b2f73] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-sm text-slate-600">Redirection en cours...</p>
+        </div>
+      </div>
+    );
   }
 
   // Sinon, exécuter le flow post-login (une seule fois)

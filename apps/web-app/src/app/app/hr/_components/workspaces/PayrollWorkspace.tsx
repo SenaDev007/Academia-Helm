@@ -48,7 +48,10 @@ export function PayrollWorkspace() {
   });
 
   async function fetchData() {
-    if (!tenant?.id) return;
+    if (!tenant?.id) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const [payrollData, statsData] = await Promise.all([

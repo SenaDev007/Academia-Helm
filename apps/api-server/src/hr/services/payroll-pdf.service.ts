@@ -316,7 +316,7 @@ export class PayrollPdfService {
   </div>
 
   <div class="footer">
-    <p>Ce bulletin de paie est généré par Academia Hub. Pour votre sécurité, conservez-le précieusement.</p>
+    <p>Ce bulletin de paie est généré par Academia Helm. Pour votre sécurité, conservez-le précieusement.</p>
     <p>ID Bulletin: ${payrollItem.id}</p>
   </div>
 </body>

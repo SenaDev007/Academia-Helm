@@ -1,0 +1,312 @@
+/**
+ * ============================================================================
+ * TIMETABLES PRISMA SERVICE - MODULE 2
+ * ============================================================================
+ * 
+ * Service pour la gestion des emplois du temps
+ * 
+ * ============================================================================
+ */
+
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { PrismaService } from '../database/prisma.service';
+import { PedagogicalAuditService } from './services/pedagogical-audit.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
+
+
+@Injectable()
+export class TimetablesPrismaService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: PedagogicalAuditService,
+  ) {}
+
+
+  /**
+   * Crée un créneau horaire
+   */
+  async createTimeSlot(data: {
+    tenantId: string;
+    dayOfWeek: number; // 0 = Lundi, 6 = Dimanche
+    startTime: string; // Format: HH:mm
+    endTime: string; // Format: HH:mm
+  }) {
+    // Vérifier l'unicité
+    const existing = await this.prisma.timeSlot.findFirst({
+      where: {
+        tenantId: data.tenantId,
+        dayOfWeek: data.dayOfWeek,
+        startTime: data.startTime,
+        endTime: data.endTime,
+      },
+    });
+
+    if (existing) {
+      throw new BadRequestException('Time slot already exists');
+    }
+
+    return this.prisma.timeSlot.create({
+      data: {
+        ...prismaCreateDefaults(),
+        ...data,
+      },
+    });
+  }
+
+  /**
+   * Crée un emploi du temps
+   */
+  async createTimetable(data: {
+    tenantId: string;
+    academicYearId: string;
+    schoolLevelId: string;
+    name: string;
+    description?: string;
+    startDate: Date;
+    endDate?: Date;
+  }) {
+    return this.prisma.timetable.create({
+      data: {
+        ...prismaCreateDefaults(),
+        ...data,
+        isActive: true,
+      },
+      include: {
+        academicYear: true,
+        schoolLevel: true,
+      },
+    });
+  }
+
+  /**
+   * Ajoute une entrée à l'emploi du temps
+   */
+  async createTimetableEntry(data: {
+    tenantId: string;
+    academicYearId: string;
+    schoolLevelId: string;
+    timetableId: string;
+    classId?: string;
+    subjectId?: string;
+    teacherId?: string;
+    roomId?: string;
+    timeSlotId?: string;
+    dayOfWeek: number;
+    startTime: string;
+    endTime: string;
+    duration?: number;
+  }) {
+    // Vérifier que l'emploi du temps existe
+    const timetable = await this.prisma.timetable.findFirst({
+      where: { id: data.timetableId, tenantId: data.tenantId },
+    });
+
+    if (!timetable) {
+      throw new NotFoundException(`Timetable with ID ${data.timetableId} not found`);
+    }
+
+    // Vérifier les conflits (même classe, même jour, même heure)
+    const conflictWhere: any = {
+      timetableId: data.timetableId,
+      dayOfWeek: data.dayOfWeek,
+      OR: [
+        { startTime: { lte: data.startTime }, endTime: { gt: data.startTime } },
+        { startTime: { lt: data.endTime }, endTime: { gte: data.endTime } },
+        { startTime: { gte: data.startTime }, endTime: { lte: data.endTime } },
+      ],
+    };
+
+    if (data.classId) {
+      const classConflict = await this.prisma.timetableEntry.findFirst({
+        where: { ...conflictWhere, classId: data.classId },
+      });
+      if (classConflict) throw new BadRequestException('Conflit : La classe a déjà un cours sur ce créneau.');
+    }
+
+    if (data.teacherId) {
+      const teacherConflict = await this.prisma.timetableEntry.findFirst({
+        where: { ...conflictWhere, teacherId: data.teacherId },
+      });
+      if (teacherConflict) throw new BadRequestException('Conflit : L\'enseignant est déjà occupé sur ce créneau.');
+    }
+
+    if (data.roomId) {
+      const roomConflict = await this.prisma.timetableEntry.findFirst({
+        where: { ...conflictWhere, roomId: data.roomId },
+      });
+      if (roomConflict) throw new BadRequestException('Conflit : La salle est déjà occupée sur ce créneau.');
+    }
+
+    // Vérifier la capacité de la salle
+    if (data.roomId && data.classId) {
+      const [room, academicClass] = await Promise.all([
+        this.prisma.room.findUnique({ where: { id: data.roomId } }),
+        this.prisma.academicClass.findUnique({ where: { id: data.classId } }),
+      ]);
+
+      if (room && academicClass && room.capacity && academicClass.capacity && academicClass.capacity > room.capacity) {
+        throw new BadRequestException(`Capacité insuffisante : La salle (${room.capacity}) est trop petite pour la classe (${academicClass.capacity}).`);
+      }
+    }
+
+    const entry = await this.prisma.timetableEntry.create({
+      data: {
+        ...prismaCreateDefaults(),
+        ...data,
+      },
+      include: {
+        class: true,
+        subject: true,
+        teacher: true,
+        room: true,
+        timeSlot: true,
+      },
+    });
+
+    // Log action (non-blocking, don't fail if audit fails)
+    try {
+      await this.audit.log({
+        tenantId: data.tenantId,
+        entityType: 'TIMETABLE_SLOT',
+        entityId: entry.id,
+        action: 'CREATE',
+        performedBy: 'SYSTEM',
+        newData: JSON.parse(JSON.stringify(entry)),
+      });
+    } catch (auditError) {
+      // Audit logging failure should not block the operation
+    }
+
+    return entry;
+
+  }
+
+  /**
+   * Récupère un emploi du temps avec ses entrées
+   */
+  async getTimetable(id: string, tenantId: string) {
+    const timetable = await this.prisma.timetable.findFirst({
+      where: { id, tenantId },
+      include: {
+        academicYear: true,
+        schoolLevel: true,
+        entries: {
+          include: {
+            class: true,
+            subject: true,
+            teacher: true,
+            room: true,
+            timeSlot: true,
+          },
+          orderBy: [
+            { dayOfWeek: 'asc' },
+            { startTime: 'asc' },
+          ],
+        },
+      },
+    });
+
+    if (!timetable) {
+      throw new NotFoundException(`Timetable with ID ${id} not found`);
+    }
+
+    return timetable;
+  }
+
+  /**
+   * Récupère tous les emplois du temps
+   */
+  async findAllTimetables(
+    tenantId: string,
+    filters?: {
+      academicYearId?: string;
+      schoolLevelId?: string;
+      isActive?: boolean;
+    }
+  ) {
+    const where: any = {
+      tenantId,
+    };
+
+    if (filters?.academicYearId) {
+      where.academicYearId = filters.academicYearId;
+    }
+
+    if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
+      where.schoolLevelId = filters.schoolLevelId;
+    }
+
+    if (filters?.isActive !== undefined) {
+      where.isActive = filters.isActive;
+    }
+
+    return this.prisma.timetable.findMany({
+      where,
+      include: {
+        academicYear: true,
+        schoolLevel: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Met à jour un emploi du temps
+   */
+  async updateTimetable(
+    id: string,
+    tenantId: string,
+    data: {
+      name?: string;
+      description?: string;
+      isActive?: boolean;
+      startDate?: Date;
+      endDate?: Date;
+    }
+  ) {
+    await this.getTimetable(id, tenantId);
+
+    return this.prisma.timetable.update({
+      where: { id },
+      data: { ...prismaUpdateDefaults(), ...data },
+      include: {
+        academicYear: true,
+        schoolLevel: true,
+      },
+    });
+  }
+
+  /**
+   * Supprime une entrée d'emploi du temps
+   */
+  async deleteTimetableSlot(id: string, tenantId: string) {
+    const entry = await this.prisma.timetableEntry.findFirst({
+      where: { id, tenantId },
+    });
+
+    if (!entry) {
+      throw new NotFoundException(`TimetableSlot with ID ${id} not found`);
+    }
+
+    await this.prisma.timetableEntry.delete({
+      where: { id },
+    });
+
+    // Log action (non-blocking)
+    try {
+      await this.audit.log({
+        tenantId,
+        entityType: 'TIMETABLE_SLOT',
+        entityId: id,
+        action: 'DELETE',
+        performedBy: 'SYSTEM',
+        oldData: JSON.parse(JSON.stringify(entry)),
+      });
+    } catch (auditError) {
+      // Audit logging failure should not block the operation
+    }
+
+    return { success: true };
+  }
+}
+

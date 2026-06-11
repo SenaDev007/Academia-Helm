@@ -4,6 +4,7 @@ package-lock.json
 !apps/api-server/package-lock.json
 yarn.lock
 pnpm-lock.yaml
+bun.lock
 
 # Environment variables
 .env

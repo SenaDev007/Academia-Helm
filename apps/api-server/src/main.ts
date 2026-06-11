@@ -61,7 +61,7 @@ async function bootstrap() {
       forbidNonWhitelisted: true, // CDC §16.3.3 — rejeter les champs inconnus
       transform: true,
       transformOptions: { enableImplicitConversion: true },
-      disableErrorMessages: process.env.NODE_ENV === 'production',
+      disableErrorMessages: false, // Always show validation errors for debuggability
     }),
   );
 
@@ -225,6 +225,62 @@ async function bootstrap() {
       // staffId on hr_applications (migration 20260606200000)
       `ALTER TABLE "hr_applications" ADD COLUMN IF NOT EXISTS "staffId" TEXT`,
       `CREATE INDEX IF NOT EXISTS "hr_applications_staffId_idx" ON "hr_applications"("staffId")`,
+      // status, result, feedback on hr_interviews (migration 20260607080000)
+      `ALTER TABLE "hr_interviews" ADD COLUMN IF NOT EXISTS "status" TEXT NOT NULL DEFAULT 'PLANIFIÉ'`,
+      `ALTER TABLE "hr_interviews" ADD COLUMN IF NOT EXISTS "result" TEXT`,
+      `ALTER TABLE "hr_interviews" ADD COLUMN IF NOT EXISTS "feedback" TEXT`,
+
+      // ─── Staff columns (migration 20260606120000 + later additions) ───
+      // These columns are referenced by Prisma Client when including staff in queries
+      // (e.g. contract generation, staff list). If the deployed DB doesn't have them,
+      // Prisma throws P2022 "column does not exist".
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "globalMatricule" TEXT`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "tenantMatricule" TEXT`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "terminationType" TEXT`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "terminationDetails" JSONB`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "terminatedAt" TIMESTAMP WITH TIME ZONE`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "noticePeriodDays" INTEGER`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "lastWorkingDate" TIMESTAMP WITH TIME ZONE`,
+      // Extended staff columns (migration 20260610120000)
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "nationality" TEXT`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "maritalStatus" TEXT`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "numberOfChildren" INTEGER`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "nationalId" TEXT`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "cnssNumber" TEXT`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "ifuNumber" TEXT`,
+      // Schools: city and department columns (referenced by contract generation P2022)
+      `ALTER TABLE "schools" ADD COLUMN IF NOT EXISTS "city" TEXT`,
+      `ALTER TABLE "schools" ADD COLUMN IF NOT EXISTS "department" TEXT`,
+      // staff indexes for new columns
+      `CREATE UNIQUE INDEX IF NOT EXISTS "staff_globalMatricule_key" ON "staff"("globalMatricule")`,
+      `CREATE INDEX IF NOT EXISTS "staff_globalMatricule_idx" ON "staff"("globalMatricule")`,
+      `CREATE INDEX IF NOT EXISTS "staff_tenantMatricule_idx" ON "staff"("tenantMatricule")`,
+      `CREATE INDEX IF NOT EXISTS "staff_status_idx" ON "staff"("status")`,
+      `CREATE INDEX IF NOT EXISTS "staff_roleType_idx" ON "staff"("roleType")`,
+      `CREATE INDEX IF NOT EXISTS "staff_nationalId_idx" ON "staff"("nationalId")`,
+      `CREATE INDEX IF NOT EXISTS "staff_cnssNumber_idx" ON "staff"("cnssNumber")`,
+
+      // ─── staff_documents columns (migration 20260606120000) ───
+      `ALTER TABLE "staff_documents" ADD COLUMN IF NOT EXISTS "category" TEXT NOT NULL DEFAULT 'GENERAL'`,
+      `ALTER TABLE "staff_documents" ADD COLUMN IF NOT EXISTS "description" TEXT`,
+      `ALTER TABLE "staff_documents" ADD COLUMN IF NOT EXISTS "validationStatus" TEXT NOT NULL DEFAULT 'PENDING'`,
+      `ALTER TABLE "staff_documents" ADD COLUMN IF NOT EXISTS "expiresAt" TIMESTAMP(3)`,
+      `ALTER TABLE "staff_documents" ADD COLUMN IF NOT EXISTS "version" INTEGER NOT NULL DEFAULT 1`,
+      `CREATE INDEX IF NOT EXISTS "staff_documents_category_idx" ON "staff_documents"("category")`,
+      `CREATE INDEX IF NOT EXISTS "staff_documents_validationStatus_idx" ON "staff_documents"("validationStatus")`,
+
+      // ─── staff_photos table (migration 20260606120000) ───
+      // (created via CREATE TABLE IF NOT EXISTS below)
+
+      // ─── employment_contracts columns ───
+      // schoolLevelId was added after initial migration
+      `ALTER TABLE "employment_contracts" ADD COLUMN IF NOT EXISTS "schoolLevelId" TEXT`,
+      `ALTER TABLE "employment_contracts" ADD COLUMN IF NOT EXISTS "templateId" TEXT`,
+
+      // ─── hr_jobs publishedAt (migration 20260609100000) ───
+      `ALTER TABLE "hr_jobs" ADD COLUMN IF NOT EXISTS "publishedAt" TIMESTAMP(3)`,
+      // ─── hr_jobs slug (for public job URL sharing) ───
+      `ALTER TABLE "hr_jobs" ADD COLUMN IF NOT EXISTS "slug" TEXT`,
     ];
 
     for (const alterStmt of alterStatements) {
@@ -244,6 +300,209 @@ async function bootstrap() {
       );
     } catch (fkErr: any) {
       logger.warn(`staffId FK warning: ${fkErr.message}`);
+    }
+
+    // ─── Ensure ALL missing staff columns (migrations 20260606 → 20260609) ──
+    // These ALTER statements are idempotent (IF NOT EXISTS) and cover columns
+    // from multiple migrations that may not have been applied via prisma migrate.
+    const staffAlterStatements = [
+      // ── Migration 20260606120000: dual matricule ──
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "globalMatricule" TEXT`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "tenantMatricule" TEXT`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "staff_globalMatricule_key" ON "staff"("globalMatricule") WHERE "globalMatricule" IS NOT NULL`,
+      `CREATE INDEX IF NOT EXISTS "staff_tenantMatricule_idx" ON "staff"("tenantMatricule")`,
+
+      // ── Migration 20260608120000: termination tracking ──
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "terminationType" TEXT`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "terminationDetails" JSONB`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "terminatedAt" TIMESTAMPTZ`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "noticePeriodDays" INTEGER`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "lastWorkingDate" TIMESTAMPTZ`,
+      `CREATE INDEX IF NOT EXISTS "staff_terminationType_idx" ON "staff"("terminationType")`,
+      `CREATE INDEX IF NOT EXISTS "staff_terminatedAt_idx" ON "staff"("terminatedAt")`,
+
+      // ── Migration 20260609120000: HR fields (fiche personnel) ──
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "nationality" TEXT`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "maritalStatus" TEXT`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "numberOfChildren" INTEGER`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "nationalId" TEXT`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "cnssNumber" TEXT`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "ifuNumber" TEXT`,
+      `CREATE INDEX IF NOT EXISTS "staff_cnssNumber_idx" ON "staff"("cnssNumber")`,
+
+      // ── Schools: city and department (P2022 fix for contract generation) ──
+      `ALTER TABLE "schools" ADD COLUMN IF NOT EXISTS "city" TEXT`,
+      `ALTER TABLE "schools" ADD COLUMN IF NOT EXISTS "department" TEXT`,
+    ];
+    for (const stmt of staffAlterStatements) {
+      try {
+        await prisma.$executeRawUnsafe(stmt);
+      } catch (err: any) {
+        if (!err.message?.includes('already exists') && !err.message?.includes('42P07') && !err.message?.includes('42P16')) {
+          logger.warn(`Staff ALTER warning: ${stmt.substring(0, 80)}… — ${err.message}`);
+        }
+      }
+    }
+
+    // ── Ensure staff_documents extended columns (migration 20260606120000) ──
+    const staffDocAlterStatements = [
+      `ALTER TABLE "staff_documents" ADD COLUMN IF NOT EXISTS "category" TEXT NOT NULL DEFAULT 'GENERAL'`,
+      `ALTER TABLE "staff_documents" ADD COLUMN IF NOT EXISTS "description" TEXT`,
+      `ALTER TABLE "staff_documents" ADD COLUMN IF NOT EXISTS "validationStatus" TEXT NOT NULL DEFAULT 'PENDING'`,
+      `ALTER TABLE "staff_documents" ADD COLUMN IF NOT EXISTS "expiresAt" TIMESTAMP(3)`,
+      `ALTER TABLE "staff_documents" ADD COLUMN IF NOT EXISTS "version" INTEGER NOT NULL DEFAULT 1`,
+      `CREATE INDEX IF NOT EXISTS "staff_documents_category_idx" ON "staff_documents"("category")`,
+      `CREATE INDEX IF NOT EXISTS "staff_documents_validationStatus_idx" ON "staff_documents"("validationStatus")`,
+    ];
+    for (const stmt of staffDocAlterStatements) {
+      try {
+        await prisma.$executeRawUnsafe(stmt);
+      } catch (err: any) {
+        if (!err.message?.includes('already exists') && !err.message?.includes('42P07') && !err.message?.includes('42P16')) {
+          logger.warn(`StaffDoc ALTER warning: ${err.message}`);
+        }
+      }
+    }
+
+    // ── Ensure staff_photos table (migration 20260606120000) ──
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "staff_photos" (
+            "id" TEXT NOT NULL,
+            "tenantId" TEXT NOT NULL,
+            "staffId" TEXT NOT NULL,
+            "originalUrl" TEXT NOT NULL,
+            "hdUrl" TEXT NOT NULL,
+            "thumbnailUrl" TEXT NOT NULL,
+            "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT "staff_photos_pkey" PRIMARY KEY ("id")
+        )
+      `);
+      await prisma.$executeRawUnsafe(
+        `CREATE UNIQUE INDEX IF NOT EXISTS "staff_photos_staffId_key" ON "staff_photos"("staffId")`
+      );
+      await prisma.$executeRawUnsafe(
+        `CREATE INDEX IF NOT EXISTS "staff_photos_tenantId_staffId_idx" ON "staff_photos"("tenantId", "staffId")`
+      );
+      // FK for staff_photos
+      await prisma.$executeRawUnsafe(
+        `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'staff_photos_staffId_fkey') THEN ALTER TABLE "staff_photos" ADD CONSTRAINT "staff_photos_staffId_fkey" FOREIGN KEY ("staffId") REFERENCES "staff"("id") ON DELETE CASCADE ON UPDATE CASCADE; END IF; END $$;`
+      );
+      await prisma.$executeRawUnsafe(
+        `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'staff_photos_tenantId_fkey') THEN ALTER TABLE "staff_photos" ADD CONSTRAINT "staff_photos_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE; END IF; END $$;`
+      );
+    } catch (photoErr: any) {
+      if (!photoErr.message?.includes('already exists') && !photoErr.message?.includes('42P07') && !photoErr.message?.includes('42P16')) {
+        logger.warn(`staff_photos table warning: ${photoErr.message}`);
+      }
+    }
+
+    // ── Ensure staff_number_sequences table (migration 20260606120000) ──
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "staff_number_sequences" (
+            "id" TEXT NOT NULL,
+            "tenantId" TEXT NOT NULL,
+            "current" INTEGER NOT NULL DEFAULT 0,
+            "updatedAt" TIMESTAMP(3) NOT NULL,
+            CONSTRAINT "staff_number_sequences_pkey" PRIMARY KEY ("id")
+        )
+      `);
+      await prisma.$executeRawUnsafe(
+        `CREATE UNIQUE INDEX IF NOT EXISTS "staff_number_sequences_tenantId_key" ON "staff_number_sequences"("tenantId")`
+      );
+      await prisma.$executeRawUnsafe(
+        `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'staff_number_sequences_tenantId_fkey') THEN ALTER TABLE "staff_number_sequences" ADD CONSTRAINT "staff_number_sequences_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE; END IF; END $$;`
+      );
+    } catch (seqErr: any) {
+      if (!seqErr.message?.includes('already exists') && !seqErr.message?.includes('42P07') && !seqErr.message?.includes('42P16')) {
+        logger.warn(`staff_number_sequences table warning: ${seqErr.message}`);
+      }
+    }
+
+    // ── Ensure contract termination fields (migration 20260608) ──
+    const contractTerminationStatements = [
+      `ALTER TABLE "contract" ADD COLUMN IF NOT EXISTS "terminatedAt" TIMESTAMPTZ`,
+      `ALTER TABLE "contract" ADD COLUMN IF NOT EXISTS "terminationReason" TEXT`,
+    ];
+    for (const stmt of contractTerminationStatements) {
+      try {
+        await prisma.$executeRawUnsafe(stmt);
+      } catch (err: any) {
+        if (!err.message?.includes('already exists') && !err.message?.includes('42P07') && !err.message?.includes('42P16')) {
+          logger.warn(`Contract termination ALTER warning: ${err.message}`);
+        }
+      }
+    }
+
+    // ── Ensure publishedAt on hr_jobs (migration 20260609100000) ──
+    try {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "hr_jobs" ADD COLUMN IF NOT EXISTS "publishedAt" TIMESTAMP(3)`);
+    } catch (err: any) {
+      if (!err.message?.includes('already exists') && !err.message?.includes('42P07') && !err.message?.includes('42P16')) {
+        logger.warn(`hr_jobs publishedAt warning: ${err.message}`);
+      }
+    }
+
+    // ── Ensure slug on hr_jobs and backfill existing rows ──
+    try {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "hr_jobs" ADD COLUMN IF NOT EXISTS "slug" TEXT`);
+    } catch (err: any) {
+      if (!err.message?.includes('already exists') && !err.message?.includes('42P07') && !err.message?.includes('42P16')) {
+        logger.warn(`hr_jobs slug column warning: ${err.message}`);
+      }
+    }
+    try {
+      // Backfill slug for existing rows that have NULL slug — generate from title + ref suffix
+      const slugPrefix = `lower(regexp_replace(regexp_replace(regexp_replace(title, '[^a-zA-Z0-9\\s]', '', 'g'), '\\s+', '-', 'g'), '^(-+)|(-+)$', '', 'g'))`;
+      await prisma.$executeRawUnsafe(`
+        UPDATE "hr_jobs" SET slug = CONCAT(${slugPrefix}, '-', SUBSTRING(ref FROM POSITION('-' IN reverse(ref)) + 1))
+        WHERE slug IS NULL AND title IS NOT NULL AND ref IS NOT NULL
+      `);
+    } catch (err: any) {
+      logger.warn(`hr_jobs slug backfill warning: ${err.message}`);
+    }
+    try {
+      // Add unique constraint on slug if not already present
+      await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "hr_jobs_slug_key" ON "hr_jobs"("slug")`);
+    } catch (err: any) {
+      if (!err.message?.includes('already exists') && !err.message?.includes('42P07') && !err.message?.includes('42P16')) {
+        logger.warn(`hr_jobs slug unique index warning: ${err.message}`);
+      }
+    }
+
+    // ─── Ensure hr_tests missing columns (duration, instructions, maxScore, passingScore, status, updatedAt) ───
+    const hrTestsAlterStatements = [
+      `ALTER TABLE "hr_tests" ADD COLUMN IF NOT EXISTS "duration" INTEGER`,
+      `ALTER TABLE "hr_tests" ADD COLUMN IF NOT EXISTS "instructions" TEXT`,
+      `ALTER TABLE "hr_tests" ADD COLUMN IF NOT EXISTS "maxScore" INTEGER NOT NULL DEFAULT 100`,
+      `ALTER TABLE "hr_tests" ADD COLUMN IF NOT EXISTS "passingScore" INTEGER NOT NULL DEFAULT 50`,
+      `ALTER TABLE "hr_tests" ADD COLUMN IF NOT EXISTS "status" TEXT NOT NULL DEFAULT 'ACTIF'`,
+      `ALTER TABLE "hr_tests" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+    ];
+    for (const stmt of hrTestsAlterStatements) {
+      try {
+        await prisma.$executeRawUnsafe(stmt);
+      } catch (err: any) {
+        if (!err.message?.includes('already exists') && !err.message?.includes('42P07') && !err.message?.includes('42P16')) {
+          logger.warn(`hr_tests ALTER warning: ${err.message}`);
+        }
+      }
+    }
+
+    // ─── Ensure hr_test_results missing columns (notes, evaluatedAt) ───
+    const hrTestResultsAlterStatements = [
+      `ALTER TABLE "hr_test_results" ADD COLUMN IF NOT EXISTS "notes" TEXT`,
+      `ALTER TABLE "hr_test_results" ADD COLUMN IF NOT EXISTS "evaluatedAt" TIMESTAMP(3)`,
+    ];
+    for (const stmt of hrTestResultsAlterStatements) {
+      try {
+        await prisma.$executeRawUnsafe(stmt);
+      } catch (err: any) {
+        if (!err.message?.includes('already exists') && !err.message?.includes('42P07') && !err.message?.includes('42P16')) {
+          logger.warn(`hr_test_results ALTER warning: ${err.message}`);
+        }
+      }
     }
 
     // ─── Ensure job_number_sequences table (migration 20260606220000) ──────
@@ -267,7 +526,94 @@ async function bootstrap() {
       logger.warn(`job_number_sequences table warning: ${seqErr.message}`);
     }
 
-    logger.log('Recruitment tables & columns ensured successfully');
+    // ─── Ensure staff_photos table (migration 20260606120000) ──────────────
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "staff_photos" (
+            "id" TEXT NOT NULL,
+            "tenantId" TEXT NOT NULL,
+            "staffId" TEXT NOT NULL,
+            "originalUrl" TEXT NOT NULL,
+            "hdUrl" TEXT NOT NULL,
+            "thumbnailUrl" TEXT NOT NULL,
+            "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "academicYearId" TEXT,
+            "schoolLevelId" TEXT,
+            CONSTRAINT "staff_photos_pkey" PRIMARY KEY ("id")
+        )
+      `);
+      await prisma.$executeRawUnsafe(
+        `CREATE UNIQUE INDEX IF NOT EXISTS "staff_photos_staffId_key" ON "staff_photos"("staffId")`
+      );
+      await prisma.$executeRawUnsafe(
+        `CREATE INDEX IF NOT EXISTS "staff_photos_tenantId_staffId_idx" ON "staff_photos"("tenantId", "staffId")`
+      );
+      await prisma.$executeRawUnsafe(
+        `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'staff_photos_staffId_fkey') THEN ALTER TABLE "staff_photos" ADD CONSTRAINT "staff_photos_staffId_fkey" FOREIGN KEY ("staffId") REFERENCES "staff"("id") ON DELETE CASCADE ON UPDATE CASCADE; END IF; END $$;`
+      );
+      await prisma.$executeRawUnsafe(
+        `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'staff_photos_tenantId_fkey') THEN ALTER TABLE "staff_photos" ADD CONSTRAINT "staff_photos_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE; END IF; END $$;`
+      );
+    } catch (photoErr: any) {
+      logger.warn(`staff_photos table warning: ${photoErr.message}`);
+    }
+
+    // ─── Ensure staff_number_sequences table (migration 20260606120000) ───
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "staff_number_sequences" (
+            "id" TEXT NOT NULL,
+            "tenantId" TEXT NOT NULL UNIQUE,
+            "current" INTEGER NOT NULL DEFAULT 0,
+            "updatedAt" TIMESTAMP(3) NOT NULL,
+            CONSTRAINT "staff_number_sequences_pkey" PRIMARY KEY ("id")
+        )
+      `);
+      await prisma.$executeRawUnsafe(
+        `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'staff_number_sequences_tenantId_fkey') THEN ALTER TABLE "staff_number_sequences" ADD CONSTRAINT "staff_number_sequences_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE; END IF; END $$;`
+      );
+    } catch (seqErr2: any) {
+      logger.warn(`staff_number_sequences table warning: ${seqErr2.message}`);
+    }
+
+    // ─── Ensure employee_cnss table ──────────────────────────────────────
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "employee_cnss" (
+            "id" TEXT NOT NULL,
+            "tenantId" TEXT NOT NULL,
+            "staffId" TEXT NOT NULL,
+            "cnssNumber" TEXT,
+            "affiliationDate" DATE,
+            "isActive" BOOLEAN NOT NULL DEFAULT true,
+            "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updatedAt" TIMESTAMP(3) NOT NULL,
+            CONSTRAINT "employee_cnss_pkey" PRIMARY KEY ("id")
+        )
+      `);
+      await prisma.$executeRawUnsafe(
+        `CREATE UNIQUE INDEX IF NOT EXISTS "employee_cnss_staffId_key" ON "employee_cnss"("staffId")`
+      );
+      await prisma.$executeRawUnsafe(
+        `CREATE INDEX IF NOT EXISTS "employee_cnss_tenantId_idx" ON "employee_cnss"("tenantId")`
+      );
+      await prisma.$executeRawUnsafe(
+        `CREATE INDEX IF NOT EXISTS "employee_cnss_staffId_idx" ON "employee_cnss"("staffId")`
+      );
+      await prisma.$executeRawUnsafe(
+        `CREATE INDEX IF NOT EXISTS "employee_cnss_cnssNumber_idx" ON "employee_cnss"("cnssNumber")`
+      );
+      await prisma.$executeRawUnsafe(
+        `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'employee_cnss_staffId_fkey') THEN ALTER TABLE "employee_cnss" ADD CONSTRAINT "employee_cnss_staffId_fkey" FOREIGN KEY ("staffId") REFERENCES "staff"("id") ON DELETE CASCADE ON UPDATE CASCADE; END IF; END $$;`
+      );
+      await prisma.$executeRawUnsafe(
+        `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'employee_cnss_tenantId_fkey') THEN ALTER TABLE "employee_cnss" ADD CONSTRAINT "employee_cnss_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE; END IF; END $$;`
+      );
+    } catch (cnssErr: any) {
+      logger.warn(`employee_cnss table warning: ${cnssErr.message}`);
+    }
+
+    logger.log('HR tables & columns ensured successfully');
   } catch (fallbackErr: any) {
     logger.error(`Recruitment tables fallback failed: ${fallbackErr.message}`);
     logger.warn('Some HR recruitment features may not work');
@@ -280,7 +626,7 @@ async function bootstrap() {
   logger.log(`Academia Helm API listening on http://0.0.0.0:${port} (PORT=${process.env.PORT ?? 'unset'})`);
   logger.log(`Memory: heapUsed=${Math.round(memUsage.heapUsed / 1024 / 1024)}MB, rss=${Math.round(memUsage.rss / 1024 / 1024)}MB`);
 
-  // FIX OOM: Periodic memory monitoring (every 10 minutes)
+  // Periodic memory monitoring (every 10 minutes) — v2026.06.09
   // Logs heap usage and triggers GC if heap is above 80% of max
   setInterval(() => {
     const mem = process.memoryUsage();

@@ -45,11 +45,12 @@ export default function AdminLayout({ children, user }: AdminLayoutProps) {
     try {
       await offlineBootstrapService.clearCache();
       await fetch('/api/auth/logout', { method: 'POST' });
-      router.push('/login');
     } catch (error) {
       console.error('Error logging out:', error);
-      router.push('/login');
     }
+    // Utiliser window.location.href au lieu de router.push pour garantir
+    // un rechargement complet (fiabilité mobile)
+    window.location.href = '/login';
   };
 
   const menuItems: Array<{ path: string; label: string; icon: IconName }> = [

@@ -37,14 +37,20 @@ import {
   FolderOpen,
   Globe,
   Building2,
+  UserX,
+  UserCheck,
+  Package,
+  DollarSign,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
+import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { toast } from '@/components/ui/toast';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { motion, AnimatePresence } from 'framer-motion';
+import { StaffTerminationModal } from '../../_components/modals/StaffTerminationModal';
 
 const PRIMARY = '#1A2BA6';
 
@@ -89,11 +95,23 @@ function formatEmergencyContact(contact: any): string {
   if (!contact) return 'Non renseigné';
   if (typeof contact === 'string') return contact;
   if (typeof contact === 'object') {
+    // Structured format: { name, phone, relationship }
     const parts: string[] = [];
     if (contact.name) parts.push(contact.name);
     if (contact.phone) parts.push(contact.phone);
     if (contact.relationship) parts.push(`(${contact.relationship})`);
-    return parts.length > 0 ? parts.join(' — ') : JSON.stringify(contact);
+    if (parts.length > 0) return parts.join(' — ');
+
+    // Legacy format: { note: "Name — Phone — Relationship" }
+    if (contact.note) {
+      return String(contact.note);
+    }
+
+    // Fallback: try to display any other key values
+    const values = Object.values(contact).filter(v => v != null && v !== '');
+    if (values.length > 0) return values.join(' — ');
+
+    return 'Non renseigné';
   }
   return String(contact);
 }
@@ -117,6 +135,17 @@ const STATUS_LABELS: Record<string, { label: string; className: string }> = {
   INACTIVE:  { label: 'Inactif',    className: 'text-slate-500' },
   SUSPENDED: { label: 'Suspendu',   className: 'text-amber-600' },
   ON_LEAVE:  { label: 'En congé',   className: 'text-blue-600' },
+};
+
+const TERMINATION_TYPE_LABELS: Record<string, string> = {
+  RESIGNATION: 'Démission',
+  DISMISSAL: 'Licenciement',
+  MUTUAL_AGREEMENT: 'Rupture conventionnelle',
+  END_OF_CONTRACT: 'Fin de contrat',
+  RETIREMENT: 'Retraite',
+  DEATH: 'Décès',
+  ABANDONMENT: 'Abandon de poste',
+  OTHER: 'Autre',
 };
 
 export default function StaffDetailPage() {
@@ -151,6 +180,10 @@ export default function StaffDetailPage() {
 
   // Expanded document categories
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+
+  // Termination modal
+  const [terminationModalOpen, setTerminationModalOpen] = useState(false);
+  const [reactivateLoading, setReactivateLoading] = useState(false);
 
   const fetchMember = useCallback(async () => {
     if (!tenant?.id || !id) return;
@@ -265,15 +298,31 @@ export default function StaffDetailPage() {
       email: member.email || '',
       phone: member.phone || '',
       position: member.position || '',
-      category: member.category || 'ADMIN',
+      department: member.department || '',
+      category: member.category || 'PEDAGOGICAL',
       gender: member.gender || 'MALE',
       dateOfBirth: member.dateOfBirth ? new Date(member.dateOfBirth).toISOString().split('T')[0] : '',
       birthDate: member.birthDate ? new Date(member.birthDate).toISOString().split('T')[0] : '',
       address: member.address || '',
-      emergencyContact: typeof member.emergencyContact === 'object' && member.emergencyContact ? JSON.stringify(member.emergencyContact) : (member.emergencyContact || ''),
+      emergencyContactName: typeof member.emergencyContact === 'object' && member.emergencyContact ? (member.emergencyContact.name || (member.emergencyContact.note ? member.emergencyContact.note.split(' — ')[0] || member.emergencyContact.note.split(' - ')[0] || '' : '')) : '',
+      emergencyContactPhone: typeof member.emergencyContact === 'object' && member.emergencyContact ? (member.emergencyContact.phone || (member.emergencyContact.note ? (member.emergencyContact.note.split(' — ')[1] || member.emergencyContact.note.split(' - ')[1] || '') : '')) : '',
+      emergencyContactRelationship: typeof member.emergencyContact === 'object' && member.emergencyContact ? (member.emergencyContact.relationship || (member.emergencyContact.note ? (member.emergencyContact.note.split(' — ')[2] || member.emergencyContact.note.split(' - ')[2] || '').replace(/[()]/g, '') : '')) : '',
       qualifications: member.qualifications || '',
-      department: member.department || '',
       notes: member.notes || '',
+      // HR fields (fiche personnel complète)
+      nationality: member.nationality || '',
+      maritalStatus: member.maritalStatus || '',
+      numberOfChildren: member.numberOfChildren != null ? String(member.numberOfChildren) : '',
+      nationalId: member.nationalId || '',
+      cnssNumber: member.cnssNumber || '',
+      ifuNumber: member.ifuNumber || '',
+      hireDate: member.hireDate ? new Date(member.hireDate).toISOString().split('T')[0] : '',
+      contractType: member.contractType || member.contracts?.[0]?.contractType || '',
+      status: member.status || 'ACTIVE',
+      salary: member.salary != null ? String(member.salary) : '',
+      bankName: member.bankDetails?.bankName || '',
+      bankAccountNumber: member.bankDetails?.accountNumber || '',
+      bankAccountName: member.bankDetails?.accountName || '',
     });
     setEditOpen(true);
   };
@@ -291,16 +340,44 @@ export default function StaffDetailPage() {
         }
       }
 
-      // Handle emergencyContact — try to parse as JSON, else wrap as object
-      if (typeof submitData.emergencyContact === 'string' && submitData.emergencyContact.trim()) {
-        try {
-          submitData.emergencyContact = JSON.parse(submitData.emergencyContact);
-        } catch {
-          // Wrap free-form text as structured object for backend compatibility
-          submitData.emergencyContact = { note: submitData.emergencyContact };
-        }
-      } else if (!submitData.emergencyContact || (typeof submitData.emergencyContact === 'string' && !submitData.emergencyContact.trim())) {
+      // Handle numberOfChildren — convert empty string to null, valid string to integer
+      if (submitData.numberOfChildren === '' || submitData.numberOfChildren === null || submitData.numberOfChildren === undefined) {
+        submitData.numberOfChildren = null;
+      } else {
+        submitData.numberOfChildren = parseInt(submitData.numberOfChildren, 10) || null;
+      }
+
+      // Handle emergencyContact — build structured object from 3 fields
+      const ecName = (submitData.emergencyContactName || '').trim();
+      const ecPhone = (submitData.emergencyContactPhone || '').trim();
+      const ecRelationship = (submitData.emergencyContactRelationship || '').trim();
+      delete submitData.emergencyContactName;
+      delete submitData.emergencyContactPhone;
+      delete submitData.emergencyContactRelationship;
+      if (ecName || ecPhone || ecRelationship) {
+        submitData.emergencyContact = { name: ecName, phone: ecPhone, relationship: ecRelationship };
+      } else {
         submitData.emergencyContact = null;
+      }
+
+      // Handle salary — convert empty string to null, valid string to float
+      if (submitData.salary === '' || submitData.salary === null || submitData.salary === undefined) {
+        submitData.salary = null;
+      } else {
+        submitData.salary = parseFloat(submitData.salary) || null;
+      }
+
+      // Handle bankDetails — build structured object from 3 fields
+      const bankName = (submitData.bankName || '').trim();
+      const bankAccountNumber = (submitData.bankAccountNumber || '').trim();
+      const bankAccountName = (submitData.bankAccountName || '').trim();
+      delete submitData.bankName;
+      delete submitData.bankAccountNumber;
+      delete submitData.bankAccountName;
+      if (bankName || bankAccountNumber || bankAccountName) {
+        submitData.bankDetails = { bankName, accountNumber: bankAccountNumber, accountName: bankAccountName };
+      } else {
+        submitData.bankDetails = null;
       }
 
       // Remove category from direct submission — it's mapped to roleType server-side
@@ -375,12 +452,57 @@ export default function StaffDetailPage() {
     }
   };
 
+  const handleDocView = async (doc: any) => {
+    if (!tenant?.id) return;
+    try {
+      const response = await fetch(`/api/hr/staff/${id}/documents/${doc.id}/download?tenantId=${tenant.id}`, {
+        method: 'GET',
+        headers: { ...getClientAuthorizationHeader() },
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      if (!response.ok) throw new Error('Erreur lors du téléchargement');
+      const blob = await response.blob();
+      // For images and PDFs, open in new tab; for others, trigger download
+      const url = URL.createObjectURL(blob);
+      if (doc.mimeType?.startsWith('image/') || doc.mimeType === 'application/pdf') {
+        window.open(url, '_blank');
+      } else {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = doc.fileName || 'document';
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (err: any) {
+      toast({ variant: 'error', title: err.message || 'Erreur lors de la visualisation du document' });
+    }
+  };
+
   const toggleCategory = (cat: string) => {
     setExpandedCategories(prev => {
       const next = new Set(prev);
       if (next.has(cat)) next.delete(cat); else next.add(cat);
       return next;
     });
+  };
+
+  // ─── Reactivate Staff ─────────────────────────────────────────────────────
+  const handleReactivate = async () => {
+    if (!tenant?.id || !id) return;
+    try {
+      setReactivateLoading(true);
+      await hrFetch<any>(hrUrl(`staff/${id}/reactivate`, { tenantId: tenant.id }), {
+        method: 'POST',
+        body: { reason: 'Réintégration du collaborateur' },
+      });
+      toast({ variant: 'success', title: 'Collaborateur réactivé avec succès' });
+      fetchMember();
+    } catch (err: any) {
+      toast({ variant: 'error', title: err.message || 'Erreur lors de la réactivation' });
+    } finally {
+      setReactivateLoading(false);
+    }
   };
 
   if (loading) {
@@ -400,6 +522,9 @@ export default function StaffDetailPage() {
 
   const statusInfo = STATUS_LABELS[member.status] || STATUS_LABELS.INACTIVE;
   const hireDate = member.contracts?.[0]?.startDate || member.hireDate || null;
+  const isTerminated = member.status === 'INACTIVE' && member.terminationType;
+  const terminationLabel = TERMINATION_TYPE_LABELS[member.terminationType] || member.terminationType;
+  const terminationDetails = (typeof member.terminationDetails === 'object' && member.terminationDetails) ? member.terminationDetails : null;
 
   // Sort categories by order
   const sortedCategories = Object.entries(DOC_CATEGORIES).sort(([,a], [,b]) => a.order - b.order);
@@ -421,7 +546,7 @@ export default function StaffDetailPage() {
       {/* ─── Edit Modal ──────────────────────────────────────────────────── */}
       {editOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between px-6 py-5 text-white" style={{ background: PRIMARY }}>
               <div className="flex items-center gap-3">
                 <div className="rounded-lg bg-white/15 p-2"><Edit3 className="h-5 w-5" /></div>
@@ -432,7 +557,12 @@ export default function StaffDetailPage() {
               </div>
               <button onClick={() => setEditOpen(false)} className="rounded-lg p-1.5 hover:bg-white/15 transition-colors"><X className="h-5 w-5" /></button>
             </div>
-            <form onSubmit={handleEditSubmit} className="p-6 space-y-4 max-h-[65vh] overflow-y-auto">
+            <form onSubmit={handleEditSubmit} className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
+              {/* ── Section: Identité ── */}
+              <div className="space-y-1 mb-3">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Identité</h4>
+                <div className="h-px bg-slate-100" />
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Prénom</label>
@@ -445,6 +575,52 @@ export default function StaffDetailPage() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
+                  <label className={labelClass}>Genre</label>
+                  <select className={inputClass} value={editForm.gender} onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}>
+                    <option value="MALE">Masculin</option>
+                    <option value="FEMALE">Féminin</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>Date de naissance</label>
+                  <input type="date" className={inputClass} value={editForm.birthDate} onChange={(e) => setEditForm({ ...editForm, birthDate: e.target.value })} />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Nationalité</label>
+                  <input type="text" className={inputClass} value={editForm.nationality} onChange={(e) => setEditForm({ ...editForm, nationality: e.target.value })} placeholder="Ex: Béninoise" />
+                </div>
+                <div>
+                  <label className={labelClass}>Situation matrimoniale</label>
+                  <select className={inputClass} value={editForm.maritalStatus} onChange={(e) => setEditForm({ ...editForm, maritalStatus: e.target.value })}>
+                    <option value="">— Non renseigné —</option>
+                    <option value="SINGLE">Célibataire</option>
+                    <option value="MARRIED">Marié(e)</option>
+                    <option value="DIVORCED">Divorcé(e)</option>
+                    <option value="WIDOWED">Veuf/Veuve</option>
+                    <option value="SEPARATED">Séparé(e)</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Nombre d&apos;enfants</label>
+                  <input type="number" min="0" className={inputClass} value={editForm.numberOfChildren} onChange={(e) => setEditForm({ ...editForm, numberOfChildren: e.target.value })} placeholder="0" />
+                </div>
+                <div>
+                  <label className={labelClass}>N° pièce d&apos;identité</label>
+                  <input type="text" className={inputClass} value={editForm.nationalId} onChange={(e) => setEditForm({ ...editForm, nationalId: e.target.value })} placeholder="CNI, passeport…" />
+                </div>
+              </div>
+
+              {/* ── Section: Contact ── */}
+              <div className="space-y-1 mb-3 pt-2">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Contact & Localisation</h4>
+                <div className="h-px bg-slate-100" />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
                   <label className={labelClass}>Email</label>
                   <input type="email" className={inputClass} value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
                 </div>
@@ -452,6 +628,47 @@ export default function StaffDetailPage() {
                   <label className={labelClass}>Téléphone</label>
                   <input type="tel" className={inputClass} value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
                 </div>
+              </div>
+              <div>
+                <label className={labelClass}>Adresse</label>
+                <input type="text" className={inputClass} value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className={labelClass}>Nom du contact d&apos;urgence</label>
+                  <input type="text" className={inputClass} value={editForm.emergencyContactName} onChange={(e) => setEditForm({ ...editForm, emergencyContactName: e.target.value })} placeholder='Ex: TOKPONWOUE' />
+                </div>
+                <div>
+                  <label className={labelClass}>Tél. d&apos;urgence</label>
+                  <input type="tel" className={inputClass} value={editForm.emergencyContactPhone} onChange={(e) => setEditForm({ ...editForm, emergencyContactPhone: e.target.value })} placeholder='Ex: 0198765445' />
+                </div>
+                <div>
+                  <label className={labelClass}>Lien de parenté</label>
+                  <select className={inputClass} value={editForm.emergencyContactRelationship} onChange={(e) => setEditForm({ ...editForm, emergencyContactRelationship: e.target.value })}>
+                    <option value="">— Non renseigné —</option>
+                    <option value="Époux">Époux</option>
+                    <option value="Épouse">Épouse</option>
+                    <option value="Père">Père</option>
+                    <option value="Mère">Mère</option>
+                    <option value="Frère">Frère</option>
+                    <option value="Sœur">Sœur</option>
+                    <option value="Fils">Fils</option>
+                    <option value="Fille">Fille</option>
+                    <option value="Oncle">Oncle</option>
+                    <option value="Tante">Tante</option>
+                    <option value="Cousin">Cousin</option>
+                    <option value="Cousine">Cousine</option>
+                    <option value="Ami">Ami(e)</option>
+                    <option value="Tuteur">Tuteur/Tutrice</option>
+                    <option value="Autre">Autre</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* ── Section: Professionnel ── */}
+              <div className="space-y-1 mb-3 pt-2">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Professionnel</h4>
+                <div className="h-px bg-slate-100" />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -473,37 +690,84 @@ export default function StaffDetailPage() {
                   </select>
                 </div>
                 <div>
-                  <label className={labelClass}>Genre</label>
-                  <select className={inputClass} value={editForm.gender} onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}>
-                    <option value="MALE">Masculin</option>
-                    <option value="FEMALE">Féminin</option>
+                  <label className={labelClass}>Date d&apos;embauche</label>
+                  <input type="date" className={inputClass} value={editForm.hireDate} onChange={(e) => setEditForm({ ...editForm, hireDate: e.target.value })} />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Type de contrat</label>
+                  <select className={inputClass} value={editForm.contractType} onChange={(e) => setEditForm({ ...editForm, contractType: e.target.value })}>
+                    <option value="">— Non renseigné —</option>
+                    <option value="CDI">CDI</option>
+                    <option value="CDD">CDD</option>
+                    <option value="STAGE">Stage</option>
+                    <option value="CONSULTANT">Consultant</option>
+                    <option value="INTERIM">Intérim</option>
+                    <option value="BENEFICIAT">Bénéficiaire</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>Statut</label>
+                  <select className={inputClass} value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}>
+                    <option value="ACTIVE">Actif</option>
+                    <option value="INACTIVE">Inactif</option>
+                    <option value="SUSPENDED">Suspendu</option>
+                    <option value="ON_LEAVE">En congé</option>
                   </select>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className={labelClass}>Date de naissance</label>
-                  <input type="date" className={inputClass} value={editForm.birthDate} onChange={(e) => setEditForm({ ...editForm, birthDate: e.target.value })} />
-                </div>
-                <div>
-                  <label className={labelClass}>Adresse</label>
-                  <input type="text" className={inputClass} value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Contact d&apos;urgence</label>
-                  <input type="text" className={inputClass} value={editForm.emergencyContact} onChange={(e) => setEditForm({ ...editForm, emergencyContact: e.target.value })} placeholder='Nom — Tél — Lien' />
-                </div>
-                <div>
                   <label className={labelClass}>Qualifications</label>
                   <input type="text" className={inputClass} value={editForm.qualifications} onChange={(e) => setEditForm({ ...editForm, qualifications: e.target.value })} />
+                </div>
+                <div>
+                  <label className={labelClass}>Salaire (FCFA)</label>
+                  <input type="number" min="0" step="0.01" className={inputClass} value={editForm.salary} onChange={(e) => setEditForm({ ...editForm, salary: e.target.value })} placeholder="0" />
                 </div>
               </div>
               <div>
                 <label className={labelClass}>Notes</label>
-                <textarea className={inputClass + ' min-h-[80px]'} value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
+                <textarea className={inputClass + ' min-h-[60px]'} value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
               </div>
+
+              {/* ── Section: Informations bancaires ── */}
+              <div className="space-y-1 mb-3 pt-2">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Informations bancaires</h4>
+                <div className="h-px bg-slate-100" />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className={labelClass}>Banque</label>
+                  <input type="text" className={inputClass} value={editForm.bankName} onChange={(e) => setEditForm({ ...editForm, bankName: e.target.value })} placeholder="Ex: BDE, Ecobank…" />
+                </div>
+                <div>
+                  <label className={labelClass}>N° de compte</label>
+                  <input type="text" className={inputClass} value={editForm.bankAccountNumber} onChange={(e) => setEditForm({ ...editForm, bankAccountNumber: e.target.value })} placeholder="Numéro de compte bancaire" />
+                </div>
+                <div>
+                  <label className={labelClass}>Titulaire du compte</label>
+                  <input type="text" className={inputClass} value={editForm.bankAccountName} onChange={(e) => setEditForm({ ...editForm, bankAccountName: e.target.value })} placeholder="Nom du titulaire" />
+                </div>
+              </div>
+
+              {/* ── Section: Identifiants officiels ── */}
+              <div className="space-y-1 mb-3 pt-2">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Identifiants officiels</h4>
+                <div className="h-px bg-slate-100" />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>N° CNSS</label>
+                  <input type="text" className={inputClass} value={editForm.cnssNumber} onChange={(e) => setEditForm({ ...editForm, cnssNumber: e.target.value })} placeholder="Numéro d'immatriculation CNSS" />
+                </div>
+                <div>
+                  <label className={labelClass}>N° IFU</label>
+                  <input type="text" className={inputClass} value={editForm.ifuNumber} onChange={(e) => setEditForm({ ...editForm, ifuNumber: e.target.value })} placeholder="Identifiant Fiscal Unique" />
+                </div>
+              </div>
+
               <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
                 <button type="button" onClick={() => setEditOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-50 transition">Annuler</button>
                 <button type="submit" disabled={editLoading} className="flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-sm font-bold shadow-sm hover:opacity-90 disabled:opacity-50 transition" style={{ backgroundColor: PRIMARY }}>
@@ -686,6 +950,22 @@ export default function StaffDetailPage() {
                 </div>
 
                 <div className="mt-8 flex gap-2">
+                  {member.status === 'ACTIVE' ? (
+                    <button
+                      onClick={() => setTerminationModalOpen(true)}
+                      className="flex-1 py-2.5 bg-rose-600 text-white rounded-xl font-bold text-sm hover:bg-rose-700 transition-all flex items-center justify-center gap-2"
+                    >
+                      <UserX size={16} /> Débauche
+                    </button>
+                  ) : isTerminated ? (
+                    <button
+                      onClick={handleReactivate}
+                      disabled={reactivateLoading}
+                      className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-sm hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {reactivateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserCheck size={16} />} Réactiver
+                    </button>
+                  ) : null}
                   <button onClick={openEditModal} className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
                     <Edit3 size={16} /> Modifier
                   </button>
@@ -734,6 +1014,85 @@ export default function StaffDetailPage() {
               </div>
             </div>
           </Card>
+
+          {/* Termination Details Card */}
+          {isTerminated && (
+            <Card className="border-none shadow-sm rounded-3xl bg-white p-6">
+              <h4 className="text-xs font-bold text-rose-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                <UserX size={14} /> Détails du départ
+              </h4>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-500">Type</span>
+                  <span className="text-sm font-bold text-rose-600">{terminationLabel}</span>
+                </div>
+                {member.terminatedAt && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-500">Date d'effet</span>
+                    <span className="text-sm font-bold text-gray-900">{new Date(member.terminatedAt).toLocaleDateString('fr-FR')}</span>
+                  </div>
+                )}
+                {member.lastWorkingDate && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-500">Dernier jour travaillé</span>
+                    <span className="text-sm font-bold text-gray-900">{new Date(member.lastWorkingDate).toLocaleDateString('fr-FR')}</span>
+                  </div>
+                )}
+                {member.noticePeriodDays != null && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-500">Préavis</span>
+                    <span className="text-sm font-bold text-gray-900">{member.noticePeriodDays} jour(s)</span>
+                  </div>
+                )}
+                {terminationDetails?.reason && (
+                  <div className="flex justify-between items-start">
+                    <span className="text-sm text-gray-500 shrink-0">Motif</span>
+                    <span className="text-sm font-bold text-gray-900 text-right max-w-[200px]">{terminationDetails.reason}</span>
+                  </div>
+                )}
+                {terminationDetails?.detailedReason && (
+                  <div className="mt-2 p-3 bg-slate-50 rounded-xl">
+                    <p className="text-xs font-semibold text-slate-400 mb-1">Motif détaillé</p>
+                    <p className="text-sm text-slate-700">{terminationDetails.detailedReason}</p>
+                  </div>
+                )}
+                {/* Exit Checklist Summary */}
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Checklist de sortie</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: 'Entretien de sortie', value: terminationDetails?.exitInterviewConducted, icon: FileText },
+                      { label: 'Matériel restitué', value: terminationDetails?.equipmentReturned, icon: Package },
+                      { label: 'Documents fournis', value: terminationDetails?.exitDocumentsProvided, icon: FileText },
+                      { label: 'Solde réglé', value: terminationDetails?.finalSettlementPaid, icon: DollarSign },
+                    ].map(({ label, value, icon: Icon }) => (
+                      <div
+                        key={label}
+                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-semibold ${
+                          value ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-50 text-slate-400'
+                        }`}
+                      >
+                        <Icon className="h-3 w-3" />
+                        {label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {terminationDetails?.authorizedBy && (
+                  <div className="flex justify-between items-center mt-2">
+                    <span className="text-sm text-gray-500">Autorisé par</span>
+                    <span className="text-sm font-bold text-gray-900">{terminationDetails.authorizedBy}</span>
+                  </div>
+                )}
+                {terminationDetails?.terminationLetterRef && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-500">Réf. lettre</span>
+                    <span className="text-xs font-bold text-blue-600">{terminationDetails.terminationLetterRef}</span>
+                  </div>
+                )}
+              </div>
+            </Card>
+          )}
         </div>
 
         {/* ─── Right Column: Tabs Content ────────────────────────────────── */}
@@ -796,6 +1155,18 @@ export default function StaffDetailPage() {
                       <InfoField label="Numéro CNI / Passeport" value={member.nationalId || 'Non renseigné'} />
                       <InfoField label="Numéro CNSS" value={member.cnssNumber || 'Non renseigné'} />
                       <InfoField label="Numéro IFU" value={member.ifuNumber || 'N/A'} />
+                    </div>
+                  </section>
+
+                  <section className="md:col-span-2 pt-6 border-t border-gray-50">
+                    <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+                      <DollarSign size={20} className="text-blue-500" />
+                      Rémunération & Banque
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <InfoField label="Salaire" value={member.salary ? `${Number(member.salary).toLocaleString('fr-FR')} FCFA` : 'Non renseigné'} />
+                      <InfoField label="Banque" value={member.bankDetails?.bankName || 'Non renseignée'} />
+                      <InfoField label="N° de compte" value={member.bankDetails?.accountNumber || 'Non renseigné'} />
                     </div>
                   </section>
                 </div>
@@ -893,6 +1264,14 @@ export default function StaffDetailPage() {
                                           </span>
                                           {/* Actions */}
                                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            {/* View/Download button */}
+                                            <button 
+                                              onClick={() => handleDocView(doc)}
+                                              className="p-1 text-blue-500 hover:bg-blue-50 rounded transition-colors"
+                                              title="Voir / Télécharger"
+                                            >
+                                              <Eye className="h-3.5 w-3.5" />
+                                            </button>
                                             {doc.validationStatus === 'PENDING' && (
                                               <>
                                                 <button 
@@ -974,8 +1353,8 @@ export default function StaffDetailPage() {
                               </p>
                             </div>
                           </div>
-                          <Badge className={contract.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}>
-                            {contract.status === 'ACTIVE' ? 'En vigueur' : contract.status === 'EXPIRED' ? 'Expiré' : contract.status}
+                          <Badge className={contract.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700' : contract.status === 'PENDING' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}>
+                            {contract.status === 'ACTIVE' ? 'En vigueur' : contract.status === 'PENDING' ? 'En attente' : contract.status === 'EXPIRED' ? 'Expiré' : contract.status}
                           </Badge>
                         </div>
                         <div className="grid grid-cols-2 gap-4 mt-4 pt-3 border-t border-slate-50">
@@ -1076,6 +1455,24 @@ export default function StaffDetailPage() {
           </Tabs>
         </div>
       </div>
+
+      {/* Staff Termination Modal */}
+      <StaffTerminationModal
+        isOpen={terminationModalOpen}
+        onClose={() => setTerminationModalOpen(false)}
+        onSuccess={fetchMember}
+        staff={{
+          id: member.id,
+          firstName: member.firstName,
+          lastName: member.lastName,
+          position: member.position,
+          employeeNumber: member.employeeNumber,
+          tenantMatricule: member.tenantMatricule,
+          globalMatricule: member.globalMatricule,
+          status: member.status,
+        }}
+        tenantId={tenant?.id || ''}
+      />
     </div>
   );
 }

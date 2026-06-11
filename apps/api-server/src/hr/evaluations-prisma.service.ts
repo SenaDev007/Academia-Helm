@@ -148,41 +148,31 @@ export class EvaluationsPrismaService {
   }
 
   /**
-   * Récupère les statistiques d'évaluation
+   * Récupère les statistiques d'évaluation (uses Prisma aggregate instead of JS reduce)
    */
   async getEvaluationStatistics(tenantId: string, academicYearId: string) {
-    const evaluations = await this.prisma.staffEvaluation.findMany({
+    const stats = await this.prisma.staffEvaluation.aggregate({
       where: {
         tenantId,
         academicYearId,
         score: { not: null },
       },
+      _count: true,
+      _avg: { score: true },
+      _min: { score: true },
+      _max: { score: true },
     });
 
-    if (evaluations.length === 0) {
-      return {
-        total: 0,
-        average: 0,
-        min: 0,
-        max: 0,
-      };
+    const total = stats._count;
+    if (total === 0) {
+      return { total: 0, average: 0, min: 0, max: 0 };
     }
-
-    const scores = evaluations
-      .map(e => Number(e.score))
-      .filter(s => !isNaN(s));
-
-    const total = scores.length;
-    const sum = scores.reduce((a, b) => a + b, 0);
-    const average = total > 0 ? sum / total : 0;
-    const min = Math.min(...scores);
-    const max = Math.max(...scores);
 
     return {
       total,
-      average,
-      min,
-      max,
+      average: Number(stats._avg.score ?? 0),
+      min: Number(stats._min.score ?? 0),
+      max: Number(stats._max.score ?? 0),
     };
   }
 

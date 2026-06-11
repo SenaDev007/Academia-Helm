@@ -1,0 +1,63 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1600" y2="900" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#071A3A"/>
+      <stop offset="0.55" stop-color="#0B2B6B"/>
+      <stop offset="1" stop-color="#2D5BFF"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="210" y1="170" x2="1400" y2="780" gradientUnits="userSpaceOnUse">
+      <stop stop-color="white" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="white" stop-opacity="0.08"/>
+    </linearGradient>
+    <filter id="blur" x="-50" y="-50" width="1700" height="1000" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="28"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#bg)"/>
+
+  <g filter="url(#blur)" opacity="0.9">
+    <circle cx="380" cy="260" r="210" fill="#38BDF8" fill-opacity="0.28"/>
+    <circle cx="1220" cy="260" r="220" fill="#22C55E" fill-opacity="0.25"/>
+    <circle cx="1200" cy="730" r="280" fill="#F59E0B" fill-opacity="0.20"/>
+  </g>
+
+  <rect x="170" y="150" width="1260" height="610" rx="44" fill="url(#glass)" stroke="white" stroke-opacity="0.16"/>
+
+  <!-- Three operational pillars -->
+  <g opacity="0.92">
+    <rect x="250" y="240" width="360" height="420" rx="30" fill="white" fill-opacity="0.10" stroke="white" stroke-opacity="0.18"/>
+    <rect x="620" y="240" width="360" height="420" rx="30" fill="white" fill-opacity="0.10" stroke="white" stroke-opacity="0.18"/>
+    <rect x="990" y="240" width="360" height="420" rx="30" fill="white" fill-opacity="0.10" stroke="white" stroke-opacity="0.18"/>
+  </g>
+
+  <!-- Icons: coins, checklist, chat -->
+  <g transform="translate(325 300)" opacity="0.95">
+    <circle cx="70" cy="70" r="46" fill="white" fill-opacity="0.22"/>
+    <circle cx="86" cy="62" r="46" fill="white" fill-opacity="0.14"/>
+    <path d="M54 72h56" stroke="white" stroke-opacity="0.65" stroke-width="10" stroke-linecap="round"/>
+    <path d="M70 44v56" stroke="white" stroke-opacity="0.35" stroke-width="10" stroke-linecap="round"/>
+  </g>
+
+  <g transform="translate(695 300)" opacity="0.95">
+    <rect x="26" y="26" width="112" height="120" rx="22" fill="white" fill-opacity="0.22"/>
+    <path d="M58 70l14 14 34-40" stroke="white" stroke-opacity="0.70" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="52" y="104" width="64" height="10" rx="5" fill="white" fill-opacity="0.40"/>
+  </g>
+
+  <g transform="translate(1065 300)" opacity="0.95">
+    <path d="M44 48c0-22 20-40 44-40h24c24 0 44 18 44 40v32c0 22-20 40-44 40H96l-38 28v-28c-8-6-14-17-14-30V48Z"
+      fill="white" fill-opacity="0.22"/>
+    <circle cx="86" cy="70" r="8" fill="white" fill-opacity="0.75"/>
+    <circle cx="118" cy="70" r="8" fill="white" fill-opacity="0.75"/>
+    <circle cx="150" cy="70" r="8" fill="white" fill-opacity="0.75"/>
+  </g>
+
+  <!-- Subtle timeline -->
+  <g transform="translate(300 690)" opacity="0.85">
+    <rect x="0" y="0" width="1000" height="10" rx="5" fill="white" fill-opacity="0.22"/>
+    <rect x="0" y="0" width="540" height="10" rx="5" fill="#38BDF8" fill-opacity="0.55"/>
+    <circle cx="540" cy="5" r="12" fill="white" fill-opacity="0.75"/>
+  </g>
+</svg>
+

@@ -30,7 +30,22 @@ import {
   UserPlus,
   Star,
   Linkedin,
-  BookOpen
+  BookOpen,
+  HelpCircle,
+  ChevronLeft,
+  ChevronDown,
+  Compass,
+  Eye,
+  MessageSquare,
+  PenTool,
+  HeartHandshake,
+  ShieldCheck,
+  PowerOff,
+  RefreshCw,
+  Share2,
+  Link2,
+  Check,
+  MessageCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -43,12 +58,14 @@ const PRIMARY = '#1A2BA6';
 interface Job {
   id: string;
   ref: string;
+  slug: string;
   title: string;
   dept: string;
   loc: string;
   date: string;
   candidates: number;
   status: string;
+  publishedAt?: string;
   description?: string;
   missions?: string;
   responsibilities?: string;
@@ -85,6 +102,16 @@ interface Candidate {
   scoreCV: number;
   scoreLetter: number;
   scoreMatching: number;
+  /** AI/heuristic document analysis score (same as `score`) */
+  docScore: number;
+  /** Average of all interview scores, or null if none */
+  interviewScore: number | null;
+  /** Average of all test result scores, or null if none */
+  testScore: number | null;
+  /** Weighted composite score used for hiring decisions */
+  finalScore: number;
+  /** Human-readable breakdown of the finalScore */
+  scoreBreakdown: string;
   category: string;
   matchDetail: string;
   risks: string;
@@ -111,6 +138,9 @@ interface Interview {
   evaluator: string;
   score: number;
   comments?: string;
+  status?: string;
+  result?: string;
+  feedback?: string;
 }
 
 interface Test {
@@ -118,12 +148,23 @@ interface Test {
   name: string;
   type: string;
   description?: string;
+  duration?: number;
+  instructions?: string;
+  maxScore: number;
+  passingScore: number;
+  status: string;
+  createdAt: string;
+  updatedAt?: string;
   results?: Array<{
     id: string;
+    testId: string;
     candidateId: string;
     candidate: { firstName: string; lastName: string };
     score: number;
     result: string;
+    notes?: string;
+    evaluatedAt?: string;
+    createdAt: string;
   }>;
 }
 
@@ -139,6 +180,25 @@ interface TalentPool {
 export function RecruitmentWorkspace() {
   const { tenant } = useModuleContext();
   const confirmDialog = useConfirmDialog();
+
+  // Valid status transitions (mirrors backend VALID_TRANSITIONS)
+  const VALID_TRANSITIONS: Record<string, string[]> = {
+    'NOUVEAU':     ['EN_COURS', 'REJETÉ'],
+    'EN_COURS':    ['ENTRETIEN', 'TEST', 'REJETÉ'],
+    'ENTRETIEN':   ['TEST', 'EMBAUCHÉ', 'REJETÉ'],
+    'TEST':        ['EMBAUCHÉ', 'REJETÉ'],
+    'EMBAUCHÉ':    [],
+    'REJETÉ':      [],
+  };
+  const STATUS_LABELS: Record<string, string> = {
+    'NOUVEAU': 'Nouveau',
+    'EN_COURS': 'En cours',
+    'ENTRETIEN': 'Entretien',
+    'TEST': 'Test',
+    'EMBAUCHÉ': 'Embauché',
+    'REJETÉ': 'Rejeté',
+  };
+
   const [activeTab, setActiveTab] = useState<'jobs' | 'candidates' | 'interviews' | 'tests' | 'embauches' | 'talent_pool'>('jobs');
   const [loading, setLoading] = useState(false);
 
@@ -156,8 +216,12 @@ export function RecruitmentWorkspace() {
   const [recruiterComment, setRecruiterComment] = useState<string>('');
 
 
-  // Add Job Form State
+  // Share link state
+  const [copiedJobId, setCopiedJobId] = useState<string | null>(null);
+
+  // Add/Edit Job Form State
   const [isAddJobOpen, setIsAddJobOpen] = useState(false);
+  const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [newJob, setNewJob] = useState<Partial<Job>>({
     title: '', dept: '', loc: '', status: 'PUBLIÉE', contractType: 'CDI', salary: '', academicLevel: '', experience: '', skillsRequired: '', description: '', missions: '', responsibilities: '',
   });
@@ -172,23 +236,150 @@ export function RecruitmentWorkspace() {
     firstName: '', lastName: '', email: '', phone: '', address: '', gender: 'M', jobId: '', status: 'NOUVEAU'
   });
 
-  // Add Interview Form State
+  // Onboarding Guide State
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const [guideStep, setGuideStep] = useState(0);
+  const [guideExpanded, setGuideExpanded] = useState<number | null>(null);
+
+  // Pipeline steps data for the onboarding guide
+  const PIPELINE_STEPS = [
+    {
+      id: 'candidature',
+      title: 'Candidature',
+      subtitle: 'Réception & Analyse IA',
+      icon: Users,
+      color: 'bg-blue-500',
+      colorLight: 'bg-blue-50 border-blue-100',
+      textColor: 'text-blue-700',
+      tab: 'candidates',
+      description: 'Le processus commence par la réception d\'une candidature. Le candidat peut postuler via la page publique d\'offres d\'emploi ou être enregistré manuellement par le recruteur.',
+      details: [
+        { label: 'Soumission', text: 'Le candidat soumet son CV, sa lettre de motivation et sa lettre de recommandation via le formulaire de candidature en ligne ou le recruteur crée le dossier manuellement.' },
+        { label: 'Analyse IA (HTIP)', text: 'Notre système d\'intelligence artificielle analyse automatiquement les documents soumis. Il génère un score global composé de : Score CV (40%), Score Lettre de Motivation (10%), Score d\'Adéquation (50%). Ce score reflète la correspondance entre le profil du candidat et les exigences du poste.' },
+        { label: 'Détection des risques (HDIE)', text: 'L\'IA détecte les incohérences potentielles : chevauchement de dates, informations contradictoires, ou signaux d\'alerte dans le parcours du candidat. Ces alertes aident le recruteur à prendre une décision éclairée.' },
+        { label: 'Statut initial', text: 'La candidature démarre au statut NOUVEAU. Le recruteur peut ensuite la faire avancer dans le pipeline en changeant le statut via le menu déroulant.' },
+      ],
+    },
+    {
+      id: 'en-cours',
+      title: 'En cours',
+      subtitle: 'Examen du dossier',
+      icon: Eye,
+      color: 'bg-amber-500',
+      colorLight: 'bg-amber-50 border-amber-100',
+      textColor: 'text-amber-700',
+      tab: 'candidates',
+      description: 'L\'étape "En cours" indique que le dossier du candidat est en cours d\'examen par l\'équipe de recrutement. C\'est une étape de transition avant l\'entretien.',
+      details: [
+        { label: 'Examen du dossier', text: 'Le recruteur consulte les documents du candidat, vérifie les critères d\'éligibilité, et évalue la pertinence du profil par rapport au poste à pourvoir.' },
+        { label: 'Décision', text: 'À cette étape, le recruteur décide soit de convoquer le candidat à un entretien, soit de lui faire passer un test technique, soit de rejeter la candidature si le profil ne correspond pas.' },
+        { label: 'Transition automatique', text: 'Lorsqu\'un entretien est planifié pour un candidat, son statut passe automatiquement à "Entretien". De même, si un test est programmé, le statut avance en conséquence.' },
+      ],
+    },
+    {
+      id: 'entretien',
+      title: 'Entretien',
+      subtitle: 'Évaluation humaine & comportementale',
+      icon: MessageSquare,
+      color: 'bg-violet-500',
+      colorLight: 'bg-violet-50 border-violet-100',
+      textColor: 'text-violet-700',
+      tab: 'interviews',
+      description: 'L\'entretien est l\'étape clé où le recruteur (ou l\'équipe de direction) rencontre le candidat pour évaluer sa personnalité, sa motivation, son fit culturel et ses compétences communicationnelles.',
+      details: [
+        { label: 'Types d\'entretien', text: 'Le système supporte plusieurs types : RH (évaluation générale et motivation), Technique (compétences spécifiques au poste), et Direction (validation finale par la direction de l\'établissement).' },
+        { label: 'Formats', text: 'L\'entretien peut se dérouler en Présentiel, en Visioconférence ou par Téléphone. Le format est choisi lors de la planification et affiché sur la carte de l\'entretien.' },
+        { label: 'Planification', text: 'L\'entretien est planifié avec une date, une heure, un évaluateur désigné et un format. Il commence au statut PLANIFIÉ, passe à EN_COURS le jour J, puis est validé avec un résultat.' },
+        { label: 'Validation', text: 'Après l\'entretien, le recruteur saisit le résultat (Réussi, Échoué ou En attente), un score sur 100, et un feedback détaillé. Si le résultat est "Réussi", la candidature avance automatiquement à l\'étape Entretien dans le pipeline.' },
+        { label: 'Filtrage', text: 'Les entretiens sont organisés par statut : Planifiés, En cours, Terminés. Vous pouvez facilement filtrer pour voir uniquement les entretiens à venir ou ceux déjà complétés.' },
+      ],
+    },
+    {
+      id: 'test',
+      title: 'Test',
+      subtitle: 'Évaluation technique & pratique (optionnel)',
+      icon: PenTool,
+      color: 'bg-orange-500',
+      colorLight: 'bg-orange-50 border-orange-100',
+      textColor: 'text-orange-700',
+      tab: 'tests',
+      description: 'Le test est une étape OPTIONNELLE qui permet d\'évaluer les compétences techniques et pratiques du candidat. Il n\'est pas obligatoire pour embaucher — un candidat peut passer directement de l\'entretien à l\'embauche.',
+      details: [
+        { label: 'Quand utiliser le test ?', text: 'Le test est particulièrement recommandé pour les postes d\'enseignants (démonstration pédagogique, leçon test), les postes techniques (exercices pratiques), ou lorsque l\'établissement souhaite une évaluation complémentaire après l\'entretien.' },
+        { label: 'Types de tests', text: 'Le système supporte les tests Techniques (compétences spécifiques), Pédagogiques (démonstration de cours), Psychométriques (évaluation cognitive), et tous autres types personnalisés.' },
+        { label: 'Résultats', text: 'Chaque test reçoit un score et un résultat (Réussi/Échoué). Si le test est réussi, la candidature avance automatiquement au statut TEST dans le pipeline, rendant le candidat éligible à l\'embauche.' },
+        { label: 'Optionnel', text: 'Important : le test N\'EST PAS obligatoire. Depuis le statut ENTRETIEN, un candidat peut être embauché directement sans passer par un test. Le recruteur choisit selon les besoins du poste.' },
+      ],
+    },
+    {
+      id: 'embauche',
+      title: 'Embauche',
+      subtitle: 'Validation finale & Contrat',
+      icon: HeartHandshake,
+      color: 'bg-emerald-500',
+      colorLight: 'bg-emerald-50 border-emerald-100',
+      textColor: 'text-emerald-700',
+      tab: 'embauches',
+      description: 'L\'embauche est l\'étape finale du processus. Le candidat qui a réussi l\'entretien (et optionnellement le test) est officiellement recruté. Un contrat brouillon est automatiquement créé.',
+      details: [
+        { label: 'Candidats éligibles', text: 'Sont éligibles à l\'embauche tous les candidats ayant le statut ENTRETIEN (entretien réussi) ou TEST (test réussi). Ils apparaissent dans la section "Prêts à embaucher" de l\'onglet Embauches.' },
+        { label: 'Processus d\'embauche', text: 'Le recruteur clique sur "Embaucher", confirme la décision, et le système crée automatiquement : une fiche Personnel (Staff) avec matricule, et un contrat brouillon (DRAFT) avec les informations du poste et le salaire.' },
+        { label: 'Contrat automatique', text: 'Un contrat de travail est généré automatiquement en mode brouillon avec le type de contrat (CDI, CDD...), la date de début, le salaire de base, et les informations du candidat. Le contrat sera finalisé et signé ultérieurement.' },
+        { label: 'Statut final', text: 'Après embauche, le statut de la candidature passe à EMBAUCHÉ (état terminal). Le candidat ne peut plus revenir en arrière dans le pipeline. Il apparaît dans la section "Embauchés" de l\'onglet Embauches.' },
+      ],
+    },
+    {
+      id: 'base-talents',
+      title: 'Base de talents',
+      subtitle: 'Candidats non retenus mais prometteurs',
+      icon: ShieldCheck,
+      color: 'bg-slate-500',
+      colorLight: 'bg-slate-50 border-slate-200',
+      textColor: 'text-slate-700',
+      tab: 'talent_pool',
+      description: 'La base de talents permet de conserver les profils des candidats non retenus lors d\'un processus, mais qui pourraient correspondre à de futures offres d\'emploi.',
+      details: [
+        { label: 'Ajout automatique', text: 'Lorsqu\'un candidat est rejeté, le système propose automatiquement de l\'ajouter à la base de talents plutôt que de simplement le supprimer. Cela permet de capitaliser sur les profils intéressants.' },
+        { label: 'Catégorisation', text: 'Les candidats dans la base de talents peuvent être catégorisés par domaine (Informatique, Administration, Enseignement...) et marqués comme Disponibles, En veille ou Contactés.' },
+        { label: 'Réactivation', text: 'Lorsqu\'une nouvelle offre correspond au profil d\'un candidat dans la base de talents, le recruteur peut le réactiver rapidement sans repasser par tout le processus de candidature.' },
+      ],
+    },
+  ];
+
+  // Add/Edit Interview Form State
   const [isAddInterviewOpen, setIsAddInterviewOpen] = useState(false);
+  const [editingInterview, setEditingInterview] = useState<Interview | null>(null);
   const [newInterview, setNewInterview] = useState({
-    candidateId: '', type: 'RH', date: '', time: '', format: 'Visioconférence', evaluator: '', score: '0', comments: ''
+    candidateId: '', type: 'RH', date: '', time: '', format: 'Visioconférence', evaluator: '', score: '0', comments: '',
+    status: '', result: '', feedback: '',
+  });
+
+  // Interview Filter State
+  const [interviewFilter, setInterviewFilter] = useState<'PLANIFIÉ' | 'EN_COURS' | 'TERMINÉ' | 'TOUS'>('TOUS');
+
+  // Validate Interview Form State
+  const [validatingInterview, setValidatingInterview] = useState<Interview | null>(null);
+  const [interviewValidation, setInterviewValidation] = useState({
+    result: 'RÉUSSI', score: '0', feedback: ''
   });
 
   // Add Test Form State
   const [isAddTestOpen, setIsAddTestOpen] = useState(false);
+  const [editingTest, setEditingTest] = useState<Test | null>(null);
   const [newTest, setNewTest] = useState({
-    name: '', type: 'Technique', description: ''
+    name: '', type: 'Technique', description: '', duration: '', instructions: '', maxScore: '100', passingScore: '50', status: 'ACTIF'
   });
 
   // Log Test Result Form State
   const [isAddTestResultOpen, setIsAddTestResultOpen] = useState(false);
+  const [editingTestResult, setEditingTestResult] = useState<{ id: string; testId: string; candidateId: string; score: string; result: string; notes: string; evaluatedAt: string } | null>(null);
   const [newTestResult, setNewTestResult] = useState({
-    testId: '', candidateId: '', score: '50', result: 'ADMIS'
+    testId: '', candidateId: '', score: '50', result: 'RÉUSSI', notes: '', evaluatedAt: ''
   });
+
+  // Test Filter State
+  const [testFilter, setTestFilter] = useState<'TOUS' | 'Technique' | 'RH / Psychotechnique' | 'Anglais' | 'Compétences transverses' | 'Pédagogique'>('TOUS');
+  const [testSearch, setTestSearch] = useState('');
 
   // Add to Talent Pool Form State
   const [isAddTalentOpen, setIsAddTalentOpen] = useState(false);
@@ -196,33 +387,44 @@ export function RecruitmentWorkspace() {
     candidateId: '', category: 'Développement', status: 'Disponible'
   });
 
-  // Load all datasets — each fetch is independent so one failure doesn't block the others
+  // Load all datasets in PARALLEL — each fetch is independent so one failure doesn't block the others
   const loadData = async () => {
     if (!tenant?.id) return;
     setLoading(true);
 
-    // Fetch Jobs
-    try {
-      const fetchedJobs = await hrFetch<any[]>(hrUrl('recruitment/jobs', { tenantId: tenant.id }));
-      if (fetchedJobs) {
-        setJobs(fetchedJobs.map(j => ({
-          ...j,
-          date: j.createdAt ? j.createdAt.split('T')[0] : new Date().toISOString().split('T')[0],
-          candidates: j._count?.applications || 0,
-        })));
-      }
-    } catch (err) {
-      console.error('Failed to fetch recruitment jobs:', err);
+    // Fire all 5 API calls in parallel instead of sequentially
+    const [jobsResult, candidatesResult, interviewsResult, testsResult, talentResult] = await Promise.allSettled([
+      hrFetch<any[]>(hrUrl('recruitment/jobs', { tenantId: tenant.id })),
+      hrFetch<any[]>(hrUrl('recruitment/candidates', { tenantId: tenant.id })),
+      hrFetch<any[]>(hrUrl('recruitment/interviews', { tenantId: tenant.id })),
+      hrFetch<any[]>(hrUrl('recruitment/tests', { tenantId: tenant.id })),
+      hrFetch<any[]>(hrUrl('recruitment/talent-pool', { tenantId: tenant.id })),
+    ]);
+
+    // Process Jobs
+    if (jobsResult.status === 'fulfilled') {
+      const jobList = Array.isArray(jobsResult.value) ? jobsResult.value : [];
+      setJobs(jobList.map(j => ({
+        ...j,
+        date: j.createdAt ? j.createdAt.split('T')[0] : new Date().toISOString().split('T')[0],
+        publishedAt: j.publishedAt || null,
+        candidates: j._count?.applications || 0,
+      })));
+    } else {
+      console.error('Failed to fetch recruitment jobs:', jobsResult.reason);
     }
 
-    // Fetch Candidates
-    try {
-      const fetchedCandidates = await hrFetch<any[]>(hrUrl('recruitment/candidates', { tenantId: tenant.id }));
-      if (fetchedCandidates) {
-        setCandidates(fetchedCandidates.map(c => {
-          // Find the primary (first) application with its job data
+    // Process Candidates
+    if (candidatesResult.status === 'fulfilled') {
+      const candidateList = Array.isArray(candidatesResult.value) ? candidatesResult.value : [];
+      setCandidates(candidateList.map(c => {
           const primaryApp = c.applications?.[0] || c.application;
           const jobTitle = primaryApp?.job?.title || primaryApp?.jobTitle || c.jobTitle || '';
+          const docScore = primaryApp?.score || 0;
+          const finalScore = c._finalScore ?? docScore;
+          const interviewScore = c._avgInterviewScore ?? null;
+          const testScore = c._avgTestScore ?? null;
+          const scoreBreakdown = c._scoreBreakdown || `Documents: ${docScore}%`;
           return {
             id: c.id,
             applicationId: primaryApp?.id || c.id,
@@ -234,11 +436,16 @@ export function RecruitmentWorkspace() {
             address: c.address || '',
             gender: c.gender || 'M',
             job: jobTitle || 'Aucun poste',
-            score: primaryApp?.score || 0,
+            score: docScore,
             scoreCV: primaryApp?.scoreCV || 0,
             scoreLetter: primaryApp?.scoreLetter || 0,
             scoreMatching: primaryApp?.scoreMatching || 0,
-            category: primaryApp?.score >= 90 ? 'Excellent' : 'Bon',
+            docScore,
+            interviewScore,
+            testScore,
+            finalScore,
+            scoreBreakdown,
+            category: finalScore >= 80 ? 'Excellent' : finalScore >= 50 ? 'Bon' : 'Insuffisant',
             matchDetail: primaryApp?.matchDetail || '',
             risks: primaryApp?.risks || 'Aucun',
             riskDetail: primaryApp?.riskDetail || '',
@@ -249,42 +456,33 @@ export function RecruitmentWorkspace() {
             documents: c.documents || [],
           };
         }));
-      }
-    } catch (err) {
-      console.error('Failed to fetch recruitment candidates:', err);
+    } else {
+      console.error('Failed to fetch recruitment candidates:', candidatesResult.reason);
     }
 
-    // Fetch Interviews
-    try {
-      const fetchedInterviews = await hrFetch<any[]>(hrUrl('recruitment/interviews', { tenantId: tenant.id }));
-      if (fetchedInterviews) {
-        setInterviews(fetchedInterviews.map(i => ({
-          ...i,
-          date: i.date ? i.date.split('T')[0] : '',
-        })));
-      }
-    } catch (err) {
-      console.error('Failed to fetch recruitment interviews:', err);
+    // Process Interviews
+    if (interviewsResult.status === 'fulfilled') {
+      const interviewList = Array.isArray(interviewsResult.value) ? interviewsResult.value : [];
+      setInterviews(interviewList.map(i => ({
+        ...i,
+        date: i.date ? i.date.split('T')[0] : '',
+      })));
+    } else {
+      console.error('Failed to fetch recruitment interviews:', interviewsResult.reason);
     }
 
-    // Fetch Tests
-    try {
-      const fetchedTests = await hrFetch<any[]>(hrUrl('recruitment/tests', { tenantId: tenant.id }));
-      if (fetchedTests) {
-        setTests(fetchedTests);
-      }
-    } catch (err) {
-      console.error('Failed to fetch recruitment tests:', err);
+    // Process Tests
+    if (testsResult.status === 'fulfilled') {
+      setTests(Array.isArray(testsResult.value) ? testsResult.value : []);
+    } else {
+      console.error('Failed to fetch recruitment tests:', testsResult.reason);
     }
 
-    // Fetch Talent Pool
-    try {
-      const fetchedTalent = await hrFetch<any[]>(hrUrl('recruitment/talent-pool', { tenantId: tenant.id }));
-      if (fetchedTalent) {
-        setTalentPool(fetchedTalent);
-      }
-    } catch (err) {
-      console.error('Failed to fetch recruitment talent pool:', err);
+    // Process Talent Pool
+    if (talentResult.status === 'fulfilled') {
+      setTalentPool(Array.isArray(talentResult.value) ? talentResult.value : []);
+    } else {
+      console.error('Failed to fetch recruitment talent pool:', talentResult.reason);
     }
 
     setLoading(false);
@@ -294,32 +492,68 @@ export function RecruitmentWorkspace() {
     loadData();
   }, [tenant?.id, activeTab]);
 
-  // Create Job
-  const handleCreateJob = async (e: React.FormEvent) => {
+  // Create or Update Job
+  const handleSaveJob = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tenant?.id) return;
+    if (!tenant?.id) {
+      toast({ variant: 'error', title: 'Erreur', description: 'Aucun établissement sélectionné. Veuillez rafraîchir la page ou sélectionner un établissement.' });
+      return;
+    }
     try {
-      await hrFetch(hrUrl('recruitment/jobs', { tenantId: tenant.id }), {
-        method: 'POST',
-        body: newJob,
-      });
-      toast({ variant: 'success', title: 'Offre d\'emploi créée avec succès !' });
+      if (editingJob) {
+        // Update existing job
+        await hrFetch(hrUrl(`recruitment/jobs/${editingJob.id}`, { tenantId: tenant.id }), {
+          method: 'PUT',
+          body: newJob,
+        });
+        toast({ variant: 'success', title: 'Offre d\'emploi modifiée avec succès !' });
+      } else {
+        // Create new job
+        await hrFetch(hrUrl('recruitment/jobs', { tenantId: tenant.id }), {
+          method: 'POST',
+          body: newJob,
+        });
+        toast({ variant: 'success', title: 'Offre d\'emploi créée avec succès !' });
+      }
       setIsAddJobOpen(false);
+      setEditingJob(null);
       setNewJob({ title: '', dept: '', loc: '', status: 'PUBLIÉE', contractType: 'CDI', salary: '', academicLevel: '', experience: '', skillsRequired: '', description: '', missions: '', responsibilities: '' });
       loadData();
     } catch (err) {
-      console.error('Failed to create job:', err);
-      toast({ variant: 'error', title: 'Erreur lors de la création de l\'offre d\'emploi.' });
+      console.error('Failed to save job:', err);
+      toast({ variant: 'error', title: editingJob ? 'Erreur lors de la modification de l\'offre.' : 'Erreur lors de la création de l\'offre d\'emploi.' });
     }
   };
 
-  // Create Candidate and Application
+  // Open edit job modal
+  const openEditJob = (job: Job) => {
+    setEditingJob(job);
+    setNewJob({
+      title: job.title, dept: job.dept, loc: job.loc, status: job.status,
+      contractType: job.contractType || 'CDI', salary: job.salary || '',
+      academicLevel: job.academicLevel || '', experience: job.experience || '',
+      skillsRequired: job.skillsRequired || '', description: job.description || '',
+      missions: job.missions || '', responsibilities: job.responsibilities || '',
+    });
+    setIsAddJobOpen(true);
+  };
+
+  // Create Candidate and Application — single atomic API call
+  // The backend creates both the candidate AND the application in one transaction
+  // when jobId is provided, mirroring the public application flow
   const handleCreateCandidate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tenant?.id) return;
+    if (!tenant?.id) {
+      toast({ variant: 'error', title: 'Erreur', description: 'Aucun établissement sélectionné. Veuillez rafraîchir la page ou sélectionner un établissement.' });
+      return;
+    }
+    if (!newCandidate.jobId) {
+      toast({ variant: 'error', title: 'Offre requise', description: 'Veuillez sélectionner une offre d\'emploi pour créer la candidature.' });
+      return;
+    }
     try {
-      // 1. Create Candidate
-      const createdCandidate = await hrFetch<any>(hrUrl('recruitment/candidates', { tenantId: tenant.id }), {
+      // Single API call: backend creates candidate + application atomically
+      await hrFetch<any>(hrUrl('recruitment/candidates', { tenantId: tenant.id }), {
         method: 'POST',
         body: {
           firstName: newCandidate.firstName,
@@ -328,20 +562,10 @@ export function RecruitmentWorkspace() {
           phone: newCandidate.phone,
           address: newCandidate.address,
           gender: newCandidate.gender,
+          jobId: newCandidate.jobId,
+          status: newCandidate.status || 'NOUVEAU',
         }
       });
-
-      // 2. Create associated application if Job is selected
-      if (newCandidate.jobId && createdCandidate?.id) {
-        await hrFetch(hrUrl('recruitment/applications', { tenantId: tenant.id }), {
-          method: 'POST',
-          body: {
-            jobId: newCandidate.jobId,
-            candidateId: createdCandidate.id,
-            status: newCandidate.status,
-          }
-        });
-      }
 
       toast({ variant: 'success', title: 'Candidat enregistré avec succès !' });
       setIsAddCandidateOpen(false);
@@ -376,6 +600,44 @@ export function RecruitmentWorkspace() {
     }
   };
 
+  // Deactivate Job Offer (soft action — does NOT delete the job or its applications)
+  const handleDeactivateJob = async (id: string) => {
+    const ok = await confirmDialog.warning(
+      'L\'offre sera désactivée et ne sera plus visible publiquement. Les candidatures existantes seront conservées.',
+      'Désactiver cette offre ?'
+    );
+    if (!ok) return;
+    try {
+      await hrFetch(hrUrl(`recruitment/jobs/${id}/deactivate`, { tenantId: tenant.id }), { method: 'PUT' });
+      // Optimistic update: change status locally
+      setJobs(prev => prev.map(j => j.id === id ? { ...j, status: 'DÉSACTIVÉE' } : j));
+      toast({ variant: 'success', title: 'Offre désactivée', description: 'L\'offre n\'est plus visible publiquement. Vous pouvez la republier à tout moment.' });
+    } catch (err: any) {
+      console.error('Failed to deactivate job:', err);
+      const msg = err?.message || 'Impossible de désactiver cette offre. Veuillez réessayer.';
+      toast({ variant: 'error', title: 'Erreur', description: msg });
+    }
+  };
+
+  // Republish a deactivated Job Offer (updates publishedAt automatically on backend)
+  const handleRepublishJob = async (id: string) => {
+    const ok = await confirmDialog.warning(
+      'L\'offre sera republiée et redeviendra visible publiquement. La date de publication sera mise à jour.',
+      'Republicaliser cette offre ?'
+    );
+    if (!ok) return;
+    try {
+      const updated = await hrFetch<any>(hrUrl(`recruitment/jobs/${id}/republish`, { tenantId: tenant.id }), { method: 'PUT' });
+      // Optimistic update: change status and publishedAt locally
+      setJobs(prev => prev.map(j => j.id === id ? { ...j, status: 'PUBLIÉE', publishedAt: updated?.publishedAt || new Date().toISOString() } : j));
+      toast({ variant: 'success', title: 'Offre republiée', description: 'L\'offre est à nouveau visible publiquement avec une nouvelle date de publication.' });
+    } catch (err: any) {
+      console.error('Failed to republish job:', err);
+      const msg = err?.message || 'Impossible de republier cette offre. Veuillez réessayer.';
+      toast({ variant: 'error', title: 'Erreur', description: msg });
+    }
+  };
+
   // Delete Candidate
   const handleDeleteCandidate = async (id: string) => {
     const ok = await confirmDialog.danger(
@@ -404,24 +666,64 @@ export function RecruitmentWorkspace() {
     }
   };
 
-  // Schedule Interview
-  const handleCreateInterview = async (e: React.FormEvent) => {
+  // Schedule or Update Interview
+  const handleSaveInterview = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tenant?.id) return;
+    if (!tenant?.id) {
+      toast({ variant: 'error', title: 'Erreur', description: 'Aucun établissement sélectionné. Veuillez rafraîchir la page ou sélectionner un établissement.' });
+      return;
+    }
     try {
-      await hrFetch(hrUrl('recruitment/interviews', { tenantId: tenant.id }), {
-        method: 'POST',
-        body: newInterview,
-      });
-      toast({ variant: 'success', title: 'Entretien programmé avec succès !' });
+      if (editingInterview) {
+        // Update existing interview — include status/result/feedback
+        const updateBody: any = { ...newInterview, score: Number(newInterview.score) || 0 };
+        // Remove empty optional fields to avoid validation errors
+        if (!newInterview.status) delete updateBody.status;
+        if (!newInterview.result) delete updateBody.result;
+        if (!newInterview.feedback) delete updateBody.feedback;
+        await hrFetch(hrUrl(`recruitment/interviews/${editingInterview.id}`, { tenantId: tenant.id }), {
+          method: 'PUT',
+          body: updateBody,
+        });
+        toast({ variant: 'success', title: 'Entretien modifié avec succès !' });
+      } else {
+        // Create new interview — exclude status/result/feedback (not in CreateInterviewDto)
+        const { status: _s, result: _r, feedback: _f, ...createBody } = newInterview as any;
+        createBody.score = Number(createBody.score) || 0;
+        await hrFetch(hrUrl('recruitment/interviews', { tenantId: tenant.id }), {
+          method: 'POST',
+          body: createBody,
+        });
+        toast({ variant: 'success', title: 'Entretien programmé avec succès !' });
+      }
       setIsAddInterviewOpen(false);
-      setNewInterview({ candidateId: '', type: 'RH', date: '', time: '', format: 'Visioconférence', evaluator: '', score: '0', comments: '' });
+      setEditingInterview(null);
+      setNewInterview({ candidateId: '', type: 'RH', date: '', time: '', format: 'Visioconférence', evaluator: '', score: '0', comments: '', status: '', result: '', feedback: '' });
       loadData();
     } catch (err: any) {
-      console.error('Failed to schedule interview:', err);
+      console.error('Failed to save interview:', err);
       const backendMsg = err?.message || err?.toString() || '';
-      toast({ variant: 'error', title: 'Erreur lors de la programmation de l\'entretien.', description: backendMsg || 'Veuillez vérifier les données saisies et réessayer.' });
+      toast({ variant: 'error', title: editingInterview ? 'Erreur lors de la modification de l\'entretien.' : 'Erreur lors de la programmation de l\'entretien.', description: backendMsg || 'Veuillez vérifier les données saisies et réessayer.' });
     }
+  };
+
+  // Open edit interview modal
+  const openEditInterview = (int: Interview) => {
+    setEditingInterview(int);
+    setNewInterview({
+      candidateId: int.candidateId,
+      type: int.type,
+      date: int.date,
+      time: int.time,
+      format: int.format,
+      evaluator: int.evaluator,
+      score: String(int.score || 0),
+      comments: int.comments || '',
+      status: int.status || '',
+      result: int.result || '',
+      feedback: int.feedback || '',
+    });
+    setIsAddInterviewOpen(true);
   };
 
   // Delete Interview
@@ -436,7 +738,6 @@ export function RecruitmentWorkspace() {
     try {
       await hrFetch(hrUrl(`recruitment/interviews/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Entretien annulé', description: 'L\'entretien a été supprimé du calendrier.' });
-      // Ne PAS appeler loadData() : l'optimistic update a déjà retiré l'élément.
     } catch (err) {
       setInterviews(previousInterviews);
       console.error('Failed to delete interview:', err);
@@ -444,23 +745,87 @@ export function RecruitmentWorkspace() {
     }
   };
 
-  // Create Test
-  const handleCreateTest = async (e: React.FormEvent) => {
+  // Validate Interview (mark as completed with result)
+  const handleValidateInterview = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tenant?.id) return;
+    if (!validatingInterview) return;
     try {
-      await hrFetch(hrUrl('recruitment/tests', { tenantId: tenant.id }), {
-        method: 'POST',
-        body: newTest,
+      await hrFetch(hrUrl(`recruitment/interviews/${validatingInterview.id}/validate`, { tenantId: tenant.id }), {
+        method: 'PUT',
+        body: {
+          status: 'TERMINÉ',
+          result: interviewValidation.result,
+          score: Number(interviewValidation.score),
+          feedback: interviewValidation.feedback,
+        },
       });
-      toast({ variant: 'success', title: 'Test d\'évaluation créé avec succès !' });
-      setIsAddTestOpen(false);
-      setNewTest({ name: '', type: 'Technique', description: '' });
+      toast({ variant: 'success', title: 'Entretien validé !', description: interviewValidation.result === 'RÉUSSI' ? 'Le candidat a été automatiquement avancé à l\'étape Entretien.' : 'L\'entretien a été marqué comme échoué.' });
+      setValidatingInterview(null);
+      setInterviewValidation({ result: 'RÉUSSI', score: '0', feedback: '' });
       loadData();
-    } catch (err) {
-      console.error('Failed to create test:', err);
-      toast({ variant: 'error', title: 'Erreur lors de la création du test.' });
+    } catch (err: any) {
+      console.error('Failed to validate interview:', err);
+      const msg = err?.message || 'Erreur lors de la validation de l\'entretien.';
+      toast({ variant: 'error', title: msg });
     }
+  };
+
+  // Create or Update Test
+  const handleSaveTest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tenant?.id) {
+      toast({ variant: 'error', title: 'Erreur', description: 'Aucun établissement sélectionné. Veuillez rafraîchir la page ou sélectionner un établissement.' });
+      return;
+    }
+    try {
+      const body = {
+        name: newTest.name,
+        type: newTest.type,
+        description: newTest.description || undefined,
+        duration: newTest.duration ? Number(newTest.duration) : undefined,
+        instructions: newTest.instructions || undefined,
+        maxScore: Number(newTest.maxScore) || 100,
+        passingScore: Number(newTest.passingScore) || 50,
+        status: newTest.status || 'ACTIF',
+      };
+      if (editingTest) {
+        await hrFetch(hrUrl(`recruitment/tests/${editingTest.id}`, { tenantId: tenant.id }), {
+          method: 'PUT',
+          body,
+        });
+        toast({ variant: 'success', title: 'Test modifié avec succès !' });
+      } else {
+        await hrFetch(hrUrl('recruitment/tests', { tenantId: tenant.id }), {
+          method: 'POST',
+          body,
+        });
+        toast({ variant: 'success', title: 'Test d\'évaluation créé avec succès !' });
+      }
+      setIsAddTestOpen(false);
+      setEditingTest(null);
+      setNewTest({ name: '', type: 'Technique', description: '', duration: '', instructions: '', maxScore: '100', passingScore: '50', status: 'ACTIF' });
+      loadData();
+    } catch (err: any) {
+      console.error('Failed to save test:', err);
+      const msg = err?.message || 'Erreur lors de l\'enregistrement du test.';
+      toast({ variant: 'error', title: msg });
+    }
+  };
+
+  // Open edit test modal
+  const openEditTest = (test: Test) => {
+    setEditingTest(test);
+    setNewTest({
+      name: test.name,
+      type: test.type,
+      description: test.description || '',
+      duration: test.duration ? String(test.duration) : '',
+      instructions: test.instructions || '',
+      maxScore: String(test.maxScore || 100),
+      passingScore: String(test.passingScore || 50),
+      status: test.status || 'ACTIF',
+    });
+    setIsAddTestOpen(true);
   };
 
   // Delete Test
@@ -475,7 +840,6 @@ export function RecruitmentWorkspace() {
     try {
       await hrFetch(hrUrl(`recruitment/tests/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Test supprimé', description: 'Le test et ses résultats ont été supprimés.' });
-      // Ne PAS appeler loadData() : l'optimistic update a déjà retiré l'élément.
     } catch (err) {
       setTests(previousTests);
       console.error('Failed to delete test:', err);
@@ -483,22 +847,67 @@ export function RecruitmentWorkspace() {
     }
   };
 
-  // Saisir un Résultat de Test
-  const handleCreateTestResult = async (e: React.FormEvent) => {
+  // Create or Update Test Result
+  const handleSaveTestResult = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await hrFetch(hrUrl('recruitment/test-results', { tenantId: tenant.id }), {
-        method: 'POST',
-        body: newTestResult,
-      });
-      toast({ variant: 'success', title: 'Résultat de test enregistré !' });
+      const body = {
+        testId: newTestResult.testId,
+        candidateId: newTestResult.candidateId,
+        score: Number(newTestResult.score),
+        result: newTestResult.result,
+        notes: newTestResult.notes || undefined,
+        evaluatedAt: newTestResult.evaluatedAt || new Date().toISOString().split('T')[0],
+      };
+      if (editingTestResult) {
+        await hrFetch(hrUrl(`recruitment/test-results/${editingTestResult.id}`, { tenantId: tenant.id }), {
+          method: 'PUT',
+          body: {
+            score: body.score,
+            result: body.result,
+            notes: body.notes,
+            evaluatedAt: body.evaluatedAt,
+          },
+        });
+        toast({ variant: 'success', title: 'Résultat de test modifié !' });
+      } else {
+        await hrFetch(hrUrl('recruitment/test-results', { tenantId: tenant.id }), {
+          method: 'POST',
+          body,
+        });
+        toast({ variant: 'success', title: 'Résultat de test enregistré !', description: newTestResult.result === 'RÉUSSI' ? 'Le candidat a été automatiquement avancé au statut Test.' : 'Le résultat a été enregistré.' });
+      }
       setIsAddTestResultOpen(false);
-      setNewTestResult({ testId: '', candidateId: '', score: '50', result: 'ADMIS' });
+      setEditingTestResult(null);
+      setNewTestResult({ testId: '', candidateId: '', score: '50', result: 'RÉUSSI', notes: '', evaluatedAt: '' });
       loadData();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to save test result:', err);
-      toast({ variant: 'error', title: 'Erreur lors de l\'enregistrement du résultat.' });
+      const msg = err?.message || 'Erreur lors de l\'enregistrement du résultat.';
+      toast({ variant: 'error', title: msg });
     }
+  };
+
+  // Open edit test result modal
+  const openEditTestResult = (result: { id: string; testId: string; candidateId: string; score: number; result: string; notes?: string; evaluatedAt?: string }, testId: string) => {
+    setEditingTestResult({
+      id: result.id,
+      testId: testId,
+      candidateId: result.candidateId,
+      score: String(result.score),
+      result: result.result,
+      notes: result.notes || '',
+      evaluatedAt: result.evaluatedAt ? result.evaluatedAt.split('T')[0] : '',
+    });
+    setNewTestResult({
+      testId: testId,
+      candidateId: result.candidateId,
+      score: String(result.score),
+      result: result.result,
+      notes: result.notes || '',
+      evaluatedAt: result.evaluatedAt ? result.evaluatedAt.split('T')[0] : '',
+    });
+    setIsAddTestResultOpen(true);
   };
 
   // Remove Test Result
@@ -516,7 +925,6 @@ export function RecruitmentWorkspace() {
     try {
       await hrFetch(hrUrl(`recruitment/test-results/${id}`, { tenantId: tenant.id }), { method: 'DELETE' });
       toast({ variant: 'success', title: 'Résultat supprimé', description: 'Le résultat du test a été supprimé.' });
-      // Ne PAS appeler loadData() : l'optimistic update a déjà retiré l'élément.
     } catch (err) {
       setTests(previousTests);
       console.error('Failed to delete test result:', err);
@@ -616,13 +1024,28 @@ export function RecruitmentWorkspace() {
 
   // Filter candidates for the Embauches tab
   const hiredCandidates = candidates.filter(c => c.status === 'EMBAUCHÉ');
-  const readyForHire = candidates.filter(c => c.status === 'ENTRETIEN' || c.status === 'TEST');
+
+  // Minimum score threshold for hire eligibility (configurable)
+  const MIN_HIRE_SCORE = 50;
+
+  // Candidates with ENTRETIEN or TEST status AND a minimum finalScore are truly eligible
+  // finalScore = weighted composite of document analysis + interview + test scores
+  const readyForHire = candidates.filter(c =>
+    (c.status === 'ENTRETIEN' || c.status === 'TEST') && c.finalScore >= MIN_HIRE_SCORE
+  );
+
+  // Candidates who reached ENTRETIEN/TEST but have a below-threshold finalScore — shown separately as "not recommended"
+  const notRecommendedForHire = candidates.filter(c =>
+    (c.status === 'ENTRETIEN' || c.status === 'TEST') && c.finalScore < MIN_HIRE_SCORE
+  );
 
   // KPI calculations for dashboard cards (Tome 2 & 3)
   const totalJobs = jobs.filter(j => j.status === 'PUBLIÉE').length;
   const totalApplications = candidates.length;
-  const totalInterviews = interviews.length;
-  const avgIaScore = candidates.length > 0 ? Math.round(candidates.reduce((sum, c) => sum + c.score, 0) / candidates.length) : 0;
+  const totalInterviews = interviews.filter(i => i.status === 'PLANIFIÉ').length;
+  const totalInterviewsInProgress = interviews.filter(i => i.status === 'EN_COURS').length;
+  const totalInterviewsCompleted = interviews.filter(i => i.status === 'TERMINÉ').length;
+  const avgFinalScore = candidates.length > 0 ? Math.round(candidates.reduce((sum, c) => sum + c.finalScore, 0) / candidates.length) : 0;
   const fraudAlerts = candidates.filter(c => c.risks && c.risks !== 'Aucun').length;
   const totalHired = candidates.filter(c => c.status === 'EMBAUCHÉ').length;
 
@@ -634,8 +1057,8 @@ export function RecruitmentWorkspace() {
         {[
           { label: 'Offres Actives', value: totalJobs, sub: 'Recrutement ouvert', bg: 'bg-indigo-50/50 border-indigo-100/50' },
           { label: 'Candidatures', value: totalApplications, sub: 'Dossiers reçus', bg: 'bg-indigo-50/50 border-indigo-100/50' },
-          { label: 'Entretiens', value: totalInterviews, sub: 'Planifiés', bg: 'bg-indigo-50/50 border-indigo-100/50' },
-          { label: 'Score IA Moyen', value: `${avgIaScore}%`, sub: 'Adéquation HTIP', bg: 'bg-amber-50/50 border-amber-100/50' },
+          { label: 'Entretiens', value: totalInterviews, sub: `${totalInterviewsInProgress} en cours · ${totalInterviewsCompleted} terminés`, bg: 'bg-indigo-50/50 border-indigo-100/50' },
+          { label: 'Score Moyen', value: `${avgFinalScore}%`, sub: 'Score final composite', bg: 'bg-amber-50/50 border-amber-100/50' },
           { label: 'Alertes Risque', value: fraudAlerts, sub: 'Détections HDIE', bg: 'bg-rose-50/50 border-rose-100/50' },
           { label: 'Recrutements', value: totalHired, sub: 'Candidats embauchés', bg: 'bg-emerald-50/50 border-emerald-100/50' }
         ].map((card, i) => (
@@ -650,13 +1073,14 @@ export function RecruitmentWorkspace() {
       </div>
 
       {/* Sub tabs header navigation */}
-      <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
-        {[
-          { id: 'jobs', label: "Offres d'emploi", icon: Briefcase },
-          { id: 'candidates', label: 'Candidatures', icon: Users },
-          { id: 'interviews', label: 'Entretiens', icon: Calendar },
-          { id: 'tests', label: 'Tests', icon: ClipboardList },
-          { id: 'embauches', label: 'Embauches', icon: UserCheck },
+      <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+        <div className="flex flex-wrap gap-2">
+          {[
+            { id: 'jobs', label: "Offres d'emploi", icon: Briefcase },
+            { id: 'candidates', label: 'Candidatures', icon: Users },
+            { id: 'interviews', label: 'Entretiens', icon: Calendar },
+            { id: 'tests', label: 'Tests', icon: ClipboardList },
+            { id: 'embauches', label: 'Embauches', icon: UserCheck },
           { id: 'talent_pool', label: 'Base de talents', icon: Award }
         ].map((tab) => {
           const Icon = tab.icon;
@@ -675,6 +1099,15 @@ export function RecruitmentWorkspace() {
             </button>
           );
         })}
+        </div>
+        <button
+          onClick={() => { setIsGuideOpen(true); setGuideStep(0); setGuideExpanded(null); }}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-[#1A2BA6] bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 hover:shadow-sm transition-all"
+          title="Guide du processus de recrutement"
+        >
+          <Compass className="h-4 w-4" />
+          Guide du processus
+        </button>
       </div>
 
       {loading ? (
@@ -687,7 +1120,7 @@ export function RecruitmentWorkspace() {
               <div className="flex justify-between items-center">
                 <h3 className="text-base font-bold text-slate-900">Offres d'emploi actives</h3>
                 <button
-                  onClick={() => setIsAddJobOpen(true)}
+                  onClick={() => { setEditingJob(null); setNewJob({ title: '', dept: '', loc: '', status: 'PUBLIÉE', contractType: 'CDI', salary: '', academicLevel: '', experience: '', skillsRequired: '', description: '', missions: '', responsibilities: '' }); setIsAddJobOpen(true); }}
                   className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition"
                   style={{ backgroundColor: PRIMARY }}
                 >
@@ -702,14 +1135,48 @@ export function RecruitmentWorkspace() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {jobs.map((job) => (
-                    <div key={job.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-all relative overflow-hidden flex flex-col justify-between">
+                  {jobs.map((job) => {
+                    const shareUrl = typeof window !== 'undefined' && tenant?.slug && job.slug
+                      ? `${window.location.origin}/jobs/${tenant.slug}/${job.slug}`
+                      : '';
+                    const shareText = `Offre d'emploi : ${job.title} — ${job.loc}`;
+                    return (
+                    <div key={job.id} className={cn(
+                      'bg-white border rounded-xl p-5 shadow-sm hover:shadow-md transition-all relative overflow-hidden flex flex-col justify-between',
+                      job.status === 'DÉSACTIVÉE' ? 'border-amber-200 bg-amber-50/30' : 'border-slate-200'
+                    )}>
                       <div>
                         <div className="flex justify-between items-start">
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{job.ref}</span>
-                          <div className="flex items-center gap-2">
-                            <span className={cn('px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase border', job.status === 'PUBLIÉE' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-200')}>{job.status}</span>
-                            <button onClick={() => handleDeleteJob(job.id)} className="text-slate-400 hover:text-red-600 transition">
+                          <div className="flex items-center gap-1.5">
+                            <span className={cn(
+                              'px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase border',
+                              job.status === 'PUBLIÉE' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                              job.status === 'DÉSACTIVÉE' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                              job.status === 'FERMÉE' ? 'bg-red-50 text-red-600 border-red-200' :
+                              job.status === 'ARCHIVÉE' ? 'bg-slate-100 text-slate-400 border-slate-200' :
+                              'bg-slate-50 text-slate-500 border-slate-200'
+                            )}>
+                              {job.status === 'DÉSACTIVÉE' ? 'Désactivée' :
+                               job.status === 'PUBLIÉE' ? 'Publiée' :
+                               job.status === 'FERMÉE' ? 'Fermée' :
+                               job.status === 'ARCHIVÉE' ? 'Archivée' :
+                               job.status === 'BROUILLON' ? 'Brouillon' : job.status}
+                            </span>
+                            <button onClick={() => openEditJob(job)} className="text-slate-400 hover:text-blue-600 transition" title="Modifier">
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </button>
+                            {job.status === 'PUBLIÉE' && (
+                              <button onClick={() => handleDeactivateJob(job.id)} className="text-slate-400 hover:text-amber-600 transition" title="Désactiver l'offre">
+                                <PowerOff className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            {job.status === 'DÉSACTIVÉE' && (
+                              <button onClick={() => handleRepublishJob(job.id)} className="text-emerald-500 hover:text-emerald-600 transition" title="Republicaliser l'offre">
+                                <RefreshCw className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            <button onClick={() => handleDeleteJob(job.id)} className="text-slate-400 hover:text-red-600 transition" title="Supprimer définitivement">
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
                           </div>
@@ -721,12 +1188,70 @@ export function RecruitmentWorkspace() {
                           {job.academicLevel && <span className="flex items-center gap-1.5"><GraduationCap className="h-3.5 w-3.5" /> {job.academicLevel}</span>}
                         </div>
                       </div>
-                      <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center">
-                        <span className="text-xs font-semibold text-[#1A2BA6]">{job.candidates} Candidats</span>
-                        <span className="text-[10px] text-slate-400">Créé le {job.date}</span>
+                      <div className="mt-4 pt-4 border-t border-slate-100">
+                        <div className="flex justify-between items-center mb-3">
+                          <span className="text-xs font-semibold text-[#1A2BA6]">{job.candidates} Candidats</span>
+                          <div className="flex flex-col items-end gap-0.5">
+                            {job.publishedAt && (
+                              <span className="text-[10px] text-emerald-600 font-medium">Publiée le {job.publishedAt.split('T')[0]}</span>
+                            )}
+                            <span className="text-[10px] text-slate-400">Créé le {job.date}</span>
+                          </div>
+                        </div>
+                        {/* Share block — displayed for published jobs */}
+                        {job.status === 'PUBLIÉE' && shareUrl && (
+                          <div className="flex items-center gap-2 pt-3 border-t border-slate-50">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1"><Share2 className="h-3 w-3" /> Partager</span>
+                            <div className="flex items-center gap-1.5 ml-auto">
+                              <a
+                                href={`https://wa.me/?text=${encodeURIComponent(shareText + ' ' + shareUrl)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Partager sur WhatsApp"
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-[#25D366] shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow"
+                              >
+                                <MessageCircle className="h-3.5 w-3.5" />
+                              </a>
+                              <a
+                                href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Partager sur Facebook"
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-[#1877F2] shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow"
+                              >
+                                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor"><path d="M22 12.06C22 6.51 17.52 2 12 2S2 6.51 2 12.06c0 5 3.66 9.14 8.44 9.94v-7.03H7.9V12.06h2.54V9.85c0-2.52 1.49-3.91 3.77-3.91 1.09 0 2.24.2 2.24.2v2.47h-1.26c-1.24 0-1.63.78-1.63 1.57v1.88h2.78l-.44 2.91h-2.34V22c4.78-.8 8.44-4.94 8.44-9.94Z"/></svg>
+                              </a>
+                              <a
+                                href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Partager sur LinkedIn"
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-[#0A66C2] shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow"
+                              >
+                                <Linkedin className="h-3.5 w-3.5" />
+                              </a>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    await navigator.clipboard.writeText(shareUrl);
+                                    setCopiedJobId(job.id);
+                                    setTimeout(() => setCopiedJobId(null), 2000);
+                                  } catch { /* ignore */ }
+                                }}
+                                title="Copier le lien"
+                                className="inline-flex h-7 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-semibold text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow"
+                              >
+                                {copiedJobId === job.id ? <Check className="h-3 w-3 text-emerald-500" /> : <Link2 className="h-3 w-3" />}
+                                {copiedJobId === job.id ? 'Copié' : 'Lien'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
@@ -734,8 +1259,8 @@ export function RecruitmentWorkspace() {
               {isAddJobOpen && (
                 <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
                   <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border border-slate-100 my-8">
-                    <h3 className="font-bold text-slate-900 text-base mb-4">Créer une offre d'emploi détaillée</h3>
-                    <form onSubmit={handleCreateJob} className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+                    <h3 className="font-bold text-slate-900 text-base mb-4">{editingJob ? 'Modifier l\'offre d\'emploi' : 'Créer une offre d\'emploi détaillée'}</h3>
+                    <form onSubmit={handleSaveJob} className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Intitulé du poste</label>
@@ -767,6 +1292,19 @@ export function RecruitmentWorkspace() {
                         </div>
                       </div>
 
+                      {editingJob && (
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Statut de l'offre</label>
+                          <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newJob.status} onChange={(e) => setNewJob({ ...newJob, status: e.target.value })}>
+                            <option value="BROUILLON">Brouillon</option>
+                            <option value="PUBLIÉE">Publiée</option>
+                            <option value="DÉSACTIVÉE">Désactivée</option>
+                            <option value="FERMÉE">Fermée</option>
+                            <option value="ARCHIVÉE">Archivée</option>
+                          </select>
+                        </div>
+                      )}
+
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Niveau académique requis</label>
@@ -795,8 +1333,8 @@ export function RecruitmentWorkspace() {
                       </div>
 
                       <div className="flex gap-2 justify-end mt-6">
-                        <button type="button" onClick={() => setIsAddJobOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs">Annuler</button>
-                        <button type="submit" className="px-4 py-2 text-white rounded-lg text-xs font-semibold" style={{ backgroundColor: PRIMARY }}>Enregistrer l'offre</button>
+                        <button type="button" onClick={() => { setIsAddJobOpen(false); setEditingJob(null); }} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs">Annuler</button>
+                        <button type="submit" className="px-4 py-2 text-white rounded-lg text-xs font-semibold" style={{ backgroundColor: PRIMARY }}>{editingJob ? 'Enregistrer les modifications' : 'Enregistrer l\'offre'}</button>
                       </div>
                     </form>
                   </motion.div>
@@ -844,7 +1382,7 @@ export function RecruitmentWorkspace() {
                           <td className="p-4 font-bold text-slate-950">{c.name}</td>
                           <td className="p-4 text-slate-600">{c.job}</td>
                           <td className="p-4 text-center">
-                            <span className="font-bold text-[#1A2BA6] bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">{c.score}%</span>
+                            <span className={cn('font-bold px-2 py-0.5 rounded-full border', c.finalScore >= 50 ? 'text-[#1A2BA6] bg-indigo-50 border-indigo-100' : 'text-red-600 bg-red-50 border-red-100')}>{c.finalScore}%</span>
                           </td>
                           <td className="p-4">
                             <span className={cn('inline-flex items-center gap-1 font-semibold px-2 py-0.5 rounded-full text-[10px]', c.risks === 'Aucun' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-amber-50 text-amber-600 border border-amber-100')}>
@@ -869,12 +1407,10 @@ export function RecruitmentWorkspace() {
                               }}
                               className="bg-slate-50 border border-slate-200 text-[10px] font-bold rounded-lg px-2 py-1 uppercase"
                             >
-                              <option value="NOUVEAU">Nouveau</option>
-                              <option value="EN_COURS">En cours</option>
-                              <option value="ENTRETIEN">Entretien</option>
-                              <option value="TEST">Test</option>
-                              <option value="EMBAUCHÉ" disabled>Embauché → Onglet Embauches</option>
-                              <option value="REJETÉ">Rejeté</option>
+                              <option value={c.status}>{STATUS_LABELS[c.status] || c.status}</option>
+                              {(VALID_TRANSITIONS[c.status] || []).map(s => (
+                                <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>
+                              ))}
                             </select>
                           </td>
                           <td className="p-4 text-right flex justify-end gap-3 items-center">
@@ -950,8 +1486,7 @@ export function RecruitmentWorkspace() {
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Statut initial</label>
                           <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newCandidate.status} onChange={(e) => setNewCandidate({ ...newCandidate, status: e.target.value })}>
                             <option value="NOUVEAU">Nouveau</option>
-                            <option value="PRÉSÉLECTIONNÉ">Présélectionné</option>
-                            <option value="ENTRETIEN RH">Entretien RH</option>
+                            <option value="EN_COURS">En cours</option>
                           </select>
                         </div>
                       </div>
@@ -1274,6 +1809,35 @@ export function RecruitmentWorkspace() {
                       )}
                       {activeCandidateTab === 'ia' && (
                         <div className="space-y-4">
+                          {/* Final Score - Most prominent */}
+                          <div className="p-4 bg-indigo-50 rounded-lg border border-indigo-100">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="text-[10px] text-indigo-500 font-bold uppercase">Score Final (Composite)</p>
+                                <p className={cn('text-2xl font-extrabold mt-1', selectedCandidate.finalScore >= 50 ? 'text-[#1A2BA6]' : 'text-red-600')}>{selectedCandidate.finalScore}%</p>
+                              </div>
+                              <div className="text-[10px] text-indigo-400 max-w-[200px]">{selectedCandidate.scoreBreakdown}</div>
+                            </div>
+                          </div>
+                          {/* Score breakdown: Documents, Interview, Test */}
+                          <div className="grid grid-cols-3 gap-2 text-center">
+                            <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+                              <p className="text-[10px] text-slate-400 font-bold uppercase">Score Documents</p>
+                              <p className="text-sm font-bold text-slate-900 mt-1">{selectedCandidate.docScore}%</p>
+                              <p className="text-[9px] text-slate-400 mt-0.5">CV / Lettre / Matching</p>
+                            </div>
+                            <div className="p-3 bg-violet-50 rounded-lg border border-violet-100">
+                              <p className="text-[10px] text-violet-400 font-bold uppercase">Score Entretien</p>
+                              <p className="text-sm font-bold text-violet-700 mt-1">{selectedCandidate.interviewScore !== null ? `${selectedCandidate.interviewScore}%` : '—'}</p>
+                              <p className="text-[9px] text-violet-300 mt-0.5">Note réelle</p>
+                            </div>
+                            <div className="p-3 bg-amber-50 rounded-lg border border-amber-100">
+                              <p className="text-[10px] text-amber-400 font-bold uppercase">Score Test</p>
+                              <p className="text-sm font-bold text-amber-700 mt-1">{selectedCandidate.testScore !== null ? `${selectedCandidate.testScore}%` : '—'}</p>
+                              <p className="text-[9px] text-amber-300 mt-0.5">Note réelle</p>
+                            </div>
+                          </div>
+                          {/* Document analysis sub-scores */}
                           <div className="grid grid-cols-3 gap-2 text-center">
                             <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
                               <p className="text-[10px] text-slate-400 font-bold uppercase">Score CV</p>
@@ -1329,7 +1893,7 @@ export function RecruitmentWorkspace() {
               <div className="flex justify-between items-center">
                 <h3 className="text-base font-bold text-slate-900">Calendrier des Entretiens</h3>
                 <button
-                  onClick={() => setIsAddInterviewOpen(true)}
+                  onClick={() => { setEditingInterview(null); setNewInterview({ candidateId: '', type: 'RH', date: '', time: '', format: 'Visioconférence', evaluator: '', score: '0', comments: '', status: '', result: '', feedback: '' }); setIsAddInterviewOpen(true); }}
                   className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition"
                   style={{ backgroundColor: PRIMARY }}
                 >
@@ -1337,21 +1901,69 @@ export function RecruitmentWorkspace() {
                 </button>
               </div>
 
-              {interviews.length === 0 ? (
+              {/* Interview Filter Tabs */}
+              <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 w-fit">
+                {[
+                  { key: 'TOUS', label: 'Tous', count: interviews.length },
+                  { key: 'PLANIFIÉ', label: 'Planifiés', count: totalInterviews },
+                  { key: 'EN_COURS', label: 'En cours', count: totalInterviewsInProgress },
+                  { key: 'TERMINÉ', label: 'Terminés', count: totalInterviewsCompleted },
+                ].map(tab => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setInterviewFilter(tab.key as typeof interviewFilter)}
+                    className={cn(
+                      'px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition',
+                      interviewFilter === tab.key
+                        ? 'bg-white text-[#1A2BA6] shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
+                    )}
+                  >
+                    {tab.label} <span className="ml-0.5 text-[9px] font-normal">({tab.count})</span>
+                  </button>
+                ))}
+              </div>
+
+              {interviews.filter(int => interviewFilter === 'TOUS' || int.status === interviewFilter).length === 0 ? (
                 <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
                   <Calendar className="h-10 w-10 text-slate-300 mx-auto mb-3" />
-                  <p className="text-xs text-slate-500 font-semibold">Aucun entretien programmé.</p>
+                  <p className="text-xs text-slate-500 font-semibold">
+                    {interviewFilter === 'PLANIFIÉ' ? 'Aucun entretien planifié.' : interviewFilter === 'EN_COURS' ? 'Aucun entretien en cours.' : interviewFilter === 'TERMINÉ' ? 'Aucun entretien terminé.' : 'Aucun entretien programmé.'}
+                  </p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {interviews.map((int) => (
+                  {interviews.filter(int => interviewFilter === 'TOUS' || int.status === interviewFilter).map((int) => (
                     <div key={int.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col justify-between">
                       <div>
                         <div className="flex justify-between items-start">
-                          <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-blue-50 text-blue-700 border border-blue-100">{int.type}</span>
-                          <button onClick={() => handleDeleteInterview(int.id)} className="text-slate-400 hover:text-red-600 transition">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-blue-50 text-blue-700 border border-blue-100">{int.type}</span>
+                            <span className={cn(
+                              'px-2 py-0.5 rounded-full text-[9px] font-bold uppercase',
+                              int.status === 'TERMINÉ'
+                                ? int.result === 'RÉUSSI'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                  : int.result === 'ÉCHOUÉ'
+                                    ? 'bg-red-50 text-red-700 border border-red-100'
+                                    : 'bg-amber-50 text-amber-700 border border-amber-100'
+                                : int.status === 'EN_COURS'
+                                  ? 'bg-violet-50 text-violet-700 border border-violet-100'
+                                  : 'bg-slate-50 text-slate-600 border border-slate-200'
+                            )}>
+                              {int.status === 'TERMINÉ'
+                                ? (int.result === 'RÉUSSI' ? 'Réussi' : int.result === 'ÉCHOUÉ' ? 'Échoué' : 'En attente')
+                                : int.status === 'EN_COURS' ? 'En cours' : 'Planifié'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button onClick={() => openEditInterview(int)} className="text-slate-400 hover:text-blue-600 transition">
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </button>
+                            <button onClick={() => handleDeleteInterview(int.id)} className="text-slate-400 hover:text-red-600 transition">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </div>
                         <h4 className="font-bold text-slate-900 mt-3 text-xs">
                           {int.candidate ? `${int.candidate.firstName} ${int.candidate.lastName}` : 'Candidat inconnu'}
@@ -1366,10 +1978,38 @@ export function RecruitmentWorkspace() {
                             {int.comments}
                           </div>
                         )}
+                        {int.feedback && (
+                          <div className="mt-2 bg-blue-50 p-2.5 rounded-lg border border-blue-100 text-[10px] text-blue-700">
+                            <span className="font-bold">Retour : </span>{int.feedback}
+                          </div>
+                        )}
                       </div>
                       <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center">
-                        <span className="text-[10px] font-semibold text-slate-400">Note technique :</span>
-                        <span className="font-bold text-[#1A2BA6] bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">{int.score}/100</span>
+                        <span className="text-[10px] font-semibold text-slate-400">Note :</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-[#1A2BA6] bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">{int.score}/100</span>
+                          {int.status !== 'TERMINÉ' ? (
+                            <button
+                              onClick={() => {
+                                setValidatingInterview(int);
+                                setInterviewValidation({ result: 'RÉUSSI', score: String(int.score || 0), feedback: '' });
+                              }}
+                              className="inline-flex items-center gap-1 px-3 py-1 text-white rounded-lg text-[10px] font-bold shadow-sm hover:opacity-90 transition bg-emerald-600"
+                            >
+                              <CheckCircle className="h-3 w-3" /> Valider
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setValidatingInterview(int);
+                                setInterviewValidation({ result: int.result || 'RÉUSSI', score: String(int.score || 0), feedback: int.feedback || '' });
+                              }}
+                              className="inline-flex items-center gap-1 px-3 py-1 text-slate-600 rounded-lg text-[10px] font-bold border border-slate-200 hover:bg-slate-50 transition"
+                            >
+                              <Edit2 className="h-3 w-3" /> Modifier résultat
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -1380,8 +2020,8 @@ export function RecruitmentWorkspace() {
               {isAddInterviewOpen && (
                 <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
                   <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-100">
-                    <h3 className="font-bold text-slate-900 text-base mb-4">Programmer un entretien</h3>
-                    <form onSubmit={handleCreateInterview} className="space-y-4">
+                    <h3 className="font-bold text-slate-900 text-base mb-4">{editingInterview ? 'Modifier l\'entretien' : 'Programmer un entretien'}</h3>
+                    <form onSubmit={handleSaveInterview} className="space-y-4">
                       <div>
                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Candidat</label>
                         <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newInterview.candidateId} onChange={(e) => setNewInterview({ ...newInterview, candidateId: e.target.value })} required>
@@ -1437,9 +2077,106 @@ export function RecruitmentWorkspace() {
                         <textarea className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-16" value={newInterview.comments} onChange={(e) => setNewInterview({ ...newInterview, comments: e.target.value })} />
                       </div>
 
+                      {/* Status / Result / Feedback — only shown when editing an existing interview */}
+                      {editingInterview && (
+                        <>
+                          <div className="border-t border-slate-100 pt-4">
+                            <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Statut & Résultat</span>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-1">Statut</label>
+                                <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newInterview.status} onChange={(e) => setNewInterview({ ...newInterview, status: e.target.value })}>
+                                  <option value="">-- Changer le statut --</option>
+                                  <option value="PLANIFIÉ">Planifié</option>
+                                  <option value="EN_COURS">En cours</option>
+                                  <option value="TERMINÉ">Terminé</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-1">Résultat</label>
+                                <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newInterview.result} onChange={(e) => setNewInterview({ ...newInterview, result: e.target.value })}>
+                                  <option value="">-- Changer le résultat --</option>
+                                  <option value="RÉUSSI">Réussi / Validé</option>
+                                  <option value="ÉCHOUÉ">Échoué / Non retenu</option>
+                                  <option value="EN_ATTENTE">En attente</option>
+                                </select>
+                              </div>
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Retour / Feedback</label>
+                            <textarea className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-16" placeholder="Commentaires sur l'entretien, points forts, points à améliorer..." value={newInterview.feedback} onChange={(e) => setNewInterview({ ...newInterview, feedback: e.target.value })} />
+                          </div>
+                        </>
+                      )}
+
                       <div className="flex gap-2 justify-end mt-6">
-                        <button type="button" onClick={() => setIsAddInterviewOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs">Annuler</button>
-                        <button type="submit" className="px-4 py-2 text-white rounded-lg text-xs font-semibold" style={{ backgroundColor: PRIMARY }}>Programmer</button>
+                        <button type="button" onClick={() => { setIsAddInterviewOpen(false); setEditingInterview(null); }} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs">Annuler</button>
+                        <button type="submit" className="px-4 py-2 text-white rounded-lg text-xs font-semibold" style={{ backgroundColor: PRIMARY }}>{editingInterview ? 'Enregistrer' : 'Programmer'}</button>
+                      </div>
+                    </form>
+                  </motion.div>
+                </div>
+              )}
+
+              {/* Validate Interview Modal */}
+              {validatingInterview && (
+                <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-100">
+                    <div className={cn("-mx-6 -mt-6 px-6 py-4 rounded-t-2xl mb-4", validatingInterview.status === 'TERMINÉ' ? "bg-blue-600" : "bg-emerald-600")}>
+                      <h3 className="font-bold text-white text-sm">{validatingInterview.status === 'TERMINÉ' ? 'Modifier le résultat' : 'Valider l\'entretien'}</h3>
+                      <p className="text-emerald-100 text-[10px] mt-0.5">
+                        {validatingInterview.candidate ? `${validatingInterview.candidate.firstName} ${validatingInterview.candidate.lastName}` : 'Candidat'} — {validatingInterview.type}
+                      </p>
+                    </div>
+                    <form onSubmit={handleValidateInterview} className="space-y-4">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Résultat de l'entretien</label>
+                        <select
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs"
+                          value={interviewValidation.result}
+                          onChange={(e) => setInterviewValidation({ ...interviewValidation, result: e.target.value })}
+                        >
+                          <option value="RÉUSSI">Réussi / Validé</option>
+                          <option value="ÉCHOUÉ">Échoué / Non retenu</option>
+                          <option value="EN_ATTENTE">En attente</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Score (/100)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs"
+                          value={interviewValidation.score}
+                          onChange={(e) => setInterviewValidation({ ...interviewValidation, score: e.target.value })}
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Retour / Commentaires</label>
+                        <textarea
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-20"
+                          placeholder="Commentaires sur l'entretien, points forts, points à améliorer..."
+                          value={interviewValidation.feedback}
+                          onChange={(e) => setInterviewValidation({ ...interviewValidation, feedback: e.target.value })}
+                        />
+                      </div>
+
+                      {interviewValidation.result === 'RÉUSSI' && validatingInterview.status !== 'TERMINÉ' && (
+                        <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
+                          <p className="text-[10px] text-blue-700 font-medium">
+                            Le statut de la candidature sera automatiquement avancé à <strong>Entretien</strong>, rendant le candidat éligible pour l'embauche.
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="flex gap-2 justify-end mt-6">
+                        <button type="button" onClick={() => { setValidatingInterview(null); setInterviewValidation({ result: 'RÉUSSI', score: '0', feedback: '' }); }} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs">Annuler</button>
+                        <button type="submit" className="px-4 py-2 text-white rounded-lg text-xs font-semibold bg-emerald-600 hover:opacity-90 transition">{validatingInterview.status === 'TERMINÉ' ? 'Enregistrer les modifications' : 'Valider l\'entretien'}</button>
                       </div>
                     </form>
                   </motion.div>
@@ -1451,17 +2188,21 @@ export function RecruitmentWorkspace() {
           {/* TAB: TESTS */}
           {activeTab === 'tests' && (
             <motion.div key="tests" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h3 className="text-base font-bold text-slate-900">Épreuves et Tests d'évaluation</h3>
+              {/* Header */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Épreuves et Tests d'évaluation</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Créez et gérez les tests d'évaluation. Saisissez les résultats des candidats.</p>
+                </div>
                 <div className="flex gap-3">
                   <button
-                    onClick={() => setIsAddTestResultOpen(true)}
+                    onClick={() => { setEditingTestResult(null); setNewTestResult({ testId: '', candidateId: '', score: '50', result: 'RÉUSSI', notes: '', evaluatedAt: '' }); setIsAddTestResultOpen(true); }}
                     className="flex items-center gap-2 border border-[#1A2BA6] text-[#1A2BA6] rounded-xl px-4 py-2.5 text-xs font-bold transition hover:bg-indigo-50"
                   >
-                    Saisir un résultat
+                    <PenTool className="h-3.5 w-3.5" /> Saisir un résultat
                   </button>
                   <button
-                    onClick={() => setIsAddTestOpen(true)}
+                    onClick={() => { setEditingTest(null); setNewTest({ name: '', type: 'Technique', description: '', duration: '', instructions: '', maxScore: '100', passingScore: '50', status: 'ACTIF' }); setIsAddTestOpen(true); }}
                     className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:opacity-90 transition"
                     style={{ backgroundColor: PRIMARY }}
                   >
@@ -1470,126 +2211,498 @@ export function RecruitmentWorkspace() {
                 </div>
               </div>
 
-              {tests.length === 0 ? (
-                <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
-                  <ClipboardList className="h-10 w-10 text-slate-300 mx-auto mb-3" />
-                  <p className="text-xs text-slate-500 font-semibold">Aucun test d'évaluation enregistré.</p>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {tests.map((test) => (
-                    <div key={test.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
-                      <div className="flex justify-between items-start border-b border-slate-100 pb-3">
-                        <div>
-                          <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-amber-50 text-amber-700 border border-amber-100">{test.type}</span>
-                          <h4 className="font-bold text-slate-900 mt-2 text-sm">{test.name}</h4>
-                          {test.description && <p className="text-xs text-slate-500 mt-1">{test.description}</p>}
-                        </div>
-                        <button onClick={() => handleDeleteTest(test.id)} className="text-slate-400 hover:text-red-600 transition">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-
-                      <div className="mt-4">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Candidats ayant passé ce test</span>
-                        {(!test.results || test.results.length === 0) ? (
-                          <span className="text-xs text-slate-400 italic">Aucun résultat enregistré pour le moment.</span>
-                        ) : (
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                            {test.results.map((res) => (
-                              <div key={res.id} className="bg-slate-50 border border-slate-100 rounded-lg p-3 flex justify-between items-center text-xs">
-                                <div>
-                                  <p className="font-bold text-slate-800">{res.candidate ? `${res.candidate.firstName} ${res.candidate.lastName}` : 'Inconnu'}</p>
-                                  <p className="text-[10px] text-slate-500 mt-0.5">Statut: {res.result}</p>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                  <span className="font-bold text-[#1A2BA6] bg-white border border-slate-200 rounded-full px-2 py-0.5">{res.score}/100</span>
-                                  <button onClick={() => handleDeleteTestResult(res.id)} className="text-slate-400 hover:text-red-500 transition">
-                                    ✕
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+              {/* KPI Cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  { label: 'Total Tests', value: tests.filter(t => t.status !== 'ARCHIVÉ').length, sub: 'Tests actifs', icon: ClipboardList, bg: 'bg-blue-50/50 border-blue-100/50', color: 'text-blue-600' },
+                  { label: 'Résultats', value: tests.reduce((sum, t) => sum + (t.results?.length || 0), 0), sub: `${tests.reduce((sum, t) => sum + (t.results?.filter(r => r.result === 'RÉUSSI').length || 0), 0)} réussis`, icon: CheckCircle, bg: 'bg-emerald-50/50 border-emerald-100/50', color: 'text-emerald-600' },
+                  { label: 'Taux Réussite', value: (() => { const all = tests.reduce((sum, t) => sum + (t.results?.length || 0), 0); const pass = tests.reduce((sum, t) => sum + (t.results?.filter(r => r.result === 'RÉUSSI').length || 0), 0); return all > 0 ? `${Math.round(pass / all * 100)}%` : '—'; })(), sub: 'Tests validés', icon: Star, bg: 'bg-amber-50/50 border-amber-100/50', color: 'text-amber-600' },
+                  { label: 'Score Moyen', value: (() => { const allResults = tests.flatMap(t => t.results || []); return allResults.length > 0 ? `${Math.round(allResults.reduce((s, r) => s + r.score, 0) / allResults.length)}` : '—'; })(), sub: 'Moyenne générale', icon: Sparkles, bg: 'bg-violet-50/50 border-violet-100/50', color: 'text-violet-600' },
+                ].map((card, i) => (
+                  <div key={i} className={`border rounded-xl p-3.5 shadow-sm flex items-center gap-3 ${card.bg}`}>
+                    <div className={`p-2 rounded-lg bg-white/80 ${card.color}`}>
+                      <card.icon className="h-4 w-4" />
                     </div>
+                    <div>
+                      <span className="text-lg font-extrabold text-slate-900">{card.value}</span>
+                      <span className="text-[9px] text-slate-500 block font-medium">{card.sub}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Filters & Search */}
+              <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { id: 'TOUS' as const, label: 'Tous' },
+                    { id: 'Technique' as const, label: 'Technique' },
+                    { id: 'RH / Psychotechnique' as const, label: 'RH / Psycho' },
+                    { id: 'Anglais' as const, label: 'Anglais' },
+                    { id: 'Compétences transverses' as const, label: 'Comp. transverses' },
+                    { id: 'Pédagogique' as const, label: 'Pédagogique' },
+                  ].map(f => (
+                    <button
+                      key={f.id}
+                      onClick={() => setTestFilter(f.id)}
+                      className={cn(
+                        'px-3 py-1.5 rounded-lg text-[10px] font-bold transition border',
+                        testFilter === f.id
+                          ? 'bg-[#1A2BA6] text-white border-[#1A2BA6]'
+                          : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                      )}
+                    >
+                      {f.label}
+                    </button>
                   ))}
                 </div>
-              )}
+                <div className="relative flex-1 max-w-xs ml-auto">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Rechercher un test..."
+                    value={testSearch}
+                    onChange={e => setTestSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1A2BA6]/20 focus:border-[#1A2BA6]"
+                  />
+                </div>
+              </div>
 
-              {/* Create Test Modal */}
+              {/* Test List */}
+              {(() => {
+                const filtered = tests
+                  .filter(t => testFilter === 'TOUS' || t.type === testFilter)
+                  .filter(t => !testSearch || t.name.toLowerCase().includes(testSearch.toLowerCase()) || (t.description || '').toLowerCase().includes(testSearch.toLowerCase()));
+
+                if (tests.length === 0) {
+                  return (
+                    <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
+                      <ClipboardList className="h-10 w-10 text-slate-300 mx-auto mb-3" />
+                      <p className="text-xs text-slate-500 font-semibold">Aucun test d'évaluation enregistré.</p>
+                      <p className="text-[10px] text-slate-400 mt-1">Cliquez sur "Créer un test" pour commencer.</p>
+                    </div>
+                  );
+                }
+                if (filtered.length === 0) {
+                  return (
+                    <div className="bg-white border border-slate-200 rounded-xl p-8 text-center">
+                      <Filter className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+                      <p className="text-xs text-slate-500 font-semibold">Aucun test trouvé pour ce filtre.</p>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="space-y-4">
+                    {filtered.map((test) => {
+                      const passCount = test.results?.filter(r => r.result === 'RÉUSSI').length || 0;
+                      const failCount = test.results?.filter(r => r.result === 'ÉCHOUÉ').length || 0;
+                      const pendingCount = test.results?.filter(r => r.result === 'EN_ATTENTE').length || 0;
+                      const avgScore = (test.results && test.results.length > 0) ? Math.round(test.results.reduce((s, r) => s + r.score, 0) / test.results.length) : null;
+                      const passRate = (test.results && test.results.length > 0) ? Math.round(passCount / test.results.length * 100) : null;
+
+                      return (
+                        <div key={test.id} className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                          {/* Test Header */}
+                          <div className="p-5">
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className={cn(
+                                    'px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase border',
+                                    test.type === 'Technique' ? 'bg-blue-50 text-blue-700 border-blue-100' :
+                                    test.type === 'RH / Psychotechnique' ? 'bg-purple-50 text-purple-700 border-purple-100' :
+                                    test.type === 'Anglais' ? 'bg-cyan-50 text-cyan-700 border-cyan-100' :
+                                    test.type === 'Pédagogique' ? 'bg-amber-50 text-amber-700 border-amber-100' :
+                                    'bg-orange-50 text-orange-700 border-orange-100'
+                                  )}>
+                                    {test.type}
+                                  </span>
+                                  <span className={cn(
+                                    'px-2 py-0.5 rounded-full text-[8px] font-bold uppercase',
+                                    test.status === 'ACTIF' ? 'bg-emerald-50 text-emerald-600' :
+                                    test.status === 'BROUILLON' ? 'bg-slate-100 text-slate-500' :
+                                    'bg-red-50 text-red-500'
+                                  )}>
+                                    {test.status === 'ACTIF' ? 'Actif' : test.status === 'BROUILLON' ? 'Brouillon' : 'Archivé'}
+                                  </span>
+                                  {test.duration && (
+                                    <span className="flex items-center gap-1 text-[9px] text-slate-400 font-medium">
+                                      <Clock className="h-3 w-3" /> {test.duration} min
+                                    </span>
+                                  )}
+                                </div>
+                                <h4 className="font-bold text-slate-900 mt-2 text-sm">{test.name}</h4>
+                                {test.description && <p className="text-xs text-slate-500 mt-1 leading-relaxed">{test.description}</p>}
+                                {test.instructions && (
+                                  <div className="mt-2 bg-slate-50 border border-slate-100 rounded-lg p-2.5">
+                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Consignes</span>
+                                    <p className="text-[11px] text-slate-600 mt-0.5 whitespace-pre-line">{test.instructions}</p>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1 ml-4">
+                                <button onClick={() => openEditTest(test)} className="p-1.5 text-slate-400 hover:text-[#1A2BA6] hover:bg-indigo-50 rounded-lg transition">
+                                  <Edit2 className="h-3.5 w-3.5" />
+                                </button>
+                                <button onClick={() => handleDeleteTest(test.id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition">
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Score Config */}
+                            <div className="flex items-center gap-4 mt-3 text-[10px]">
+                              <span className="flex items-center gap-1 text-slate-500">
+                                <Star className="h-3 w-3 text-amber-400" /> Score max: <b className="text-slate-700">{test.maxScore || 100}</b>
+                              </span>
+                              <span className="flex items-center gap-1 text-slate-500">
+                                <CheckCircle className="h-3 w-3 text-emerald-400" /> Score réussite: <b className="text-slate-700">{test.passingScore || 50}</b>
+                              </span>
+                            </div>
+
+                            {/* Stats bar */}
+                            {(test.results && test.results.length > 0) && (
+                              <div className="mt-3 flex items-center gap-4 text-[10px]">
+                                <div className="flex items-center gap-2 flex-1">
+                                  <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${passRate || 0}%` }} />
+                                  </div>
+                                  <span className="font-bold text-slate-600">{passRate}% réussite</span>
+                                </div>
+                                <span className="text-emerald-600 font-bold">{passCount} réussi{passCount > 1 ? 's' : ''}</span>
+                                <span className="text-red-500 font-bold">{failCount} échoué{failCount > 1 ? 's' : ''}</span>
+                                {pendingCount > 0 && <span className="text-amber-500 font-bold">{pendingCount} en attente</span>}
+                                <span className="text-slate-400">Score moyen: <b className="text-slate-600">{avgScore}/{test.maxScore || 100}</b></span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Results Section */}
+                          <div className="border-t border-slate-100 bg-slate-50/50 px-5 py-4">
+                            <div className="flex justify-between items-center mb-3">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                Candidats ayant passé ce test ({test.results?.length || 0})
+                              </span>
+                              <button
+                                onClick={() => { setEditingTestResult(null); setNewTestResult({ testId: test.id, candidateId: '', score: '50', result: 'RÉUSSI', notes: '', evaluatedAt: '' }); setIsAddTestResultOpen(true); }}
+                                className="flex items-center gap-1 text-[10px] font-bold text-[#1A2BA6] hover:underline"
+                              >
+                                <Plus className="h-3 w-3" /> Ajouter un résultat
+                              </button>
+                            </div>
+                            {(!test.results || test.results.length === 0) ? (
+                              <span className="text-xs text-slate-400 italic">Aucun résultat enregistré pour le moment.</span>
+                            ) : (
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {test.results.map((res) => (
+                                  <div key={res.id} className={cn(
+                                    'bg-white border rounded-lg p-3.5 shadow-sm',
+                                    res.result === 'RÉUSSI' ? 'border-emerald-100' :
+                                    res.result === 'ÉCHOUÉ' ? 'border-red-100' :
+                                    'border-amber-100'
+                                  )}>
+                                    <div className="flex justify-between items-start">
+                                      <div className="flex items-center gap-2">
+                                        <div className={cn(
+                                          'w-7 h-7 rounded-full flex items-center justify-center text-white text-[9px] font-bold',
+                                          res.result === 'RÉUSSI' ? 'bg-emerald-500' :
+                                          res.result === 'ÉCHOUÉ' ? 'bg-red-500' :
+                                          'bg-amber-500'
+                                        )}>
+                                          {res.candidate ? `${res.candidate.firstName[0]}${res.candidate.lastName[0]}` : '??'}
+                                        </div>
+                                        <div>
+                                          <p className="font-bold text-slate-800 text-xs">{res.candidate ? `${res.candidate.firstName} ${res.candidate.lastName}` : 'Inconnu'}</p>
+                                          <p className="text-[9px] text-slate-400">{res.evaluatedAt ? new Date(res.evaluatedAt).toLocaleDateString('fr-FR') : '—'}</p>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-1">
+                                        <button onClick={() => openEditTestResult(res, test.id)} className="p-1 text-slate-300 hover:text-[#1A2BA6] transition">
+                                          <Edit2 className="h-3 w-3" />
+                                        </button>
+                                        <button onClick={() => handleDeleteTestResult(res.id)} className="p-1 text-slate-300 hover:text-red-500 transition">
+                                          <Trash2 className="h-3 w-3" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <div className="mt-2 flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <span className={cn(
+                                          'px-2 py-0.5 rounded-full text-[9px] font-bold',
+                                          res.result === 'RÉUSSI' ? 'bg-emerald-50 text-emerald-700' :
+                                          res.result === 'ÉCHOUÉ' ? 'bg-red-50 text-red-700' :
+                                          'bg-amber-50 text-amber-700'
+                                        )}>
+                                          {res.result === 'RÉUSSI' ? 'Réussi' : res.result === 'ÉCHOUÉ' ? 'Échoué' : 'En attente'}
+                                        </span>
+                                        <span className={cn(
+                                          'font-bold text-xs',
+                                          res.score >= (test.passingScore || 50) ? 'text-[#1A2BA6]' : 'text-red-600'
+                                        )}>
+                                          {res.score}/{test.maxScore || 100}
+                                        </span>
+                                      </div>
+                                      {/* Score bar */}
+                                      <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                        <div className={cn(
+                                          'h-full rounded-full',
+                                          res.score >= (test.passingScore || 50) ? 'bg-emerald-500' : 'bg-red-400'
+                                        )} style={{ width: `${Math.min(100, (res.score / (test.maxScore || 100)) * 100)}%` }} />
+                                      </div>
+                                    </div>
+                                    {res.notes && (
+                                      <p className="text-[10px] text-slate-500 mt-2 border-t border-slate-50 pt-1.5 italic">{res.notes}</p>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
+              {/* Create/Edit Test Modal */}
               {isAddTestOpen && (
                 <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-100">
-                    <h3 className="font-bold text-slate-900 text-base mb-4">Créer une épreuve / test</h3>
-                    <form onSubmit={handleCreateTest} className="space-y-4">
-                      <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Nom de l'épreuve</label>
-                        <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newTest.name} onChange={(e) => setNewTest({ ...newTest, name: e.target.value })} required />
+                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-100 max-h-[90vh] overflow-y-auto">
+                    <h3 className="font-bold text-slate-900 text-base mb-1">{editingTest ? 'Modifier l\'épreuve / test' : 'Créer une épreuve / test'}</h3>
+                    <p className="text-[11px] text-slate-500 mb-4">Définissez les paramètres du test d'évaluation. Les candidats pourront ensuite y être affectés.</p>
+                    <form onSubmit={handleSaveTest} className="space-y-4">
+                      {/* Row 1: Name + Type */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Nom de l'épreuve *</label>
+                          <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#1A2BA6]/20 focus:border-[#1A2BA6]" value={newTest.name} onChange={(e) => setNewTest({ ...newTest, name: e.target.value })} placeholder="Ex: Test Python Avancé" required />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Type de test *</label>
+                          <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#1A2BA6]/20 focus:border-[#1A2BA6]" value={newTest.type} onChange={(e) => setNewTest({ ...newTest, type: e.target.value })}>
+                            <option value="Technique">Technique</option>
+                            <option value="RH / Psychotechnique">RH / Psychotechnique</option>
+                            <option value="Anglais">Langue / Anglais</option>
+                            <option value="Pédagogique">Pédagogique</option>
+                            <option value="Compétences transverses">Compétences transverses</option>
+                          </select>
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Type de test</label>
-                        <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newTest.type} onChange={(e) => setNewTest({ ...newTest, type: e.target.value })}>
-                          <option value="Technique">Technique</option>
-                          <option value="RH / Psychotechnique">RH / Psychotechnique</option>
-                          <option value="Anglais">Langue / Anglais</option>
-                          <option value="Compétences transverses">Compétences transverses</option>
-                        </select>
-                      </div>
+
+                      {/* Row 2: Description */}
                       <div>
                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Description / Objectifs</label>
-                        <textarea className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-20" value={newTest.description} onChange={(e) => setNewTest({ ...newTest, description: e.target.value })} />
+                        <textarea className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-20 focus:outline-none focus:ring-2 focus:ring-[#1A2BA6]/20 focus:border-[#1A2BA6]" value={newTest.description} onChange={(e) => setNewTest({ ...newTest, description: e.target.value })} placeholder="Décrivez les objectifs et le contenu du test..." />
                       </div>
-                      <div className="flex gap-2 justify-end mt-6">
-                        <button type="button" onClick={() => setIsAddTestOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs">Annuler</button>
-                        <button type="submit" className="px-4 py-2 text-white rounded-lg text-xs font-semibold" style={{ backgroundColor: PRIMARY }}>Enregistrer</button>
+
+                      {/* Row 3: Instructions */}
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Consignes / Instructions</label>
+                        <textarea className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-20 focus:outline-none focus:ring-2 focus:ring-[#1A2BA6]/20 focus:border-[#1A2BA6]" value={newTest.instructions} onChange={(e) => setNewTest({ ...newTest, instructions: e.target.value })} placeholder="Instructions spécifiques pour les candidats (ex: durée, documents autorisés, etc.)..." />
+                      </div>
+
+                      {/* Row 4: Duration + Status */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Durée (minutes)</label>
+                          <input type="number" min="1" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#1A2BA6]/20 focus:border-[#1A2BA6]" value={newTest.duration} onChange={(e) => setNewTest({ ...newTest, duration: e.target.value })} placeholder="Ex: 60" />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Statut</label>
+                          <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#1A2BA6]/20 focus:border-[#1A2BA6]" value={newTest.status} onChange={(e) => setNewTest({ ...newTest, status: e.target.value })}>
+                            <option value="ACTIF">Actif</option>
+                            <option value="BROUILLON">Brouillon</option>
+                            <option value="ARCHIVÉ">Archivé</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Row 5: Max Score + Passing Score */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Score maximum</label>
+                          <input type="number" min="1" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#1A2BA6]/20 focus:border-[#1A2BA6]" value={newTest.maxScore} onChange={(e) => setNewTest({ ...newTest, maxScore: e.target.value })} />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Score de réussite</label>
+                          <input type="number" min="1" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#1A2BA6]/20 focus:border-[#1A2BA6]" value={newTest.passingScore} onChange={(e) => setNewTest({ ...newTest, passingScore: e.target.value })} />
+                          <p className="text-[9px] text-slate-400 mt-0.5">Score minimum pour valider le test</p>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 justify-end mt-6 pt-4 border-t border-slate-100">
+                        <button type="button" onClick={() => { setIsAddTestOpen(false); setEditingTest(null); }} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs hover:bg-slate-50 transition">Annuler</button>
+                        <button type="submit" className="px-4 py-2 text-white rounded-lg text-xs font-semibold hover:opacity-90 transition" style={{ backgroundColor: PRIMARY }}>
+                          {editingTest ? 'Mettre à jour' : 'Créer le test'}
+                        </button>
                       </div>
                     </form>
                   </motion.div>
                 </div>
               )}
 
-              {/* Log Test Result Modal */}
+              {/* Create/Edit Test Result Modal */}
               {isAddTestResultOpen && (
                 <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-100">
-                    <h3 className="font-bold text-slate-900 text-base mb-4">Saisir le score d'un candidat</h3>
-                    <form onSubmit={handleCreateTestResult} className="space-y-4">
+                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-100 max-h-[90vh] overflow-y-auto">
+                    <h3 className="font-bold text-slate-900 text-base mb-1">{editingTestResult ? 'Modifier le résultat' : 'Saisir un résultat de test'}</h3>
+                    <p className="text-[11px] text-slate-500 mb-4">
+                      {editingTestResult
+                        ? 'Modifiez le score, le résultat ou les commentaires du candidat.'
+                        : 'Enregistrez le score d\'un candidat pour un test. Si le test est réussi, le candidat sera automatiquement avancé au statut Test dans le pipeline.'}
+                    </p>
+                    <form onSubmit={handleSaveTestResult} className="space-y-4">
+                      {/* Test Selector */}
                       <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Sélectionner l'épreuve</label>
-                        <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newTestResult.testId} onChange={(e) => setNewTestResult({ ...newTestResult, testId: e.target.value })} required>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Épreuve / Test *</label>
+                        <select
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#1A2BA6]/20 focus:border-[#1A2BA6]"
+                          value={newTestResult.testId}
+                          onChange={(e) => setNewTestResult({ ...newTestResult, testId: e.target.value })}
+                          required
+                          disabled={!!editingTestResult}
+                        >
                           <option value="">-- Choisir le test --</option>
-                          {tests.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                          {tests.filter(t => t.status === 'ACTIF').map(t => (
+                            <option key={t.id} value={t.id}>{t.name} ({t.type})</option>
+                          ))}
                         </select>
+                        {newTestResult.testId && (() => {
+                          const selectedTest = tests.find(t => t.id === newTestResult.testId);
+                          if (selectedTest) {
+                            return (
+                              <div className="mt-1.5 flex items-center gap-3 text-[9px] text-slate-400">
+                                <span>Score max: <b className="text-slate-600">{selectedTest.maxScore || 100}</b></span>
+                                <span>Réussite: <b className="text-slate-600">{selectedTest.passingScore || 50}</b></span>
+                                {selectedTest.duration && <span>Durée: <b className="text-slate-600">{selectedTest.duration} min</b></span>}
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
 
+                      {/* Candidate Selector */}
                       <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Candidat</label>
-                        <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newTestResult.candidateId} onChange={(e) => setNewTestResult({ ...newTestResult, candidateId: e.target.value })} required>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Candidat *</label>
+                        <select
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#1A2BA6]/20 focus:border-[#1A2BA6]"
+                          value={newTestResult.candidateId}
+                          onChange={(e) => setNewTestResult({ ...newTestResult, candidateId: e.target.value })}
+                          required
+                          disabled={!!editingTestResult}
+                        >
                           <option value="">-- Choisir le candidat --</option>
-                          {candidates.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                          {candidates.map(c => (
+                            <option key={c.id} value={c.id}>
+                              {c.name} {c.job !== 'Aucun poste' ? `— ${c.job}` : ''} ({STATUS_LABELS[c.status] || c.status})
+                            </option>
+                          ))}
                         </select>
+                        {newTestResult.candidateId && (() => {
+                          const cand = candidates.find(c => c.id === newTestResult.candidateId);
+                          if (cand) {
+                            return (
+                              <div className="mt-1.5 flex items-center gap-2 text-[9px] text-slate-400">
+                                <span>Statut actuel: <span className={cn(
+                                  'font-bold',
+                                  cand.status === 'EMBAUCHÉ' ? 'text-emerald-600' :
+                                  cand.status === 'REJETÉ' ? 'text-red-500' :
+                                  'text-slate-600'
+                                )}>{STATUS_LABELS[cand.status] || cand.status}</span></span>
+                                <span>·</span>
+                                <span>Poste: {cand.job}</span>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
 
+                      {/* Score + Result */}
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Score obtenu (/100)</label>
-                          <input type="number" min="0" max="100" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newTestResult.score} onChange={(e) => setNewTestResult({ ...newTestResult, score: e.target.value })} required />
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                            Score obtenu /{newTestResult.testId ? (tests.find(t => t.id === newTestResult.testId)?.maxScore || 100) : 100}
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            max={newTestResult.testId ? (tests.find(t => t.id === newTestResult.testId)?.maxScore || 100) : 100}
+                            className={cn(
+                              'w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#1A2BA6]/20',
+                              newTestResult.testId && Number(newTestResult.score) >= (tests.find(t => t.id === newTestResult.testId)?.passingScore || 50)
+                                ? 'border-emerald-200 focus:border-emerald-500'
+                                : Number(newTestResult.score) > 0 ? 'border-red-200 focus:border-red-500'
+                                : 'border-slate-200 focus:border-[#1A2BA6]'
+                            )}
+                            value={newTestResult.score}
+                            onChange={(e) => setNewTestResult({ ...newTestResult, score: e.target.value })}
+                            required
+                          />
+                          {newTestResult.testId && (
+                            <p className={cn(
+                              'text-[9px] mt-0.5 font-medium',
+                              Number(newTestResult.score) >= (tests.find(t => t.id === newTestResult.testId)?.passingScore || 50)
+                                ? 'text-emerald-600' : 'text-red-500'
+                            )}>
+                              {Number(newTestResult.score) >= (tests.find(t => t.id === newTestResult.testId)?.passingScore || 50)
+                                ? 'Au-dessus du score de réussite' : 'En dessous du score de réussite'}
+                            </p>
+                          )}
                         </div>
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Résultat final</label>
-                          <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newTestResult.result} onChange={(e) => setNewTestResult({ ...newTestResult, result: e.target.value })}>
-                            <option value="ADMIS">Admis / Validé</option>
-                            <option value="REJETÉ">Échec / Non retenu</option>
-                            <option value="RÉSERVE">Liste d'attente</option>
+                          <select
+                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#1A2BA6]/20 focus:border-[#1A2BA6]"
+                            value={newTestResult.result}
+                            onChange={(e) => setNewTestResult({ ...newTestResult, result: e.target.value })}
+                          >
+                            <option value="RÉUSSI">Réussi / Validé</option>
+                            <option value="ÉCHOUÉ">Échoué / Non retenu</option>
+                            <option value="EN_ATTENTE">En attente</option>
                           </select>
                         </div>
                       </div>
 
-                      <div className="flex gap-2 justify-end mt-6">
-                        <button type="button" onClick={() => setIsAddTestResultOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs">Annuler</button>
-                        <button type="submit" className="px-4 py-2 text-white rounded-lg text-xs font-semibold" style={{ backgroundColor: PRIMARY }}>Enregistrer</button>
+                      {/* Date d'évaluation */}
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Date d'évaluation</label>
+                        <input
+                          type="date"
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#1A2BA6]/20 focus:border-[#1A2BA6]"
+                          value={newTestResult.evaluatedAt}
+                          onChange={(e) => setNewTestResult({ ...newTestResult, evaluatedAt: e.target.value })}
+                        />
+                      </div>
+
+                      {/* Notes / Commentaires */}
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Commentaires / Observations</label>
+                        <textarea
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-20 focus:outline-none focus:ring-2 focus:ring-[#1A2BA6]/20 focus:border-[#1A2BA6]"
+                          value={newTestResult.notes}
+                          onChange={(e) => setNewTestResult({ ...newTestResult, notes: e.target.value })}
+                          placeholder="Observations sur la performance du candidat, points forts, axes d'amélioration..."
+                        />
+                      </div>
+
+                      {/* Info box */}
+                      {!editingTestResult && (
+                        <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                          <p className="text-[10px] text-blue-700 font-medium flex items-start gap-2">
+                            <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                            <span>Si le résultat est <b>Réussi</b>, le statut du candidat sera automatiquement avancé à <b>Test</b> dans le pipeline de recrutement. Le test est une étape optionnelle : un candidat peut être embauché directement après l'entretien.</span>
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="flex gap-2 justify-end mt-6 pt-4 border-t border-slate-100">
+                        <button type="button" onClick={() => { setIsAddTestResultOpen(false); setEditingTestResult(null); }} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs hover:bg-slate-50 transition">Annuler</button>
+                        <button type="submit" className="px-4 py-2 text-white rounded-lg text-xs font-semibold hover:opacity-90 transition" style={{ backgroundColor: PRIMARY }}>
+                          {editingTestResult ? 'Mettre à jour' : 'Enregistrer le résultat'}
+                        </button>
                       </div>
                     </form>
                   </motion.div>
@@ -1612,14 +2725,14 @@ export function RecruitmentWorkspace() {
                   <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-blue-50 text-blue-700 border border-blue-100">
                     {readyForHire.length} candidat{readyForHire.length !== 1 ? 's' : ''} éligible{readyForHire.length !== 1 ? 's' : ''}
                   </span>
-                  <span className="text-xs text-slate-400 font-medium">Prêts à embaucher (ayant passé Entretien ou Test)</span>
+                  <span className="text-xs text-slate-400 font-medium">Prêts à embaucher (score final ≥ {MIN_HIRE_SCORE}%)</span>
                 </div>
 
                 {readyForHire.length === 0 ? (
                   <div className="bg-white border border-slate-200 rounded-xl p-8 text-center">
                     <UserCheck className="h-8 w-8 text-slate-300 mx-auto mb-2" />
                     <p className="text-xs text-slate-500 font-semibold">Aucun candidat éligible pour le moment.</p>
-                    <p className="text-[10px] text-slate-400 mt-1">Les candidats doivent passer par les étapes Entretien ou Test avant de pouvoir être embauchés.</p>
+                    <p className="text-[10px] text-slate-400 mt-1">Les candidats doivent avoir un score final ≥ {MIN_HIRE_SCORE}% et avoir passé les étapes Entretien ou Test.</p>
                   </div>
                 ) : (
                   <div className="bg-white border border-blue-200 rounded-xl overflow-hidden shadow-sm">
@@ -1630,7 +2743,8 @@ export function RecruitmentWorkspace() {
                           <th className="p-4">Candidat</th>
                           <th className="p-4">Poste</th>
                           <th className="p-4">Étape actuelle</th>
-                          <th className="p-4">Score IA</th>
+                          <th className="p-4">Score Final</th>
+                          <th className="p-4">Détail Scores</th>
                           <th className="p-4">Risque</th>
                           <th className="p-4 text-right">Action</th>
                         </tr>
@@ -1649,7 +2763,21 @@ export function RecruitmentWorkspace() {
                               </span>
                             </td>
                             <td className="p-4">
-                              <span className="font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">{c.score}%</span>
+                              <span className={cn(
+                                'font-semibold px-2 py-0.5 rounded-full border',
+                                c.finalScore >= 50
+                                  ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
+                                  : 'text-red-600 bg-red-50 border-red-100'
+                              )}>
+                                {c.finalScore}%
+                              </span>
+                            </td>
+                            <td className="p-4">
+                              <div className="space-y-0.5 text-[10px]">
+                                <div className="text-slate-500">Docs: <span className="font-semibold text-slate-700">{c.docScore}%</span></div>
+                                {c.interviewScore !== null && <div className="text-slate-500">Entretien: <span className="font-semibold text-violet-700">{c.interviewScore}%</span></div>}
+                                {c.testScore !== null && <div className="text-slate-500">Test: <span className="font-semibold text-amber-700">{c.testScore}%</span></div>}
+                              </div>
                             </td>
                             <td className="p-4">
                               <span className={cn('inline-flex items-center gap-1 font-semibold px-2 py-0.5 rounded-full text-[10px]', c.risks === 'Aucun' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-amber-50 text-amber-600 border border-amber-100')}>
@@ -1672,6 +2800,70 @@ export function RecruitmentWorkspace() {
                   </div>
                 )}
               </div>
+
+              {/* ─── Section: Score insuffisant (non recommandés) ──────────── */}
+              {notRecommendedForHire.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-amber-50 text-amber-700 border border-amber-100">
+                      {notRecommendedForHire.length} score insuffisant
+                    </span>
+                    <span className="text-xs text-slate-400 font-medium">Score final &lt; {MIN_HIRE_SCORE}% — embauche non recommandée</span>
+                  </div>
+
+                  <div className="bg-white border border-amber-200 rounded-xl overflow-hidden shadow-sm">
+                    <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                    <table className="w-full border-collapse text-left text-xs text-slate-600">
+                      <thead>
+                        <tr className="bg-amber-50/50 border-b border-amber-100 text-slate-400 font-bold uppercase tracking-wider">
+                          <th className="p-4">Candidat</th>
+                          <th className="p-4">Poste</th>
+                          <th className="p-4">Étape actuelle</th>
+                          <th className="p-4">Score Final</th>
+                          <th className="p-4">Détail Scores</th>
+                          <th className="p-4 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {notRecommendedForHire.map((c) => (
+                          <tr key={c.id} className="hover:bg-amber-50/30 transition opacity-75">
+                            <td className="p-4 font-bold text-slate-950">{c.name}</td>
+                            <td className="p-4 text-slate-600">{c.job}</td>
+                            <td className="p-4">
+                              <span className={cn(
+                                'uppercase text-[9px] font-bold px-2 py-0.5 rounded-full',
+                                c.status === 'ENTRETIEN' ? 'bg-violet-50 text-violet-700 border border-violet-100' : 'bg-amber-50 text-amber-700 border border-amber-100'
+                              )}>
+                                {c.status === 'ENTRETIEN' ? 'Entretien' : 'Test'}
+                              </span>
+                            </td>
+                            <td className="p-4">
+                              <span className="font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">{c.finalScore}%</span>
+                            </td>
+                            <td className="p-4">
+                              <div className="space-y-0.5 text-[10px]">
+                                <div className="text-slate-500">Docs: <span className="font-semibold text-slate-700">{c.docScore}%</span></div>
+                                {c.interviewScore !== null && <div className="text-slate-500">Entretien: <span className="font-semibold text-violet-700">{c.interviewScore}%</span></div>}
+                                {c.testScore !== null && <div className="text-slate-500">Test: <span className="font-semibold text-amber-700">{c.testScore}%</span></div>}
+                              </div>
+                            </td>
+                            <td className="p-4 text-right">
+                              <button
+                                onClick={() => setHireCandidate(c)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-amber-700 rounded-lg text-xs font-medium border border-amber-200 hover:bg-amber-50 transition"
+                                title="Embauche non recommandée — score final insuffisant"
+                              >
+                                <AlertTriangle className="h-3 w-3" /> Forcer
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* ─── Section: Déjà embauchés ──────────────────────────────── */}
               <div className="space-y-3">
@@ -1706,7 +2898,8 @@ export function RecruitmentWorkspace() {
                             <td className="p-4 font-bold text-slate-950">{c.name}</td>
                             <td className="p-4 text-slate-600">{c.job}</td>
                             <td className="p-4">
-                              <span className="font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">{c.score}%</span>
+                              <span className="font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">{c.finalScore}%</span>
+                              <div className="text-[10px] text-slate-400 mt-0.5">{c.scoreBreakdown}</div>
                             </td>
                             <td className="p-4 text-slate-500">{c.date}</td>
                             <td className="p-4">
@@ -1748,12 +2941,30 @@ export function RecruitmentWorkspace() {
                             <p className="font-bold text-slate-900 mt-0.5">{hireCandidate.job}</p>
                           </div>
                           <div>
-                            <span className="text-slate-400 font-bold text-[10px] uppercase">Score IA</span>
-                            <p className="font-bold text-emerald-600 mt-0.5">{hireCandidate.score}%</p>
+                            <span className="text-slate-400 font-bold text-[10px] uppercase">Score Final</span>
+                            <p className={cn('font-bold mt-0.5', hireCandidate.finalScore >= MIN_HIRE_SCORE ? 'text-emerald-600' : 'text-red-600')}>{hireCandidate.finalScore}%</p>
                           </div>
                           <div>
                             <span className="text-slate-400 font-bold text-[10px] uppercase">Étape</span>
                             <p className="font-bold text-slate-900 mt-0.5">{hireCandidate.status === 'ENTRETIEN' ? 'Entretien' : 'Test'}</p>
+                          </div>
+                        </div>
+                        {/* Score breakdown */}
+                        <div className="border-t border-slate-200 pt-2 mt-2">
+                          <span className="text-slate-400 font-bold text-[10px] uppercase">Détail des scores</span>
+                          <div className="grid grid-cols-3 gap-2 mt-1.5 text-xs">
+                            <div className="bg-white rounded-lg p-2 text-center border border-slate-100">
+                              <div className="text-[10px] text-slate-400 font-medium">Documents</div>
+                              <div className="font-bold text-slate-700">{hireCandidate.docScore}%</div>
+                            </div>
+                            <div className="bg-white rounded-lg p-2 text-center border border-slate-100">
+                              <div className="text-[10px] text-slate-400 font-medium">Entretien</div>
+                              <div className="font-bold text-violet-700">{hireCandidate.interviewScore ?? '—'}</div>
+                            </div>
+                            <div className="bg-white rounded-lg p-2 text-center border border-slate-100">
+                              <div className="text-[10px] text-slate-400 font-medium">Test</div>
+                              <div className="font-bold text-amber-700">{hireCandidate.testScore ?? '—'}</div>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1764,6 +2975,19 @@ export function RecruitmentWorkspace() {
                           Rendez-vous ensuite dans l'onglet <strong>Contrats</strong> pour compléter et signer le contrat.
                         </p>
                       </div>
+
+                      {hireCandidate.finalScore < MIN_HIRE_SCORE && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
+                          <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                          <div>
+                            <p className="text-[10px] text-amber-800 font-bold">Score final insuffisant</p>
+                            <p className="text-[10px] text-amber-700">
+                              Le score final de ce candidat ({hireCandidate.finalScore}%) est inférieur au seuil recommandé ({MIN_HIRE_SCORE}%).
+                              L&apos;embauche n&apos;est pas recommandée. Voulez-vous vraiment continuer ?
+                            </p>
+                          </div>
+                        </div>
+                      )}
 
                       <div className="flex gap-3 justify-end">
                         <button
@@ -1776,7 +3000,10 @@ export function RecruitmentWorkspace() {
                         <button
                           onClick={handleHireCandidate}
                           disabled={hiring}
-                          className="inline-flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-xs font-bold shadow-sm hover:opacity-90 transition bg-emerald-600 disabled:opacity-50"
+                          className={cn(
+                            "inline-flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-xs font-bold shadow-sm hover:opacity-90 transition disabled:opacity-50",
+                            hireCandidate.finalScore < MIN_HIRE_SCORE ? "bg-amber-600" : "bg-emerald-600"
+                          )}
                         >
                           {hiring ? (
                             <><span className="animate-spin h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full" /> Traitement...</>
@@ -1880,6 +3107,211 @@ export function RecruitmentWorkspace() {
       )}
     </div>
     {confirmDialog.dialog}
+
+    {/* ═══ Onboarding Guide Modal ═══ */}
+    {isGuideOpen && (
+      <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setIsGuideOpen(false)}>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl border border-slate-100 overflow-hidden"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="bg-gradient-to-r from-[#1A2BA6] to-[#2D3FE0] p-6 text-white">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2.5 rounded-xl">
+                  <Compass className="h-6 w-6" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold">Guide du Processus de Recrutement</h2>
+                  <p className="text-white/70 text-xs mt-0.5">Comprenez chaque étape du pipeline de recrutement HTIP</p>
+                </div>
+              </div>
+              <button onClick={() => setIsGuideOpen(false)} className="text-white/60 hover:text-white transition p-1">
+                <XCircle className="h-6 w-6" />
+              </button>
+            </div>
+            {/* Pipeline visual bar */}
+            <div className="mt-5 flex items-center gap-1">
+              {PIPELINE_STEPS.map((step, i) => {
+                const StepIcon = step.icon;
+                const isActive = i === guideStep;
+                const isPast = i < guideStep;
+                return (
+                  <button
+                    key={step.id}
+                    onClick={() => setGuideStep(i)}
+                    className="flex-1 flex flex-col items-center gap-1 cursor-pointer group"
+                  >
+                    <div className={cn(
+                      'w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300',
+                      isActive ? 'bg-white text-[#1A2BA6] shadow-lg scale-110' : isPast ? 'bg-white/30 text-white' : 'bg-white/10 text-white/50 group-hover:bg-white/20'
+                    )}>
+                      <StepIcon className="h-4 w-4" />
+                    </div>
+                    <span className={cn(
+                      'text-[9px] font-bold uppercase tracking-wider transition',
+                      isActive ? 'text-white' : isPast ? 'text-white/70' : 'text-white/40'
+                    )}>{step.title}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="p-6 max-h-[60vh] overflow-y-auto">
+            {PIPELINE_STEPS.map((step, i) => {
+              const StepIcon = step.icon;
+              const isActive = i === guideStep;
+              const isExpanded = guideExpanded === i;
+
+              return (
+                <div
+                  key={step.id}
+                  className={cn(
+                    'mb-3 rounded-xl border transition-all duration-300 cursor-pointer',
+                    isActive ? `${step.colorLight} shadow-sm` : 'border-slate-100 bg-slate-50/50 hover:bg-slate-50'
+                  )}
+                  onClick={() => {
+                    setGuideStep(i);
+                    setGuideExpanded(isExpanded ? null : i);
+                  }}
+                >
+                  {/* Step Header */}
+                  <div className="flex items-center gap-3 p-4">
+                    <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center text-white flex-shrink-0', step.color)}>
+                      <StepIcon className="h-5 w-5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase">Étape {i + 1}</span>
+                        {i === 3 && (
+                          <span className="px-1.5 py-0.5 bg-orange-100 text-orange-600 text-[8px] font-bold rounded-full uppercase">Optionnel</span>
+                        )}
+                        {i === 4 && (
+                          <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-600 text-[8px] font-bold rounded-full uppercase">Final</span>
+                        )}
+                      </div>
+                      <h3 className={cn('text-sm font-bold', isActive ? step.textColor : 'text-slate-700')}>{step.title}</h3>
+                      <p className="text-[10px] text-slate-500 font-medium">{step.subtitle}</p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {isActive && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setActiveTab(step.tab as any); setIsGuideOpen(false); }}
+                          className={cn('px-2.5 py-1 rounded-lg text-[9px] font-bold border transition hover:shadow-sm', step.colorLight, step.textColor)}
+                        >
+                          Aller à l'onglet
+                        </button>
+                      )}
+                      <ChevronDown className={cn(
+                        'h-4 w-4 text-slate-400 transition-transform duration-200',
+                        isExpanded && 'rotate-180'
+                      )} />
+                    </div>
+                  </div>
+
+                  {/* Expanded Content */}
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="px-4 pb-4 pt-0">
+                          <div className="border-t border-slate-100 pt-3">
+                            <p className="text-xs text-slate-600 leading-relaxed mb-3">{step.description}</p>
+                            <div className="space-y-2.5">
+                              {step.details.map((detail, j) => (
+                                <div key={j} className="flex gap-2.5">
+                                  <div className={cn('w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0', step.color)} />
+                                  <div>
+                                    <span className="text-[10px] font-bold text-slate-700">{detail.label}</span>
+                                    <p className="text-[10px] text-slate-500 leading-relaxed mt-0.5">{detail.text}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })}
+
+            {/* Pipeline flow summary */}
+            <div className="mt-4 bg-slate-50 rounded-xl p-4 border border-slate-100">
+              <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Flux du pipeline</h4>
+              <div className="flex items-center gap-1 flex-wrap">
+                {['NOUVEAU', 'EN_COURS', 'ENTRETIEN', 'TEST', 'EMBAUCHÉ'].map((s, i) => (
+                  <div key={s} className="flex items-center gap-1">
+                    <span className={cn(
+                      'px-2 py-0.5 rounded-full text-[9px] font-bold',
+                      s === 'TEST' ? 'bg-orange-50 text-orange-600 border border-orange-100' :
+                      s === 'EMBAUCHÉ' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                      'bg-slate-100 text-slate-600'
+                    )}>{s}</span>
+                    {i < 4 && <ChevronRight className="h-3 w-3 text-slate-300" />}
+                  </div>
+                ))}
+                <span className="text-[9px] text-slate-400 ml-2">ou</span>
+                <div className="flex items-center gap-1 ml-1">
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-violet-50 text-violet-600 border border-violet-100">ENTRETIEN</span>
+                  <ChevronRight className="h-3 w-3 text-slate-300" />
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-100">EMBAUCHÉ</span>
+                  <span className="text-[9px] text-orange-500 font-bold ml-1">(sans test)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Footer navigation */}
+          <div className="border-t border-slate-100 p-4 flex items-center justify-between bg-slate-50/50">
+            <button
+              onClick={() => { setGuideStep(Math.max(0, guideStep - 1)); setGuideExpanded(guideStep - 1 >= 0 ? guideStep - 1 : null); }}
+              disabled={guideStep === 0}
+              className={cn('flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition', guideStep === 0 ? 'text-slate-300 cursor-not-allowed' : 'text-slate-600 hover:bg-slate-100')}
+            >
+              <ChevronLeft className="h-4 w-4" /> Précédent
+            </button>
+            <div className="flex items-center gap-1.5">
+              {PIPELINE_STEPS.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => { setGuideStep(i); setGuideExpanded(i); }}
+                  className={cn(
+                    'w-2 h-2 rounded-full transition-all',
+                    i === guideStep ? 'bg-[#1A2BA6] scale-125' : 'bg-slate-300 hover:bg-slate-400'
+                  )}
+                />
+              ))}
+            </div>
+            <button
+              onClick={() => {
+                if (guideStep < PIPELINE_STEPS.length - 1) {
+                  setGuideStep(guideStep + 1);
+                  setGuideExpanded(guideStep + 1);
+                } else {
+                  setIsGuideOpen(false);
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-[#1A2BA6] text-white hover:bg-[#1521A0] transition shadow-sm"
+            >
+              {guideStep < PIPELINE_STEPS.length - 1 ? 'Suivant' : 'Compris !'} <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    )}
     </>
   );
 }

@@ -30,16 +30,6 @@ Handlebars.registerHelper('formatMoney', (amount: any, currency: string = 'XOF')
   return `${Number(amount).toLocaleString('fr-FR')} ${currency}`;
 });
 
-Handlebars.registerHelper('contractTypeLabel', (type: string) => {
-  const labels: Record<string, string> = {
-    CDI: 'Contrat à Durée Indéterminée (CDI)',
-    CDD: 'Contrat à Durée Déterminée (CDD)',
-    VACATAIRE: 'Contrat de Vacation',
-    STAGE: "Convention de Stage",
-  };
-  return labels[type] || type;
-});
-
 Handlebars.registerHelper('paymentModeLabel', (mode: string) => {
   const labels: Record<string, string> = {
     BANK: 'Virement bancaire',
@@ -135,17 +125,72 @@ export class ContractPdfService {
     contract: any;
   }> {
     // 1. Charger le contrat complet
-    const contract = await this.prisma.contract.findFirst({
-      where: { id: contractId, tenantId },
-      include: {
-        staff: { include: { employeeCNSS: true } },
-        tenant: { include: { country: true } },
-        academicYear: true,
-        template: true,
-      },
-    });
+    // NOTE: employeeCNSS relation may not exist if Prisma client is outdated.
+    // We try with the full include first, and fall back to a simpler query if it fails.
+    let contract: any;
+    try {
+      contract = await this.prisma.contract.findFirst({
+        where: { id: contractId, tenantId },
+        include: {
+          staff: { include: { employeeCNSS: true } },
+          tenant: { include: { country: true, schools: true } },
+          academicYear: true,
+          template: true,
+        },
+      });
+    } catch (prismaErr: any) {
+      // P2022 = column does not exist, P2009 = validation error (unknown field/relation)
+      if (prismaErr?.code === 'P2022' || prismaErr?.code === 'P2009' || prismaErr?.message?.includes('column') || prismaErr?.message?.includes('does not exist')) {
+        this.logger.warn(`Full include query failed (likely missing column/relation), falling back to simpler query: ${prismaErr.message}`);
+        contract = await this.prisma.contract.findFirst({
+          where: { id: contractId, tenantId },
+          include: {
+            staff: true,
+            tenant: { include: { country: true, schools: true } },
+            academicYear: true,
+            template: true,
+          },
+        });
+      } else {
+        throw prismaErr;
+      }
+    }
 
     if (!contract) throw new NotFoundException(`Contrat ${contractId} introuvable`);
+
+    // 1b. Charger les données complètes de l'école depuis SchoolSettings / TenantIdentityProfile
+    const schoolSettings = await this.prisma.schoolSettings.findFirst({
+      where: { tenantId },
+    });
+    const identityProfile = await this.prisma.tenantIdentityProfile.findFirst({
+      where: { tenantId, isActive: true },
+      orderBy: { version: 'desc' },
+    });
+    const school = contract.tenant?.schools || await this.prisma.school.findFirst({ where: { tenantId } });
+
+    // Priorité : SchoolSettings > TenantIdentityProfile > School > Tenant
+    const schoolName = schoolSettings?.schoolName || identityProfile?.schoolName || school?.name || contract.tenant?.name || 'L\'École';
+    const schoolAddress = schoolSettings?.address || identityProfile?.address || school?.address || '';
+    const schoolPhone = schoolSettings?.phone || identityProfile?.phonePrimary || school?.primaryPhone || '';
+    const schoolEmail = schoolSettings?.email || identityProfile?.email || school?.primaryEmail || '';
+    const schoolLogo = schoolSettings?.logoUrl || identityProfile?.logoUrl || school?.logo || '';
+    const schoolCity = schoolSettings?.city || identityProfile?.city || '';
+    const schoolCountry = schoolSettings?.country || identityProfile?.country || contract.tenant?.country?.name || '';
+    const directorName = school?.directorPrimary || schoolSettings?.abbreviation || identityProfile?.schoolAcronym || 'Le Directeur';
+    const schoolAuthorizationNumber = schoolSettings?.authorizationNumber || identityProfile?.authorizationNumber || '';
+    const schoolAbbreviation = schoolSettings?.abbreviation || identityProfile?.schoolAcronym || school?.abbreviation || '';
+
+    // Résoudre le logo en URL complète si nécessaire
+    // safety: school?.logo might be a JSON object (Prisma Json field), ensure we only use strings
+    const schoolLogoStr = typeof schoolLogo === 'string' ? schoolLogo : (schoolLogo as any)?.url || '';
+    let schoolLogoUrl = '';
+    if (schoolLogoStr) {
+      try {
+        schoolLogoUrl = await this.storageService.resolveFileUrl(schoolLogoStr);
+      } catch {
+        schoolLogoUrl = schoolLogoStr; // Use raw URL if resolveFileUrl fails
+      }
+    }
 
     // 2. Sélectionner le template Handlebars
     let templateSource: string;
@@ -172,7 +217,7 @@ export class ContractPdfService {
     }
 
     // 3. Générer le QR Code de vérification
-    const verificationUrl = `${process.env.APP_URL || 'https://academia-hub.app'}/verify/contract/${contractId}`;
+    const verificationUrl = `${process.env.APP_URL || 'https://academia-helm.app'}/verify/contract/${contractId}`;
     let qrCodeDataUrl = '';
     if (this.qrcode) {
       try {
@@ -187,12 +232,20 @@ export class ContractPdfService {
     }
 
     // 4. Préparer les variables du template
-    const currency = contract.tenant?.country?.currencyCode || 'XOF';
+    const currency = contract.tenant?.country?.currencyCode || schoolSettings?.currency || 'XOF';
     const templateVars = {
       // École / Employeur
-      schoolName: contract.tenant?.name || 'L\'École',
-      schoolAddress: contract.tenant?.schools?.address || contract.tenant?.slug || '',
-      schoolCountry: contract.tenant?.country?.name || '',
+      schoolName,
+      schoolAddress,
+      schoolPhone,
+      schoolEmail,
+      schoolCountry,
+      schoolCity,
+      schoolLogoUrl,
+      directorName,
+      directorPosition: 'Directeur(rice)',
+      schoolAuthorizationNumber,
+      schoolAbbreviation,
       // Employé
       civilite: contract.staff?.gender === 'FEMALE' ? 'Madame' : 'Monsieur',
       staffFirstName: contract.staff?.firstName || '',
@@ -200,18 +253,31 @@ export class ContractPdfService {
       staffFullName: `${contract.staff?.firstName} ${contract.staff?.lastName}`,
       staffPosition: contract.staff?.position || 'Personnel',
       employeeNumber: contract.staff?.employeeNumber || '',
+      staffMatricule: contract.staff?.tenantMatricule || contract.staff?.globalMatricule || contract.staff?.employeeNumber || '',
       staffRoleType: contract.staff?.roleType || '',
       staffEmail: contract.staff?.email || '',
       staffPhone: contract.staff?.phone || '',
       staffBirthDate: contract.staff?.birthDate
         ? new Date(contract.staff.birthDate).toLocaleDateString('fr-FR')
         : '',
-      cnssNumber: contract.staff?.employeeCNSS?.cnssNumber || 'Non encore attribué',
-      // Contrat
+      staffBirthPlace: contract.staff?.address || '',
+      staffNationality: contract.staff?.nationality || '',
+      staffMaritalStatus: contract.staff?.maritalStatus || '',
+      staffNumberOfChildren: contract.staff?.numberOfChildren ?? '',
+      staffAddress: contract.staff?.address || '',
+      staffIdType: contract.staff?.nationalId ? 'CNI / Passeport' : '',
+      staffIdNumber: contract.staff?.nationalId || '',
+      cnssNumber: contract.staff?.employeeCNSS?.cnssNumber || contract.staff?.cnssNumber || 'Non encore attribué',
+      staffIfuNumber: contract.staff?.ifuNumber || '',
+      staffBankName: (contract.staff?.bankDetails as any)?.bankName || '',
+      staffBankAccountNumber: (contract.staff?.bankDetails as any)?.accountNumber || '',
+      staffBankAccountName: (contract.staff?.bankDetails as any)?.accountName || '',
+      // Contrat — Utiliser le matricule comme référence (jamais l'ID backend)
       contractId: contract.id,
+      contractReference: contract.staff?.tenantMatricule || contract.staff?.globalMatricule || `CTR-${new Date(contract.startDate).getFullYear()}-${contract.staff?.employeeNumber || ''}`,
       contractType: contract.contractType,
       contractTypeLabel:
-        { CDI: 'Contrat à Durée Indéterminée (CDI)', CDD: 'Contrat à Durée Déterminée (CDD)', VACATAIRE: 'Contrat de Vacation', STAGE: 'Convention de Stage' }[contract.contractType] || contract.contractType,
+        { CDI: 'Contrat à Durée Indéterminée (CDI)', CDD: 'Contrat à Durée Déterminée (CDD)', VACATAIRE: 'Contrat de Vacation', STAGE: 'Convention de Stage', CONSULTANT: 'Contrat de Consultation' }[contract.contractType] || contract.contractType,
       startDate: new Date(contract.startDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }),
       endDate: contract.endDate
         ? new Date(contract.endDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
@@ -219,10 +285,22 @@ export class ContractPdfService {
       isCDI: contract.contractType === 'CDI',
       isStage: contract.contractType === 'STAGE',
       isVacataire: contract.contractType === 'VACATAIRE',
+      probationDuration: contract.contractType === 'CDI' ? 'trois (3) mois' : 'un (1) mois',
+      jobResponsibilities: contract.staff?.qualifications || 'Les missions définies par la Direction de l\'établissement',
+      workLocation: schoolAddress || schoolCity || 'L\'établissement',
+      weeklyHours: '40',
+      workSchedule: 'Du lundi au vendredi, selon les horaires affichés par la Direction',
       baseSalary: Number(contract.baseSalary).toLocaleString('fr-FR'),
+      functionBonus: '0',
+      transportBonus: '0',
+      otherBenefits: 'Aucun',
+      grossSalary: Number(contract.baseSalary).toLocaleString('fr-FR'),
       currency,
       paymentMode: { BANK: 'Virement bancaire', CASH: 'Espèces', MOBILE_MONEY: 'Mobile Money' }[contract.paymentMode] || contract.paymentMode,
       academicYear: contract.academicYear?.name || '',
+      country: schoolCountry || 'Bénin',
+      city: schoolCity || '',
+      signatureDate: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }),
       // Signature
       signedAt: contract.signedAt
         ? new Date(contract.signedAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
@@ -248,7 +326,7 @@ export class ContractPdfService {
     } catch (renderError: any) {
       this.logger.error('PDF rendering failed', renderError?.message || renderError);
       throw new BadRequestException(
-        `Impossible de générer le PDF du contrat. Le service de rendu PDF est indisponible. Détail : ${renderError?.message || 'Erreur inconnue'}`,
+        `Impossible de générer le PDF du contrat. Détail : ${renderError?.message || 'Erreur inconnue'}`,
       );
     }
 
@@ -271,6 +349,169 @@ export class ContractPdfService {
     return { pdfBuffer, pdfUrl, contract };
   }
 
+  // ─── HTML Preview (no PDF generation) ─────────────────────────────────────
+
+  /**
+   * Génère uniquement le HTML du contrat pour prévisualisation,
+   * sans produire de PDF ni mettre à jour l'URL.
+   * Utilisé pour l'édition interactive avant signature.
+   */
+  async generateContractHtml(contractId: string, tenantId: string): Promise<{
+    html: string;
+    contract: any;
+    templateVars: Record<string, any>;
+  }> {
+    const contract = await this.prisma.contract.findFirst({
+      where: { id: contractId, tenantId },
+      include: {
+        staff: { include: { employeeCNSS: true } },
+        tenant: { include: { country: true, schools: true } },
+        academicYear: true,
+        template: true,
+      },
+    }).catch(async (prismaErr: any) => {
+      // Fallback if employeeCNSS relation or column is missing
+      if (prismaErr?.code === 'P2022' || prismaErr?.code === 'P2009' || prismaErr?.message?.includes('column') || prismaErr?.message?.includes('does not exist')) {
+        this.logger.warn(`generateContractHtml: Full include failed, falling back: ${prismaErr.message}`);
+        return this.prisma.contract.findFirst({
+          where: { id: contractId, tenantId },
+          include: {
+            staff: true,
+            tenant: { include: { country: true, schools: true } },
+            academicYear: true,
+            template: true,
+          },
+        });
+      }
+      throw prismaErr;
+    });
+
+    if (!contract) throw new NotFoundException(`Contrat ${contractId} introuvable`);
+
+    const schoolSettings = await this.prisma.schoolSettings.findFirst({ where: { tenantId } });
+    const identityProfile = await this.prisma.tenantIdentityProfile.findFirst({
+      where: { tenantId, isActive: true },
+      orderBy: { version: 'desc' },
+    });
+    const school = contract.tenant?.schools || await this.prisma.school.findFirst({ where: { tenantId } });
+
+    const schoolName = schoolSettings?.schoolName || identityProfile?.schoolName || school?.name || contract.tenant?.name || "L'École";
+    const schoolAddress = schoolSettings?.address || identityProfile?.address || school?.address || '';
+    const schoolPhone = schoolSettings?.phone || identityProfile?.phonePrimary || school?.primaryPhone || '';
+    const schoolEmail = schoolSettings?.email || identityProfile?.email || school?.primaryEmail || '';
+    const schoolLogo = schoolSettings?.logoUrl || identityProfile?.logoUrl || school?.logo || '';
+    const schoolCity = schoolSettings?.city || identityProfile?.city || '';
+    const schoolCountry = schoolSettings?.country || identityProfile?.country || contract.tenant?.country?.name || '';
+    const directorName = school?.directorPrimary || schoolSettings?.abbreviation || identityProfile?.schoolAcronym || 'Le Directeur';
+    const schoolAuthorizationNumber = schoolSettings?.authorizationNumber || identityProfile?.authorizationNumber || '';
+    const schoolAbbreviation = schoolSettings?.abbreviation || identityProfile?.schoolAcronym || school?.abbreviation || '';
+
+    let schoolLogoUrl = '';
+    const schoolLogoStr = typeof schoolLogo === 'string' ? schoolLogo : (schoolLogo as any)?.url || '';
+    if (schoolLogoStr) {
+      try {
+        schoolLogoUrl = await this.storageService.resolveFileUrl(schoolLogoStr);
+      } catch {
+        schoolLogoUrl = schoolLogoStr;
+      }
+    }
+
+    // Sélectionner le template
+    let templateSource: string;
+    if (contract.template?.template) {
+      templateSource = contract.template.template;
+    } else {
+      const activeTemplate = await this.prisma.contractTemplate.findFirst({
+        where: { tenantId, contractType: contract.contractType, isActive: true },
+        orderBy: { createdAt: 'desc' },
+      });
+      templateSource = activeTemplate?.template || JSON.stringify(this.getDefaultArticles(contract.contractType));
+    }
+
+    if (templateSource.trim().startsWith('[')) {
+      try {
+        const articles = JSON.parse(templateSource);
+        templateSource = this.buildHtmlFromArticles(articles, contract.contractType);
+      } catch {
+        templateSource = this.getDefaultTemplate(contract.contractType);
+      }
+    }
+
+    // QR Code
+    const verificationUrl = `${process.env.APP_URL || 'https://academia-helm.app'}/verify/contract/${contractId}`;
+    let qrCodeDataUrl = '';
+    if (this.qrcode) {
+      try {
+        qrCodeDataUrl = await this.qrcode.toDataURL(verificationUrl, { width: 100, margin: 1, color: { dark: '#1A2BA6', light: '#ffffff' } });
+      } catch { /* ignore */ }
+    }
+
+    // Réutiliser les mêmes variables que generateContractPdf
+    const currency = contract.tenant?.country?.currencyCode || schoolSettings?.currency || 'XOF';
+    const templateVars = {
+      schoolName, schoolAddress, schoolPhone, schoolEmail, schoolCountry, schoolCity, schoolLogoUrl,
+      directorName, directorPosition: 'Directeur(rice)', schoolAuthorizationNumber, schoolAbbreviation,
+      civilite: contract.staff?.gender === 'FEMALE' ? 'Madame' : 'Monsieur',
+      staffFirstName: contract.staff?.firstName || '',
+      staffLastName: contract.staff?.lastName || '',
+      staffFullName: `${contract.staff?.firstName} ${contract.staff?.lastName}`,
+      staffPosition: contract.staff?.position || 'Personnel',
+      employeeNumber: contract.staff?.employeeNumber || '',
+      staffMatricule: contract.staff?.tenantMatricule || contract.staff?.globalMatricule || contract.staff?.employeeNumber || '',
+      staffRoleType: contract.staff?.roleType || '',
+      staffEmail: contract.staff?.email || '',
+      staffPhone: contract.staff?.phone || '',
+      staffBirthDate: contract.staff?.birthDate ? new Date(contract.staff.birthDate).toLocaleDateString('fr-FR') : '',
+      staffBirthPlace: contract.staff?.address || '',
+      staffNationality: contract.staff?.nationality || '',
+      staffMaritalStatus: contract.staff?.maritalStatus || '',
+      staffNumberOfChildren: contract.staff?.numberOfChildren ?? '',
+      staffAddress: contract.staff?.address || '',
+      staffIdType: contract.staff?.nationalId ? 'CNI / Passeport' : '',
+      staffIdNumber: contract.staff?.nationalId || '',
+      cnssNumber: contract.staff?.employeeCNSS?.cnssNumber || contract.staff?.cnssNumber || 'Non encore attribué',
+      staffIfuNumber: contract.staff?.ifuNumber || '',
+      staffBankName: (contract.staff?.bankDetails as any)?.bankName || '',
+      staffBankAccountNumber: (contract.staff?.bankDetails as any)?.accountNumber || '',
+      staffBankAccountName: (contract.staff?.bankDetails as any)?.accountName || '',
+      contractId: contract.id,
+      contractReference: contract.staff?.tenantMatricule || contract.staff?.globalMatricule || `CTR-${new Date(contract.startDate).getFullYear()}-${contract.staff?.employeeNumber || ''}`,
+      contractType: contract.contractType,
+      contractTypeLabel: { CDI: 'Contrat à Durée Indéterminée (CDI)', CDD: 'Contrat à Durée Déterminée (CDD)', VACATAIRE: 'Contrat de Vacation', STAGE: 'Convention de Stage' }[contract.contractType] || contract.contractType,
+      startDate: new Date(contract.startDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }),
+      endDate: contract.endDate ? new Date(contract.endDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }) : null,
+      isCDI: contract.contractType === 'CDI',
+      isStage: contract.contractType === 'STAGE',
+      isVacataire: contract.contractType === 'VACATAIRE',
+      probationDuration: contract.contractType === 'CDI' ? 'trois (3) mois' : 'un (1) mois',
+      jobResponsibilities: contract.staff?.qualifications || "Les missions définies par la Direction de l'établissement",
+      workLocation: schoolAddress || schoolCity || "L'établissement",
+      weeklyHours: '40',
+      workSchedule: 'Du lundi au vendredi, selon les horaires affichés par la Direction',
+      baseSalary: Number(contract.baseSalary).toLocaleString('fr-FR'),
+      functionBonus: '0',
+      transportBonus: '0',
+      otherBenefits: 'Aucun',
+      grossSalary: Number(contract.baseSalary).toLocaleString('fr-FR'),
+      currency,
+      paymentMode: { BANK: 'Virement bancaire', CASH: 'Espèces', MOBILE_MONEY: 'Mobile Money' }[contract.paymentMode] || contract.paymentMode,
+      academicYear: contract.academicYear?.name || '',
+      country: schoolCountry || 'Bénin',
+      city: schoolCity || '',
+      signatureDate: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }),
+      signedAt: contract.signedAt ? new Date(contract.signedAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }) : null,
+      signatureData: (contract.terms as any)?.signatureData || null,
+      isSigned: !!contract.signedAt,
+      qrCodeDataUrl,
+      verificationUrl,
+      generatedAt: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }),
+      generatedTime: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+    };
+
+    const html = Handlebars.compile(templateSource)(templateVars);
+    return { html, contract, templateVars };
+  }
+
   // ─── Get Existing PDF (no re-generation) ────────────────────────────────────
 
   /**
@@ -287,6 +528,18 @@ export class ContractPdfService {
         staff: { include: { employeeCNSS: true } },
         tenant: { include: { country: true } },
       },
+    }).catch(async (prismaErr: any) => {
+      if (prismaErr?.code === 'P2022' || prismaErr?.code === 'P2009' || prismaErr?.message?.includes('column') || prismaErr?.message?.includes('does not exist')) {
+        this.logger.warn(`getExistingContractPdf: Full include failed, falling back: ${prismaErr.message}`);
+        return this.prisma.contract.findFirst({
+          where: { id: contractId, tenantId },
+          include: {
+            staff: true,
+            tenant: { include: { country: true } },
+          },
+        });
+      }
+      throw prismaErr;
     });
 
     if (!contract) throw new NotFoundException(`Contrat ${contractId} introuvable`);
@@ -301,21 +554,35 @@ export class ContractPdfService {
         return { pdfBuffer, contract };
       }
     } catch {
-      // Cloud download failed, try local fallback
-      this.logger.warn(`Cloud download failed for ${pdfUrl}, trying local fallback`);
+      // Cloud download failed, try other methods
+      this.logger.warn(`Cloud download failed for ${pdfUrl}, trying alternative methods`);
     }
 
-    // Try Vercel Blob (already a URL, can't download as buffer)
+    // Try Vercel Blob or any HTTPS URL — fetch the URL server-side and return the buffer
     if (pdfUrl.startsWith('https://')) {
-      return null; // Can't serve Vercel Blob PDFs from buffer — need to re-generate
+      try {
+        const response = await fetch(pdfUrl);
+        if (response.ok) {
+          const arrayBuf = await response.arrayBuffer();
+          const pdfBuffer = Buffer.from(arrayBuf);
+          this.logger.log(`Retrieved PDF from remote URL (${pdfBuffer.length} bytes)`);
+          return { pdfBuffer, contract };
+        }
+        this.logger.warn(`Failed to fetch PDF from ${pdfUrl}: HTTP ${response.status}`);
+      } catch (fetchErr: any) {
+        this.logger.warn(`Failed to fetch PDF from ${pdfUrl}: ${fetchErr.message}`);
+      }
+      // Don't return null immediately — try local filesystem as well
     }
 
     // Local filesystem fallback
     const absolutePath = path.join(process.cwd(), pdfUrl);
-    if (!fs.existsSync(absolutePath)) return null;
+    if (fs.existsSync(absolutePath)) {
+      const pdfBuffer = fs.readFileSync(absolutePath);
+      return { pdfBuffer, contract };
+    }
 
-    const pdfBuffer = fs.readFileSync(absolutePath);
-    return { pdfBuffer, contract };
+    return null;
   }
 
   // ─── Electronic Signature ───────────────────────────────────────────────────
@@ -337,11 +604,13 @@ export class ContractPdfService {
     if (contract.signedAt) throw new BadRequestException('Ce contrat a déjà été signé.');
 
     const signedAt = new Date();
+    // La signature fait passer le contrat de PENDING → ACTIVE (employé officiellement recruté)
     const updatedContract = await this.prisma.contract.update({
       where: { id: contractId },
       data: {
         signedAt,
         signedBy: data.signerName,
+        status: 'ACTIVE',  // Le contrat n'est en vigueur qu'après signature de l'employé
         terms: {
           ...((contract.terms as any) || {}),
           signatureData: data.signatureData,
@@ -353,6 +622,28 @@ export class ContractPdfService {
         },
       },
       include: { staff: { include: { employeeCNSS: true } } },
+    }).catch(async (prismaErr: any) => {
+      if (prismaErr?.code === 'P2022' || prismaErr?.code === 'P2009' || prismaErr?.message?.includes('column') || prismaErr?.message?.includes('does not exist')) {
+        return this.prisma.contract.update({
+          where: { id: contractId },
+          data: {
+            signedAt,
+            signedBy: data.signerName,
+            status: 'ACTIVE',  // Le contrat n'est en vigueur qu'après signature de l'employé
+            terms: {
+              ...((contract.terms as any) || {}),
+              signatureData: data.signatureData,
+              signerName: data.signerName,
+              signerRole: data.signerRole || 'Employé',
+              signedAt: signedAt.toISOString(),
+              ipAddress: data.ipAddress || null,
+              signatureMethod: 'ELECTRONIC_CANVAS',
+            },
+          },
+          include: { staff: true },
+        });
+      }
+      throw prismaErr;
     });
 
     // Re-générer le PDF avec la signature
@@ -365,17 +656,41 @@ export class ContractPdfService {
   // ─── Private helpers ────────────────────────────────────────────────────────
 
   private async renderPdf(html: string): Promise<Buffer> {
-    const { page } = await this.puppeteerPool.acquirePage();
     try {
-      await page.setContent(html, { waitUntil: 'networkidle0' });
-      const pdf = await page.pdf({
-        format: 'A4',
-        printBackground: true,
-        margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' },
-      });
-      return Buffer.from(pdf);
-    } finally {
-      await this.puppeteerPool.releasePage(page);
+      const { page } = await this.puppeteerPool.acquirePage();
+      try {
+        await page.setContent(html, { waitUntil: 'networkidle0' });
+        const pdf = await page.pdf({
+          format: 'A4',
+          printBackground: true,
+          margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' },
+        });
+        return Buffer.from(pdf);
+      } finally {
+        await this.puppeteerPool.releasePage(page);
+      }
+    } catch (acquireError: any) {
+      this.logger.error(`Puppeteer acquire/render failed: ${acquireError?.message || acquireError}`);
+      // Try to reset browser pool and retry once
+      try {
+        await this.puppeteerPool.closeBrowser();
+        this.logger.log('Browser pool reset, retrying PDF generation...');
+        const { page } = await this.puppeteerPool.acquirePage();
+        try {
+          await page.setContent(html, { waitUntil: 'networkidle0' });
+          const pdf = await page.pdf({
+            format: 'A4',
+            printBackground: true,
+            margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' },
+          });
+          return Buffer.from(pdf);
+        } finally {
+          await this.puppeteerPool.releasePage(page);
+        }
+      } catch (retryError: any) {
+        this.logger.error(`PDF retry also failed: ${retryError?.message || retryError}`);
+        throw new Error(`Le service de rendu PDF est indisponible. Détail : ${retryError?.message || 'Erreur inconnue'}`);
+      }
     }
   }
 
@@ -396,6 +711,84 @@ export class ContractPdfService {
     }
   }
 
+  /**
+   * Sauvegarde les articles personnalisés d'un contrat non signé.
+   * Stocke les articles dans le champ `terms` du contrat sous forme de JSON.
+   * Si un template existe, le met à jour avec les nouveaux articles.
+   */
+  async saveContractArticles(contractId: string, tenantId: string, articles: Array<{ title: string; content: string }>) {
+    const contract = await this.prisma.contract.findFirst({
+      where: { id: contractId, tenantId },
+    });
+
+    if (!contract) throw new NotFoundException(`Contrat ${contractId} introuvable`);
+    if (contract.signedAt) throw new BadRequestException('Impossible de modifier un contrat déjà signé');
+
+    // Validate articles
+    if (!Array.isArray(articles) || articles.length === 0) {
+      throw new BadRequestException('Au moins un article est requis');
+    }
+
+    for (const art of articles) {
+      if (!art.title || typeof art.title !== 'string') {
+        throw new BadRequestException('Chaque article doit avoir un titre valide');
+      }
+      if (!art.content || typeof art.content !== 'string') {
+        throw new BadRequestException('Chaque article doit avoir un contenu valide');
+      }
+    }
+
+    // Store articles as JSON in contract terms
+    const updatedTerms = {
+      ...((contract.terms as any) || {}),
+      customArticles: articles,
+      articlesUpdatedAt: new Date().toISOString(),
+    };
+
+    // Also update or create a ContractTemplate with the custom articles
+    // If the contract has a linked template, update it; otherwise create one
+    let templateId = contract.templateId;
+
+    if (templateId) {
+      // Update existing template
+      await this.prisma.contractTemplate.update({
+        where: { id: templateId },
+        data: {
+          template: JSON.stringify(articles),
+          updatedAt: new Date(),
+        },
+      });
+    } else {
+      // Create a new template linked to this contract type
+      const newTemplate = await this.prisma.contractTemplate.create({
+        data: {
+          name: `Personnalisé - ${contract.contractType} - ${new Date().toLocaleDateString('fr-FR')}`,
+          contractType: contract.contractType,
+          template: JSON.stringify(articles),
+          tenantId,
+          isActive: true,
+        },
+      });
+      templateId = newTemplate.id;
+
+      // Link the template to the contract
+      await this.prisma.contract.update({
+        where: { id: contractId },
+        data: { templateId },
+      });
+    }
+
+    // Update the contract terms
+    const updated = await this.prisma.contract.update({
+      where: { id: contractId },
+      data: { terms: updatedTerms },
+      include: { staff: true, template: true },
+    });
+
+    this.logger.log(`Articles sauvegardés pour le contrat ${contractId}: ${articles.length} articles`);
+    return { success: true, articlesCount: articles.length, contract: updated };
+  }
+
   // ─── Default Templates ──────────────────────────────────────────────────────
 
   getDefaultTemplate(contractType: string): string {
@@ -408,7 +801,7 @@ export class ContractPdfService {
     body {
       font-family: 'Times New Roman', serif;
       color: #1a1a1a;
-      font-size: 12pt;
+      font-size: 11pt;
       line-height: 1.7;
       background: white;
     }
@@ -432,10 +825,12 @@ export class ContractPdfService {
       align-items: flex-start;
       border-bottom: 3px solid #1A2BA6;
       padding-bottom: 16px;
-      margin-bottom: 24px;
+      margin-bottom: 20px;
     }
-    .school-info h1 { font-size: 18pt; color: #1A2BA6; font-weight: bold; }
-    .school-info p { font-size: 9pt; color: #555; margin-top: 2px; }
+    .school-info { display: flex; align-items: center; gap: 14px; }
+    .school-info img.logo { max-height: 60px; max-width: 60px; object-fit: contain; }
+    .school-info h1 { font-size: 16pt; color: #1A2BA6; font-weight: bold; }
+    .school-info p { font-size: 8.5pt; color: #555; margin-top: 1px; }
     .contract-meta { text-align: right; }
     .contract-meta .ref {
       font-size: 8pt;
@@ -449,52 +844,52 @@ export class ContractPdfService {
     /* Title */
     .contract-title {
       text-align: center;
-      margin: 28px 0 24px;
+      margin: 20px 0 20px;
     }
     .contract-title h2 {
-      font-size: 15pt;
+      font-size: 14pt;
       font-weight: bold;
       text-transform: uppercase;
       letter-spacing: 2px;
       border: 2px solid #1A2BA6;
       display: inline-block;
-      padding: 8px 32px;
+      padding: 8px 28px;
       color: #1A2BA6;
     }
-    /* Sections */
-    .section {
-      margin-bottom: 22px;
+    /* Reference */
+    .ref-line {
+      text-align: center;
+      font-size: 10pt;
+      color: #555;
+      margin-bottom: 16px;
     }
-    .section-title {
-      font-size: 11pt;
+    /* Preamble */
+    .preamble { margin-bottom: 20px; }
+    .preamble h3 { font-size: 11pt; color: #1A2BA6; margin-bottom: 8px; text-transform: uppercase; }
+    .party-block { margin: 12px 0; padding: 10px 14px; background: #f8fafc; border-left: 4px solid #1A2BA6; border-radius: 0 6px 6px 0; }
+    .party-block h4 { font-size: 10pt; color: #1A2BA6; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
+    .party-block .field { display: flex; gap: 6px; margin: 2px 0; }
+    .party-block .label { font-weight: bold; color: #444; min-width: 160px; font-size: 9.5pt; }
+    .party-block .value { color: #1a1a1a; font-size: 9.5pt; }
+    .party-role { font-style: italic; font-size: 9.5pt; color: #555; margin-top: 6px; }
+    /* Articles */
+    .article { margin-bottom: 16px; page-break-inside: avoid; }
+    .article-title {
       font-weight: bold;
       color: #1A2BA6;
+      font-size: 11pt;
       border-bottom: 1px solid #e2e8f0;
       padding-bottom: 4px;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
       text-transform: uppercase;
-      letter-spacing: 1px;
+      letter-spacing: 0.5px;
     }
-    /* Info grid */
-    .info-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px 24px;
-    }
-    .info-row {
-      display: flex;
-      gap: 6px;
-    }
-    .info-label { font-weight: bold; color: #444; min-width: 130px; font-size: 10pt; }
-    .info-value { color: #1a1a1a; font-size: 10pt; }
-    /* Article */
-    .article { margin-bottom: 16px; }
-    .article-num {
-      font-weight: bold;
-      color: #1A2BA6;
-      font-size: 10.5pt;
-    }
-    .article p { font-size: 10.5pt; text-align: justify; margin-top: 4px; }
+    .article p { font-size: 10pt; text-align: justify; margin-top: 4px; }
+    .article .field { display: flex; gap: 6px; margin: 2px 0; }
+    .article .label { font-weight: bold; color: #444; min-width: 200px; font-size: 10pt; }
+    .article .value { color: #1a1a1a; font-size: 10pt; }
+    .checkbox { margin: 4px 0; font-size: 10pt; }
+    .checkbox span { margin-right: 8px; }
     /* Salary box */
     .salary-box {
       background: #f8fafc;
@@ -504,15 +899,13 @@ export class ContractPdfService {
       border-radius: 6px;
       margin: 10px 0;
     }
-    .salary-amount {
-      font-size: 18pt;
-      font-weight: bold;
-      color: #1A2BA6;
-    }
-    .salary-label { font-size: 9pt; color: #64748b; }
+    .salary-row { display: flex; justify-content: space-between; margin: 4px 0; font-size: 10pt; }
+    .salary-row.total { border-top: 2px solid #1A2BA6; padding-top: 6px; margin-top: 6px; font-weight: bold; font-size: 12pt; color: #1A2BA6; }
+    .salary-label { color: #444; }
+    .salary-value { font-weight: bold; }
     /* Signature area */
     .signature-section {
-      margin-top: 40px;
+      margin-top: 36px;
       page-break-inside: avoid;
     }
     .sig-grid {
@@ -538,6 +931,7 @@ export class ContractPdfService {
       margin-bottom: 8px;
     }
     .sig-name { font-size: 10pt; font-weight: bold; color: #1a1a1a; }
+    .sig-role { font-size: 9pt; color: #666; }
     .sig-date { font-size: 8.5pt; color: #888; margin-top: 4px; }
     .sig-image { max-height: 70px; max-width: 180px; margin-top: 6px; }
     .sig-placeholder {
@@ -580,18 +974,21 @@ export class ContractPdfService {
   </style>
 </head>
 <body>
-<div class="watermark">ACADEMIA HUB</div>
+<div class="watermark">ACADEMIA HELM</div>
 <div class="page">
 
-  <!-- Header -->
+  <!-- Header with logo -->
   <div class="header">
     <div class="school-info">
-      <h1>{{schoolName}}</h1>
-      <p>{{schoolAddress}}</p>
-      <p>{{schoolCountry}}</p>
+      {{#if schoolLogoUrl}}<img class="logo" src="{{schoolLogoUrl}}" alt="Logo" />{{/if}}
+      <div>
+        <h1>{{schoolName}}</h1>
+        <p>{{schoolAddress}}</p>
+        <p>Tél. : {{schoolPhone}} | Email : {{schoolEmail}}</p>
+      </div>
     </div>
     <div class="contract-meta">
-      <div class="ref">Réf. CONTRAT-{{contractId}}</div>
+      <div class="ref">Réf. : {{contractReference}}</div>
       <p style="font-size:8pt;color:#888;">Émis le {{generatedAt}} à {{generatedTime}}</p>
       {{#if isSigned}}
         <span class="status-badge">✓ SIGNÉ</span>
@@ -603,162 +1000,212 @@ export class ContractPdfService {
 
   <!-- Title -->
   <div class="contract-title">
-    <h2>{{contractTypeLabel}}</h2>
+    <h2>CONTRAT DE TRAVAIL</h2>
   </div>
 
-  <!-- Preamble -->
-  <div class="section">
-    <p style="font-size:10.5pt; text-align:justify;">
-      Entre les soussignés, <strong>{{schoolName}}</strong>, établissement scolaire sis à
-      {{schoolAddress}}, ci-après dénommé <em>« L'Employeur »</em>,
-    </p>
-    <p style="font-size:10.5pt; text-align:justify; margin-top:8px;">
-      Et <strong>{{civilite}} {{staffFullName}}</strong>, né(e) le {{staffBirthDate}},
-      ci-après dénommé(e) <em>« L'Employé(e) »</em>,
-    </p>
-    <p style="font-size:10.5pt; margin-top:8px;">
-      Il a été convenu et arrêté ce qui suit :
-    </p>
+  <div class="ref-line"><strong>Référence :</strong> {{contractReference}}</div>
+
+  <!-- Preamble: Parties -->
+  <div class="preamble">
+    <p style="text-align:center; margin-bottom:12px;">Entre les soussignés :</p>
+
+    <div class="party-block">
+      <h4>L'Employeur</h4>
+      <div class="field"><span class="label">Établissement scolaire :</span><span class="value">{{schoolName}}</span></div>
+      <div class="field"><span class="label">Adresse :</span><span class="value">{{schoolAddress}}</span></div>
+      <div class="field"><span class="label">Téléphone :</span><span class="value">{{schoolPhone}}</span></div>
+      <div class="field"><span class="label">Email :</span><span class="value">{{schoolEmail}}</span></div>
+      <div class="field"><span class="label">Représenté par :</span><span class="value">{{directorName}}</span></div>
+      <div class="field"><span class="label">Fonction :</span><span class="value">{{directorPosition}}</span></div>
+      <p class="party-role">Ci-après dénommé(e) « l'Employeur », <strong>D'une part,</strong></p>
+    </div>
+
+    <p style="text-align:center; margin:8px 0;">Et</p>
+
+    <div class="party-block">
+      <h4>Le Salarié</h4>
+      <div class="field"><span class="label">Nom et Prénoms :</span><span class="value">{{staffFullName}}</span></div>
+      <div class="field"><span class="label">Date de naissance :</span><span class="value">{{staffBirthDate}}</span></div>
+      <div class="field"><span class="label">Nationalité :</span><span class="value">{{staffNationality}}</span></div>
+      <div class="field"><span class="label">Adresse :</span><span class="value">{{staffAddress}}</span></div>
+      <div class="field"><span class="label">Téléphone :</span><span class="value">{{staffPhone}}</span></div>
+      <div class="field"><span class="label">Email :</span><span class="value">{{staffEmail}}</span></div>
+      <div class="field"><span class="label">Pièce d'identité :</span><span class="value">{{staffIdType}}</span></div>
+      <div class="field"><span class="label">N° de pièce :</span><span class="value">{{staffIdNumber}}</span></div>
+      <p class="party-role">Ci-après dénommé(e) « le Salarié », <strong>D'autre part.</strong></p>
+    </div>
+
+    <p style="text-align:center; margin-top:12px; font-style:italic;">Il a été convenu ce qui suit :</p>
   </div>
 
-  <!-- Section 1: Identité parties -->
-  <div class="section">
-    <div class="section-title">Article 1 — Identification des Parties</div>
-    <div class="info-grid">
-      <div>
-        <p style="font-size:9pt;font-weight:bold;color:#1A2BA6;margin-bottom:6px;">L'EMPLOYEUR</p>
-        <div class="info-row"><span class="info-label">Établissement :</span><span class="info-value">{{schoolName}}</span></div>
-        <div class="info-row"><span class="info-label">Adresse :</span><span class="info-value">{{schoolAddress}}</span></div>
-        <div class="info-row"><span class="info-label">Pays :</span><span class="info-value">{{schoolCountry}}</span></div>
-      </div>
-      <div>
-        <p style="font-size:9pt;font-weight:bold;color:#1A2BA6;margin-bottom:6px;">L'EMPLOYÉ(E)</p>
-        <div class="info-row"><span class="info-label">Civilité :</span><span class="info-value">{{civilite}}</span></div>
-        <div class="info-row"><span class="info-label">Nom complet :</span><span class="info-value">{{staffFullName}}</span></div>
-        <div class="info-row"><span class="info-label">Matricule :</span><span class="info-value">{{employeeNumber}}</span></div>
-        {{#if staffRoleType}}<div class="info-row"><span class="info-label">Catégorie :</span><span class="info-value">{{staffRoleType}}</span></div>{{/if}}
-        <div class="info-row"><span class="info-label">N° CNSS :</span><span class="info-value">{{cnssNumber}}</span></div>
-        {{#if staffEmail}}<div class="info-row"><span class="info-label">Email :</span><span class="info-value">{{staffEmail}}</span></div>{{/if}}
-        {{#if staffPhone}}<div class="info-row"><span class="info-label">Téléphone :</span><span class="info-value">{{staffPhone}}</span></div>{{/if}}
-      </div>
-    </div>
+  <!-- Article 1: Objet -->
+  <div class="article">
+    <div class="article-title">Article 1 : Objet du contrat</div>
+    <p>Le présent contrat a pour objet l'engagement du Salarié en qualité de :</p>
+    <div class="field"><span class="label">Poste occupé :</span><span class="value"><strong>{{staffPosition}}</strong></span></div>
+    <p style="margin-top:6px;">Le Salarié exercera ses fonctions sous l'autorité de la Direction de l'établissement scolaire.</p>
   </div>
 
-  <!-- Section 2: Objet -->
-  <div class="section">
-    <div class="section-title">Article 2 — Objet et Durée</div>
-    <div class="article">
-      <p class="article-num">2.1 — Nature du contrat</p>
-      <p>{{civility}} {{staffFullName}} est engagé(e) en qualité de <strong>{{staffPosition}}</strong>
-      dans le cadre d'un <strong>{{contractTypeLabel}}</strong>.</p>
-    </div>
-    <div class="article">
-      <p class="article-num">2.2 — Durée</p>
-      {{#if isCDI}}
-        <p>Le présent contrat est à durée indéterminée. Il prend effet à compter du <strong>{{startDate}}</strong>.</p>
-      {{else}}
-        <p>Le présent contrat est conclu pour la période du <strong>{{startDate}}</strong>
-        {{#if endDate}}au <strong>{{endDate}}</strong>{{else}}jusqu'à terme de la mission confiée{{/if}}.</p>
-      {{/if}}
-      {{#if academicYear}}<p style="margin-top:6px;">Année scolaire de référence : <strong>{{academicYear}}</strong></p>{{/if}}
-    </div>
+  <!-- Article 2: Date d'effet -->
+  <div class="article">
+    <div class="article-title">Article 2 : Date d'effet</div>
+    <p>Le présent contrat prend effet à compter du :</p>
+    <p style="text-align:center; margin:8px 0;"><strong>{{startDate}}</strong></p>
   </div>
 
-  <!-- Section 3: Rémunération -->
-  <div class="section">
-    <div class="section-title">Article 3 — Rémunération</div>
-    <div class="salary-box">
-      <p class="salary-label">Salaire brut mensuel de base</p>
-      <p class="salary-amount">{{baseSalary}} {{currency}}</p>
-      <p class="salary-label" style="margin-top:4px;">Mode de paiement : {{paymentMode}}</p>
+  <!-- Article 3: Type de contrat -->
+  <div class="article">
+    <div class="article-title">Article 3 : Type de contrat</div>
+    <div class="checkbox">
+      {{#if isCDI}}<span>☑</span>{{else}}<span>☐</span>{{/if}} Contrat à Durée Indéterminée (CDI)
     </div>
-    {{#unless isStage}}
-    <p style="font-size:10pt; margin-top:10px; text-align:justify;">
-      Ce salaire est versé mensuellement, après déduction des cotisations sociales et fiscales
-      réglementaires en vigueur dans le pays. Des primes et indemnités pourront être accordées
-      selon les dispositions du règlement intérieur de l'établissement.
-    </p>
+    <div class="checkbox">
+      {{#if isCDI}}<span>☐</span>{{else}}<span>☑</span>{{/if}} Contrat à Durée Déterminée (CDD)
+    </div>
+    {{#unless isCDI}}
+    <p style="margin-top:8px; margin-left:20px;">Dans le cas d'un CDD :</p>
+    <div class="field" style="margin-left:20px;"><span class="label">Date de début :</span><span class="value">{{startDate}}</span></div>
+    <div class="field" style="margin-left:20px;"><span class="label">Date de fin :</span><span class="value">{{endDate}}</span></div>
     {{/unless}}
-    {{#if isStage}}
-    <p style="font-size:10pt; margin-top:10px; text-align:justify;">
-      Le stagiaire percevra une gratification mensuelle de <strong>{{baseSalary}} {{currency}}</strong>.
-    </p>
-    {{/if}}
   </div>
 
-  <!-- Section 4: Obligations -->
-  <div class="section">
-    <div class="section-title">Article 4 — Obligations des Parties</div>
-    <div class="article">
-      <p class="article-num">4.1 — Obligations de l'Employé(e)</p>
-      <p>L'employé(e) s'engage à exercer ses fonctions avec diligence, loyauté et professionnalisme,
-      à respecter le règlement intérieur de l'établissement, à maintenir la confidentialité des
-      informations auxquelles il/elle aura accès dans le cadre de ses fonctions.</p>
-    </div>
-    <div class="article">
-      <p class="article-num">4.2 — Obligations de l'Employeur</p>
-      <p>L'employeur s'engage à fournir les moyens nécessaires à l'exécution des missions confiées,
-      à verser la rémunération convenue aux échéances prévues, à déclarer l'employé(e) aux
-      organismes sociaux compétents conformément à la législation en vigueur.</p>
-    </div>
+  <!-- Article 4: Période d'essai -->
+  <div class="article">
+    <div class="article-title">Article 4 : Période d'essai</div>
+    <p>Le présent contrat est assorti d'une période d'essai de :</p>
+    <p style="text-align:center; margin:8px 0;"><strong>{{probationDuration}}</strong></p>
+    <p>Durant cette période, chacune des parties pourra mettre fin au contrat conformément aux dispositions légales en vigueur.</p>
   </div>
 
-  <!-- Section 5: Conditions générales -->
-  <div class="section">
-    <div class="section-title">Article 5 — Dispositions Générales</div>
-    <div class="article">
-      <p class="article-num">5.1 — Période d'essai</p>
-      {{#if isCDI}}
-        <p>Le présent contrat est soumis à une période d'essai de trois (3) mois à compter de la
-        date de prise d'effet. Durant cette période, chacune des parties peut rompre le contrat
-        sans préavis ni indemnité.</p>
-      {{else}}
-        <p>Un mois d'essai est prévu à compter de la date de prise d'effet du contrat.</p>
-      {{/if}}
+  <!-- Article 5: Missions -->
+  <div class="article">
+    <div class="article-title">Article 5 : Missions et responsabilités</div>
+    <p>Le Salarié s'engage à accomplir notamment les missions suivantes :</p>
+    <p style="margin-top:6px; margin-left:16px;">{{jobResponsibilities}}</p>
+    <p style="margin-top:6px;">Cette liste n'est pas exhaustive et peut être adaptée en fonction des besoins de l'établissement.</p>
+  </div>
+
+  <!-- Article 6: Lieu de travail -->
+  <div class="article">
+    <div class="article-title">Article 6 : Lieu de travail</div>
+    <p>Le Salarié exercera principalement ses fonctions à :</p>
+    <p style="text-align:center; margin:8px 0;"><strong>{{workLocation}}</strong></p>
+    <p>Toutefois, il pourra être amené à intervenir dans tout autre site relevant de l'établissement scolaire.</p>
+  </div>
+
+  <!-- Article 7: Durée du travail -->
+  <div class="article">
+    <div class="article-title">Article 7 : Durée du travail</div>
+    <p>La durée hebdomadaire de travail est fixée à :</p>
+    <p style="text-align:center; margin:8px 0;"><strong>{{weeklyHours}} heures</strong></p>
+    <p>Horaires habituels :</p>
+    <p style="margin:6px 0 6px 16px;">{{workSchedule}}</p>
+    <p>Toute modification des horaires sera communiquée au Salarié dans un délai raisonnable.</p>
+  </div>
+
+  <!-- Article 8: Rémunération -->
+  <div class="article">
+    <div class="article-title">Article 8 : Rémunération</div>
+    <p>En contrepartie de son travail, le Salarié percevra :</p>
+    <div class="salary-box">
+      <div class="salary-row"><span class="salary-label">Salaire de base mensuel :</span><span class="salary-value">{{baseSalary}} {{currency}}</span></div>
+      <div class="salary-row"><span class="salary-label">Prime de fonction :</span><span class="salary-value">{{functionBonus}} {{currency}}</span></div>
+      <div class="salary-row"><span class="salary-label">Prime de transport :</span><span class="salary-value">{{transportBonus}} {{currency}}</span></div>
+      <div class="salary-row"><span class="salary-label">Autres avantages :</span><span class="salary-value">{{otherBenefits}}</span></div>
+      <div class="salary-row total"><span class="salary-label">Salaire brut total :</span><span class="salary-value">{{grossSalary}} {{currency}}</span></div>
     </div>
-    <div class="article">
-      <p class="article-num">5.2 — Résiliation</p>
-      <p>Le présent contrat peut être résilié par consentement mutuel des parties, ou par l'une
-      d'elles dans les cas prévus par la législation du travail applicable, moyennant un préavis
-      dont la durée sera fixée conformément aux dispositions légales en vigueur.</p>
-    </div>
-    <div class="article">
-      <p class="article-num">5.3 — Droit applicable</p>
-      <p>Le présent contrat est soumis aux dispositions du Code du Travail applicable dans le pays
-      de l'établissement. Tout litige relatif à l'interprétation ou à l'exécution du présent
-      contrat sera soumis à la juridiction compétente.</p>
-    </div>
+    <p>Le salaire est payable selon les modalités définies par l'établissement.</p>
+  </div>
+
+  <!-- Article 9: Congés -->
+  <div class="article">
+    <div class="article-title">Article 9 : Congés</div>
+    <p>Le Salarié bénéficie des congés prévus par la législation du travail applicable ainsi que du règlement intérieur de l'établissement.</p>
+  </div>
+
+  <!-- Article 10: Confidentialité -->
+  <div class="article">
+    <div class="article-title">Article 10 : Obligation de confidentialité</div>
+    <p>Le Salarié s'engage à préserver la confidentialité de toutes les informations pédagogiques, administratives, financières et stratégiques auxquelles il pourrait avoir accès dans le cadre de ses fonctions.</p>
+    <p style="margin-top:4px;">Cette obligation demeure applicable même après la cessation du contrat.</p>
+  </div>
+
+  <!-- Article 11: Protection des données -->
+  <div class="article">
+    <div class="article-title">Article 11 : Protection des données</div>
+    <p>Le Salarié s'engage à respecter les règles de protection des données personnelles des élèves, parents, enseignants et partenaires de l'établissement.</p>
+  </div>
+
+  <!-- Article 12: Discipline -->
+  <div class="article">
+    <div class="article-title">Article 12 : Discipline et règlement intérieur</div>
+    <p>Le Salarié déclare avoir pris connaissance du règlement intérieur de l'établissement et s'engage à le respecter.</p>
+    <p style="margin-top:4px;">Toute violation pourra faire l'objet de sanctions disciplinaires conformément à la réglementation en vigueur.</p>
+  </div>
+
+  <!-- Article 13: Absences -->
+  <div class="article">
+    <div class="article-title">Article 13 : Absences</div>
+    <p>Toute absence devra être justifiée dans les délais prévus par la réglementation interne de l'établissement.</p>
+  </div>
+
+  <!-- Article 14: Résiliation -->
+  <div class="article">
+    <div class="article-title">Article 14 : Résiliation du contrat</div>
+    <p>Le présent contrat peut être résilié :</p>
+    <ul style="margin:6px 0 6px 24px; font-size:10pt;">
+      <li>Par accord mutuel des parties ;</li>
+      <li>À l'initiative de l'Employeur ;</li>
+      <li>À l'initiative du Salarié ;</li>
+      <li>Pour faute grave ;</li>
+      <li>Pour toute autre cause prévue par la législation du travail applicable.</li>
+    </ul>
+    <p>Les délais de préavis seront ceux prévus par la réglementation en vigueur.</p>
+  </div>
+
+  <!-- Article 15: Droit applicable -->
+  <div class="article">
+    <div class="article-title">Article 15 : Droit applicable</div>
+    <p>Le présent contrat est régi par les dispositions du Code du Travail applicable dans :</p>
+    <p style="text-align:center; margin:8px 0;"><strong>{{country}}</strong></p>
+    <p>et par les textes réglementaires en vigueur.</p>
+  </div>
+
+  <!-- Article 16: Dispositions finales -->
+  <div class="article">
+    <div class="article-title">Article 16 : Dispositions finales</div>
+    <p>Le présent contrat est établi en deux exemplaires originaux dont un est remis à chacune des parties.</p>
+    <div class="field" style="margin-top:8px;"><span class="label">Fait à :</span><span class="value"><strong>{{city}}</strong></span></div>
+    <div class="field"><span class="label">Le :</span><span class="value"><strong>{{signatureDate}}</strong></span></div>
   </div>
 
   <!-- Signature Section -->
   <div class="signature-section">
-    <div class="section-title">Signatures</div>
-    <p style="font-size:10pt; color:#555; margin-bottom:16px;">
-      Fait en deux (2) exemplaires originaux, dont un remis à chaque partie.
-      Chaque partie reconnaît avoir lu et accepté les termes du présent contrat.
-    </p>
+    <div class="article-title">Signatures</div>
+
     <div class="sig-grid">
       <!-- Employeur -->
       <div class="sig-box">
-        <p class="sig-title">Pour l'Établissement (Employeur)</p>
-        <p class="sig-name">{{schoolName}}</p>
+        <p class="sig-title">L'Employeur</p>
+        <p class="sig-name">{{directorName}}</p>
+        <p class="sig-role">{{directorPosition}}</p>
         {{#if isSigned}}
           <p class="sig-date">Fait le : {{signedAt}}</p>
         {{else}}
-          <div class="sig-placeholder">Signature & cachet de l'établissement</div>
+          <div class="sig-placeholder">Signature et cachet</div>
         {{/if}}
       </div>
-      <!-- Employé -->
+      <!-- Salarié -->
       <div class="sig-box">
-        <p class="sig-title">L'Employé(e) — Lu et approuvé</p>
-        <p class="sig-name">{{civilite}} {{staffFullName}}</p>
+        <p class="sig-title">Le Salarié</p>
+        <p class="sig-name">{{staffFullName}}</p>
         {{#if isSigned}}
           <p class="sig-date">Signé le : {{signedAt}}</p>
           {{#if signatureData}}
             <img class="sig-image" src="{{signatureData}}" alt="Signature électronique" />
           {{/if}}
         {{else}}
-          <div class="sig-placeholder">Signature de l'employé(e)</div>
+          <div class="sig-placeholder">Signature du salarié</div>
         {{/if}}
       </div>
     </div>
@@ -767,8 +1214,8 @@ export class ContractPdfService {
   <!-- Footer -->
   <div class="footer">
     <div class="footer-left">
-      <p><strong>Academia Hub</strong> — Système de Gestion Scolaire</p>
-      <p>Document généré automatiquement. Réf. : {{contractId}}</p>
+      <p><strong>Academia Helm</strong> — Système de Gestion Scolaire</p>
+      <p>Document généré automatiquement. Réf. : {{contractReference}}</p>
       <p>Vérification : {{verificationUrl}}</p>
     </div>
     {{#if qrCodeDataUrl}}
@@ -786,32 +1233,87 @@ export class ContractPdfService {
 
   getDefaultArticles(type: string): any[] {
     const isCDI = type === 'CDI';
+    const isCDD = type === 'CDD';
     const isStage = type === 'STAGE';
+    const isVacataire = type === 'VACATAIRE';
+    const isConsultant = type === 'CONSULTANT';
 
     return [
       {
-        title: "Article 1 — Nature et Objet du Contrat",
-        content: `L'Employé(e) est engagé(e) en qualité de <strong>{{staffPosition}}</strong> au sein de l'établissement <strong>{{schoolName}}</strong> dans le cadre d'un <strong>{{contractTypeLabel}}</strong>.`
+        title: "Article 1 — Objet du contrat",
+        content: `Le présent contrat a pour objet l'engagement du Salarié en qualité de <strong>{{staffPosition}}</strong> au sein de l'établissement <strong>{{schoolName}}</strong>. Le Salarié exercera ses fonctions sous l'autorité de la Direction de l'établissement scolaire.`
       },
       {
-        title: "Article 2 — Durée et Période d'essai",
-        content: isCDI 
-          ? `Le présent contrat est conclu pour une durée indéterminée et prend effet à compter du <strong>{{startDate}}</strong>. Il est soumis à une période d'essai de trois (3) mois.` 
-          : `Le présent contrat est conclu à durée déterminée pour la période du <strong>{{startDate}}</strong> au <strong>{{endDate}}</strong>. Il comprend une période d'essai d'un (1) mois.`
+        title: "Article 2 — Date d'effet",
+        content: `Le présent contrat prend effet à compter du <strong>{{startDate}}</strong>.`
       },
       {
-        title: "Article 3 — Rémunération",
+        title: "Article 3 — Type de contrat",
+        content: isCDI
+          ? `Le présent contrat est un <strong>Contrat à Durée Indéterminée (CDI)</strong>.`
+          : isCDD
+          ? `Le présent contrat est un <strong>Contrat à Durée Déterminée (CDD)</strong> pour la période du <strong>{{startDate}}</strong> au <strong>{{endDate}}</strong>.`
+          : isVacataire
+          ? `Le présent contrat est un <strong>Contrat de Vacation</strong>.`
+          : isConsultant
+          ? `Le présent contrat est un <strong>Contrat de Consultation</strong> pour la période du <strong>{{startDate}}</strong> au <strong>{{endDate}}</strong>.`
+          : `Le présent document est une <strong>Convention de Stage</strong> pour la période du <strong>{{startDate}}</strong> au <strong>{{endDate}}</strong>.`
+      },
+      {
+        title: "Article 4 — Période d'essai",
+        content: `Le présent contrat est assorti d'une période d'essai de <strong>{{probationDuration}}</strong>. Durant cette période, chacune des parties pourra mettre fin au contrat conformément aux dispositions légales en vigueur.`
+      },
+      {
+        title: "Article 5 — Missions et responsabilités",
+        content: `Le Salarié s'engage à accomplir notamment les missions suivantes : <strong>{{jobResponsibilities}}</strong>. Cette liste n'est pas exhaustive et peut être adaptée en fonction des besoins de l'établissement.`
+      },
+      {
+        title: "Article 6 — Lieu de travail",
+        content: `Le Salarié exercera principalement ses fonctions à : <strong>{{workLocation}}</strong>. Toute affectation dans un autre lieu de travail pourra être décidée par l'Employeur, après consultation du Salarié, dans l'intérêt du service.`
+      },
+      {
+        title: "Article 7 — Durée du travail",
+        content: `La durée hebdomadaire de travail est fixée à <strong>{{weeklyHours}} heures</strong>. Les horaires de travail sont : {{workSchedule}}. Toute modification des horaires sera portée à la connaissance du Salarié dans un délai raisonnable.`
+      },
+      {
+        title: "Article 8 — Rémunération",
         content: isStage
           ? `Le stagiaire percevra une gratification mensuelle nette de <strong>{{baseSalary}} {{currency}}</strong>, payée par <strong>{{paymentMode}}</strong>.`
-          : `En contrepartie de son travail, l'Employé(e) percevra un salaire brut mensuel de <strong>{{baseSalary}} {{currency}}</strong>, versé mensuellement par <strong>{{paymentMode}}</strong>.`
+          : `En contrepartie de son travail, le Salarié percevra une rémunération composée comme suit :<br>- Salaire de base : <strong>{{baseSalary}} {{currency}}</strong><br>- Prime de fonction : <strong>{{functionBonus}} {{currency}}</strong><br>- Indemnité de transport : <strong>{{transportBonus}} {{currency}}</strong><br>- Autres avantages : <strong>{{otherBenefits}}</strong><br><br>Soit un salaire brut mensuel de <strong>{{grossSalary}} {{currency}}</strong>, versé mensuellement par <strong>{{paymentMode}}</strong>.`
       },
       {
-        title: "Article 4 — Droits et Obligations des Parties",
-        content: `L'Employé(e) s'engage à exercer ses fonctions avec diligence, à respecter le règlement intérieur de l'établissement et à préserver la confidentialité. L'Employeur s'engage à lui fournir les moyens nécessaires à sa mission et à verser la rémunération convenue.`
+        title: "Article 9 — Congés",
+        content: `Le Salarié bénéficiera des congés conformément à la législation du travail en vigueur dans le pays ({{country}}). Les périodes de congé seront fixées d'un commun accord entre l'Employeur et le Salarié, dans le respect du fonctionnement de l'établissement scolaire et du calendrier académique.`
       },
       {
-        title: "Article 5 — Dispositions diverses",
-        content: `Toute modification du présent contrat fera l'objet d'un avenant écrit. Tout litige né de son exécution sera soumis aux autorités compétentes et au droit du travail applicable.`
+        title: "Article 10 — Obligation de confidentialité",
+        content: `Le Salarié s'engage à préserver la confidentialité de toutes les informations dont il aurait connaissance dans l'exercice de ses fonctions, notamment les données relatives aux élèves, aux familles, à la gestion financière et administrative de l'établissement. Cette obligation perdure après la fin du contrat.`
+      },
+      {
+        title: "Article 11 — Protection des données",
+        content: `Conformément à la législation en matière de protection des données personnelles, le Salarié est informé que ses données personnelles sont traitées dans le cadre de la gestion de la relation de travail. Il dispose d'un droit d'accès, de rectification et de suppression de ses données.`
+      },
+      {
+        title: "Article 12 — Discipline et règlement intérieur",
+        content: `Le Salarié s'engage à respecter le règlement intérieur de l'établissement, qui lui a été communiqué et dont il accuse réception. Toute infraction pourra faire l'objet de sanctions disciplinaires conformément aux dispositions légales en vigueur.`
+      },
+      {
+        title: "Article 13 — Absences",
+        content: `Toute absence doit être justifiée et préalablement autorisée par l'Employeur, sauf en cas de force majeure. Les absences injustifiées pourront entraîner une retenue sur salaire et, le cas échéant, des sanctions disciplinaires.`
+      },
+      {
+        title: "Article 14 — Résiliation du contrat",
+        content: isCDI
+          ? `Le présent contrat pourra être résilié par chacune des parties, moyennant un préavis de un (1) mois. En cas de faute grave, le contrat pourra être rompu sans préavis ni indemnités. La démission devra être notifiée par écrit.`
+          : `Le présent contrat prend fin à l'échéance du terme fixé, sans qu'il soit besoin de notification. Il pourra toutefois être résilié avant terme en cas de faute grave ou de force majeure.`
+      },
+      {
+        title: "Article 15 — Droit applicable",
+        content: `Le présent contrat est soumis au droit du travail applicable en <strong>{{country}}</strong>. Toute clause non prévue expressément sera régie par les dispositions légales et conventionnelles en vigueur.`
+      },
+      {
+        title: "Article 16 — Dispositions finales",
+        content: `Le présent contrat est établi en deux (2) exemplaires originaux, dont un remis à chaque partie. Les modifications apportées au présent contrat feront l'objet d'un avenant écrit. Fait à <strong>{{city}}</strong>, le <strong>{{signatureDate}}</strong>.`
       }
     ];
   }
@@ -1014,7 +1516,7 @@ export class ContractPdfService {
   </style>
 </head>
 <body>
-<div class="watermark">ACADEMIA HUB</div>
+<div class="watermark">ACADEMIA HELM</div>
 <div class="page">
 
   <!-- Header -->
@@ -1025,7 +1527,7 @@ export class ContractPdfService {
       <p>{{schoolCountry}}</p>
     </div>
     <div class="contract-meta">
-      <div class="ref">Réf. CONTRAT-{{contractId}}</div>
+      <div class="ref">Réf. {{contractReference}}</div>
       <p style="font-size:8pt;color:#888;">Émis le {{generatedAt}} à {{generatedTime}}</p>
       {{#if isSigned}}
         <span class="status-badge">✓ SIGNÉ</span>
@@ -1056,7 +1558,7 @@ export class ContractPdfService {
   </div>
 
   <!-- Articles du contrat générés dynamiquement -->
-  \${articlesHtml}
+  ${articlesHtml}
 
   <!-- Signature Section -->
   <div class="signature-section">
@@ -1095,8 +1597,8 @@ export class ContractPdfService {
   <!-- Footer -->
   <div class="footer">
     <div class="footer-left">
-      <p><strong>Academia Hub</strong> — Système de Gestion Scolaire</p>
-      <p>Document généré automatiquement. Réf. : {{contractId}}</p>
+      <p><strong>Academia Helm</strong> — Système de Gestion Scolaire</p>
+      <p>Document généré automatiquement. Réf. : {{contractReference}}</p>
       <p>Vérification : {{verificationUrl}}</p>
     </div>
     {{#if qrCodeDataUrl}}

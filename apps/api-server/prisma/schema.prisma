@@ -446,6 +446,9 @@ model Tenant {
   academicAuditLogs                AcademicAuditLog[]
   gradeCorrectionRequests          GradeCorrectionRequest[]
 
+  // Organigramme
+  organigramNodes                  OrganigramNode[]
+
   @@index([subdomain])
   @@index([slug])
   @@index([countryId])
@@ -2085,6 +2088,7 @@ model UserRole {
 
   @@id([userId, roleId])
   @@index([tenantId])
+  @@index([userId, tenantId])
   @@map("user_roles")
 }
 
@@ -2096,6 +2100,7 @@ model RolePermission {
   role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@id([roleId, permissionId])
+  @@index([roleId])
   @@map("role_permissions")
 }
 
@@ -2108,6 +2113,8 @@ model School {
   motto                    String?
   slogan                   String?
   address                  String?
+  city                     String?
+  department               String?
   primaryPhone             String?
   secondaryPhone           String?
   primaryEmail             String?
@@ -4897,6 +4904,28 @@ model Staff {
   emergencyContact          Json?
   qualifications            String?
   notes                     String?
+  /// Nationalité du collaborateur
+  nationality               String?
+  /// Situation matrimoniale: SINGLE, MARRIED, DIVORCED, WIDOWED, SEPARATED
+  maritalStatus             String?
+  /// Nombre d'enfants à charge
+  numberOfChildren          Int?
+  /// Numéro de pièce d'identité (CNI, passeport, etc.)
+  nationalId                String?
+  /// Numéro d'immatriculation CNSS (convenience field — also in EmployeeCNSS)
+  cnssNumber                String?
+  /// Numéro IFU (Identifiant Fiscal Unique)
+  ifuNumber                 String?
+  /// Type de départ: RESIGNATION, DISMISSAL, MUTUAL_AGREEMENT, END_OF_CONTRACT, RETIREMENT, DEATH, ABANDONMENT, OTHER
+  terminationType              String?
+  /// Détails de la résiliation/débauche (motif, préavis, entretien de sortie, etc.)
+  terminationDetails           Json?
+  /// Date effective de départ
+  terminatedAt                 DateTime?
+  /// Nombre de jours de préavis (légal ou contractuel)
+  noticePeriodDays             Int?
+  /// Date du dernier jour travaillé
+  lastWorkingDate              DateTime?
   createdAt                 DateTime                   @default(now())
   updatedAt                 DateTime                   @updatedAt
   employeeCNSS              EmployeeCNSS?
@@ -4924,6 +4953,7 @@ model Staff {
   photo                     StaffPhoto?
   globalResourceUsages      TenantResourceUsage[]      @relation("StaffResourceUsages")
   globalResourceAnnotations TenantResourceAnnotation[] @relation("StaffResourceAnnotations")
+  organigramNodes           OrganigramNode[]           @relation("StaffOrganigramNodes")
 
   @@index([tenantId])
   @@index([employeeNumber])
@@ -4931,6 +4961,9 @@ model Staff {
   @@index([tenantMatricule])
   @@index([status])
   @@index([roleType])
+  @@index([tenantId, status])
+  @@index([tenantId, academicYearId])
+  @@index([email, tenantId])
   @@map("staff")
 }
 
@@ -5073,6 +5106,8 @@ model Contract {
   @@index([staffId])
   @@index([status])
   @@index([contractType])
+  @@index([tenantId, status])
+  @@index([staffId, tenantId, status])
   @@map("employment_contracts")
 }
 
@@ -13465,6 +13500,7 @@ model HrJob {
   id               String          @id @default(uuid())
   tenantId         String
   ref              String          @unique
+  slug             String          @unique
   title            String
   dept             String
   loc              String
@@ -13477,6 +13513,7 @@ model HrJob {
   skillsRequired   String?
   salary           String?
   contractType     String?
+  publishedAt      DateTime?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
   applications     HrApplication[]
@@ -13543,6 +13580,7 @@ model HrApplication {
   @@index([jobId])
   @@index([candidateId])
   @@index([staffId])
+  @@index([tenantId, status])
   @@map("hr_applications")
 }
 
@@ -13557,6 +13595,9 @@ model HrInterview {
   evaluator   String
   score       Int         @default(0)
   comments    String?
+  status      String      @default("PLANIFIÉ")
+  result      String?
+  feedback    String?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   candidate   HrCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
@@ -13568,14 +13609,20 @@ model HrInterview {
 }
 
 model HrTest {
-  id          String         @id @default(uuid())
-  tenantId    String
-  name        String
-  type        String
-  description String?
-  createdAt   DateTime       @default(now())
-  results     HrTestResult[]
-  tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id           String         @id @default(uuid())
+  tenantId     String
+  name         String
+  type         String
+  description  String?
+  duration     Int?           // Durée en minutes
+  instructions String?        // Consignes / instructions pour le test
+  maxScore     Int            @default(100) // Score maximum possible
+  passingScore Int            @default(50)  // Score minimum pour réussir
+  status       String         @default("ACTIF") // ACTIF, ARCHIVÉ, BROUILLON
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  results      HrTestResult[]
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@map("hr_tests")
@@ -13587,6 +13634,8 @@ model HrTestResult {
   candidateId String
   score       Int
   result      String
+  notes       String?     // Commentaires / observations de l'évaluateur
+  evaluatedAt DateTime?   // Date à laquelle le test a été passé
   createdAt   DateTime    @default(now())
   test        HrTest      @relation(fields: [testId], references: [id], onDelete: Cascade)
   candidate   HrCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
@@ -13920,4 +13969,34 @@ model GradeCorrectionRequest {
   @@index([gradeId])
   @@index([status])
   @@map("grade_correction_requests")
+}
+
+// ─── Organigramme ──────────────────────────────────────────────────────────────
+
+model OrganigramNode {
+  id                String    @id @default(uuid())
+  tenantId          String
+  title             String
+  type              String    @default("POSITION")   // DEPARTMENT, SERVICE, POSITION
+  level             Int       @default(0)            // 0 = racine, 1 = direction, etc.
+  order             Int       @default(0)            // Ordre d'affichage parmi les frères
+  schoolLevelCode   String?                          // MAT, PRI, SEC, MAT_PRI, ALL — filtre par niveau scolaire
+  staffId           String?                          // Lien optionnel vers un employé
+  parentId          String?                          // Parent dans l'arbre hiérarchique
+  metadata          Json?                            // Données supplémentaires (couleur, icône, etc.)
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  tenant            Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  staff             Staff?           @relation("StaffOrganigramNodes", fields: [staffId], references: [id], onDelete: SetNull)
+  parent            OrganigramNode?  @relation("OrganigramHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children          OrganigramNode[] @relation("OrganigramHierarchy")
+
+  @@index([tenantId])
+  @@index([parentId])
+  @@index([staffId])
+  @@index([type])
+  @@index([schoolLevelCode])
+  @@map("organigram_nodes")
 }

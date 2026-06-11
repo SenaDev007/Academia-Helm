@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui/toast';
 import { StaffWorkspace } from './StaffWorkspace';
 import { ContractsWorkspace } from './ContractsWorkspace';
+import { OrganigramWorkspace } from './OrganigramWorkspace';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import Link from 'next/link';
@@ -54,17 +55,20 @@ export function CollaboratorsWorkspace() {
   const [evaluationsList, setEvaluationsList] = useState<any[]>([]);
   const [trainingsList, setTrainingsList] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!tenant?.id) return;
     if (activeTab === 'assignments' || activeTab === 'org_chart' || activeTab === 'history') {
       setLoading(true);
+      setError(null);
       hrFetch<any[]>(hrUrl('staff', { tenantId: tenant.id }))
         .then((data) => {
           setStaffList(Array.isArray(data) ? data : []);
         })
         .catch((err) => {
           console.error('Error loading staff for collaborators:', err);
+          setError(err?.message || 'Erreur de chargement des données');
           toast({ variant: 'error', title: 'Erreur de chargement des données' });
           setStaffList([]);
         })
@@ -314,113 +318,8 @@ export function CollaboratorsWorkspace() {
         )}
 
         {activeTab === 'org_chart' && (
-          <motion.div key="org_chart" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-            <h3 className="text-base font-bold text-slate-900">Organigramme</h3>
-            {loading ? (
-              <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>
-            ) : staffList.length === 0 ? (
-              <div className="text-center py-12 bg-slate-50 rounded-xl border border-slate-200 text-sm text-slate-400">Aucun collaborateur pour construire l&apos;organigramme.</div>
-            ) : (
-              <div className="bg-white border border-slate-200 rounded-xl p-8 flex flex-col items-center">
-                <div className="w-full space-y-8">
-                  {/* Director at top */}
-                  {directorStaff && (
-                    <div className="flex flex-col items-center">
-                      <div className="relative">
-                        <div className="flex flex-col items-center p-4 rounded-2xl border-2 border-amber-300 bg-gradient-to-b from-amber-50 to-white shadow-lg min-w-[180px]">
-                          <div className="w-12 h-12 rounded-xl flex items-center justify-center text-base font-bold mb-2" style={{ backgroundColor: '#1A2BA615', color: PRIMARY }}>
-                            {directorStaff.firstName?.[0]}{directorStaff.lastName?.[0]}
-                          </div>
-                          <p className="font-bold text-slate-900 text-sm text-center">{directorStaff.firstName} {directorStaff.lastName}</p>
-                          <p className="text-[10px] text-[#1A2BA6] font-semibold mt-0.5">{directorStaff.position || 'Directeur'}</p>
-                          <Crown className="absolute -top-2 -right-2 h-5 w-5 text-amber-500" />
-                        </div>
-                      </div>
-                      {/* Connector line */}
-                      <div className="w-px h-8 bg-slate-300" />
-                    </div>
-                  )}
-
-                  {/* Category groups as tree branches */}
-                  {categoryGroups.length > 0 ? (
-                    <div className="space-y-6">
-                      {categoryGroups.map((cat) => {
-                        const catStyle = CATEGORY_STYLES[cat] || { bg: 'bg-slate-50', text: 'text-slate-600', label: cat || 'Autre' };
-                        const depts = departmentByCategory[cat] || [];
-                        return (
-                          <div key={cat} className="space-y-3">
-                            {/* Category header with connector */}
-                            <div className="flex items-center gap-3">
-                              <div className="flex-1 h-px bg-slate-200" />
-                              <div className={cn('flex items-center gap-2 px-4 py-2 rounded-xl border', catStyle.bg, catStyle.text)} style={{ borderColor: 'var(--tw-border-opacity, 1)' }}>
-                                {cat === 'PEDAGOGICAL' ? <GraduationCap className="h-4 w-4" /> : cat === 'ADMIN' ? <UserCog className="h-4 w-4" /> : <Building2 className="h-4 w-4" />}
-                                <span className="text-sm font-bold">{catStyle.label}</span>
-                                <span className="text-[10px] font-semibold opacity-70">({staffList.filter(s => s.category === cat).length})</span>
-                              </div>
-                              <div className="flex-1 h-px bg-slate-200" />
-                            </div>
-
-                            {/* Departments under this category */}
-                            <div className="pl-4 border-l-2 border-slate-100 ml-[50%] space-y-4">
-                              {depts.map(({ dept, members }) => (
-                                <div key={dept} className="space-y-2">
-                                  <div className="flex items-center gap-2 -ml-4">
-                                    <div className="w-3 h-px bg-slate-300" />
-                                    <div className="flex items-center gap-1.5">
-                                      <Briefcase className="h-3.5 w-3.5 text-slate-400" />
-                                      <h4 className="text-xs font-bold text-slate-700">{dept}</h4>
-                                      <span className="text-[10px] text-slate-400">({members.length})</span>
-                                    </div>
-                                  </div>
-                                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 pl-4">
-                                    {members.map((m) => (
-                                      <div key={m.id} className={cn('border rounded-lg p-2.5 text-center hover:shadow-sm transition-shadow', catStyle.bg)} style={{ borderColor: 'var(--tw-border-opacity, 1)' }}>
-                                        <div className="w-7 h-7 rounded-lg mx-auto flex items-center justify-center text-[10px] font-bold mb-1.5" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
-                                          {m.firstName?.[0]}{m.lastName?.[0]}
-                                        </div>
-                                        <p className="font-bold text-slate-900 text-[11px] leading-tight">{m.firstName} {m.lastName}</p>
-                                        <p className="text-[9px] text-slate-500 mt-0.5">{m.position || 'Général'}</p>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    /* Fallback: no categories, just flat list grouped by department */
-                    <div className="space-y-4">
-                      {Array.from(new Set(staffList.map((s) => s.department || s.position || 'Non classé').filter(Boolean))).map((dept) => {
-                        const members = staffList.filter((s) => (s.department || s.position || 'Non classé') === dept);
-                        return (
-                          <div key={dept} className="space-y-2">
-                            <div className="flex items-center gap-2">
-                              <Briefcase className="h-4 w-4 text-slate-400" />
-                              <h4 className="text-sm font-bold text-slate-800">{dept}</h4>
-                              <span className="text-[10px] font-semibold text-slate-400 ml-1">({members.length})</span>
-                            </div>
-                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                              {members.map((m) => (
-                                <div key={m.id} className="border border-slate-100 rounded-xl p-3 bg-slate-50 text-center hover:bg-slate-100 transition-colors">
-                                  <div className="w-8 h-8 rounded-lg mx-auto flex items-center justify-center text-xs font-bold mb-2" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
-                                    {m.firstName?.[0]}{m.lastName?.[0]}
-                                  </div>
-                                  <p className="font-bold text-slate-900 text-xs">{m.firstName} {m.lastName}</p>
-                                  <p className="text-[10px] text-slate-500 mt-0.5">{m.position || 'Général'}</p>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+          <motion.div key="org_chart" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <OrganigramWorkspace />
           </motion.div>
         )}
       </AnimatePresence>

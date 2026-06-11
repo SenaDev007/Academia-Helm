@@ -8,7 +8,7 @@
  * ============================================================================
  */
 
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, BadRequestException } from '@nestjs/common';
 import { EvaluationsPrismaService } from './evaluations-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
@@ -21,10 +21,18 @@ export class EvaluationsPrismaController {
   constructor(private readonly evaluationsService: EvaluationsPrismaService) {}
 
   @Post()
-  async createEvaluation(@GetTenant() tenant: any, @Body() data: CreateEvaluationDto) {
+  async createEvaluation(
+    @GetTenant() tenant: any,
+    @Body() data: CreateEvaluationDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
     return this.evaluationsService.createEvaluation({
       ...data,
-      tenantId: tenant.id,
+      tenantId: tid,
     });
   }
 
@@ -34,8 +42,10 @@ export class EvaluationsPrismaController {
     @Query('academicYearId') academicYearId?: string,
     @Query('staffId') staffId?: string,
     @Query('evaluatorId') evaluatorId?: string,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.evaluationsService.findAllEvaluations(tenant.id, {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.evaluationsService.findAllEvaluations(tid, {
       academicYearId,
       staffId,
       evaluatorId,
@@ -46,59 +56,122 @@ export class EvaluationsPrismaController {
   async getEvaluationStatistics(
     @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId: string,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.evaluationsService.getEvaluationStatistics(tenant.id, academicYearId);
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.evaluationsService.getEvaluationStatistics(tid, academicYearId);
   }
 
   // ─── Trainings (MUST be before @Get(':id') to avoid route shadowing) ────────
 
   @Post('trainings')
-  async createTraining(@GetTenant() tenant: any, @Body() data: CreateTrainingDto) {
+  async createTraining(
+    @GetTenant() tenant: any,
+    @Body() data: CreateTrainingDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
     return this.evaluationsService.createTraining({
       ...data,
-      tenantId: tenant.id,
+      tenantId: tid,
     });
   }
 
   @Get('trainings')
-  async findAllTrainings(@GetTenant() tenant: any) {
-    return this.evaluationsService.findAllTrainings(tenant.id);
+  async findAllTrainings(
+    @GetTenant() tenant: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.evaluationsService.findAllTrainings(tid);
   }
 
   @Get('trainings/staff/:staffId')
-  async findStaffTrainings(@GetTenant() tenant: any, @Param('staffId') staffId: string) {
-    return this.evaluationsService.findStaffTrainings(staffId, tenant.id);
+  async findStaffTrainings(
+    @GetTenant() tenant: any,
+    @Param('staffId') staffId: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.evaluationsService.findStaffTrainings(staffId, tid);
   }
 
   @Get('trainings/:id')
-  async findTrainingById(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.evaluationsService.findTrainingById(id, tenant.id);
+  async findTrainingById(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.evaluationsService.findTrainingById(id, tid);
   }
 
   @Put('trainings/:id')
-  async updateTraining(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: UpdateTrainingDto) {
-    return this.evaluationsService.updateTraining(id, tenant.id, data);
+  async updateTraining(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Body() data: UpdateTrainingDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.evaluationsService.updateTraining(id, tid, data);
   }
 
   @Delete('trainings/:id')
-  async deleteTraining(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.evaluationsService.deleteTraining(id, tenant.id);
+  async deleteTraining(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.evaluationsService.deleteTraining(id, tid);
   }
 
   // ─── Evaluations (parameterized routes AFTER specific routes) ───────────────
 
   @Get(':id')
-  async findEvaluationById(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.evaluationsService.findEvaluationById(id, tenant.id);
+  async findEvaluationById(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.evaluationsService.findEvaluationById(id, tid);
   }
 
   @Put(':id')
-  async updateEvaluation(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: UpdateEvaluationDto) {
-    return this.evaluationsService.updateEvaluation(id, tenant.id, data);
+  async updateEvaluation(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Body() data: UpdateEvaluationDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.evaluationsService.updateEvaluation(id, tid, data);
   }
 
   @Delete(':id')
-  async deleteEvaluation(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.evaluationsService.deleteEvaluation(id, tenant.id);
+  async deleteEvaluation(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.evaluationsService.deleteEvaluation(id, tid);
   }
 }

@@ -38,6 +38,8 @@ import { SchedulesPrismaService } from './schedules-prisma.service';
 import { SchedulesPrismaController } from './schedules-prisma.controller';
 import { IaPrismaService } from './ia-prisma.service';
 import { IaPrismaController } from './ia-prisma.controller';
+import { OrganigramPrismaService } from './organigram-prisma.service';
+import { OrganigramPrismaController } from './organigram-prisma.controller';
 import { OrionModule } from '../orion/orion.module';
 
 @Module({
@@ -63,6 +65,7 @@ import { OrionModule } from '../orion/orion.module';
     RecruitmentPrismaService,
     SchedulesPrismaService,
     IaPrismaService,
+    OrganigramPrismaService,
   ],
   controllers: [
     StaffPrismaController,
@@ -77,6 +80,7 @@ import { OrionModule } from '../orion/orion.module';
     RecruitmentPrismaController,
     SchedulesPrismaController,
     IaPrismaController,
+    OrganigramPrismaController,
   ],
   exports: [
     StaffPrismaService,
@@ -98,6 +102,7 @@ import { OrionModule } from '../orion/orion.module';
     RecruitmentPrismaService,
     SchedulesPrismaService,
     IaPrismaService,
+    OrganigramPrismaService,
   ],
 })
 export class HRModule {}

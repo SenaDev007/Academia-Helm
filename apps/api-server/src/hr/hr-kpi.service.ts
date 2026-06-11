@@ -26,14 +26,23 @@ export class HrKpiService {
    * Calcule un snapshot KPI RH
    */
   async generateSnapshot(tenantId: string, academicYearId: string) {
-    // 1. Effectifs
-    const staff = await this.prisma.staff.findMany({
-      where: { tenantId, status: 'ACTIVE' },
-    });
+    // 1. Effectifs — use groupBy instead of loading all staff into memory
+    const [totalCount, roleGroups] = await Promise.all([
+      this.prisma.staff.count({ where: { tenantId, status: 'ACTIVE' } }),
+      this.prisma.staff.groupBy({
+        by: ['roleType'],
+        where: { tenantId, status: 'ACTIVE' },
+        _count: true,
+      }),
+    ]);
 
-    const totalStaff = staff.length;
-    const totalTeachers = staff.filter(s => s.roleType === 'TEACHER').length;
-    const totalAdmin = staff.filter(s => s.roleType === 'ADMIN').length;
+    const totalStaff = totalCount;
+    let totalTeachers = 0;
+    let totalAdmin = 0;
+    for (const g of roleGroups) {
+      if (g.roleType === 'TEACHER') totalTeachers = g._count;
+      if (g.roleType === 'ADMIN') totalAdmin = g._count;
+    }
 
     // 2. Masse salariale (dernier lot validé ou payé)
     const latestPayroll = await this.prisma.payroll.findFirst({
@@ -47,14 +56,12 @@ export class HrKpiService {
     if (latestPayroll) {
       monthlyPayroll = Number(latestPayroll.totalAmount);
 
-      // Récupérer la CNSS via les items
-      const items = await this.prisma.payrollItem.findMany({
+      // Récupérer la CNSS via aggregate instead of loading all items
+      const cnssStats = await this.prisma.payrollItem.aggregate({
         where: { payrollId: latestPayroll.id },
+        _sum: { cnssEmployer: true, cnssEmployee: true },
       });
-      cnssCharges = items.reduce(
-        (sum, item) => sum + Number(item.cnssEmployer || 0) + Number(item.cnssEmployee || 0),
-        0,
-      );
+      cnssCharges = Number(cnssStats._sum.cnssEmployer ?? 0) + Number(cnssStats._sum.cnssEmployee ?? 0);
     }
 
     // 3. Congés actifs (LeaveRequest)

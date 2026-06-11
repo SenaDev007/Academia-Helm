@@ -1,0 +1,44 @@
+(node:4808) Warning: SECURITY WARNING: The SSL modes 'prefer', 'require', and 'verify-ca' are treated as aliases for 'verify-full'.
+In the next major version (pg-connection-string v3.0.0 and pg v9.0.0), these modes will adopt standard libpq semantics, which have weaker security guarantees.
+
+To prepare for this change:
+- If you want the current behavior, explicitly use 'sslmode=verify-full'
+- If you want libpq compatibility now, use 'uselibpqcompat=true&sslmode=require'
+
+See https://www.postgresql.org/docs/current/libpq-ssl.html for libpq SSL mode definitions.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Seeding HR for Tenant: Tenant par Défaut - Academia Helm (4246cd3c-518a-44bb-a5e0-4109b8eca372)
+PrismaClientKnownRequestError: 
+Invalid `prisma.leaveType.upsert()` invocation in
+D:\Projet YEHI OR Tech\Academia Hub Web\apps\api-server\src\hr\seed-hr.ts:38:28
+
+  35 ];
+  36 
+  37 for (const lt of leaveTypes) {
+→ 38   await prisma.leaveType.upsert(
+The table `public.leave_types` does not exist in the current database.
+    at zr.handleRequestError (D:\Projet YEHI OR Tech\Academia Hub Web\apps\api-server\node_modules\@prisma\client\src\runtime\RequestHandler.ts:237:13)
+    at zr.handleAndLogRequestError (D:\Projet YEHI OR Tech\Academia Hub Web\apps\api-server\node_modules\@prisma\client\src\runtime\RequestHandler.ts:183:12)
+    at zr.request (D:\Projet YEHI OR Tech\Academia Hub Web\apps\api-server\node_modules\@prisma\client\src\runtime\RequestHandler.ts:152:12)
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async a (D:\Projet YEHI OR Tech\Academia Hub Web\apps\api-server\node_modules\@prisma\client\src\runtime\getPrismaClient.ts:963:24)
+    at async main (D:\Projet YEHI OR Tech\Academia Hub Web\apps\api-server\src\hr\seed-hr.ts:38:5) {
+  code: 'P2021',
+  meta: {
+    modelName: 'LeaveType',
+    driverAdapterError: DriverAdapterError: TableDoesNotExist
+        at PgTransaction.onError (D:\Projet YEHI OR Tech\Academia Hub Web\apps\api-server\node_modules\@prisma\adapter-pg\dist\index.js:687:11)
+        at PgTransaction.performIO (D:\Projet YEHI OR Tech\Academia Hub Web\apps\api-server\node_modules\@prisma\adapter-pg\dist\index.js:682:12)
+        at processTicksAndRejections (node:internal/process/task_queues:103:5)
+        at async PgTransaction.queryRaw (D:\Projet YEHI OR Tech\Academia Hub Web\apps\api-server\node_modules\@prisma\adapter-pg\dist\index.js:602:30)
+        at async e.interpretNode (D:\Projet YEHI OR Tech\Academia Hub Web\apps\api-server\node_modules\@prisma\client-engine-runtime\src\interpreter\query-interpreter.ts:186:26)
+        at async e.interpretNode (D:\Projet YEHI OR Tech\Academia Hub Web\apps\api-server\node_modules\@prisma\client-engine-runtime\src\interpreter\query-interpreter.ts:128:29)
+        at async e.interpretNode (D:\Projet YEHI OR Tech\Academia Hub Web\apps\api-server\node_modules\@prisma\client-engine-runtime\src\interpreter\query-interpreter.ts:272:41)
+        at async e.interpretNode (D:\Projet YEHI OR Tech\Academia Hub Web\apps\api-server\node_modules\@prisma\client-engine-runtime\src\interpreter\query-interpreter.ts:262:25)
+        at async e.run (D:\Projet YEHI OR Tech\Academia Hub Web\apps\api-server\node_modules\@prisma\client-engine-runtime\src\interpreter\query-interpreter.ts:94:23)
+        at async execute (D:\Projet YEHI OR Tech\Academia Hub Web\apps\api-server\node_modules\@prisma\client\src\runtime\core\engines\client\LocalExecutor.ts:81:12) {
+      cause: [Object]
+    }
+  },
+  clientVersion: '7.8.0'
+}

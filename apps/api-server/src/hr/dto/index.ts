@@ -103,6 +103,11 @@ export class UpdateStaffDto {
   @IsOptional() @IsString() nationalId?: string;
   @IsOptional() @IsString() cnssNumber?: string;
   @IsOptional() @IsString() ifuNumber?: string;
+  @IsOptional() @IsString() terminationType?: string;
+  @IsOptional() terminationDetails?: Record<string, any>;
+  @IsOptional() terminatedAt?: string | null;
+  @IsOptional() @IsNumber() @Type(() => Number) noticePeriodDays?: number;
+  @IsOptional() lastWorkingDate?: string | null;
   @IsOptional() @IsUUID() academicYearId?: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
   @IsOptional() @IsString() tenantId?: string;
@@ -121,7 +126,7 @@ export class CreateContractDto {
   @IsOptional() terms?: Record<string, any>;
   @IsOptional() @IsUUID() academicYearId?: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
-  /** Frontend ContractsWorkspace sends status: 'ACTIVE' */
+  /** Frontend ContractsWorkspace sends status: 'PENDING' — contract becomes ACTIVE only after signing */
   @IsOptional() @IsString() status?: string;
   /** Frontend may send tenantId — ignored (resolved server-side) */
   @IsOptional() @IsString() tenantId?: string;
@@ -391,11 +396,14 @@ export class AddStaffDocumentDto {
  */
 export class UploadStaffDocumentDto {
   /** Document type: CV, CNI, BIRTH_CERTIFICATE, DIPLOMA, CONTRACT, CNSS_CERTIFICATE, MEDICAL_CERTIFICATE, WORK_PERMIT, OTHER */
-  @IsString() documentType: string;
-  @IsOptional() @IsString() description?: string;
-  @IsOptional() @IsDateString() expiresAt?: string;
+  @IsString() @Type(() => String) documentType: string;
+  @IsOptional() @IsString() @Type(() => String) description?: string;
+  /** Accept date string or empty string (empty will be treated as null) */
+  @IsOptional() @Type(() => String) expiresAt?: string;
+  /** Category for document classification (IDENTITE, DIPLOMES, EXPERIENCE, ADMINISTRATIF, MEDICAL, GENERAL) */
+  @IsOptional() @IsString() @Type(() => String) category?: string;
   /** Frontend may send tenantId — ignored */
-  @IsOptional() @IsString() tenantId?: string;
+  @IsOptional() @IsString() @Type(() => String) tenantId?: string;
 }
 
 /**
@@ -438,18 +446,35 @@ export class CreateScheduleDto {
 
 export class CreateJobDto {
   @IsString() title: string;
-  @IsString() dept: string;
-  @IsString() loc: string;
+  /** DB column name — frontend may send 'dept' or 'department' */
+  @IsOptional() @IsString() dept?: string;
+  /** Alias: frontend RecruitmentWorkspace sends 'department' */
+  @IsOptional() @IsString() department?: string;
+  /** DB column name — frontend may send 'loc' or 'location' */
+  @IsOptional() @IsString() loc?: string;
+  /** Alias: frontend RecruitmentWorkspace sends 'location' */
+  @IsOptional() @IsString() location?: string;
   @IsOptional() @IsString() ref?: string;
-  @IsOptional() @IsIn(['BROUILLON', 'PUBLIÉE', 'FERMÉE', 'ARCHIVÉE']) status?: string;
+  @IsOptional() @IsIn(['BROUILLON', 'PUBLIÉE', 'FERMÉE', 'ARCHIVÉE', 'DÉSACTIVÉE']) status?: string;
   @IsOptional() @IsString() description?: string;
+  /** DB column name — frontend may send 'missions' or 'keyMissions' */
   @IsOptional() @IsString() missions?: string;
+  /** Alias: frontend forms may send 'keyMissions' */
+  @IsOptional() @IsString() keyMissions?: string;
   @IsOptional() @IsString() responsibilities?: string;
+  /** DB column name — frontend may send 'academicLevel' or 'requiredEducation' */
   @IsOptional() @IsString() academicLevel?: string;
+  /** Alias: frontend forms may send 'requiredEducation' */
+  @IsOptional() @IsString() requiredEducation?: string;
+  /** DB column name — frontend may send 'experience' or 'requiredExperience' */
   @IsOptional() @IsString() experience?: string;
+  /** Alias: frontend forms may send 'requiredExperience' */
+  @IsOptional() @IsString() requiredExperience?: string;
   @IsOptional() @IsString() skillsRequired?: string;
   @IsOptional() @IsString() salary?: string;
   @IsOptional() @IsString() contractType?: string;
+  /** Date when the job was published — set automatically on publish/republish */
+  @IsOptional() @IsDateString() publishedAt?: string;
   /** Frontend may send tenantId — ignored (resolved server-side) */
   @IsOptional() @IsString() tenantId?: string;
 }
@@ -457,17 +482,24 @@ export class CreateJobDto {
 export class UpdateJobDto {
   @IsOptional() @IsString() title?: string;
   @IsOptional() @IsString() dept?: string;
+  @IsOptional() @IsString() department?: string;
   @IsOptional() @IsString() loc?: string;
+  @IsOptional() @IsString() location?: string;
   @IsOptional() @IsString() ref?: string;
-  @IsOptional() @IsIn(['BROUILLON', 'PUBLIÉE', 'FERMÉE', 'ARCHIVÉE']) status?: string;
+  @IsOptional() @IsIn(['BROUILLON', 'PUBLIÉE', 'FERMÉE', 'ARCHIVÉE', 'DÉSACTIVÉE']) status?: string;
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsString() missions?: string;
+  @IsOptional() @IsString() keyMissions?: string;
   @IsOptional() @IsString() responsibilities?: string;
   @IsOptional() @IsString() academicLevel?: string;
+  @IsOptional() @IsString() requiredEducation?: string;
   @IsOptional() @IsString() experience?: string;
+  @IsOptional() @IsString() requiredExperience?: string;
   @IsOptional() @IsString() skillsRequired?: string;
   @IsOptional() @IsString() salary?: string;
   @IsOptional() @IsString() contractType?: string;
+  /** Date when the job was published — updated automatically on republish */
+  @IsOptional() @IsDateString() publishedAt?: string;
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() tenantId?: string;
 }
@@ -482,6 +514,10 @@ export class CreateCandidateDto {
   @IsOptional() @IsString() city?: string;
   @IsOptional() @IsString() gender?: string;
   @IsOptional() @IsDateString() dateOfBirth?: string;
+  /** Optional: if provided, an HrApplication is auto-created for this job */
+  @IsOptional() @IsUUID() jobId?: string;
+  /** Optional: initial application status (defaults to NOUVEAU) */
+  @IsOptional() @IsIn(['NOUVEAU', 'EN_COURS', 'ENTRETIEN', 'TEST', 'EMBAUCHÉ', 'REJETÉ']) status?: string;
   /** Frontend may send tenantId — ignored (resolved server-side) */
   @IsOptional() @IsString() tenantId?: string;
 }
@@ -529,6 +565,8 @@ export class CreateInterviewDto {
 }
 
 export class UpdateInterviewDto {
+  /** Frontend may send candidateId — ignored (not updatable) */
+  @IsOptional() @IsUUID() candidateId?: string;
   @IsOptional() @IsIn(['RH', 'TECHNIQUE', 'DIRECTION', 'PEDAGOGIQUE']) type?: string;
   @IsOptional() @IsDateString() date?: string;
   @IsOptional() @IsString() time?: string;
@@ -536,6 +574,9 @@ export class UpdateInterviewDto {
   @IsOptional() @IsString() evaluator?: string;
   @IsOptional() @IsInt() @Type(() => Number) score?: number;
   @IsOptional() @IsString() comments?: string;
+  @IsOptional() @IsIn(['PLANIFIÉ', 'EN_COURS', 'TERMINÉ']) status?: string;
+  @IsOptional() @IsIn(['RÉUSSI', 'ÉCHOUÉ', 'EN_ATTENTE']) result?: string;
+  @IsOptional() @IsString() feedback?: string;
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() tenantId?: string;
 }
@@ -544,6 +585,11 @@ export class CreateTestDto {
   @IsString() name: string;
   @IsString() type: string;
   @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsInt() @Type(() => Number) duration?: number; // minutes
+  @IsOptional() @IsString() instructions?: string;
+  @IsOptional() @IsInt() @Type(() => Number) maxScore?: number;
+  @IsOptional() @IsInt() @Type(() => Number) passingScore?: number;
+  @IsOptional() @IsIn(['ACTIF', 'ARCHIVÉ', 'BROUILLON']) status?: string;
   /** Frontend may send tenantId — ignored (resolved server-side) */
   @IsOptional() @IsString() tenantId?: string;
 }
@@ -552,6 +598,11 @@ export class UpdateTestDto {
   @IsOptional() @IsString() name?: string;
   @IsOptional() @IsString() type?: string;
   @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsInt() @Type(() => Number) duration?: number;
+  @IsOptional() @IsString() instructions?: string;
+  @IsOptional() @IsInt() @Type(() => Number) maxScore?: number;
+  @IsOptional() @IsInt() @Type(() => Number) passingScore?: number;
+  @IsOptional() @IsIn(['ACTIF', 'ARCHIVÉ', 'BROUILLON']) status?: string;
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() tenantId?: string;
 }
@@ -561,6 +612,26 @@ export class CreateTestResultDto {
   @IsUUID() candidateId: string;
   @IsInt() @Type(() => Number) score: number;
   @IsOptional() @IsIn(['RÉUSSI', 'ÉCHOUÉ', 'EN_ATTENTE']) result?: string;
+  @IsOptional() @IsString() notes?: string;
+  @IsOptional() @IsString() evaluatedAt?: string; // ISO date string
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+export class UpdateTestResultDto {
+  @IsOptional() @IsInt() @Type(() => Number) score?: number;
+  @IsOptional() @IsIn(['RÉUSSI', 'ÉCHOUÉ', 'EN_ATTENTE']) result?: string;
+  @IsOptional() @IsString() notes?: string;
+  @IsOptional() @IsString() evaluatedAt?: string; // ISO date string
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+export class ValidateInterviewDto {
+  @IsIn(['TERMINÉ', 'ANNULÉ']) status: string;
+  @IsIn(['RÉUSSI', 'ÉCHOUÉ', 'EN_ATTENTE']) result: string;
+  @IsOptional() @IsInt() @Type(() => Number) score?: number;
+  @IsOptional() @IsString() feedback?: string;
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() tenantId?: string;
 }
@@ -639,4 +710,105 @@ export class UpdateTrainingDto {
   @IsOptional() @IsUUID() schoolLevelId?: string;
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() tenantId?: string;
+}
+
+// ─── Termination / Débauche DTOs ────────────────────────────────────────────
+
+/**
+ * DTO pour la débauche d'un employé (départ de l'entreprise).
+ * Ce processus met à jour le statut du personnel, résilie les contrats actifs,
+ * et enregistre les détails de la débauche de manière professionnelle.
+ */
+export class TerminateStaffDto {
+  /** Type de départ */
+  @IsIn([
+    'RESIGNATION',         // Démission
+    'DISMISSAL',           // Licenciement
+    'MUTUAL_AGREEMENT',    // Rupture conventionnelle
+    'END_OF_CONTRACT',     // Fin de contrat
+    'RETIREMENT',          // Retraite
+    'DEATH',               // Décès
+    'ABANDONMENT',         // Abandon de poste
+    'OTHER',               // Autre
+  ])
+  terminationType: string;
+
+  /** Date effective du départ (obligatoire) */
+  @IsDateString()
+  effectiveDate: string;
+
+  /** Dernier jour travaillé (optionnel, par défaut = effectiveDate) */
+  @IsOptional() @IsDateString()
+  lastWorkingDate?: string;
+
+  /** Nombre de jours de préavis (légal ou contractuel) */
+  @IsOptional() @IsInt() @Min(0) @Type(() => Number)
+  noticePeriodDays?: number;
+
+  /** Motif principal de la résiliation (texte libre) */
+  @IsOptional() @IsString() @MaxLength(1000)
+  reason?: string;
+
+  /** Motif détaillé / notes complètes */
+  @IsOptional() @IsString()
+  detailedReason?: string;
+
+  /** Entretien de sortie réalisé ? */
+  @IsOptional() @IsBoolean()
+  exitInterviewConducted?: boolean;
+
+  /** Notes de l'entretien de sortie */
+  @IsOptional() @IsString()
+  exitInterviewNotes?: string;
+
+  /** Remise du matériel effectuée ? */
+  @IsOptional() @IsBoolean()
+  equipmentReturned?: boolean;
+
+  /** Documents de sortie remis ? (certificat de travail, attestation, etc.) */
+  @IsOptional() @IsBoolean()
+  exitDocumentsProvided?: boolean;
+
+  /** Solde de tout compte réglé ? */
+  @IsOptional() @IsBoolean()
+  finalSettlementPaid?: boolean;
+
+  /** Autorisé par (nom du responsable RH ou direction) */
+  @IsOptional() @IsString()
+  authorizedBy?: string;
+
+  /** Référence de la lettre de débauche */
+  @IsOptional() @IsString()
+  terminationLetterRef?: string;
+
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString()
+  tenantId?: string;
+}
+
+/**
+ * DTO pour la résiliation d'un contrat spécifique.
+ * Contrairement à la débauche qui affecte le personnel et tous ses contrats,
+ * la résiliation de contrat ne concerne qu'un seul contrat.
+ */
+export class TerminateContractDto {
+  /** Motif de la résiliation */
+  @IsString() @MaxLength(1000)
+  reason: string;
+
+  /** Date de résiliation (par défaut = aujourd'hui) */
+  @IsOptional() @IsDateString()
+  terminatedAt?: string;
+
+  /** Type de résiliation */
+  @IsOptional() @IsIn(['RESIGNATION', 'DISMISSAL', 'MUTUAL_AGREEMENT', 'END_OF_CONTRACT', 'OTHER'])
+  terminationType?: string;
+
+  /** Mettre à jour également le statut du personnel ? (par défaut true si c'est le seul contrat actif) */
+  @IsOptional() @IsBoolean()
+  updateStaffStatus?: boolean;
+
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString()
+  tenantId?: string;
 }

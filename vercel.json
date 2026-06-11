@@ -1,6 +1,5 @@
 {
   "version": 2,
-  "ignoreCommand": "exit 1",
   "functions": {
     "apps/web-app/src/app/api/hr/recruitment/apply/route.ts": {
       "maxDuration": 60,

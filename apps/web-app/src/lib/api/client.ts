@@ -8,6 +8,7 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { getClientToken } from '@/lib/auth/session-client';
 import { getApiBaseUrl } from '@/lib/utils/urls';
+import { getClientTenantId } from '@/lib/auth/client-access-token';
 
 const API_URL = getApiBaseUrl();
 
@@ -36,10 +37,15 @@ apiClient.interceptors.request.use(
     // Ajouter le tenant ID depuis les headers Next.js
     // (sera géré par le middleware)
     if (typeof window !== 'undefined') {
-      const tenantId = document.cookie
+      // Priorité : cookie → getClientTenantId() (localStorage session)
+      let tenantId = document.cookie
         .split('; ')
         .find(row => row.startsWith('x-tenant-id='))
         ?.split('=')[1];
+      
+      if (!tenantId) {
+        tenantId = getClientTenantId() || undefined;
+      }
       
       if (tenantId && config.headers) {
         config.headers['X-Tenant-ID'] = tenantId;

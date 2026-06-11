@@ -1,0 +1,113 @@
+{
+  "cookies": [
+    {
+      "name": "_ga",
+      "value": "GA1.1.431372373.1781114932",
+      "domain": ".academiahelm.com",
+      "path": "/",
+      "expires": 1815675026.184517,
+      "size": 29,
+      "httpOnly": false,
+      "secure": false,
+      "session": false
+    },
+    {
+      "name": "x-tenant-id",
+      "value": "4246cd3c-518a-44bb-a5e0-4109b8eca372",
+      "domain": ".academiahelm.com",
+      "path": "/",
+      "expires": 1781719824.496378,
+      "size": 47,
+      "httpOnly": false,
+      "secure": true,
+      "session": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "academia_session",
+      "value": "%7B%22user%22%3A%7B%22id%22%3A%229d36e2a4-8d4f-49ea-a804-50b46f692c80%22%2C%22email%22%3A%22dev%40academia-hub.local%22%2C%22firstName%22%3A%22Platform%22%2C%22lastName%22%3A%22Owner%22%2C%22role%22%3A%22PLATFORM_OWNER%22%2C%22portal%22%3A%22SCHOOL%22%2C%22tenantId%22%3A%224246cd3c-518a-44bb-a5e0-4109b8eca372%22%2C%22permissions%22%3A%5B%5D%2C%22createdAt%22%3A%222026-06-10T18%3A10%3A24.394Z%22%7D%2C%22tenant%22%3A%7B%22id%22%3A%224246cd3c-518a-44bb-a5e0-4109b8eca372%22%2C%22name%22%3A%22Academia%20Helm%22%2C%22slug%22%3A%22default-tenant%22%2C%22subdomain%22%3A%22app%22%2C%22status%22%3A%22active%22%2C%22subscriptionStatus%22%3A%22ACTIVE_SUBSCRIBED%22%2C%22createdAt%22%3A%222026-06-10T18%3A10%3A24.395Z%22%2C%22updatedAt%22%3A%222026-06-10T18%3A10%3A24.395Z%22%7D%2C%22token%22%3A%22eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5ZDM2ZTJhNC04ZDRmLTQ5ZWEtYTgwNC01MGI0NmY2OTJjODAiLCJlbWFpbCI6ImRldkBhY2FkZW1pYS1odWIubG9jYWwiLCJyb2xlIjoiUExBVEZPUk1fT1dORVIiLCJ0ZW5hbnRJZCI6IjQyNDZjZDNjLTUxOGEtNDRiYi1hNWUwLTQxMDliOGVjYTM3MiIsImFjYWRlbWljWWVhcklkIjoiMTkwYzczODctZDA2OS00MDE0LTljNzYtMGFlOGY1N2ZjZjZhIiwiY29udGV4dExvY2tlZCI6dHJ1ZSwiaWF0IjoxNzgxMTE1MDI0LCJleHAiOjE3ODExMTU5MjR9.1Lt2y5rC5OmQNGVP6w-gLp4I_oZPOrccz-s4yZxaqLA%22%2C%22expiresAt%22%3A%222026-06-11T18%3A10%3A24.394Z%22%7D",
+      "domain": ".academiahelm.com",
+      "path": "/",
+      "expires": 1781719824.496211,
+      "size": 1303,
+      "httpOnly": true,
+      "secure": true,
+      "session": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "academia_token",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5ZDM2ZTJhNC04ZDRmLTQ5ZWEtYTgwNC01MGI0NmY2OTJjODAiLCJlbWFpbCI6ImRldkBhY2FkZW1pYS1odWIubG9jYWwiLCJyb2xlIjoiUExBVEZPUk1fT1dORVIiLCJ0ZW5hbnRJZCI6IjQyNDZjZDNjLTUxOGEtNDRiYi1hNWUwLTQxMDliOGVjYTM3MiIsImFjYWRlbWljWWVhcklkIjoiMTkwYzczODctZDA2OS00MDE0LTljNzYtMGFlOGY1N2ZjZjZhIiwiY29udGV4dExvY2tlZCI6dHJ1ZSwiaWF0IjoxNzgxMTE1MDI0LCJleHAiOjE3ODExMTU5MjR9.1Lt2y5rC5OmQNGVP6w-gLp4I_oZPOrccz-s4yZxaqLA",
+      "domain": ".academiahelm.com",
+      "path": "/",
+      "expires": 1781719824.496349,
+      "size": 447,
+      "httpOnly": false,
+      "secure": true,
+      "session": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_ga_TG29Y7XL8S",
+      "value": "GS2.1.s1781114931$o1$g1$t1781115026$j36$l0$h0",
+      "domain": ".academiahelm.com",
+      "path": "/",
+      "expires": 1815675026.191887,
+      "size": 59,
+      "httpOnly": false,
+      "secure": false,
+      "session": false
+    }
+  ],
+  "origins": [
+    {
+      "origin": "https://default-tenant.academiahelm.com",
+      "localStorage": [
+        {
+          "name": "academia_helm_last_activity",
+          "value": "1781115028190"
+        },
+        {
+          "name": "currentAcademicYearId",
+          "value": "190c7387-d069-4014-9c76-0ae8f57fcf6a"
+        },
+        {
+          "name": "currentSchoolLevelId",
+          "value": "ALL"
+        }
+      ],
+      "sessionStorage": [
+        {
+          "name": "academia_post_login_done",
+          "value": "1"
+        }
+      ]
+    },
+    {
+      "origin": "https://www.academiahelm.com",
+      "localStorage": [
+        {
+          "name": "accessToken",
+          "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5ZDM2ZTJhNC04ZDRmLTQ5ZWEtYTgwNC01MGI0NmY2OTJjODAiLCJlbWFpbCI6ImRldkBhY2FkZW1pYS1odWIubG9jYWwiLCJyb2xlIjoiUExBVEZPUk1fT1dORVIiLCJ0ZW5hbnRJZCI6IjQyNDZjZDNjLTUxOGEtNDRiYi1hNWUwLTQxMDliOGVjYTM3MiIsImFjYWRlbWljWWVhcklkIjoiMTkwYzczODctZDA2OS00MDE0LTljNzYtMGFlOGY1N2ZjZjZhIiwiY29udGV4dExvY2tlZCI6dHJ1ZSwiaWF0IjoxNzgxMTE1MDI0LCJleHAiOjE3ODExMTU5MjR9.1Lt2y5rC5OmQNGVP6w-gLp4I_oZPOrccz-s4yZxaqLA"
+        },
+        {
+          "name": "academia_helm_last_email_4246cd3c-518a-44bb-a5e0-4109b8eca372",
+          "value": "dev@academia-hub.local"
+        },
+        {
+          "name": "refreshToken",
+          "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5ZDM2ZTJhNC04ZDRmLTQ5ZWEtYTgwNC01MGI0NmY2OTJjODAiLCJlbWFpbCI6ImRldkBhY2FkZW1pYS1odWIubG9jYWwiLCJyb2xlIjoiUExBVEZPUk1fT1dORVIiLCJ0ZW5hbnRJZCI6IjQyNDZjZDNjLTUxOGEtNDRiYi1hNWUwLTQxMDliOGVjYTM3MiIsImFjYWRlbWljWWVhcklkIjoiMTkwYzczODctZDA2OS00MDE0LTljNzYtMGFlOGY1N2ZjZjZhIiwiY29udGV4dExvY2tlZCI6dHJ1ZSwiaWF0IjoxNzgxMTE1MDI0LCJleHAiOjE3ODE3MTk4MjR9.y2pFFKnrZrtuKjosdZ3CtaDbzQq9NyG6dGnKU6DNpek"
+        },
+        {
+          "name": "session",
+          "value": "{\"tenantId\":\"4246cd3c-518a-44bb-a5e0-4109b8eca372\",\"userId\":\"9d36e2a4-8d4f-49ea-a804-50b46f692c80\",\"user\":{\"id\":\"9d36e2a4-8d4f-49ea-a804-50b46f692c80\",\"email\":\"dev@academia-hub.local\",\"firstName\":\"Platform\",\"lastName\":\"Owner\",\"role\":\"PLATFORM_OWNER\",\"isPlatformOwner\":true},\"tenant\":{\"id\":\"4246cd3c-518a-44bb-a5e0-4109b8eca372\",\"name\":\"Academia Helm\",\"slug\":\"default-tenant\",\"subdomain\":\"app\"},\"serverSessionId\":\"63970261-7d8e-41fb-a46d-d8e30e0b4a4d\",\"portalSessionId\":null,\"expiresAt\":\"2026-06-11T18:10:24.394Z\",\"syncedAt\":\"2026-06-10T18:10:24.499Z\"}"
+        },
+        {
+          "name": "serverSessionId",
+          "value": "63970261-7d8e-41fb-a46d-d8e30e0b4a4d"
+        }
+      ],
+      "sessionStorage": []
+    }
+  ]
+}

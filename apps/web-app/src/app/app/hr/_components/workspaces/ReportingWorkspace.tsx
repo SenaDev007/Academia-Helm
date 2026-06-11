@@ -16,7 +16,10 @@ export function ReportingWorkspace() {
 
   useEffect(() => {
     async function loadAnalytics() {
-      if (!tenant?.id || !academicYear?.id) return;
+      if (!tenant?.id || !academicYear?.id) {
+        setLoading(false);
+        return;
+      }
       try {
         setLoading(true);
         const res = await hrFetch<any>(hrUrl('overview/analytics', { tenantId: tenant.id, academicYearId: academicYear.id }));

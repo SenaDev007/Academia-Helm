@@ -13,6 +13,7 @@ import dynamic from 'next/dynamic';
 import { getServerSession } from '@/lib/auth/session';
 import { ModalProvider } from '@/components/modules/blueprint/modals/ModalProvider';
 import AppLayoutClient from './layout-client';
+import { SessionRecovery } from './session-recovery';
 import type { User, Tenant } from '@/types';
 
 // ✅ Lazy load du layout lourd pour améliorer le temps de chargement initial
@@ -20,6 +21,14 @@ const PilotageLayout = dynamic(
   () => import('@/components/pilotage/PilotageLayout'),
   {
     ssr: true, // ✅ Garder SSR pour le SEO
+    loading: () => (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center px-4">
+          <div className="w-12 h-12 border-4 border-[#0b2f73] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-sm text-slate-600">Chargement de l&apos;interface...</p>
+        </div>
+      </div>
+    ),
   }
 );
 
@@ -31,7 +40,10 @@ export default async function AppLayout({
   const session = await getServerSession();
 
   if (!session?.user) {
-    redirect('/login');
+    // Instead of immediate redirect (which causes blank page on mobile when
+    // cookies haven't propagated yet), render a client-side recovery component
+    // that attempts to re-establish the session from localStorage before redirecting.
+    return <SessionRecovery />;
   }
 
   const user = session.user as User;

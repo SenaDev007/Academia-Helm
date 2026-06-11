@@ -25,6 +25,7 @@ import {
   Param,
   Query,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { SchedulesPrismaService } from './schedules-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -54,8 +55,10 @@ export class SchedulesPrismaController {
     @Query('staffId') staffId?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.schedulesService.findAll(tenant.id, {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.schedulesService.findAll(tid, {
       academicYearId,
       staffId,
       startDate,
@@ -68,7 +71,15 @@ export class SchedulesPrismaController {
    * Create a new staff schedule.
    */
   @Post()
-  async create(@GetTenant() tenant: any, @Body() data: CreateScheduleDto) {
+  async create(
+    @GetTenant() tenant: any,
+    @Body() data: CreateScheduleDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
     // Derive dayOfWeek from date if not provided
     let dayOfWeek = data.dayOfWeek;
     if (!dayOfWeek && data.date) {
@@ -80,8 +91,8 @@ export class SchedulesPrismaController {
       ...data,
       dayOfWeek,
       shiftType,
-      tenantId: tenant.id,
-    }, tenant.id);
+      tenantId: tid,
+    }, tid);
   }
 
   /**
@@ -93,8 +104,13 @@ export class SchedulesPrismaController {
     @GetTenant() tenant: any,
     @Param('id') id: string,
     @Body() data: UpdateScheduleDto,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.schedulesService.update(id, data, tenant.id);
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.schedulesService.update(id, data, tid);
   }
 
   /**
@@ -102,7 +118,15 @@ export class SchedulesPrismaController {
    * Delete a staff schedule.
    */
   @Delete(':id')
-  async delete(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.schedulesService.delete(id, tenant.id);
+  async delete(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.schedulesService.delete(id, tid);
   }
 }

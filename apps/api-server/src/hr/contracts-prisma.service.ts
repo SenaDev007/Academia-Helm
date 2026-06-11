@@ -23,6 +23,7 @@ export class ContractsPrismaService {
   async createContract(data: {
     tenantId: string;
     academicYearId?: string;
+    schoolLevelId?: string;
     staffId: string;
     contractType: string;
     startDate: Date;
@@ -32,15 +33,16 @@ export class ContractsPrismaService {
     status?: string;
     terms?: any;
     templateId?: string;
+    schoolLevelId?: string;
   }) {
     return this.prisma.$transaction(async (tx) => {
       // Désactiver l'éventuel contrat actif existant
       await tx.contract.updateMany({
-        where: { staffId: data.staffId, tenantId: data.tenantId, status: 'ACTIVE' },
+        where: { staffId: data.staffId, tenantId: data.tenantId, status: { in: ['ACTIVE', 'PENDING'] } },
         data: { status: 'EXPIRED' },
       });
 
-      // Créer le nouveau contrat
+      // Créer le nouveau contrat — PENDING par défaut tant que l'employé n'a pas signé
       return tx.contract.create({
         data: {
           ...prismaCreateDefaults(),
@@ -51,7 +53,7 @@ export class ContractsPrismaService {
           endDate: data.endDate ? new Date(data.endDate) : null,
           baseSalary: new Prisma.Decimal(data.baseSalary ?? 0),
           paymentMode: data.paymentMode ?? 'BANK',
-          status: data.status ?? 'ACTIVE',
+          status: data.status ?? 'PENDING',
           terms: data.terms ?? null,
           templateId: data.templateId ?? null,
           academicYearId: data.academicYearId ?? null,
@@ -216,24 +218,86 @@ export class ContractsPrismaService {
   }
 
   /**
-   * Termine un contrat
+   * Termine un contrat — Résiliation professionnelle.
+   *
+   * Si updateStaffStatus est true (ou non spécifié et c'est le seul contrat actif du staff),
+   * le statut du staff est également mis à jour en INACTIVE avec les détails de la résiliation.
    */
   async terminateContract(
     id: string,
     tenantId: string,
     terminationReason?: string,
+    options?: {
+      terminatedAt?: Date;
+      terminationType?: string;
+      updateStaffStatus?: boolean;
+    },
   ) {
     const contract = await this.findContractById(id, tenantId);
+    const terminatedAt = options?.terminatedAt || new Date();
 
-    return this.prisma.contract.update({
-      where: { id },
-      data: {
-        ...prismaUpdateDefaults(),
-        status: 'TERMINATED',
-        terminatedAt: new Date(),
-        terminationReason: terminationReason ?? null,
-      },
+    // Determine if we should update staff status
+    const shouldUpdateStaff = options?.updateStaffStatus !== false; // default true
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 1. Terminate the contract
+      const terminated = await tx.contract.update({
+        where: { id },
+        data: {
+          ...prismaUpdateDefaults(),
+          status: 'TERMINATED',
+          terminatedAt,
+          terminationReason: terminationReason || null,
+        },
+      });
+
+      // 2. Check if this was the only active contract for the staff
+      const remainingActiveContracts = await tx.contract.count({
+        where: {
+          staffId: contract.staffId,
+          tenantId,
+          status: { in: ['ACTIVE', 'PENDING'] },
+          id: { not: id },
+        },
+      });
+
+      // 3. Update staff status if no more active contracts and updateStaffStatus is true
+      if (shouldUpdateStaff && remainingActiveContracts === 0) {
+        const staffUpdateData: any = {
+          ...prismaUpdateDefaults(),
+          status: 'INACTIVE',
+          terminatedAt,
+          terminationType: options?.terminationType || 'END_OF_CONTRACT',
+          lastWorkingDate: terminatedAt,
+        };
+
+        // Build termination details
+        const terminationDetails = {
+          terminationType: options?.terminationType || 'END_OF_CONTRACT',
+          terminationLabel: 'Résiliation de contrat',
+          effectiveDate: terminatedAt.toISOString(),
+          lastWorkingDate: terminatedAt.toISOString(),
+          reason: terminationReason || null,
+          contractTerminated: {
+            id: contract.id,
+            contractType: contract.contractType,
+            startDate: contract.startDate,
+            baseSalary: Number(contract.baseSalary),
+          },
+          automaticStaffUpdate: true,
+        };
+        staffUpdateData.terminationDetails = terminationDetails;
+
+        await tx.staff.update({
+          where: { id: contract.staffId },
+          data: staffUpdateData,
+        });
+      }
+
+      return terminated;
     });
+
+    return result;
   }
 
   /**
@@ -251,14 +315,14 @@ export class ContractsPrismaService {
   }
 
   /**
-   * Récupère le contrat actif d'un membre du personnel
+   * Récupère le contrat actif ou en attente d'un membre du personnel
    */
   async findActiveContract(staffId: string, tenantId: string) {
     const contract = await this.prisma.contract.findFirst({
       where: {
         staffId,
         tenantId,
-        status: 'ACTIVE',
+        status: { in: ['ACTIVE', 'PENDING'] },
       },
       include: {
         staff: {

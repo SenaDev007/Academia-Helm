@@ -10,6 +10,7 @@
 import {
   Controller, Get, Post, Put, Delete, Body, Param, Query,
   UseGuards, Res, StreamableFile, HttpCode, HttpStatus, Req,
+  BadRequestException,
 } from '@nestjs/common';
 import { ContractsPrismaService } from './contracts-prisma.service';
 import { ContractPdfService } from './services/contract-pdf.service';
@@ -17,7 +18,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 import type { Response, Request } from 'express';
-import { CreateContractDto, UpdateContractDto, CreateAmendmentDto, SignContractDto, CreateContractTemplateDto, UpdateContractTemplateDto } from './dto';
+import { CreateContractDto, UpdateContractDto, CreateAmendmentDto, SignContractDto, CreateContractTemplateDto, UpdateContractTemplateDto, TerminateContractDto } from './dto';
 
 @Controller('hr/contracts')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -30,10 +31,18 @@ export class ContractsPrismaController {
   // ─── Contracts CRUD ─────────────────────────────────────────────────────────
 
   @Post()
-  async createContract(@GetTenant() tenant: any, @Body() data: CreateContractDto) {
+  async createContract(
+    @GetTenant() tenant: any,
+    @Body() data: CreateContractDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
     return this.contractsService.createContract({
       ...data,
-      tenantId: tenant.id,
+      tenantId: tid,
     });
   }
 
@@ -43,22 +52,33 @@ export class ContractsPrismaController {
     @Query('staffId') staffId?: string,
     @Query('type') type?: string,
     @Query('status') status?: string,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.contractsService.findAllContracts(tenant.id, { staffId, type, status });
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.contractsService.findAllContracts(tid, { staffId, type, status });
   }
 
   // ─── Staff active contract (MUST be before @Get(':id')) ────────────────────
 
   @Get('staff/:staffId/active')
-  async findActiveContract(@GetTenant() tenant: any, @Param('staffId') staffId: string) {
-    return this.contractsService.findActiveContract(staffId, tenant.id);
+  async findActiveContract(
+    @GetTenant() tenant: any,
+    @Param('staffId') staffId: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.contractsService.findActiveContract(staffId, tid);
   }
 
   // ─── Contract Templates (MUST be before @Get(':id')) ───────────────────────
 
   @Get('templates/list')
-  async listTemplates(@GetTenant() tenant: any) {
-    return this.contractPdfService.listTemplates(tenant.id);
+  async listTemplates(
+    @GetTenant() tenant: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.contractPdfService.listTemplates(tid);
   }
 
   @Get('templates/default/:type')
@@ -67,8 +87,16 @@ export class ContractsPrismaController {
   }
 
   @Post('templates')
-  async createTemplate(@GetTenant() tenant: any, @Body() data: CreateContractTemplateDto) {
-    return this.contractPdfService.createTemplate(tenant.id, data);
+  async createTemplate(
+    @GetTenant() tenant: any,
+    @Body() data: CreateContractTemplateDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.contractPdfService.createTemplate(tid, data);
   }
 
   @Put('templates/:id')
@@ -76,36 +104,94 @@ export class ContractsPrismaController {
     @GetTenant() tenant: any,
     @Param('id') id: string,
     @Body() data: UpdateContractTemplateDto,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.contractPdfService.updateTemplate(id, tenant.id, data);
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.contractPdfService.updateTemplate(id, tid, data);
   }
 
   @Delete('templates/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteTemplate(@GetTenant() tenant: any, @Param('id') id: string) {
-    await this.contractPdfService.deleteTemplate(id, tenant.id);
+  async deleteTemplate(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    await this.contractPdfService.deleteTemplate(id, tid);
   }
 
   // ─── Parameterized contract routes (AFTER all static routes) ───────────────
 
   @Get(':id')
-  async findContractById(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.contractsService.findContractById(id, tenant.id);
+  async findContractById(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    return this.contractsService.findContractById(id, tid);
   }
 
   @Put(':id')
-  async updateContract(@GetTenant() tenant: any, @Param('id') id: string, @Body() data: UpdateContractDto) {
-    return this.contractsService.updateContract(id, tenant.id, data);
+  async updateContract(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Body() data: UpdateContractDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.contractsService.updateContract(id, tid, data);
   }
 
+  /**
+   * PUT /hr/contracts/:id/terminate
+   * Résilie un contrat de manière professionnelle.
+   * Si c'est le dernier contrat actif du staff, son statut est également mis à jour.
+   */
   @Put(':id/terminate')
-  async terminateContract(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.contractsService.terminateContract(id, tenant.id);
+  async terminateContract(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Body() data?: TerminateContractDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.contractsService.terminateContract(
+      id,
+      tid,
+      data?.reason,
+      {
+        terminatedAt: data?.terminatedAt ? new Date(data.terminatedAt) : undefined,
+        terminationType: data?.terminationType,
+        updateStaffStatus: data?.updateStaffStatus,
+      },
+    );
   }
 
   @Delete(':id')
-  async deleteContract(@GetTenant() tenant: any, @Param('id') id: string) {
-    return this.contractsService.deleteContract(id, tenant.id);
+  async deleteContract(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.contractsService.deleteContract(id, tid);
   }
 
   @Post(':id/amendments')
@@ -113,10 +199,15 @@ export class ContractsPrismaController {
     @GetTenant() tenant: any,
     @Param('id') contractId: string,
     @Body() data: CreateAmendmentDto,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
     return this.contractsService.createAmendment({
       ...data,
-      tenantId: tenant.id,
+      tenantId: tid,
       contractId,
     });
   }
@@ -124,12 +215,77 @@ export class ContractsPrismaController {
   // ─── PDF Generation ──────────────────────────────────────────────────────────
 
   /**
+   * GET /api/hr/contracts/:id/preview
+   * Retourne le HTML du contrat pour prévisualisation (sans générer de PDF).
+   * Permet de visualiser et vérifier le contenu avant de signer.
+   */
+  @Get(':id/preview')
+  async previewContract(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    const { html, contract, templateVars } = await this.contractPdfService.generateContractHtml(id, tid);
+    // Retourner les variables et le HTML pour la prévisualisation côté frontend
+    // On envoie aussi les infos du contrat pour permettre l'édition
+    return {
+      html,
+      contractReference: templateVars.contractReference,
+      staffMatricule: templateVars.staffMatricule,
+      schoolName: templateVars.schoolName,
+      templateVars: {
+        contractReference: templateVars.contractReference,
+        staffMatricule: templateVars.staffMatricule,
+        staffFullName: templateVars.staffFullName,
+        schoolName: templateVars.schoolName,
+        contractTypeLabel: templateVars.contractTypeLabel,
+        baseSalary: templateVars.baseSalary,
+        currency: templateVars.currency,
+        startDate: templateVars.startDate,
+        endDate: templateVars.endDate,
+        paymentMode: templateVars.paymentMode,
+      },
+    };
+  }
+
+  /**
+   * PUT /api/hr/contracts/:id/articles
+   * Sauvegarde le contenu personnalisé des articles d'un contrat non signé.
+   * Permet l'édition complète du document avant signature.
+   */
+  @Put(':id/articles')
+  async saveContractArticles(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Body() body: { articles: Array<{ title: string; content: string }> },
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.contractPdfService.saveContractArticles(id, tid, body.articles);
+  }
+
+  /**
    * POST /api/hr/contracts/:id/generate-pdf
    * Génère (ou régénère) le PDF du contrat. Retourne { pdfUrl }.
    */
   @Post(':id/generate-pdf')
-  async generatePdf(@GetTenant() tenant: any, @Param('id') id: string) {
-    const { pdfUrl } = await this.contractPdfService.generateContractPdf(id, tenant.id);
+  async generatePdf(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    const { pdfUrl } = await this.contractPdfService.generateContractPdf(id, tid);
     return { pdfUrl, message: 'PDF généré avec succès.' };
   }
 
@@ -142,13 +298,15 @@ export class ContractsPrismaController {
     @GetTenant() tenant: any,
     @Param('id') id: string,
     @Res({ passthrough: true }) res: Response,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
+    const tid = tenant?.id ?? tenantIdFallback;
     // Try to serve existing PDF first (no re-generation)
-    let result = await this.contractPdfService.getExistingContractPdf(id, tenant.id);
+    let result = await this.contractPdfService.getExistingContractPdf(id, tid);
 
     // If no PDF exists yet, generate one
     if (!result) {
-      const generated = await this.contractPdfService.generateContractPdf(id, tenant.id);
+      const generated = await this.contractPdfService.generateContractPdf(id, tid);
       result = { pdfBuffer: generated.pdfBuffer, contract: generated.contract };
     }
 
@@ -178,8 +336,13 @@ export class ContractsPrismaController {
     @Param('id') id: string,
     @Body() body: SignContractDto,
     @Req() req: Request,
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.contractPdfService.signContract(id, tenant.id, {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.contractPdfService.signContract(id, tid, {
       ...body,
       ipAddress: req.ip || req.socket?.remoteAddress,
     });

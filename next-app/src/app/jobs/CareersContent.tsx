@@ -31,7 +31,6 @@ import {
   Phone
 } from 'lucide-react';
 import PremiumHeader from '@/components/layout/PremiumHeader';
-import { apiFetch } from '@/lib/api/client';
 
 
 const PRIMARY = '#1A2BA6';
@@ -281,9 +280,15 @@ export function CareersContent({
 
     try {
       setLoading(true);
-      const fetched = await apiFetch<Job[]>(`/hr/recruitment/jobs?tenantId=${school.tenantId || school.id}`);
-      if (fetched) {
-        setJobs(fetched.filter((j: any) => j.status === 'PUBLIÉE'));
+      // Use BFF proxy (not apiFetch) for public job listings.
+      // apiFetch sends X-Tenant-ID from the auth cookie, which overrides
+      // the query param tenantId in NestJS — causing wrong-tenant jobs.
+      const res = await fetch(`/api/hr/recruitment/jobs?tenantId=${school.tenantId || school.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setJobs(Array.isArray(data) ? data.filter((j: any) => j.status === 'PUBLIÉE') : []);
+      } else {
+        console.error('Failed to load jobs:', res.status, res.statusText);
       }
     } catch (err) {
       console.error('Failed to load jobs:', err);

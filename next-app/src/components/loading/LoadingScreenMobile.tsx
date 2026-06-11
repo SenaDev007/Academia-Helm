@@ -14,6 +14,7 @@ import { useEffect, useState, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import type { LoadingMessage } from '@/lib/loading/loading-messages';
 import { getMessageText } from '@/lib/messages/system-messages';
+import { LoadingScreen } from './LoadingScreen';
 
 /** Durée minimale par défaut (ms) */
 const DEFAULT_MIN_DURATION_MS = 5000;
@@ -184,6 +185,10 @@ export function useIsMobile(): boolean {
 
 /**
  * Composant de chargement adaptatif (desktop/mobile)
+ * 
+ * Utilise LoadingScreenMobile sur mobile (CSS-only, léger)
+ * et LoadingScreen sur desktop (framer-motion, animations riches).
+ * Gère la conversion de variant entre mobile et desktop.
  */
 export function AdaptiveLoadingScreen(props: LoadingScreenMobileProps) {
   const isMobile = useIsMobile();
@@ -192,7 +197,16 @@ export function AdaptiveLoadingScreen(props: LoadingScreenMobileProps) {
     return <LoadingScreenMobile {...props} />;
   }
 
-  // Importer le composant desktop
-  const { LoadingScreen } = require('./LoadingScreen');
-  return <LoadingScreen {...props} />;
+  // Conversion de variant mobile → desktop
+  const desktopVariant = props.variant === 'pwa' ? 'orion' : 'default';
+
+  return (
+    <LoadingScreen
+      message={props.message}
+      progress={props.progress}
+      showProgress={props.showProgress}
+      variant={desktopVariant}
+      className={props.className}
+    />
+  );
 }

@@ -82,7 +82,7 @@ export function LoadingScreen({
   return (
     <div
       className={cn(
-        'fixed inset-0 z-50 flex items-center justify-center overflow-hidden',
+        'fixed inset-0 z-50 flex items-center justify-center overflow-hidden safe-area-inset-top safe-area-inset-bottom',
         variants[variant],
         className
       )}
@@ -200,7 +200,7 @@ export function MinimalLoadingScreen({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm safe-area-inset-top safe-area-inset-bottom">
       <div className="text-center">
         <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
         {message && <p className="text-gray-600">{message}</p>}

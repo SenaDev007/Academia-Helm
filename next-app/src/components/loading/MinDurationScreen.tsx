@@ -6,12 +6,16 @@
  * afin d'offrir une expérience visuelle fluide et professionnelle.
  *
  * DURÉE PAR DÉFAUT : 5 secondes
+ *
+ * MOBILE : Sur mobile, utilise LoadingScreenMobile (CSS-only, léger)
+ * au lieu de LoadingScreen (framer-motion, ~30KB) pour de meilleures performances.
  */
 
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
 import { LoadingScreen } from './LoadingScreen';
+import { LoadingScreenMobile } from './LoadingScreenMobile';
 
 /** Durée minimale par défaut (ms) */
 const DEFAULT_MIN_DURATION_MS = 5000;
@@ -32,11 +36,31 @@ export interface MinDurationScreenProps {
 }
 
 /**
+ * Hook léger pour détecter mobile côté client.
+ * Retourne false pendant SSR pour éviter les mismatches.
+ */
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  return isMobile;
+}
+
+/**
  * Composant qui garantit une durée minimale d'affichage du loading screen.
  *
  * Le contenu n'est révélé que lorsque DEUX conditions sont remplies :
  * 1. `ready` est true (les données sont chargées)
  * 2. La durée minimale s'est écoulée
+ *
+ * Sur mobile, utilise LoadingScreenMobile (CSS-only) au lieu de LoadingScreen
+ * (framer-motion) pour de meilleures performances sur appareils bas de gamme.
  *
  * @example
  * ```tsx
@@ -56,6 +80,7 @@ export function MinDurationScreen({
   const [minDurationElapsed, setMinDurationElapsed] = useState(false);
   const [progress, setProgress] = useState(0);
   const startTimeRef = useRef(Date.now());
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     startTimeRef.current = Date.now();
@@ -97,10 +122,27 @@ export function MinDurationScreen({
     return <>{children}</>;
   }
 
+  const effectiveProgress = ready ? Math.max(progress, 90) : progress;
+
+  // Sur mobile : utiliser LoadingScreenMobile (CSS-only, pas de framer-motion)
+  // pour de meilleures performances sur appareils bas de gamme
+  if (isMobile) {
+    return (
+      <LoadingScreenMobile
+        message={message || { title: 'Chargement…' }}
+        progress={effectiveProgress}
+        showProgress={true}
+        variant={variant === 'orion' ? 'pwa' : 'default'}
+        minDuration={0} // La durée est déjà gérée par ce composant
+      />
+    );
+  }
+
+  // Sur desktop : utiliser LoadingScreen (framer-motion, animations riches)
   return (
     <LoadingScreen
       message={message || { title: 'Chargement…' }}
-      progress={ready ? Math.max(progress, 90) : progress}
+      progress={effectiveProgress}
       showProgress={true}
       variant={variant}
     />

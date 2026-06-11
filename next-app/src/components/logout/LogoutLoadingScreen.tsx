@@ -68,7 +68,7 @@ export function LogoutLoadingScreen({ progress }: LogoutLoadingScreenProps) {
     : displayProgress;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-white">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-white safe-area-inset-top safe-area-inset-bottom">
       <div className="w-full max-w-md px-6 text-center">
         {/* Icône */}
         <div className="mb-8 flex justify-center">

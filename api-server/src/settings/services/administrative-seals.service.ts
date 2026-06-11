@@ -1,4 +1,4 @@
-import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
+import { prismaCreateDefaults, prismaCreateIdOnly, prismaCreateNoUpdatedAt, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 /**
  * ============================================================================
  * ADMINISTRATIVE SEALS SERVICE
@@ -289,7 +289,7 @@ export class AdministrativeSealsService {
     // Créer la version
     const version = await this.prisma.administrativeSealVersion.create({
       data: {
-        ...prismaCreateDefaults(),
+        ...prismaCreateNoUpdatedAt(),
         sealId,
         format: data.format,
         primaryColor: data.primaryColor,
@@ -403,7 +403,7 @@ export class AdministrativeSealsService {
     // Enregistrer l'utilisation
     const usage = await this.prisma.administrativeSealUsage.create({
       data: {
-        ...prismaCreateDefaults(),
+        ...prismaCreateIdOnly(),
         sealVersionId: data.sealVersionId,
         documentType: data.documentType,
         documentId: data.documentId,

@@ -435,6 +435,7 @@ export class IdentityProfileService {
     await this.prisma.schoolSettings.upsert({
       where: { tenantId },
       create: {
+        ...prismaCreateDefaults(),
         tenantId,
         schoolName: profile.schoolName,
         abbreviation: profile.schoolAcronym,

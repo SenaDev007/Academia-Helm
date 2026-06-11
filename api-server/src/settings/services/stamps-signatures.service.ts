@@ -1,4 +1,4 @@
-import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
+import { prismaCreateDefaults, prismaCreateNoUpdatedAt, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 /**
  * ============================================================================
  * CACHETS & SIGNATURES GÉNÉRÉS — PAR TENANT, NIVEAU SCOLAIRE ET RÔLE
@@ -380,7 +380,7 @@ export class StampsSignaturesService {
       } else {
         row = await this.prisma.tenantSignature.create({
           data: {
-        ...prismaCreateDefaults(),
+        ...prismaCreateNoUpdatedAt(),
             tenantId,
             educationLevelId: null,
             role,

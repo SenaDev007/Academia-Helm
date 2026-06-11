@@ -5,7 +5,7 @@
  * avant de révéler le contenu. Utilisé pour toutes les transitions de chargement
  * afin d'offrir une expérience visuelle fluide et professionnelle.
  *
- * DURÉE PAR DÉFAUT : 5 secondes
+ * DURÉE PAR DÉFAUT : 15 secondes
  *
  * MOBILE : Sur mobile, utilise LoadingScreenMobile (CSS-only, léger)
  * au lieu de LoadingScreen (framer-motion, ~30KB) pour de meilleures performances.
@@ -18,7 +18,7 @@ import { LoadingScreen } from './LoadingScreen';
 import { LoadingScreenMobile } from './LoadingScreenMobile';
 
 /** Durée minimale par défaut (ms) */
-const DEFAULT_MIN_DURATION_MS = 5000;
+const DEFAULT_MIN_DURATION_MS = 15000;
 
 export interface MinDurationScreenProps {
   /** Si true, le contenu est prêt à être affiché */

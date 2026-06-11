@@ -159,7 +159,7 @@ export function PostLoginFlowWrapper({
   };
 
   // Si le flow a déjà été complété dans cette session, afficher directement le contenu
-  // mais en garantissant un minimum de 5 secondes de loading pour la première visite
+  // mais en garantissant un minimum de 15 secondes de loading pour la première visite
   if (flowResult) {
     return (
       <MinDurationScreen ready={true}>

@@ -1,15 +1,16 @@
 /**
- * Loading Component - Root Level
+ * Loading Component - /jobs Route
  *
- * Affiché pendant le chargement initial des pages racine.
+ * Affiché pendant le chargement de la page /jobs.
  * Durée minimale de 15 secondes pour une expérience visuelle professionnelle.
+ * Adaptatif desktop/mobile.
  */
 
 'use client';
 
 import { MinDurationScreen } from '@/components/loading/MinDurationScreen';
 
-export default function Loading() {
+export default function JobsLoading() {
   return (
     <MinDurationScreen ready={false} />
   );

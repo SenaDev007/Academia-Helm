@@ -115,6 +115,7 @@ export function CareersContent({
   // When no pre-fetched data is provided, start in loading state so the skeleton
   // is visible immediately instead of a flash of empty grid.
   const [loading, setLoading] = useState(!initialSchools || initialSchools.length === 0);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   
   const router = useRouter();
@@ -238,6 +239,7 @@ export function CareersContent({
     async function loadSchools() {
       try {
         setLoading(true);
+        setLoadError(null);
         // Use the optimized endpoint that returns schools with active job counts
         // and includes logo, contact info, etc.
         const res = await fetch('/api/public/schools/with-jobs');
@@ -245,17 +247,27 @@ export function CareersContent({
           const data = await res.json();
           if (Array.isArray(data)) {
             setSchools(data);
-          }
-        } else {
-          // Fallback to the basic list endpoint
-          const fallbackRes = await fetch('/api/public/schools/list');
-          const fallbackData = await fallbackRes.json();
-          if (Array.isArray(fallbackData)) {
-            setSchools(fallbackData);
+            return; // Success — no need for fallback
           }
         }
+        // Fallback to the basic list endpoint
+        try {
+          const fallbackRes = await fetch('/api/public/schools/list');
+          if (fallbackRes.ok) {
+            const fallbackData = await fallbackRes.json();
+            if (Array.isArray(fallbackData)) {
+              setSchools(fallbackData);
+              return;
+            }
+          }
+        } catch {
+          // Fallback also failed
+        }
+        // Both endpoints failed
+        setLoadError('Impossible de charger les établissements. Vérifiez votre connexion et réessayez.');
       } catch (err) {
         console.error('Failed to load schools:', err);
+        setLoadError('Erreur réseau. Vérifiez votre connexion et réessayez.');
       } finally {
         setLoading(false);
       }
@@ -492,7 +504,41 @@ export function CareersContent({
           </div>
         )}
 
-        {!loading && (
+        {!loading && loadError && (
+          <div className="text-center py-16 max-w-md mx-auto">
+            <div className="h-16 w-16 rounded-full bg-red-50 border border-red-100 flex items-center justify-center mx-auto mb-4">
+              <XCircle className="h-8 w-8 text-red-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">Erreur de chargement</h3>
+            <p className="text-sm text-slate-500 mb-6">{loadError}</p>
+            <button
+              onClick={() => {
+                setLoading(true);
+                setLoadError(null);
+                fetch('/api/public/schools/with-jobs')
+                  .then(res => res.ok ? res.json() : Promise.reject('API error'))
+                  .then(data => { if (Array.isArray(data)) setSchools(data); })
+                  .catch(() => setLoadError('Impossible de charger les établissements. Vérifiez votre connexion et réessayez.'))
+                  .finally(() => setLoading(false));
+              }}
+              className="px-6 py-2.5 bg-[#1A2BA6] text-white text-sm font-semibold rounded-xl hover:bg-[#1521a0] transition-colors"
+            >
+              Réessayer
+            </button>
+          </div>
+        )}
+
+        {!loading && !loadError && !selectedSchool && schools.length === 0 && (
+          <div className="text-center py-16 max-w-md mx-auto">
+            <div className="h-16 w-16 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center mx-auto mb-4">
+              <Building2 className="h-8 w-8 text-slate-300" />
+            </div>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">Aucun établissement trouvé</h3>
+            <p className="text-sm text-slate-500">Aucun établissement ne recrute actuellement. Revenez bientôt !</p>
+          </div>
+        )}
+
+        {!loading && !loadError && (
           <AnimatePresence mode="wait">
             {/* STEP 1: Select Institution */}
             {!selectedSchool && (

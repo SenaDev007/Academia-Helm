@@ -2,7 +2,7 @@
  * Loading Component - Public Pages
  *
  * Affiché pendant le chargement des pages publiques.
- * Durée minimale de 5 secondes pour une expérience visuelle professionnelle.
+ * Durée minimale de 15 secondes pour une expérience visuelle professionnelle.
  */
 
 'use client';

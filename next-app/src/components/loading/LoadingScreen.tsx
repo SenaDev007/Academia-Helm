@@ -164,17 +164,17 @@ export function LoadingScreen({
 /**
  * LoadingScreen minimal pour les transitions rapides
  * 
- * Intègre une durée minimale d'affichage de 5 secondes par défaut.
+ * Intègre une durée minimale d'affichage de 15 secondes par défaut.
  * Le contenu est rendu via la prop `children` après la durée minimale.
  * Si pas de children, affiche simplement le spinner pendant minDuration.
  */
 export function MinimalLoadingScreen({ 
   message,
-  minDuration = 5000,
+  minDuration = 15000,
   children,
 }: { 
   message?: string;
-  /** Durée minimale d'affichage en ms (défaut: 5000). Mettre 0 pour désactiver. */
+  /** Durée minimale d'affichage en ms (défaut: 15000). Mettre 0 pour désactiver. */
   minDuration?: number;
   /** Contenu à afficher après la durée minimale */
   children?: React.ReactNode;

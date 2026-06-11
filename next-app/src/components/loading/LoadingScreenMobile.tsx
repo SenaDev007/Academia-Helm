@@ -5,7 +5,7 @@
  * - Aucun écran blanc
  * - Loaders adaptés à l'écran réduit
  * - Skeleton loaders priorisés
- * - Durée minimale d'affichage : 5 secondes (configurable)
+ * - Durée minimale d'affichage : 15 secondes (configurable)
  */
 
 'use client';
@@ -17,7 +17,7 @@ import { getMessageText } from '@/lib/messages/system-messages';
 import { LoadingScreen } from './LoadingScreen';
 
 /** Durée minimale par défaut (ms) */
-const DEFAULT_MIN_DURATION_MS = 5000;
+const DEFAULT_MIN_DURATION_MS = 15000;
 
 export interface LoadingScreenMobileProps {
   message?: LoadingMessage;
@@ -32,7 +32,7 @@ export interface LoadingScreenMobileProps {
 /**
  * Écran de chargement optimisé pour mobile
  * 
- * Garantit une durée minimale d'affichage de 5 secondes par défaut.
+ * Garantit une durée minimale d'affichage de 15 secondes par défaut.
  * La barre de progression anime de 0% à 85% pendant la durée minimale,
  * puis monte à 100% quand le contenu est prêt.
  */
@@ -58,7 +58,7 @@ export function LoadingScreenMobile({
     }
   }, []);
 
-  // Timer pour la durée minimale de 5 secondes
+  // Timer pour la durée minimale de 15 secondes
   useEffect(() => {
     if (minDuration <= 0) {
       setMinElapsed(true);

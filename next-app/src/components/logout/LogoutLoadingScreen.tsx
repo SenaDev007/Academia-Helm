@@ -3,7 +3,7 @@
  * 
  * Écran de chargement pendant le flow de logout
  * Affiche les messages de progression
- * Durée minimale d'affichage : 5 secondes
+ * Durée minimale d'affichage : 15 secondes
  */
 
 'use client';
@@ -13,7 +13,7 @@ import { LogOut } from 'lucide-react';
 import type { LogoutFlowProgress } from '@/lib/logout/secure-logout-flow.service';
 
 /** Durée minimale d'affichage du loading de logout (ms) */
-const MIN_LOGOUT_LOADING_MS = 5000;
+const MIN_LOGOUT_LOADING_MS = 15000;
 
 export interface LogoutLoadingScreenProps {
   progress: LogoutFlowProgress | null;
@@ -22,7 +22,7 @@ export interface LogoutLoadingScreenProps {
 /**
  * Écran de chargement pour le logout
  * 
- * Garantit un affichage minimum de 5 secondes pour une expérience fluide.
+ * Garantit un affichage minimum de 15 secondes pour une expérience fluide.
  * La barre de progression anime de 0% à 85% pendant la durée minimale,
  * puis monte à 100% quand le flow est terminé.
  */
@@ -40,7 +40,7 @@ export function LogoutLoadingScreen({ progress }: LogoutLoadingScreenProps) {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Timer pour la durée minimale de 5 secondes
+  // Timer pour la durée minimale de 15 secondes
   useEffect(() => {
     startTimeRef.current = Date.now();
 

@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import PremiumHeader from '@/components/layout/PremiumHeader';
 import { apiFetch } from '@/lib/api/client';
-import { getApiBaseUrl } from '@/lib/utils/urls';
+
 
 const PRIMARY = '#1A2BA6';
 
@@ -91,10 +91,27 @@ interface EducationItem {
   year: string;
 }
 
-export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedSchoolSlug?: string; forcedJobSlug?: string }) {
-  const [schools, setSchools] = useState<any[]>([]);
-  const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
-  const [jobs, setJobs] = useState<Job[]>([]);
+export interface CareersContentProps {
+  forcedSchoolSlug?: string;
+  forcedJobSlug?: string;
+  /** Pre-fetched schools from Server Component — skips client-side fetch */
+  initialSchools?: any[];
+  /** Pre-fetched selected school from Server Component */
+  initialSchool?: School | null;
+  /** Pre-fetched jobs for the selected school from Server Component */
+  initialJobs?: Job[];
+}
+
+export function CareersContent({
+  forcedSchoolSlug,
+  forcedJobSlug,
+  initialSchools,
+  initialSchool = null,
+  initialJobs,
+}: CareersContentProps) {
+  const [schools, setSchools] = useState<any[]>(initialSchools ?? []);
+  const [selectedSchool, setSelectedSchool] = useState<School | null>(initialSchool);
+  const [jobs, setJobs] = useState<Job[]>(initialJobs ?? []);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -212,8 +229,11 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
     return () => { cancelled = true; };
   }, [forcedJobSlug, deepLinkResolved]);
 
-  // Fetch available schools on mount (using the optimized endpoint)
+  // Fetch available schools on mount — skip if data was pre-fetched by Server Component
   useEffect(() => {
+    // If Server Component already provided schools, skip the client-side fetch entirely
+    if (initialSchools && initialSchools.length > 0) return;
+
     async function loadSchools() {
       try {
         setLoading(true);
@@ -240,7 +260,7 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
       }
     }
     loadSchools();
-  }, []);
+  }, [initialSchools]);
 
   // Fetch jobs for the selected school
   const handleSelectSchool = async (school: School) => {
@@ -278,9 +298,9 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
     }
     async function loadStats() {
       try {
-        const API_URL = getApiBaseUrl();
         const jobId = selectedJob!.id;
-        const res = await fetch(`${API_URL}/hr/recruitment/jobs/${jobId}/stats`);
+        // Route through BFF proxy to avoid CORS issues on mobile devices
+        const res = await fetch(`/api/hr/recruitment/jobs/${jobId}/stats`);
         if (res.ok) {
           const data = await res.json();
           setJobStats(data);
@@ -293,15 +313,17 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
   }, [selectedJob?.id]);
 
   // Auto-select school if query parameter matches (only if deep-link hasn't already resolved)
+  // Skip if Server Component already provided initialSchool (already selected)
   useEffect(() => {
     if (deepLinkResolved && forcedJobSlug) return; // Deep-link already set the school
+    if (initialSchool) return; // Server Component already selected the school
     if (schools.length > 0 && schoolParam && !selectedSchool) {
       const match = schools.find(s => s.slug === schoolParam);
       if (match) {
         handleSelectSchool(match);
       }
     }
-  }, [schools, schoolParam, deepLinkResolved, forcedJobSlug, selectedSchool]);
+  }, [schools, schoolParam, deepLinkResolved, forcedJobSlug, selectedSchool, initialSchool]);
 
   // Select a specific job from the jobs list by slug
   const handleSelectJobBySlug = (jobSlug: string) => {

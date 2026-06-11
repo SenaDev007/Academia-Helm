@@ -23,7 +23,7 @@ const nextConfig = {
     formats: ['image/avif', 'image/webp'],
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
-    minimumCacheTTL: 31536000, // 1 an — CDC §17.1
+    minimumCacheTTL: 86400, // 1 jour — permet de rafraîchir les logos modifiés sans attendre 1 an
     // ✅ Sécurité SVG
     dangerouslyAllowSVG: true,
     contentDispositionType: 'attachment',

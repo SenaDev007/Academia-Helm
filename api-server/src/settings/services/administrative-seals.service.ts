@@ -204,7 +204,7 @@ export class AdministrativeSealsService {
 
     const updatedSeal = await this.prisma.administrativeSeal.update({
       where: { id: sealId },
-      data,
+      data: { ...prismaUpdateDefaults(), ...data },
       include: {
         school: true,
         academicYear: true,

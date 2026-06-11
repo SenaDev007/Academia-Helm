@@ -1,4 +1,4 @@
-import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
+import { prismaCreateDefaults, prismaCreateNoUpdatedAt, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 /**
  * Bootstrap RBAC : crée automatiquement les permissions et rôles système en BDD
  * au démarrage de l'API si absents (production-ready, idempotent).
@@ -169,7 +169,7 @@ export class RolesPermissionsBootstrapService {
           await this.prisma.permission.upsert({
             where: { name },
             update: { resource, action, description: `${resource} - ${action}` },
-            create: { name, resource, action, description: `${resource} - ${action}` },
+            create: { ...prismaCreateNoUpdatedAt(), name, resource, action, description: `${resource} - ${action}` },
           });
         }
       }

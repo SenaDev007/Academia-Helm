@@ -60,6 +60,7 @@ interface Job {
   dept: string;
   loc: string;
   status: string;
+  slug?: string;
   description?: string;
   missions?: string;
   responsibilities?: string;
@@ -237,7 +238,7 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
   // Auto-select job if forcedJobSlug is provided and jobs are loaded
   useEffect(() => {
     if (jobs.length > 0 && jobParam) {
-      const match = jobs.find(j => j.ref === jobParam || j.id === jobParam);
+      const match = jobs.find(j => j.slug === jobParam || j.ref === jobParam || j.id === jobParam);
       if (match) {
         setSelectedJob(match);
       }
@@ -537,7 +538,12 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
                         jobs.map((job) => (
                           <div
                             key={job.id}
-                            onClick={() => setSelectedJob(job)}
+                            onClick={() => {
+                              setSelectedJob(job);
+                              // Mettre à jour l'URL pour le partage et la deep-link
+                              const jobSlug = job.slug || job.ref;
+                              router.push(`/jobs/${selectedSchool.slug}/${jobSlug}`, { scroll: false });
+                            }}
                             className={`cursor-pointer border p-4 rounded-xl transition-all ${
                               selectedJob?.id === job.id 
                                 ? 'bg-indigo-50/50 border-[#1A2BA6] shadow-sm' 

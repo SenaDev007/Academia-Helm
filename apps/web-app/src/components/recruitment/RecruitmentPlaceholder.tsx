@@ -19,10 +19,10 @@ export default function RecruitmentPlaceholder() {
       className="flex h-full min-h-[420px] w-full items-center justify-center rounded-2xl bg-white border border-slate-200 shadow-sm p-6"
     >
       <Image
-        src="/images/AcademiaHelm_RecruitmentPortal.jpeg"
+        src="/images/AcademiaHelm_RecruitmentPortal_Portrait.jpeg"
         alt="Academia Helm — Portail de Recrutement"
-        width={1200}
-        height={675}
+        width={675}
+        height={1200}
         priority
         className="max-h-full max-w-full rounded-xl object-contain"
       />

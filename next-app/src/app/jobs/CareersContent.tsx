@@ -113,7 +113,9 @@ export function CareersContent({
   const [selectedSchool, setSelectedSchool] = useState<School | null>(initialSchool);
   const [jobs, setJobs] = useState<Job[]>(initialJobs ?? []);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
-  const [loading, setLoading] = useState(false);
+  // When no pre-fetched data is provided, start in loading state so the skeleton
+  // is visible immediately instead of a flash of empty grid.
+  const [loading, setLoading] = useState(!initialSchools || initialSchools.length === 0);
   const [searchQuery, setSearchQuery] = useState('');
   
   const router = useRouter();

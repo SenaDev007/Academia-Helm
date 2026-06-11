@@ -611,40 +611,54 @@ export function CareersContent({
                 </div>
 
                 {!isApplying ? (
+                  jobs.length === 0 ? (
+                    /* ─── No open positions — show illustration ─── */
+                    <div className="flex flex-col items-center justify-center py-8">
+                      <div className="relative w-full max-w-lg">
+                        <Image
+                          src="/images/AcademiaHelm_NoRecruitment.jpeg"
+                          alt="Aucune offre de recrutement pour le moment"
+                          width={512}
+                          height={360}
+                          className="rounded-2xl shadow-sm w-full h-auto object-contain"
+                          priority
+                          sizes="(max-width: 768px) 100vw, 512px"
+                        />
+                      </div>
+                      <p className="mt-5 text-sm font-semibold text-slate-700">Aucune offre de recrutement pour le moment</p>
+                      <p className="mt-1 text-xs text-slate-400">Les nouvelles opportunités apparaîtront ici dès leur publication.</p>
+                    </div>
+                  ) : (
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Left: Job list */}
                     <div className="lg:col-span-1 space-y-4">
                       <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Postes ouverts</h3>
-                      {jobs.length === 0 ? (
-                        <p className="text-xs text-slate-400 italic">Aucune offre active publiée par cette école.</p>
-                      ) : (
-                        jobs.map((job) => (
-                          <div
-                            key={job.id}
-                            onClick={() => {
-                              setSelectedJob(job);
-                              if (selectedSchool?.slug && job.slug) {
-                                router.push(`/jobs/${selectedSchool.slug}/${job.slug}`, { scroll: false });
-                              }
-                            }}
-                            className={`cursor-pointer border p-4 rounded-xl transition-all ${
-                              selectedJob?.id === job.id 
-                                ? 'bg-indigo-50/50 border-[#1A2BA6] shadow-sm' 
-                                : 'bg-white border-slate-200 hover:border-slate-300'
-                            }`}
-                          >
-                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{job.ref}</span>
-                            <h4 className="font-bold text-slate-900 text-xs mt-1">{job.title}</h4>
-                            <div className="mt-3 flex items-center gap-3 text-[10px] text-slate-500">
-                              <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {job.loc}</span>
-                              <span className="flex items-center gap-1"><Briefcase className="h-3 w-3" /> {job.contractType || 'CDI'}</span>
-                              {(job._count?.applications ?? 0) > 0 && (
-                                <span className="flex items-center gap-1 text-blue-600 font-semibold"><Users className="h-3 w-3" /> {job._count?.applications ?? 0} candidat{(job._count?.applications ?? 0) > 1 ? 's' : ''}</span>
-                              )}
-                            </div>
+                      {jobs.map((job) => (
+                        <div
+                          key={job.id}
+                          onClick={() => {
+                            setSelectedJob(job);
+                            if (selectedSchool?.slug && job.slug) {
+                              router.push(`/jobs/${selectedSchool.slug}/${job.slug}`, { scroll: false });
+                            }
+                          }}
+                          className={`cursor-pointer border p-4 rounded-xl transition-all ${
+                            selectedJob?.id === job.id 
+                              ? 'bg-indigo-50/50 border-[#1A2BA6] shadow-sm' 
+                              : 'bg-white border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{job.ref}</span>
+                          <h4 className="font-bold text-slate-900 text-xs mt-1">{job.title}</h4>
+                          <div className="mt-3 flex items-center gap-3 text-[10px] text-slate-500">
+                            <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {job.loc}</span>
+                            <span className="flex items-center gap-1"><Briefcase className="h-3 w-3" /> {job.contractType || 'CDI'}</span>
+                            {(job._count?.applications ?? 0) > 0 && (
+                              <span className="flex items-center gap-1 text-blue-600 font-semibold"><Users className="h-3 w-3" /> {job._count?.applications ?? 0} candidat{(job._count?.applications ?? 0) > 1 ? 's' : ''}</span>
+                            )}
                           </div>
-                        ))
-                      )}
+                        </div>
+                      ))}
                     </div>
 
                     {/* Right: Job details */}
@@ -777,6 +791,7 @@ export function CareersContent({
                       )}
                     </div>
                   </div>
+                  )}
                 ) : (
                   /* Form: Easy Apply multi-step */
                   <div className="max-w-2xl mx-auto bg-white border border-slate-200 rounded-2xl p-6 shadow-md relative overflow-hidden">

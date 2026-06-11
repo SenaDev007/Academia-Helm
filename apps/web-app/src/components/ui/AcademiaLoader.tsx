@@ -4,21 +4,26 @@
  * AcademiaLoader
  *
  * Écran de chargement premium avec le logo Academia Helm animé.
+ * Affiche dynamiquement le nom de la page en cours de chargement.
  * Animation élégante : pulse lumineux sur le logo + barre de progression dorée.
- * Utilisable comme composant de loading pour toute la plateforme.
  */
 
+import { usePathname } from 'next/navigation';
 import Image from 'next/image';
 import { BRAND } from '@/lib/brand';
+import { getPageDisplayName } from '@/lib/loading/page-names';
 
 interface AcademiaLoaderProps {
   /** Mode compact pour les transitions inline (pas plein écran) */
   inline?: boolean;
-  /** Message personnalisé sous le logo */
+  /** Message personnalisé — surcharge le nom de page dynamique */
   message?: string;
 }
 
 export default function AcademiaLoader({ inline = false, message }: AcademiaLoaderProps) {
+  const pathname = usePathname();
+  const pageName = message ?? getPageDisplayName(pathname);
+
   if (inline) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -33,7 +38,7 @@ export default function AcademiaLoader({ inline = false, message }: AcademiaLoad
             priority
           />
         </div>
-        <span className="ml-3 text-sm text-slate-500">{message ?? 'Chargement…'}</span>
+        <span className="ml-3 text-sm text-slate-500">{pageName}</span>
         <style>{`
           .academia-loader-ring-sm {
             position: absolute; inset: -4px;
@@ -93,9 +98,9 @@ export default function AcademiaLoader({ inline = false, message }: AcademiaLoad
         <div className="academia-loader-progress" />
       </div>
 
-      {/* Message */}
-      <p className="mt-4 text-[11px] text-blue-200/50 tracking-wide">
-        {message ?? 'Chargement…'}
+      {/* Nom de la page en cours de chargement */}
+      <p className="mt-4 text-[12px] text-amber-200/70 tracking-wide font-medium academia-loader-page">
+        {pageName}
       </p>
 
       <style>{`
@@ -150,6 +155,10 @@ export default function AcademiaLoader({ inline = false, message }: AcademiaLoad
 
         .academia-loader-text {
           animation: academia-fade-up 0.6s ease-out 0.2s both;
+        }
+
+        .academia-loader-page {
+          animation: academia-fade-up 0.5s ease-out 0.4s both;
         }
 
         .academia-loader-progress {

@@ -227,6 +227,9 @@ export class SchoolSearchService {
               name: true,
               logo: true,
               address: true,
+              city: true,
+              primaryPhone: true,
+              primaryEmail: true,
               educationLevels: true,
             },
           },
@@ -276,12 +279,12 @@ export class SchoolSearchService {
       const results = tenants.map((tenant) => {
         const school = tenant.schools;
         const activeProfile = tenant.identityProfiles?.[0];
-        // Priorité : TenantIdentityProfile (source de vérité) > School.logo (fallback)
+        // Priorité : TenantIdentityProfile (source de vérité) > School (fallback)
         const logoUrl = activeProfile?.logoUrl || school?.logo || null;
-        const city = activeProfile?.city || this.extractCityFromAddress(school?.address || '');
+        const city = activeProfile?.city || school?.city || this.extractCityFromAddress(school?.address || '');
         const country = activeProfile?.country || tenant.country?.name || null;
-        const phone = activeProfile?.phonePrimary || null;
-        const email = activeProfile?.email || null;
+        const phone = activeProfile?.phonePrimary || school?.primaryPhone || null;
+        const email = activeProfile?.email || school?.primaryEmail || null;
 
         return {
           id: tenant.id,

@@ -252,40 +252,28 @@ export class OfflineSyncService {
 
     // FIX OOM: Add take limits to prevent loading unbounded data when device hasn't synced in a while
     const SYNC_BATCH_LIMIT = 5000;
-    const [students, studentEnrollments, payments, schoolAcademicSettings] = await Promise.all([
-      this.prisma.student.findMany({
-        where: { tenantId: request.tenant_id, updatedAt: { gt: since } },
-        take: SYNC_BATCH_LIMIT,
-        orderBy: { updatedAt: 'asc' },
-      }),
-      this.prisma.studentEnrollment.findMany({
-        where: { tenantId: request.tenant_id, updatedAt: { gt: since } },
-        take: SYNC_BATCH_LIMIT,
-        orderBy: { updatedAt: 'asc' },
-      }),
-      this.prisma.payment.findMany({
-        where: { tenantId: request.tenant_id, updatedAt: { gt: since } },
-        take: SYNC_BATCH_LIMIT,
-        orderBy: { updatedAt: 'asc' },
-      }),
-      this.prisma.schoolAcademicSettings.findMany({
-        where: { tenantId: request.tenant_id, updatedAt: { gt: since } },
-        take: SYNC_BATCH_LIMIT,
-        orderBy: { updatedAt: 'asc' },
-      }),
-    ]);
+
+    // Requêter toutes les entités supportées en parallèle
+    const pullQueries = this.buildPullQueries(request.tenant_id, since, SYNC_BATCH_LIMIT);
+    const pullResults = await Promise.all(pullQueries);
+
+    // Mapper les résultats
+    const entities: Record<string, any[]> = {};
+    const pullEntityTypes = this.getPullEntityTypes();
+    for (let i = 0; i < pullEntityTypes.length; i++) {
+      const [tableName] = pullEntityTypes[i];
+      const data = pullResults[i] as any[];
+      if (data && data.length > 0) {
+        entities[tableName] = data;
+      }
+    }
 
     const pulledAt = new Date().toISOString();
     return {
       tenant_id: request.tenant_id,
       last_sync_at: request.last_sync_at,
       pulled_at: pulledAt,
-      entities: {
-        students: students as any[],
-        studentEnrollments: studentEnrollments as any[],
-        payments: payments as any[],
-        school_academic_settings: schoolAcademicSettings as any[],
-      },
+      entities,
     };
   }
 
@@ -603,9 +591,189 @@ export class OfflineSyncService {
       material_stocks: 'materialStock',
       material_movements: 'materialMovement',
       teacher_material_assignments: 'teacherMaterialAssignment',
+      // --- Nouvelles entités pour double-écriture ---
+      // RH & Paie
+      staff: 'staff',
+      contracts: 'contract',
+      leaves: 'leave',
+      payrolls: 'payroll',
+      paysheets: 'paysheet',
+      staff_documents: 'staffDocument',
+      // Communication
+      sms_queue: 'smsMessage',
+      email_queue: 'emailMessage',
+      whatsapp_messages: 'whatsappMessage',
+      communication_templates: 'communicationTemplate',
+      // Présences & Emploi du temps
+      attendance_records: 'attendanceRecord',
+      timetables: 'timetable',
+      timetable_slots: 'timetableSlot',
+      // Examens & Bulletins
+      exam_scores: 'examScore',
+      report_cards: 'reportCard',
+      report_card_templates: 'reportCardTemplate',
+      // Réunions & Conseils
+      meetings: 'meeting',
+      meeting_decisions: 'meetingDecision',
+      meeting_minutes: 'meetingMinute',
+      council_decisions: 'councilDecision',
+      // QHSE
+      qhse_incidents: 'qhseIncident',
+      qhse_audits: 'qhseAudit',
+      qhse_risks: 'qhseRisk',
+      qhse_actions: 'qhseAction',
+      // Paramètres
+      school_settings: 'schoolSettings',
+      security_settings: 'securitySettings',
+      orion_settings: 'orionSettings',
+      atlas_settings: 'atlasSettings',
+      communication_settings: 'settingsCommunication',
+      bilingual_settings: 'settingsBilingual',
+      offline_sync_settings: 'offlineSyncSettings',
+      pedagogical_structure: 'settingsPedagogicalStructure',
+      tenant_stamps: 'tenantStamp',
+      tenant_signatures: 'tenantSignature',
+      tenant_features: 'tenantFeature',
+      roles: 'role',
+      permissions: 'permission',
+      // Modules complémentaires
+      library_books: 'libraryBook',
+      library_loans: 'libraryLoan',
+      transport_routes: 'transportRoute',
+      transport_subscriptions: 'transportSubscription',
+      canteen_menus: 'canteenMenu',
+      canteen_subscriptions: 'canteenSubscription',
+      canteen_meals: 'canteenMeal',
+      infirmary_records: 'infirmaryRecord',
+      infirmary_visits: 'infirmaryVisit',
+      shop_products: 'shopProduct',
+      shop_orders: 'shopOrder',
+      educast_videos: 'educastVideo',
+      educast_playlists: 'educastPlaylist',
+      // Salles
+      rooms: 'room',
+      // Agrégation
+      aggregation_results: 'aggregationResult',
+      aggregation_sessions: 'aggregationSession',
+      // Entités existantes manquantes dans le mapping
+      grades: 'grade',
+      attendance: 'attendance',
+      absences: 'absence',
+      invoices: 'invoice',
+      academic_years: 'academicYear',
+      school_levels: 'schoolLevel',
+      homeworks: 'homework',
+      incidents: 'incident',
+      loans: 'loan',
+      sessions: 'session',
+      messages: 'message',
+      notifications: 'notification',
+      alerts: 'alert',
+      reports: 'report',
+      orion_alerts: 'orionAlert',
+      exam_candidates: 'examCandidate',
+      exam_results: 'examResult',
+      exam_pvs: 'examPv',
+      pedagogical_files: 'pedagogicalFile',
+      disciplinary_incidents: 'disciplinaryIncident',
+      student_enrollments: 'studentEnrollment',
     };
 
     return mapping[tableName] || tableName;
+  }
+
+  /**
+   * Liste des types d'entités à inclure dans le pull sync
+   * Format: [tableName, prismaModelName]
+   */
+  private getPullEntityTypes(): [string, string][] {
+    return [
+      // Entités principales
+      ['students', 'student'],
+      ['student_enrollments', 'studentEnrollment'],
+      ['payments', 'payment'],
+      ['school_academic_settings', 'schoolAcademicSettings'],
+      // Enseignants & Classes
+      ['teachers', 'teacher'],
+      ['classes', 'class'],
+      ['subjects', 'subject'],
+      ['academic_years', 'academicYear'],
+      ['school_levels', 'schoolLevel'],
+      // Finance
+      ['invoices', 'invoice'],
+      ['fee_structures', 'feeStructure'],
+      ['expenses', 'expense'],
+      ['finance_settings', 'financeSetting'],
+      // Pédagogie
+      ['exams', 'exam'],
+      ['grades', 'grade'],
+      ['class_diaries', 'classDiary'],
+      ['lesson_plans', 'lessonPlan'],
+      ['lesson_journals', 'lessonJournal'],
+      ['homework_entries', 'homeworkEntry'],
+      ['academic_series', 'academicSeries'],
+      ['teacher_profiles', 'teacherAcademicProfile'],
+      ['pedagogical_materials', 'pedagogicalMaterial'],
+      // Présences & Discipline
+      ['attendance_records', 'attendanceRecord'],
+      ['absences', 'absence'],
+      ['disciplinary_incidents', 'disciplinaryIncident'],
+      // RH & Paie
+      ['staff', 'staff'],
+      ['contracts', 'contract'],
+      ['leaves', 'leave'],
+      // Communication
+      ['communication_templates', 'communicationTemplate'],
+      // Emploi du temps
+      ['timetables', 'timetable'],
+      ['timetable_slots', 'timetableSlot'],
+      // Examens & Bulletins
+      ['exam_scores', 'examScore'],
+      ['report_cards', 'reportCard'],
+      ['exam_candidates', 'examCandidate'],
+      ['exam_results', 'examResult'],
+      // Réunions & Conseils
+      ['meetings', 'meeting'],
+      ['meeting_decisions', 'meetingDecision'],
+      // QHSE
+      ['qhse_incidents', 'qhseIncident'],
+      ['qhse_audits', 'qhseAudit'],
+      // Paramètres
+      ['school_settings', 'schoolSettings'],
+      ['security_settings', 'securitySettings'],
+      ['bilingual_settings', 'settingsBilingual'],
+      ['orion_settings', 'orionSettings'],
+      ['atlas_settings', 'atlasSettings'],
+      // Modules complémentaires
+      ['library_books', 'libraryBook'],
+      ['library_loans', 'libraryLoan'],
+      ['transport_routes', 'transportRoute'],
+      ['canteen_menus', 'canteenMenu'],
+      ['canteen_subscriptions', 'canteenSubscription'],
+      ['infirmary_records', 'infirmaryRecord'],
+      ['shop_products', 'shopProduct'],
+      ['educast_videos', 'educastVideo'],
+      // Salles
+      ['rooms', 'room'],
+    ];
+  }
+
+  /**
+   * Construit les requêtes Prisma pour le pull sync
+   */
+  private buildPullQueries(tenantId: string, since: Date, limit: number): Promise<any[]>[] {
+    return this.getPullEntityTypes().map(([, modelName]) => {
+      try {
+        return (this.prisma as any)[modelName].findMany({
+          where: { tenantId, updatedAt: { gt: since } },
+          take: limit,
+          orderBy: { updatedAt: 'asc' },
+        });
+      } catch {
+        // Modèle non trouvé dans le schéma Prisma — ignorer silencieusement
+        return Promise.resolve([]);
+      }
+    });
   }
 
   /**

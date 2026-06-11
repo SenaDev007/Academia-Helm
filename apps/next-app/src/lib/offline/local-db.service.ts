@@ -86,6 +86,33 @@ class LocalDbService {
       'modules', 'academic_terms',
       // Store pour le cache des feature flags (offline fallback)
       'settings_cache',
+      // --- Nouveaux stores pour double-écriture complète ---
+      // RH & Paie
+      'staff', 'contracts', 'leaves', 'payrolls', 'paysheets', 'staff_documents',
+      // Communication
+      'sms_queue', 'email_queue', 'whatsapp_messages', 'communication_templates',
+      // Présences & Emploi du temps
+      'attendance_records', 'timetables', 'timetable_slots',
+      // Examens & Bulletins
+      'exam_scores', 'report_cards', 'report_card_templates',
+      // Réunions & Conseils
+      'meetings', 'meeting_decisions', 'meeting_minutes', 'council_decisions',
+      // QHSE
+      'qhse_incidents', 'qhse_audits', 'qhse_risks', 'qhse_actions',
+      // Paramètres (stores dédiés par onglet)
+      'school_settings', 'security_settings', 'orion_settings', 'atlas_settings',
+      'communication_settings', 'bilingual_settings', 'offline_sync_settings',
+      'pedagogical_structure', 'tenant_stamps', 'tenant_signatures', 'tenant_features',
+      'roles', 'permissions',
+      // Modules complémentaires
+      'library_books', 'library_loans', 'transport_routes', 'transport_subscriptions',
+      'canteen_menus', 'canteen_subscriptions', 'canteen_meals',
+      'infirmary_records', 'infirmary_visits',
+      'shop_products', 'shop_orders', 'educast_videos', 'educast_playlists',
+      // Salles
+      'rooms',
+      // Agrégation
+      'aggregation_results', 'aggregation_sessions',
     ];
 
     entities.forEach(storeName => {
@@ -276,6 +303,6 @@ class LocalDbService {
 // Instance singleton
 export const localDb = new LocalDbService({
   dbName: 'academia-helm-local',
-  version: 10, // + settings_cache store for offline feature flags fallback
+  version: 11, // + tous les stores pour double-écriture complète (RH, Communication, QHSE, etc.)
 });
 

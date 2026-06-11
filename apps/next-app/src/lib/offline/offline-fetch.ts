@@ -308,6 +308,68 @@ function inferEntityTypeFromUrl(url: string): import('@/types').SyncEntityType {
     'daily-logs': 'HOMEWORK_ENTRY',
     'exam-candidates': 'EXAM_CANDIDATE',
     'exam-results': 'EXAM_RESULT',
+    'exam-scores': 'EXAM_SCORE',
+    'report-cards': 'REPORT_CARD',
+    // --- Nouvelles entités ---
+    // RH & Paie
+    'hr/staff': 'STAFF',
+    'hr/contracts': 'CONTRACT',
+    'hr/leaves': 'LEAVE',
+    'hr/payroll': 'PAYROLL',
+    'hr/paysheets': 'PAYSHEET',
+    'hr/documents': 'STAFF_DOCUMENT',
+    // Communication
+    'communication/sms': 'SMS',
+    'communication/email': 'EMAIL',
+    'communication/whatsapp': 'WHATSAPP_MESSAGE',
+    'communication/templates': 'COMMUNICATION_TEMPLATE',
+    // Présences & Emploi du temps
+    'attendance/records': 'ATTENDANCE_RECORD',
+    'timetables': 'TIMETABLE',
+    'timetable-slots': 'TIMETABLE_SLOT',
+    // Réunions & Conseils
+    'meetings': 'MEETING',
+    'meeting-decisions': 'MEETING_DECISION',
+    'meeting-minutes': 'MEETING_MINUTE',
+    'council-decisions': 'COUNCIL_DECISION',
+    // QHSE
+    'qhse/incidents': 'QHSE_INCIDENT',
+    'qhse/audits': 'QHSE_AUDIT',
+    'qhse/risks': 'QHSE_RISK',
+    'qhse/actions': 'QHSE_ACTION',
+    // Paramètres
+    'settings/general': 'SCHOOL_SETTINGS',
+    'settings/security': 'SECURITY_SETTINGS',
+    'settings/orion': 'ORION_SETTINGS',
+    'settings/atlas': 'ATLAS_SETTINGS',
+    'settings/communication': 'COMMUNICATION_SETTINGS',
+    'settings/bilingual': 'BILINGUAL_SETTINGS',
+    'settings/offline-sync': 'OFFLINE_SYNC_SETTINGS',
+    'settings/structure': 'PEDAGOGICAL_STRUCTURE',
+    'settings/stamps': 'TENANT_STAMP',
+    'settings/signatures': 'TENANT_SIGNATURE',
+    'settings/features': 'TENANT_FEATURE',
+    'settings/roles': 'ROLE',
+    'settings/permissions': 'PERMISSION',
+    // Modules complémentaires
+    'library/books': 'LIBRARY_BOOK',
+    'library/loans': 'LIBRARY_LOAN',
+    'transport/routes': 'TRANSPORT_ROUTE',
+    'transport/subscriptions': 'TRANSPORT_SUBSCRIPTION',
+    'canteen/menus': 'CANTEEN_MENU',
+    'canteen/subscriptions': 'CANTEEN_SUBSCRIPTION',
+    'canteen/meals': 'CANTEEN_MEAL',
+    'infirmary/records': 'INFIRMARY_RECORD',
+    'infirmary/visits': 'INFIRMARY_VISIT',
+    'shop/products': 'SHOP_PRODUCT',
+    'shop/orders': 'SHOP_ORDER',
+    'educast/videos': 'EDUCAST_VIDEO',
+    'educast/playlists': 'EDUCAST_PLAYLIST',
+    // Salles
+    'rooms': 'ROOM',
+    // Agrégation
+    'aggregation/results': 'AGGREGATION_RESULT',
+    'aggregation/sessions': 'AGGREGATION_SESSION',
   };
 
   // Parcourir les clés de la plus longue à la plus courte pour correspondance la plus spécifique

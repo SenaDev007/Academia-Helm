@@ -347,7 +347,71 @@ export type SyncEntityType =
   | 'PEDAGOGICAL_MATERIAL'
   | 'MATERIAL_STOCK'
   | 'MATERIAL_MOVEMENT'
-  | 'TEACHER_MATERIAL_ASSIGNMENT';
+  | 'TEACHER_MATERIAL_ASSIGNMENT'
+  // --- Nouvelles entités pour double-écriture complète ---
+  // RH & Paie
+  | 'STAFF'
+  | 'CONTRACT'
+  | 'LEAVE'
+  | 'PAYROLL'
+  | 'PAYSHEET'
+  | 'STAFF_DOCUMENT'
+  // Communication
+  | 'SMS'
+  | 'EMAIL'
+  | 'WHATSAPP_MESSAGE'
+  | 'COMMUNICATION_TEMPLATE'
+  // Présences & Emploi du temps
+  | 'ATTENDANCE_RECORD'
+  | 'TIMETABLE'
+  | 'TIMETABLE_SLOT'
+  // Examens & Bulletins
+  | 'EXAM_SCORE'
+  | 'REPORT_CARD'
+  | 'REPORT_CARD_TEMPLATE'
+  // Réunions & Conseils
+  | 'MEETING'
+  | 'MEETING_DECISION'
+  | 'MEETING_MINUTE'
+  | 'COUNCIL_DECISION'
+  // QHSE
+  | 'QHSE_INCIDENT'
+  | 'QHSE_AUDIT'
+  | 'QHSE_RISK'
+  | 'QHSE_ACTION'
+  // Paramètres & Configuration
+  | 'SCHOOL_SETTINGS'
+  | 'SECURITY_SETTINGS'
+  | 'ORION_SETTINGS'
+  | 'ATLAS_SETTINGS'
+  | 'COMMUNICATION_SETTINGS'
+  | 'BILINGUAL_SETTINGS'
+  | 'OFFLINE_SYNC_SETTINGS'
+  | 'PEDAGOGICAL_STRUCTURE'
+  | 'TENANT_STAMP'
+  | 'TENANT_SIGNATURE'
+  | 'TENANT_FEATURE'
+  | 'ROLE'
+  | 'PERMISSION'
+  // Modules complémentaires
+  | 'LIBRARY_BOOK'
+  | 'LIBRARY_LOAN'
+  | 'TRANSPORT_ROUTE'
+  | 'TRANSPORT_SUBSCRIPTION'
+  | 'CANTEEN_MENU'
+  | 'CANTEEN_SUBSCRIPTION'
+  | 'CANTEEN_MEAL'
+  | 'INFIRMARY_RECORD'
+  | 'INFIRMARY_VISIT'
+  | 'SHOP_PRODUCT'
+  | 'SHOP_ORDER'
+  | 'EDUCAST_VIDEO'
+  | 'EDUCAST_PLAYLIST'
+  // Salles
+  | 'ROOM'
+  // Agrégation
+  | 'AGGREGATION_RESULT'
+  | 'AGGREGATION_SESSION';
 
 /**
  * État d'un événement dans l'Outbox

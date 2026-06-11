@@ -176,7 +176,7 @@ export default function PremiumLandingPage() {
       try {
         const res = await fetch('/api/auth/dev-available-tenants');
         const data = await res.json();
-        if (Array.isArray(data)) {
+        if (Array.isArray(data) && data.length > 0) {
           // Fetch active jobs count for each school
           const withCounts = await Promise.all(data.map(async (school: any) => {
             try {
@@ -212,28 +212,40 @@ export default function PremiumLandingPage() {
     <div className="min-h-screen overflow-x-hidden bg-white text-slate-900 [word-break:normal] [overflow-wrap:normal] hyphens-none">
       <PremiumHeader />
 
-      {/* Animated recruitment banner - just after navbar */}
-      {recruitAnnouncements.length > 0 && (
-        <div className="relative z-30 bg-gradient-to-r from-[#f5b335] via-[#ffd166] to-[#f5b335] overflow-hidden">
-          <div className="flex items-center py-2">
-            <div className="flex animate-[marquee_40s_linear_infinite] whitespace-nowrap">
-              {[...recruitAnnouncements, ...recruitAnnouncements, ...recruitAnnouncements, ...recruitAnnouncements].map((msg, i) => (
-                <span key={i} className="inline-flex items-center gap-2 mx-8 text-sm font-bold text-[#0b2f73]">
-                  <Megaphone className="h-4 w-4 shrink-0" />
-                  <Link href="/jobs" className="hover:underline">{msg}</Link>
-                  <span className="mx-2 text-[#0b2f73]/40">|</span>
+      {/* Recruitment announcements banner — just after navbar */}
+      <div className="relative z-30 bg-[#0b2f73] overflow-hidden select-none">
+        <div className="marquee-track flex items-center py-2.5">
+          <div className="marquee-content flex items-center whitespace-nowrap">
+            {(() => {
+              const items = recruitAnnouncements.length > 0
+                ? recruitAnnouncements
+                : ['Des établissements recrutent en ce moment sur Academia Helm — Consultez les offres', 'Rejoignez une équipe éducative dynamique — Postulez en un clic', 'Carrières dans l\'éducation : découvrez les opportunités du moment'];
+              // Duplicate enough for seamless loop
+              const repeated = [...items, ...items, ...items, ...items, ...items, ...items, ...items, ...items];
+              return repeated.map((msg, i) => (
+                <span key={i} className="inline-flex items-center gap-2.5 mx-6 text-[13px] font-semibold tracking-wide text-amber-200/90">
+                  <Megaphone className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                  <Link href="/jobs" className="hover:text-amber-100 transition-colors">{msg}</Link>
+                  <span className="ml-6 text-amber-400/30 text-lg">•</span>
                 </span>
-              ))}
-            </div>
+              ));
+            })()}
           </div>
-          <style>{`
-            @keyframes marquee {
-              0% { transform: translateX(0); }
-              100% { transform: translateX(-25%); }
-            }
-          `}</style>
         </div>
-      )}
+        {/* Fade edges */}
+        <div className="pointer-events-none absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-[#0b2f73] to-transparent z-10" />
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-16 bg-gradient-to-l from-[#0b2f73] to-transparent z-10" />
+        <style>{`
+          .marquee-track { overflow: hidden; }
+          .marquee-content {
+            animation: marquee-scroll 60s linear infinite;
+          }
+          @keyframes marquee-scroll {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+          }
+        `}</style>
+      </div>
 
       <motion.div
         style={{ scaleX: progress }}

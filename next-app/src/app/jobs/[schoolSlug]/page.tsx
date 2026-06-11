@@ -3,16 +3,14 @@
  * TENANT CAREERS PAGE — Server Component with ISR
  * ============================================================================
  *
- * Pre-fetches schools AND jobs data server-side in parallel,
- * eliminating the sequential client-side waterfall:
- *   OLD: load all schools → match slug → load jobs (3 sequential round-trips)
- *   NEW: parallel server fetch → instant render with data
+ * Pre-fetches schools AND jobs data server-side,
+ * eliminating the sequential client-side waterfall.
+ * Falls back gracefully to client-side loading if the backend is slow.
  *
  * ISR: revalidates every 30 seconds — job data changes more frequently.
  */
 
 import { Suspense } from 'react';
-import { notFound } from 'next/navigation';
 import { CareersContent } from '../CareersContent';
 import { getApiBaseUrl } from '@/lib/utils/urls';
 import { normalizeApiUrl } from '@/lib/utils/api-urls';
@@ -35,6 +33,24 @@ interface School {
   activeJobsCount?: number;
 }
 
+const FETCH_TIMEOUT_MS = 5000; // 5s max — don't block page render
+
+async function fetchWithTimeout(url: string, revalidateSeconds: number): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(normalizeApiUrl(url), {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      next: { revalidate: revalidateSeconds },
+      signal: controller.signal,
+    });
+    return res;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function fetchSchools(): Promise<School[]> {
   try {
     const API_BASE = getApiBaseUrl();
@@ -42,17 +58,17 @@ async function fetchSchools(): Promise<School[]> {
       ? `${API_BASE}/public/schools/with-jobs`
       : `${API_BASE}/api/public/schools/with-jobs`;
 
-    const res = await fetch(normalizeApiUrl(url), {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-      next: { revalidate: 60 },
-    });
+    const res = await fetchWithTimeout(url, 60);
 
     if (!res.ok) return [];
     const data = await res.json();
     return Array.isArray(data) ? data : [];
-  } catch (err) {
-    console.error('[Tenant Careers Page] Schools fetch error:', err);
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      console.warn('[Tenant Careers] Schools fetch timed out — falling back to client-side load');
+    } else {
+      console.error('[Tenant Careers] Schools fetch error:', err);
+    }
     return [];
   }
 }
@@ -62,17 +78,17 @@ async function fetchJobs(tenantId: string): Promise<any[]> {
     const API_BASE = getApiBaseUrl();
     const url = `${API_BASE}/hr/recruitment/jobs?tenantId=${encodeURIComponent(tenantId)}`;
 
-    const res = await fetch(normalizeApiUrl(url), {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-      next: { revalidate: 30 },
-    });
+    const res = await fetchWithTimeout(url, 30);
 
     if (!res.ok) return [];
     const data = await res.json();
     return Array.isArray(data) ? data.filter((j: any) => j.status === 'PUBLIÉE') : [];
-  } catch (err) {
-    console.error('[Tenant Careers Page] Jobs fetch error:', err);
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      console.warn('[Tenant Careers] Jobs fetch timed out — falling back to client-side load');
+    } else {
+      console.error('[Tenant Careers] Jobs fetch error:', err);
+    }
     return [];
   }
 }

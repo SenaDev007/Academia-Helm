@@ -159,3 +159,28 @@ Stage Summary:
 - L'illustration est centrée, responsive, avec animation fade-in
 - La transition illustration → détail du poste est fluide
 - Plus de "zone vide" sur la page recrutement
+---
+Task ID: 4
+Agent: main
+Task: Analyze and fix all Settings (Paramètres) module tabs
+
+Work Log:
+- Analyzed 2 user screenshots: Bug #1 (Prisma error on updatedAt in SettingsHistory.create) and Bug #2 (v5 displayed instead of v7)
+- Found root cause: `prismaCreateDefaults()` injects `{ id, updatedAt, createdAt }` but `SettingsHistory` model has NO `updatedAt` or `createdAt` fields
+- Fixed `settings-history.service.ts`: replaced `...prismaCreateDefaults()` with `id: uuid()` in `logFeatureChange()`
+- Fixed `enhanced-audit.service.ts`: added `id: uuid()` to both `logChange()` and `logBatchChanges()` + imported `uuid` from prisma-helpers
+- Bug #2 (wrong version display) is caused by Bug #1: the transaction succeeds (v7 is created in DB) but `logSettingChange()` fails (throws Prisma error), causing the API to return 500, so frontend never receives v7 data
+- Fixed systemic bug: added `setXxxForm(updated || {})` after save in 7 handlers: handleSaveBilingual, handleSaveCommunication, handleSaveSecurity, handleSaveOrion, handleSaveAtlas, handleSaveOffline, handleSaveBilling
+- Added 11 missing fields to Security tab: passwordRequireUppercase/Lowercase/Numbers/Special, passwordExpirationDays, twoFactorEnabled, requireEmailVerification, auditLogRetentionDays, dataRetentionYears, gdprCompliant, allowInspectionAccess
+- Added 5 missing fields to Orion tab: kpiCalculationFrequency, insightsFrequency, autoGenerateInsights, allowOrionExports
+- Added 5 missing fields to Atlas tab: scope, language, conversationHistoryDays, maxConversationsPerDay
+- Added 4 missing fields to Offline tab: conflictResolution, autoSyncOnConnect, allowOfflineModification, syncOnBackground
+- Enhanced History tab: added refresh button, category badges, old/new value diff display
+- Verified all tab sections have balanced HTML divs
+
+Stage Summary:
+- 3 backend bugs fixed (prismaCreateDefaults misuse in 2 files)
+- 7 frontend form re-sync bugs fixed
+- 4 tabs enhanced with missing fields (Security: +11, Orion: +5, Atlas: +5, Offline: +4)
+- History tab upgraded from stub to functional with refresh + diff display
+- Root cause of user's 2 reported bugs (Prisma error + wrong version) fully resolved

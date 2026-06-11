@@ -13,6 +13,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { uuid } from '../utils/prisma-helpers';
 
 export interface AuditLogEntry {
   tenantId: string;
@@ -40,6 +41,7 @@ export class EnhancedAuditService {
     try {
       await this.prisma.settingsHistory.create({
         data: {
+          id: uuid(),
           tenantId: entry.tenantId,
           category: entry.category,
           key: entry.key,
@@ -69,6 +71,7 @@ export class EnhancedAuditService {
         entries.map((entry) =>
           this.prisma.settingsHistory.create({
             data: {
+              id: uuid(),
               tenantId: entry.tenantId,
               category: entry.category,
               key: entry.key,

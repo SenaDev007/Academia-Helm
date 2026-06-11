@@ -837,6 +837,7 @@ export default function SettingsPage() {
       showToast('success', 'Paramètres de sécurité enregistrés');
       const updated = await settingsService.getSecuritySettings(tid);
       setSecuritySettings(updated);
+      setSecurityForm(updated || {});
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
     } finally {
@@ -852,6 +853,7 @@ export default function SettingsPage() {
       showToast('success', 'Paramètres ORION enregistrés');
       const updated = await settingsService.getOrionSettings(tid);
       setOrionSettings(updated);
+      setOrionForm(updated || {});
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
     } finally {
@@ -867,6 +869,7 @@ export default function SettingsPage() {
       showToast('success', 'Paramètres ATLAS enregistrés');
       const updated = await settingsService.getAtlasSettings(tid);
       setAtlasSettings(updated);
+      setAtlasForm(updated || {});
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
     } finally {
@@ -882,6 +885,7 @@ export default function SettingsPage() {
       showToast('success', 'Paramètres offline enregistrés');
       const updated = await settingsService.getOfflineSyncSettings(tid);
       setOfflineSyncSettings(updated);
+      setOfflineForm(updated || {});
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
     } finally {
@@ -1114,6 +1118,7 @@ export default function SettingsPage() {
       showToast('success', 'Paramètres bilingues enregistrés');
       const updated = await settingsService.getBilingualSettings(effectiveTenantId ?? undefined);
       setBilingualSettings(updated);
+      setBilingualForm(updated || {});
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent(SETTINGS_BILINGUAL_UPDATED_EVENT));
       }
@@ -1175,6 +1180,7 @@ export default function SettingsPage() {
       showToast('success', 'Paramètres de communication enregistrés');
       const updated = await settingsService.getCommunicationSettings(tid);
       setCommunicationSettings(updated);
+      setCommunicationForm(updated || {});
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
     } finally {
@@ -1402,6 +1408,7 @@ export default function SettingsPage() {
       showToast('success', 'Paramètres de facturation enregistrés');
       const updated = await settingsService.getBillingSettings(tid);
       setBillingSettings(updated);
+      setBillingForm(updated || {});
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
     } finally {
@@ -3824,6 +3831,189 @@ export default function SettingsPage() {
                   />
                 </div>
               </div>
+
+              {/* Complexité du mot de passe */}
+              <h4 className="text-md font-semibold text-gray-700 mt-6 mb-3">Complexité du mot de passe</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                  <div>
+                    <h5 className="font-medium text-gray-800 text-sm">Majuscules requises</h5>
+                    <p className="text-xs text-gray-500">Au moins une lettre majuscule</p>
+                  </div>
+                  <button
+                    onClick={() => setSecurityForm({ ...securityForm, passwordRequireUppercase: !securityForm.passwordRequireUppercase })}
+                    className="p-1"
+                  >
+                    {securityForm.passwordRequireUppercase ? (
+                      <ToggleRight className="w-6 h-6 text-green-600" />
+                    ) : (
+                      <ToggleLeft className="w-6 h-6 text-gray-400" />
+                    )}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                  <div>
+                    <h5 className="font-medium text-gray-800 text-sm">Minuscules requises</h5>
+                    <p className="text-xs text-gray-500">Au moins une lettre minuscule</p>
+                  </div>
+                  <button
+                    onClick={() => setSecurityForm({ ...securityForm, passwordRequireLowercase: !securityForm.passwordRequireLowercase })}
+                    className="p-1"
+                  >
+                    {securityForm.passwordRequireLowercase ? (
+                      <ToggleRight className="w-6 h-6 text-green-600" />
+                    ) : (
+                      <ToggleLeft className="w-6 h-6 text-gray-400" />
+                    )}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                  <div>
+                    <h5 className="font-medium text-gray-800 text-sm">Chiffres requis</h5>
+                    <p className="text-xs text-gray-500">Au moins un chiffre</p>
+                  </div>
+                  <button
+                    onClick={() => setSecurityForm({ ...securityForm, passwordRequireNumbers: !securityForm.passwordRequireNumbers })}
+                    className="p-1"
+                  >
+                    {securityForm.passwordRequireNumbers ? (
+                      <ToggleRight className="w-6 h-6 text-green-600" />
+                    ) : (
+                      <ToggleLeft className="w-6 h-6 text-gray-400" />
+                    )}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                  <div>
+                    <h5 className="font-medium text-gray-800 text-sm">Caractères spéciaux requis</h5>
+                    <p className="text-xs text-gray-500">Au moins un caractère spécial (!@#$...)</p>
+                  </div>
+                  <button
+                    onClick={() => setSecurityForm({ ...securityForm, passwordRequireSpecial: !securityForm.passwordRequireSpecial })}
+                    className="p-1"
+                  >
+                    {securityForm.passwordRequireSpecial ? (
+                      <ToggleRight className="w-6 h-6 text-green-600" />
+                    ) : (
+                      <ToggleLeft className="w-6 h-6 text-gray-400" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Paramètres avancés */}
+              <h4 className="text-md font-semibold text-gray-700 mt-6 mb-3">Paramètres avancés</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Expiration mot de passe (jours, 0 = jamais)
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={securityForm.passwordExpirationDays || 0}
+                    onChange={(e) => setSecurityForm({ ...securityForm, passwordExpirationDays: parseInt(e.target.value) || 0 })}
+                    min={0}
+                    max={365}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Rétention logs d&apos;audit (jours)
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={securityForm.auditLogRetentionDays || 90}
+                    onChange={(e) => setSecurityForm({ ...securityForm, auditLogRetentionDays: parseInt(e.target.value) })}
+                    min={30}
+                    max={365}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Rétention données (années)
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={securityForm.dataRetentionYears || 5}
+                    onChange={(e) => setSecurityForm({ ...securityForm, dataRetentionYears: parseInt(e.target.value) })}
+                    min={1}
+                    max={20}
+                  />
+                </div>
+              </div>
+
+              {/* Toggles de sécurité */}
+              <h4 className="text-md font-semibold text-gray-700 mt-6 mb-3">Sécurité et conformité</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                  <div>
+                    <h5 className="font-medium text-gray-800 text-sm">Authentification à deux facteurs</h5>
+                    <p className="text-xs text-gray-500">Exiger une 2FA pour tous les utilisateurs</p>
+                  </div>
+                  <button
+                    onClick={() => setSecurityForm({ ...securityForm, twoFactorEnabled: !securityForm.twoFactorEnabled })}
+                    className="p-1"
+                  >
+                    {securityForm.twoFactorEnabled ? (
+                      <ToggleRight className="w-6 h-6 text-green-600" />
+                    ) : (
+                      <ToggleLeft className="w-6 h-6 text-gray-400" />
+                    )}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                  <div>
+                    <h5 className="font-medium text-gray-800 text-sm">Vérification email obligatoire</h5>
+                    <p className="text-xs text-gray-500">Les utilisateurs doivent vérifier leur email</p>
+                  </div>
+                  <button
+                    onClick={() => setSecurityForm({ ...securityForm, requireEmailVerification: !securityForm.requireEmailVerification })}
+                    className="p-1"
+                  >
+                    {securityForm.requireEmailVerification ? (
+                      <ToggleRight className="w-6 h-6 text-green-600" />
+                    ) : (
+                      <ToggleLeft className="w-6 h-6 text-gray-400" />
+                    )}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                  <div>
+                    <h5 className="font-medium text-gray-800 text-sm">Conformité RGPD</h5>
+                    <p className="text-xs text-gray-500">Activer les règles de conformité RGPD</p>
+                  </div>
+                  <button
+                    onClick={() => setSecurityForm({ ...securityForm, gdprCompliant: !securityForm.gdprCompliant })}
+                    className="p-1"
+                  >
+                    {securityForm.gdprCompliant ? (
+                      <ToggleRight className="w-6 h-6 text-green-600" />
+                    ) : (
+                      <ToggleLeft className="w-6 h-6 text-gray-400" />
+                    )}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                  <div>
+                    <h5 className="font-medium text-gray-800 text-sm">Accès inspection</h5>
+                    <p className="text-xs text-gray-500">Autoriser l&apos;accès aux inspecteurs de l&apos;éducation</p>
+                  </div>
+                  <button
+                    onClick={() => setSecurityForm({ ...securityForm, allowInspectionAccess: !securityForm.allowInspectionAccess })}
+                    className="p-1"
+                  >
+                    {securityForm.allowInspectionAccess ? (
+                      <ToggleRight className="w-6 h-6 text-green-600" />
+                    ) : (
+                      <ToggleLeft className="w-6 h-6 text-gray-400" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
               <div className="mt-6 flex justify-end">
                 <button
                   onClick={handleSaveSecurity}
@@ -3893,6 +4083,72 @@ export default function SettingsPage() {
                     />
                   </div>
                 </div>
+                {/* Paramètres avancés ORION */}
+                <h4 className="text-md font-semibold text-gray-700 mt-4 mb-2">Paramètres avancés</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Fréquence de calcul KPI
+                    </label>
+                    <select
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={orionForm.kpiCalculationFrequency || 'daily'}
+                      onChange={(e) => setOrionForm({ ...orionForm, kpiCalculationFrequency: e.target.value })}
+                    >
+                      <option value="daily">Quotidienne</option>
+                      <option value="weekly">Hebdomadaire</option>
+                      <option value="monthly">Mensuelle</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Fréquence des insights
+                    </label>
+                    <select
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={orionForm.insightsFrequency || 'weekly'}
+                      onChange={(e) => setOrionForm({ ...orionForm, insightsFrequency: e.target.value })}
+                    >
+                      <option value="daily">Quotidienne</option>
+                      <option value="weekly">Hebdomadaire</option>
+                      <option value="monthly">Mensuelle</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                    <div>
+                      <h5 className="font-medium text-gray-800 text-sm">Génération auto des insights</h5>
+                      <p className="text-xs text-gray-500">Générer automatiquement les insights IA</p>
+                    </div>
+                    <button
+                      onClick={() => setOrionForm({ ...orionForm, autoGenerateInsights: !orionForm.autoGenerateInsights })}
+                      className="p-1"
+                    >
+                      {orionForm.autoGenerateInsights ? (
+                        <ToggleRight className="w-6 h-6 text-green-600" />
+                      ) : (
+                        <ToggleLeft className="w-6 h-6 text-gray-400" />
+                      )}
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                    <div>
+                      <h5 className="font-medium text-gray-800 text-sm">Autoriser les exports</h5>
+                      <p className="text-xs text-gray-500">Permettre l&apos;export des données ORION</p>
+                    </div>
+                    <button
+                      onClick={() => setOrionForm({ ...orionForm, allowOrionExports: !orionForm.allowOrionExports })}
+                      className="p-1"
+                    >
+                      {orionForm.allowOrionExports ? (
+                        <ToggleRight className="w-6 h-6 text-green-600" />
+                      ) : (
+                        <ToggleLeft className="w-6 h-6 text-gray-400" />
+                      )}
+                    </button>
+                  </div>
+                </div>
                 <div className="mt-4 flex justify-end">
                   <button
                     onClick={handleSaveOrion}
@@ -3945,6 +4201,64 @@ export default function SettingsPage() {
                       <ToggleLeft className="w-6 h-6 text-gray-400" />
                     )}
                   </button>
+                </div>
+                {/* Paramètres avancés ATLAS */}
+                <h4 className="text-md font-semibold text-gray-700 mt-4 mb-2">Paramètres avancés</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Périmètre du chatbot
+                    </label>
+                    <select
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={atlasForm.scope || 'all'}
+                      onChange={(e) => setAtlasForm({ ...atlasForm, scope: e.target.value })}
+                    >
+                      <option value="all">Tous les modules</option>
+                      <option value="pedagogy">Pédagogie uniquement</option>
+                      <option value="administration">Administration uniquement</option>
+                      <option value="students">Élèves uniquement</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Langue du chatbot
+                    </label>
+                    <select
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={atlasForm.language || 'fr'}
+                      onChange={(e) => setAtlasForm({ ...atlasForm, language: e.target.value })}
+                    >
+                      <option value="fr">Français</option>
+                      <option value="en">Anglais</option>
+                      <option value="ar">Arabe</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Historique conversations (jours)
+                    </label>
+                    <input
+                      type="number"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={atlasForm.conversationHistoryDays || 30}
+                      onChange={(e) => setAtlasForm({ ...atlasForm, conversationHistoryDays: parseInt(e.target.value) })}
+                      min={7}
+                      max={365}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Max conversations/jour (0 = illimité)
+                    </label>
+                    <input
+                      type="number"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={atlasForm.maxConversationsPerDay || 0}
+                      onChange={(e) => setAtlasForm({ ...atlasForm, maxConversationsPerDay: parseInt(e.target.value) || 0 })}
+                      min={0}
+                    />
+                  </div>
                 </div>
                 <div className="mt-4 flex justify-end">
                   <button
@@ -4007,6 +4321,74 @@ export default function SettingsPage() {
                     />
             </div>
           </div>
+                {/* Paramètres avancés synchronisation */}
+                <h4 className="text-md font-semibold text-gray-700 mt-4 mb-2">Comportement de synchronisation</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Résolution des conflits
+                    </label>
+                    <select
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={offlineForm.conflictResolution || 'server_wins'}
+                      onChange={(e) => setOfflineForm({ ...offlineForm, conflictResolution: e.target.value })}
+                    >
+                      <option value="server_wins">Serveur prioritaire</option>
+                      <option value="client_wins">Client prioritaire</option>
+                      <option value="manual">Résolution manuelle</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                    <div>
+                      <h5 className="font-medium text-gray-800 text-sm">Sync auto à la connexion</h5>
+                      <p className="text-xs text-gray-500">Synchroniser automatiquement quand la connexion revient</p>
+                    </div>
+                    <button
+                      onClick={() => setOfflineForm({ ...offlineForm, autoSyncOnConnect: offlineForm.autoSyncOnConnect === false })}
+                      className="p-1"
+                    >
+                      {offlineForm.autoSyncOnConnect !== false ? (
+                        <ToggleRight className="w-6 h-6 text-green-600" />
+                      ) : (
+                        <ToggleLeft className="w-6 h-6 text-gray-400" />
+                      )}
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                    <div>
+                      <h5 className="font-medium text-gray-800 text-sm">Modifications hors ligne</h5>
+                      <p className="text-xs text-gray-500">Autoriser les créations/modifications hors ligne</p>
+                    </div>
+                    <button
+                      onClick={() => setOfflineForm({ ...offlineForm, allowOfflineModification: offlineForm.allowOfflineModification === false })}
+                      className="p-1"
+                    >
+                      {offlineForm.allowOfflineModification !== false ? (
+                        <ToggleRight className="w-6 h-6 text-green-600" />
+                      ) : (
+                        <ToggleLeft className="w-6 h-6 text-gray-400" />
+                      )}
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                    <div>
+                      <h5 className="font-medium text-gray-800 text-sm">Sync en arrière-plan</h5>
+                      <p className="text-xs text-gray-500">Synchroniser en arrière-plan même si l&apos;app est inactive</p>
+                    </div>
+                    <button
+                      onClick={() => setOfflineForm({ ...offlineForm, syncOnBackground: offlineForm.syncOnBackground === false })}
+                      className="p-1"
+                    >
+                      {offlineForm.syncOnBackground !== false ? (
+                        <ToggleRight className="w-6 h-6 text-green-600" />
+                      ) : (
+                        <ToggleLeft className="w-6 h-6 text-gray-400" />
+                      )}
+                    </button>
+                  </div>
+                </div>
                 <div className="mt-4 flex justify-end">
                   <button
                     onClick={handleSaveOffline}
@@ -4109,7 +4491,24 @@ export default function SettingsPage() {
         return (
           <div className="space-y-6">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Historique des modifications</h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-800">Historique des modifications</h3>
+                <button
+                  onClick={async () => {
+                    try {
+                      const data = await settingsService.getSettingsHistory({ limit: 100 }, effectiveTenantId ?? undefined);
+                      setHistory(Array.isArray(data) ? data : []);
+                      showToast('success', 'Historique actualisé');
+                    } catch {
+                      showToast('error', 'Erreur lors du chargement');
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Actualiser
+                </button>
+              </div>
                 {history.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     <History className="w-12 h-12 mx-auto mb-4 text-gray-300" />
@@ -4124,12 +4523,30 @@ export default function SettingsPage() {
                       >
                         <div className="flex justify-between items-start">
                           <div>
-                            <h4 className="font-semibold text-gray-800">{item.key}</h4>
-                            <p className="text-sm text-gray-600">{item.category}</p>
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-semibold text-gray-800">{item.key}</h4>
+                              {item.category && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                  {item.category}
+                                </span>
+                              )}
+                            </div>
                             <p className="text-xs text-gray-500 mt-1">
                             {new Date(item.changedAt).toLocaleString('fr-FR')}
                             {item.user && ` par ${item.user.firstName} ${item.user.lastName}`}
                             </p>
+                            {item.oldValue != null && item.newValue != null && (
+                              <div className="mt-2 text-xs space-y-1">
+                                <div className="flex items-start gap-2">
+                                  <span className="text-red-600 font-medium shrink-0">Ancien :</span>
+                                  <span className="text-gray-600 font-mono break-all">{typeof item.oldValue === 'object' ? JSON.stringify(item.oldValue) : String(item.oldValue)}</span>
+                                </div>
+                                <div className="flex items-start gap-2">
+                                  <span className="text-green-600 font-medium shrink-0">Nouveau :</span>
+                                  <span className="text-gray-600 font-mono break-all">{typeof item.newValue === 'object' ? JSON.stringify(item.newValue) : String(item.newValue)}</span>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>

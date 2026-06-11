@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Building2,
@@ -25,7 +26,10 @@ import {
   Linkedin,
   Users,
   Globe,
-  Map
+  Map,
+  Mail,
+  Phone,
+  Megaphone
 } from 'lucide-react';
 import PremiumHeader from '@/components/layout/PremiumHeader';
 import { apiFetch } from '@/lib/api/client';
@@ -40,6 +44,13 @@ interface School {
   schoolName: string;
   tenantName: string;
   slug: string;
+  logoUrl?: string;
+  city?: string;
+  country?: string;
+  primaryPhone?: string;
+  primaryEmail?: string;
+  address?: string;
+  activeJobsCount?: number;
 }
 
 interface Job {
@@ -163,9 +174,15 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
           id: tenantInfo.id,
           tenantId: tenantInfo.id,
           name: tenantInfo.name,
-          schoolName: tenantInfo.name,
+          schoolName: tenantInfo.schoolName || tenantInfo.name,
           tenantName: tenantInfo.name,
           slug: tenantInfo.slug,
+          logoUrl: tenantInfo.logoUrl || tenantInfo.school?.logo || undefined,
+          city: tenantInfo.city || tenantInfo.school?.city || undefined,
+          country: tenantInfo.country || tenantInfo.school?.country || undefined,
+          primaryPhone: tenantInfo.primaryPhone || tenantInfo.school?.primaryPhone || undefined,
+          primaryEmail: tenantInfo.primaryEmail || tenantInfo.school?.primaryEmail || undefined,
+          address: tenantInfo.address || tenantInfo.school?.address || undefined,
         };
 
         // Set school and job directly
@@ -429,6 +446,16 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
       <PremiumHeader />
 
       <main className="flex-grow pt-28 pb-20 px-4 md:px-8 max-w-6xl mx-auto w-full">
+        <style>{`
+          @keyframes shimmerSlide {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(300%); }
+          }
+          @keyframes marqueeScroll {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+          }
+        `}</style>
         {/* Banner Section */}
         <div className="text-center mb-10">
           <span className="px-4 py-1.5 rounded-full border text-xs font-bold uppercase tracking-wider bg-indigo-50 border-indigo-200 text-[#1A2BA6] mb-4 inline-block">
@@ -438,8 +465,30 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
             Espace Candidat Augmenté
           </h1>
           <p className="text-sm md:text-base text-slate-500 mt-2 max-w-xl mx-auto">
-            Postulez instantanément grâce à notre parcours de candidature simplifiée intégrant l'analyse IA.
+            Postulez instantanément grâce à notre parcours de candidature simplifiée intégrant l&apos;analyse IA.
           </p>
+          {/* Animated recruitment marquee banner — visible when schools have active offers */}
+          {schools.some(s => (s.activeJobsCount ?? 0) > 0) && (
+            <div className="mt-6 overflow-hidden relative rounded-xl bg-gradient-to-r from-[#1A2BA6] via-blue-700 to-[#1A2BA6] py-3 shadow-lg border border-blue-400/30">
+              <div className="absolute inset-0 opacity-20">
+                <div className="h-full w-1/3 bg-gradient-to-r from-transparent via-white/40 to-transparent" style={{ animation: 'shimmerSlide 3s ease-in-out infinite' }} />
+              </div>
+              <div className="flex items-center relative z-10" style={{ animation: 'marqueeScroll 15s linear infinite' }}>
+                <span className="flex items-center gap-2 text-white text-xs font-bold whitespace-nowrap px-8">
+                  <Megaphone className="h-4 w-4" /> Appels d&apos;offres en cours — {schools.filter(s => (s.activeJobsCount ?? 0) > 0).length} établissement{schools.filter(s => (s.activeJobsCount ?? 0) > 0).length > 1 ? 's' : ''} recrutent actuellement
+                </span>
+                <span className="flex items-center gap-2 text-white text-xs font-bold whitespace-nowrap px-8">
+                  <Sparkles className="h-4 w-4" /> Candidature simplifiée avec analyse IA intégrée
+                </span>
+                <span className="flex items-center gap-2 text-white text-xs font-bold whitespace-nowrap px-8">
+                  <Megaphone className="h-4 w-4" /> Appels d&apos;offres en cours — {schools.filter(s => (s.activeJobsCount ?? 0) > 0).length} établissement{schools.filter(s => (s.activeJobsCount ?? 0) > 0).length > 1 ? 's' : ''} recrutent actuellement
+                </span>
+                <span className="flex items-center gap-2 text-white text-xs font-bold whitespace-nowrap px-8">
+                  <Sparkles className="h-4 w-4" /> Candidature simplifiée avec analyse IA intégrée
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
         {loading && (
@@ -473,9 +522,21 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
                     >
                       <div>
                         <div className="flex justify-between items-start mb-4">
-                          <div className="h-12 w-12 rounded-xl bg-blue-50/80 border border-blue-100 flex items-center justify-center text-[#1A2BA6]">
-                            <Building2 className="h-6 w-6" />
-                          </div>
+                          {school.logoUrl ? (
+                            <Image
+                              src={school.logoUrl}
+                              alt={school.schoolName || school.tenantName || school.name}
+                              width={48}
+                              height={48}
+                              className="h-12 w-12 rounded-xl object-contain border border-slate-100 bg-white p-0.5"
+                              loading="lazy"
+                              sizes="48px"
+                            />
+                          ) : (
+                            <div className="h-12 w-12 rounded-xl bg-blue-50/80 border border-blue-100 flex items-center justify-center text-[#1A2BA6]">
+                              <Building2 className="h-6 w-6" />
+                            </div>
+                          )}
                           {school.activeJobsCount > 0 ? (
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 shadow-sm relative">
                               <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
@@ -494,6 +555,12 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
                           {school.schoolName || school.tenantName || school.name}
                         </h3>
                         <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider mt-1">{school.slug}</p>
+                        {(school.city || school.country) && (
+                          <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
+                            <MapPin className="h-2.5 w-2.5" />
+                            {[school.city, school.country].filter(Boolean).join(', ')}
+                          </p>
+                        )}
                       </div>
                       <div className="mt-6 pt-4 border-t border-slate-50 flex items-center justify-between text-xs font-bold text-[#1A2BA6]">
                         <span>Découvrir les offres</span>
@@ -521,11 +588,37 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
                 </button>
 
                 <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-                  <div className="flex items-center gap-3">
-                    <Building2 className="h-5 w-5 text-[#1A2BA6]" />
-                    <h2 className="font-extrabold text-slate-900 text-lg">
-                      {selectedSchool.schoolName || selectedSchool.tenantName || selectedSchool.name}
-                    </h2>
+                  <div className="flex items-center gap-4">
+                    {selectedSchool.logoUrl ? (
+                      <Image
+                        src={selectedSchool.logoUrl}
+                        alt={selectedSchool.schoolName || selectedSchool.tenantName || selectedSchool.name}
+                        width={56}
+                        height={56}
+                        className="h-14 w-14 rounded-xl object-contain border border-slate-100 bg-white p-0.5"
+                        sizes="56px"
+                      />
+                    ) : (
+                      <div className="h-14 w-14 rounded-xl bg-blue-50/80 border border-blue-100 flex items-center justify-center text-[#1A2BA6]">
+                        <Building2 className="h-7 w-7" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <h2 className="font-extrabold text-slate-900 text-lg truncate">
+                        {selectedSchool.schoolName || selectedSchool.tenantName || selectedSchool.name}
+                      </h2>
+                      <div className="flex flex-wrap items-center gap-3 mt-1 text-xs text-slate-500">
+                        {(selectedSchool.city || selectedSchool.country) && (
+                          <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {[selectedSchool.city, selectedSchool.country].filter(Boolean).join(', ')}</span>
+                        )}
+                        {selectedSchool.primaryPhone && (
+                          <a href={`tel:${selectedSchool.primaryPhone}`} className="flex items-center gap-1 hover:text-[#1A2BA6] transition-colors"><Phone className="h-3 w-3" /> {selectedSchool.primaryPhone}</a>
+                        )}
+                        {selectedSchool.primaryEmail && (
+                          <a href={`mailto:${selectedSchool.primaryEmail}`} className="flex items-center gap-1 hover:text-[#1A2BA6] transition-colors"><Mail className="h-3 w-3" /> {selectedSchool.primaryEmail}</a>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
 

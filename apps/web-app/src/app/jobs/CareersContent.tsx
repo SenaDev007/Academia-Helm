@@ -404,12 +404,12 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
                   />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="flex flex-wrap justify-center gap-6">
                   {filteredSchools.map((school) => (
                     <div
                       key={school.id}
                       onClick={() => handleSelectSchool(school)}
-                      className="group cursor-pointer bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md hover:border-slate-300 transition-all flex flex-col justify-between relative overflow-hidden"
+                      className="group cursor-pointer bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md hover:border-slate-300 transition-all flex flex-col justify-between relative overflow-hidden w-full sm:w-[calc(50%-12px)] lg:w-[calc(33.333%-16px)]"
                     >
                       <div>
                         <div className="flex justify-between items-start mb-4">

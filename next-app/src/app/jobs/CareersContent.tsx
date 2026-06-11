@@ -499,8 +499,29 @@ export function CareersContent({
         </div>
 
         {loading && (
-          <div className="space-y-4 py-12 max-w-md mx-auto">
-            {[1, 2, 3].map(i => <div key={i} className="h-16 bg-white animate-pulse rounded-xl border border-slate-200" />)}
+          <div className="space-y-4 py-12 max-w-lg mx-auto">
+            {[1, 2, 3].map(i => (
+              <div
+                key={i}
+                className="relative overflow-hidden bg-white rounded-2xl border border-slate-100 p-5 shadow-sm"
+                style={{ animationDelay: `${i * 120}ms` }}
+              >
+                <div className="flex items-center gap-4">
+                  {/* Logo placeholder */}
+                  <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-[#0b2f73]/8 to-[#1d4fa5]/8 shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3.5 w-3/4 rounded-full bg-slate-100 relative overflow-hidden">
+                      <div className="absolute inset-0" style={{ background: 'linear-gradient(90deg, transparent, rgba(29,79,165,0.06), rgba(245,179,53,0.08), rgba(29,79,165,0.06), transparent)', animation: 'academiaShimmer 2s ease-in-out infinite', transform: 'translateX(-100%)' }} />
+                    </div>
+                    <div className="h-2.5 w-1/2 rounded-full bg-slate-50 relative overflow-hidden">
+                      <div className="absolute inset-0" style={{ background: 'linear-gradient(90deg, transparent, rgba(29,79,165,0.04), rgba(245,179,53,0.06), rgba(29,79,165,0.04), transparent)', animation: 'academiaShimmer 2s ease-in-out infinite 0.3s', transform: 'translateX(-100%)' }} />
+                    </div>
+                  </div>
+                  {/* Badge placeholder */}
+                  <div className="h-5 w-16 rounded-full bg-emerald-50/60 shrink-0" />
+                </div>
+              </div>
+            ))}
           </div>
         )}
 

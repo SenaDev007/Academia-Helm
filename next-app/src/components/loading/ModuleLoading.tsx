@@ -1,14 +1,13 @@
 /**
  * ModuleLoading Component
- * 
- * Composant de chargement pour les transitions de modules
- * Transition douce, message contextuel
+ *
+ * Composant de chargement branded pour les transitions de modules.
+ * Affiche un skeleton contextuel avec le nom du module.
  */
 
 'use client';
 
-import { getModuleMessage } from '@/lib/loading/loading-messages';
-import { MinimalLoadingScreen } from './LoadingScreen';
+import { ModuleSkeleton } from '@/components/loading/Skeleton';
 
 export interface ModuleLoadingProps {
   moduleName: string;
@@ -17,18 +16,16 @@ export interface ModuleLoadingProps {
 
 /**
  * Composant de chargement pour un module
- * 
+ *
  * @example
  * ```tsx
  * <ModuleLoading moduleName="finance" />
  * ```
  */
 export function ModuleLoading({ moduleName, className }: ModuleLoadingProps) {
-  const message = getModuleMessage(moduleName);
-
   return (
     <div className={className}>
-      <MinimalLoadingScreen message={message.title} />
+      <ModuleSkeleton moduleName={moduleName} />
     </div>
   );
 }

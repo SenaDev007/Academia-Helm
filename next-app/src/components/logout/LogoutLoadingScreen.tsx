@@ -29,7 +29,16 @@ export interface LogoutLoadingScreenProps {
 export function LogoutLoadingScreen({ progress }: LogoutLoadingScreenProps) {
   const [displayProgress, setDisplayProgress] = useState(0);
   const [minElapsed, setMinElapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const startTimeRef = useRef(Date.now());
+
+  // Détecter mobile pour adapter le layout
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Timer pour la durée minimale de 5 secondes
   useEffect(() => {
@@ -69,19 +78,19 @@ export function LogoutLoadingScreen({ progress }: LogoutLoadingScreenProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-white safe-area-inset-top safe-area-inset-bottom">
-      <div className="w-full max-w-md px-6 text-center">
+      <div className={`${isMobile ? 'w-full max-w-sm px-4' : 'w-full max-w-md px-6'} text-center`}>
         {/* Icône */}
-        <div className="mb-8 flex justify-center">
+        <div className={`${isMobile ? 'mb-6' : 'mb-8'} flex justify-center`}>
           <div className="relative">
-            <div className="h-20 w-20 rounded-full border-4 border-orange-200"></div>
+            <div className={`${isMobile ? 'h-16 w-16' : 'h-20 w-20'} rounded-full border-4 border-orange-200`}></div>
             <div className="absolute inset-0 flex items-center justify-center">
-              <LogOut className="h-10 w-10 text-orange-600 animate-pulse" />
+              <LogOut className={`${isMobile ? 'h-8 w-8' : 'h-10 w-10'} text-orange-600 animate-pulse`} />
             </div>
           </div>
         </div>
 
         {/* Message */}
-        <h2 className="text-xl font-semibold text-gray-900 mb-2">
+        <h2 className={`${isMobile ? 'text-lg' : 'text-xl'} font-semibold text-gray-900 mb-2`}>
           {progress?.message || 'Déconnexion en cours…'}
         </h2>
 

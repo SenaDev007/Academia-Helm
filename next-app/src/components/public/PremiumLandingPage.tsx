@@ -25,6 +25,7 @@ import {
 import PremiumHeader from '../layout/PremiumHeader';
 import InstitutionalFooter from './InstitutionalFooter';
 import { LoadingScreen } from '@/components/loading/LoadingScreen';
+import { LoadingScreenMobile } from '@/components/loading/LoadingScreenMobile';
 import { BLOG_POSTS } from '@/content/blog/posts';
 
 const SaraWidget = dynamic(() => import('./SaraWidget'), {
@@ -219,6 +220,15 @@ const LANDING_MIN_LOADING_MS = 5000;
 export default function PremiumLandingPage() {
   const [showContent, setShowContent] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState(0);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Détecter mobile pour le loading screen
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Loading minimum de 5 secondes avant d'afficher le contenu
   useEffect(() => {
@@ -270,10 +280,26 @@ export default function PremiumLandingPage() {
   );
 
   // Afficher le loading screen pendant 5 secondes minimum
+  // Sur mobile : LoadingScreenMobile (CSS-only, léger)
+  // Sur desktop : LoadingScreen (framer-motion, animations riches)
   if (!showContent) {
+    const loadingMessage = { title: 'Bienvenue sur Academia Helm', subtitle: 'Plateforme de pilotage éducatif nouvelle génération' };
+
+    if (isMobile) {
+      return (
+        <LoadingScreenMobile
+          message={loadingMessage}
+          progress={loadingProgress}
+          showProgress={true}
+          variant="pwa"
+          minDuration={0}
+        />
+      );
+    }
+
     return (
       <LoadingScreen
-        message={{ title: 'Bienvenue sur Academia Helm', subtitle: 'Plateforme de pilotage éducatif nouvelle génération' }}
+        message={loadingMessage}
         progress={loadingProgress}
         showProgress={true}
         variant="orion"

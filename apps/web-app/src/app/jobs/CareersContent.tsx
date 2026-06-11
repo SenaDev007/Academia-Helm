@@ -152,21 +152,28 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
     async function loadSchools() {
       try {
         setLoading(true);
-        const res = await fetch('/api/auth/dev-available-tenants');
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          // Fetch jobs count for each school in parallel (Tome 2 & 8)
-          const schoolsWithCounts = await Promise.all(data.map(async (school) => {
-            try {
-              const jobsRes = await fetch(`/api/hr/recruitment/jobs?tenantId=${school.tenantId || school.id}`);
-              const jobsData = await jobsRes.json();
-              const activeCount = Array.isArray(jobsData) ? jobsData.filter((j: any) => j.status === 'PUBLIÉE').length : 0;
-              return { ...school, activeJobsCount: activeCount };
-            } catch (e) {
-              return { ...school, activeJobsCount: 0 };
+        // Use the optimized public endpoint that returns schools with active job counts
+        // (instead of the old N+1 pattern with /api/auth/dev-available-tenants)
+        const res = await fetch('/api/public/schools/with-jobs');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setSchools(data);
+            return;
+          }
+        }
+        // Fallback to the basic list endpoint
+        try {
+          const fallbackRes = await fetch('/api/public/schools/list');
+          if (fallbackRes.ok) {
+            const fallbackData = await fallbackRes.json();
+            if (Array.isArray(fallbackData)) {
+              setSchools(fallbackData);
+              return;
             }
-          }));
-          setSchools(schoolsWithCounts);
+          }
+        } catch {
+          // Fallback also failed
         }
       } catch (err) {
         console.error('Failed to load schools:', err);
@@ -191,9 +198,15 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
 
     try {
       setLoading(true);
-      const fetched = await apiFetch<Job[]>(`/hr/recruitment/jobs?tenantId=${school.tenantId || school.id}`);
-      if (fetched) {
-        setJobs(fetched.filter((j: any) => j.status === 'PUBLIÉE'));
+      // Use BFF proxy (not apiFetch) for public job listings.
+      // apiFetch sends X-Tenant-ID from the auth cookie, which overrides
+      // the query param tenantId in NestJS — causing wrong-tenant jobs.
+      const res = await fetch(`/api/hr/recruitment/jobs?tenantId=${school.tenantId || school.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setJobs(Array.isArray(data) ? data.filter((j: any) => j.status === 'PUBLIÉE') : []);
+      } else {
+        console.error('Failed to load jobs:', res.status, res.statusText);
       }
     } catch (err) {
       console.error('Failed to load jobs:', err);

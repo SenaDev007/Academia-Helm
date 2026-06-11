@@ -171,23 +171,15 @@ export default function PremiumLandingPage() {
 
   // ---- Recruitment announcements marquee ----
   const [recruitAnnouncements, setRecruitAnnouncements] = useState<string[]>([]);
+  const [isPaused, setIsPaused] = useState(false);
   useEffect(() => {
     async function loadAnnouncements() {
       try {
-        const res = await fetch('/api/auth/dev-available-tenants');
+        const res = await fetch('/api/public/schools/with-jobs');
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
-          // Fetch active jobs count for each school
-          const withCounts = await Promise.all(data.map(async (school: any) => {
-            try {
-              const jobsRes = await fetch(`/api/hr/recruitment/jobs?tenantId=${school.tenantId || school.id}`);
-              const jobsData = await jobsRes.json();
-              const activeCount = Array.isArray(jobsData) ? jobsData.filter((j: any) => j.status === 'PUBLIÉE').length : 0;
-              return { ...school, activeJobsCount: activeCount };
-            } catch { return { ...school, activeJobsCount: 0 }; }
-          }));
-          const msgs = withCounts
-            .filter((s: any) => s.activeJobsCount > 0)
+          const msgs = data
+            .filter((s: any) => (s.activeJobsCount ?? 0) > 0)
             .map((s: any) => `${s.schoolName || s.tenantName || s.name} recrute ! ${s.activeJobsCount} poste${s.activeJobsCount > 1 ? 's' : ''} ouvert${s.activeJobsCount > 1 ? 's' : ''}`);
           setRecruitAnnouncements(msgs);
         }
@@ -214,9 +206,23 @@ export default function PremiumLandingPage() {
 
       {/* Bande défilante recrutement — uniquement si des offres sont publiées */}
       {recruitAnnouncements.length > 0 && (
-        <div className="mt-16 md:mt-20 relative z-30 overflow-hidden select-none bg-gradient-to-r from-[#0b2f73] via-[#103e91] to-[#0b2f73] border-y border-amber-400/20 shadow-md">
+        <div
+          className="mt-16 md:mt-20 relative z-30 overflow-hidden select-none bg-gradient-to-r from-[#0b2f73] via-[#103e91] to-[#0b2f73] border-y border-amber-400/20 shadow-md cursor-pointer"
+          onMouseEnter={() => setIsPaused(true)}
+          onMouseLeave={() => setIsPaused(false)}
+          onTouchStart={() => setIsPaused(true)}
+          onTouchEnd={() => {
+            // Reprend après 2s sur mobile pour ne pas bloquer définitivement
+            setTimeout(() => setIsPaused(false), 2000);
+          }}
+        >
           <div className="marquee-track flex items-center py-2.5">
-            <div className="marquee-content flex items-center whitespace-nowrap">
+            <div
+              className="marquee-content flex items-center whitespace-nowrap"
+              style={{
+                animationPlayState: isPaused ? 'paused' : 'running',
+              }}
+            >
               {[...recruitAnnouncements, ...recruitAnnouncements, ...recruitAnnouncements, ...recruitAnnouncements, ...recruitAnnouncements, ...recruitAnnouncements, ...recruitAnnouncements, ...recruitAnnouncements].map((msg, i) => (
                 <span key={i} className="inline-flex items-center gap-2.5 mx-8 text-[13px] font-semibold tracking-wide text-amber-100">
                   <Megaphone className="h-3.5 w-3.5 text-[#f5b335] shrink-0" />
@@ -231,7 +237,7 @@ export default function PremiumLandingPage() {
           <style>{`
             .marquee-track { overflow: hidden; }
             .marquee-content {
-              animation: marquee-scroll 50s linear infinite;
+              animation: marquee-scroll 200s linear infinite;
             }
             @keyframes marquee-scroll {
               0% { transform: translateX(0); }

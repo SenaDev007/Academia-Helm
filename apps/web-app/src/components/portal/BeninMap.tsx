@@ -5,8 +5,9 @@
  *
  * Carte SVG interactive des 12 départements du Bénin, fidèle au style
  * des sites gouvernementaux (emp.educmaster.bj / secondaire.educmaster.bj) :
+ * - Layout côte-à-côte : carte SVG à gauche, panneau de détail fixe à droite
+ * - Panneau toujours visible : totaux nationaux ou stats départementales
  * - Échelle discrète 6 niveaux (comme le site du secondaire)
- * - Panneau latéral au clic avec statistiques détaillées
  * - Filtres par cycle (Maternelle/CI-CP/CE/CM) et statut (Tous/Public/Privé)
  * - Tableau des circonscriptions scolaires (primaire uniquement)
  * - Légende avec bornes explicites
@@ -29,6 +30,8 @@ import {
   BookOpen,
   ChevronDown,
   BarChart3,
+  Building2,
+  ChevronRight,
 } from 'lucide-react';
 import {
   BENIN_DEPARTMENTS,
@@ -66,7 +69,7 @@ const DEPT_PATHS: Record<string, string> = {
   AQ: 'M165.9,349.1 166.2,350.2 166.6,351.0 166.6,351.9 165.4,352.4 165.3,353.1 165.4,354.6 164.8,355.8 163.9,356.8 163.1,359.3 163.2,360.7 162.8,362.0 161.7,364.0 162.0,364.4 162.4,365.1 162.3,365.7 161.7,366.5 160.9,367.3 160.5,368.2 160.5,369.1 160.5,370.4 160.7,371.6 161.0,372.6 160.8,373.5 160.8,375.2 160.4,377.4 160.0,378.8 159.5,379.9 159.0,381.4 159.0,382.6 159.7,384.3 160.1,385.0 160.4,386.2 160.9,386.8 160.9,387.4 161.0,388.0 161.2,389.5 170.1,388.2 174.1,387.9 181.5,386.5 181.5,386.3 181.4,386.1 181.5,385.3 183.2,381.2 184.8,380.9 185.9,380.2 188.4,379.4 189.2,379.3 190.1,379.4 190.5,379.5 190.5,379.0 190.7,378.3 190.8,377.4 190.6,375.6 190.6,374.9 189.8,374.3 189.2,374.0 188.5,373.7 187.7,373.3 188.0,370.6 187.6,368.7 187.2,359.4 186.6,353.6 186.3,352.4 186.0,351.5 185.3,350.8 183.9,349.1 183.9,348.5 186.1,345.0 186.2,344.9 185.9,344.3 185.7,343.9 185.2,343.7 184.2,343.6 183.7,344.2 183.1,344.9 181.5,346.6 180.3,344.7 177.4,346.7 167.6,348.8 166.4,349.0 165.9,349.1 Z',
   KO: 'M139.0,310.6 139.0,312.4 138.7,313.7 138.6,323.3 138.8,332.6 138.9,341.9 139.0,343.2 137.7,343.3 135.6,343.3 133.6,342.3 133.2,342.5 133.6,343.6 134.4,346.2 134.8,347.1 135.4,348.1 136.3,348.8 136.5,348.7 136.8,350.0 136.6,350.6 136.8,352.0 136.4,354.5 136.9,354.9 137.2,355.6 137.3,356.2 138.0,357.7 138.0,358.3 137.8,358.9 137.3,359.3 136.9,359.9 138.0,360.0 140.2,359.3 141.9,358.7 143.5,357.7 145.8,357.3 148.2,356.7 149.9,356.7 151.7,356.6 153.0,357.3 154.4,358.3 154.9,359.7 155.6,361.1 157.4,361.8 161.7,364.0 162.8,362.0 163.2,360.7 163.1,359.3 163.9,356.8 164.8,355.8 165.4,354.6 165.3,353.1 165.4,352.4 166.6,351.9 166.6,351.0 166.2,350.2 165.9,349.1 164.8,349.4 163.6,350.2 162.6,349.9 161.3,348.4 160.3,347.0 159.0,345.0 158.3,344.4 156.5,341.9 155.2,340.3 153.7,337.9 152.5,335.4 152.5,334.6 152.4,333.7 151.8,331.8 151.2,331.2 150.3,330.6 149.9,329.8 149.8,328.8 149.2,328.1 148.4,327.6 147.6,326.2 147.0,325.7 145.6,325.0 145.3,324.1 145.6,322.8 144.7,321.3 142.9,316.7 141.7,314.1 140.6,311.9 139.4,310.9 139.0,310.6 Z',
   LI: 'M181.4,386.1 181.5,386.3 182.7,386.2 185.1,386.1 186.5,385.9 187.5,385.5 188.8,385.4 190.2,384.9 192.4,384.4 194.0,384.2 195.0,384.0 193.4,382.2 192.7,381.2 192.1,380.6 190.9,379.9 190.5,379.5 190.5,379.5 190.1,379.4 189.2,379.3 188.4,379.4 185.9,380.2 184.8,380.9 183.2,381.2 181.5,385.3 181.4,386.1 Z',
-  MO: 'M136.9,359.9 136.4,360.0 136.0,360.3 136.2,360.8 136.1,361.3 135.8,361.7 135.6,362.4 136.6,363.4 137.5,364.9 137.6,365.4 137.5,366.2 137.9,366.8 137.7,367.5 138.0,368.3 139.0,368.3 139.3,368.6 139.6,369.2 140.3,369.6 141.1,369.4 141.3,369.8 141.4,370.6 142.1,371.1 142.8,371.4 142.8,372.4 143.1,373.5 143.0,374.4 143.5,375.2 144.9,375.3 145.6,375.9 146.3,376.7 146.5,377.4 146.5,378.1 146.8,378.6 147.5,379.2 147.4,379.9 148.3,382.2 148.8,384.5 149.4,386.3 149.5,388.0 149.7,388.9 147.6,389.3 142.7,389.9 141.7,390.2 140.6,390.2 139.5,390.9 139.9,392.0 141.1,391.9 142.2,391.7 143.2,391.5 144.0,391.2 147.6,391.3 150.8,390.3 152.5,390.4 153.3,390.2 153.9,389.8 161.2,389.5 161.2,389.5 161.0,388.0 160.9,387.4 160.9,386.8 160.4,386.2 160.1,385.0 159.7,384.3 159.0,382.6 159.0,381.4 159.5,379.9 160.0,378.8 160.4,377.4 160.8,375.2 160.8,373.5 161.0,372.6 160.7,371.6 160.5,370.4 160.5,369.1 160.5,368.2 160.9,367.3 161.7,366.5 162.3,365.7 162.4,365.1 162.0,364.4 161.7,364.0 157.4,361.8 155.6,361.1 154.9,359.7 154.4,358.3 153.0,357.3 151.7,356.6 149.9,356.7 148.2,356.7 145.8,357.3 143.5,357.7 141.9,358.7 140.2,359.3 138.0,360.0 136.9,359.9 Z',
+  MO: 'M136.9,359.9 136.4,360.0 136.0,360.3 136.2,360.8 136.1,361.3 135.8,361.7 135.6,362.4 136.6,363.4 137.5,364.9 137.6,365.4 137.5,366.2 137.9,366.8 137.7,367.5 138.0,368.3 139.0,368.3 139.3,368.6 139.6,369.2 140.3,369.6 141.1,369.4 141.3,369.8 141.4,370.6 142.1,371.1 142.8,371.4 142.8,372.4 143.1,373.5 143.0,374.4 143.5,375.2 144.9,375.3 145.6,375.9 146.3,376.7 146.5,377.4 146.5,378.1 146.8,378.6 147.5,379.2 147.4,379.9 148.3,382.2 148.8,384.5 149.4,386.3 149.5,388.0 149.7,388.9 147.6,389.3 142.7,389.9 141.7,390.2 140.6,390.2 139.5,390.9 139.9,392.0 141.1,391.9 142.2,391.7 143.2,391.5 144.0,391.2 147.6,391.3 150.8,390.3 152.5,390.4 153.3,390.2 153.9,389.8 161.2,389.5 161.2,389.5 161.0,388.0 160.9,387.4 160.9,386.8 160.4,386.2 160.1,385.0 159.7,384.3 159.0,382.6 159.5,379.9 160.0,378.8 160.4,377.4 160.8,375.2 160.8,373.5 161.0,372.6 160.7,371.6 160.5,370.4 160.5,369.1 160.5,368.2 160.9,367.3 161.7,366.5 162.3,365.7 162.4,365.1 162.0,364.4 161.7,364.0 157.4,361.8 155.6,361.1 154.9,359.7 154.4,358.3 153.0,357.3 151.7,356.6 149.9,356.7 148.2,356.7 145.8,357.3 143.5,357.7 141.9,358.7 140.2,359.3 138.0,360.0 136.9,359.9 Z',
   OU: 'M194.1,344.8 193.1,344.6 186.2,344.9 186.2,344.9 186.1,345.0 183.9,348.5 183.9,349.1 185.3,350.8 186.0,351.5 186.3,352.4 186.6,353.6 187.2,359.4 187.6,368.7 188.0,370.6 187.7,373.3 188.5,373.7 189.2,374.0 189.8,374.3 190.6,374.9 190.6,375.6 190.8,377.4 190.7,378.3 190.5,379.0 190.5,379.5 190.5,379.5 190.9,379.9 192.1,380.6 192.7,381.2 193.4,382.2 195.0,384.0 196.6,383.6 198.0,383.4 204.8,381.7 204.9,380.2 204.7,376.5 205.1,374.9 205.4,373.3 205.7,370.8 204.8,370.3 200.3,370.1 199.9,369.8 199.5,368.3 197.7,361.5 193.9,353.4 193.1,350.8 193.3,348.3 193.8,345.4 194.1,344.8 Z',
   PL: 'M185.9,315.3 186.1,317.0 187.1,317.8 187.2,320.2 187.2,322.4 189.5,330.1 190.1,330.9 191.1,331.7 192.2,331.9 193.3,332.9 193.0,335.0 193.9,337.3 194.2,339.1 194.6,341.6 194.5,343.9 194.1,344.8 193.8,345.4 193.3,348.3 193.1,350.8 193.9,353.4 197.7,361.5 199.5,368.3 199.9,369.8 200.3,370.1 204.8,370.3 205.7,370.8 206.0,370.3 206.4,367.3 205.9,366.1 206.6,363.2 207.0,362.4 207.6,362.0 208.9,362.1 209.4,360.8 207.9,356.6 206.8,356.7 206.0,355.9 205.7,354.6 206.0,353.2 206.5,352.2 206.3,351.1 206.3,349.9 206.5,349.3 206.6,347.7 205.7,346.6 205.0,346.2 205.4,343.8 205.9,342.5 206.5,341.8 208.1,340.7 209.1,339.8 208.1,339.0 207.5,338.6 206.7,337.4 206.4,336.4 207.0,335.3 207.7,334.7 208.0,333.3 208.0,331.1 208.0,328.1 207.3,326.5 207.2,323.5 207.3,321.1 207.1,318.5 207.5,317.1 208.4,316.9 209.2,316.5 209.5,315.8 209.9,313.4 209.9,312.5 209.6,311.6 208.3,310.9 207.7,310.4 207.6,309.6 207.3,309.0 206.3,308.4 205.9,307.3 205.8,303.0 200.0,303.3 191.1,303.7 190.8,304.8 190.4,305.6 190.2,306.4 190.1,307.3 190.5,308.7 190.6,309.9 190.2,310.6 189.6,311.3 188.5,311.9 187.3,313.9 186.8,315.0 185.9,315.3 Z',
   ZO: 'M138.3,302.8 138.8,310.6 139.0,310.6 139.4,310.9 140.6,311.9 141.7,314.1 142.9,316.7 144.7,321.3 145.6,322.8 145.3,324.1 145.6,325.0 147.0,325.7 147.6,326.2 148.4,327.6 149.2,328.1 149.8,328.8 149.9,329.8 150.3,330.6 151.2,331.2 151.8,331.8 152.4,333.7 152.5,334.6 152.5,335.4 153.7,337.9 155.2,340.3 156.5,341.9 158.3,344.4 159.0,345.0 160.3,347.0 161.3,348.4 162.6,349.9 163.6,350.2 164.8,349.4 165.9,349.1 166.4,349.0 167.6,348.8 177.4,346.7 180.3,344.7 181.5,346.6 183.1,344.9 183.7,344.2 184.2,343.6 185.2,343.7 185.7,343.9 185.9,344.3 186.2,344.9 186.2,344.9 193.1,344.6 194.1,344.8 194.5,343.9 194.6,341.6 194.2,339.1 193.9,337.3 193.0,335.0 193.3,332.9 192.2,331.9 191.1,331.7 190.1,330.9 189.5,330.1 187.2,322.4 187.2,320.2 187.1,317.8 186.1,317.0 185.9,315.3 185.1,315.6 183.5,315.9 181.9,315.5 181.4,315.1 179.6,313.2 177.2,312.1 176.0,311.7 174.9,311.2 173.2,311.1 171.4,310.8 169.4,310.6 165.6,309.8 161.8,307.8 159.6,307.1 155.2,305.3 145.0,303.3 142.1,303.4 138.3,302.8 Z',
@@ -112,6 +115,15 @@ function getDiscreteColor(value: number, breakpoints: number[]): string {
 function formatNumber(n: number): string {
   return new Intl.NumberFormat('fr-FR').format(n);
 }
+
+/* ── Animation variants ──────────────────────────────────────────────── */
+const panelVariants = {
+  initial: { opacity: 0, x: 20 },
+  animate: { opacity: 1, x: 0 },
+  exit: { opacity: 0, x: -20 },
+};
+
+const panelTransition = { duration: 0.3, ease: 'easeOut' as const };
 
 /* ── Composant principal ──────────────────────────────────────────────── */
 export default function BeninMap({
@@ -209,11 +221,62 @@ export default function BeninMap({
     [educationLevel],
   );
 
+  /* ── National totals based on current education level ── */
+  const nationalTotals = useMemo(() => {
+    if (educationLevel === 'secondaire') {
+      const t = BENIN_SECONDAIRE_TOTALS;
+      const femalePercent =
+        t.students > 0
+          ? Math.round(
+              (BENIN_DEPARTMENTS.reduce(
+                (s, d) => s + d.secondaire.studentCount * (d.secondaire.femalePercent / 100),
+                0,
+              ) /
+                t.students) *
+                100 *
+                10,
+            ) / 10
+          : 0;
+      return {
+        schoolCount: t.schools,
+        studentCount: t.students,
+        teacherCount: t.teachers,
+        femalePercent,
+        publicCount: t.publicCount,
+        privateCount: t.privateCount,
+      };
+    }
+    const t = BENIN_TOTALS;
+    const femalePercent =
+      t.students > 0
+        ? Math.round(
+            (BENIN_DEPARTMENTS.reduce(
+              (s, d) => s + d.studentCount * (d.femalePercent / 100),
+              0,
+            ) /
+              t.students) *
+              100 *
+              10,
+          ) / 10
+        : 0;
+    return {
+      schoolCount: t.schools,
+      studentCount: t.students,
+      teacherCount: t.teachers,
+      femalePercent,
+      publicCount: t.publicCount,
+      privateCount: t.privateCount,
+    };
+  }, [educationLevel]);
+
   /* ── Caption text (like government site) ── */
   const captionText = useMemo(() => {
     const entityLabel = educationLevel === 'secondaire' ? 'établissements' : 'écoles';
     return `Carte : nombre d'${entityLabel} par département · ${getFilterLabel()}`;
   }, [educationLevel, getFilterLabel]);
+
+  /* ── The selected department for the panel ── */
+  const panelDept = selectedDepartment ?? null;
 
   return (
     <div className={className}>
@@ -287,485 +350,680 @@ export default function BeninMap({
         </div>
       )}
 
-      {/* ── Carte SVG plein format ─────────────────────────────────── */}
-      <div className="relative">
-        <svg
-          viewBox="0 0 360 400"
-          className="w-full max-w-2xl mx-auto"
-          role="img"
-          aria-label="Carte interactive du Bénin par département"
-          onMouseLeave={() => setHoveredDept(null)}
-        >
-          {/* Départements */}
-          {BENIN_DEPARTMENTS.map((dept) => {
-            const path = DEPT_PATHS[dept.code];
-            if (!path) return null;
-            const value = getSchoolCount(dept);
-            const isHovered = hoveredDept === dept.code;
-            const isSelected = selectedDepartment?.code === dept.code;
-            const isActive = isHovered || isSelected;
-
-            return (
-              <g key={dept.code}>
-                <path
-                  d={path}
-                  fill={getDiscreteColor(value, breakpoints)}
-                  stroke={isActive ? GOLD : 'rgba(255,255,255,0.7)'}
-                  strokeWidth={isActive ? 2.5 : 1}
-                  className="cursor-pointer transition-all duration-150"
-                  style={{
-                    filter: isActive
-                      ? 'drop-shadow(0 2px 8px rgba(245,179,53,0.5))'
-                      : 'none',
-                  }}
-                  onMouseEnter={() => setHoveredDept(dept.code)}
-                  onMouseLeave={() => setHoveredDept(null)}
-                  onClick={() =>
-                    onDepartmentSelect?.(isSelected ? null : dept)
-                  }
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Département ${dept.name}`}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      onDepartmentSelect?.(isSelected ? null : dept);
-                    }
-                  }}
-                />
-                {/* Label du département */}
-                <text
-                  x={DEPT_LABELS[dept.code]?.x ?? 0}
-                  y={DEPT_LABELS[dept.code]?.y ?? 0}
-                  textAnchor="middle"
-                  className="pointer-events-none select-none"
-                  fill={isActive ? GOLD : 'rgba(255,255,255,0.92)'}
-                  fontSize={isActive ? '9' : '7.5'}
-                  fontWeight={isActive ? '700' : '600'}
-                  style={{ textShadow: '0 1px 3px rgba(0,0,0,0.6)' }}
-                >
-                  {dept.code}
-                </text>
-              </g>
-            );
-          })}
-
-          {/* Hover info overlay inside SVG */}
-          {hoveredDept &&
-            (() => {
-              const dept = BENIN_DEPARTMENTS.find(
-                (d) => d.code === hoveredDept,
-              );
-              if (!dept) return null;
-              const data = getActiveData(dept);
-              const lx = DEPT_LABELS[dept.code]?.x ?? 180;
-              const ly = (DEPT_LABELS[dept.code]?.y ?? 200) - 28;
-
-              return (
-                <g className="pointer-events-none">
-                  <rect
-                    x={lx - 68}
-                    y={ly - 20}
-                    width={136}
-                    height={22}
-                    rx={6}
-                    fill="rgba(7,29,74,0.92)"
-                    stroke={GOLD}
-                    strokeWidth={0.5}
-                  />
-                  <text
-                    x={lx}
-                    y={ly - 5}
-                    textAnchor="middle"
-                    fill="white"
-                    fontSize="7.5"
-                    fontWeight="600"
-                  >
-                    {dept.name} — {formatNumber(data.schoolCount)}{' '}
-                    {educationLevel === 'secondaire' ? 'étab.' : 'écoles'}
-                  </text>
-                </g>
-              );
-            })()}
-        </svg>
-
-        {/* ── Legend (discrete, like government site) ──────────────── */}
-        <div className="mt-2 space-y-1.5">
-          <div className="flex items-center justify-center gap-1.5 text-[11px]">
-            <span className="text-slate-500">Moins</span>
-            {COLOR_SCALE.map((color, i) => (
-              <div
-                key={i}
-                className="h-3.5 w-7 rounded-sm border border-white/40"
-                style={{ backgroundColor: color }}
-                title={`≥ ${formatNumber(breakpoints[i])}`}
-              />
-            ))}
-            <span className="text-slate-500">Plus</span>
-          </div>
-          <p className="text-center text-[10px] text-slate-400 italic">
-            {captionText}
-          </p>
-        </div>
-      </div>
-
-      {/* ── Détail du département sélectionné (panneau latéral style gov) ── */}
-      <AnimatePresence mode="wait">
-        {activeDept &&
-        onDepartmentSelect &&
-        selectedDepartment?.code === activeDept.code ? (
-          <motion.div
-            key={activeDept.code}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.3, ease: 'easeOut' }}
-            className="mt-4 rounded-2xl border border-slate-200/80 bg-white shadow-lg overflow-hidden"
-          >
-            {/* En-tête département */}
-            <div
-              className="px-5 py-3.5 relative overflow-hidden"
-              style={{
-                background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
-              }}
+      {/* ── Main layout: Map + Detail Panel side by side ────────── */}
+      <div className="flex flex-col lg:flex-row gap-4">
+        {/* ── LEFT: SVG Map + Legend ──────────────────────────────── */}
+        <div className="flex-1 min-w-0">
+          <div className="relative">
+            <svg
+              viewBox="0 0 360 400"
+              className="w-full max-w-2xl mx-auto"
+              role="img"
+              aria-label="Carte interactive du Bénin par département"
+              onMouseLeave={() => setHoveredDept(null)}
             >
-              <div
-                className="absolute -right-6 -top-6 h-20 w-20 rounded-full opacity-10"
-                style={{ backgroundColor: GOLD }}
-              />
-              <div className="relative flex items-center justify-between">
-                <div>
-                  <p
-                    className="text-[10px] font-medium uppercase tracking-wider"
-                    style={{ color: GOLD_LIGHT }}
-                  >
-                    Département
-                  </p>
-                  <h3 className="mt-0.5 text-lg font-bold text-white">
-                    {activeDept.name}
-                  </h3>
-                  <p className="mt-0.5 text-[11px] text-blue-200 flex items-center gap-1">
-                    <MapPin className="h-3 w-3" />
-                    {activeDept.capital} · {formatNumber(activeDept.area)} km²
-                  </p>
-                </div>
-                <button
-                  onClick={() => onDepartmentSelect(null)}
-                  className="rounded-lg p-1.5 text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-                  aria-label="Fermer"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
+              {/* Départements */}
+              {BENIN_DEPARTMENTS.map((dept) => {
+                const path = DEPT_PATHS[dept.code];
+                if (!path) return null;
+                const value = getSchoolCount(dept);
+                const isHovered = hoveredDept === dept.code;
+                const isSelected = selectedDepartment?.code === dept.code;
+                const isActive = isHovered || isSelected;
 
-            {/* Statistiques principales */}
-            <div className="p-4 space-y-3">
-              {/* Onglets Primaire / Secondaire dans le panneau */}
-              <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
-                {(['primaire', 'secondaire'] as const).map((level) => (
-                  <button
-                    key={level}
-                    onClick={() => setEducationLevel(level)}
-                    className={`flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${
-                      educationLevel === level
-                        ? 'text-white shadow-sm'
-                        : 'text-slate-600 hover:text-slate-800'
-                    }`}
-                    style={
-                      educationLevel === level
-                        ? {
-                            background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
-                            color: 'white',
-                          }
-                        : undefined
-                    }
-                  >
-                    {level === 'primaire'
-                      ? 'Maternel & Primaire'
-                      : 'Secondaire'}
-                  </button>
-                ))}
-              </div>
-
-              {/* 4 Key Stats */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <StatCard
-                  icon={<School className="h-4 w-4" style={{ color: BLUE }} />}
-                  label="Écoles"
-                  value={formatNumber(getActiveData(activeDept).schoolCount)}
-                  accent={BLUE}
-                />
-                <StatCard
-                  icon={<Users className="h-4 w-4" style={{ color: BLUE }} />}
-                  label="Apprenants"
-                  value={formatNumber(getActiveData(activeDept).studentCount)}
-                  accent={BLUE}
-                />
-                <StatCard
-                  icon={
-                    <GraduationCap
-                      className="h-4 w-4"
-                      style={{ color: BLUE }}
-                    />
-                  }
-                  label="Enseignants"
-                  value={formatNumber(getActiveData(activeDept).teacherCount)}
-                  accent={BLUE}
-                />
-                <StatCard
-                  icon={
-                    <BarChart3 className="h-4 w-4" style={{ color: BLUE }} />
-                  }
-                  label="% Filles"
-                  value={`${getActiveData(activeDept).femalePercent}%`}
-                  accent={BLUE}
-                />
-              </div>
-
-              {/* Répartition Public / Privé */}
-              <div className="rounded-xl bg-slate-50 p-3 space-y-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Répartition Public / Privé
-                </p>
-                <div className="flex items-center gap-3">
-                  <div className="flex-1">
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="font-medium text-slate-700">Public</span>
-                      <span className="text-slate-500">
-                        {formatNumber(getActiveData(activeDept).publicCount)} (
-                        {(
-                          (getActiveData(activeDept).publicCount /
-                            getActiveData(activeDept).schoolCount) *
-                          100
-                        ).toFixed(1)}
-                        %)
-                      </span>
-                    </div>
-                    <div className="h-2.5 rounded-full bg-slate-200 overflow-hidden">
-                      <motion.div
-                        className="h-full rounded-full"
-                        style={{ backgroundColor: NAVY }}
-                        initial={{ width: 0 }}
-                        animate={{
-                          width: `${
-                            (getActiveData(activeDept).publicCount /
-                              getActiveData(activeDept).schoolCount) *
-                            100
-                          }%`,
-                        }}
-                        transition={{ duration: 0.6, ease: 'easeOut' }}
-                      />
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex-1">
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="font-medium text-slate-700">Privé</span>
-                      <span className="text-slate-500">
-                        {formatNumber(getActiveData(activeDept).privateCount)} (
-                        {(
-                          (getActiveData(activeDept).privateCount /
-                            getActiveData(activeDept).schoolCount) *
-                          100
-                        ).toFixed(1)}
-                        %)
-                      </span>
-                    </div>
-                    <div className="h-2.5 rounded-full bg-slate-200 overflow-hidden">
-                      <motion.div
-                        className="h-full rounded-full"
-                        style={{ backgroundColor: GOLD }}
-                        initial={{ width: 0 }}
-                        animate={{
-                          width: `${
-                            (getActiveData(activeDept).privateCount /
-                              getActiveData(activeDept).schoolCount) *
-                            100
-                          }%`,
-                        }}
-                        transition={{
-                          duration: 0.6,
-                          ease: 'easeOut',
-                          delay: 0.1,
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Circonscriptions scolaires (primaire only) */}
-              {educationLevel === 'primaire' &&
-                activeDept.circumscriptions.length > 0 && (
-                  <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-                    <button
-                      onClick={() =>
-                        setCircumscriptionOpen(!circumscriptionOpen)
-                      }
-                      className="w-full flex items-center justify-between px-3 py-2.5 text-xs font-semibold uppercase tracking-wide hover:bg-slate-50 transition-colors"
-                      style={{ color: NAVY }}
-                    >
-                      <span className="flex items-center gap-2">
-                        <MapPin
-                          className="h-3.5 w-3.5"
-                          style={{ color: GOLD }}
-                        />
-                        Circonscriptions ({activeDept.circumscriptions.length})
-                      </span>
-                      <motion.div
-                        animate={{ rotate: circumscriptionOpen ? 180 : 0 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        <ChevronDown className="h-4 w-4 text-slate-400" />
-                      </motion.div>
-                    </button>
-                    <AnimatePresence>
-                      {circumscriptionOpen && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          transition={{ duration: 0.25, ease: 'easeOut' }}
-                          className="overflow-hidden"
-                        >
-                          <div className="max-h-72 overflow-y-auto">
-                            <table className="w-full text-[11px]">
-                              <thead>
-                                <tr
-                                  className="border-t border-slate-100"
-                                  style={{ background: `${NAVY}08` }}
-                                >
-                                  <th className="text-left px-3 py-2 font-semibold text-slate-600">
-                                    CS
-                                  </th>
-                                  <th className="text-right px-3 py-2 font-semibold text-slate-600">
-                                    Éc.
-                                  </th>
-                                  <th className="text-right px-3 py-2 font-semibold text-slate-600">
-                                    App.
-                                  </th>
-                                  <th className="text-right px-3 py-2 font-semibold text-slate-600">
-                                    Ens.
-                                  </th>
-                                  <th className="text-right px-3 py-2 font-semibold text-slate-600">
-                                    %F
-                                  </th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {activeDept.circumscriptions.map((circ, i) => (
-                                  <tr
-                                    key={circ.name}
-                                    className={`border-t border-slate-50 hover:bg-blue-50/40 transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-slate-25'}`}
-                                  >
-                                    <td className="px-3 py-1.5 font-medium text-slate-800">
-                                      {circ.name}
-                                    </td>
-                                    <td
-                                      className="text-right px-3 py-1.5 font-semibold"
-                                      style={{ color: NAVY }}
-                                    >
-                                      {formatNumber(circ.schoolCount)}
-                                    </td>
-                                    <td className="text-right px-3 py-1.5 text-slate-600">
-                                      {formatNumber(circ.studentCount)}
-                                    </td>
-                                    <td className="text-right px-3 py-1.5 text-slate-600">
-                                      {formatNumber(circ.teacherCount)}
-                                    </td>
-                                    <td className="text-right px-3 py-1.5">
-                                      <span
-                                        className="font-medium"
-                                        style={{
-                                          color:
-                                            circ.femalePercent >= 48
-                                              ? '#16a34a'
-                                              : '#dc2626',
-                                        }}
-                                      >
-                                        {circ.femalePercent}%
-                                      </span>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                )}
-
-              {/* Communes */}
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
-                  Communes ({activeDept.communes.length})
-                </p>
-                <div className="flex flex-wrap gap-1">
-                  {activeDept.communes.map((commune) => (
-                    <span
-                      key={commune}
-                      className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium text-slate-700"
+                return (
+                  <g key={dept.code}>
+                    <path
+                      d={path}
+                      fill={getDiscreteColor(value, breakpoints)}
+                      stroke={isActive ? GOLD : 'rgba(255,255,255,0.7)'}
+                      strokeWidth={isActive ? 2.5 : 1}
+                      className="cursor-pointer transition-all duration-150"
                       style={{
-                        backgroundColor: `${NAVY}08`,
-                        border: `1px solid ${NAVY}18`,
+                        filter: isActive
+                          ? 'drop-shadow(0 2px 8px rgba(245,179,53,0.5))'
+                          : 'none',
                       }}
+                      onMouseEnter={() => setHoveredDept(dept.code)}
+                      onMouseLeave={() => setHoveredDept(null)}
+                      onClick={() =>
+                        onDepartmentSelect?.(isSelected ? null : dept)
+                      }
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Département ${dept.name}`}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          onDepartmentSelect?.(isSelected ? null : dept);
+                        }
+                      }}
+                    />
+                    {/* Label du département */}
+                    <text
+                      x={DEPT_LABELS[dept.code]?.x ?? 0}
+                      y={DEPT_LABELS[dept.code]?.y ?? 0}
+                      textAnchor="middle"
+                      className="pointer-events-none select-none"
+                      fill={isActive ? GOLD : 'rgba(255,255,255,0.92)'}
+                      fontSize={isActive ? '8' : '6.5'}
+                      fontWeight={isActive ? '700' : '600'}
+                      style={{ textShadow: '0 1px 3px rgba(0,0,0,0.6)' }}
                     >
-                      <MapPin
-                        className="h-3 w-3"
-                        style={{ color: BLUE }}
-                      />
-                      {commune}
-                    </span>
-                  ))}
-                </div>
-              </div>
+                      {dept.name.toUpperCase()}
+                    </text>
+                  </g>
+                );
+              })}
 
-              {/* Source */}
-              <p className="text-[10px] text-slate-400 text-center pt-1">
-                Source :{' '}
-                {educationLevel === 'primaire'
-                  ? 'MEMP — emp.educmaster.bj'
-                  : 'MESTFP — secondaire.educmaster.bj'}{' '}
-                · Année scolaire 2025-2026
+              {/* Hover info overlay inside SVG */}
+              {hoveredDept &&
+                (() => {
+                  const dept = BENIN_DEPARTMENTS.find(
+                    (d) => d.code === hoveredDept,
+                  );
+                  if (!dept) return null;
+                  const data = getActiveData(dept);
+                  const lx = DEPT_LABELS[dept.code]?.x ?? 180;
+                  const ly = (DEPT_LABELS[dept.code]?.y ?? 200) - 28;
+
+                  return (
+                    <g className="pointer-events-none">
+                      <rect
+                        x={lx - 68}
+                        y={ly - 20}
+                        width={136}
+                        height={22}
+                        rx={6}
+                        fill="rgba(7,29,74,0.92)"
+                        stroke={GOLD}
+                        strokeWidth={0.5}
+                      />
+                      <text
+                        x={lx}
+                        y={ly - 5}
+                        textAnchor="middle"
+                        fill="white"
+                        fontSize="7.5"
+                        fontWeight="600"
+                      >
+                        {dept.name} — {formatNumber(data.schoolCount)}{' '}
+                        {educationLevel === 'secondaire' ? 'étab.' : 'écoles'}
+                      </text>
+                    </g>
+                  );
+                })()}
+            </svg>
+
+            {/* ── Legend (discrete, like government site) ──────────── */}
+            <div className="mt-2 space-y-1.5">
+              <div className="flex items-center justify-center gap-1.5 text-[11px]">
+                <span className="text-slate-500">Moins</span>
+                {COLOR_SCALE.map((color, i) => (
+                  <div
+                    key={i}
+                    className="h-3.5 w-7 rounded-sm border border-white/40"
+                    style={{ backgroundColor: color }}
+                    title={`≥ ${formatNumber(breakpoints[i])}`}
+                  />
+                ))}
+                <span className="text-slate-500">Plus</span>
+              </div>
+              <p className="text-center text-[10px] text-slate-400 italic">
+                {captionText}
               </p>
             </div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-    </div>
-  );
-}
+          </div>
+        </div>
 
-/* ── Micro-composant : StatCard ───────────────────────────────────────── */
-function StatCard({
-  icon,
-  label,
-  value,
-  accent,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  accent: string;
-}) {
-  return (
-    <div
-      className="rounded-lg p-2.5 border border-slate-100"
-      style={{
-        background: `linear-gradient(135deg, ${accent}08, ${accent}03)`,
-      }}
-    >
-      <div className="flex items-center gap-1.5 mb-0.5">
-        {icon}
-        <span className="text-[11px] text-slate-500">{label}</span>
+        {/* ── RIGHT: Detail Panel (always visible) ───────────────── */}
+        <div className="w-full lg:w-[290px] lg:flex-shrink-0">
+          <div className="rounded-2xl border border-slate-200/80 bg-white shadow-lg overflow-hidden">
+            <AnimatePresence mode="wait">
+              {panelDept ? (
+                /* ── DEPARTMENT SELECTED: Show department stats ───── */
+                <motion.div
+                  key={panelDept.code}
+                  variants={panelVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  transition={panelTransition}
+                >
+                  {/* En-tête département — dark navy gradient */}
+                  <div
+                    className="px-4 py-3.5 relative overflow-hidden"
+                    style={{
+                      background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+                    }}
+                  >
+                    <div
+                      className="absolute -right-6 -top-6 h-20 w-20 rounded-full opacity-10"
+                      style={{ backgroundColor: GOLD }}
+                    />
+                    <div className="relative flex items-start justify-between">
+                      <div>
+                        <p
+                          className="text-[10px] font-medium uppercase tracking-wider"
+                          style={{ color: GOLD_LIGHT }}
+                        >
+                          Département
+                        </p>
+                        <h3 className="mt-0.5 text-base font-bold text-white leading-tight">
+                          {panelDept.name}
+                        </h3>
+                        <p className="mt-0.5 text-[11px] text-blue-200 flex items-center gap-1">
+                          <MapPin className="h-3 w-3" />
+                          {panelDept.capital} · {formatNumber(panelDept.area)} km²
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => onDepartmentSelect?.(null)}
+                        className="rounded-lg p-1 text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                        aria-label="Fermer"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Statistiques principales — inline stat cards */}
+                  <div className="p-3 space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      {/* Écoles */}
+                      <div
+                        className="rounded-lg p-2.5 border border-slate-100"
+                        style={{
+                          background: `linear-gradient(135deg, ${BLUE}08, ${BLUE}03)`,
+                        }}
+                      >
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <School className="h-3.5 w-3.5" style={{ color: BLUE }} />
+                          <span className="text-[10px] text-slate-500">Écoles</span>
+                        </div>
+                        <p className="text-sm font-bold" style={{ color: BLUE }}>
+                          {formatNumber(getActiveData(panelDept).schoolCount)}
+                        </p>
+                      </div>
+                      {/* Apprenants */}
+                      <div
+                        className="rounded-lg p-2.5 border border-slate-100"
+                        style={{
+                          background: `linear-gradient(135deg, ${BLUE}08, ${BLUE}03)`,
+                        }}
+                      >
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <Users className="h-3.5 w-3.5" style={{ color: BLUE }} />
+                          <span className="text-[10px] text-slate-500">Apprenants</span>
+                        </div>
+                        <p className="text-sm font-bold" style={{ color: BLUE }}>
+                          {formatNumber(getActiveData(panelDept).studentCount)}
+                        </p>
+                      </div>
+                      {/* Enseignants */}
+                      <div
+                        className="rounded-lg p-2.5 border border-slate-100"
+                        style={{
+                          background: `linear-gradient(135deg, ${BLUE}08, ${BLUE}03)`,
+                        }}
+                      >
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <GraduationCap className="h-3.5 w-3.5" style={{ color: BLUE }} />
+                          <span className="text-[10px] text-slate-500">Enseignants</span>
+                        </div>
+                        <p className="text-sm font-bold" style={{ color: BLUE }}>
+                          {formatNumber(getActiveData(panelDept).teacherCount)}
+                        </p>
+                      </div>
+                      {/* % Filles */}
+                      <div
+                        className="rounded-lg p-2.5 border border-slate-100"
+                        style={{
+                          background: `linear-gradient(135deg, ${BLUE}08, ${BLUE}03)`,
+                        }}
+                      >
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <BarChart3 className="h-3.5 w-3.5" style={{ color: BLUE }} />
+                          <span className="text-[10px] text-slate-500">% Filles</span>
+                        </div>
+                        <p className="text-sm font-bold" style={{ color: BLUE }}>
+                          {getActiveData(panelDept).femalePercent}%
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Répartition Public / Privé */}
+                    <div className="rounded-xl bg-slate-50 p-2.5 space-y-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                        Répartition Public / Privé
+                      </p>
+                      <div>
+                        <div className="flex justify-between text-[11px] mb-1">
+                          <span className="font-medium text-slate-700">Public</span>
+                          <span className="text-slate-500">
+                            {formatNumber(getActiveData(panelDept).publicCount)} (
+                            {(
+                              (getActiveData(panelDept).publicCount /
+                                getActiveData(panelDept).schoolCount) *
+                              100
+                            ).toFixed(1)}
+                            %)
+                          </span>
+                        </div>
+                        <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+                          <motion.div
+                            className="h-full rounded-full"
+                            style={{ backgroundColor: NAVY }}
+                            initial={{ width: 0 }}
+                            animate={{
+                              width: `${
+                                (getActiveData(panelDept).publicCount /
+                                  getActiveData(panelDept).schoolCount) *
+                                100
+                              }%`,
+                            }}
+                            transition={{ duration: 0.6, ease: 'easeOut' }}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex justify-between text-[11px] mb-1">
+                          <span className="font-medium text-slate-700">Privé</span>
+                          <span className="text-slate-500">
+                            {formatNumber(getActiveData(panelDept).privateCount)} (
+                            {(
+                              (getActiveData(panelDept).privateCount /
+                                getActiveData(panelDept).schoolCount) *
+                              100
+                            ).toFixed(1)}
+                            %)
+                          </span>
+                        </div>
+                        <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+                          <motion.div
+                            className="h-full rounded-full"
+                            style={{ backgroundColor: GOLD }}
+                            initial={{ width: 0 }}
+                            animate={{
+                              width: `${
+                                (getActiveData(panelDept).privateCount /
+                                  getActiveData(panelDept).schoolCount) *
+                                100
+                              }%`,
+                            }}
+                            transition={{
+                              duration: 0.6,
+                              ease: 'easeOut',
+                              delay: 0.1,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Circonscriptions scolaires (primaire only) */}
+                    {educationLevel === 'primaire' &&
+                      panelDept.circumscriptions.length > 0 && (
+                        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+                          <button
+                            onClick={() =>
+                              setCircumscriptionOpen(!circumscriptionOpen)
+                            }
+                            className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold uppercase tracking-wide hover:bg-slate-50 transition-colors"
+                            style={{ color: NAVY }}
+                          >
+                            <span className="flex items-center gap-1.5">
+                              <MapPin
+                                className="h-3 w-3"
+                                style={{ color: GOLD }}
+                              />
+                              Circonscriptions ({panelDept.circumscriptions.length})
+                            </span>
+                            <motion.div
+                              animate={{ rotate: circumscriptionOpen ? 180 : 0 }}
+                              transition={{ duration: 0.2 }}
+                            >
+                              <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+                            </motion.div>
+                          </button>
+                          <AnimatePresence>
+                            {circumscriptionOpen && (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                transition={{ duration: 0.25, ease: 'easeOut' }}
+                                className="overflow-hidden"
+                              >
+                                <div className="max-h-52 overflow-y-auto">
+                                  <table className="w-full text-[10px]">
+                                    <thead>
+                                      <tr
+                                        className="border-t border-slate-100"
+                                        style={{ background: `${NAVY}08` }}
+                                      >
+                                        <th className="text-left px-2 py-1.5 font-semibold text-slate-600">
+                                          CS
+                                        </th>
+                                        <th className="text-right px-2 py-1.5 font-semibold text-slate-600">
+                                          Éc.
+                                        </th>
+                                        <th className="text-right px-2 py-1.5 font-semibold text-slate-600">
+                                          App.
+                                        </th>
+                                        <th className="text-right px-2 py-1.5 font-semibold text-slate-600">
+                                          Ens.
+                                        </th>
+                                        <th className="text-right px-2 py-1.5 font-semibold text-slate-600">
+                                          %F
+                                        </th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {panelDept.circumscriptions.map((circ, i) => (
+                                        <tr
+                                          key={circ.name}
+                                          className={`border-t border-slate-50 hover:bg-blue-50/40 transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-slate-25'}`}
+                                        >
+                                          <td className="px-2 py-1 font-medium text-slate-800">
+                                            {circ.name}
+                                          </td>
+                                          <td
+                                            className="text-right px-2 py-1 font-semibold"
+                                            style={{ color: NAVY }}
+                                          >
+                                            {formatNumber(circ.schoolCount)}
+                                          </td>
+                                          <td className="text-right px-2 py-1 text-slate-600">
+                                            {formatNumber(circ.studentCount)}
+                                          </td>
+                                          <td className="text-right px-2 py-1 text-slate-600">
+                                            {formatNumber(circ.teacherCount)}
+                                          </td>
+                                          <td className="text-right px-2 py-1">
+                                            <span
+                                              className="font-medium"
+                                              style={{
+                                                color:
+                                                  circ.femalePercent >= 48
+                                                    ? '#16a34a'
+                                                    : '#dc2626',
+                                              }}
+                                            >
+                                              {circ.femalePercent}%
+                                            </span>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      )}
+
+                    {/* Communes */}
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
+                        Communes ({panelDept.communes.length})
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {panelDept.communes.map((commune) => (
+                          <span
+                            key={commune}
+                            className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-slate-700"
+                            style={{
+                              backgroundColor: `${NAVY}08`,
+                              border: `1px solid ${NAVY}18`,
+                            }}
+                          >
+                            <MapPin
+                              className="h-2.5 w-2.5"
+                              style={{ color: BLUE }}
+                            />
+                            {commune}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Source */}
+                    <p className="text-[9px] text-slate-400 text-center pt-1">
+                      Source :{' '}
+                      {educationLevel === 'primaire'
+                        ? 'MEMP — emp.educmaster.bj'
+                        : 'MESTFP — secondaire.educmaster.bj'}{' '}
+                      · 2025-2026
+                    </p>
+                  </div>
+                </motion.div>
+              ) : (
+                /* ── NO DEPARTMENT: National totals + department list ── */
+                <motion.div
+                  key="national"
+                  variants={panelVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  transition={panelTransition}
+                >
+                  {/* En-tête national — dark navy gradient */}
+                  <div
+                    className="px-4 py-3.5 relative overflow-hidden"
+                    style={{
+                      background: `linear-gradient(135deg, ${NAVY_DARK}, ${NAVY})`,
+                    }}
+                  >
+                    <div
+                      className="absolute -right-6 -top-6 h-20 w-20 rounded-full opacity-10"
+                      style={{ backgroundColor: GOLD }}
+                    />
+                    <div className="relative">
+                      <p
+                        className="text-[10px] font-medium uppercase tracking-wider"
+                        style={{ color: GOLD_LIGHT }}
+                      >
+                        République du Bénin
+                      </p>
+                      <h3 className="mt-0.5 text-base font-bold text-white leading-tight">
+                        Statistiques Nationales
+                      </h3>
+                      <p className="mt-0.5 text-[11px] text-blue-200 flex items-center gap-1">
+                        <Building2 className="h-3 w-3" />
+                        {BENIN_TOTALS.departments} départements ·{' '}
+                        {educationLevel === 'secondaire' ? 'Secondaire' : 'Primaire'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* National stats — inline stat cards */}
+                  <div className="p-3 space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      {/* Écoles */}
+                      <div
+                        className="rounded-lg p-2.5 border border-slate-100"
+                        style={{
+                          background: `linear-gradient(135deg, ${BLUE}08, ${BLUE}03)`,
+                        }}
+                      >
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <School className="h-3.5 w-3.5" style={{ color: BLUE }} />
+                          <span className="text-[10px] text-slate-500">
+                            {educationLevel === 'secondaire' ? 'Étab.' : 'Écoles'}
+                          </span>
+                        </div>
+                        <p className="text-sm font-bold" style={{ color: BLUE }}>
+                          {formatNumber(nationalTotals.schoolCount)}
+                        </p>
+                      </div>
+                      {/* Apprenants */}
+                      <div
+                        className="rounded-lg p-2.5 border border-slate-100"
+                        style={{
+                          background: `linear-gradient(135deg, ${BLUE}08, ${BLUE}03)`,
+                        }}
+                      >
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <Users className="h-3.5 w-3.5" style={{ color: BLUE }} />
+                          <span className="text-[10px] text-slate-500">Apprenants</span>
+                        </div>
+                        <p className="text-sm font-bold" style={{ color: BLUE }}>
+                          {formatNumber(nationalTotals.studentCount)}
+                        </p>
+                      </div>
+                      {/* Enseignants */}
+                      <div
+                        className="rounded-lg p-2.5 border border-slate-100"
+                        style={{
+                          background: `linear-gradient(135deg, ${BLUE}08, ${BLUE}03)`,
+                        }}
+                      >
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <GraduationCap className="h-3.5 w-3.5" style={{ color: BLUE }} />
+                          <span className="text-[10px] text-slate-500">Enseignants</span>
+                        </div>
+                        <p className="text-sm font-bold" style={{ color: BLUE }}>
+                          {formatNumber(nationalTotals.teacherCount)}
+                        </p>
+                      </div>
+                      {/* % Filles */}
+                      <div
+                        className="rounded-lg p-2.5 border border-slate-100"
+                        style={{
+                          background: `linear-gradient(135deg, ${BLUE}08, ${BLUE}03)`,
+                        }}
+                      >
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <BarChart3 className="h-3.5 w-3.5" style={{ color: BLUE }} />
+                          <span className="text-[10px] text-slate-500">% Filles</span>
+                        </div>
+                        <p className="text-sm font-bold" style={{ color: BLUE }}>
+                          {nationalTotals.femalePercent}%
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Répartition Public / Privé */}
+                    <div className="rounded-xl bg-slate-50 p-2.5 space-y-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                        Répartition Public / Privé
+                      </p>
+                      <div>
+                        <div className="flex justify-between text-[11px] mb-1">
+                          <span className="font-medium text-slate-700">Public</span>
+                          <span className="text-slate-500">
+                            {formatNumber(nationalTotals.publicCount)} (
+                            {(
+                              (nationalTotals.publicCount /
+                                nationalTotals.schoolCount) *
+                              100
+                            ).toFixed(1)}
+                            %)
+                          </span>
+                        </div>
+                        <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+                          <motion.div
+                            className="h-full rounded-full"
+                            style={{ backgroundColor: NAVY }}
+                            initial={{ width: 0 }}
+                            animate={{
+                              width: `${
+                                (nationalTotals.publicCount /
+                                  nationalTotals.schoolCount) *
+                                100
+                              }%`,
+                            }}
+                            transition={{ duration: 0.6, ease: 'easeOut' }}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex justify-between text-[11px] mb-1">
+                          <span className="font-medium text-slate-700">Privé</span>
+                          <span className="text-slate-500">
+                            {formatNumber(nationalTotals.privateCount)} (
+                            {(
+                              (nationalTotals.privateCount /
+                                nationalTotals.schoolCount) *
+                              100
+                            ).toFixed(1)}
+                            %)
+                          </span>
+                        </div>
+                        <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+                          <motion.div
+                            className="h-full rounded-full"
+                            style={{ backgroundColor: GOLD }}
+                            initial={{ width: 0 }}
+                            animate={{
+                              width: `${
+                                (nationalTotals.privateCount /
+                                  nationalTotals.schoolCount) *
+                                100
+                              }%`,
+                            }}
+                            transition={{
+                              duration: 0.6,
+                              ease: 'easeOut',
+                              delay: 0.1,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Clickable list of all 12 departments */}
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
+                        Départements
+                      </p>
+                      <div className="space-y-0.5">
+                        {BENIN_DEPARTMENTS.map((dept) => {
+                          const value = getSchoolCount(dept);
+                          const color = getDiscreteColor(value, breakpoints);
+                          return (
+                            <button
+                              key={dept.code}
+                              onClick={() => onDepartmentSelect?.(dept)}
+                              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-slate-50 transition-colors group"
+                            >
+                              <div
+                                className="h-3 w-3 rounded-sm flex-shrink-0 border border-white/40"
+                                style={{ backgroundColor: color }}
+                              />
+                              <span className="flex-1 text-[11px] font-medium text-slate-700 group-hover:text-slate-900">
+                                {dept.name}
+                              </span>
+                              <span
+                                className="text-[11px] font-bold"
+                                style={{ color: BLUE }}
+                              >
+                                {formatNumber(value)}
+                              </span>
+                              <ChevronRight className="h-3 w-3 text-slate-300 group-hover:text-slate-500 flex-shrink-0" />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Source */}
+                    <p className="text-[9px] text-slate-400 text-center pt-1">
+                      Source :{' '}
+                      {educationLevel === 'primaire'
+                        ? 'MEMP — emp.educmaster.bj'
+                        : 'MESTFP — secondaire.educmaster.bj'}{' '}
+                      · 2025-2026
+                    </p>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
       </div>
-      <p className="text-base font-bold" style={{ color: accent }}>
-        {value}
-      </p>
     </div>
   );
 }

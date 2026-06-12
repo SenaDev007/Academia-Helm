@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, HttpException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, HttpException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { StorageService } from '../common/services/storage.service';
 import { OpenRouterService } from '../common/services/openrouter.service';
@@ -1500,6 +1500,37 @@ export class RecruitmentPrismaService {
 
   async applyJob(body: any, files: any) {
     const tenantId = body.tenantId;
+
+    // ─── Duplicate prevention ──────────────────────────────────────────────
+    // Reject if the same email has already applied to the same job within
+    // this tenant. We check HrCandidate by email + tenantId, then look for
+    // an existing HrApplication linking that candidate to the same jobId.
+    if (body.email && body.jobId && tenantId) {
+      const existingCandidate = await this.prisma.hrCandidate.findFirst({
+        where: {
+          email: body.email,
+          tenantId,
+        },
+        select: { id: true },
+      });
+
+      if (existingCandidate) {
+        const existingApplication = await this.prisma.hrApplication.findFirst({
+          where: {
+            candidateId: existingCandidate.id,
+            jobId: body.jobId,
+          },
+          select: { id: true },
+        });
+
+        if (existingApplication) {
+          this.logger.warn(`Duplicate application blocked: email=${body.email}, jobId=${body.jobId}, tenantId=${tenantId}`);
+          throw new ConflictException(
+            'Vous avez déjà soumis une candidature pour cette offre. Il n\'est pas possible de postuler deux fois au même poste.'
+          );
+        }
+      }
+    }
 
     // Parse structured data from request body
     let skills: string[] = [];

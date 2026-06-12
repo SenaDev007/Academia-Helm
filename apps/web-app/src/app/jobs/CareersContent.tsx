@@ -160,6 +160,9 @@ export function CareersContent({
   const [isApplying, setIsApplying] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
   
+  // Track job IDs the user has already applied to (prevents duplicate applications)
+  const [appliedJobIds, setAppliedJobIds] = useState<Set<string>>(new Set());
+  
   // Step 1: Contact & Identity
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -568,16 +571,28 @@ export function CareersContent({
           message: 'Candidature transmise avec succès ! Notre IA procède à l\'extraction sémantique et à la validation des diplômes/certifications.'
         });
         setApplicationSubmitted(true);
+        // Mark this job as applied to prevent re-application
+        if (selectedJob) {
+          setAppliedJobIds(prev => new Set(prev).add(selectedJob.id));
+        }
       } else {
+        // Check for duplicate application error (HTTP 409 Conflict)
+        const isDuplicate = res.status === 409;
         const serverMsg = data?.message || data?.error || '';
         const detail = data?.detail || '';
         const fullMsg = [serverMsg, detail].filter(Boolean).join(' — ');
         setSubmitResult({
           success: false,
-          message: fullMsg
-            ? `Erreur : ${fullMsg}`
-            : `Erreur serveur (${res.status}). Veuillez réessayer.`
+          message: isDuplicate
+            ? (fullMsg || 'Vous avez déjà soumis une candidature pour cette offre.')
+            : fullMsg
+              ? `Erreur : ${fullMsg}`
+              : `Erreur serveur (${res.status}). Veuillez réessayer.`
         });
+        // If duplicate detected, mark job as applied
+        if (isDuplicate && selectedJob) {
+          setAppliedJobIds(prev => new Set(prev).add(selectedJob.id));
+        }
       }
     } catch (err: any) {
       console.error('Submission failed:', err);
@@ -1183,12 +1198,19 @@ export function CareersContent({
                             <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#0b2f73]/0 group-hover:bg-[#0b2f73]/40 rounded-r transition-colors duration-300" />
                           )}
 
-                          {/* Top row: title + bookmark */}
+                          {/* Top row: title + applied badge + bookmark */}
                           <div className="flex items-start justify-between gap-2">
                             <h4 className={`font-bold text-sm leading-snug transition-colors ${selectedJob?.id === job.id ? 'text-[#0b2f73]' : 'text-slate-800 group-hover:text-[#0b2f73]'}`}>
                               {job.title}
                             </h4>
-                            <Bookmark className={`h-4 w-4 shrink-0 transition-all ${selectedJob?.id === job.id ? 'text-[#f5b335] fill-[#f5b335]/30' : 'text-slate-200 group-hover:text-[#1d4fa5]/40'}`} />
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {appliedJobIds.has(job.id) && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-700">
+                                  <CheckCircle className="h-2.5 w-2.5" />Postulé
+                                </span>
+                              )}
+                              <Bookmark className={`h-4 w-4 shrink-0 transition-all ${selectedJob?.id === job.id ? 'text-[#f5b335] fill-[#f5b335]/30' : 'text-slate-200 group-hover:text-[#1d4fa5]/40'}`} />
+                            </div>
                           </div>
 
                           {/* Department badge */}
@@ -1303,13 +1325,22 @@ export function CareersContent({
                               </div>
                             )}
 
-                            {/* Bouton Postuler */}
-                            <button
-                              onClick={() => { setIsApplying(true); setCurrentStep(1); setSubmitResult(null); setApplicationSubmitted(false); }}
-                              className="w-full py-3 bg-[#0b2f73] text-white rounded-xl font-bold text-sm hover:bg-[#1521a0] transition-colors flex items-center justify-center gap-2"
-                            >
-                              <Send className="h-4 w-4" /> Postuler
-                            </button>
+                            {/* Bouton Postuler / Déjà postulé */}
+                            {appliedJobIds.has(selectedJob?.id || '') ? (
+                              <button
+                                disabled
+                                className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 cursor-not-allowed opacity-90"
+                              >
+                                <CheckCircle className="h-4 w-4" /> Déjà postulé
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => { setIsApplying(true); setCurrentStep(1); setSubmitResult(null); setApplicationSubmitted(false); }}
+                                className="w-full py-3 bg-[#0b2f73] text-white rounded-xl font-bold text-sm hover:bg-[#1521a0] transition-colors flex items-center justify-center gap-2"
+                              >
+                                <Send className="h-4 w-4" /> Postuler
+                              </button>
+                            )}
                           </div>
                         </motion.div>
                       ) : (

@@ -1,14 +1,15 @@
 /**
- * MinDurationScreen Component
+ * MinDurationScreen Component — v2 Modern
  *
  * Garantit que l'écran de chargement s'affiche pendant une durée minimale
- * avant de révéler le contenu. Utilisé pour toutes les transitions de chargement
- * afin d'offrir une expérience visuelle fluide et professionnelle.
+ * avant de révéler le contenu. Design moderne, captivant et professionnel.
  *
- * DURÉE PAR DÉFAUT : 15 secondes
+ * DURÉE PAR DÉFAUT : 10 secondes (réduit de 15s)
  *
  * MOBILE : Sur mobile, utilise LoadingScreenMobile (CSS-only, léger)
  * au lieu de LoadingScreen (framer-motion, ~30KB) pour de meilleures performances.
+ *
+ * Palette : Navy (#0b2f73), Blue (#1d4fa5), Gold (#f5b335)
  */
 
 'use client';
@@ -17,13 +18,13 @@ import { useState, useEffect, useRef } from 'react';
 import { LoadingScreen } from './LoadingScreen';
 import { LoadingScreenMobile } from './LoadingScreenMobile';
 
-/** Durée minimale par défaut (ms) */
-const DEFAULT_MIN_DURATION_MS = 15000;
+/** Durée minimale par défaut (ms) — réduit à 10s */
+const DEFAULT_MIN_DURATION_MS = 10000;
 
 export interface MinDurationScreenProps {
   /** Si true, le contenu est prêt à être affiché */
   ready: boolean;
-  /** Durée minimale d'affichage du loading en ms (défaut: 15000) */
+  /** Durée minimale d'affichage du loading en ms (défaut: 10000) */
   minDuration?: number;
   /** Contenu à afficher une fois prêt et la durée minimale écoulée */
   children?: React.ReactNode;
@@ -61,13 +62,6 @@ function useIsMobile() {
  *
  * Sur mobile, utilise LoadingScreenMobile (CSS-only) au lieu de LoadingScreen
  * (framer-motion) pour de meilleures performances sur appareils bas de gamme.
- *
- * @example
- * ```tsx
- * <MinDurationScreen ready={dataLoaded}>
- *   <Dashboard data={data} />
- * </MinDurationScreen>
- * ```
  */
 export function MinDurationScreen({
   ready,
@@ -85,8 +79,7 @@ export function MinDurationScreen({
   useEffect(() => {
     startTimeRef.current = Date.now();
 
-    // Animer la progression de 0% à 85% pendant la durée minimale
-    // On laisse les 15% derniers pour la phase "finalisation"
+    // Progression de 0% à 85% pendant la durée minimale
     const totalSteps = 85;
     const stepDuration = minDuration / totalSteps;
     let currentStep = 0;
@@ -100,7 +93,6 @@ export function MinDurationScreen({
         setMinDurationElapsed(true);
         clearInterval(interval);
       } else {
-        // Progression légèrement non-linéaire pour un effet plus naturel
         const baseProgress = (currentStep / totalSteps) * 85;
         setProgress(Math.min(baseProgress, 85));
       }
@@ -124,8 +116,6 @@ export function MinDurationScreen({
 
   const effectiveProgress = ready ? Math.max(progress, 90) : progress;
 
-  // Sur mobile : utiliser LoadingScreenMobile (CSS-only, pas de framer-motion)
-  // pour de meilleures performances sur appareils bas de gamme
   if (isMobile) {
     return (
       <LoadingScreenMobile
@@ -133,12 +123,11 @@ export function MinDurationScreen({
         progress={effectiveProgress}
         showProgress={true}
         variant={variant === 'orion' ? 'pwa' : 'default'}
-        minDuration={0} // La durée est déjà gérée par ce composant
+        minDuration={0}
       />
     );
   }
 
-  // Sur desktop : utiliser LoadingScreen (framer-motion, animations riches)
   return (
     <LoadingScreen
       message={message ?? { title: 'Chargement…' }}

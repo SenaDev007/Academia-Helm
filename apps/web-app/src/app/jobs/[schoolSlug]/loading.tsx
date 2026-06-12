@@ -2,7 +2,7 @@
  * Loading Component - /jobs/[schoolSlug] Route
  *
  * Affiché pendant le chargement de la page /jobs/:slug.
- * Durée minimale de 15 secondes pour une expérience visuelle professionnelle.
+ * Durée minimale de 10 secondes pour une expérience visuelle professionnelle.
  * Adaptatif desktop/mobile.
  */
 

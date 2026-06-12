@@ -1,8 +1,8 @@
 /**
- * ModuleLoading Component - Premium Branded
+ * ModuleLoading Component — v2 Modern
  *
  * Composant de chargement branded pour les transitions de modules.
- * Affiche un skeleton contextuel avec le nom du module.
+ * Skeleton contextuel avec design Academia Helm.
  * Adapte automatiquement le rendu entre desktop et mobile.
  *
  * Palette : Navy (#0b2f73), Blue (#1d4fa5), Gold (#f5b335)
@@ -19,14 +19,6 @@ export interface ModuleLoadingProps {
   className?: string;
 }
 
-/**
- * Composant de chargement pour un module
- *
- * @example
- * ```tsx
- * <ModuleLoading moduleName="finance" />
- * ```
- */
 export function ModuleLoading({ moduleName, className }: ModuleLoadingProps) {
   const [isMobile, setIsMobile] = useState(false);
 

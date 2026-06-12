@@ -2,7 +2,7 @@
  * Loading Component - Root Level
  *
  * Affiché pendant le chargement initial des pages racine.
- * Durée minimale de 15 secondes pour une expérience visuelle professionnelle.
+ * Durée minimale de 10 secondes pour une expérience visuelle professionnelle.
  */
 
 'use client';

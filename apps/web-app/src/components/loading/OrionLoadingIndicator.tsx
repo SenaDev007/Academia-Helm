@@ -1,15 +1,12 @@
 /**
- * ============================================================================
- * ORION LOADING INDICATOR - PREMIUM BRANDED ACADEMIA HELM
- * ============================================================================
+ * OrionLoadingIndicator — v2 Modern Premium
  *
  * Indicateur de chargement ORION premium avec :
- * - Anneau orbital double (desktop) / anneau simple (mobile)
+ * - Anneau orbital double (desktop) / simple (mobile)
  * - Compteur d'alertes avec animation
- * - Barre de progression linéaire branded
+ * - Barre de progression branded
  * - Détection mobile automatique
- * - Phase transition animations
- * - Design cohérent avec la charte Academia Helm
+ * - Design cohérent Academia Helm
  *
  * Palette : Navy (#0b2f73), Blue (#1d4fa5), Gold (#f5b335)
  */
@@ -18,12 +15,11 @@
 
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { LinearProgress, OrbitalSpinner } from '@/components/ui/feedback/InlineSpinner';
+import { OrbitalSpinner, LinearProgress } from '@/components/ui/feedback/InlineSpinner';
 
 export interface OrionLoadingIndicatorProps {
   isActive: boolean;
   alertsCount?: number;
-  /** Phase actuelle de l'analyse */
   phase?: 'scan' | 'analyze' | 'report';
   className?: string;
 }
@@ -40,13 +36,6 @@ const phaseColors: Record<string, string> = {
   report: 'bg-emerald-50 text-emerald-700 border-emerald-200',
 };
 
-/**
- * Indicateur de chargement ORION premium
- *
- * Affiche un indicateur visuel pendant l'analyse ORION
- * avec le nombre d'alertes critiques détectées et la phase courante.
- * Adapte automatiquement le rendu pour mobile (CSS-only, léger).
- */
 export function OrionLoadingIndicator({
   isActive,
   alertsCount = 0,
@@ -57,12 +46,10 @@ export function OrionLoadingIndicator({
   const [dots, setDots] = useState('');
   const [isMobile, setIsMobile] = useState(false);
 
-  // Mobile detection
   useEffect(() => {
     setIsMobile(typeof window !== 'undefined' && window.innerWidth < 768);
   }, []);
 
-  // Afficher les alertes après un court délai
   useEffect(() => {
     if (!isActive || alertsCount <= 0) {
       setShowAlerts(false);
@@ -72,7 +59,6 @@ export function OrionLoadingIndicator({
     return () => clearTimeout(timer);
   }, [isActive, alertsCount]);
 
-  // Animation des points de suspension
   useEffect(() => {
     if (!isActive) return;
     const interval = setInterval(() => {
@@ -81,25 +67,21 @@ export function OrionLoadingIndicator({
     return () => clearInterval(interval);
   }, [isActive]);
 
-  if (!isActive) {
-    return null;
-  }
+  if (!isActive) return null;
 
   return (
     <div
       className={cn(
         'rounded-xl overflow-hidden',
         isMobile
-          ? 'bg-gradient-to-r from-[#0b2f73]/[0.03] via-[#1d4fa5]/[0.03] to-[#f5b335]/[0.03] border border-[#1d4fa5]/8 p-3'
+          ? 'bg-[#0b2f73]/[0.03] border border-[#1d4fa5]/8 p-3'
           : 'bg-gradient-to-r from-[#0b2f73]/5 via-[#1d4fa5]/5 to-[#f5b335]/5 border border-[#1d4fa5]/10 p-4',
         className,
       )}
     >
-      {/* Ligne supérieure : spinner + message */}
+      {/* Spinner + message */}
       <div className={cn('flex items-center', isMobile ? 'gap-2.5' : 'gap-3')}>
-        {/* Anneau ORION */}
         {isMobile ? (
-          /* Mobile: simple gold ring */
           <div className="relative shrink-0">
             <div
               className="h-7 w-7 rounded-full border-2 border-[#f5b335]/15 border-t-[#f5b335]"
@@ -113,11 +95,9 @@ export function OrionLoadingIndicator({
             </div>
           </div>
         ) : (
-          /* Desktop: orbital spinner premium */
           <OrbitalSpinner size="sm" />
         )}
 
-        {/* Texte */}
         <div className="flex-1 min-w-0">
           <div className={cn('flex items-center', isMobile ? 'gap-1.5' : 'gap-2')}>
             <p className={cn('font-semibold text-[#0b2f73]', isMobile ? 'text-[11px]' : 'text-sm')}>
@@ -136,7 +116,6 @@ export function OrionLoadingIndicator({
           </p>
         </div>
 
-        {/* Compteur d'alertes */}
         {showAlerts && alertsCount > 0 && (
           <div
             className={cn(
@@ -155,8 +134,7 @@ export function OrionLoadingIndicator({
         )}
       </div>
 
-      {/* Barre de progression */}
-      <div className={cn('mt-3', isMobile ? 'mt-2' : 'mt-3')}>
+      <div className={cn(isMobile ? 'mt-2' : 'mt-3')}>
         <LinearProgress color="gold" />
       </div>
     </div>

@@ -1,9 +1,11 @@
 /**
- * LoadingScreen Component
- * 
- * Composant de chargement global professionnel
- * Plein écran avec animation et messages dynamiques
- * Adaptatif desktop/mobile
+ * LoadingScreen Component — v2 Modern Captivating
+ *
+ * Écran de chargement plein écran avec design premium Academia Helm.
+ * Animations fluides, progression branded, ambiance immersive.
+ *
+ * Palette : Navy (#0b2f73), Blue (#1d4fa5), Gold (#f5b335)
+ * Durée : 10s par défaut
  */
 
 'use client';
@@ -14,6 +16,8 @@ import { cn } from '@/lib/utils';
 import type { LoadingMessage, LoadingStep } from '@/lib/loading/loading-messages';
 import { getMotionDuration } from '@/lib/motion/presets';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
+import Image from 'next/image';
+import { BRAND } from '@/lib/brand';
 
 export interface LoadingScreenProps {
   message?: LoadingMessage;
@@ -36,48 +40,30 @@ export function LoadingScreen({
   const [isMobile, setIsMobile] = useState(false);
   const { shouldReduceMotion } = useMotionBudget();
 
-  // Détecter mobile
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
-
+    if (typeof window === 'undefined') return;
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();
     window.addEventListener('resize', checkMobile);
-
-    return () => {
-      window.removeEventListener('resize', checkMobile);
-    };
+    return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
   // Animation fluide de la barre de progression
   useEffect(() => {
     const interval = setInterval(() => {
       setDisplayProgress((prev) => {
-        if (prev < progress) {
-          return Math.min(prev + 2, progress);
-        }
+        if (prev < progress) return Math.min(prev + 2, progress);
         return prev;
       });
     }, 50);
-
     return () => clearInterval(interval);
   }, [progress]);
 
   const variants = {
-    default: 'bg-white',
-    minimal: 'bg-gray-50',
-    orion: 'bg-gradient-to-br from-blue-50 to-indigo-50',
+    default: 'bg-[#0b2f73]',
+    minimal: 'bg-[#0D1F6E]',
+    orion: 'bg-gradient-to-br from-[#0b2f73] via-[#0D1F6E] to-[#1A3490]',
   };
-
-  // Utiliser un layout plus compact sur mobile
-  const containerClass = isMobile 
-    ? 'w-full max-w-sm px-4' 
-    : 'w-full max-w-md px-6';
 
   return (
     <div
@@ -87,74 +73,112 @@ export function LoadingScreen({
         className
       )}
     >
+      {/* Ambiance — orbes lumineux */}
       <motion.div
         className="pointer-events-none absolute inset-0"
-        animate={shouldReduceMotion ? { opacity: 0.2 } : { opacity: [0.18, 0.28, 0.18] }}
-        transition={shouldReduceMotion ? { duration: 0 } : { duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+        animate={shouldReduceMotion ? { opacity: 0.15 } : { opacity: [0.15, 0.3, 0.15] }}
+        transition={shouldReduceMotion ? { duration: 0 } : { duration: 6, repeat: Infinity, ease: 'easeInOut' }}
       >
-        <div className="absolute -top-20 -left-12 w-72 h-72 bg-[#f5b335]/20 rounded-full blur-3xl" />
-        <div className="absolute -bottom-24 -right-14 w-80 h-80 bg-[#1d4fa5]/22 rounded-full blur-3xl" />
+        <div className="absolute -top-32 -left-16 w-96 h-96 bg-[#f5b335]/10 rounded-full blur-[100px]" />
+        <div className="absolute -bottom-40 -right-20 w-[500px] h-[500px] bg-[#1d4fa5]/15 rounded-full blur-[120px]" />
+        <div className="absolute top-1/3 right-1/4 w-64 h-64 bg-[#f5b335]/5 rounded-full blur-[80px]" />
       </motion.div>
-      <div className={cn(containerClass, 'text-center')}>
-        {/* Logo Academia Helm */}
-        <div className="mb-8 flex justify-center">
+
+      {/* Contenu central */}
+      <div className="w-full max-w-md px-8 text-center relative z-10">
+        {/* Logo avec halo premium */}
+        <div className="mb-10 flex justify-center">
           <motion.div
             className="relative"
-            animate={shouldReduceMotion ? { y: 0, scale: 1 } : { y: [0, -4, 0], scale: [1, 1.03, 1] }}
-            transition={shouldReduceMotion ? { duration: 0 } : { duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
+            animate={shouldReduceMotion ? { scale: 1 } : { scale: [1, 1.04, 1] }}
+            transition={shouldReduceMotion ? { duration: 0 } : { duration: 3, repeat: Infinity, ease: 'easeInOut' }}
           >
-            <img
-              src="/images/logo-Academia Hub.png" 
-              alt="Academia Helm" 
-              className="h-20 w-20 object-contain animate-pulse"
+            {/* Halo doré pulsant */}
+            <div className="absolute inset-0 -m-5 rounded-full bg-[#f5b335]/8 blur-xl" style={{ animation: 'academiaPulse 2.5s ease-in-out infinite' }} />
+            {/* Anneau rotatif */}
+            <div className="absolute inset-0 -m-3 rounded-full border-2 border-[#f5b335]/20 border-t-[#f5b335]" style={{ animation: 'academiaOrbit 1.2s linear infinite' }} />
+            {/* Logo */}
+            <Image
+              src={BRAND.logoPath}
+              alt={BRAND.name}
+              width={72}
+              height={72}
+              className="relative z-10 rounded-2xl"
+              style={{ animation: 'academiaPulse 3s ease-in-out infinite' }}
+              priority
             />
           </motion.div>
         </div>
 
+        {/* Nom de marque */}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.2 }}
+        >
+          <h1 className="text-2xl font-bold text-white tracking-tight mb-1">
+            {BRAND.name.split(' ')[0]}
+            <span className="text-[#f5b335] ml-1.5">{BRAND.name.split(' ')[1]}</span>
+          </h1>
+          <p className="text-[11px] text-blue-200/50 tracking-[0.2em] uppercase font-medium">
+            {BRAND.subtitle}
+          </p>
+        </motion.div>
+
         {/* Message principal */}
-        <h2 className="text-xl font-semibold text-gray-900 mb-2">
-          {message?.title || 'Chargement…'}
-        </h2>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.5 }}
+          className="mt-8"
+        >
+          <h2 className="text-base font-medium text-white/90 mb-1">
+            {message?.title || 'Chargement…'}
+          </h2>
+          {message?.subtitle && (
+            <p className="text-xs text-blue-200/60">{message.subtitle}</p>
+          )}
+        </motion.div>
 
-        {/* Sous-titre */}
-        {message?.subtitle && (
-          <p className="text-sm text-gray-600 mb-6">{message.subtitle}</p>
-        )}
-
-        {/* Barre de progression */}
+        {/* Barre de progression premium */}
         {showProgress && (
-          <div className="mb-4">
-            <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
+          <motion.div
+            initial={{ opacity: 0, scaleX: 0.8 }}
+            animate={{ opacity: 1, scaleX: 1 }}
+            transition={{ duration: 0.5, delay: 0.7 }}
+            className="mt-8"
+          >
+            <div className="relative h-1 w-full bg-white/10 rounded-full overflow-hidden">
               <motion.div
-                className="h-full bg-gradient-to-r from-[#0b2f73] via-[#1d4fa5] to-[#f5b335] rounded-full transition-all duration-300 ease-out"
-                style={{ width: `${displayProgress}%` }}
-                animate={shouldReduceMotion ? { filter: 'brightness(1)' } : { filter: ['brightness(1)', 'brightness(1.12)', 'brightness(1)'] }}
-                transition={shouldReduceMotion ? { duration: 0 } : { duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+                className="h-full rounded-full"
+                style={{
+                  width: `${displayProgress}%`,
+                  background: 'linear-gradient(90deg, #1d4fa5, #f5b335, #1d4fa5)',
+                  backgroundSize: '200% 100%',
+                  animation: 'academiaShimmerWave 2s ease-in-out infinite',
+                }}
               />
             </div>
-            {progress > 0 && (
-              <p className="text-xs text-gray-500 mt-2">{Math.round(displayProgress)}%</p>
-            )}
-          </div>
+            <div className="flex justify-between mt-2">
+              <p className="text-[10px] text-blue-200/40 uppercase tracking-wider">Progression</p>
+              <p className="text-xs text-[#f5b335] font-semibold tabular-nums">{Math.round(displayProgress)}%</p>
+            </div>
+          </motion.div>
         )}
 
-        {/* Indicateur de chargement animé */}
-        <div className="flex justify-center space-x-1 mt-6">
-          <motion.div
-            className="h-2 w-2 rounded-full bg-[#0b2f73]"
-            animate={shouldReduceMotion ? { y: 0 } : { y: [0, -5, 0] }}
-            transition={shouldReduceMotion ? { duration: 0 } : { duration: getMotionDuration(false, 'slow'), repeat: Infinity, delay: 0 }}
-          />
-          <motion.div
-            className="h-2 w-2 rounded-full bg-[#1d4fa5]"
-            animate={shouldReduceMotion ? { y: 0 } : { y: [0, -5, 0] }}
-            transition={shouldReduceMotion ? { duration: 0 } : { duration: getMotionDuration(false, 'slow'), repeat: Infinity, delay: 0.15 }}
-          />
-          <motion.div
-            className="h-2 w-2 rounded-full bg-[#f5b335]"
-            animate={shouldReduceMotion ? { y: 0 } : { y: [0, -5, 0] }}
-            transition={shouldReduceMotion ? { duration: 0 } : { duration: getMotionDuration(false, 'slow'), repeat: Infinity, delay: 0.3 }}
-          />
+        {/* Dots animés branded */}
+        <div className="flex justify-center items-center space-x-2 mt-8">
+          {[0, 1, 2].map((i) => (
+            <motion.div
+              key={i}
+              className={cn(
+                'rounded-full',
+                i === 0 ? 'h-2 w-2 bg-[#0b2f73]' : i === 1 ? 'h-2.5 w-2.5 bg-[#1d4fa5]' : 'h-2 w-2 bg-[#f5b335]',
+              )}
+              animate={shouldReduceMotion ? { y: 0 } : { y: [0, -8, 0] }}
+              transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.8, repeat: Infinity, delay: i * 0.15, ease: 'easeInOut' }}
+            />
+          ))}
         </div>
       </div>
     </div>
@@ -162,21 +186,16 @@ export function LoadingScreen({
 }
 
 /**
- * LoadingScreen minimal pour les transitions rapides
- * 
- * Intègre une durée minimale d'affichage de 15 secondes par défaut.
- * Le contenu est rendu via la prop `children` après la durée minimale.
- * Si pas de children, affiche simplement le spinner pendant minDuration.
+ * MinimalLoadingScreen — Transition rapide
+ * Durée minimale : 10s par défaut
  */
-export function MinimalLoadingScreen({ 
+export function MinimalLoadingScreen({
   message,
-  minDuration = 15000,
+  minDuration = 10000,
   children,
-}: { 
+}: {
   message?: string;
-  /** Durée minimale d'affichage en ms (défaut: 15000). Mettre 0 pour désactiver. */
   minDuration?: number;
-  /** Contenu à afficher après la durée minimale */
   children?: React.ReactNode;
 }) {
   const [minElapsed, setMinElapsed] = useState(false);
@@ -186,24 +205,81 @@ export function MinimalLoadingScreen({
       setMinElapsed(true);
       return;
     }
-
-    const timer = setTimeout(() => {
-      setMinElapsed(true);
-    }, minDuration);
-
+    const timer = setTimeout(() => setMinElapsed(true), minDuration);
     return () => clearTimeout(timer);
   }, [minDuration]);
 
-  // Si la durée minimale est écoulée et qu'on a du contenu, l'afficher
   if (minElapsed && children) {
     return <>{children}</>;
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm safe-area-inset-top safe-area-inset-bottom">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0b2f73] safe-area-inset-top safe-area-inset-bottom">
       <div className="text-center">
-        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-        {message && <p className="text-gray-600">{message}</p>}
+        {/* Anneau rotatif minimal */}
+        <div className="relative w-14 h-14 mx-auto mb-5">
+          <div
+            className="absolute inset-0 rounded-full border-2 border-[#f5b335]/15 border-t-[#f5b335]"
+            style={{ animation: 'academiaOrbit 1s linear infinite' }}
+          />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-2 h-2 rounded-full bg-[#f5b335]" style={{ animation: 'academiaPulse 1.5s ease-in-out infinite' }} />
+          </div>
+        </div>
+        {message && <p className="text-sm text-white/70">{message}</p>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * LogoutLoadingScreen — Progress bar, responsive
+ * Durée minimale : 10s par défaut
+ */
+export function LogoutLoadingScreen({
+  message = 'Déconnexion en cours…',
+  minDuration = 10000,
+}: {
+  message?: string;
+  minDuration?: number;
+}) {
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    const steps = 100;
+    const stepDuration = minDuration / steps;
+    let current = 0;
+    const interval = setInterval(() => {
+      current++;
+      setProgress(Math.min((current / steps) * 100, 100));
+      if (current >= steps) clearInterval(interval);
+    }, stepDuration);
+    return () => clearInterval(interval);
+  }, [minDuration]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0b2f73] safe-area-inset-top safe-area-inset-bottom">
+      <div className="w-full max-w-xs px-6 text-center">
+        <div className="relative w-12 h-12 mx-auto mb-6">
+          <div
+            className="absolute inset-0 rounded-full border-2 border-white/10 border-t-[#f5b335]"
+            style={{ animation: 'academiaOrbit 0.8s linear infinite' }}
+          />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-1.5 h-1.5 rounded-full bg-[#f5b335]" style={{ animation: 'academiaPulse 1s ease-in-out infinite' }} />
+          </div>
+        </div>
+        <p className="text-sm text-white/80 mb-4">{message}</p>
+        <div className="h-1 bg-white/10 rounded-full overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-300 ease-out"
+            style={{
+              width: `${progress}%`,
+              background: 'linear-gradient(90deg, #1d4fa5, #f5b335)',
+            }}
+          />
+        </div>
+        <p className="text-[10px] text-white/30 mt-2 tabular-nums">{Math.round(progress)}%</p>
       </div>
     </div>
   );

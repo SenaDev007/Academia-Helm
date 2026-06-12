@@ -1,11 +1,12 @@
 /**
- * LoadingScreenMobile Component
- * 
- * Composant de chargement optimisé pour mobile/PWA
- * - Aucun écran blanc
- * - Loaders adaptés à l'écran réduit
- * - Skeleton loaders priorisés
- * - Durée minimale d'affichage : 15 secondes (configurable)
+ * LoadingScreenMobile Component — v2 Modern Captivating
+ *
+ * Écran de chargement optimisé mobile/PWA — CSS-only, zero JS runtime.
+ * Design immersif avec palette Academia Helm, noir profond,
+ * halo doré pulsant et progression branded.
+ *
+ * Durée minimale : 10 secondes (réduit de 15s)
+ * Palette : Navy (#0b2f73), Blue (#1d4fa5), Gold (#f5b335)
  */
 
 'use client';
@@ -14,10 +15,11 @@ import { useEffect, useState, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import type { LoadingMessage } from '@/lib/loading/loading-messages';
 import { getMessageText } from '@/lib/messages/system-messages';
-import { LoadingScreen } from './LoadingScreen';
+import Image from 'next/image';
+import { BRAND } from '@/lib/brand';
 
-/** Durée minimale par défaut (ms) */
-const DEFAULT_MIN_DURATION_MS = 15000;
+/** Durée minimale par défaut (ms) — réduit à 10s */
+const DEFAULT_MIN_DURATION_MS = 10000;
 
 export interface LoadingScreenMobileProps {
   message?: LoadingMessage;
@@ -25,17 +27,9 @@ export interface LoadingScreenMobileProps {
   showProgress?: boolean;
   variant?: 'default' | 'pwa';
   className?: string;
-  /** Durée minimale d'affichage en ms (défaut: 15000). Mettre 0 pour désactiver. */
   minDuration?: number;
 }
 
-/**
- * Écran de chargement optimisé pour mobile
- * 
- * Garantit une durée minimale d'affichage de 15 secondes par défaut.
- * La barre de progression anime de 0% à 85% pendant la durée minimale,
- * puis monte à 100% quand le contenu est prêt.
- */
 export function LoadingScreenMobile({
   message,
   progress = 0,
@@ -50,15 +44,13 @@ export function LoadingScreenMobile({
   const startTimeRef = useRef(Date.now());
 
   useEffect(() => {
-    // Détecter si l'app est installée en PWA
-    if (typeof window !== 'undefined') {
-      const isStandalone = (window.navigator as any).standalone || 
-                          window.matchMedia('(display-mode: standalone)').matches;
-      setIsPWA(isStandalone);
-    }
+    if (typeof window === 'undefined') return;
+    const isStandalone = (window.navigator as any).standalone ||
+                        window.matchMedia('(display-mode: standalone)').matches;
+    setIsPWA(isStandalone);
   }, []);
 
-  // Timer pour la durée minimale de 15 secondes
+  // Timer pour la durée minimale de 10 secondes
   useEffect(() => {
     if (minDuration <= 0) {
       setMinElapsed(true);
@@ -66,7 +58,6 @@ export function LoadingScreenMobile({
     }
 
     startTimeRef.current = Date.now();
-
     const totalSteps = 85;
     const stepDuration = minDuration / totalSteps;
     let currentStep = 0;
@@ -95,62 +86,83 @@ export function LoadingScreenMobile({
     }
   }, [minElapsed, progress]);
 
-  const variants = {
-    default: 'bg-white',
-    pwa: 'bg-gradient-to-br from-blue-50 to-indigo-50',
-  };
-
   const pwaMessage = isPWA ? getMessageText('loading.preparing_app') : undefined;
 
   return (
     <div
       className={cn(
-        'fixed inset-0 z-50 flex items-center justify-center',
-        'safe-area-inset-top safe-area-inset-bottom',
-        variants[variant],
+        'fixed inset-0 z-50 flex items-center justify-center bg-[#0b2f73] safe-area-inset-top safe-area-inset-bottom',
+        variant === 'pwa' && 'bg-gradient-to-br from-[#0b2f73] via-[#0D1F6E] to-[#1A3490]',
         className
       )}
     >
-      <div className="w-full max-w-sm px-6 text-center">
-        {/* Logo compact pour mobile */}
-        <div className="mb-6 flex justify-center">
+      {/* Orbes d'ambiance — CSS-only */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-20 -left-10 w-56 h-56 bg-[#f5b335]/8 rounded-full blur-[80px]" style={{ animation: 'academiaPulse 5s ease-in-out infinite' }} />
+        <div className="absolute -bottom-24 -right-12 w-64 h-64 bg-[#1d4fa5]/12 rounded-full blur-[90px]" style={{ animation: 'academiaPulse 7s ease-in-out infinite reverse' }} />
+      </div>
+
+      <div className="w-full max-w-sm px-6 text-center relative z-10">
+        {/* Logo + halo */}
+        <div className="mb-8 flex justify-center">
           <div className="relative">
-            <img 
-              src="/images/logo-Academia Hub.png" 
-              alt="Academia Helm" 
-              className="h-16 w-16 object-contain animate-pulse"
+            {/* Halo doré */}
+            <div className="absolute inset-0 -m-4 rounded-full bg-[#f5b335]/6 blur-lg" style={{ animation: 'academiaPulse 2.5s ease-in-out infinite' }} />
+            {/* Anneau rotatif */}
+            <div className="absolute inset-0 -m-2 rounded-full border-2 border-[#f5b335]/15 border-t-[#f5b335]" style={{ animation: 'academiaOrbit 1.2s linear infinite' }} />
+            <Image
+              src={BRAND.logoPath}
+              alt={BRAND.name}
+              width={56}
+              height={56}
+              className="relative z-10 rounded-xl"
+              style={{ animation: 'academiaPulse 3s ease-in-out infinite' }}
+              priority
             />
           </div>
         </div>
 
-        {/* Message principal */}
-        <h2 className="text-lg font-semibold text-gray-900 mb-2">
+        {/* Nom de marque */}
+        <h1 className="text-lg font-bold text-white tracking-tight mb-0.5">
+          {BRAND.name.split(' ')[0]}
+          <span className="text-[#f5b335] ml-1">{BRAND.name.split(' ')[1]}</span>
+        </h1>
+        <p className="text-[9px] text-blue-200/40 tracking-[0.2em] uppercase font-medium mb-6">
+          {BRAND.subtitle}
+        </p>
+
+        {/* Message */}
+        <h2 className="text-sm font-medium text-white/85 mb-1">
           {pwaMessage || message?.title || 'Chargement…'}
         </h2>
-
-        {/* Sous-titre (optionnel, plus court sur mobile) */}
         {message?.subtitle && !isPWA && (
-          <p className="text-xs text-gray-600 mb-4">{message.subtitle}</p>
+          <p className="text-[10px] text-blue-200/50 mb-4">{message.subtitle}</p>
         )}
 
         {/* Barre de progression compacte */}
         {showProgress && (
-          <div className="mb-4">
-            <div className="h-1 w-full bg-gray-200 rounded-full overflow-hidden">
+          <div className="mt-6">
+            <div className="h-1 bg-white/8 rounded-full overflow-hidden">
               <div
-                className="h-full bg-blue-600 rounded-full transition-all duration-300 ease-out"
-                style={{ width: `${displayProgress}%` }}
+                className="h-full rounded-full transition-all duration-300 ease-out"
+                style={{
+                  width: `${displayProgress}%`,
+                  background: 'linear-gradient(90deg, #1d4fa5, #f5b335)',
+                }}
               />
             </div>
-            <p className="text-xs text-gray-500 mt-1">{Math.round(displayProgress)}%</p>
+            <div className="flex justify-between mt-1.5">
+              <span className="text-[9px] text-blue-200/30 uppercase tracking-wider">Progression</span>
+              <span className="text-[10px] text-[#f5b335] font-semibold tabular-nums">{Math.round(displayProgress)}%</span>
+            </div>
           </div>
         )}
 
-        {/* Indicateur de chargement animé (compact) */}
-        <div className="flex justify-center space-x-1 mt-4">
-          <div className="h-1.5 w-1.5 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '0ms' }} />
-          <div className="h-1.5 w-1.5 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '150ms' }} />
-          <div className="h-1.5 w-1.5 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '300ms' }} />
+        {/* Dots animés CSS-only */}
+        <div className="flex justify-center items-center space-x-1.5 mt-6">
+          <div className="h-1.5 w-1.5 rounded-full bg-[#0b2f73] animate-bounce" style={{ animationDelay: '0ms', animationDuration: '0.7s' }} />
+          <div className="h-2 w-2 rounded-full bg-[#1d4fa5] animate-bounce" style={{ animationDelay: '120ms', animationDuration: '0.7s' }} />
+          <div className="h-1.5 w-1.5 rounded-full bg-[#f5b335] animate-bounce" style={{ animationDelay: '240ms', animationDuration: '0.7s' }} />
         </div>
       </div>
     </div>
@@ -164,31 +176,18 @@ export function useIsMobile(): boolean {
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
-
+    if (typeof window === 'undefined') return;
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();
     window.addEventListener('resize', checkMobile);
-
-    return () => {
-      window.removeEventListener('resize', checkMobile);
-    };
+    return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
   return isMobile;
 }
 
 /**
- * Composant de chargement adaptatif (desktop/mobile)
- * 
- * Utilise LoadingScreenMobile sur mobile (CSS-only, léger)
- * et LoadingScreen sur desktop (framer-motion, animations riches).
- * Gère la conversion de variant entre mobile et desktop.
+ * AdaptiveLoadingScreen — Desktop/mobile auto
  */
 export function AdaptiveLoadingScreen(props: LoadingScreenMobileProps) {
   const isMobile = useIsMobile();
@@ -197,16 +196,28 @@ export function AdaptiveLoadingScreen(props: LoadingScreenMobileProps) {
     return <LoadingScreenMobile {...props} />;
   }
 
-  // Conversion de variant mobile → desktop
+  // Import dynamique évité — on utilise le LoadingScreen directement
   const desktopVariant = props.variant === 'pwa' ? 'orion' : 'default';
 
   return (
-    <LoadingScreen
-      message={props.message}
-      progress={props.progress}
-      showProgress={props.showProgress}
-      variant={desktopVariant}
-      className={props.className}
-    />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0b2f73]">
+      <div className="text-center">
+        <div className="relative w-16 h-16 mx-auto mb-6">
+          <div className="absolute inset-0 -m-3 rounded-full bg-[#f5b335]/6 blur-xl" style={{ animation: 'academiaPulse 2.5s ease-in-out infinite' }} />
+          <div className="absolute inset-0 -m-2 rounded-full border-2 border-[#f5b335]/15 border-t-[#f5b335]" style={{ animation: 'academiaOrbit 1s linear infinite' }} />
+          <Image src={BRAND.logoPath} alt={BRAND.name} width={48} height={48} className="relative z-10 rounded-xl" style={{ animation: 'academiaPulse 3s ease-in-out infinite' }} priority />
+        </div>
+        <h2 className="text-sm font-medium text-white/85">{props.message?.title || 'Chargement…'}</h2>
+        {props.showProgress && props.progress !== undefined && (
+          <div className="mt-4 w-48 mx-auto">
+            <div className="h-1 bg-white/10 rounded-full overflow-hidden">
+              <div className="h-full rounded-full" style={{ width: `${props.progress}%`, background: 'linear-gradient(90deg, #1d4fa5, #f5b335)' }} />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
+
+import { LoadingScreen } from './LoadingScreen';

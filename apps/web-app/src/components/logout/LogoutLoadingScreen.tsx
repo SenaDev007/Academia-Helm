@@ -1,19 +1,20 @@
 /**
- * LogoutLoadingScreen Component
- * 
- * Écran de chargement pendant le flow de logout
- * Affiche les messages de progression
- * Durée minimale d'affichage : 15 secondes
+ * LogoutLoadingScreen — v2 Modern
+ *
+ * Écran de chargement pendant le flow de logout.
+ * Design immersif avec palette Academia Helm.
+ * Durée minimale d'affichage : 10 secondes (réduit de 15s)
  */
 
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { LogOut } from 'lucide-react';
+import Image from 'next/image';
+import { BRAND } from '@/lib/brand';
 import type { LogoutFlowProgress } from '@/lib/logout/secure-logout-flow.service';
 
-/** Durée minimale d'affichage du loading de logout (ms) */
-const MIN_LOGOUT_LOADING_MS = 15000;
+/** Durée minimale d'affichage du loading de logout (ms) — réduit à 10s */
+const MIN_LOGOUT_LOADING_MS = 10000;
 
 export interface LogoutLoadingScreenProps {
   progress: LogoutFlowProgress | null;
@@ -21,10 +22,9 @@ export interface LogoutLoadingScreenProps {
 
 /**
  * Écran de chargement pour le logout
- * 
- * Garantit un affichage minimum de 15 secondes pour une expérience fluide.
- * La barre de progression anime de 0% à 85% pendant la durée minimale,
- * puis monte à 100% quand le flow est terminé.
+ *
+ * Garantit un affichage minimum de 10 secondes pour une expérience fluide.
+ * Design immersif avec fond Navy, halo doré et progression branded.
  */
 export function LogoutLoadingScreen({ progress }: LogoutLoadingScreenProps) {
   const [displayProgress, setDisplayProgress] = useState(0);
@@ -32,7 +32,6 @@ export function LogoutLoadingScreen({ progress }: LogoutLoadingScreenProps) {
   const [isMobile, setIsMobile] = useState(false);
   const startTimeRef = useRef(Date.now());
 
-  // Détecter mobile pour adapter le layout
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();
@@ -40,7 +39,7 @@ export function LogoutLoadingScreen({ progress }: LogoutLoadingScreenProps) {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Timer pour la durée minimale de 15 secondes
+  // Timer pour la durée minimale de 10 secondes
   useEffect(() => {
     startTimeRef.current = Date.now();
 
@@ -64,45 +63,63 @@ export function LogoutLoadingScreen({ progress }: LogoutLoadingScreenProps) {
     return () => clearInterval(interval);
   }, []);
 
-  // Quand le flow est terminé ET la durée minimale écoulée, monter à 100%
   useEffect(() => {
     if (minElapsed && progress && progress.progress >= 100) {
       setDisplayProgress(100);
     }
   }, [minElapsed, progress]);
 
-  // La progression affichée est le max entre le flow réel et l'animation
   const effectiveProgress = progress
     ? Math.max(displayProgress, Math.min(progress.progress, minElapsed ? 100 : 85))
     : displayProgress;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-white safe-area-inset-top safe-area-inset-bottom">
-      <div className={`${isMobile ? 'w-full max-w-sm px-4' : 'w-full max-w-md px-6'} text-center`}>
-        {/* Icône */}
-        <div className={`${isMobile ? 'mb-6' : 'mb-8'} flex justify-center`}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0b2f73] safe-area-inset-top safe-area-inset-bottom">
+      {/* Ambiance */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-20 -left-10 w-56 h-56 bg-[#f5b335]/8 rounded-full blur-[80px]" style={{ animation: 'academiaPulse 5s ease-in-out infinite' }} />
+        <div className="absolute -bottom-24 -right-12 w-64 h-64 bg-[#1d4fa5]/12 rounded-full blur-[90px]" style={{ animation: 'academiaPulse 7s ease-in-out infinite reverse' }} />
+      </div>
+
+      <div className={`${isMobile ? 'w-full max-w-sm px-4' : 'w-full max-w-md px-6'} text-center relative z-10`}>
+        {/* Logo avec halo */}
+        <div className="mb-8 flex justify-center">
           <div className="relative">
-            <div className={`${isMobile ? 'h-16 w-16' : 'h-20 w-20'} rounded-full border-4 border-orange-200`}></div>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <LogOut className={`${isMobile ? 'h-8 w-8' : 'h-10 w-10'} text-orange-600 animate-pulse`} />
-            </div>
+            <div className="absolute inset-0 -m-4 rounded-full bg-[#f5b335]/6 blur-lg" style={{ animation: 'academiaPulse 2.5s ease-in-out infinite' }} />
+            <div className="absolute inset-0 -m-2 rounded-full border-2 border-[#f5b335]/15 border-t-[#f5b335]" style={{ animation: 'academiaOrbit 1.2s linear infinite' }} />
+            <Image
+              src={BRAND.logoPath}
+              alt={BRAND.name}
+              width={isMobile ? 48 : 56}
+              height={isMobile ? 48 : 56}
+              className="relative z-10 rounded-xl"
+              style={{ animation: 'academiaPulse 3s ease-in-out infinite' }}
+              priority
+            />
           </div>
         </div>
 
         {/* Message */}
-        <h2 className={`${isMobile ? 'text-lg' : 'text-xl'} font-semibold text-gray-900 mb-2`}>
+        <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-medium text-white/90 mb-1`}>
           {progress?.message || 'Déconnexion en cours…'}
         </h2>
+        <p className="text-xs text-blue-200/50">Fermeture sécurisée de votre session</p>
 
-        {/* Barre de progression */}
-        <div className="mt-6">
-          <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
+        {/* Barre de progression branded */}
+        <div className="mt-8">
+          <div className="h-1 bg-white/8 rounded-full overflow-hidden">
             <div
-              className="h-full bg-orange-600 rounded-full transition-all duration-300 ease-out"
-              style={{ width: `${effectiveProgress}%` }}
+              className="h-full rounded-full transition-all duration-300 ease-out"
+              style={{
+                width: `${effectiveProgress}%`,
+                background: 'linear-gradient(90deg, #1d4fa5, #f5b335)',
+              }}
             />
           </div>
-          <p className="text-xs text-gray-500 mt-2">{Math.round(effectiveProgress)}%</p>
+          <div className="flex justify-between mt-1.5">
+            <span className="text-[9px] text-blue-200/30 uppercase tracking-wider">Progression</span>
+            <span className="text-[10px] text-[#f5b335] font-semibold tabular-nums">{Math.round(effectiveProgress)}%</span>
+          </div>
         </div>
       </div>
     </div>

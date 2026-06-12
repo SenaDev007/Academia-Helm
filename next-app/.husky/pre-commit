@@ -1,7 +1,0 @@
-#!/usr/bin/env sh
-. "$(dirname -- "$0")/_/husky.sh"
-
-# Optimiser automatiquement les images avant chaque commit
-echo "🖼️  Optimisation automatique des images..."
-npm run optimize-images
-

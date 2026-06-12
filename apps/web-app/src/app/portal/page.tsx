@@ -234,12 +234,6 @@ export default function PortalPage() {
     });
   };
 
-  const handleCloseModal = () => {
-    setShowSchoolModal(false);
-    setSelectedSchool(null);
-    setShowSchoolSearch(false);
-  };
-
   const handleCloseSchoolSearch = () => {
     setShowSchoolSearch(false);
     setSelectedPortal(null);
@@ -409,239 +403,39 @@ export default function PortalPage() {
 
       <PremiumHeader />
 
-      <main className="relative z-[1] pb-20 pt-24 md:pt-28">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+      <main className="relative z-[1] pb-6 pt-20 md:pt-22">
+        <div className="mx-auto max-w-7xl px-3 sm:px-4 lg:px-6">
 
-          {/* ── Hero compact ── */}
-          <motion.div
-            className="mb-10 text-center"
-            initial={shouldReduceMotion ? false : { opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: dur, ease: 'easeOut' }}
-          >
-            <span
-              className="mb-3 inline-flex items-center gap-2 rounded-full border px-4 py-1 text-xs font-semibold uppercase tracking-wide"
-              style={{
-                color: NAVY,
-                borderColor: `${GOLD}66`,
-                background: `linear-gradient(90deg, ${GOLD}22, ${GOLD}3d)`,
-              }}
-            >
-              <Shield className="h-3.5 w-3.5" />
-              Portails sécurisés
-            </span>
-            <h1
-              className="mb-2 text-3xl font-extrabold tracking-tight md:text-4xl"
-              style={{ color: NAVY }}
-            >
-              Accéder à votre portail
-            </h1>
-            <p className="mx-auto max-w-xl text-base text-slate-600">
-              Sélectionnez votre espace sécurisé {BRAND.name}. {BRAND.subtitle}.
-            </p>
-            <p className="mt-1 text-sm font-medium text-slate-500">
-              {BRAND.slogan}
-            </p>
+          {/* ── Layout : BeninMap (majeur) + Portails (compact latéral) ── */}
+          <div className="flex w-full flex-col gap-4 lg:flex-row lg:items-stretch lg:gap-5">
 
-            {/* Dev mode button */}
-            <div className="mt-5 flex justify-center">
-              <motion.button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleDevPanelOpen();
-                }}
-                whileHover={
-                  shouldReduceMotion
-                    ? undefined
-                    : { scale: 1.03, boxShadow: `0 16px 32px ${GOLD}40` }
-                }
-                whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
-                transition={cardSpring}
-                className="group relative inline-flex items-center gap-2 rounded-xl border-2 px-5 py-2.5 text-sm font-semibold shadow-lg"
-                style={{
-                  borderColor: GOLD,
-                  background: `linear-gradient(135deg, ${GOLD}, #e6a020)`,
-                  color: NAVY,
-                }}
-                title="Ouvrir la fenêtre : choisir une école puis saisir vos identifiants"
-              >
-                <Code2 className="h-4 w-4" />
-                <span>Mode Développement</span>
-                <span className="absolute -right-1 -top-1 rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-md">
-                  DEV
-                </span>
-              </motion.button>
-            </div>
-          </motion.div>
-
-          {/* ── Layout : Portal grid + BeninMap ── */}
-          <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 lg:flex-row lg:items-start lg:gap-10">
-            {/* ── Colonne gauche : Grille portails compacte ── */}
-            <div className="lg:w-[55%]">
-              {/* Grille 3+2 compacte */}
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
-                {PORTAL_DEFINITIONS.map((portal, index) => {
-                  const Icon = portal.Icon;
-                  const isActive = selectedPortal === portal.type;
-                  return (
-                    <motion.button
-                      key={portal.type}
-                      type="button"
-                      initial={shouldReduceMotion ? false : { opacity: 0, y: 16 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{
-                        delay: shouldReduceMotion ? 0 : 0.06 + index * 0.06,
-                        duration: dur,
-                        ease: 'easeOut',
-                      }}
-                      whileHover={
-                        shouldReduceMotion
-                          ? undefined
-                          : {
-                              y: -3,
-                              boxShadow: `0 12px 28px ${NAVY}20`,
-                              transition: cardSpring,
-                            }
-                      }
-                      whileTap={shouldReduceMotion ? undefined : { scale: 0.97 }}
-                      onClick={() => handlePortalSelect(portal.type)}
-                      className="group relative flex flex-col items-center gap-2 rounded-2xl border p-4 text-center outline-none transition-all sm:p-5"
-                      style={{
-                        borderColor: isActive ? GOLD : `${NAVY}20`,
-                        background: isActive
-                          ? `linear-gradient(135deg, ${NAVY}10, ${BLUE}08, ${GOLD}0a)`
-                          : `linear-gradient(135deg, ${NAVY}06, ${BLUE}04)`,
-                        boxShadow: isActive
-                          ? `0 0 0 2px ${GOLD}50, 0 8px 20px ${NAVY}15`
-                          : `0 1px 3px ${NAVY}08`,
-                      }}
-                    >
-                      {/* Glassmorphism overlay */}
-                      <div
-                        className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 transition-opacity group-hover:opacity-100"
-                        style={{
-                          background: `linear-gradient(135deg, ${NAVY}0a, ${BLUE}08, ${GOLD}06)`,
-                        }}
-                        aria-hidden
-                      />
-
-                      {/* Icon container */}
-                      <motion.div
-                        className="relative flex h-12 w-12 items-center justify-center rounded-xl sm:h-14 sm:w-14"
-                        style={{
-                          background: `linear-gradient(135deg, ${NAVY}18, ${BLUE}12)`,
-                          boxShadow: `0 2px 8px ${NAVY}12`,
-                        }}
-                        whileHover={
-                          shouldReduceMotion ? undefined : { scale: 1.08, rotate: -3 }
-                        }
-                        transition={cardSpring}
-                      >
-                        <Icon
-                          className="h-6 w-6 sm:h-7 sm:w-7"
-                          style={{ color: NAVY }}
-                        />
-                      </motion.div>
-
-                      {/* Title */}
-                      <h3
-                        className="text-sm font-bold leading-tight sm:text-base"
-                        style={{ color: NAVY }}
-                      >
-                        {portal.title}
-                      </h3>
-
-                      {/* Role count badge */}
-                      <span
-                        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide sm:text-[11px]"
-                        style={{
-                          color: NAVY,
-                          background: `${GOLD}25`,
-                          border: `1px solid ${GOLD}40`,
-                        }}
-                      >
-                        {portal.roleCount} rôles
-                      </span>
-
-                      {/* Description (compact) */}
-                      <p className="mt-0.5 text-[11px] leading-snug text-slate-500 sm:text-xs">
-                        {portal.description}
-                      </p>
-
-                      {/* Active indicator */}
-                      {isActive && (
-                        <motion.div
-                          layoutId="portal-active-indicator"
-                          className="absolute -bottom-0.5 left-1/2 h-1 w-10 -translate-x-1/2 rounded-full"
-                          style={{ backgroundColor: GOLD }}
-                          transition={cardSpring}
-                        />
-                      )}
-                    </motion.button>
-                  );
-                })}
-              </div>
-
-              {/* Lien vers la recherche si portail sélectionné */}
-              <AnimatePresence>
-                {selectedPortal && !showSchoolSearch && (
-                  <motion.div
-                    initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={shouldReduceMotion ? undefined : { opacity: 0, y: -6 }}
-                    transition={{ duration: dur, ease: 'easeOut' }}
-                    className="mt-4"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setShowSchoolSearch(true)}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-md transition-all hover:shadow-lg"
-                      style={{
-                        background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
-                      }}
-                    >
-                      <Search className="h-4 w-4" />
-                      <span>
-                        {selectedPortal === 'PUBLIC'
-                          ? 'Rechercher un établissement pour la pré-inscription'
-                          : 'Rechercher votre établissement'}
-                      </span>
-                      <ArrowRight className="h-4 w-4" />
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            {/* ── Colonne droite : Carte du Bénin (INTACTE) ── */}
+            {/* ── Colonne gauche : Carte du Bénin — espace majeur (INTACTE) ── */}
             <motion.div
-              initial={shouldReduceMotion ? false : { opacity: 0, x: 24 }}
+              initial={shouldReduceMotion ? false : { opacity: 0, x: -16 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: shouldReduceMotion ? 0 : 0.3, duration: dur, ease: 'easeOut' }}
-              className="lg:w-[45%]"
+              transition={{ duration: dur, ease: 'easeOut' }}
+              className="lg:w-[68%]"
             >
               <div
-                className="rounded-2xl border bg-white p-5 shadow-lg"
+                className="rounded-xl border bg-white p-3 shadow-lg sm:p-4"
                 style={{ borderColor: `${NAVY}18` }}
               >
-                <div className="mb-3 flex items-center justify-between">
+                <div className="mb-2 flex items-center justify-between">
                   <h3
-                    className="text-sm font-bold uppercase tracking-wider"
+                    className="text-xs font-bold uppercase tracking-wider"
                     style={{ color: NAVY }}
                   >
-                    Carte du Bénin
+                    Carte du Bénin — Données éducatives
                   </h3>
                   <div
-                    className="flex overflow-hidden rounded-lg border text-xs"
+                    className="flex overflow-hidden rounded-lg border text-[10px]"
                     style={{ borderColor: `${NAVY}20` }}
                   >
                     {(['all', 'public', 'private'] as const).map((f) => (
                       <button
                         key={f}
                         onClick={() => setMapFilter(f)}
-                        className="px-3 py-1.5 font-medium transition-colors"
+                        className="px-2.5 py-1 font-medium transition-colors"
                         style={
                           mapFilter === f
                             ? { background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`, color: '#fff' }
@@ -660,41 +454,191 @@ export default function PortalPage() {
                 />
               </div>
             </motion.div>
-          </div>
 
-          {/* ── Footer sécurité ── */}
-          <motion.div
-            initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: shouldReduceMotion ? 0 : 0.25, duration: dur }}
-            className="relative z-0 mt-12 flex justify-center"
-          >
-            <div
-              className="relative z-0 inline-flex items-center gap-2 rounded-full border bg-white/90 px-5 py-2.5 text-sm text-slate-600 shadow-sm backdrop-blur-sm"
-              style={{ borderColor: `${NAVY}15`, boxShadow: `0 0 0 1px ${GOLD}14` }}
+            {/* ── Colonne droite : Panneau portails compact ── */}
+            <motion.div
+              initial={shouldReduceMotion ? false : { opacity: 0, x: 16 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: shouldReduceMotion ? 0 : 0.1, duration: dur, ease: 'easeOut' }}
+              className="lg:w-[32%] flex flex-col gap-3"
             >
-              <Shield className="h-4 w-4" style={{ color: NAVY }} />
-              <span>
-                Vous êtes sur un portail officiel sécurisé {BRAND.name}
-              </span>
-            </div>
-            {/* Dev mode: discreet button */}
-            {process.env.NODE_ENV === 'development' && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleDevPanelOpen();
-                }}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200/60 bg-white/60 px-3 py-1 text-[11px] font-medium text-slate-400 hover:text-slate-600 hover:bg-white/80 transition-all"
-                title="Mode développement"
+              {/* Titre compact */}
+              <div className="text-center lg:text-left">
+                <h1
+                  className="text-xl font-extrabold tracking-tight sm:text-2xl"
+                  style={{ color: NAVY }}
+                >
+                  Accéder à votre portail
+                </h1>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {BRAND.name} — {BRAND.subtitle}
+                </p>
+              </div>
+
+              {/* Grille portails ultra-compacte — 1 colonne */}
+              <div className="flex flex-col gap-2">
+                {PORTAL_DEFINITIONS.map((portal, index) => {
+                  const Icon = portal.Icon;
+                  const isActive = selectedPortal === portal.type;
+                  return (
+                    <motion.button
+                      key={portal.type}
+                      type="button"
+                      initial={shouldReduceMotion ? false : { opacity: 0, x: 12 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{
+                        delay: shouldReduceMotion ? 0 : 0.05 + index * 0.04,
+                        duration: dur,
+                        ease: 'easeOut',
+                      }}
+                      whileHover={
+                        shouldReduceMotion
+                          ? undefined
+                          : {
+                              x: 3,
+                              boxShadow: `0 6px 16px ${NAVY}18`,
+                              transition: cardSpring,
+                            }
+                      }
+                      whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
+                      onClick={() => handlePortalSelect(portal.type)}
+                      className="group relative flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left outline-none transition-all sm:px-4 sm:py-3"
+                      style={{
+                        borderColor: isActive ? GOLD : `${NAVY}15`,
+                        background: isActive
+                          ? `linear-gradient(135deg, ${NAVY}0a, ${BLUE}06, ${GOLD}08)`
+                          : `linear-gradient(135deg, ${NAVY}04, ${BLUE}02)`,
+                        boxShadow: isActive
+                          ? `0 0 0 2px ${GOLD}40, 0 4px 12px ${NAVY}10`
+                          : `0 1px 2px ${NAVY}06`,
+                      }}
+                    >
+                      {/* Icon */}
+                      <div
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+                        style={{
+                          background: `linear-gradient(135deg, ${NAVY}14, ${BLUE}0c)`,
+                        }}
+                      >
+                        <Icon className="h-4.5 w-4.5" style={{ color: NAVY }} />
+                      </div>
+
+                      {/* Texte */}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <h3
+                            className="text-sm font-bold leading-tight"
+                            style={{ color: NAVY }}
+                          >
+                            {portal.title}
+                          </h3>
+                          <span
+                            className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
+                            style={{
+                              color: NAVY,
+                              background: `${GOLD}20`,
+                              border: `1px solid ${GOLD}35`,
+                            }}
+                          >
+                            {portal.roleCount} rôles
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-[11px] leading-snug text-slate-500">
+                          {portal.description}
+                        </p>
+                      </div>
+
+                      {/* Flèche */}
+                      <ArrowRight
+                        className="h-4 w-4 shrink-0 text-slate-300 transition-colors group-hover:text-slate-500"
+                        style={isActive ? { color: GOLD } : undefined}
+                      />
+
+                      {/* Active indicator bar */}
+                      {isActive && (
+                        <motion.div
+                          layoutId="portal-active-bar"
+                          className="absolute bottom-0 left-0 right-0 h-0.5 rounded-b-xl"
+                          style={{ backgroundColor: GOLD }}
+                          transition={cardSpring}
+                        />
+                      )}
+                    </motion.button>
+                  );
+                })}
+              </div>
+
+              {/* Lien recherche si portail sélectionné */}
+              <AnimatePresence>
+                {selectedPortal && !showSchoolSearch && (
+                  <motion.div
+                    initial={shouldReduceMotion ? false : { opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={shouldReduceMotion ? undefined : { opacity: 0, y: -4 }}
+                    transition={{ duration: dur, ease: 'easeOut' }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setShowSchoolSearch(true)}
+                      className="flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:shadow-lg"
+                      style={{
+                        background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+                      }}
+                    >
+                      <Search className="h-3.5 w-3.5" />
+                      <span>
+                        {selectedPortal === 'PUBLIC'
+                          ? 'Pré-inscription'
+                          : 'Rechercher votre établissement'}
+                      </span>
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Footer sécurité compact */}
+              <div
+                className="mt-auto flex items-center justify-center gap-1.5 rounded-lg border bg-white/80 px-3 py-2 text-[11px] text-slate-500 backdrop-blur-sm lg:justify-start"
+                style={{ borderColor: `${NAVY}10` }}
               >
-                <Code2 className="h-3 w-3" />
-                DEV
-              </button>
-            )}
-          </motion.div>
+                <Shield className="h-3 w-3" style={{ color: NAVY }} />
+                <span>Portail officiel sécurisé {BRAND.name}</span>
+              </div>
+
+              {/* Dev mode button — compact */}
+              <div className="flex justify-center lg:justify-start">
+                <motion.button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleDevPanelOpen();
+                  }}
+                  whileHover={
+                    shouldReduceMotion
+                      ? undefined
+                      : { scale: 1.02, boxShadow: `0 8px 20px ${GOLD}30` }
+                  }
+                  whileTap={shouldReduceMotion ? undefined : { scale: 0.97 }}
+                  transition={cardSpring}
+                  className="group relative inline-flex items-center gap-1.5 rounded-lg border-2 px-3 py-1.5 text-xs font-semibold shadow"
+                  style={{
+                    borderColor: GOLD,
+                    background: `linear-gradient(135deg, ${GOLD}, #e6a020)`,
+                    color: NAVY,
+                  }}
+                  title="Mode développement"
+                >
+                  <Code2 className="h-3 w-3" />
+                  <span>DEV</span>
+                  <span className="absolute -right-0.5 -top-0.5 rounded-full bg-red-500 px-1 py-px text-[8px] font-bold text-white shadow-sm">
+                    ⚡
+                  </span>
+                </motion.button>
+              </div>
+            </motion.div>
+          </div>
         </div>
       </main>
 
@@ -802,7 +746,7 @@ export default function PortalPage() {
               {/* Back link */}
               <button
                 type="button"
-                onClick={handleBack}
+                onClick={handleCloseSchoolSearch}
                 className="mt-4 flex w-full items-center justify-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-slate-700"
               >
                 <ArrowRight className="h-3.5 w-3.5 rotate-180" />

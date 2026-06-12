@@ -25,6 +25,7 @@ const IDENTITY_PROFILE_SELECT = {
   address: true,
   city: true,
   department: true,
+  postalCode: true,
   phonePrimary: true,
   phoneSecondary: true,
   email: true,
@@ -85,6 +86,7 @@ export class SchoolSearchService {
       logoUrl: identity?.logoUrl || school?.logo || null,
       address: identity?.address || school?.address || null,
       city: identity?.city || school?.city || this.extractCityFromAddress(school?.address || '') || null,
+      postalCode: identity?.postalCode || school?.postalCode || null,
       phonePrimary: identity?.phonePrimary || school?.primaryPhone || null,
       phoneSecondary: identity?.phoneSecondary || school?.secondaryPhone || null,
       primaryEmail: identity?.email || school?.primaryEmail || null,
@@ -294,6 +296,8 @@ export class SchoolSearchService {
       }
 
       // 3. Merge school data with job counts — TenantIdentityProfile first
+      //    Returns ALL identity fields so the public careers page can display
+      //    full contact info (emails, phones, website, etc.)
       const results = tenants.map((tenant) => {
         const data = this.extractSchoolData(tenant);
 
@@ -302,17 +306,23 @@ export class SchoolSearchService {
           tenantId: tenant.id,
           name: tenant.name,
           schoolName: data.schoolName,
+          schoolAcronym: data.schoolAcronym,
           tenantName: tenant.name,
           slug: tenant.slug,
           subdomain: tenant.subdomain || null,
           logoUrl: data.logoUrl,
-          city: data.city,
-          primaryPhone: data.phonePrimary,
-          primaryEmail: data.primaryEmail,
           address: data.address,
+          city: data.city,
+          department: data.department,
+          postalCode: data.postalCode || null,
+          country: tenant.country?.name || data.country || null,
+          phonePrimary: data.phonePrimary,
+          phoneSecondary: data.phoneSecondary,
+          primaryEmail: data.primaryEmail,
+          website: data.website,
           schoolType: data.schoolType,
           slogan: data.slogan,
-          country: tenant.country?.name || data.country || null,
+          identityVersion: data.identityVersion,
           activeJobsCount: countMap.get(tenant.id) || 0,
         };
       });

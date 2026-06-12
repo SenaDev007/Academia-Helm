@@ -237,3 +237,35 @@ Stage Summary:
 - New reusable components: OrbitalSpinner, JobCardSkeleton, JobCardSkeletonMobile, InlineContentSkeleton, CornerAccent, MobileCornerAccent, RotatingMessage
 - 10 new CSS keyframe animations for branded loading effects
 - Build validation limited by disk space (node_modules partially broken), but import/export validation passed 100%
+---
+Task ID: jobs-page-redesign
+Agent: Main Agent
+Task: Redesign /jobs page with centered school cards, full contact info, and fix footer
+
+Work Log:
+- Analyzed full CareersContent.tsx (1230 lines) and SchoolSearchService backend
+- Updated SchoolSearchService.listSchoolsWithJobs() to return ALL identity profile fields:
+  schoolAcronym, phoneSecondary, website, department, postalCode, identityVersion
+- Added postalCode to IDENTITY_PROFILE_SELECT and extractSchoolData()
+- Redesigned CareersContent.tsx with:
+  - Enriched School interface with all TenantIdentityProfile fields
+  - New helper functions: getSchoolPhoneSecondary, getSchoolWebsite, getSchoolSlogan, getSchoolAcronym, getSchoolAddress, getSchoolDepartment, getSchoolDisplayName
+  - Dynamically centered school cards using flex-wrap justify-center (1 card centered, 2 centered, 3 centered, etc.)
+  - Full contact info on each school card: phonePrimary, phoneSecondary, email, website, address
+  - Display name format: "Full Name (Acronym)"
+  - Slogan displayed in italic below name
+  - Address + city + department + country in location section
+  - Stats strip in hero section (number of schools, active offers, currently recruiting)
+  - Subtle grid pattern in hero background
+  - School header card in Step 2 also shows all contact info
+  - Replaced inline footer with InstitutionalFooter component (proper Academia Helm palette)
+  - Removed "Propulsé par HDIE Engine" text
+  - Changed "HDIE Engine" in AI notice to generic wording
+- TypeScript compilation passes with zero errors
+
+Stage Summary:
+- Backend: SchoolSearchService returns full identity profile data (latest versioned)
+- Frontend: School cards dynamically centered with complete contact information
+- Footer: Now uses InstitutionalFooter (navy/gold palette) instead of slate-900 inline footer
+- "Propulsé par HDIE Engine" removed
+- All data sourced from TenantIdentityProfile (source of truth, versioned, active)

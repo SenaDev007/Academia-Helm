@@ -28,9 +28,14 @@ import {
   Globe,
   Map,
   Mail,
-  Phone
+  Phone,
+  ExternalLink,
+  Clock,
+  DollarSign,
+  Bookmark,
 } from 'lucide-react';
 import PremiumHeader from '@/components/layout/PremiumHeader';
+import InstitutionalFooter from '@/components/public/InstitutionalFooter';
 import { JobCardSkeleton } from '@/components/loading/Skeleton';
 import { JobCardSkeletonMobile } from '@/components/loading/SkeletonMobile';
 
@@ -39,19 +44,33 @@ const PRIMARY = '#0b2f73';
 const BLUE = '#1d4fa5';
 const GOLD = '#f5b335';
 
+/**
+ * School interface — enriched with ALL identity profile fields from the
+ * latest versioned TenantIdentityProfile (source of truth).
+ * The backend listSchoolsWithJobs() already resolves:
+ *   TenantIdentityProfile (active) → School (legacy) → Tenant.name
+ */
 interface School {
   id: string;
   tenantId: string;
   name: string;
   schoolName: string;
+  schoolAcronym?: string;
   tenantName: string;
   slug: string;
   logoUrl?: string;
-  city?: string;
-  country?: string;
-  primaryPhone?: string;
-  primaryEmail?: string;
   address?: string;
+  city?: string;
+  department?: string;
+  postalCode?: string;
+  country?: string;
+  phonePrimary?: string;
+  phoneSecondary?: string;
+  primaryEmail?: string;
+  website?: string;
+  schoolType?: string;
+  slogan?: string;
+  identityVersion?: number;
   activeJobsCount?: number;
   /** Nested school object from API — school-level contact info takes priority over tenant-level */
   school?: {
@@ -177,8 +196,6 @@ export function CareersContent({
   const [submitResult, setSubmitResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // When forcedJobSlug is provided, directly deep-link to the specific job via API.
-  // This avoids the fragile multi-step chain (load schools → match slug → load jobs → match slug)
-  // and works reliably for social sharing links.
   const [deepLinkResolved, setDeepLinkResolved] = useState(false);
 
   useEffect(() => {
@@ -188,7 +205,6 @@ export function CareersContent({
     async function resolveDeepLink() {
       try {
         setLoading(true);
-        // Call the public getJobBySlug API — returns job with tenant info
         const res = await fetch(`/api/hr/recruitment/jobs/by-slug/${encodeURIComponent(forcedJobSlug!)}`);
         if (!res.ok) {
           console.warn('Deep-link: job not found for slug', forcedJobSlug);
@@ -198,7 +214,6 @@ export function CareersContent({
         const jobData = await res.json();
         if (cancelled || !jobData?.tenant) return;
 
-        // Build a synthetic school object from the job's tenant info
         const tenantInfo = jobData.tenant;
         const syntheticSchool: School = {
           id: tenantInfo.id,
@@ -210,16 +225,19 @@ export function CareersContent({
           logoUrl: tenantInfo.logoUrl || tenantInfo.school?.logo || undefined,
           city: tenantInfo.city || tenantInfo.school?.city || undefined,
           country: tenantInfo.country || tenantInfo.school?.country || undefined,
-          primaryPhone: tenantInfo.school?.primaryPhone || tenantInfo.primaryPhone || undefined,
+          phonePrimary: tenantInfo.school?.primaryPhone || tenantInfo.primaryPhone || undefined,
+          phoneSecondary: tenantInfo.phoneSecondary || undefined,
           primaryEmail: tenantInfo.school?.primaryEmail || tenantInfo.primaryEmail || undefined,
           address: tenantInfo.address || tenantInfo.school?.address || undefined,
+          website: tenantInfo.website || undefined,
+          schoolAcronym: tenantInfo.schoolAcronym || undefined,
+          slogan: tenantInfo.slogan || undefined,
+          department: tenantInfo.department || undefined,
         };
 
-        // Set school and job directly
         setSelectedSchool(syntheticSchool);
         setSelectedJob(jobData);
 
-        // Also load the full jobs list for this school (for sidebar navigation)
         try {
           const jobsRes = await fetch(`/api/hr/recruitment/jobs?tenantId=${tenantInfo.id}`);
           const jobsData = await jobsRes.json();
@@ -243,26 +261,22 @@ export function CareersContent({
     return () => { cancelled = true; };
   }, [forcedJobSlug, deepLinkResolved]);
 
-  // Fetch available schools on mount — skip if data was pre-fetched by Server Component
+  // Fetch available schools on mount
   useEffect(() => {
-    // If Server Component already provided schools, skip the client-side fetch entirely
     if (initialSchools && initialSchools.length > 0) return;
 
     async function loadSchools() {
       try {
         setLoading(true);
         setLoadError(null);
-        // Use the optimized endpoint that returns schools with active job counts
-        // and includes logo, contact info, etc.
         const res = await fetch('/api/public/schools/with-jobs');
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data)) {
             setSchools(data);
-            return; // Success — no need for fallback
+            return;
           }
         }
-        // Fallback to the basic list endpoint
         try {
           const fallbackRes = await fetch('/api/public/schools/list');
           if (fallbackRes.ok) {
@@ -275,7 +289,6 @@ export function CareersContent({
         } catch {
           // Fallback also failed
         }
-        // Both endpoints failed
         setLoadError('Impossible de charger les établissements. Vérifiez votre connexion et réessayez.');
       } catch (err) {
         console.error('Failed to load schools:', err);
@@ -296,17 +309,11 @@ export function CareersContent({
     setJobStats(null);
     setCurrentStep(1);
     
-    // Update path dynamically (personalized tenant URL)
-    // Preserve the jobSlug if we're coming from a direct link (/jobs/{school}/{job})
-    // so that the auto-select job useEffect can still trigger
     const jobSlugSegment = forcedJobSlug ? `/${forcedJobSlug}` : '';
     router.push(`/jobs/${school.slug}${jobSlugSegment}`);
 
     try {
       setLoading(true);
-      // Use BFF proxy (not apiFetch) for public job listings.
-      // apiFetch sends X-Tenant-ID from the auth cookie, which overrides
-      // the query param tenantId in NestJS — causing wrong-tenant jobs.
       const res = await fetch(`/api/hr/recruitment/jobs?tenantId=${school.tenantId || school.id}`);
       if (res.ok) {
         const data = await res.json();
@@ -330,7 +337,6 @@ export function CareersContent({
     async function loadStats() {
       try {
         const jobId = selectedJob!.id;
-        // Route through BFF proxy to avoid CORS issues on mobile devices
         const res = await fetch(`/api/hr/recruitment/jobs/${jobId}/stats`);
         if (res.ok) {
           const data = await res.json();
@@ -343,11 +349,10 @@ export function CareersContent({
     loadStats();
   }, [selectedJob?.id]);
 
-  // Auto-select school if query parameter matches (only if deep-link hasn't already resolved)
-  // Skip if Server Component already provided initialSchool (already selected)
+  // Auto-select school if query parameter matches
   useEffect(() => {
-    if (deepLinkResolved && forcedJobSlug) return; // Deep-link already set the school
-    if (initialSchool) return; // Server Component already selected the school
+    if (deepLinkResolved && forcedJobSlug) return;
+    if (initialSchool) return;
     if (schools.length > 0 && schoolParam && !selectedSchool) {
       const match = schools.find(s => s.slug === schoolParam);
       if (match) {
@@ -365,7 +370,6 @@ export function CareersContent({
   };
 
   // Auto-select job if forcedJobSlug is provided and jobs are loaded
-  // (fallback for when deep-link resolution didn't set the job directly)
   useEffect(() => {
     if (forcedJobSlug && jobs.length > 0 && selectedSchool && !selectedJob) {
       handleSelectJobBySlug(forcedJobSlug);
@@ -433,7 +437,6 @@ export function CareersContent({
       formData.append('gender', gender);
       formData.append('linkedinUrl', linkedinUrl);
       
-      // Structured profile fields serialized
       formData.append('experiences', JSON.stringify(experiences));
       formData.append('education', JSON.stringify(education));
       formData.append('skills', JSON.stringify(skills));
@@ -443,13 +446,6 @@ export function CareersContent({
       if (coverFile) formData.append('coverLetter', coverFile);
       if (recoFile) formData.append('recommendationLetter', recoFile);
 
-      // NOTE: Route through the BFF proxy (/api/hr/recruitment/apply) instead of
-      // making a direct cross-origin call to the NestJS API. This avoids CORS issues,
-      // works reliably on mobile devices, and ensures the multipart/form-data body
-      // is forwarded correctly with authentication headers.
-      //
-      // Do NOT set Content-Type header manually — the browser must auto-set
-      // "multipart/form-data; boundary=..." so the server can parse the body.
       const res = await fetch('/api/hr/recruitment/apply', {
         method: 'POST',
         body: formData,
@@ -463,7 +459,6 @@ export function CareersContent({
           message: 'Candidature Easy Apply transmise ! Notre IA procède à l\'extraction sémantique et à la validation des diplômes/certifications.'
         });
       } else {
-        // Extract error details from various response formats
         const serverMsg = data?.message || data?.error || '';
         const detail = data?.detail || '';
         const fullMsg = [serverMsg, detail].filter(Boolean).join(' — ');
@@ -494,25 +489,47 @@ export function CareersContent({
 
   /**
    * Resolve contact info with school-level priority over tenant-level.
-   * Prevents the wrong email/phone from being displayed when tenant-level
-   * data belongs to a different entity than the school.
+   * The backend already merges TenantIdentityProfile → School → Tenant,
+   * so the top-level fields (phonePrimary, primaryEmail, etc.) are the
+   * latest versioned identity data.
    */
   const getSchoolEmail = (s: School) => s.school?.primaryEmail || s.primaryEmail;
-  const getSchoolPhone = (s: School) => s.school?.primaryPhone || s.primaryPhone;
+  const getSchoolPhone = (s: School) => s.school?.primaryPhone || s.phonePrimary;
+  const getSchoolPhoneSecondary = (s: School) => s.phoneSecondary;
+  const getSchoolWebsite = (s: School) => s.website;
+  const getSchoolSlogan = (s: School) => s.slogan;
+  const getSchoolAcronym = (s: School) => s.schoolAcronym;
+  const getSchoolAddress = (s: School) => s.address;
+  const getSchoolDepartment = (s: School) => s.department;
+
+  /** Build a display name: "Full Name (Acronym)" */
+  const getSchoolDisplayName = (s: School) => {
+    const name = s.schoolName || s.tenantName || s.name;
+    const acronym = getSchoolAcronym(s);
+    return acronym ? `${name} (${acronym})` : name;
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50 text-slate-900 flex flex-col justify-between">
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50 text-slate-900 flex flex-col">
       <PremiumHeader />
 
-      {/* Hero premium */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-[#0b2f73] via-[#103e91] to-[#1d4fa5] pt-28 pb-14 md:pb-16">
-        {/* Particules d'ambiance */}
+      {/* ═══════════════════════════════════════════════════════
+          HERO — Premium navy gradient with golden accents
+          ═══════════════════════════════════════════════════════ */}
+      <section className="relative overflow-hidden bg-gradient-to-br from-[#0b2f73] via-[#103e91] to-[#1d4fa5] pt-28 pb-16 md:pb-20">
+        {/* Ambient light particles */}
         <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute -top-20 -left-10 w-64 h-64 bg-[#f5b335]/8 rounded-full blur-[100px]" />
-          <div className="absolute -bottom-16 -right-16 w-72 h-72 bg-[#1d4fa5]/15 rounded-full blur-[110px]" />
-          <div className="absolute top-1/3 right-1/4 w-40 h-40 bg-[#f5b335]/5 rounded-full blur-[80px]" />
+          <div className="absolute -top-20 -left-10 w-72 h-72 bg-[#f5b335]/8 rounded-full blur-[100px]" />
+          <div className="absolute -bottom-16 -right-16 w-80 h-80 bg-[#1d4fa5]/15 rounded-full blur-[120px]" />
+          <div className="absolute top-1/3 right-1/4 w-48 h-48 bg-[#f5b335]/5 rounded-full blur-[80px]" />
         </div>
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(245,179,53,0.06)_0%,transparent_50%)]" />
+
+        {/* Subtle grid pattern */}
+        <div className="absolute inset-0 opacity-[0.03]" style={{
+          backgroundImage: 'linear-gradient(rgba(255,255,255,.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.1) 1px, transparent 1px)',
+          backgroundSize: '60px 60px'
+        }} />
 
         <div className="relative z-10 max-w-5xl mx-auto px-4 md:px-8 text-center">
           <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border text-[11px] font-bold uppercase tracking-widest bg-[#f5b335]/10 border-[#f5b335]/25 text-[#f5b335] mb-5">
@@ -525,9 +542,33 @@ export function CareersContent({
           <p className="text-sm md:text-base text-blue-100/70 max-w-xl mx-auto">
             Postulez instantanément grâce à notre parcours de candidature simplifiée intégrant l&apos;analyse IA.
           </p>
+
+          {/* Stats strip */}
+          {schools.length > 0 && (
+            <div className="mt-8 flex flex-wrap justify-center gap-6 md:gap-10">
+              <div className="text-center">
+                <p className="text-2xl md:text-3xl font-extrabold text-white">{schools.length}</p>
+                <p className="text-[10px] md:text-xs text-blue-200/60 font-medium uppercase tracking-wider">Établissements</p>
+              </div>
+              <div className="w-px h-10 bg-white/10" />
+              <div className="text-center">
+                <p className="text-2xl md:text-3xl font-extrabold text-[#f5b335]">
+                  {schools.reduce((sum: number, s: any) => sum + (s.activeJobsCount || 0), 0)}
+                </p>
+                <p className="text-[10px] md:text-xs text-blue-200/60 font-medium uppercase tracking-wider">Offres actives</p>
+              </div>
+              <div className="w-px h-10 bg-white/10" />
+              <div className="text-center">
+                <p className="text-2xl md:text-3xl font-extrabold text-white">
+                  {schools.filter((s: any) => (s.activeJobsCount || 0) > 0).length}
+                </p>
+                <p className="text-[10px] md:text-xs text-blue-200/60 font-medium uppercase tracking-wider">Recrutent maintenant</p>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Vague séparateur SVG */}
+        {/* Wave separator */}
         <div className="absolute bottom-0 left-0 right-0">
           <svg viewBox="0 0 1440 60" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full">
             <path d="M0 60V30C240 0 480 0 720 30C960 60 1200 60 1440 30V60H0Z" fill="#f8fafc" />
@@ -539,11 +580,9 @@ export function CareersContent({
 
         {loading && (
           <div className="py-12">
-            {/* Desktop skeleton */}
             <div className="hidden md:block">
               <JobCardSkeleton count={3} />
             </div>
-            {/* Mobile skeleton */}
             <div className="block md:hidden">
               <JobCardSkeletonMobile count={3} />
             </div>
@@ -586,10 +625,12 @@ export function CareersContent({
 
         {!loading && !loadError && (
           <AnimatePresence mode="wait">
-            {/* STEP 1: Select Institution */}
+            {/* ═══════════════════════════════════════════════════════
+                STEP 1: Select Institution — Dynamically centered cards
+                ═══════════════════════════════════════════════════════ */}
             {!selectedSchool && (
               <motion.div key="step-schools" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }} className="space-y-8">
-                {/* Barre de recherche premium */}
+                {/* Premium search bar */}
                 <div className="max-w-lg mx-auto relative">
                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[#0b2f73]/40" />
                   <input
@@ -601,7 +642,7 @@ export function CareersContent({
                   />
                 </div>
 
-                {/* Grille de cartes centrée dynamiquement */}
+                {/* Dynamically centered school cards grid */}
                 <div className="flex flex-wrap justify-center gap-6">
                   {filteredSchools.map((school) => (
                     <motion.div
@@ -609,13 +650,14 @@ export function CareersContent({
                       onClick={() => handleSelectSchool(school)}
                       whileHover={{ y: -6, boxShadow: '0 20px 40px rgba(11,47,115,0.12)' }}
                       transition={{ type: 'spring', stiffness: 260, damping: 20 }}
-                      className="group cursor-pointer bg-white border border-slate-100 rounded-2xl p-6 shadow-md shadow-slate-100/60 hover:border-[#f5b335]/30 transition-colors flex flex-col justify-between relative overflow-hidden w-full sm:w-[calc(50%-12px)] lg:w-[calc(33.333%-16px)]"
+                      className="group cursor-pointer bg-white border border-slate-100 rounded-2xl shadow-md shadow-slate-100/60 hover:border-[#f5b335]/30 transition-colors flex flex-col relative overflow-hidden w-full sm:w-[calc(50%-12px)] lg:w-[calc(33.333%-16px)]"
                     >
-                      {/* Barre dorée en haut de la carte */}
+                      {/* Gold accent bar on top */}
                       <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#f5b335] via-[#ffd166] to-[#f5b335] opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
 
-                      <div>
-                        <div className="flex justify-between items-start mb-4">
+                      {/* Card header: Logo + Name + Badge */}
+                      <div className="p-5 pb-3">
+                        <div className="flex justify-between items-start mb-3">
                           {school.logoUrl ? (
                             <Image
                               src={school.logoUrl}
@@ -645,17 +687,88 @@ export function CareersContent({
                             </span>
                           )}
                         </div>
+
+                        {/* School name + acronym */}
                         <h3 className="font-bold text-[#0b2f73] text-sm leading-snug group-hover:text-[#1d4fa5] transition-colors">
-                          {school.schoolName || school.tenantName || school.name}
+                          {getSchoolDisplayName(school)}
                         </h3>
-                        {(school.city || school.country) && (
-                          <p className="text-[11px] text-slate-400 mt-1.5 flex items-center gap-1">
-                            <MapPin className="h-3 w-3" />
-                            {[school.city, school.country].filter(Boolean).join(', ')}
+
+                        {/* Slogan */}
+                        {getSchoolSlogan(school) && (
+                          <p className="text-[10px] text-slate-400 mt-0.5 italic line-clamp-1">
+                            {getSchoolSlogan(school)}
+                          </p>
+                        )}
+
+                        {/* Location */}
+                        {(school.city || school.country || getSchoolAddress(school)) && (
+                          <p className="text-[11px] text-slate-500 mt-1.5 flex items-start gap-1">
+                            <MapPin className="h-3 w-3 mt-0.5 shrink-0 text-slate-400" />
+                            <span className="line-clamp-2">
+                              {getSchoolAddress(school) && <span>{getSchoolAddress(school)}, </span>}
+                              {[school.city, school.department, school.country].filter(Boolean).join(', ')}
+                            </span>
                           </p>
                         )}
                       </div>
-                      <div className="mt-5 pt-3.5 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-[#0b2f73] group-hover:text-[#f5b335] transition-colors">
+
+                      {/* Contact info section */}
+                      <div className="px-5 pb-3 space-y-1.5">
+                        {/* Phone numbers */}
+                        {(getSchoolPhone(school) || getSchoolPhoneSecondary(school)) && (
+                          <div className="flex flex-col gap-0.5">
+                            {getSchoolPhone(school) && (
+                              <a
+                                href={`tel:${getSchoolPhone(school)}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex items-center gap-1.5 text-[10px] text-slate-500 hover:text-[#0b2f73] transition-colors group/contact"
+                              >
+                                <Phone className="h-3 w-3 shrink-0 text-[#1d4fa5]/50 group-hover/contact:text-[#1d4fa5]" />
+                                <span className="truncate">{getSchoolPhone(school)}</span>
+                              </a>
+                            )}
+                            {getSchoolPhoneSecondary(school) && (
+                              <a
+                                href={`tel:${getSchoolPhoneSecondary(school)}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex items-center gap-1.5 text-[10px] text-slate-400 hover:text-[#0b2f73] transition-colors group/contact"
+                              >
+                                <Phone className="h-3 w-3 shrink-0 text-slate-300 group-hover/contact:text-[#1d4fa5]" />
+                                <span className="truncate">{getSchoolPhoneSecondary(school)}</span>
+                              </a>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Email */}
+                        {getSchoolEmail(school) && (
+                          <a
+                            href={`mailto:${getSchoolEmail(school)}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex items-center gap-1.5 text-[10px] text-slate-500 hover:text-[#0b2f73] transition-colors group/contact"
+                          >
+                            <Mail className="h-3 w-3 shrink-0 text-[#1d4fa5]/50 group-hover/contact:text-[#1d4fa5]" />
+                            <span className="truncate">{getSchoolEmail(school)}</span>
+                          </a>
+                        )}
+
+                        {/* Website */}
+                        {getSchoolWebsite(school) && (
+                          <a
+                            href={getSchoolWebsite(school)!.startsWith('http') ? getSchoolWebsite(school)! : `https://${getSchoolWebsite(school)!}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex items-center gap-1.5 text-[10px] text-slate-500 hover:text-[#0b2f73] transition-colors group/contact"
+                          >
+                            <Globe className="h-3 w-3 shrink-0 text-[#1d4fa5]/50 group-hover/contact:text-[#1d4fa5]" />
+                            <span className="truncate">{getSchoolWebsite(school)!.replace(/^https?:\/\//, '')}</span>
+                          </a>
+                        )}
+                      </div>
+
+                      {/* CTA footer */}
+                      <div className="mt-auto px-5 py-3 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-[#0b2f73] group-hover:text-[#f5b335] transition-colors">
                         <span>Découvrir les offres</span>
                         <ChevronRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
                       </div>
@@ -665,7 +778,9 @@ export function CareersContent({
               </motion.div>
             )}
 
-            {/* STEP 2: Job Board or Application */}
+            {/* ═══════════════════════════════════════════════════════
+                STEP 2: Job Board or Application
+                ═══════════════════════════════════════════════════════ */}
             {selectedSchool && (
               <motion.div key="step-jobs" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }} className="space-y-6">
                 <button
@@ -680,8 +795,9 @@ export function CareersContent({
                   <ArrowLeft className="h-4 w-4" /> Retour aux établissements
                 </button>
 
+                {/* School header card with full contact info */}
                 <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-start gap-4">
                     {selectedSchool.logoUrl ? (
                       <Image
                         src={selectedSchool.logoUrl}
@@ -698,17 +814,38 @@ export function CareersContent({
                     )}
                     <div className="flex-1 min-w-0">
                       <h2 className="font-extrabold text-slate-900 text-lg truncate">
-                        {selectedSchool.schoolName || selectedSchool.tenantName || selectedSchool.name}
+                        {getSchoolDisplayName(selectedSchool)}
                       </h2>
-                      <div className="flex flex-wrap items-center gap-3 mt-1 text-xs text-slate-500">
-                        {(selectedSchool.city || selectedSchool.country) && (
-                          <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {[selectedSchool.city, selectedSchool.country].filter(Boolean).join(', ')}</span>
+                      {getSchoolSlogan(selectedSchool) && (
+                        <p className="text-[11px] text-slate-400 italic mt-0.5">{getSchoolSlogan(selectedSchool)}</p>
+                      )}
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-2 text-xs text-slate-500">
+                        {(selectedSchool.city || selectedSchool.country || getSchoolAddress(selectedSchool)) && (
+                          <span className="flex items-center gap-1">
+                            <MapPin className="h-3 w-3" />
+                            {getSchoolAddress(selectedSchool) && <span>{getSchoolAddress(selectedSchool)}, </span>}
+                            {[selectedSchool.city, selectedSchool.department, selectedSchool.country].filter(Boolean).join(', ')}
+                          </span>
                         )}
                         {getSchoolPhone(selectedSchool) && (
                           <a href={`tel:${getSchoolPhone(selectedSchool)}`} className="flex items-center gap-1 hover:text-[#0b2f73] transition-colors"><Phone className="h-3 w-3" /> {getSchoolPhone(selectedSchool)}</a>
                         )}
+                        {getSchoolPhoneSecondary(selectedSchool) && (
+                          <a href={`tel:${getSchoolPhoneSecondary(selectedSchool)}`} className="flex items-center gap-1 hover:text-[#0b2f73] transition-colors"><Phone className="h-3 w-3 text-slate-400" /> {getSchoolPhoneSecondary(selectedSchool)}</a>
+                        )}
                         {getSchoolEmail(selectedSchool) && (
                           <a href={`mailto:${getSchoolEmail(selectedSchool)}`} className="flex items-center gap-1 hover:text-[#0b2f73] transition-colors"><Mail className="h-3 w-3" /> {getSchoolEmail(selectedSchool)}</a>
+                        )}
+                        {getSchoolWebsite(selectedSchool) && (
+                          <a
+                            href={getSchoolWebsite(selectedSchool)!.startsWith('http') ? getSchoolWebsite(selectedSchool)! : `https://${getSchoolWebsite(selectedSchool)!}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 hover:text-[#0b2f73] transition-colors"
+                          >
+                            <Globe className="h-3 w-3" />
+                            {getSchoolWebsite(selectedSchool)!.replace(/^https?:\/\//, '')}
+                          </a>
                         )}
                       </div>
                     </div>
@@ -747,472 +884,354 @@ export function CareersContent({
                               router.push(`/jobs/${selectedSchool.slug}/${job.slug}`, { scroll: false });
                             }
                           }}
-                          className={`cursor-pointer border p-4 rounded-xl transition-all ${
-                            selectedJob?.id === job.id 
-                              ? 'bg-indigo-50/50 border-[#0b2f73] shadow-sm' 
-                              : 'bg-white border-slate-200 hover:border-slate-300'
+                          className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                            selectedJob?.id === job.id
+                              ? 'border-[#f5b335]/40 bg-[#f5b335]/5 shadow-sm'
+                              : 'border-slate-100 bg-white hover:border-slate-200 hover:shadow-sm'
                           }`}
                         >
-                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{job.ref}</span>
-                          <h4 className="font-bold text-slate-900 text-xs mt-1">{job.title}</h4>
-                          <div className="mt-3 flex items-center gap-3 text-[10px] text-slate-500">
-                            <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {job.loc}</span>
-                            <span className="flex items-center gap-1"><Briefcase className="h-3 w-3" /> {job.contractType || 'CDI'}</span>
-                            {(job._count?.applications ?? 0) > 0 && (
-                              <span className="flex items-center gap-1 text-blue-600 font-semibold"><Users className="h-3 w-3" /> {job._count?.applications ?? 0} candidat{(job._count?.applications ?? 0) > 1 ? 's' : ''}</span>
+                          <div className="flex items-start justify-between gap-2">
+                            <h4 className="font-semibold text-sm text-slate-800 leading-snug">{job.title}</h4>
+                            <Bookmark className={`h-4 w-4 shrink-0 ${selectedJob?.id === job.id ? 'text-[#f5b335]' : 'text-slate-300'}`} />
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-1">{job.dept}</p>
+                          <div className="flex items-center gap-3 mt-2 text-[10px] text-slate-400">
+                            {job.contractType && (
+                              <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{job.contractType}</span>
+                            )}
+                            {job.loc && (
+                              <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{job.loc}</span>
                             )}
                           </div>
+                          {job.salary && (
+                            <p className="text-[10px] font-semibold text-[#0b2f73] mt-1.5 flex items-center gap-1">
+                              <DollarSign className="h-3 w-3" />{job.salary}
+                            </p>
+                          )}
                         </div>
                       ))}
                     </div>
 
-                    {/* Right: Job details */}
+                    {/* Right: Job detail */}
                     <div className="lg:col-span-2">
                       {selectedJob ? (
-                        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
-                          <div>
-                            <div className="flex justify-between items-start">
-                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{selectedJob.ref}</span>
-                              <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-emerald-50 text-emerald-700 border border-emerald-100">{selectedJob.contractType || 'CDI'}</span>
-                            </div>
-                            <h3 className="font-extrabold text-slate-900 text-base mt-2">{selectedJob.title}</h3>
-                            <p className="text-xs text-slate-500 mt-1">{selectedJob.dept} · {selectedJob.loc}</p>
-                          </div>
-
-                          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 border-y border-slate-100 py-4 text-xs">
-                            {selectedJob.salary && (
-                              <div>
-                                <span className="text-[10px] text-slate-400 font-bold uppercase">Salaire</span>
-                                <p className="font-semibold text-slate-900 mt-0.5">{selectedJob.salary}</p>
-                              </div>
-                            )}
-                            {selectedJob.academicLevel && (
-                              <div>
-                                <span className="text-[10px] text-slate-400 font-bold uppercase">Niveau d'études</span>
-                                <p className="font-semibold text-slate-900 mt-0.5">{selectedJob.academicLevel}</p>
-                              </div>
-                            )}
-                            {selectedJob.experience && (
-                              <div>
-                                <span className="text-[10px] text-slate-400 font-bold uppercase">Expérience</span>
-                                <p className="font-semibold text-slate-900 mt-0.5">{selectedJob.experience}</p>
-                              </div>
-                            )}
-                            {/* Applicant count stat */}
-                            <div>
-                              <span className="text-[10px] text-slate-400 font-bold uppercase">Candidats</span>
-                              <p className="font-semibold text-[#0b2f73] mt-0.5 flex items-center gap-1">
-                                <Users className="h-3.5 w-3.5" />
-                                {selectedJob._count?.applications ?? 0} candidat{((selectedJob._count?.applications ?? 0) > 1) ? 's' : ''}
-                              </p>
+                        <motion.div
+                          key={selectedJob.id}
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden"
+                        >
+                          {/* Job detail header */}
+                          <div className="p-6 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
+                            <h2 className="text-xl font-extrabold text-slate-900">{selectedJob.title}</h2>
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-2 text-xs text-slate-500">
+                              <span className="flex items-center gap-1"><Building2 className="h-3.5 w-3.5" />{selectedJob.dept}</span>
+                              {selectedJob.loc && <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{selectedJob.loc}</span>}
+                              {selectedJob.contractType && <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#0b2f73]/5 text-[#0b2f73] font-semibold">{selectedJob.contractType}</span>}
+                              {selectedJob.salary && <span className="flex items-center gap-1"><DollarSign className="h-3.5 w-3.5" />{selectedJob.salary}</span>}
+                              {selectedJob.academicLevel && <span className="flex items-center gap-1"><GraduationCap className="h-3.5 w-3.5" />{selectedJob.academicLevel}</span>}
+                              {selectedJob.experience && <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{selectedJob.experience}</span>}
                             </div>
                           </div>
 
-                          {/* LinkedIn-style applicant stats */}
-                          {jobStats && jobStats.totalApplicants > 0 && (
-                            <div className="bg-gradient-to-br from-slate-50 to-blue-50/30 border border-slate-200 rounded-xl p-4 space-y-3">
-                              <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2">
-                                <Users className="h-4 w-4 text-[#0b2f73]" />
-                                Statistiques des candidats
-                              </h4>
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {/* By country */}
+                          <div className="p-6 space-y-5">
+                            {selectedJob.description && (
+                              <div>
+                                <h4 className="text-xs font-bold text-slate-800 mb-2 uppercase tracking-wider">Description</h4>
+                                <p className="text-sm text-slate-600 whitespace-pre-line leading-relaxed">{selectedJob.description}</p>
+                              </div>
+                            )}
+                            {selectedJob.missions && (
+                              <div>
+                                <h4 className="text-xs font-bold text-slate-800 mb-2 uppercase tracking-wider">Missions</h4>
+                                <p className="text-sm text-slate-600 whitespace-pre-line leading-relaxed">{selectedJob.missions}</p>
+                              </div>
+                            )}
+                            {selectedJob.responsibilities && (
+                              <div>
+                                <h4 className="text-xs font-bold text-slate-800 mb-2 uppercase tracking-wider">Responsabilités</h4>
+                                <p className="text-sm text-slate-600 whitespace-pre-line leading-relaxed">{selectedJob.responsibilities}</p>
+                              </div>
+                            )}
+                            {selectedJob.skillsRequired && (
+                              <div>
+                                <h4 className="text-xs font-bold text-slate-800 mb-2 uppercase tracking-wider">Compétences requises</h4>
+                                <div className="flex flex-wrap gap-2 mt-1">
+                                  {selectedJob.skillsRequired.split(',').map((skill, i) => (
+                                    <span key={i} className="px-2.5 py-1 bg-[#0b2f73]/5 text-[#0b2f73] text-[10px] font-semibold rounded-lg">{skill.trim()}</span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Stats */}
+                            {jobStats && (
+                              <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-xl text-xs text-slate-500">
+                                <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{jobStats.totalApplicants} candidat{jobStats.totalApplicants !== 1 ? 's' : ''}</span>
                                 {jobStats.countries.length > 0 && (
-                                  <div>
-                                    <span className="text-[10px] text-slate-400 font-bold uppercase flex items-center gap-1"><Globe className="h-3 w-3" /> Par pays</span>
-                                    <div className="mt-1.5 space-y-1">
-                                      {jobStats.countries.map((c) => (
-                                        <div key={c.name} className="flex items-center gap-2">
-                                          <div className="flex-1 bg-slate-200 rounded-full h-2 overflow-hidden">
-                                            <div
-                                              className="bg-[#0b2f73] h-full rounded-full transition-all duration-500"
-                                              style={{ width: `${Math.round((c.count / jobStats.totalApplicants) * 100)}%` }}
-                                            />
-                                          </div>
-                                          <span className="text-[10px] text-slate-700 font-medium whitespace-nowrap min-w-[70px]">{c.name}</span>
-                                          <span className="text-[10px] text-slate-400 font-bold">{c.count}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                                {/* By city */}
-                                {jobStats.cities.length > 0 && jobStats.cities.some(c => c.name !== 'Non spécifié') && (
-                                  <div>
-                                    <span className="text-[10px] text-slate-400 font-bold uppercase flex items-center gap-1"><Map className="h-3 w-3" /> Par ville</span>
-                                    <div className="mt-1.5 space-y-1">
-                                      {jobStats.cities.filter(c => c.name !== 'Non spécifié').map((c) => (
-                                        <div key={c.name} className="flex items-center gap-2">
-                                          <div className="flex-1 bg-slate-200 rounded-full h-2 overflow-hidden">
-                                            <div
-                                              className="bg-emerald-500 h-full rounded-full transition-all duration-500"
-                                              style={{ width: `${Math.round((c.count / jobStats.totalApplicants) * 100)}%` }}
-                                            />
-                                          </div>
-                                          <span className="text-[10px] text-slate-700 font-medium whitespace-nowrap min-w-[70px]">{c.name}</span>
-                                          <span className="text-[10px] text-slate-400 font-bold">{c.count}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
+                                  <span className="flex items-center gap-1"><Globe className="h-3.5 w-3.5" />{jobStats.countries.length} pays</span>
                                 )}
                               </div>
-                            </div>
-                          )}
+                            )}
 
-                          {selectedJob.description && (
-                            <div>
-                              <h4 className="font-bold text-slate-900 text-xs mb-1.5">Description du poste</h4>
-                              <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line">{selectedJob.description}</p>
-                            </div>
-                          )}
-
-                          {selectedJob.missions && (
-                            <div>
-                              <h4 className="font-bold text-slate-900 text-xs mb-1.5">Missions clés</h4>
-                              <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line">{selectedJob.missions}</p>
-                            </div>
-                          )}
-
-                          {selectedJob.responsibilities && (
-                            <div>
-                              <h4 className="font-bold text-slate-900 text-xs mb-1.5">Responsabilités</h4>
-                              <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line">{selectedJob.responsibilities}</p>
-                            </div>
-                          )}
-
-                          <button
-                            onClick={() => setIsApplying(true)}
-                            className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold text-white transition hover:opacity-90 shadow-md bg-blue-600"
-                          >
-                            <Sparkles className="h-4 w-4 text-white fill-white" /> Postuler instantanément
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center shadow-sm">
-                          <div className="relative w-full max-w-md mx-auto">
-                            <Image
-                              src="/images/AcademiaHelm_RecruitmentPortal.jpeg"
-                              alt="Portail de recrutement Academia Helm"
-                              width={512}
-                              height={360}
-                              className="rounded-2xl shadow-sm w-full h-auto object-contain"
-                              priority
-                              sizes="(max-width: 768px) 100vw, 512px"
-                            />
+                            {/* Easy Apply CTA */}
+                            <button
+                              onClick={() => { setIsApplying(true); setCurrentStep(1); setSubmitResult(null); }}
+                              className="w-full py-3 bg-[#0b2f73] text-white rounded-xl font-bold text-sm hover:bg-[#1521a0] transition-colors flex items-center justify-center gap-2"
+                            >
+                              <Send className="h-4 w-4" /> Easy Apply
+                            </button>
                           </div>
-                          <p className="mt-5 text-sm font-semibold text-slate-700">Sélectionnez une offre</p>
-                          <p className="mt-1 text-xs text-slate-400">Parcourez les postes ouverts et cliquez sur un poste pour voir les détails.</p>
+                        </motion.div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center h-64 text-slate-400">
+                          <Briefcase className="h-12 w-12 mb-3 text-slate-200" />
+                          <p className="text-sm font-medium">Sélectionnez un poste pour voir les détails</p>
                         </div>
                       )}
                     </div>
                   </div>
                   )
                 ) : (
-                  /* Form: Easy Apply multi-step */
-                  <div className="max-w-2xl mx-auto bg-white border border-slate-200 rounded-2xl p-6 shadow-md relative overflow-hidden">
-                    {/* Top step progress bar */}
-                    <div className="w-full bg-slate-100 h-1.5 absolute top-0 left-0">
-                      <div className="bg-blue-600 h-full transition-all duration-300" style={{ width: `${(currentStep / 5) * 100}%` }} />
+                  /* ─── Application Form ─── */
+                  <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                    <div className="p-6 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
+                      <h3 className="text-base font-extrabold text-slate-900">Candidature — {selectedJob?.title}</h3>
+                      <p className="text-[11px] text-slate-500 mt-1">Étape {currentStep} sur 5</p>
+                      {/* Progress bar */}
+                      <div className="mt-3 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-[#0b2f73] to-[#f5b335] rounded-full transition-all duration-500" style={{ width: `${(currentStep / 5) * 100}%` }} />
+                      </div>
                     </div>
 
-                    <div className="flex justify-between items-center border-b border-slate-100 pb-4 mb-6 mt-2">
-                      <div>
-                        <span className="text-[9px] font-bold text-blue-600 uppercase tracking-widest">Étape {currentStep} sur 5</span>
-                        <h3 className="font-extrabold text-slate-900 text-sm">Candidature Simplifiée : {selectedJob?.title}</h3>
-                      </div>
-                      <button
-                        onClick={() => setIsApplying(false)}
-                        className="text-xs text-slate-500 font-semibold hover:underline"
-                      >
-                        Annuler
-                      </button>
-                    </div>
+                    <div className="p-6 space-y-5">
+                      {/* Submission result */}
+                      {submitResult && (
+                        <div className={`p-4 rounded-xl flex gap-3 text-sm ${submitResult.success ? 'bg-emerald-50 text-emerald-800 border border-emerald-100' : 'bg-red-50 text-red-800 border border-red-100'}`}>
+                          {submitResult.success ? <CheckCircle className="h-5 w-5 shrink-0" /> : <XCircle className="h-5 w-5 shrink-0" />}
+                          <p>{submitResult.message}</p>
+                        </div>
+                      )}
 
-                    {submitResult ? (
-                      <div className="text-center py-8 space-y-4">
-                        {submitResult.success ? (
-                          <>
-                            <CheckCircle className="h-12 w-12 text-emerald-500 mx-auto" />
-                            <h4 className="font-bold text-slate-900 text-base">Candidature Transmise avec Succès</h4>
-                            <p className="text-xs text-slate-600 max-w-md mx-auto leading-relaxed">{submitResult.message}</p>
-                          </>
-                        ) : (
-                          <>
-                            <XCircle className="h-12 w-12 text-red-500 mx-auto" />
-                            <h4 className="font-bold text-slate-900 text-base">Échec de la soumission</h4>
-                            <p className="text-xs text-slate-600 max-w-md mx-auto leading-relaxed">{submitResult.message}</p>
-                          </>
-                        )}
-                        <button
-                          onClick={() => { setSelectedSchool(null); setSelectedJob(null); setIsApplying(false); }}
-                          className="mt-6 rounded-xl border border-slate-200 px-5 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                        >
-                          Retourner à l'accueil
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="space-y-6">
-                        {/* STEP 1: Contact Information */}
-                        {currentStep === 1 && (
-                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-                            <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><User className="h-4 w-4 text-blue-600" /> Informations de contact</h4>
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Prénom</label>
-                                <input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} required className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Nom de famille</label>
-                                <input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} required className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" />
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Adresse email</label>
-                                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Téléphone</label>
-                                <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} required className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="Ex: +229 90000000" />
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Adresse résidentielle</label>
-                                <input type="text" value={address} onChange={(e) => setAddress(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Genre</label>
-                                <select value={gender} onChange={(e) => setGender(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs bg-white">
-                                  <option value="M">Masculin</option>
-                                  <option value="F">Féminin</option>
-                                </select>
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Pays</label>
-                                <select value={country} onChange={(e) => setCountry(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs bg-white">
-                                  <option value="Bénin">Bénin</option>
-                                  <option value="Togo">Togo</option>
-                                  <option value="Niger">Niger</option>
-                                  <option value="Nigéria">Nigéria</option>
-                                  <option value="Côte d'Ivoire">Côte d'Ivoire</option>
-                                  <option value="Sénégal">Sénégal</option>
-                                  <option value="Mali">Mali</option>
-                                  <option value="Burkina Faso">Burkina Faso</option>
-                                  <option value="Guinée">Guinée</option>
-                                  <option value="Cameroun">Cameroun</option>
-                                  <option value="Gabon">Gabon</option>
-                                  <option value="Congo">Congo</option>
-                                  <option value="RDC">RDC</option>
-                                  <option value="France">France</option>
-                                  <option value="Autre">Autre</option>
-                                </select>
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Ville / Commune</label>
-                                <input type="text" value={city} onChange={(e) => setCity(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="Ex: Cotonou, Parakou..." />
-                              </div>
-                            </div>
-
+                      {/* STEP 1: Contact & Identity */}
+                      {currentStep === 1 && (
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+                          <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><User className="h-4 w-4 text-blue-600" /> Identité & Contact</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                              <label className="block text-[10px] font-bold text-slate-500 mb-1 flex items-center gap-1"><Linkedin className="h-3.5 w-3.5 text-[#0A66C2] fill-[#0A66C2]" /> Profil LinkedIn (optionnel)</label>
-                              <input type="url" value={linkedinUrl} onChange={(e) => setLinkedinUrl(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="https://linkedin.com/in/nom-d-utilisateur" />
+                              <label className="block text-[10px] font-bold text-slate-500 mb-1">Prénom *</label>
+                              <input type="text" value={firstName} onChange={e => setFirstName(e.target.value)} required className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="Prénom" />
                             </div>
-                          </motion.div>
-                        )}
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-500 mb-1">Nom *</label>
+                              <input type="text" value={lastName} onChange={e => setLastName(e.target.value)} required className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="Nom de famille" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-500 mb-1">Email *</label>
+                              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="votre@email.com" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-500 mb-1">Téléphone</label>
+                              <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="+229 90 00 00 00" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-500 mb-1">Adresse</label>
+                              <input type="text" value={address} onChange={e => setAddress(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="Adresse" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-500 mb-1">Pays</label>
+                              <input type="text" value={country} onChange={e => setCountry(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-500 mb-1">Ville</label>
+                              <input type="text" value={city} onChange={e => setCity(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="Ville" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-500 mb-1">Genre</label>
+                              <select value={gender} onChange={e => setGender(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs">
+                                <option value="M">Masculin</option>
+                                <option value="F">Féminin</option>
+                              </select>
+                            </div>
+                            <div className="md:col-span-2">
+                              <label className="block text-[10px] font-bold text-slate-500 mb-1">LinkedIn</label>
+                              <input type="url" value={linkedinUrl} onChange={e => setLinkedinUrl(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="https://linkedin.com/in/votrenom" />
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
 
-                        {/* STEP 2: Work Experience */}
-                        {currentStep === 2 && (
-                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-                            <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><Briefcase className="h-4 w-4 text-blue-600" /> Expériences professionnelles</h4>
-                            
-                            {/* Experience list */}
+                      {/* STEP 2: Work Experience */}
+                      {currentStep === 2 && (
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+                          <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><Briefcase className="h-4 w-4 text-blue-600" /> Expérience professionnelle</h4>
+                          
+                          {experiences.length > 0 && (
                             <div className="space-y-2">
                               {experiences.map((exp, i) => (
-                                <div key={i} className="flex justify-between items-start bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs">
+                                <div key={i} className="p-3 bg-slate-50 rounded-lg text-xs flex justify-between items-start">
                                   <div>
-                                    <p className="font-bold text-slate-900">{exp.title}</p>
-                                    <p className="text-[10px] text-slate-500">{exp.company} · {exp.years}</p>
-                                    {exp.description && <p className="text-[10px] text-slate-600 mt-1 italic">{exp.description}</p>}
+                                    <p className="font-semibold text-slate-800">{exp.title} — {exp.company}</p>
+                                    <p className="text-slate-500">{exp.years}</p>
+                                    {exp.description && <p className="text-slate-500 mt-1">{exp.description}</p>}
                                   </div>
-                                  <button onClick={() => removeExperience(i)} className="text-red-500 hover:text-red-700 transition">
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
+                                  <button type="button" onClick={() => removeExperience(i)} className="text-slate-400 hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>
                                 </div>
                               ))}
                             </div>
+                          )}
 
-                            {/* Add Experience sub-form */}
-                            <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
-                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Ajouter une expérience</span>
-                              <div className="grid grid-cols-2 gap-3">
-                                <input type="text" placeholder="Intitulé du poste (ex: Enseignant)" value={expTitle} onChange={(e) => setExpTitle(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
-                                <input type="text" placeholder="Établissement / École" value={expCompany} onChange={(e) => setExpCompany(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
-                              </div>
-                              <div className="grid grid-cols-3 gap-3">
-                                <input type="text" placeholder="Durée (ex: 2022 - 2025)" value={expYears} onChange={(e) => setExpYears(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs col-span-1" />
-                                <input type="text" placeholder="Brève description des responsabilités" value={expDesc} onChange={(e) => setExpDesc(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs col-span-2" />
-                              </div>
-                              <button type="button" onClick={addExperience} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-[10px] font-semibold hover:opacity-90 transition">
-                                <Plus className="h-3.5 w-3.5" /> Enregistrer le poste
-                              </button>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 border border-dashed border-slate-200 rounded-xl">
+                            <input type="text" value={expTitle} onChange={e => setExpTitle(e.target.value)} placeholder="Poste occupé" className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+                            <input type="text" value={expCompany} onChange={e => setExpCompany(e.target.value)} placeholder="Établissement / Entreprise" className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+                            <input type="text" value={expYears} onChange={e => setExpYears(e.target.value)} placeholder="Période (ex: 2020-2023)" className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+                            <div className="flex gap-2">
+                              <input type="text" value={expDesc} onChange={e => setExpDesc(e.target.value)} placeholder="Description (optionnel)" className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+                              <button type="button" onClick={addExperience} className="px-3 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 transition"><Plus className="h-4 w-4 text-slate-600" /></button>
                             </div>
-                          </motion.div>
-                        )}
+                          </div>
+                        </motion.div>
+                      )}
 
-                        {/* STEP 3: Education */}
-                        {currentStep === 3 && (
-                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-                            <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><BookOpen className="h-4 w-4 text-blue-600" /> Études et Formations</h4>
-                            
-                            {/* Education list */}
+                      {/* STEP 3: Education */}
+                      {currentStep === 3 && (
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+                          <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><BookOpen className="h-4 w-4 text-blue-600" /> Formation</h4>
+
+                          {education.length > 0 && (
                             <div className="space-y-2">
                               {education.map((edu, i) => (
-                                <div key={i} className="flex justify-between items-start bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs">
+                                <div key={i} className="p-3 bg-slate-50 rounded-lg text-xs flex justify-between items-start">
                                   <div>
-                                    <p className="font-bold text-slate-900">{edu.degree}</p>
-                                    <p className="text-[10px] text-slate-500">{edu.school} · {edu.year}</p>
+                                    <p className="font-semibold text-slate-800">{edu.degree} — {edu.school}</p>
+                                    <p className="text-slate-500">{edu.year}</p>
                                   </div>
-                                  <button onClick={() => removeEducation(i)} className="text-red-500 hover:text-red-700 transition">
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
+                                  <button type="button" onClick={() => removeEducation(i)} className="text-slate-400 hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>
                                 </div>
                               ))}
                             </div>
+                          )}
 
-                            {/* Add Education sub-form */}
-                            <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
-                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Ajouter un diplôme</span>
-                              <div className="grid grid-cols-2 gap-3">
-                                <input type="text" placeholder="Diplôme (ex: Master Mathématiques)" value={eduDegree} onChange={(e) => setEduDegree(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
-                                <input type="text" placeholder="Université / École" value={eduSchool} onChange={(e) => setEduSchool(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
-                              </div>
-                              <div className="flex gap-3">
-                                <input type="text" placeholder="Année d'obtention" value={eduYear} onChange={(e) => setEduYear(e.target.value)} className="w-1/3 rounded-lg border border-slate-200 px-3 py-2 text-xs" />
-                                <button type="button" onClick={addEducation} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-[10px] font-semibold hover:opacity-90 transition">
-                                  <Plus className="h-3.5 w-3.5" /> Enregistrer le diplôme
-                                </button>
-                              </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 border border-dashed border-slate-200 rounded-xl">
+                            <input type="text" value={eduDegree} onChange={e => setEduDegree(e.target.value)} placeholder="Diplôme" className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+                            <input type="text" value={eduSchool} onChange={e => setEduSchool(e.target.value)} placeholder="Établissement" className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+                            <div className="flex gap-2">
+                              <input type="text" value={eduYear} onChange={e => setEduYear(e.target.value)} placeholder="Année" className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+                              <button type="button" onClick={addEducation} className="px-3 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 transition"><Plus className="h-4 w-4 text-slate-600" /></button>
                             </div>
-                          </motion.div>
-                        )}
+                          </div>
+                        </motion.div>
+                      )}
 
-                        {/* STEP 4: Skills & Pitch */}
-                        {currentStep === 4 && (
-                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-                            <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><Award className="h-4 w-4 text-blue-600" /> Compétences & Présentation</h4>
-                            
-                            <div>
-                              <label className="block text-[10px] font-bold text-slate-500 mb-1">Compétences clés (Appuyez sur Entrée)</label>
-                              <input
-                                type="text"
-                                value={skillInput}
-                                onChange={(e) => setSkillInput(e.target.value)}
-                                onKeyDown={addSkill}
-                                placeholder="Ajouter une compétence... (ex: Didactique, Python)"
-                                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs"
-                              />
-                              <div className="flex flex-wrap gap-1.5 mt-2">
-                                {skills.map(s => (
-                                  <span key={s} className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 rounded-full text-slate-700 text-[10px] font-semibold">
-                                    {s}
-                                    <button type="button" onClick={() => removeSkill(s)} className="text-slate-400 hover:text-slate-600">✕</button>
-                                  </span>
-                                ))}
-                              </div>
+                      {/* STEP 4: Skills & Pitch */}
+                      {currentStep === 4 && (
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+                          <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><Award className="h-4 w-4 text-blue-600" /> Compétences & Présentation</h4>
+                          
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 mb-1">Compétences clés (Appuyez sur Entrée)</label>
+                            <input
+                              type="text"
+                              value={skillInput}
+                              onChange={(e) => setSkillInput(e.target.value)}
+                              onKeyDown={addSkill}
+                              placeholder="Ajouter une compétence... (ex: Didactique, Python)"
+                              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs"
+                            />
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {skills.map(s => (
+                                <span key={s} className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 rounded-full text-slate-700 text-[10px] font-semibold">
+                                  {s}
+                                  <button type="button" onClick={() => removeSkill(s)} className="text-slate-400 hover:text-slate-600">✕</button>
+                                </span>
+                              ))}
                             </div>
+                          </div>
 
-                            <div>
-                              <label className="block text-[10px] font-bold text-slate-500 mb-1">Pourquoi vous ? Pitch de motivation (1-2 paragraphes)</label>
-                              <textarea
-                                value={pitch}
-                                onChange={(e) => setPitch(e.target.value)}
-                                placeholder="Présentez brièvement vos atouts pour ce poste scolaire..."
-                                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-28"
-                              />
-                            </div>
-                          </motion.div>
-                        )}
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 mb-1">Pourquoi vous ? Pitch de motivation (1-2 paragraphes)</label>
+                            <textarea
+                              value={pitch}
+                              onChange={(e) => setPitch(e.target.value)}
+                              placeholder="Présentez brièvement vos atouts pour ce poste scolaire..."
+                              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-28"
+                            />
+                          </div>
+                        </motion.div>
+                      )}
 
-                        {/* STEP 5: Document Uploads */}
-                        {currentStep === 5 && (
-                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-                            <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><FileText className="h-4 w-4 text-blue-600" /> Fichiers & Justificatifs</h4>
-                            
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {/* CV */}
-                              <div className="border border-dashed border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center text-center relative hover:bg-slate-50 transition cursor-pointer">
-                                <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setCvFile(e.target.files?.[0] || null)} required className="absolute inset-0 opacity-0 cursor-pointer" />
-                                <Upload className="h-6 w-6 text-[#0b2f73] mb-2" />
-                                <span className="text-[10px] font-bold text-slate-700">Curriculum Vitae *</span>
-                                <span className="text-[9px] text-slate-400 mt-1">{cvFile ? cvFile.name : 'PDF, DOCX'}</span>
-                              </div>
-
-                              {/* Letter */}
-                              <div className="border border-dashed border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center text-center relative hover:bg-slate-50 transition cursor-pointer">
-                                <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setCoverFile(e.target.files?.[0] || null)} className="absolute inset-0 opacity-0 cursor-pointer" />
-                                <Upload className="h-6 w-6 text-[#0b2f73] mb-2" />
-                                <span className="text-[10px] font-bold text-slate-700">Lettre de motivation</span>
-                                <span className="text-[9px] text-slate-400 mt-1">{coverFile ? coverFile.name : 'PDF, DOCX'}</span>
-                              </div>
-                            </div>
-
-                            {/* Recommendation */}
+                      {/* STEP 5: Document Uploads */}
+                      {currentStep === 5 && (
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+                          <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><FileText className="h-4 w-4 text-blue-600" /> Fichiers & Justificatifs</h4>
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* CV */}
                             <div className="border border-dashed border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center text-center relative hover:bg-slate-50 transition cursor-pointer">
-                              <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setRecoFile(e.target.files?.[0] || null)} className="absolute inset-0 opacity-0 cursor-pointer" />
+                              <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setCvFile(e.target.files?.[0] || null)} required className="absolute inset-0 opacity-0 cursor-pointer" />
                               <Upload className="h-6 w-6 text-[#0b2f73] mb-2" />
-                              <span className="text-[10px] font-bold text-slate-700">Lettre de recommandation académique</span>
-                              <span className="text-[9px] text-slate-400 mt-1">{recoFile ? recoFile.name : 'PDF, DOCX'}</span>
+                              <span className="text-[10px] font-bold text-slate-700">Curriculum Vitae *</span>
+                              <span className="text-[9px] text-slate-400 mt-1">{cvFile ? cvFile.name : 'PDF, DOCX'}</span>
                             </div>
 
-                            {/* AI Processing notice */}
-                            <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-lg flex gap-2 text-[10px] text-slate-600">
-                              <Sparkles className="h-4 w-4 text-blue-600 shrink-0 mt-0.5 animate-pulse" />
-                              <p>En transmettant vos documents, le système **HDIE Engine** analysera la cohérence de vos diplômes et rédigera une note de synthèse pour la direction.</p>
+                            {/* Letter */}
+                            <div className="border border-dashed border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center text-center relative hover:bg-slate-50 transition cursor-pointer">
+                              <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setCoverFile(e.target.files?.[0] || null)} className="absolute inset-0 opacity-0 cursor-pointer" />
+                              <Upload className="h-6 w-6 text-[#0b2f73] mb-2" />
+                              <span className="text-[10px] font-bold text-slate-700">Lettre de motivation</span>
+                              <span className="text-[9px] text-slate-400 mt-1">{coverFile ? coverFile.name : 'PDF, DOCX'}</span>
                             </div>
-                          </motion.div>
-                        )}
+                          </div>
 
-                        {/* Navigation buttons */}
-                        <div className="flex justify-between items-center pt-4 border-t border-slate-100">
+                          {/* Recommendation */}
+                          <div className="border border-dashed border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center text-center relative hover:bg-slate-50 transition cursor-pointer">
+                            <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setRecoFile(e.target.files?.[0] || null)} className="absolute inset-0 opacity-0 cursor-pointer" />
+                            <Upload className="h-6 w-6 text-[#0b2f73] mb-2" />
+                            <span className="text-[10px] font-bold text-slate-700">Lettre de recommandation académique</span>
+                            <span className="text-[9px] text-slate-400 mt-1">{recoFile ? recoFile.name : 'PDF, DOCX'}</span>
+                          </div>
+
+                          {/* AI Processing notice */}
+                          <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-lg flex gap-2 text-[10px] text-slate-600">
+                            <Sparkles className="h-4 w-4 text-blue-600 shrink-0 mt-0.5 animate-pulse" />
+                            <p>En transmettant vos documents, le système analysERA la cohérence de vos diplômes et rédigera une note de synthèse pour la direction.</p>
+                          </div>
+                        </motion.div>
+                      )}
+
+                      {/* Navigation buttons */}
+                      <div className="flex justify-between items-center pt-4 border-t border-slate-100">
+                        <button
+                          type="button"
+                          disabled={currentStep === 1 || submitting}
+                          onClick={() => setCurrentStep(prev => prev - 1)}
+                          className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs hover:bg-slate-50 disabled:opacity-40"
+                        >
+                          Précédent
+                        </button>
+
+                        {currentStep < 5 ? (
                           <button
                             type="button"
-                            disabled={currentStep === 1 || submitting}
-                            onClick={() => setCurrentStep(prev => prev - 1)}
-                            className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs hover:bg-slate-50 disabled:opacity-40"
+                            onClick={() => setCurrentStep(prev => prev + 1)}
+                            className="px-5 py-2 text-white rounded-lg text-xs font-bold transition hover:opacity-90"
+                            style={{ backgroundColor: PRIMARY }}
                           >
-                            Précédent
+                            Continuer
                           </button>
-
-                          {currentStep < 5 ? (
-                            <button
-                              type="button"
-                              onClick={() => setCurrentStep(prev => prev + 1)}
-                              className="px-5 py-2 text-white rounded-lg text-xs font-bold transition hover:opacity-90"
-                              style={{ backgroundColor: PRIMARY }}
-                            >
-                              Continuer
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={handleSubmitApplication}
-                              disabled={submitting}
-                              className="px-5 py-2 text-white rounded-lg text-xs font-bold transition hover:opacity-90 flex items-center gap-1 bg-blue-600"
-                            >
-                              {submitting ? 'Transmission...' : 'Soumettre le dossier'}
-                              <Send className="h-3 w-3" />
-                            </button>
-                          )}
-                        </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handleSubmitApplication}
+                            disabled={submitting}
+                            className="px-5 py-2 text-white rounded-lg text-xs font-bold transition hover:opacity-90 flex items-center gap-1 bg-blue-600"
+                          >
+                            {submitting ? 'Transmission...' : 'Soumettre le dossier'}
+                            <Send className="h-3 w-3" />
+                          </button>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </div>
                 )}
               </motion.div>
@@ -1221,9 +1240,10 @@ export function CareersContent({
         )}
       </main>
 
-      <footer className="bg-slate-900 text-slate-500 py-8 border-t border-slate-800 text-center text-xs">
-        <p>© 2026 Academia Helm. Tous droits réservés. Propulsé par HDIE Engine.</p>
-      </footer>
+      {/* ═══════════════════════════════════════════════════════
+          FOOTER — Academia Helm branded, using InstitutionalFooter
+          ═══════════════════════════════════════════════════════ */}
+      <InstitutionalFooter />
     </div>
   );
 }

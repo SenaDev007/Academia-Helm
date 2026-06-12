@@ -158,9 +158,22 @@ const modules = [
 /** Aperçu blog sur la landing (les articles MDX auto-générés apparaissent aussi sur /blog). */
 const featuredBlogPosts = BLOG_POSTS.slice(0, 3);
 
-/** Bande défilante animée — alerte recrutement sur le landing page */
+/** Établissement avec offres d'emploi */
+interface BannerSchool {
+  id: string;
+  tenantId: string;
+  name: string;
+  schoolName: string;
+  slug: string;
+  logoUrl?: string;
+  city?: string;
+  country?: string;
+  activeJobsCount: number;
+}
+
+/** Bande défilante animée — appels d'offres par établissement avec liens cliquables */
 function RecruitmentBanner() {
-  const [activeSchoolsCount, setActiveSchoolsCount] = useState<number | null>(null);
+  const [schools, setSchools] = useState<BannerSchool[]>([]);
   const [isPaused, setIsPaused] = useState(false);
 
   useEffect(() => {
@@ -171,7 +184,21 @@ function RecruitmentBanner() {
         if (!res.ok) return;
         const data = await res.json();
         if (Array.isArray(data) && !cancelled) {
-          setActiveSchoolsCount(data.filter((s: any) => (s.activeJobsCount ?? 0) > 0).length);
+          // Ne garder que les écoles avec au moins 1 offre active
+          const active = data
+            .filter((s: any) => (s.activeJobsCount ?? 0) > 0)
+            .map((s: any) => ({
+              id: s.id,
+              tenantId: s.tenantId ?? s.id,
+              name: s.schoolName || s.name,
+              schoolName: s.schoolName || s.name,
+              slug: s.slug,
+              logoUrl: s.logoUrl,
+              city: s.city,
+              country: s.country,
+              activeJobsCount: s.activeJobsCount ?? 0,
+            }));
+          setSchools(active);
         }
       } catch {
         // Silently fail — banner is non-critical
@@ -181,39 +208,109 @@ function RecruitmentBanner() {
     return () => { cancelled = true; };
   }, []);
 
-  if (!activeSchoolsCount || activeSchoolsCount === 0) return null;
+  if (schools.length === 0) return null;
+
+  const totalJobs = schools.reduce((sum, s) => sum + s.activeJobsCount, 0);
+
+  // Chaque item = une carte école cliquable + séparateur
+  const bannerItems = schools.map((school) => (
+    <Link
+      key={school.id}
+      href={`/jobs?school=${school.slug}`}
+      className="flex items-center gap-2.5 bg-white/15 hover:bg-white/30 backdrop-blur-sm rounded-full px-4 py-1.5 transition-all duration-200 border border-white/20 hover:border-white/40 hover:scale-[1.03] shrink-0 group"
+    >
+      {school.logoUrl ? (
+        <Image
+          src={school.logoUrl}
+          alt={school.name}
+          width={24}
+          height={24}
+          className="w-6 h-6 rounded-full object-cover ring-1 ring-white/30"
+        />
+      ) : (
+        <span className="w-6 h-6 rounded-full bg-[#0b2f73] flex items-center justify-center text-[10px] font-bold text-[#f5b335] ring-1 ring-white/30">
+          {school.name.charAt(0).toUpperCase()}
+        </span>
+      )}
+      <span className="text-[#0b2f73] text-sm font-semibold whitespace-nowrap group-hover:underline">
+        {school.name}
+      </span>
+      {school.city && (
+        <span className="text-[#0b2f73]/60 text-xs whitespace-nowrap hidden sm:inline">
+          • {school.city}
+        </span>
+      )}
+      <span className="inline-flex items-center justify-center bg-[#0b2f73] text-[#f5b335] text-xs font-bold rounded-full min-w-[22px] h-[22px] px-1.5">
+        {school.activeJobsCount}
+      </span>
+      <span className="text-[#0b2f73]/70 text-xs whitespace-nowrap">
+        offre{school.activeJobsCount > 1 ? 's' : ''}
+      </span>
+    </Link>
+  ));
+
+  // Dupliquer les items pour le défilement continu (2 copies = boucle parfaite)
+  const duplicatedItems = [...bannerItems, ...bannerItems];
 
   return (
     <div
-      className="overflow-hidden relative bg-gradient-to-r from-[#f5b335] via-[#ffd166] to-[#f5b335] py-2.5 shadow-lg cursor-pointer select-none"
+      className="overflow-hidden relative shadow-lg select-none"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
       onTouchStart={() => setIsPaused(true)}
       onTouchEnd={() => {
-        // Reprend après 2s sur mobile pour ne pas bloquer définitivement
-        setTimeout(() => setIsPaused(false), 2000);
+        setTimeout(() => setIsPaused(false), 2500);
       }}
     >
-      <div className="absolute inset-0 opacity-20">
+      {/* Fond premium avec dégradé et motifs */}
+      <div className="absolute inset-0 bg-gradient-to-r from-[#0b2f73] via-[#103e91] to-[#1d4fa5]" />
+      <div className="absolute inset-0 opacity-[0.04] bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(255,255,255,0.1)_10px,rgba(255,255,255,0.1)_20px)]" />
+
+      {/* Shimmer lumineux */}
+      <div className="absolute inset-0 opacity-10 overflow-hidden">
         <div
-          className="h-full w-1/3 bg-gradient-to-r from-transparent via-white/50 to-transparent"
-          style={{ animation: 'bannerShimmer 3s ease-in-out infinite' }}
+          className="h-full w-1/3 bg-gradient-to-r from-transparent via-white/60 to-transparent"
+          style={{ animation: 'bannerShimmer 4s ease-in-out infinite' }}
         />
       </div>
+
+      {/* Ligne dorée en haut */}
+      <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#f5b335] to-transparent" />
+      {/* Ligne dorée en bas */}
+      <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#f5b335] to-transparent" />
+
+      {/* En-tête fixe à gauche */}
+      <div className="absolute left-0 top-0 bottom-0 z-20 flex items-center bg-gradient-to-r from-[#0b2f73] via-[#0b2f73] to-transparent pr-8 pl-4">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-[#f5b335] shadow-md">
+            <Megaphone className="h-4 w-4 text-[#0b2f73]" />
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[#f5b335] text-[10px] font-bold uppercase tracking-wider leading-tight">Appels d&apos;offres</span>
+            <span className="text-white text-xs font-semibold leading-tight">
+              {totalJobs} offre{totalJobs > 1 ? 's' : ''} • {schools.length} établis.{schools.length > 1 ? 's' : ''}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Zone défilante */}
       <div
-        className="flex items-center relative z-10"
+        className="flex items-center gap-4 relative z-10 py-2.5 pl-56"
         style={{
-          animation: 'bannerScroll 200s linear infinite',
+          animation: 'bannerScroll 60s linear infinite',
           animationPlayState: isPaused ? 'paused' : 'running',
+          width: 'max-content',
         }}
       >
-        {Array.from({ length: 8 }).map((_, i) => (
-          <span key={i} className="flex items-center gap-2 text-[#0b2f73] text-xs font-bold whitespace-nowrap px-8">
-            <Megaphone className="h-4 w-4" />
-            Appels d&apos;offres en cours — {activeSchoolsCount} établissement{activeSchoolsCount > 1 ? 's' : ''} recrutent actuellement
-          </span>
+        {duplicatedItems.map((item, i) => (
+          <div key={`item-${i}`} className="flex items-center gap-4 shrink-0">
+            {item}
+            <span className="text-white/25 text-lg">|</span>
+          </div>
         ))}
       </div>
+
       <style>{`
         @keyframes bannerShimmer {
           0% { transform: translateX(-100%); }
@@ -324,8 +421,8 @@ export default function PremiumLandingPage() {
     <div className="min-h-screen overflow-x-hidden bg-white text-slate-900 [word-break:normal] [overflow-wrap:normal] hyphens-none">
       <PremiumHeader />
 
-      {/* Spacer for fixed navbar */}
-      <div className="h-14 md:h-16" aria-hidden />
+      {/* Petit espacement après navbar avant la bande */}
+      <div className="h-2" aria-hidden />
 
       <RecruitmentBanner />
       
@@ -347,8 +444,6 @@ export default function PremiumLandingPage() {
           className="absolute inset-0 bg-[linear-gradient(to_bottom,transparent,rgba(11,47,115,0.28),transparent)]"
         />
       </div>
-
-      <div className="h-14 md:h-16" aria-hidden />
 
       <section className="relative overflow-hidden bg-gradient-to-br from-[#0b2f73] via-[#103e91] to-[#1d4fa5]">
         <Image

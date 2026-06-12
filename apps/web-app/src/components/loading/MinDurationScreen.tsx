@@ -28,7 +28,7 @@ export interface MinDurationScreenProps {
   /** Contenu à afficher une fois prêt et la durée minimale écoulée */
   children?: React.ReactNode;
   /** Message de chargement optionnel */
-  message?: { title?: string; subtitle?: string };
+  message?: { title: string; subtitle?: string };
   /** Variante visuelle */
   variant?: 'default' | 'minimal' | 'orion';
   /** Force l'affichage du loading (même si ready=true et durée écoulée) */
@@ -129,7 +129,7 @@ export function MinDurationScreen({
   if (isMobile) {
     return (
       <LoadingScreenMobile
-        message={message || { title: 'Chargement…' }}
+        message={message ?? { title: 'Chargement…' }}
         progress={effectiveProgress}
         showProgress={true}
         variant={variant === 'orion' ? 'pwa' : 'default'}
@@ -141,7 +141,7 @@ export function MinDurationScreen({
   // Sur desktop : utiliser LoadingScreen (framer-motion, animations riches)
   return (
     <LoadingScreen
-      message={message || { title: 'Chargement…' }}
+      message={message ?? { title: 'Chargement…' }}
       progress={effectiveProgress}
       showProgress={true}
       variant={variant}

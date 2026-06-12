@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -197,6 +197,54 @@ export function CareersContent({
 
   const [submitting, setSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Auto-scroll ref for job list when > 5 cards
+  const jobListRef = useRef<HTMLDivElement>(null);
+  const scrollAnimRef = useRef<number | null>(null);
+  const isHoveredRef = useRef(false);
+  const boundaryPauseRef = useRef(false);
+
+  // Smooth bottom-to-top auto-scroll animation
+  useEffect(() => {
+    const container = jobListRef.current;
+    if (!container || jobs.length <= 5) return;
+
+    let direction = 1; // 1 = scrolling up (content moves up), -1 = scrolling down
+    const speed = 0.4; // px per frame — smooth and gentle
+    let boundaryTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    function animate() {
+      if (!container) return;
+
+      // Pause on hover
+      if (isHoveredRef.current || boundaryPauseRef.current) {
+        scrollAnimRef.current = requestAnimationFrame(animate);
+        return;
+      }
+
+      container.scrollTop += direction * speed;
+
+      // Reverse direction at boundaries with a brief pause
+      if (container.scrollTop <= 0) {
+        direction = 1;
+        boundaryPauseRef.current = true;
+        boundaryTimeout = setTimeout(() => { boundaryPauseRef.current = false; }, 2000);
+      } else if (container.scrollTop >= container.scrollHeight - container.clientHeight - 1) {
+        direction = -1;
+        boundaryPauseRef.current = true;
+        boundaryTimeout = setTimeout(() => { boundaryPauseRef.current = false; }, 2000);
+      }
+
+      scrollAnimRef.current = requestAnimationFrame(animate);
+    }
+
+    scrollAnimRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (scrollAnimRef.current) cancelAnimationFrame(scrollAnimRef.current);
+      if (boundaryTimeout) clearTimeout(boundaryTimeout);
+    };
+  }, [jobs.length]);
 
   // When forcedJobSlug is provided, directly deep-link to the specific job via API.
   const [deepLinkResolved, setDeepLinkResolved] = useState(false);
@@ -958,7 +1006,7 @@ export function CareersContent({
                   ) : (
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Left: Job list — Premium Academia Helm design */}
-                    <div className="lg:col-span-1 space-y-3">
+                    <div className="lg:col-span-1">
                       <div className="flex items-center justify-between mb-1">
                         <h3 className="text-xs font-bold text-[#0b2f73] uppercase tracking-wider flex items-center gap-1.5">
                           <Briefcase className="h-3.5 w-3.5 text-[#f5b335]" />
@@ -966,6 +1014,18 @@ export function CareersContent({
                         </h3>
                         <span className="text-[10px] font-bold text-white bg-gradient-to-r from-[#0b2f73] to-[#1d4fa5] rounded-full px-3 py-0.5 shadow-sm shadow-[#0b2f73]/20">{jobs.length}</span>
                       </div>
+                      <div
+                        ref={jobListRef}
+                        className={`space-y-3 overflow-y-auto ${jobs.length > 5 ? 'max-h-[420px] scroll-smooth' : ''} ${jobs.length > 5 ? 'scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent' : ''}`}
+                        onMouseEnter={() => { if (jobs.length > 5) isHoveredRef.current = true; }}
+                        onMouseLeave={() => { if (jobs.length > 5) isHoveredRef.current = false; }}
+                        style={jobs.length > 5 ? {
+                          scrollbarWidth: 'thin',
+                          scrollbarColor: '#cbd5e1 transparent',
+                          maskImage: 'linear-gradient(to bottom, transparent 0%, black 5%, black 92%, transparent 100%)',
+                          WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 5%, black 92%, transparent 100%)',
+                        } : undefined}
+                      >
                       {jobs.map((job) => (
                         <motion.div
                           key={job.id}
@@ -1045,6 +1105,7 @@ export function CareersContent({
                           </div>
                         </motion.div>
                       ))}
+                      </div>
                     </div>
 
                     {/* Right: Job detail OR recruitment portrait placeholder */}

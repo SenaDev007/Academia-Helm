@@ -481,7 +481,7 @@ export function CareersContent({
     setSkills(skills.filter(s => s !== tag));
   };
 
-  // Easy Apply submission
+  // Soumission de candidature simplifiée
   const handleSubmitApplication = async () => {
     if (!selectedSchool || !selectedJob) return;
 
@@ -521,7 +521,7 @@ export function CareersContent({
       if (res.ok && data) {
         setSubmitResult({
           success: true,
-          message: 'Candidature Easy Apply transmise ! Notre IA procède à l\'extraction sémantique et à la validation des diplômes/certifications.'
+          message: 'Candidature transmise avec succès ! Notre IA procède à l\'extraction sémantique et à la validation des diplômes/certifications.'
         });
       } else {
         const serverMsg = data?.message || data?.error || '';
@@ -1040,7 +1040,12 @@ export function CareersContent({
                           onClick={() => {
                             setSelectedJob(job);
                             if (selectedSchool?.slug && job.slug) {
-                              router.push(`/jobs/${selectedSchool.slug}/${job.slug}`, { scroll: false });
+                              // Use history.pushState to update URL without triggering
+                              // Next.js page navigation (which would unmount CareersContent
+                              // and remount from scratch, causing the school header flash).
+                              // A full page refresh will correctly resolve via the
+                              // [schoolSlug]/[jobSlug]/page.tsx server component.
+                              window.history.pushState(null, '', `/jobs/${selectedSchool.slug}/${job.slug}`);
                             }
                           }}
                           whileHover={{ x: 4 }}
@@ -1179,12 +1184,12 @@ export function CareersContent({
                               </div>
                             )}
 
-                            {/* Easy Apply CTA */}
+                            {/* Bouton Postuler */}
                             <button
                               onClick={() => { setIsApplying(true); setCurrentStep(1); setSubmitResult(null); }}
                               className="w-full py-3 bg-[#0b2f73] text-white rounded-xl font-bold text-sm hover:bg-[#1521a0] transition-colors flex items-center justify-center gap-2"
                             >
-                              <Send className="h-4 w-4" /> Easy Apply
+                              <Send className="h-4 w-4" /> Postuler
                             </button>
                           </div>
                         </motion.div>

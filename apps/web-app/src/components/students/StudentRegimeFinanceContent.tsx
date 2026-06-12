@@ -12,6 +12,7 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 import { LoadingState } from '@/components/ui/feedback/LoadingState';
 import { studentsService } from '@/services/students.service';
 import { toast } from '@/components/ui/toast';
+import { formatCurrency } from '@/lib/utils';
 
 interface FinanceRecord {
   id: string;
@@ -116,13 +117,13 @@ export default function StudentRegimeFinanceContent() {
                   </div>
                 </td>
                 <td className="px-6 py-4 text-right font-mono text-sm font-bold text-gray-600">
-                  {item.feeProfile?.totalExpected?.toLocaleString() || '0'} FCFA
+                  {formatCurrency(item.feeProfile?.totalExpected ?? 0)}
                 </td>
                 <td className="px-6 py-4 text-right font-mono text-sm font-bold text-green-600">
-                  {item.feeProfile?.totalPaid?.toLocaleString() || '0'} FCFA
+                  {formatCurrency(item.feeProfile?.totalPaid ?? 0)}
                 </td>
                 <td className="px-6 py-4 text-right font-mono text-sm font-bold text-red-600">
-                  {item.feeProfile?.balance?.toLocaleString() || '0'} FCFA
+                  {formatCurrency(item.feeProfile?.balance ?? 0)}
                 </td>
                 <td className="px-6 py-4 text-center">
                   {(item.feeProfile?.balance || 0) <= 0 ? (

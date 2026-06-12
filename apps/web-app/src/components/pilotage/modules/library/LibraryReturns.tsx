@@ -11,9 +11,9 @@ import { ArrowDownCircle, CheckCircle2, AlertCircle, Calendar, ShieldCheck, Sear
 
 export default function LibraryReturns() {
   const returns = [
-    { id: 'RE-1001', reader: 'Saliou Diallo', book: 'L\'Enfant Noir', date: '15/05/2026', condition: 'CONFORME', penalty: '0 FCFA' },
-    { id: 'RE-1002', reader: 'Mme. Koffi', book: 'Physique-Chimie 3ème', date: '14/05/2026', condition: 'ABÎMÉ', penalty: '5,000 FCFA' },
-    { id: 'RE-1003', reader: 'Jean Lawson', book: 'Le Petit Prince', date: '13/05/2026', condition: 'RETARD', penalty: '1,500 FCFA' },
+    { id: 'RE-1001', reader: 'Saliou Diallo', book: 'L\'Enfant Noir', date: '15/05/2026', condition: 'CONFORME', penalty: '0 F CFA' },
+    { id: 'RE-1002', reader: 'Mme. Koffi', book: 'Physique-Chimie 3ème', date: '14/05/2026', condition: 'ABÎMÉ', penalty: '5 000 F CFA' },
+    { id: 'RE-1003', reader: 'Jean Lawson', book: 'Le Petit Prince', date: '13/05/2026', condition: 'RETARD', penalty: '1 500 F CFA' },
   ];
 
   return (
@@ -74,7 +74,7 @@ export default function LibraryReturns() {
                   </div>
                 </td>
                 <td className="px-8 py-5">
-                  <span className={`text-sm font-black ${ret.penalty !== '0 FCFA' ? 'text-rose-600' : 'text-slate-900'}`}>{ret.penalty}</span>
+                  <span className={`text-sm font-black ${ret.penalty !== '0 F CFA' ? 'text-rose-600' : 'text-slate-900'}`}>{ret.penalty}</span>
                 </td>
                 <td className="px-8 py-5 text-right">
                   <button className="p-2.5 bg-slate-100 hover:bg-navy-900 hover:text-white rounded-xl text-slate-400 transition-all">

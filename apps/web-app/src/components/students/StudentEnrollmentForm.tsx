@@ -16,7 +16,7 @@ import { studentsService } from '@/services/students.service';
 import { financeService } from '@/services/finance.service';
 import { classesService } from '@/services/classes.service';
 import { motion } from 'framer-motion';
-import { formatGradeLabel } from '@/lib/utils';
+import { formatGradeLabel, formatCurrency } from '@/lib/utils';
 import { localDb } from '@/lib/offline/local-db.service';
 
 interface FeeRegime {
@@ -1026,7 +1026,7 @@ export default function StudentEnrollmentForm({
                               <div key={idx} className="text-xs text-gray-600 ml-4">
                                 • {rule.feeType}:{' '}
                                 {rule.discountType === 'FIXED'
-                                  ? `${rule.discountValue.toLocaleString('fr-FR')} FCFA`
+                                  ? formatCurrency(rule.discountValue)
                                   : `${rule.discountValue}%`}
                               </div>
                             ))}

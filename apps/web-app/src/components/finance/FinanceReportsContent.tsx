@@ -27,13 +27,7 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import { financeService } from '@/services/finance.service';
-
-const formatXOF = (n: number) =>
-  new Intl.NumberFormat('fr-FR', { 
-    style: 'currency', 
-    currency: 'XOF', 
-    maximumFractionDigits: 0 
-  }).format(n);
+import { formatCurrency } from '@/lib/utils';
 
 export default function FinanceReportsContent() {
   const { academicYear } = useModuleContext();
@@ -163,7 +157,7 @@ export default function FinanceReportsContent() {
                     <div key={i} className="space-y-2">
                       <div className="flex justify-between items-end">
                         <span className="text-sm font-bold text-slate-700">{c.className}</span>
-                        <span className="text-xs font-black text-slate-900">{formatXOF(c.total)}</span>
+                        <span className="text-xs font-black text-slate-900">{formatCurrency(c.total)}</span>
                       </div>
                       <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
                         <motion.div 
@@ -206,7 +200,7 @@ export default function FinanceReportsContent() {
                     <div key={i} className="space-y-2">
                       <div className="flex justify-between items-end">
                         <span className="text-sm font-bold text-slate-700 uppercase tracking-tighter">{e.category}</span>
-                        <span className="text-xs font-black text-rose-600">{formatXOF(e.total)}</span>
+                        <span className="text-xs font-black text-rose-600">{formatCurrency(e.total)}</span>
                       </div>
                       <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
                         <motion.div 
@@ -272,7 +266,7 @@ function KPICard({ title, value, icon, color, trend, isCurrency = true }: any) {
       </div>
       <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">{title}</p>
       <h3 className="text-xl font-black text-slate-900 tracking-tight">
-        {isCurrency && typeof value === 'number' ? formatXOF(value) : value}
+        {isCurrency && typeof value === 'number' ? formatCurrency(value) : value}
       </h3>
     </motion.div>
   );

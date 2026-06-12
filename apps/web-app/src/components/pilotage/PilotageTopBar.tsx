@@ -16,6 +16,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Image from 'next/image';
 import { Bell, RefreshCw, User as UserIcon, LogOut, Wifi, WifiOff, AlertCircle, ChevronDown, Settings, HelpCircle, School, Globe } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { clearClientSessionSync } from '@/lib/auth/client-access-token';
 import AcademicYearSelector from './AcademicYearSelector';
 import SchoolLevelSelector from './SchoolLevelSelector';
 import AcademicTrackSelector from '../dashboard/AcademicTrackSelector';
@@ -140,10 +141,13 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
   const handleLogout = async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
-      router.push('/portal');
+      clearClientSessionSync();
+      // Redirection complète pour nettoyer tout l'état React
+      window.location.href = '/';
     } catch (error) {
       console.error('Error logging out:', error);
-      router.push('/portal');
+      clearClientSessionSync();
+      window.location.href = '/';
     }
   };
 

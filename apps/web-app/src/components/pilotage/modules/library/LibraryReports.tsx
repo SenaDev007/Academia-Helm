@@ -41,7 +41,7 @@ export default function LibraryReports() {
             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Recettes Pénalités</h4>
             <FileText className="w-5 h-5 text-amber-500" />
           </div>
-          <div className="text-4xl font-black text-slate-900 mb-2">42,500 FCFA</div>
+          <div className="text-4xl font-black text-slate-900 mb-2">42 500 F CFA</div>
           <p className="text-[10px] font-bold text-slate-400 bg-slate-50 w-fit px-2 py-0.5 rounded-lg">Mois en cours</p>
         </div>
       </div>

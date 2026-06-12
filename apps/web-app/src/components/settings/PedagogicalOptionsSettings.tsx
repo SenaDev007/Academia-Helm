@@ -12,7 +12,7 @@ import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useFeature, FeatureCode } from '@/hooks/useFeature';
 import { enableFeature, disableFeature, getPricingImpact } from '@/lib/features/tenant-features.service';
 import AppIcon from '@/components/ui/AppIcon';
-import { cn } from '@/lib/utils';
+import { cn, formatCurrency } from '@/lib/utils';
 
 export default function PedagogicalOptionsSettings() {
   const confirmDialog = useConfirmDialog();
@@ -44,8 +44,8 @@ export default function PedagogicalOptionsSettings() {
       alert(
         `Option bilingue activée avec succès.\n\n` +
         `Impact sur la tarification :\n` +
-        `• +${result.pricingImpact.monthly.toLocaleString()} FCFA/mois\n` +
-        `• +${result.pricingImpact.annual.toLocaleString()} FCFA/an`
+        `• +${formatCurrency(result.pricingImpact.monthly)}/mois\n` +
+        `• +${formatCurrency(result.pricingImpact.annual)}/an`
       );
       
       refresh();
@@ -67,8 +67,8 @@ export default function PedagogicalOptionsSettings() {
       alert(
         `Option bilingue désactivée.\n\n` +
         `Réduction sur la tarification :\n` +
-        `• ${result.pricingImpact.monthly.toLocaleString()} FCFA/mois\n` +
-        `• ${result.pricingImpact.annual.toLocaleString()} FCFA/an\n\n` +
+        `• ${formatCurrency(result.pricingImpact.monthly)}/mois\n` +
+        `• ${formatCurrency(result.pricingImpact.annual)}/an\n\n` +
         `Les données EN existantes sont conservées mais masquées.`
       );
       
@@ -121,8 +121,8 @@ export default function PedagogicalOptionsSettings() {
                   Impact sur la tarification :
                 </p>
                 <ul className="text-sm text-blue-800 space-y-1">
-                  <li>• +15 000 FCFA/mois</li>
-                  <li>• +150 000 FCFA/an</li>
+                  <li>• +15 000 F CFA/mois</li>
+                  <li>• +150 000 F CFA/an</li>
                 </ul>
               </div>
             )}
@@ -158,8 +158,8 @@ export default function PedagogicalOptionsSettings() {
                   Impact sur la tarification :
                 </p>
                 <ul className="text-sm text-blue-800 space-y-1">
-                  <li>• +15 000 FCFA/mois</li>
-                  <li>• +150 000 FCFA/an</li>
+                  <li>• +15 000 F CFA/mois</li>
+                  <li>• +150 000 F CFA/an</li>
                 </ul>
               </div>
 

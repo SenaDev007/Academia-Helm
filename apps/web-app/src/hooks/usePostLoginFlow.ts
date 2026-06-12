@@ -10,6 +10,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   executePostLoginFlow,
   type PostLoginFlowResult,
@@ -18,6 +19,7 @@ import {
 import { getLoadingMessage, type LoadingStep } from '@/lib/loading/loading-messages';
 
 const SESSION_KEY = 'academia_post_login_done';
+const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes TTL
 
 export interface UsePostLoginFlowReturn {
   isLoading: boolean;
@@ -44,6 +46,7 @@ export interface UsePostLoginFlowReturn {
  * ```
  */
 export function usePostLoginFlow(): UsePostLoginFlowReturn {
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState<PostLoginFlowProgress | null>(null);
   const [result, setResult] = useState<PostLoginFlowResult | null>(null);
@@ -56,20 +59,26 @@ export function usePostLoginFlow(): UsePostLoginFlowReturn {
     hasExecutedRef.current = true;
 
     // Vérifier si le flow a déjà été complété dans cette session navigateur
+    // Utilise localStorage (partagé entre sous-domaines) au lieu de sessionStorage
     if (typeof window !== 'undefined') {
       try {
-        if (sessionStorage.getItem(SESSION_KEY) === '1') {
-          // Flow déjà fait — simuler un résultat réussi sans appeler le service
-          setResult({
-            success: true,
-            user: null as any,
-            tenant: null as any,
-            academicYear: null,
-            permissions: [],
-            offlineStatus: { isOnline: true, pendingOperations: 0, syncRequired: false },
-            orionAlerts: [],
-          });
-          return;
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (raw) {
+          const { ts } = JSON.parse(raw);
+          if (Date.now() - ts <= SESSION_TTL_MS) {
+            // Flow déjà fait — simuler un résultat réussi sans appeler le service
+            setResult({
+              success: true,
+              user: null as any,
+              tenant: null as any,
+              academicYear: null,
+              permissions: [],
+              offlineStatus: { isOnline: true, pendingOperations: 0, syncRequired: false },
+              orionAlerts: [],
+            });
+            return;
+          }
+          localStorage.removeItem(SESSION_KEY);
         }
       } catch {}
     }
@@ -90,9 +99,9 @@ export function usePostLoginFlow(): UsePostLoginFlowReturn {
         setError(flowResult.error);
 
         // Gérer les erreurs critiques
-        // IMPORTANT: Utiliser window.location.href au lieu de router.push
-        // pour forcer un rechargement complet de la page, ce qui garantit
-        // que les cookies sont correctement traités sur mobile.
+        // IMPORTANT: Toujours utiliser window.location.href (rechargement complet)
+        // pour les redirections critiques, jamais router.push() qui peut causer
+        // une page blanche sur les sous-domaines tenant (race condition RSC/cookies).
         if (flowResult.error.code === 'AUTH_ERROR') {
           window.location.href = '/login';
           return;
@@ -118,7 +127,7 @@ export function usePostLoginFlow(): UsePostLoginFlowReturn {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [router]);
 
   return {
     isLoading,

@@ -21,6 +21,7 @@ import {
   AlertCircle,
   BarChart3,
 } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
 
 interface ConsolidatedKpiPageProps {
   user: User;
@@ -154,7 +155,7 @@ export default function ConsolidatedKpiPage({ user, tenant }: ConsolidatedKpiPag
               <Calculator className="w-5 h-5 text-slate-400" />
             </div>
             <p className="text-2xl font-bold text-navy-900">
-              {data.consolidated.totalRevenue.toLocaleString()} {data.consolidated.currency}
+              {formatCurrency(data.consolidated.totalRevenue)}
             </p>
             <p className="text-xs text-slate-500 mt-1">Somme de tous les établissements</p>
           </div>
@@ -209,7 +210,7 @@ export default function ConsolidatedKpiPage({ user, tenant }: ConsolidatedKpiPag
                 <div>
                   <p className="text-xs text-slate-600 mb-1">Recettes</p>
                   <p className="text-lg font-semibold text-navy-900">
-                    {school.kpi.totalRevenue.toLocaleString()} {school.kpi.currency}
+                    {formatCurrency(school.kpi.totalRevenue)}
                   </p>
                 </div>
                 <div>

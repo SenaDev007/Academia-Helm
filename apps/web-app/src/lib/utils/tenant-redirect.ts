@@ -72,7 +72,6 @@ export interface RedirectLog {
 export function getTenantRedirectUrl(config: TenantRedirectConfig): string {
   const {
     tenantSlug,
-    tenantId,
     path = '/app',
     queryParams = {},
     portalType,
@@ -80,32 +79,6 @@ export function getTenantRedirectUrl(config: TenantRedirectConfig): string {
 
   const env = getAppEnvironment();
   let baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN;
-
-  // ── Mobile safe redirect: avoid cross-domain subdomain redirects on mobile ──
-  // On mobile browsers (iOS Safari, Chrome Android), cross-domain redirects
-  // (e.g. from academiahelm.com to school.academiahelm.com) can cause cookie
-  // loss because the browser may not persist the Set-Cookie from the previous
-  // fetch() before navigating. Using query params on the same domain avoids this.
-  if (typeof window !== 'undefined') {
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    if (isMobile && env !== 'local') {
-      // On mobile in production/preview, use query params on the CURRENT domain
-      // instead of cross-domain subdomain redirect. The middleware already
-      // supports tenant and tenant_id query params as fallback.
-      const url = new URL(path, window.location.origin);
-      url.searchParams.set('tenant', tenantSlug);
-      if (tenantId) {
-        url.searchParams.set('tenant_id', tenantId);
-      }
-      if (portalType) {
-        url.searchParams.set('portal', portalType.toLowerCase());
-      }
-      Object.entries(queryParams).forEach(([key, value]) => {
-        url.searchParams.set(key, value);
-      });
-      return url.toString();
-    }
-  }
 
   // Nettoyage : enlever http://, https:// et les slashs de fin si le dev l'a mal configuré
   if (baseDomain) {

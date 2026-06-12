@@ -12,16 +12,9 @@ import {
   ExternalLink, Phone, Mail, MapPin, MoreVertical,
   CheckCircle2, Clock, XCircle, ChevronRight, DollarSign
 } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
 
 export default function ShopSuppliers() {
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'XOF',
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
-
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
       {/* Header Actions */}
@@ -139,8 +132,6 @@ export default function ShopSuppliers() {
 }
 
 function SupplierCard({ name, category, phone, email, stats }: any) {
-  const formatCurrency = (val: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 0 }).format(val);
-
   return (
     <div className="bg-white rounded-3xl border border-gray-100 p-8 shadow-sm hover:shadow-xl transition-all duration-300 group">
       <div className="flex justify-between items-start mb-6">
@@ -181,8 +172,6 @@ function SupplierCard({ name, category, phone, email, stats }: any) {
 }
 
 function PORow({ id, supplier, amount, status, date }: any) {
-  const formatCurrency = (val: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 0 }).format(val);
-  
   const statusStyles: any = {
     'Reçu': 'bg-emerald-50 text-emerald-600 border-emerald-100',
     'En Transit': 'bg-blue-50 text-blue-600 border-blue-100',
@@ -205,7 +194,6 @@ function PORow({ id, supplier, amount, status, date }: any) {
 }
 
 function ProcurementCategory({ label, amount, percent, color }: any) {
-  const formatCurrency = (val: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 0 }).format(val);
   const colors: any = {
     navy: 'bg-navy-900',
     emerald: 'bg-emerald-500',

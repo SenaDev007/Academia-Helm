@@ -11,9 +11,9 @@ import { TrendingUp, DollarSign, Users, ShoppingCart, ArrowUpRight, ArrowDownRig
 
 export default function EduCastMonetization() {
   const kpis = [
-    { label: 'Revenus Bruts', value: '245.800', unit: 'FCFA', trend: '+12%', positive: true, icon: DollarSign, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { label: 'Commission École', value: '49.160', unit: 'FCFA', trend: '20%', positive: null, icon: TrendingUp, color: 'text-rose-600', bg: 'bg-rose-50' },
-    { label: 'Revenus Nets', value: '196.640', unit: 'FCFA', trend: '+15%', positive: true, icon: Wallet, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { label: 'Revenus Bruts', value: '245 800', unit: 'F CFA', trend: '+12%', positive: true, icon: DollarSign, color: 'text-blue-600', bg: 'bg-blue-50' },
+    { label: 'Commission École', value: '49 160', unit: 'F CFA', trend: '20%', positive: null, icon: TrendingUp, color: 'text-rose-600', bg: 'bg-rose-50' },
+    { label: 'Revenus Nets', value: '196 640', unit: 'F CFA', trend: '+15%', positive: true, icon: Wallet, color: 'text-emerald-600', bg: 'bg-emerald-50' },
     { label: 'Ventes Totales', value: '84', unit: 'unités', trend: '+8', positive: true, icon: ShoppingCart, color: 'text-amber-600', bg: 'bg-amber-50' },
   ];
 
@@ -117,7 +117,7 @@ export default function EduCastMonetization() {
                     <Clock className="w-5 h-5" />
                   </div>
                   <div>
-                    <p className="text-sm font-black text-slate-900">{p.amount} <span className="text-[10px] font-bold">FCFA</span></p>
+                    <p className="text-sm font-black text-slate-900">{p.amount} <span className="text-[10px] font-bold">F CFA</span></p>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{p.date}</p>
                   </div>
                 </div>

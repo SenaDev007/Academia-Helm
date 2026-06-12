@@ -15,9 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 import { financeService } from '@/services/finance.service';
-
-const formatXOF = (n: number) =>
-  new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', maximumFractionDigits: 0 }).format(n);
+import { formatCurrency } from '@/lib/utils';
 
 export default function TreasuryPage() {
   const confirmDialog = useConfirmDialog();
@@ -91,7 +89,7 @@ export default function TreasuryPage() {
         description="Clôture journalière (calcul auto), rapprochement caisse, type Manuel/Auto, anomalie."
         icon="finance"
         kpis={[
-          { label: 'Solde cumulé', value: formatXOF(totalNet) },
+          { label: 'Solde cumulé', value: formatCurrency(totalNet) },
           { label: 'Clôtures', value: String(closures.length) },
           { label: 'Année', value: academicYear?.label ?? '—' },
         ]}
@@ -125,11 +123,11 @@ export default function TreasuryPage() {
             <div className="grid grid-cols-2 gap-4 text-sm mb-4">
               <div><strong>Type:</strong> {detailClosure.closureType}</div>
               <div><strong>Validée:</strong> {detailClosure.validatedById ? 'Oui' : 'Non'}</div>
-              <div><strong>Encaissements:</strong> {formatXOF(Number(detailClosure.totalIncome ?? 0))}</div>
-              <div><strong>Dépenses:</strong> {formatXOF(Number(detailClosure.totalExpense ?? 0))}</div>
-              <div><strong>Solde:</strong> {formatXOF(Number(detailClosure.netBalance ?? 0))}</div>
-              {detailClosure.physicalAmount != null && <div><strong>Montant physique:</strong> {formatXOF(Number(detailClosure.physicalAmount))}</div>}
-              {detailClosure.discrepancy != null && <div><strong>Écart:</strong> {formatXOF(Number(detailClosure.discrepancy))}</div>}
+              <div><strong>Encaissements:</strong> {formatCurrency(detailClosure.totalIncome ?? 0)}</div>
+              <div><strong>Dépenses:</strong> {formatCurrency(detailClosure.totalExpense ?? 0)}</div>
+              <div><strong>Solde:</strong> {formatCurrency(detailClosure.netBalance ?? 0)}</div>
+              {detailClosure.physicalAmount != null && <div><strong>Montant physique:</strong> {formatCurrency(detailClosure.physicalAmount)}</div>}
+              {detailClosure.discrepancy != null && <div><strong>Écart:</strong> {formatCurrency(detailClosure.discrepancy)}</div>}
               {detailClosure.anomalyNote && <div className="col-span-2"><strong>Anomalie:</strong> {detailClosure.anomalyNote}</div>}
             </div>
             <div className="flex justify-end">
@@ -168,9 +166,9 @@ export default function TreasuryPage() {
                       <Badge className="bg-green-100 text-green-800">Manuel</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-green-600">{formatXOF(Number(c.totalIncome ?? 0))}</TableCell>
-                  <TableCell className="text-red-600">{formatXOF(Number(c.totalExpense ?? 0))}</TableCell>
-                  <TableCell className="font-medium">{formatXOF(Number(c.netBalance ?? 0))}</TableCell>
+                  <TableCell className="text-green-600">{formatCurrency(c.totalIncome ?? 0)}</TableCell>
+                  <TableCell className="text-red-600">{formatCurrency(c.totalExpense ?? 0)}</TableCell>
+                  <TableCell className="font-medium">{formatCurrency(c.netBalance ?? 0)}</TableCell>
                   <TableCell>{c.anomalyDetected ? <span className="text-red-600">Oui</span> : '—'}</TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="icon" onClick={() => setDetailClosure(c)}><Eye className="h-4 w-4" /></Button>

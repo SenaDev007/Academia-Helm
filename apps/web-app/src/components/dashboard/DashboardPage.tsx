@@ -457,7 +457,7 @@ export default function DashboardPage({ user, tenant, subdomain }: DashboardPage
               </h4>
               <p className="text-sm text-yellow-800 mb-4">
                 Votre période d'essai se termine dans {trialDaysRemaining} jour{trialDaysRemaining > 1 ? 's' : ''}. 
-                L'abonnement mensuel de 15.000 FCFA démarrera automatiquement après cette date.
+                L'abonnement mensuel de 15 000 F CFA démarrera automatiquement après cette date.
               </p>
               <Link
                 href="/app/settings/billing"

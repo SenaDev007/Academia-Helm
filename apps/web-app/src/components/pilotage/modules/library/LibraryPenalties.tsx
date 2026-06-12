@@ -11,10 +11,10 @@ import { AlertCircle, Search, Filter, MoreVertical, CreditCard, Clock, CheckCirc
 
 export default function LibraryPenalties() {
   const penalties = [
-    { id: 'PN-4001', reader: 'Jean Lawson', book: 'Le Petit Prince', motif: 'RETARD (15 jours)', amount: '1,500 FCFA', status: 'PENDING', date: '12/05/2026' },
-    { id: 'PN-4002', reader: 'Saliou Diallo', book: 'Physique 3ème', motif: 'LIVRE ABÎMÉ', amount: '5,000 FCFA', status: 'PAID', date: '10/05/2026' },
-    { id: 'PN-4003', reader: 'Sarah Goussi', book: 'Dictionnaire Anglais', motif: 'PERTE DE LIVRE', amount: '12,500 FCFA', status: 'OVERDUE', date: '05/05/2026' },
-    { id: 'PN-4004', reader: 'M. Saliou', book: 'L\'Enfant Noir', motif: 'RETARD (2 jours)', amount: '1,000 FCFA', status: 'CANCELLED', date: '01/05/2026' },
+    { id: 'PN-4001', reader: 'Jean Lawson', book: 'Le Petit Prince', motif: 'RETARD (15 jours)', amount: '1 500 F CFA', status: 'PENDING', date: '12/05/2026' },
+    { id: 'PN-4002', reader: 'Saliou Diallo', book: 'Physique 3ème', motif: 'LIVRE ABÎMÉ', amount: '5 000 F CFA', status: 'PAID', date: '10/05/2026' },
+    { id: 'PN-4003', reader: 'Sarah Goussi', book: 'Dictionnaire Anglais', motif: 'PERTE DE LIVRE', amount: '12 500 F CFA', status: 'OVERDUE', date: '05/05/2026' },
+    { id: 'PN-4004', reader: 'M. Saliou', book: 'L\'Enfant Noir', motif: 'RETARD (2 jours)', amount: '1 000 F CFA', status: 'CANCELLED', date: '01/05/2026' },
   ];
 
   return (

@@ -7,6 +7,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { formatCurrency } from '@/lib/utils';
 import { 
   Search, Filter, Plus, Package, Grid, List, 
   MoreVertical, Eye, Edit, Trash2, Tag, 
@@ -109,8 +110,6 @@ export default function ShopCatalog() {
 }
 
 function ProductCard({ index }: any) {
-  const formatCurrency = (val: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 0 }).format(val);
-
   return (
     <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden shadow-sm hover:shadow-2xl hover:-translate-y-1 transition-all duration-500 group">
       <div className="h-48 bg-gray-50 relative overflow-hidden flex items-center justify-center">

@@ -279,7 +279,7 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">Abonnement Mensuel</h3>
-                  <p className="text-sm text-gray-600">50 000 FCFA / mois</p>
+                  <p className="text-sm text-gray-600">50 000 F CFA / mois</p>
                 </div>
                 <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
                   Actif
@@ -304,7 +304,7 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
                     <p className="text-sm text-gray-600">15 Jan 2024</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-semibold text-gray-900">50 000 FCFA</p>
+                    <p className="font-semibold text-gray-900">50 000 F CFA</p>
                     <span className="text-xs text-green-600">Payé</span>
                   </div>
                 </div>

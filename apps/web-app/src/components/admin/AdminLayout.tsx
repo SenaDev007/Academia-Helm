@@ -16,6 +16,7 @@ import { usePathname } from 'next/navigation';
 import AppIcon from '@/components/ui/AppIcon';
 import type { IconName } from '@/lib/icons';
 import { offlineBootstrapService } from '@/lib/offline/offline-bootstrap.service';
+import { clearClientSessionSync } from '@/lib/auth/client-access-token';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -45,12 +46,13 @@ export default function AdminLayout({ children, user }: AdminLayoutProps) {
     try {
       await offlineBootstrapService.clearCache();
       await fetch('/api/auth/logout', { method: 'POST' });
+      clearClientSessionSync();
+      window.location.href = '/';
     } catch (error) {
       console.error('Error logging out:', error);
+      clearClientSessionSync();
+      window.location.href = '/';
     }
-    // Utiliser window.location.href au lieu de router.push pour garantir
-    // un rechargement complet (fiabilité mobile)
-    window.location.href = '/login';
   };
 
   const menuItems: Array<{ path: string; label: string; icon: IconName }> = [

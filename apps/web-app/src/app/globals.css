@@ -149,6 +149,20 @@ body {
   .icon-card-primary {
     @apply w-8 h-8 text-blue-900 mb-4;
   }
+
+  /* Safe area utilities for notched phones (iPhone X+) */
+  .safe-area-inset-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-area-inset-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .safe-area-inset-left {
+    padding-left: env(safe-area-inset-left);
+  }
+  .safe-area-inset-right {
+    padding-right: env(safe-area-inset-right);
+  }
 }
 
 @keyframes fadeIn {
@@ -160,6 +174,123 @@ body {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* Academia Helm branded animations */
+@keyframes academiaShimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+@keyframes academiaBounce {
+  0%, 80%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-6px); }
+}
+
+/* ── Premium inline loading animations ── */
+
+/* Branded wave: gradient wave sweeping left-to-right with brand colors */
+@keyframes academiaWave {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Orbital ring rotation for ORION */
+@keyframes academiaOrbit {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Reverse orbital for double-ring effect */
+@keyframes academiaOrbitReverse {
+  0% { transform: rotate(360deg); }
+  100% { transform: rotate(0deg); }
+}
+
+/* Branded pulse with color transition (navy → gold → navy) */
+@keyframes academiaPulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.95); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+/* Core glow effect for spinner center */
+@keyframes academiaGlow {
+  0%, 100% {
+    box-shadow: 0 0 4px 1px rgba(245,179,53,0.3);
+    opacity: 0.6;
+  }
+  50% {
+    box-shadow: 0 0 10px 3px rgba(245,179,53,0.6);
+    opacity: 1;
+  }
+}
+
+/* Wave dot: smooth scale with color shift */
+@keyframes academiaWaveDot {
+  0%, 100% {
+    transform: scale(0.6);
+    opacity: 0.3;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Slide up fade for skeleton blocks */
+@keyframes academiaSlideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Branded shimmer with color wave (enhanced) */
+@keyframes academiaShimmerWave {
+  0% {
+    transform: translateX(-100%);
+    opacity: 0.6;
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(200%);
+    opacity: 0.6;
+  }
+}
+
+/* Flowing progress bar for linear indicators */
+@keyframes academiaFlow {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Gentle float for mobile skeletons */
+@keyframes academiaFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+/* Ring dash for orbital spinners */
+@keyframes academiaRingDash {
+  0% { stroke-dashoffset: 100; }
+  100% { stroke-dashoffset: 0; }
 }
 
 @keyframes shake-interval {

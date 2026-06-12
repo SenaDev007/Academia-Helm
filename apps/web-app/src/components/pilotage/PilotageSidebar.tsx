@@ -181,7 +181,10 @@ export default function PilotageSidebar({
     [],
   );
 
-  const isPlatformPortal = user?.portal === 'PLATFORM';
+  const isPlatformOwner =
+    user?.role === 'PLATFORM_OWNER' ||
+    user?.role === 'PLATFORM_SUPER_ADMIN';
+  const isPlatformPortal = user?.portal === 'PLATFORM' || isPlatformOwner;
 
   // Module Général (Direction uniquement)
   const generalModule = isSuperDirector
@@ -292,10 +295,11 @@ export default function PilotageSidebar({
             ) : (
               mainModules.map((item) => {
                 const Icon = item.icon;
+                const href = tenantParam ? `${item.path}?tenant=${tenantParam}` : item.path;
                 return (
                   <Link
                     key={item.path}
-                    href={item.path}
+                    href={href}
                     className="flex items-center justify-center p-2.5 rounded-lg transition-all duration-200 text-blue-100 hover:bg-blue-800/60 hover:text-white"
                     title={item.label}
                   >
@@ -566,10 +570,11 @@ export default function PilotageSidebar({
         <nav className="flex-1 overflow-y-auto p-2 space-y-1">
           {mainModules.map((item) => {
             const Icon = item.icon;
+            const href = tenantParam ? `${item.path}?tenant=${tenantParam}` : item.path;
             return (
               <Link
                 key={item.path}
-                href={item.path}
+                href={href}
                 className="flex items-center justify-center p-2.5 rounded-lg transition-all duration-200 text-blue-100 hover:bg-blue-800/60 hover:text-white min-h-[44px] min-w-[44px]"
                 title={item.label}
               >
@@ -579,7 +584,7 @@ export default function PilotageSidebar({
           })}
           {generalModule && (
             <Link
-              href={generalModule.path}
+              href={tenantParam ? `${generalModule.path}?tenant=${tenantParam}` : generalModule.path}
               className="flex items-center justify-center p-2.5 rounded-lg transition-all duration-200 text-blue-100 hover:bg-blue-800/60 hover:text-white min-h-[44px] min-w-[44px]"
               title={generalModule.label}
             >
@@ -588,10 +593,11 @@ export default function PilotageSidebar({
           )}
           {supplementaryModules.map((item) => {
             const Icon = item.icon;
+            const href = tenantParam ? `${item.path}?tenant=${tenantParam}` : item.path;
             return (
               <Link
                 key={item.path}
-                href={item.path}
+                href={href}
                 className="flex items-center justify-center p-2.5 rounded-lg transition-all duration-200 text-blue-100 hover:bg-blue-800/60 hover:text-white min-h-[44px] min-w-[44px]"
                 title={item.label}
               >

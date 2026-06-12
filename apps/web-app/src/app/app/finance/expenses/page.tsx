@@ -19,9 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 import { financeService } from '@/services/finance.service';
-
-const formatXOF = (n: number) =>
-  new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', maximumFractionDigits: 0 }).format(n);
+import { formatCurrency } from '@/lib/utils';
 
 export default function ExpensesPage() {
   const confirmDialog = useConfirmDialog();
@@ -141,7 +139,7 @@ export default function ExpensesPage() {
         description="Dépenses avec workflow d'approbation et budget annuel par catégorie."
         icon="finance"
         kpis={[
-          { label: 'Dépenses approuvées', value: formatXOF(approvedSum) },
+          { label: 'Dépenses approuvées', value: formatCurrency(approvedSum) },
           { label: 'En attente', value: String(pendingCount) },
           { label: 'Année', value: academicYear?.label ?? '—' },
         ]}
@@ -186,7 +184,7 @@ export default function ExpensesPage() {
             <div className="grid grid-cols-2 gap-4 text-sm mb-4">
               <div><strong>Catégorie:</strong> {detailExpense.category?.name ?? detailExpense.categoryId}</div>
               <div><strong>Date:</strong> {detailExpense.createdAt ? new Date(detailExpense.createdAt).toLocaleDateString('fr-FR') : '—'}</div>
-              <div><strong>Montant:</strong> {formatXOF(Number(detailExpense.amount))}</div>
+              <div><strong>Montant:</strong> {formatCurrency(detailExpense.amount)}</div>
               <div><strong>Statut:</strong> {detailExpense.status}</div>
               <div className="col-span-2"><strong>Description:</strong> {detailExpense.description}</div>
             </div>
@@ -243,7 +241,7 @@ export default function ExpensesPage() {
                     <TableCell>{expense.createdAt ? new Date(expense.createdAt).toLocaleDateString('fr-FR') : '—'}</TableCell>
                     <TableCell>{expense.category?.name ?? expense.categoryId}</TableCell>
                     <TableCell className="font-medium">{expense.description}</TableCell>
-                    <TableCell>{formatXOF(Number(expense.amount))}</TableCell>
+                    <TableCell>{formatCurrency(expense.amount)}</TableCell>
                     <TableCell>{expense.requester ? [expense.requester.firstName, expense.requester.lastName].filter(Boolean).join(' ') : '—'}</TableCell>
                     <TableCell>{getStatusBadge(expense.status)}</TableCell>
                     <TableCell className="text-right">
@@ -282,9 +280,9 @@ export default function ExpensesPage() {
                 budgets.map((b: any) => (
                   <TableRow key={b.id}>
                     <TableCell>{b.category?.name ?? b.categoryId}</TableCell>
-                    <TableCell>{formatXOF(Number(b.allocatedAmount))}</TableCell>
-                    <TableCell>{formatXOF(b.spent ?? 0)}</TableCell>
-                    <TableCell>{formatXOF(b.remaining ?? 0)}</TableCell>
+                    <TableCell>{formatCurrency(b.allocatedAmount)}</TableCell>
+                    <TableCell>{formatCurrency(b.spent ?? 0)}</TableCell>
+                    <TableCell>{formatCurrency(b.remaining ?? 0)}</TableCell>
                     <TableCell>
                       <span className={b.percentUsed >= 85 ? 'text-red-600 font-medium' : b.percentUsed >= 60 ? 'text-yellow-600' : 'text-green-600'}>{b.percentUsed ?? 0} %</span>
                     </TableCell>

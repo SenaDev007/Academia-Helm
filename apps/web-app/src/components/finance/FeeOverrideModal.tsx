@@ -10,6 +10,7 @@ import { getModalMotion } from '@/lib/motion/presets';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { studentsService } from '@/services/students.service';
 import { financeService } from '@/services/finance.service';
+import { formatCurrency } from '@/lib/utils';
 
 export default function FeeOverrideModal({
   structures,
@@ -76,7 +77,7 @@ export default function FeeOverrideModal({
               <SelectTrigger><SelectValue placeholder="Sélectionner un frais" /></SelectTrigger>
               <SelectContent>
                 {structures.filter((f) => f.isActive).map((s) => (
-                  <SelectItem key={s.id} value={s.id}>{s.name} — {Number(s.totalAmount).toLocaleString('fr-FR')} XOF</SelectItem>
+                  <SelectItem key={s.id} value={s.id}>{s.name} — {formatCurrency(Number(s.totalAmount))}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

@@ -20,7 +20,7 @@
 
 import { localDb } from './local-db.service';
 import { networkDetectionService } from './network-detection.service';
-import { getClientAuthorizationHeader, getClientTenantId } from '@/lib/auth/client-access-token';
+import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 
 export interface OfflineFetchOptions {
   /** ID du tenant pour filtrer les données locales */
@@ -104,20 +104,12 @@ export async function offlineFetch<T = any>(
  * Requête réseau standard avec headers d'authentification
  */
 async function networkFetch<T>(url: string, options: RequestInit = {}): Promise<T> {
-  // Ajouter X-Tenant-ID explicite pour garantir la résolution du tenant côté backend
-  const tenantId = getClientTenantId();
-  const extraHeaders: Record<string, string> = {};
-  if (tenantId) {
-    extraHeaders['x-tenant-id'] = tenantId;
-  }
-
   const response = await fetch(url, {
     ...options,
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...getClientAuthorizationHeader(),
-      ...extraHeaders,
       ...options.headers,
     },
   });

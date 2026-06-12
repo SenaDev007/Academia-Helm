@@ -100,7 +100,7 @@ export default function SubscriptionsWorkspace() {
                   <h3 className={`text-lg font-bold ${plan.text} mb-2`}>{plan.name}</h3>
                   <div className="flex items-baseline gap-1">
                     <span className="text-4xl font-extrabold text-slate-900">{plan.price}</span>
-                    <span className="text-slate-500 text-sm font-medium">FCFA / {plan.cycle}</span>
+                    <span className="text-slate-500 text-sm font-medium">F CFA / {plan.cycle}</span>
                   </div>
                 </div>
                 

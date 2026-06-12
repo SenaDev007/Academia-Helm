@@ -7,7 +7,7 @@ import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { toast } from '@/components/ui/toast';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { cn } from '@/lib/utils';
+import { cn, formatCurrency } from '@/lib/utils';
 
 const PRIMARY = '#1A2BA6';
 
@@ -48,10 +48,7 @@ export function PayrollWorkspace() {
   });
 
   async function fetchData() {
-    if (!tenant?.id) {
-      setLoading(false);
-      return;
-    }
+    if (!tenant?.id) return;
     try {
       setLoading(true);
       const [payrollData, statsData] = await Promise.all([
@@ -232,7 +229,7 @@ function PayrollRow({ payroll, index }: { payroll: any; index: number }) {
             <div className="grid grid-cols-2 gap-8 flex-grow max-w-md">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">Net à Payer</p>
-                <p className="text-lg font-black text-slate-900">{Number(payroll.totalAmount).toLocaleString()}<span className="text-xs font-bold ml-1 text-slate-400">XOF</span></p>
+                <p className="text-lg font-black text-slate-900">{formatCurrency(payroll.totalAmount)}</p>
               </div>
               <div className="hidden md:block">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">Période</p>

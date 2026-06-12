@@ -30,10 +30,11 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { BRAND } from '@/lib/brand';
 import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-email';
-import { persistClientSession, waitForServerSession } from '@/lib/auth/client-access-token';
+import { persistClientSession } from '@/lib/auth/client-access-token';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getMotionDuration } from '@/lib/motion/presets';
 import { getTenantRedirectUrl } from '@/lib/utils/tenant-redirect';
+import { getAppBaseUrl } from '@/lib/utils/urls';
 
 type PortalType = 'platform' | 'school' | 'teacher' | 'parent' | 'public' | null;
 
@@ -119,10 +120,14 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Message de déconnexion pour inactivité
+  // Message de déconnexion pour inactivité / expiration
   const reasonParam = searchParams?.get('reason');
-  const idleLogoutMessage = reasonParam === 'idle_timeout'
-    ? 'Vous avez été déconnecté(e) automatiquement après 15 minutes d\'inactivité.'
+  const idleLogoutMessage = reasonParam === 'session_expired'
+    ? 'Votre session a expiré après une période d\'inactivité prolongée. Veuillez vous reconnecter.'
+    : reasonParam === 'session_locked'
+    ? 'Vous avez été déconnecté(e) depuis l\'écran de verrouillage.'
+    : reasonParam === 'idle_timeout'
+    ? 'Vous avez été déconnecté(e) automatiquement après une période d\'inactivité.'
     : null;
 
   const tenantStorageKey = tenantIdFromUrl || tenantSlug || 'platform';
@@ -208,46 +213,20 @@ export default function LoginPage() {
   };
 
   const handlePlatformLogin = async () => {
-    // Le login plateforme est similaire au login standard mais force le contexte plateforme
-    const response = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        email: schoolCredentials.email,
-        password: schoolCredentials.password,
-        portal_type: 'PLATFORM',
-      }),
-    });
+    // Le login plateforme doit TOUJOURS se faire dans le contexte d'une école (tenant)
+    // Le PLATFORM_OWNER sélectionne d'abord une école, puis se connecte sur le sous-domaine de cette école
+    // Il n'y a plus de route /app/platform sans tenant — tout passe par un sous-domaine professionnel
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.message || 'Erreur lors de la connexion plateforme');
-    }
-
-    persistClientSession({
-      accessToken: data.accessToken,
-      refreshToken: data.refreshToken,
-      serverSessionId: data.serverSessionId,
-      user: data.user,
-      tenant: data.tenant,
-      expiresAt: data.expiresAt,
-    });
-
-    saveEmailForTenant(schoolCredentials.email, 'platform');
-
-    // Attendre que la session serveur soit disponible (cookie persisté)
-    // Sur mobile, les cookies ne sont pas toujours persistés immédiatement
-    const sessionReady = await waitForServerSession();
-    if (!sessionReady) {
-      // Cookie non encore disponible — recharger la page pour forcer la persistance
-      // au lieu de rediriger vers une page qui ne trouvera pas le cookie
-      window.location.reload();
+    if (!tenantSlug && !tenantIdFromUrl) {
+      // Pas de tenant/sous-domaine → rediriger vers le portail pour sélectionner une école
+      const mainDomain = getAppBaseUrl();
+      window.location.href = `${mainDomain}/portal`;
       return;
     }
-    window.location.href = '/app/platform';
+
+    // Un tenant est disponible → se connecter comme un utilisateur standard avec ce tenant
+    // Le PLATFORM_OWNER aura accès à toutes les fonctionnalités (y compris admin plateforme) sur le sous-domaine de l'école
+    await handleStandardLogin();
   };
 
   const handleStandardLogin = async () => {
@@ -282,59 +261,60 @@ export default function LoginPage() {
     const tenantKey = data.tenant?.id || tenantIdFromUrl || tenantSlug || 'platform';
     saveEmailForTenant(schoolCredentials.email, tenantKey);
 
-    // Attendre que la session serveur soit disponible (cookie persisté)
-    // Sur mobile, les cookies ne sont pas toujours persistés immédiatement
-    const sessionReady = await waitForServerSession();
-    if (!sessionReady) {
-      window.location.reload();
-      return;
-    }
-
     const isPlatformOwner =
       data.user?.role === 'PLATFORM_OWNER' ||
       (data.user as { isPlatformOwner?: boolean })?.isPlatformOwner;
     const hasNoTenant = !data.tenant?.id;
+    
+    // Le PLATFORM_OWNER doit TOUJOURS être redirigé vers le sous-domaine d'une école
+    // Il n'y a plus de route /app/platform sans tenant — tout est professionnel
     if (isPlatformOwner && hasNoTenant) {
-      window.location.href = '/app/platform';
+      // Pas de tenant → rediriger vers le portail pour sélectionner une école d'abord
+      const mainDomain = getAppBaseUrl();
+      window.location.href = `${mainDomain}/portal`;
       return;
     }
 
     if (portalType === 'platform') {
-      window.location.href = '/app/platform';
-      return;
+      // Même chose : le portail plateforme doit toujours avoir un tenant
+      if (hasNoTenant) {
+        const mainDomain = getAppBaseUrl();
+        window.location.href = `${mainDomain}/portal`;
+        return;
+      }
+      // Si on a un tenant, rediriger vers le sous-domaine de l'école normalement
+      // Le PLATFORM_OWNER verra les modules plateforme en plus des modules école
     }
 
     // Compute the best tenant slug for redirect (prefer API response over URL)
-    // IMPORTANT: prefer `subdomain` over `slug` for URL construction, because
-    // `slug` may be a placeholder like "default-tenant" that doesn't resolve in DNS,
-    // while `subdomain` is the actual DNS-resolvable value.
-    const resolvedSlug = tenantSlug || data.tenant?.subdomain || data.tenant?.slug;
+    const resolvedSlug = tenantSlug || data.tenant?.slug || data.tenant?.subdomain;
     const resolvedTenantId = tenantIdFromUrl || data.tenant?.id;
 
-    // Placeholder/reserved slugs that should NOT be used for subdomain construction.
-    // These would create non-resolving URLs like https://default-tenant.academiahelm.com
-    const RESERVED_SLUGS = ['default-tenant', 'default', 'unknown', 'undefined', 'app', 'www', 'api', 'portal', 'admin'];
-
-    if (!resolvedSlug || RESERVED_SLUGS.includes(resolvedSlug.toLowerCase())) {
-      // Slug is missing or a placeholder — redirect to /app on the current domain.
-      // The middleware will resolve the tenant from the authenticated session
-      // (cookies are set on .academiahelm.com, so they work across all subdomains).
-      if (resolvedTenantId) {
-        const url = new URL(redirectPath, window.location.origin);
-        url.searchParams.set('tenant_id', resolvedTenantId);
-        window.location.href = url.toString();
-      } else {
-        window.location.href = redirectPath;
-      }
+    if (!resolvedSlug && !resolvedTenantId) {
+      // No tenant info at all — redirect to main domain /app
+      const mainDomain = getAppBaseUrl();
+      window.location.href = `${mainDomain}${redirectPath}`;
       return;
     }
 
     try {
       const redirectUrl = getTenantRedirectUrl({
-        tenantSlug: resolvedSlug,
+        tenantSlug: resolvedSlug || resolvedTenantId || 'unknown',
         tenantId: resolvedTenantId,
         path: redirectPath,
       });
+      
+      // IMPORTANT: Toujours utiliser window.location.href (rechargement complet)
+      // après la connexion, même si la redirection reste sur le même sous-domaine.
+      //
+      // Le Set-Cookie de /api/auth/login (academia_session) doit être traité par
+      // le navigateur AVANT que la page /app soit chargée. Avec router.push(),
+      // la requête RSC est envoyée immédiatement, avant que le navigateur n'ait
+      // traité le Set-Cookie → getServerSession() retourne null → page blanche.
+      //
+      // Le rechargement complet (window.location.href) garantit que le navigateur
+      // traite d'abord le Set-Cookie, puis charge la nouvelle page avec les cookies
+      // à jour.
       window.location.href = redirectUrl;
     } catch {
       // Fallback: redirect with query params
@@ -380,14 +360,6 @@ export default function LoginPage() {
     const tenantKey = data.tenant?.id || tenantIdForApi || 'platform';
     saveEmailForTenant(schoolCredentials.email, tenantKey);
 
-    // Attendre que la session serveur soit disponible (cookie persisté)
-    // Sur mobile, les cookies ne sont pas toujours persistés immédiatement
-    const sessionReady = await waitForServerSession();
-    if (!sessionReady) {
-      window.location.reload();
-      return;
-    }
-
     const redirectUrl = getTenantRedirectUrl({
       tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,
       tenantId: tenantIdForApi,
@@ -426,14 +398,6 @@ export default function LoginPage() {
       tenant: data.tenant,
       expiresAt: data.expiresAt,
     });
-
-    // Attendre que la session serveur soit disponible (cookie persisté)
-    // Sur mobile, les cookies ne sont pas toujours persistés immédiatement
-    const sessionReady = await waitForServerSession();
-    if (!sessionReady) {
-      window.location.reload();
-      return;
-    }
 
     const redirectUrl = getTenantRedirectUrl({
       tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,
@@ -501,14 +465,6 @@ export default function LoginPage() {
       tenant: data.tenant,
       expiresAt: data.expiresAt,
     });
-
-    // Attendre que la session serveur soit disponible (cookie persisté)
-    // Sur mobile, les cookies ne sont pas toujours persistés immédiatement
-    const sessionReady = await waitForServerSession();
-    if (!sessionReady) {
-      window.location.reload();
-      return;
-    }
 
     const redirectUrl = getTenantRedirectUrl({
       tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,

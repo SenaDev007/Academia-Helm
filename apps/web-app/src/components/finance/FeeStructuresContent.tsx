@@ -22,6 +22,7 @@ import FeeStructureModal from './FeeStructureModal';
 import FeeOverrideModal from './FeeOverrideModal';
 import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
 import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
+import { formatCurrency } from '@/lib/utils';
 
 const FEE_TYPES = [
   { value: 'INSCRIPTION', label: 'Inscription' },
@@ -140,7 +141,6 @@ export default function FeeStructuresContent() {
     icon: <t.icon className="w-4 h-4" />,
   }));
 
-  const formatXOF = (n: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', maximumFractionDigits: 0 }).format(n);
   const feeTypeLabel = (t: string) => FEE_TYPES.find((f) => f.value === t)?.label ?? t;
 
   return (
@@ -220,7 +220,7 @@ export default function FeeStructuresContent() {
                 <TableRow key={s.id}>
                   <TableCell className="font-medium">{s.name}</TableCell>
                   <TableCell>{feeTypeLabel(s.feeType)}</TableCell>
-                  <TableCell>{formatXOF(Number(s.totalAmount))}</TableCell>
+                  <TableCell>{formatCurrency(s.totalAmount)}</TableCell>
                   <TableCell>{s.isInstallment ? 'Oui' : 'Non'}</TableCell>
                   <TableCell><Badge variant={s.isMandatory ? 'default' : 'outline'}>{s.isMandatory ? 'Oui' : 'Non'}</Badge></TableCell>
                   <TableCell><Badge variant={s.isActive ? 'default' : 'secondary'}>{s.isActive ? 'Actif' : 'Inactif'}</Badge></TableCell>

@@ -9,7 +9,7 @@
 
 import { useState } from 'react';
 import AppIcon from '@/components/ui/AppIcon';
-import { cn } from '@/lib/utils';
+import { cn, formatCurrency } from '@/lib/utils';
 
 interface Invoice {
   id: string;
@@ -78,7 +78,7 @@ export default function FederisBillingPage() {
 
                     <div className="flex items-center space-x-8">
                        <div className="text-right">
-                          <p className="text-lg font-black text-gray-900">{invoice.amount.toLocaleString()} XOF</p>
+                          <p className="text-lg font-black text-gray-900">{formatCurrency(invoice.amount)}</p>
                           <div className={cn(
                             "text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded inline-block mt-1",
                             invoice.status === 'PAID' ? "bg-green-100 text-green-700" : 

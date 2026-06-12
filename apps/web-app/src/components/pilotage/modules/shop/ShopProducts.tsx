@@ -12,16 +12,9 @@ import {
   ArrowUpDown, MoreVertical, Edit, Trash2,
   CheckCircle2, AlertTriangle, Info, Copy
 } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
 
 export default function ShopProducts() {
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'XOF',
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
-
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
       {/* Header Actions */}
@@ -121,7 +114,6 @@ export default function ShopProducts() {
 }
 
 function ProductRow({ name, sku, variants, price, cost, status }: any) {
-  const formatCurrency = (val: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 0 }).format(val);
   const margin = price - cost;
   const marginPercent = Math.round((margin / price) * 100);
 

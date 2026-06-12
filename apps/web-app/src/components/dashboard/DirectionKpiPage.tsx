@@ -13,6 +13,7 @@ import { useEffect, useState } from 'react';
 import { getDirectionKpi } from '@/services/kpi.service';
 import type { DirectionKpiResponse } from '@/types';
 import { BarChart3, Users, Calculator, CheckCircle, AlertCircle, Loader } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
 
 interface KpiState {
   data: DirectionKpiResponse | null;
@@ -111,7 +112,7 @@ export default function DirectionKpiPage() {
                   <Calculator className="w-5 h-5 text-slate-400" />
                 </div>
                 <p className="text-2xl font-bold text-navy-900">
-                  {summary.totalRevenue.toLocaleString()} {summary.currency}
+                  {formatCurrency(summary.totalRevenue)}
                 </p>
                 <p className="text-xs text-slate-500 mt-1">Tous encaissements consolidés</p>
               </div>
@@ -189,7 +190,7 @@ export default function DirectionKpiPage() {
                           />
                         </div>
                         <div className="w-28 text-right text-xs text-slate-700">
-                          {point.amount.toLocaleString()} {summary.currency}
+                          {formatCurrency(point.amount)}
                         </div>
                       </div>
                     );

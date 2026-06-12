@@ -193,11 +193,11 @@ function ConsolidatedView() {
           <div className="space-y-3">
             <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
               <span className="text-xs font-bold text-slate-600">Total Encaissé</span>
-              <span className="text-sm font-bold text-slate-900">33.1M FCFA</span>
+              <span className="text-sm font-bold text-slate-900">33,1M F CFA</span>
             </div>
             <div className="flex items-center justify-between p-3 bg-red-50 rounded-2xl">
               <span className="text-xs font-bold text-red-600">Impayés</span>
-              <span className="text-sm font-bold text-red-900">9.4M FCFA</span>
+              <span className="text-sm font-bold text-red-900">9,4M F CFA</span>
             </div>
           </div>
         </div>

@@ -324,7 +324,7 @@ function ReadersTab() {
                 <td className="py-4 font-bold text-slate-900">M. KOFFI</td>
                 <td className="py-4 text-sm text-slate-600">Prof. Maths</td>
                 <td className="py-4"><span className="px-2 py-1 bg-indigo-50 text-indigo-600 text-xs font-bold rounded">5</span></td>
-                <td className="py-4"><span className="text-rose-600 text-xs font-bold">500 FCFA</span></td>
+                <td className="py-4"><span className="text-rose-600 text-xs font-bold">500 F CFA</span></td>
              </tr>
           </tbody>
        </table>
@@ -343,14 +343,14 @@ function PenaltiesTab() {
           <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl flex justify-between items-center">
              <div>
                 <p className="font-bold text-rose-900">Livre Perdu : Manuel SVT</p>
-                <p className="text-xs text-rose-700">Lecteur: TOURE Amina • 15,000 FCFA</p>
+                <p className="text-xs text-rose-700">Lecteur: TOURE Amina • 15 000 F CFA</p>
              </div>
              <button className="px-4 py-2 bg-rose-600 text-white text-xs font-bold rounded-xl shadow-sm">Transférer Comptabilité</button>
           </div>
           <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex justify-between items-center">
              <div>
                 <p className="font-bold text-slate-900">Retard (10 jours)</p>
-                <p className="text-xs text-slate-500">Lecteur: SOSSOU Marc • 1,000 FCFA</p>
+                <p className="text-xs text-slate-500">Lecteur: SOSSOU Marc • 1 000 F CFA</p>
              </div>
              <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg uppercase">Réglé</span>
           </div>
@@ -501,7 +501,7 @@ function SettingsTab() {
              </div>
              <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
                 <span className="text-sm font-bold text-slate-700">Pénalité par jour de retard</span>
-                <span className="text-xs font-bold bg-white px-3 py-1 rounded shadow-sm text-rose-600">100 FCFA</span>
+                <span className="text-xs font-bold bg-white px-3 py-1 rounded shadow-sm text-rose-600">100 F CFA</span>
              </div>
           </div>
           <div className="space-y-4">

@@ -97,10 +97,7 @@ export function SettingsWorkspace() {
   }, [showNewTemplate]);
 
   useEffect(() => {
-    if (!tenant?.id) {
-      setLoading(false);
-      return;
-    }
+    if (!tenant?.id) return;
     loadRates();
     loadTemplates();
   }, [tenant?.id]);

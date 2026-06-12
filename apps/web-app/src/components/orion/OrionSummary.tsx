@@ -7,6 +7,7 @@
 'use client';
 
 import type { OrionMonthlySummary } from '@/types';
+import { formatCurrency } from '@/lib/utils';
 import { TrendingUp, TrendingDown, Minus, AlertTriangle, Info } from 'lucide-react';
 
 interface OrionSummaryProps {
@@ -68,7 +69,7 @@ export default function OrionSummary({ summary }: OrionSummaryProps) {
           <div className="bg-cloud rounded-lg p-4 border border-gray-200">
             <p className="text-xs text-graphite-500 mb-1">Financier</p>
             <p className="text-sm text-graphite-700">
-              Recettes: {summary.facts.financial.totalRevenue.toLocaleString()} {summary.kpiData.currency}
+              Recettes: {formatCurrency(summary.facts.financial.totalRevenue)}
             </p>
             <p className="text-sm text-graphite-700">
               Taux recouvrement: {summary.facts.financial.recoveryRate}%

@@ -41,7 +41,7 @@ export default function KPICards({ data, isLoading }: KPICardsProps) {
     {
       label: 'Recettes',
       value: data?.revenue?.total || 0,
-      prefix: 'FCFA',
+      prefix: 'F CFA',
       icon: DollarSign,
       color: 'text-amber-600',
       bgColor: 'bg-amber-50',
@@ -78,10 +78,10 @@ export default function KPICards({ data, isLoading }: KPICardsProps) {
 
   const formatValue = (value: number, prefix?: string, suffix?: string) => {
     if (prefix) {
-      return `${prefix} ${value.toLocaleString('fr-FR')}`;
+      return `${value.toLocaleString('fr-FR')} ${prefix}`;
     }
     if (suffix) {
-      return `${value.toLocaleString('fr-FR')}${suffix}`;
+      return `${value.toLocaleString('fr-FR')} ${suffix}`;
     }
     return value.toLocaleString('fr-FR');
   };

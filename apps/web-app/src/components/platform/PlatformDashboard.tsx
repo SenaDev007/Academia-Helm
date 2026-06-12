@@ -31,7 +31,7 @@ const MOCK_STATS = [
   { label: 'Écoles actives', value: '112', icon: Activity, color: 'text-emerald-600', bg: 'bg-emerald-50' },
   { label: 'Total Élèves', value: '45,200', icon: GraduationCap, color: 'text-violet-600', bg: 'bg-violet-50' },
   { label: 'Utilisateurs total', value: '8,450', icon: Users, color: 'text-amber-600', bg: 'bg-amber-50' },
-  { label: 'MRR (Revenus Mensuels)', value: '12.5M FCFA', icon: TrendingUp, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+  { label: 'MRR (Revenus Mensuels)', value: '12,5M F CFA', icon: TrendingUp, color: 'text-indigo-600', bg: 'bg-indigo-50' },
   { label: 'Incidents Critiques', value: '2', icon: ShieldAlert, color: 'text-red-600', bg: 'bg-red-50' },
 ];
 
@@ -98,7 +98,7 @@ export default function PlatformDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
           <div className="flex items-center justify-between mb-6">
-            <h3 className="font-bold text-slate-900">Évolution du Chiffre d'Affaires (Millions FCFA)</h3>
+            <h3 className="font-bold text-slate-900">Évolution du Chiffre d'Affaires (Millions F CFA)</h3>
             <select className="text-sm bg-slate-50 border-none rounded-lg focus:ring-2 focus:ring-indigo-500/20 px-3 py-1.5 font-medium text-slate-600">
               <option>6 derniers mois</option>
               <option>Cette année</option>

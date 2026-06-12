@@ -13,7 +13,7 @@ export default function EduCastDashboard() {
   const stats = [
     { label: 'Contenus Publiés', value: '458', icon: Play, color: 'text-blue-600', bg: 'bg-blue-50', trend: '+12 ce mois' },
     { label: 'Vues Totales', value: '12.5k', icon: Eye, color: 'text-emerald-600', bg: 'bg-emerald-50', trend: '+24% vs avril' },
-    { label: 'Revenus (FCFA)', value: '245k', icon: Star, color: 'text-[#C9A84C]', bg: 'bg-amber-50', trend: '+15% ce mois' },
+    { label: 'Revenus (F CFA)', value: '245k', icon: Star, color: 'text-[#C9A84C]', bg: 'bg-amber-50', trend: '+15% ce mois' },
     { label: 'Ventes Contenus', value: '124', icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', trend: '85% conversion' },
   ];
 

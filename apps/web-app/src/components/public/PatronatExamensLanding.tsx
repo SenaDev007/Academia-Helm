@@ -248,14 +248,14 @@ export default function PatronatExamensLanding() {
               {
                 name: 'Starter',
                 desc: 'Idéal pour les petits patronats communaux.',
-                price: 'À partir de 100 000 FCFA',
+                price: 'À partir de 100 000 F CFA',
                 features: ['Écoles membres limitées', 'Examens simples', 'Import candidats Excel', 'Publication résultats standard'],
                 color: 'blue'
               },
               {
                 name: 'Professional',
                 desc: 'Pour les patronats départementaux structurés.',
-                price: 'À partir de 250 000 FCFA',
+                price: 'À partir de 250 000 F CFA',
                 features: ['Écoles illimitées', 'Centres d\'examen complexes', 'Gestion des surveillants & PV', 'Banque d\'épreuves sécurisée', 'Support prioritaire'],
                 color: 'amber',
                 popular: true

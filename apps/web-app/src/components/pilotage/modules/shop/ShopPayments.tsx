@@ -12,16 +12,9 @@ import {
   Filter, ArrowUpRight, ArrowDownLeft, MoreVertical,
   Plus, Smartphone, DollarSign, User
 } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
 
 export default function ShopPayments() {
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'XOF',
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
-
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
       {/* Wallet Summary */}
@@ -179,8 +172,6 @@ function PaymentMethodItem({ icon: Icon, label, percent, color }: any) {
 }
 
 function TxRow({ type, refNo, name, method, amount, status, date }: any) {
-  const formatCurrency = (val: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 0 }).format(val);
-  
   return (
     <tr className="hover:bg-gray-50/50 transition-all group">
       <td className="px-8 py-5">

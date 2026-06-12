@@ -12,16 +12,9 @@ import {
   AlertCircle, CheckCircle2, MoreVertical, Eye,
   Package, DollarSign, User, Calendar, Trash2
 } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
 
 export default function ShopReturns() {
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'XOF',
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
-
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
       {/* Header */}

@@ -27,7 +27,7 @@ import {
   Lock,
   Shield,
 } from 'lucide-react';
-import { formatGradeLabel } from '@/lib/utils';
+import { formatGradeLabel, formatCurrency } from '@/lib/utils';
 import { studentsService } from '@/services/students.service';
 import { toast } from '@/components/ui/toast';
 
@@ -363,7 +363,7 @@ export default function StudentDossierSection({ studentId }: { studentId: string
                             <div key={idx} className="text-xs text-gray-600">
                               • {rule.feeType}:{' '}
                               {rule.discountType === 'FIXED'
-                                ? `${rule.discountValue.toLocaleString('fr-FR')} FCFA`
+                                ? formatCurrency(rule.discountValue)
                                 : `${rule.discountValue}%`}
                             </div>
                           ))}

@@ -68,22 +68,79 @@ class LocalDbService {
    * Crée les object stores (IndexedDB)
    */
   private createObjectStores(db: IDBDatabase): void {
-    // Object store pour chaque entité métier
+    // Object store pour chaque entité métier — couvre TOUS les modules de l'application
     const entities: string[] = [
-      'students', 'teachers', 'classes', 'subjects', 'exams', 'grades', 
-      'payments', 'attendance', 'absences', 'invoices', 'academic_years', 
-      'school_levels', 'homeworks', 'incidents', 'loans', 'sessions', 
-      'messages', 'notifications', 'alerts', 'reports', 'orion_alerts',
-      'exam_candidates', 'exam_results', 'exam_pvs', 'pedagogical_files',
-      'disciplinary_incidents',
-      'class_diaries', 'lesson_plans', 'lesson_journals', 'lesson_journal_entries',
-      'weekly_semainier_daily_entries', 'teacher_class_assignments', 'homework_entries',
-      'teacher_profiles', 'academic_series', 'series_subjects',
-      'pedagogical_materials', 'material_stocks', 'material_movements', 'teacher_material_assignments',
-      'school_academic_settings',
-      // Stores ajoutés pour support offline complet
-      'fee_structures', 'expenses', 'finance_settings',
-      'modules', 'academic_terms',
+      // ─── Élèves & Scolarité ───
+      'students', 'guardians', 'student_guardians',
+      // ─── Personnel, RH & Paie ───
+      'teachers', 'staff', 'contracts', 'contract_amendments',
+      'leave_requests', 'staff_allowances', 'staff_schedules',
+      'staff_attendance', 'staff_evaluations', 'staff_documents',
+      'staff_assignments', 'overtime_records',
+      'salary_payments', 'salary_slips', 'payrolls', 'payroll_items', 'payroll_periods',
+      // ─── Classes & Structure ───
+      'classes', 'class_students', 'class_subjects', 'subjects',
+      'school_levels', 'academic_years', 'academic_periods',
+      // ─── Examens, Notes & Bulletins ───
+      'exams', 'grades', 'exam_candidates', 'exam_results', 'exam_scores',
+      'exam_sessions', 'exam_pvs', 'exam_compositions', 'exam_deliberations',
+      'report_cards', 'report_card_items', 'evaluations', 'grade_calculations',
+      'student_period_averages', 'student_subject_averages',
+      // ─── Finances & Économat ───
+      'payments', 'invoices', 'fee_structures', 'fee_configurations',
+      'fee_definitions', 'fee_regimes', 'expenses', 'finance_settings',
+      'finance_transactions', 'finance_budgets', 'treasury_movements',
+      'tuition_installments', 'tuition_payments', 'payment_plans', 'payment_flows',
+      // ─── Organisation Pédagogique ───
+      'attendance', 'absences', 'homeworks', 'homework_entries', 'homework_submissions',
+      'pedagogical_files', 'class_diaries', 'lesson_plans',
+      'lesson_journals', 'lesson_journal_entries', 'weekly_semainier_daily_entries',
+      'teacher_class_assignments', 'academic_series', 'series_subjects',
+      'teacher_profiles', 'pedagogical_materials', 'material_stocks',
+      'material_movements', 'teacher_material_assignments',
+      'teaching_assignments', 'subject_programs',
+      'timetables', 'timetable_entries',
+      'academic_classes', 'academic_cycles', 'academic_levels',
+      // ─── Discipline & Incidents ───
+      'disciplinary_incidents', 'incidents',
+      // ─── Réunions ───
+      'meetings', 'meeting_participants', 'meeting_agenda_items', 'meeting_minutes',
+      // ─── Communication ───
+      'messages', 'message_recipients', 'message_templates',
+      'announcements', 'sms_logs', 'email_logs', 'push_notifications',
+      'communication_channels', 'notifications', 'alerts',
+      // ─── Agrégation & Décision ───
+      'aggregation_results', 'aggregation_sessions', 'aggregation_decisions',
+      'rankings', 'honor_rolls',
+      // ─── ORION (Pilotage Direction) ───
+      'orion_alerts', 'orion_insights', 'orion_forecasts', 'orion_settings',
+      // ─── Paramètres / Settings ───
+      'school_academic_settings', 'school_settings', 'tenant_identity_profiles',
+      'settings_pedagogical_structures', 'settings_bilingual',
+      'tenant_features', 'security_settings', 'offline_sync_settings',
+      'settings_communications', 'tenant_stamps', 'tenant_signatures',
+      'roles', 'permissions', 'settings_histories',
+      // ─── Cantine ───
+      'canteen_settings', 'canteen_menus', 'canteen_meal_services',
+      'canteen_attendance', 'canteen_subscriptions', 'canteen_payments',
+      // ─── Transport ───
+      'vehicles', 'routes', 'transport_drivers', 'transport_trips',
+      'transport_assignments', 'transport_settings',
+      // ─── Infirmerie ───
+      'infirmary_visits', 'infirmary_medical_records',
+      'infirmary_medication_stocks', 'infirmary_settings',
+      // ─── QHSE ───
+      'qhse_audits', 'qhse_incidents', 'qhse_risks',
+      'qhse_action_plans', 'qhse_settings',
+      // ─── EduCast ───
+      'educast_contents', 'educast_channels', 'educast_playlists', 'educast_settings',
+      // ─── Boutique / Shop ───
+      'shop_products', 'shop_categories', 'shop_orders',
+      'shop_sales', 'shop_settings',
+      // ─── Bibliothèque ───
+      'library_books', 'library_loans', 'library_reservations', 'library_settings',
+      // ─── Divers / Legacy ───
+      'sessions', 'loans', 'reports', 'modules', 'academic_terms',
       // Store pour le cache des feature flags (offline fallback)
       'settings_cache',
     ];
@@ -276,6 +333,6 @@ class LocalDbService {
 // Instance singleton
 export const localDb = new LocalDbService({
   dbName: 'academia-helm-local',
-  version: 10, // + settings_cache store for offline feature flags fallback
+  version: 11, // + full module coverage: RH, Réunions, Communication, Agrégation, Canteen, Transport, Infirmary, QHSE, EduCast, Shop, Library, Settings
 });
 

@@ -10,6 +10,9 @@
  * 4. Vérification offline-first
  * 5. Initialisation ORION (direction uniquement)
  * 6. Préchargement UI
+ *
+ * NOTE: La durée minimale d'affichage du loading (5s) est gérée
+ * par le composant <MinDurationScreen>, pas par ce service.
  */
 
 import type { User, Tenant } from '@/types';
@@ -280,6 +283,7 @@ export async function executePostLoginFlow(
     ]).catch(() => { /* non-critical */ });
 
     // Finalisation immédiate
+    // (La durée minimale d'affichage est gérée par <MinDurationScreen>)
     onProgress?.({ step: 'PRELOAD_UI', progress: 100, message: 'Prêt' });
 
     const duration = performanceAuditService.endTimer(metricId, 'POST_LOGIN', {

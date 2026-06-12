@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react';
 import type { Invoice, Receipt } from '@/types';
 import { getBillingHistory } from '@/services/billing.service';
 import { FileText, Loader, AlertCircle, Download } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
 
 interface BillingState {
   invoices: Invoice[];
@@ -160,7 +161,7 @@ export default function BillingHistoryPage() {
                           {issuedDate}
                         </td>
                         <td className="px-6 py-3 align-top text-slate-700">
-                          {invoice.amount.toLocaleString()} {invoice.currency}
+                          {formatCurrency(invoice.amount)}
                         </td>
                         <td className="px-6 py-3 align-top">
                           <span

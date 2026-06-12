@@ -26,10 +26,7 @@ export function CnssWorkspace() {
 
   useEffect(() => {
     async function loadData() {
-      if (!tenant?.id) {
-        setLoading(false);
-        return;
-      }
+      if (!tenant?.id) return;
       try {
         setLoading(true);
         // Load CNSS declarations

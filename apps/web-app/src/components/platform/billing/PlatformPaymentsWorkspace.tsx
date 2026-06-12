@@ -3,8 +3,8 @@
 import { CreditCard, DollarSign, Search, Filter, ArrowUpRight, CheckCircle2, MoreVertical } from 'lucide-react';
 
 const MOCK_PAYMENTS = [
-  { id: 'TRX-123', school: 'Lycée Excellence', amount: '250,000 FCFA', method: 'Fedapay / Card', status: 'SUCCESS', date: '2025-05-12 14:30' },
-  { id: 'TRX-124', school: 'Collège Jean-Paul II', amount: '150,000 FCFA', method: 'Mobile Money', status: 'PENDING', date: '2025-05-14 09:15' },
+  { id: 'TRX-123', school: 'Lycée Excellence', amount: '250 000 F CFA', method: 'Fedapay / Card', status: 'SUCCESS', date: '2025-05-12 14:30' },
+  { id: 'TRX-124', school: 'Collège Jean-Paul II', amount: '150 000 F CFA', method: 'Mobile Money', status: 'PENDING', date: '2025-05-14 09:15' },
 ];
 
 export default function PlatformPaymentsWorkspace() {

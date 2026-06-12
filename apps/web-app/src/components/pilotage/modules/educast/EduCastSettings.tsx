@@ -125,7 +125,7 @@ export default function EduCastSettings() {
               <input type="number" defaultValue={20} className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-slate-900 font-black outline-none focus:ring-2 focus:ring-amber-500/20 transition-all" />
             </div>
             <div className="space-y-3">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Plafond Prix Vidéo (FCFA)</label>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Plafond Prix Vidéo (F CFA)</label>
               <input type="number" defaultValue={5000} className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-slate-900 font-black outline-none focus:ring-2 focus:ring-amber-500/20 transition-all" />
             </div>
           </div>

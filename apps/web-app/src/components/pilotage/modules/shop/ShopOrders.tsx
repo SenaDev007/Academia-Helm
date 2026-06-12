@@ -12,16 +12,9 @@ import {
   Truck, XCircle, MoreVertical, Eye, Download,
   User, Calendar, ShoppingBag
 } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
 
 export default function ShopOrders() {
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'XOF',
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
-
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
       {/* Header */}
@@ -148,8 +141,6 @@ function OrderStatCard({ label, count, color, icon: Icon }: any) {
 }
 
 function OrderRow({ id, name, student, date, itemCount, total, status }: any) {
-  const formatCurrency = (val: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 0 }).format(val);
-  
   const statusColors: any = {
     'À préparer': 'bg-rose-50 text-rose-600 border-rose-100',
     'Payé': 'bg-blue-50 text-blue-600 border-blue-100',

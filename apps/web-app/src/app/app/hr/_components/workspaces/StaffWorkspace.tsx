@@ -1,10 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Plus, Search, Phone, Briefcase, GraduationCap,
   Users, Loader2, Globe, Building2, UserX, UserCheck,
-  RefreshCw, AlertCircle,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -41,9 +40,6 @@ const CATEGORY_LABEL: Record<string, string> = {
   SUPPORT: "Personnel d'appui",
 };
 
-const MAX_STAFF_RETRIES = 3;
-const STAFF_RETRY_DELAYS = [2000, 5000, 10000];
-
 export function StaffWorkspace() {
   const { tenant } = useModuleContext();
   const [staff, setStaff] = useState<any[]>([]);
@@ -52,10 +48,6 @@ export function StaffWorkspace() {
   const [filterCategory, setFilterCategory] = useState('ALL');
   const [filterStatus, setFilterStatus] = useState('ALL');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [staffError, setStaffError] = useState<string | null>(null);
-  const [isRetrying, setIsRetrying] = useState(false);
-  const retryCountRef = useRef(0);
-  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Termination modal state
   const [terminationModalOpen, setTerminationModalOpen] = useState(false);
@@ -65,50 +57,23 @@ export function StaffWorkspace() {
   const [reactivateId, setReactivateId] = useState<string | null>(null);
   const [reactivateLoading, setReactivateLoading] = useState(false);
 
-  const fetchStaff = useCallback(async (isRetry = false) => {
-    if (!tenant?.id) {
-      setLoading(false);
-      return;
-    }
+  useEffect(() => { fetchStaff(); }, [tenant?.id, filterCategory, filterStatus]);
+
+  async function fetchStaff() {
+    if (!tenant?.id) return;
     try {
       setLoading(true);
-      setStaffError(null);
       const query: Record<string, string> = { tenantId: tenant.id };
       if (filterCategory !== 'ALL') query.category = filterCategory;
       if (filterStatus !== 'ALL') query.status = filterStatus;
       const result = await hrFetch<any[]>(hrUrl('staff', query));
-      setStaff(Array.isArray(result) ? result : []);
-      retryCountRef.current = 0; // Reset on success
-    } catch (error: any) {
+      setStaff(result);
+    } catch (error) {
       console.error('Error fetching staff:', error);
-      if (!isRetry) retryCountRef.current = 0;
-      retryCountRef.current++;
-      if (retryCountRef.current < MAX_STAFF_RETRIES) {
-        const delay = STAFF_RETRY_DELAYS[retryCountRef.current - 1] || 10000;
-        retryTimeoutRef.current = setTimeout(() => fetchStaff(true), delay);
-      } else {
-        setStaffError(error?.message || 'Erreur de chargement du personnel');
-        toast({ variant: 'error', title: 'Erreur: impossible de charger la liste du personnel' });
-      }
     } finally {
       setLoading(false);
-      setIsRetrying(false);
     }
-  }, [tenant?.id, filterCategory, filterStatus]);
-
-  useEffect(() => {
-    fetchStaff();
-    return () => {
-      if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
-    };
-  }, [fetchStaff]);
-
-  const handleRetry = () => {
-    retryCountRef.current = 0;
-    setIsRetrying(true);
-    if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
-    fetchStaff();
-  };
+  }
 
   const handleTerminate = (member: any) => {
     setSelectedStaff(member);
@@ -252,29 +217,6 @@ export function StaffWorkspace() {
           </div>
         ))}
       </div>
-
-      {/* Error banner with retry */}
-      {staffError && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-rose-100 p-2">
-              <AlertCircle className="h-5 w-5 text-rose-600" />
-            </div>
-            <div>
-              <p className="text-sm font-bold text-rose-900">Impossible de charger le personnel</p>
-              <p className="text-xs text-rose-600 mt-0.5">{staffError}</p>
-            </div>
-          </div>
-          <button
-            onClick={handleRetry}
-            disabled={isRetrying}
-            className="flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-50 transition shrink-0"
-          >
-            <RefreshCw className={cn('h-3.5 w-3.5', isRetrying && 'animate-spin')} />
-            Réessayer
-          </button>
-        </div>
-      )}
 
       {/* Grid */}
       {loading ? (

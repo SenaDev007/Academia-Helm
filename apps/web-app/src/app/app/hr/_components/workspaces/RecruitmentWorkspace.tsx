@@ -41,11 +41,7 @@ import {
   HeartHandshake,
   ShieldCheck,
   PowerOff,
-  RefreshCw,
-  Share2,
-  Link2,
-  Check,
-  MessageCircle
+  RefreshCw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -58,7 +54,6 @@ const PRIMARY = '#1A2BA6';
 interface Job {
   id: string;
   ref: string;
-  slug: string;
   title: string;
   dept: string;
   loc: string;
@@ -215,9 +210,6 @@ export function RecruitmentWorkspace() {
   const [recruiterRating, setRecruiterRating] = useState<number>(0);
   const [recruiterComment, setRecruiterComment] = useState<string>('');
 
-
-  // Share link state
-  const [copiedJobId, setCopiedJobId] = useState<string | null>(null);
 
   // Add/Edit Job Form State
   const [isAddJobOpen, setIsAddJobOpen] = useState(false);
@@ -387,37 +379,32 @@ export function RecruitmentWorkspace() {
     candidateId: '', category: 'Développement', status: 'Disponible'
   });
 
-  // Load all datasets in PARALLEL — each fetch is independent so one failure doesn't block the others
+  // Load all datasets — each fetch is independent so one failure doesn't block the others
   const loadData = async () => {
     if (!tenant?.id) return;
     setLoading(true);
 
-    // Fire all 5 API calls in parallel instead of sequentially
-    const [jobsResult, candidatesResult, interviewsResult, testsResult, talentResult] = await Promise.allSettled([
-      hrFetch<any[]>(hrUrl('recruitment/jobs', { tenantId: tenant.id })),
-      hrFetch<any[]>(hrUrl('recruitment/candidates', { tenantId: tenant.id })),
-      hrFetch<any[]>(hrUrl('recruitment/interviews', { tenantId: tenant.id })),
-      hrFetch<any[]>(hrUrl('recruitment/tests', { tenantId: tenant.id })),
-      hrFetch<any[]>(hrUrl('recruitment/talent-pool', { tenantId: tenant.id })),
-    ]);
-
-    // Process Jobs
-    if (jobsResult.status === 'fulfilled') {
-      const jobList = Array.isArray(jobsResult.value) ? jobsResult.value : [];
-      setJobs(jobList.map(j => ({
-        ...j,
-        date: j.createdAt ? j.createdAt.split('T')[0] : new Date().toISOString().split('T')[0],
-        publishedAt: j.publishedAt || null,
-        candidates: j._count?.applications || 0,
-      })));
-    } else {
-      console.error('Failed to fetch recruitment jobs:', jobsResult.reason);
+    // Fetch Jobs
+    try {
+      const fetchedJobs = await hrFetch<any[]>(hrUrl('recruitment/jobs', { tenantId: tenant.id }));
+      if (fetchedJobs) {
+        setJobs(fetchedJobs.map(j => ({
+          ...j,
+          date: j.createdAt ? j.createdAt.split('T')[0] : new Date().toISOString().split('T')[0],
+          publishedAt: j.publishedAt || null,
+          candidates: j._count?.applications || 0,
+        })));
+      }
+    } catch (err) {
+      console.error('Failed to fetch recruitment jobs:', err);
     }
 
-    // Process Candidates
-    if (candidatesResult.status === 'fulfilled') {
-      const candidateList = Array.isArray(candidatesResult.value) ? candidatesResult.value : [];
-      setCandidates(candidateList.map(c => {
+    // Fetch Candidates
+    try {
+      const fetchedCandidates = await hrFetch<any[]>(hrUrl('recruitment/candidates', { tenantId: tenant.id }));
+      if (fetchedCandidates) {
+        setCandidates(fetchedCandidates.map(c => {
+          // Find the primary (first) application with its job data
           const primaryApp = c.applications?.[0] || c.application;
           const jobTitle = primaryApp?.job?.title || primaryApp?.jobTitle || c.jobTitle || '';
           const docScore = primaryApp?.score || 0;
@@ -456,33 +443,42 @@ export function RecruitmentWorkspace() {
             documents: c.documents || [],
           };
         }));
-    } else {
-      console.error('Failed to fetch recruitment candidates:', candidatesResult.reason);
+      }
+    } catch (err) {
+      console.error('Failed to fetch recruitment candidates:', err);
     }
 
-    // Process Interviews
-    if (interviewsResult.status === 'fulfilled') {
-      const interviewList = Array.isArray(interviewsResult.value) ? interviewsResult.value : [];
-      setInterviews(interviewList.map(i => ({
-        ...i,
-        date: i.date ? i.date.split('T')[0] : '',
-      })));
-    } else {
-      console.error('Failed to fetch recruitment interviews:', interviewsResult.reason);
+    // Fetch Interviews
+    try {
+      const fetchedInterviews = await hrFetch<any[]>(hrUrl('recruitment/interviews', { tenantId: tenant.id }));
+      if (fetchedInterviews) {
+        setInterviews(fetchedInterviews.map(i => ({
+          ...i,
+          date: i.date ? i.date.split('T')[0] : '',
+        })));
+      }
+    } catch (err) {
+      console.error('Failed to fetch recruitment interviews:', err);
     }
 
-    // Process Tests
-    if (testsResult.status === 'fulfilled') {
-      setTests(Array.isArray(testsResult.value) ? testsResult.value : []);
-    } else {
-      console.error('Failed to fetch recruitment tests:', testsResult.reason);
+    // Fetch Tests
+    try {
+      const fetchedTests = await hrFetch<any[]>(hrUrl('recruitment/tests', { tenantId: tenant.id }));
+      if (fetchedTests) {
+        setTests(fetchedTests);
+      }
+    } catch (err) {
+      console.error('Failed to fetch recruitment tests:', err);
     }
 
-    // Process Talent Pool
-    if (talentResult.status === 'fulfilled') {
-      setTalentPool(Array.isArray(talentResult.value) ? talentResult.value : []);
-    } else {
-      console.error('Failed to fetch recruitment talent pool:', talentResult.reason);
+    // Fetch Talent Pool
+    try {
+      const fetchedTalent = await hrFetch<any[]>(hrUrl('recruitment/talent-pool', { tenantId: tenant.id }));
+      if (fetchedTalent) {
+        setTalentPool(fetchedTalent);
+      }
+    } catch (err) {
+      console.error('Failed to fetch recruitment talent pool:', err);
     }
 
     setLoading(false);
@@ -490,7 +486,7 @@ export function RecruitmentWorkspace() {
 
   useEffect(() => {
     loadData();
-  }, [tenant?.id, activeTab]);
+  }, [tenant?.id]);
 
   // Create or Update Job
   const handleSaveJob = async (e: React.FormEvent) => {
@@ -538,22 +534,16 @@ export function RecruitmentWorkspace() {
     setIsAddJobOpen(true);
   };
 
-  // Create Candidate and Application — single atomic API call
-  // The backend creates both the candidate AND the application in one transaction
-  // when jobId is provided, mirroring the public application flow
+  // Create Candidate and Application
   const handleCreateCandidate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!tenant?.id) {
       toast({ variant: 'error', title: 'Erreur', description: 'Aucun établissement sélectionné. Veuillez rafraîchir la page ou sélectionner un établissement.' });
       return;
     }
-    if (!newCandidate.jobId) {
-      toast({ variant: 'error', title: 'Offre requise', description: 'Veuillez sélectionner une offre d\'emploi pour créer la candidature.' });
-      return;
-    }
     try {
-      // Single API call: backend creates candidate + application atomically
-      await hrFetch<any>(hrUrl('recruitment/candidates', { tenantId: tenant.id }), {
+      // 1. Create Candidate
+      const createdCandidate = await hrFetch<any>(hrUrl('recruitment/candidates', { tenantId: tenant.id }), {
         method: 'POST',
         body: {
           firstName: newCandidate.firstName,
@@ -562,10 +552,20 @@ export function RecruitmentWorkspace() {
           phone: newCandidate.phone,
           address: newCandidate.address,
           gender: newCandidate.gender,
-          jobId: newCandidate.jobId,
-          status: newCandidate.status || 'NOUVEAU',
         }
       });
+
+      // 2. Create associated application if Job is selected
+      if (newCandidate.jobId && createdCandidate?.id) {
+        await hrFetch(hrUrl('recruitment/applications', { tenantId: tenant.id }), {
+          method: 'POST',
+          body: {
+            jobId: newCandidate.jobId,
+            candidateId: createdCandidate.id,
+            status: newCandidate.status,
+          }
+        });
+      }
 
       toast({ variant: 'success', title: 'Candidat enregistré avec succès !' });
       setIsAddCandidateOpen(false);
@@ -1135,12 +1135,7 @@ export function RecruitmentWorkspace() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {jobs.map((job) => {
-                    const shareUrl = typeof window !== 'undefined' && tenant?.slug && job.slug
-                      ? `${window.location.origin}/jobs/${tenant.slug}/${job.slug}`
-                      : '';
-                    const shareText = `Offre d'emploi : ${job.title} — ${job.loc}`;
-                    return (
+                  {jobs.map((job) => (
                     <div key={job.id} className={cn(
                       'bg-white border rounded-xl p-5 shadow-sm hover:shadow-md transition-all relative overflow-hidden flex flex-col justify-between',
                       job.status === 'DÉSACTIVÉE' ? 'border-amber-200 bg-amber-50/30' : 'border-slate-200'
@@ -1188,70 +1183,17 @@ export function RecruitmentWorkspace() {
                           {job.academicLevel && <span className="flex items-center gap-1.5"><GraduationCap className="h-3.5 w-3.5" /> {job.academicLevel}</span>}
                         </div>
                       </div>
-                      <div className="mt-4 pt-4 border-t border-slate-100">
-                        <div className="flex justify-between items-center mb-3">
-                          <span className="text-xs font-semibold text-[#1A2BA6]">{job.candidates} Candidats</span>
-                          <div className="flex flex-col items-end gap-0.5">
-                            {job.publishedAt && (
-                              <span className="text-[10px] text-emerald-600 font-medium">Publiée le {job.publishedAt.split('T')[0]}</span>
-                            )}
-                            <span className="text-[10px] text-slate-400">Créé le {job.date}</span>
-                          </div>
+                      <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center">
+                        <span className="text-xs font-semibold text-[#1A2BA6]">{job.candidates} Candidats</span>
+                        <div className="flex flex-col items-end gap-0.5">
+                          {job.publishedAt && (
+                            <span className="text-[10px] text-emerald-600 font-medium">Publiée le {job.publishedAt.split('T')[0]}</span>
+                          )}
+                          <span className="text-[10px] text-slate-400">Créé le {job.date}</span>
                         </div>
-                        {/* Share block — displayed for published jobs */}
-                        {job.status === 'PUBLIÉE' && shareUrl && (
-                          <div className="flex items-center gap-2 pt-3 border-t border-slate-50">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1"><Share2 className="h-3 w-3" /> Partager</span>
-                            <div className="flex items-center gap-1.5 ml-auto">
-                              <a
-                                href={`https://wa.me/?text=${encodeURIComponent(shareText + ' ' + shareUrl)}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                title="Partager sur WhatsApp"
-                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-[#25D366] shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow"
-                              >
-                                <MessageCircle className="h-3.5 w-3.5" />
-                              </a>
-                              <a
-                                href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                title="Partager sur Facebook"
-                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-[#1877F2] shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow"
-                              >
-                                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor"><path d="M22 12.06C22 6.51 17.52 2 12 2S2 6.51 2 12.06c0 5 3.66 9.14 8.44 9.94v-7.03H7.9V12.06h2.54V9.85c0-2.52 1.49-3.91 3.77-3.91 1.09 0 2.24.2 2.24.2v2.47h-1.26c-1.24 0-1.63.78-1.63 1.57v1.88h2.78l-.44 2.91h-2.34V22c4.78-.8 8.44-4.94 8.44-9.94Z"/></svg>
-                              </a>
-                              <a
-                                href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                title="Partager sur LinkedIn"
-                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-[#0A66C2] shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow"
-                              >
-                                <Linkedin className="h-3.5 w-3.5" />
-                              </a>
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  try {
-                                    await navigator.clipboard.writeText(shareUrl);
-                                    setCopiedJobId(job.id);
-                                    setTimeout(() => setCopiedJobId(null), 2000);
-                                  } catch { /* ignore */ }
-                                }}
-                                title="Copier le lien"
-                                className="inline-flex h-7 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-semibold text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow"
-                              >
-                                {copiedJobId === job.id ? <Check className="h-3 w-3 text-emerald-500" /> : <Link2 className="h-3 w-3" />}
-                                {copiedJobId === job.id ? 'Copié' : 'Lien'}
-                              </button>
-                            </div>
-                          </div>
-                        )}
                       </div>
                     </div>
-                    );
-                  })}
+                  ))}
                 </div>
               )}
 
@@ -1486,7 +1428,8 @@ export function RecruitmentWorkspace() {
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Statut initial</label>
                           <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newCandidate.status} onChange={(e) => setNewCandidate({ ...newCandidate, status: e.target.value })}>
                             <option value="NOUVEAU">Nouveau</option>
-                            <option value="EN_COURS">En cours</option>
+                            <option value="PRÉSÉLECTIONNÉ">Présélectionné</option>
+                            <option value="ENTRETIEN RH">Entretien RH</option>
                           </select>
                         </div>
                       </div>

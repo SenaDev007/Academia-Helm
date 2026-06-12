@@ -58,10 +58,7 @@ export function PlanningWorkspace() {
   // Load staff
   useEffect(() => {
     async function loadStaff() {
-      if (!tenant?.id) {
-        setLoading(false);
-        return;
-      }
+      if (!tenant?.id) return;
       try {
         const data = await hrFetch<any[]>(hrUrl('staff', { tenantId: tenant.id }));
         setStaffList(data);
@@ -74,10 +71,7 @@ export function PlanningWorkspace() {
 
   // Load schedules from API for the current week
   const loadSchedules = useCallback(async () => {
-    if (!tenant?.id) {
-      setLoading(false);
-      return;
-    }
+    if (!tenant?.id) return;
     try {
       setLoading(true);
       const startDate = formatDateKey(weekDates[0]);

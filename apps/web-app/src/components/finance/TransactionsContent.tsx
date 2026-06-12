@@ -12,6 +12,7 @@ import NewPaymentModal from './NewPaymentModal';
 import { financeService } from '@/services/finance.service';
 import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
 import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
+import { formatCurrency } from '@/lib/utils';
 
 const METHOD_LABELS: Record<string, string> = {
   CASH: 'Espèces',
@@ -52,8 +53,6 @@ export default function TransactionsContent() {
       .catch(() => setAccounts([]));
   }, [academicYear?.id]);
 
-  const formatXOF = (n: number) =>
-    new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', maximumFractionDigits: 0 }).format(n);
   const subModuleTabs = FINANCE_SUBMODULE_TABS.map((t) => ({ id: t.id, label: t.label, path: t.path, icon: <t.icon className="w-4 h-4" /> }));
 
   const handleSuccess = () => {
@@ -106,7 +105,7 @@ export default function TransactionsContent() {
                       ? `${t.studentAccount.student.lastName} ${t.studentAccount.student.firstName}`
                       : '—'}
                   </TableCell>
-                  <TableCell>{formatXOF(Number(t.amount))}</TableCell>
+                  <TableCell>{formatCurrency(t.amount)}</TableCell>
                   <TableCell>{METHOD_LABELS[t.paymentMethod] ?? t.paymentMethod}</TableCell>
                   <TableCell>
                     <Badge variant={t.type === 'REVERSAL' ? 'destructive' : 'default'}>{t.type}</Badge>

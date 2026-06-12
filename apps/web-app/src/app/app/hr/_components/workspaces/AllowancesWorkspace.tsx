@@ -6,7 +6,7 @@ import { Plus, Search, DollarSign, Edit, Trash2, Award, User, Layers, Check, X, 
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { motion } from 'framer-motion';
-import { cn } from '@/lib/utils';
+import { cn, formatCurrency } from '@/lib/utils';
 import { toast } from '@/components/ui/toast';
 
 const PRIMARY = '#1A2BA6';
@@ -41,10 +41,7 @@ export function AllowancesWorkspace() {
 
   useEffect(() => {
     async function loadData() {
-      if (!tenant?.id) {
-        setLoading(false);
-        return;
-      }
+      if (!tenant?.id) return;
       try {
         setLoading(true);
         // Load allowance types
@@ -257,7 +254,7 @@ export function AllowancesWorkspace() {
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
-                        <p className="text-base font-bold text-slate-900">{Number(item.amount).toLocaleString('fr-FR')} FCFA</p>
+                        <p className="text-base font-bold text-slate-900">{formatCurrency(item.amount)}</p>
                         <button
                           onClick={() => handleRemoveAssignment(item.id)}
                           className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-500 transition-colors"
@@ -339,12 +336,12 @@ export function AllowancesWorkspace() {
                   }}
                 >
                   {allowanceTypes.map(t => (
-                    <option key={t.id} value={t.id}>{t.name} ({t.defaultAmount} FCFA)</option>
+                    <option key={t.id} value={t.id}>{t.name} ({t.defaultAmount} F CFA)</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Montant Spécifique (FCFA)</label>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Montant Spécifique (F CFA)</label>
                 <input type="number" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={assignAmount} onChange={(e) => setAssignAmount(e.target.value)} required />
               </div>
               <div className="grid grid-cols-2 gap-3">

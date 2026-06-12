@@ -41,10 +41,11 @@ import {
   UserCheck,
   Package,
   DollarSign,
+  Phone,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
-import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
+import { formatCurrency } from '@/lib/utils';
 import { toast } from '@/components/ui/toast';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -95,23 +96,11 @@ function formatEmergencyContact(contact: any): string {
   if (!contact) return 'Non renseigné';
   if (typeof contact === 'string') return contact;
   if (typeof contact === 'object') {
-    // Structured format: { name, phone, relationship }
     const parts: string[] = [];
     if (contact.name) parts.push(contact.name);
     if (contact.phone) parts.push(contact.phone);
     if (contact.relationship) parts.push(`(${contact.relationship})`);
-    if (parts.length > 0) return parts.join(' — ');
-
-    // Legacy format: { note: "Name — Phone — Relationship" }
-    if (contact.note) {
-      return String(contact.note);
-    }
-
-    // Fallback: try to display any other key values
-    const values = Object.values(contact).filter(v => v != null && v !== '');
-    if (values.length > 0) return values.join(' — ');
-
-    return 'Non renseigné';
+    return parts.length > 0 ? parts.join(' — ') : JSON.stringify(contact);
   }
   return String(contact);
 }
@@ -292,37 +281,35 @@ export default function StaffDetailPage() {
   // ─── Edit Modal ─────────────────────────────────────────────────────────────
   const openEditModal = () => {
     if (!member) return;
+    // Parse bankDetails for form display
+    const bankDetailsObj = member.bankDetails && typeof member.bankDetails === 'object' ? member.bankDetails : {};
     setEditForm({
       firstName: member.firstName || '',
       lastName: member.lastName || '',
       email: member.email || '',
       phone: member.phone || '',
       position: member.position || '',
-      department: member.department || '',
-      category: member.category || 'PEDAGOGICAL',
+      category: member.category || 'ADMIN',
       gender: member.gender || 'MALE',
       dateOfBirth: member.dateOfBirth ? new Date(member.dateOfBirth).toISOString().split('T')[0] : '',
       birthDate: member.birthDate ? new Date(member.birthDate).toISOString().split('T')[0] : '',
       address: member.address || '',
-      emergencyContactName: typeof member.emergencyContact === 'object' && member.emergencyContact ? (member.emergencyContact.name || (member.emergencyContact.note ? member.emergencyContact.note.split(' — ')[0] || member.emergencyContact.note.split(' - ')[0] || '' : '')) : '',
-      emergencyContactPhone: typeof member.emergencyContact === 'object' && member.emergencyContact ? (member.emergencyContact.phone || (member.emergencyContact.note ? (member.emergencyContact.note.split(' — ')[1] || member.emergencyContact.note.split(' - ')[1] || '') : '')) : '',
-      emergencyContactRelationship: typeof member.emergencyContact === 'object' && member.emergencyContact ? (member.emergencyContact.relationship || (member.emergencyContact.note ? (member.emergencyContact.note.split(' — ')[2] || member.emergencyContact.note.split(' - ')[2] || '').replace(/[()]/g, '') : '')) : '',
-      qualifications: member.qualifications || '',
-      notes: member.notes || '',
-      // HR fields (fiche personnel complète)
+      hireDate: member.hireDate ? new Date(member.hireDate).toISOString().split('T')[0] : '',
+      contractType: member.contractType || '',
       nationality: member.nationality || '',
       maritalStatus: member.maritalStatus || '',
-      numberOfChildren: member.numberOfChildren != null ? String(member.numberOfChildren) : '',
+      numberOfChildren: member.numberOfChildren ?? '',
       nationalId: member.nationalId || '',
       cnssNumber: member.cnssNumber || '',
       ifuNumber: member.ifuNumber || '',
-      hireDate: member.hireDate ? new Date(member.hireDate).toISOString().split('T')[0] : '',
-      contractType: member.contractType || member.contracts?.[0]?.contractType || '',
-      status: member.status || 'ACTIVE',
-      salary: member.salary != null ? String(member.salary) : '',
-      bankName: member.bankDetails?.bankName || '',
-      bankAccountNumber: member.bankDetails?.accountNumber || '',
-      bankAccountName: member.bankDetails?.accountName || '',
+      salary: member.salary ?? '',
+      bankName: bankDetailsObj.bankName || '',
+      bankAccountNumber: bankDetailsObj.accountNumber || '',
+      bankAccountName: bankDetailsObj.accountName || '',
+      emergencyContact: typeof member.emergencyContact === 'object' && member.emergencyContact ? JSON.stringify(member.emergencyContact) : (member.emergencyContact || ''),
+      qualifications: member.qualifications || '',
+      department: member.department || '',
+      notes: member.notes || '',
     });
     setEditOpen(true);
   };
@@ -340,48 +327,45 @@ export default function StaffDetailPage() {
         }
       }
 
-      // Handle numberOfChildren — convert empty string to null, valid string to integer
+      // Handle salary — empty string → null, otherwise convert to number
+      if (submitData.salary === '' || submitData.salary === null || submitData.salary === undefined) {
+        delete submitData.salary;
+      } else {
+        submitData.salary = parseFloat(submitData.salary) || null;
+      }
+
+      // Handle numberOfChildren — empty string → null, otherwise convert to int
       if (submitData.numberOfChildren === '' || submitData.numberOfChildren === null || submitData.numberOfChildren === undefined) {
         submitData.numberOfChildren = null;
       } else {
         submitData.numberOfChildren = parseInt(submitData.numberOfChildren, 10) || null;
       }
 
-      // Handle emergencyContact — build structured object from 3 fields
-      const ecName = (submitData.emergencyContactName || '').trim();
-      const ecPhone = (submitData.emergencyContactPhone || '').trim();
-      const ecRelationship = (submitData.emergencyContactRelationship || '').trim();
-      delete submitData.emergencyContactName;
-      delete submitData.emergencyContactPhone;
-      delete submitData.emergencyContactRelationship;
-      if (ecName || ecPhone || ecRelationship) {
-        submitData.emergencyContact = { name: ecName, phone: ecPhone, relationship: ecRelationship };
-      } else {
-        submitData.emergencyContact = null;
-      }
-
-      // Handle salary — convert empty string to null, valid string to float
-      if (submitData.salary === '' || submitData.salary === null || submitData.salary === undefined) {
-        submitData.salary = null;
-      } else {
-        submitData.salary = parseFloat(submitData.salary) || null;
-      }
-
-      // Handle bankDetails — build structured object from 3 fields
-      const bankName = (submitData.bankName || '').trim();
-      const bankAccountNumber = (submitData.bankAccountNumber || '').trim();
-      const bankAccountName = (submitData.bankAccountName || '').trim();
-      delete submitData.bankName;
-      delete submitData.bankAccountNumber;
-      delete submitData.bankAccountName;
+      // Build bankDetails object from individual fields
+      const bankName = submitData.bankName || '';
+      const bankAccountNumber = submitData.bankAccountNumber || '';
+      const bankAccountName = submitData.bankAccountName || '';
       if (bankName || bankAccountNumber || bankAccountName) {
         submitData.bankDetails = { bankName, accountNumber: bankAccountNumber, accountName: bankAccountName };
       } else {
         submitData.bankDetails = null;
       }
+      // Remove individual bank fields (they are not Prisma fields)
+      delete submitData.bankName;
+      delete submitData.bankAccountNumber;
+      delete submitData.bankAccountName;
 
-      // Remove category from direct submission — it's mapped to roleType server-side
-      // (keep it in the payload so the backend can map it)
+      // Handle emergencyContact — try to parse as JSON, else wrap as object
+      if (typeof submitData.emergencyContact === 'string' && submitData.emergencyContact.trim()) {
+        try {
+          submitData.emergencyContact = JSON.parse(submitData.emergencyContact);
+        } catch {
+          // Wrap free-form text as structured object for backend compatibility
+          submitData.emergencyContact = { note: submitData.emergencyContact };
+        }
+      } else if (!submitData.emergencyContact || (typeof submitData.emergencyContact === 'string' && !submitData.emergencyContact.trim())) {
+        submitData.emergencyContact = null;
+      }
 
       await hrFetch<any>(hrUrl(`staff/${id}`, { tenantId: tenant.id }), {
         method: 'PUT',
@@ -449,33 +433,6 @@ export default function StaffDetailPage() {
       fetchMember();
     } catch (err: any) {
       toast({ variant: 'error', title: 'Erreur lors de la validation' });
-    }
-  };
-
-  const handleDocView = async (doc: any) => {
-    if (!tenant?.id) return;
-    try {
-      const response = await fetch(`/api/hr/staff/${id}/documents/${doc.id}/download?tenantId=${tenant.id}`, {
-        method: 'GET',
-        headers: { ...getClientAuthorizationHeader() },
-        credentials: 'include',
-        cache: 'no-store',
-      });
-      if (!response.ok) throw new Error('Erreur lors du téléchargement');
-      const blob = await response.blob();
-      // For images and PDFs, open in new tab; for others, trigger download
-      const url = URL.createObjectURL(blob);
-      if (doc.mimeType?.startsWith('image/') || doc.mimeType === 'application/pdf') {
-        window.open(url, '_blank');
-      } else {
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = doc.fileName || 'document';
-        link.click();
-        URL.revokeObjectURL(url);
-      }
-    } catch (err: any) {
-      toast({ variant: 'error', title: err.message || 'Erreur lors de la visualisation du document' });
     }
   };
 
@@ -557,214 +514,183 @@ export default function StaffDetailPage() {
               </div>
               <button onClick={() => setEditOpen(false)} className="rounded-lg p-1.5 hover:bg-white/15 transition-colors"><X className="h-5 w-5" /></button>
             </div>
-            <form onSubmit={handleEditSubmit} className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
+            <form onSubmit={handleEditSubmit} className="p-6 space-y-5 max-h-[72vh] overflow-y-auto">
+
               {/* ── Section: Identité ── */}
-              <div className="space-y-1 mb-3">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Identité</h4>
-                <div className="h-px bg-slate-100" />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Prénom</label>
-                  <input required type="text" className={inputClass} value={editForm.firstName} onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })} />
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-400">
+                  <User className="h-3.5 w-3.5" /> Identité
                 </div>
-                <div>
-                  <label className={labelClass}>Nom</label>
-                  <input required type="text" className={inputClass} value={editForm.lastName} onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelClass}>Prénom</label>
+                    <input required type="text" className={inputClass} value={editForm.firstName} onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Nom</label>
+                    <input required type="text" className={inputClass} value={editForm.lastName} onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })} />
+                  </div>
                 </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Genre</label>
-                  <select className={inputClass} value={editForm.gender} onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}>
-                    <option value="MALE">Masculin</option>
-                    <option value="FEMALE">Féminin</option>
-                  </select>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelClass}>Genre</label>
+                    <select className={inputClass} value={editForm.gender} onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}>
+                      <option value="MALE">Masculin</option>
+                      <option value="FEMALE">Féminin</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Date de naissance</label>
+                    <input type="date" className={inputClass} value={editForm.birthDate} onChange={(e) => setEditForm({ ...editForm, birthDate: e.target.value })} />
+                  </div>
                 </div>
-                <div>
-                  <label className={labelClass}>Date de naissance</label>
-                  <input type="date" className={inputClass} value={editForm.birthDate} onChange={(e) => setEditForm({ ...editForm, birthDate: e.target.value })} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelClass}>Nationalité</label>
+                    <input type="text" className={inputClass} value={editForm.nationality} onChange={(e) => setEditForm({ ...editForm, nationality: e.target.value })} placeholder="Ex : Béninoise" />
+                  </div>
+                  <div>
+                    <label className={labelClass}>N° Pièce d&apos;identité</label>
+                    <input type="text" className={inputClass} value={editForm.nationalId} onChange={(e) => setEditForm({ ...editForm, nationalId: e.target.value })} placeholder="CNI / Passeport" />
+                  </div>
                 </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Nationalité</label>
-                  <input type="text" className={inputClass} value={editForm.nationality} onChange={(e) => setEditForm({ ...editForm, nationality: e.target.value })} placeholder="Ex: Béninoise" />
-                </div>
-                <div>
-                  <label className={labelClass}>Situation matrimoniale</label>
-                  <select className={inputClass} value={editForm.maritalStatus} onChange={(e) => setEditForm({ ...editForm, maritalStatus: e.target.value })}>
-                    <option value="">— Non renseigné —</option>
-                    <option value="SINGLE">Célibataire</option>
-                    <option value="MARRIED">Marié(e)</option>
-                    <option value="DIVORCED">Divorcé(e)</option>
-                    <option value="WIDOWED">Veuf/Veuve</option>
-                    <option value="SEPARATED">Séparé(e)</option>
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Nombre d&apos;enfants</label>
-                  <input type="number" min="0" className={inputClass} value={editForm.numberOfChildren} onChange={(e) => setEditForm({ ...editForm, numberOfChildren: e.target.value })} placeholder="0" />
-                </div>
-                <div>
-                  <label className={labelClass}>N° pièce d&apos;identité</label>
-                  <input type="text" className={inputClass} value={editForm.nationalId} onChange={(e) => setEditForm({ ...editForm, nationalId: e.target.value })} placeholder="CNI, passeport…" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelClass}>Situation matrimoniale</label>
+                    <select className={inputClass} value={editForm.maritalStatus} onChange={(e) => setEditForm({ ...editForm, maritalStatus: e.target.value })}>
+                      <option value="">— Non renseigné —</option>
+                      <option value="SINGLE">Célibataire</option>
+                      <option value="MARRIED">Marié(e)</option>
+                      <option value="DIVORCED">Divorcé(e)</option>
+                      <option value="WIDOWED">Veuf/Veuve</option>
+                      <option value="SEPARATED">Séparé(e)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Nombre d&apos;enfants</label>
+                    <input type="number" min="0" className={inputClass} value={editForm.numberOfChildren} onChange={(e) => setEditForm({ ...editForm, numberOfChildren: e.target.value })} placeholder="0" />
+                  </div>
                 </div>
               </div>
 
               {/* ── Section: Contact ── */}
-              <div className="space-y-1 mb-3 pt-2">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Contact & Localisation</h4>
-                <div className="h-px bg-slate-100" />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Email</label>
-                  <input type="email" className={inputClass} value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
+              <div className="space-y-4 pt-2">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-400">
+                  <Phone className="h-3.5 w-3.5" /> Contact
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelClass}>Email</label>
+                    <input type="email" className={inputClass} value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Téléphone</label>
+                    <input type="tel" className={inputClass} value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
+                  </div>
                 </div>
                 <div>
-                  <label className={labelClass}>Téléphone</label>
-                  <input type="tel" className={inputClass} value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
-                </div>
-              </div>
-              <div>
-                <label className={labelClass}>Adresse</label>
-                <input type="text" className={inputClass} value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className={labelClass}>Nom du contact d&apos;urgence</label>
-                  <input type="text" className={inputClass} value={editForm.emergencyContactName} onChange={(e) => setEditForm({ ...editForm, emergencyContactName: e.target.value })} placeholder='Ex: TOKPONWOUE' />
+                  <label className={labelClass}>Adresse</label>
+                  <input type="text" className={inputClass} value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
                 </div>
                 <div>
-                  <label className={labelClass}>Tél. d&apos;urgence</label>
-                  <input type="tel" className={inputClass} value={editForm.emergencyContactPhone} onChange={(e) => setEditForm({ ...editForm, emergencyContactPhone: e.target.value })} placeholder='Ex: 0198765445' />
-                </div>
-                <div>
-                  <label className={labelClass}>Lien de parenté</label>
-                  <select className={inputClass} value={editForm.emergencyContactRelationship} onChange={(e) => setEditForm({ ...editForm, emergencyContactRelationship: e.target.value })}>
-                    <option value="">— Non renseigné —</option>
-                    <option value="Époux">Époux</option>
-                    <option value="Épouse">Épouse</option>
-                    <option value="Père">Père</option>
-                    <option value="Mère">Mère</option>
-                    <option value="Frère">Frère</option>
-                    <option value="Sœur">Sœur</option>
-                    <option value="Fils">Fils</option>
-                    <option value="Fille">Fille</option>
-                    <option value="Oncle">Oncle</option>
-                    <option value="Tante">Tante</option>
-                    <option value="Cousin">Cousin</option>
-                    <option value="Cousine">Cousine</option>
-                    <option value="Ami">Ami(e)</option>
-                    <option value="Tuteur">Tuteur/Tutrice</option>
-                    <option value="Autre">Autre</option>
-                  </select>
+                  <label className={labelClass}>Contact d&apos;urgence</label>
+                  <input type="text" className={inputClass} value={editForm.emergencyContact} onChange={(e) => setEditForm({ ...editForm, emergencyContact: e.target.value })} placeholder="Nom — Tél — Lien de parenté" />
                 </div>
               </div>
 
               {/* ── Section: Professionnel ── */}
-              <div className="space-y-1 mb-3 pt-2">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Professionnel</h4>
-                <div className="h-px bg-slate-100" />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Poste</label>
-                  <input type="text" className={inputClass} value={editForm.position} onChange={(e) => setEditForm({ ...editForm, position: e.target.value })} />
+              <div className="space-y-4 pt-2">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-400">
+                  <Briefcase className="h-3.5 w-3.5" /> Professionnel
                 </div>
-                <div>
-                  <label className={labelClass}>Département</label>
-                  <input type="text" className={inputClass} value={editForm.department} onChange={(e) => setEditForm({ ...editForm, department: e.target.value })} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelClass}>Poste</label>
+                    <input type="text" className={inputClass} value={editForm.position} onChange={(e) => setEditForm({ ...editForm, position: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Département</label>
+                    <input type="text" className={inputClass} value={editForm.department} onChange={(e) => setEditForm({ ...editForm, department: e.target.value })} />
+                  </div>
                 </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Catégorie</label>
-                  <select className={inputClass} value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}>
-                    <option value="PEDAGOGICAL">Corps Enseignant</option>
-                    <option value="ADMIN">Administration</option>
-                    <option value="SUPPORT">Personnel d&apos;appui</option>
-                  </select>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelClass}>Catégorie</label>
+                    <select className={inputClass} value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}>
+                      <option value="PEDAGOGICAL">Corps Enseignant</option>
+                      <option value="ADMIN">Administration</option>
+                      <option value="SUPPORT">Personnel d&apos;appui</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Type de contrat</label>
+                    <select className={inputClass} value={editForm.contractType} onChange={(e) => setEditForm({ ...editForm, contractType: e.target.value })}>
+                      <option value="">— Non défini —</option>
+                      <option value="CDI">CDI</option>
+                      <option value="CDD">CDD</option>
+                      <option value="VACATAIRE">Vacataire</option>
+                      <option value="STAGE">Stage</option>
+                      <option value="CONSULTANT">Consultant</option>
+                    </select>
+                  </div>
                 </div>
-                <div>
-                  <label className={labelClass}>Date d&apos;embauche</label>
-                  <input type="date" className={inputClass} value={editForm.hireDate} onChange={(e) => setEditForm({ ...editForm, hireDate: e.target.value })} />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Type de contrat</label>
-                  <select className={inputClass} value={editForm.contractType} onChange={(e) => setEditForm({ ...editForm, contractType: e.target.value })}>
-                    <option value="">— Non renseigné —</option>
-                    <option value="CDI">CDI</option>
-                    <option value="CDD">CDD</option>
-                    <option value="STAGE">Stage</option>
-                    <option value="CONSULTANT">Consultant</option>
-                    <option value="INTERIM">Intérim</option>
-                    <option value="BENEFICIAT">Bénéficiaire</option>
-                  </select>
-                </div>
-                <div>
-                  <label className={labelClass}>Statut</label>
-                  <select className={inputClass} value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}>
-                    <option value="ACTIVE">Actif</option>
-                    <option value="INACTIVE">Inactif</option>
-                    <option value="SUSPENDED">Suspendu</option>
-                    <option value="ON_LEAVE">En congé</option>
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Qualifications</label>
-                  <input type="text" className={inputClass} value={editForm.qualifications} onChange={(e) => setEditForm({ ...editForm, qualifications: e.target.value })} />
-                </div>
-                <div>
-                  <label className={labelClass}>Salaire (FCFA)</label>
-                  <input type="number" min="0" step="0.01" className={inputClass} value={editForm.salary} onChange={(e) => setEditForm({ ...editForm, salary: e.target.value })} placeholder="0" />
-                </div>
-              </div>
-              <div>
-                <label className={labelClass}>Notes</label>
-                <textarea className={inputClass + ' min-h-[60px]'} value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
-              </div>
-
-              {/* ── Section: Informations bancaires ── */}
-              <div className="space-y-1 mb-3 pt-2">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Informations bancaires</h4>
-                <div className="h-px bg-slate-100" />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className={labelClass}>Banque</label>
-                  <input type="text" className={inputClass} value={editForm.bankName} onChange={(e) => setEditForm({ ...editForm, bankName: e.target.value })} placeholder="Ex: BDE, Ecobank…" />
-                </div>
-                <div>
-                  <label className={labelClass}>N° de compte</label>
-                  <input type="text" className={inputClass} value={editForm.bankAccountNumber} onChange={(e) => setEditForm({ ...editForm, bankAccountNumber: e.target.value })} placeholder="Numéro de compte bancaire" />
-                </div>
-                <div>
-                  <label className={labelClass}>Titulaire du compte</label>
-                  <input type="text" className={inputClass} value={editForm.bankAccountName} onChange={(e) => setEditForm({ ...editForm, bankAccountName: e.target.value })} placeholder="Nom du titulaire" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelClass}>Date d&apos;embauche</label>
+                    <input type="date" className={inputClass} value={editForm.hireDate} onChange={(e) => setEditForm({ ...editForm, hireDate: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Qualifications</label>
+                    <input type="text" className={inputClass} value={editForm.qualifications} onChange={(e) => setEditForm({ ...editForm, qualifications: e.target.value })} placeholder="Diplômes, certifications…" />
+                  </div>
                 </div>
               </div>
 
-              {/* ── Section: Identifiants officiels ── */}
-              <div className="space-y-1 mb-3 pt-2">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Identifiants officiels</h4>
-                <div className="h-px bg-slate-100" />
+              {/* ── Section: Rémunération ── */}
+              <div className="space-y-4 pt-2">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-400">
+                  <DollarSign className="h-3.5 w-3.5" /> Rémunération & Banque
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelClass}>Salaire de base (FCFA)</label>
+                    <input type="number" min="0" step="1" className={inputClass} value={editForm.salary} onChange={(e) => setEditForm({ ...editForm, salary: e.target.value })} placeholder="0" />
+                  </div>
+                  <div>
+                    <label className={labelClass}>N° CNSS</label>
+                    <input type="text" className={inputClass} value={editForm.cnssNumber} onChange={(e) => setEditForm({ ...editForm, cnssNumber: e.target.value })} placeholder="Numéro d&apos;immatriculation" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelClass}>N° IFU</label>
+                    <input type="text" className={inputClass} value={editForm.ifuNumber} onChange={(e) => setEditForm({ ...editForm, ifuNumber: e.target.value })} placeholder="Identifiant Fiscal Unique" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className={labelClass}>Banque</label>
+                    <input type="text" className={inputClass} value={editForm.bankName} onChange={(e) => setEditForm({ ...editForm, bankName: e.target.value })} placeholder="Nom de la banque" />
+                  </div>
+                  <div>
+                    <label className={labelClass}>N° Compte bancaire</label>
+                    <input type="text" className={inputClass} value={editForm.bankAccountNumber} onChange={(e) => setEditForm({ ...editForm, bankAccountNumber: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Titulaire du compte</label>
+                    <input type="text" className={inputClass} value={editForm.bankAccountName} onChange={(e) => setEditForm({ ...editForm, bankAccountName: e.target.value })} />
+                  </div>
+                </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>N° CNSS</label>
-                  <input type="text" className={inputClass} value={editForm.cnssNumber} onChange={(e) => setEditForm({ ...editForm, cnssNumber: e.target.value })} placeholder="Numéro d'immatriculation CNSS" />
+
+              {/* ── Section: Notes ── */}
+              <div className="space-y-4 pt-2">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-400">
+                  <FileText className="h-3.5 w-3.5" /> Notes
                 </div>
                 <div>
-                  <label className={labelClass}>N° IFU</label>
-                  <input type="text" className={inputClass} value={editForm.ifuNumber} onChange={(e) => setEditForm({ ...editForm, ifuNumber: e.target.value })} placeholder="Identifiant Fiscal Unique" />
+                  <label className={labelClass}>Notes / Observations</label>
+                  <textarea className={inputClass + ' min-h-[80px]'} value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
                 </div>
               </div>
 
@@ -945,8 +871,20 @@ export default function StaffDetailPage() {
                   </div>
                   <div className="flex items-center gap-3 text-sm text-gray-600">
                     <CheckCircle2 size={18} className="text-emerald-500" />
-                    <span className="font-medium text-emerald-700">Contrat {member.contracts?.[0]?.contractType || member.contracts?.[0]?.type || 'N/A'}</span>
+                    <span className="font-medium text-emerald-700">Contrat {member.contracts?.[0]?.contractType || member.contractType || 'N/A'}</span>
                   </div>
+                  {member.hireDate && (
+                    <div className="flex items-center gap-3 text-sm text-gray-600">
+                      <Clock size={18} className="text-gray-400" />
+                      <span>Embauché le {new Date(member.hireDate).toLocaleDateString('fr-FR')}</span>
+                    </div>
+                  )}
+                  {(member.salary || member.contracts?.[0]?.baseSalary) && (
+                    <div className="flex items-center gap-3 text-sm text-gray-600">
+                      <DollarSign size={18} className="text-gray-400" />
+                      <span className="font-medium">{formatCurrency(member.salary || member.contracts?.[0]?.baseSalary)} FCFA</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-8 flex gap-2">
@@ -999,10 +937,36 @@ export default function StaffDetailPage() {
                 <span className="text-xs font-bold text-emerald-600">{member.tenantMatricule || '—'}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-500">Immatriculation CNSS</span>
+                <span className="text-sm text-gray-500">N° CNSS</span>
                 <Badge className={member.cnssNumber ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}>
-                  {member.cnssNumber ? 'Déclaré' : 'Non déclaré'}
+                  {member.cnssNumber || 'Non déclaré'}
                 </Badge>
+              </div>
+              {member.ifuNumber && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-500">N° IFU</span>
+                  <span className="text-xs font-bold text-slate-700">{member.ifuNumber}</span>
+                </div>
+              )}
+              {member.nationalId && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-500">N° Pièce d&apos;identité</span>
+                  <span className="text-xs font-bold text-slate-700">{member.nationalId}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-500">Nationalité</span>
+                <span className="text-sm font-bold text-gray-900">{member.nationality || '—'}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-500">Situation matrimoniale</span>
+                <span className="text-sm font-bold text-gray-900">
+                  {member.maritalStatus === 'SINGLE' ? 'Célibataire' :
+                   member.maritalStatus === 'MARRIED' ? 'Marié(e)' :
+                   member.maritalStatus === 'DIVORCED' ? 'Divorcé(e)' :
+                   member.maritalStatus === 'WIDOWED' ? 'Veuf/Veuve' :
+                   member.maritalStatus === 'SEPARATED' ? 'Séparé(e)' : '—'}
+                </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm text-gray-500">Ancienneté</span>
@@ -1157,18 +1121,6 @@ export default function StaffDetailPage() {
                       <InfoField label="Numéro IFU" value={member.ifuNumber || 'N/A'} />
                     </div>
                   </section>
-
-                  <section className="md:col-span-2 pt-6 border-t border-gray-50">
-                    <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
-                      <DollarSign size={20} className="text-blue-500" />
-                      Rémunération & Banque
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      <InfoField label="Salaire" value={member.salary ? `${Number(member.salary).toLocaleString('fr-FR')} FCFA` : 'Non renseigné'} />
-                      <InfoField label="Banque" value={member.bankDetails?.bankName || 'Non renseignée'} />
-                      <InfoField label="N° de compte" value={member.bankDetails?.accountNumber || 'Non renseigné'} />
-                    </div>
-                  </section>
                 </div>
               </Card>
             </TabsContent>
@@ -1264,14 +1216,6 @@ export default function StaffDetailPage() {
                                           </span>
                                           {/* Actions */}
                                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            {/* View/Download button */}
-                                            <button 
-                                              onClick={() => handleDocView(doc)}
-                                              className="p-1 text-blue-500 hover:bg-blue-50 rounded transition-colors"
-                                              title="Voir / Télécharger"
-                                            >
-                                              <Eye className="h-3.5 w-3.5" />
-                                            </button>
                                             {doc.validationStatus === 'PENDING' && (
                                               <>
                                                 <button 
@@ -1353,14 +1297,14 @@ export default function StaffDetailPage() {
                               </p>
                             </div>
                           </div>
-                          <Badge className={contract.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700' : contract.status === 'PENDING' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}>
-                            {contract.status === 'ACTIVE' ? 'En vigueur' : contract.status === 'PENDING' ? 'En attente' : contract.status === 'EXPIRED' ? 'Expiré' : contract.status}
+                          <Badge className={contract.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}>
+                            {contract.status === 'ACTIVE' ? 'En vigueur' : contract.status === 'EXPIRED' ? 'Expiré' : contract.status}
                           </Badge>
                         </div>
                         <div className="grid grid-cols-2 gap-4 mt-4 pt-3 border-t border-slate-50">
                           <div>
                             <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Salaire de base</p>
-                            <p className="text-sm font-bold text-emerald-600">{Number(contract.baseSalary).toLocaleString()} XOF</p>
+                            <p className="text-sm font-bold text-emerald-600">{formatCurrency(contract.baseSalary)}</p>
                           </div>
                           <div>
                             <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Mode de paiement</p>

@@ -56,10 +56,7 @@ export function LeavesWorkspace() {
   });
 
   async function fetchLeaves() {
-    if (!tenant?.id) {
-      setLoading(false);
-      return;
-    }
+    if (!tenant?.id) return;
     try {
       setLoading(true);
       const queryParams: Record<string, string> = { tenantId: tenant.id };

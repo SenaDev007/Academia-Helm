@@ -12,6 +12,7 @@ import localFont from 'next/font/local';
 import Script from 'next/script';
 import './globals.css';
 import { InstallPromptWrapper } from '@/components/pwa/InstallPromptWrapper';
+import { ServiceWorkerCleanup } from '@/components/pwa/ServiceWorkerCleanup';
 import { BRAND } from '@/lib/brand';
 import { buildSiteVerification, getPublicSiteUrl, DEFAULT_OG_IMAGE_PATH } from '@/lib/seo';
 import { buildHreflangLanguages } from '@/lib/seo/locales';
@@ -138,6 +139,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  viewportFit: 'cover',
   themeColor: '#0D1F6E',
 };
 
@@ -154,6 +156,7 @@ export default function RootLayout({
       <body className={`${inter.className} antialiased overflow-x-hidden`}>
         {children}
         <InstallPromptWrapper />
+        <ServiceWorkerCleanup />
         <ToastContainer />
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-TG29Y7XL8S"

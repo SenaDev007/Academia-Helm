@@ -10,10 +10,10 @@
 
 import { redirect } from 'next/navigation';
 import dynamic from 'next/dynamic';
+import { headers } from 'next/headers';
 import { getServerSession } from '@/lib/auth/session';
 import { ModalProvider } from '@/components/modules/blueprint/modals/ModalProvider';
 import AppLayoutClient from './layout-client';
-import { SessionRecovery } from './session-recovery';
 import type { User, Tenant } from '@/types';
 
 // ✅ Lazy load du layout lourd pour améliorer le temps de chargement initial
@@ -21,14 +21,6 @@ const PilotageLayout = dynamic(
   () => import('@/components/pilotage/PilotageLayout'),
   {
     ssr: true, // ✅ Garder SSR pour le SEO
-    loading: () => (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center px-4">
-          <div className="w-12 h-12 border-4 border-[#0b2f73] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-sm text-slate-600">Chargement de l&apos;interface...</p>
-        </div>
-      </div>
-    ),
   }
 );
 
@@ -40,10 +32,20 @@ export default async function AppLayout({
   const session = await getServerSession();
 
   if (!session?.user) {
-    // Instead of immediate redirect (which causes blank page on mobile when
-    // cookies haven't propagated yet), render a client-side recovery component
-    // that attempts to re-establish the session from localStorage before redirecting.
-    return <SessionRecovery />;
+    // Sur un sous-domaine, rediriger vers /login sur le même sous-domaine
+    // (le middleware autorise /login avec session pour éviter les boucles).
+    // Sur le domaine principal, rediriger vers /login normalement.
+    const headersList = await headers();
+    const host = headersList.get('host') || headersList.get('x-forwarded-host') || '';
+    const parts = host.split('.');
+    const hasSubdomain = parts.length >= 3 && !['www', 'dev', 'test', 'staging', 'preview', 'admin', 'api', 'portal', 'app'].includes(parts[0]);
+    
+    if (hasSubdomain) {
+      // Construire l'URL de login sur le même sous-domaine
+      const protocol = headersList.get('x-forwarded-proto') || 'https';
+      redirect(`${protocol}://${host}/login`);
+    }
+    redirect('/login');
   }
 
   const user = session.user as User;

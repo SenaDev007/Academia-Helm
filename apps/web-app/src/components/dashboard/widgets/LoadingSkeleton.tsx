@@ -1,24 +1,36 @@
 /**
  * ============================================================================
- * LOADING SKELETON - SKELETON DE CHARGEMENT
+ * LOADING SKELETON - DASHBOARD WIDGETS PREMIUM BRANDED
  * ============================================================================
+ *
+ * Skeleton premium pour les widgets du tableau de bord.
+ * Adapte automatiquement le rendu entre desktop et mobile :
+ * - Desktop : CardSkeleton avec corner accents et slide-up
+ * - Mobile : CardSkeletonMobile avec layout 2 colonnes compact
+ *
+ * Palette : Navy (#0b2f73), Blue (#1d4fa5), Gold (#f5b335)
  */
 
 'use client';
+
+import { useEffect, useState } from 'react';
+import { CardSkeleton } from '@/components/loading/Skeleton';
+import { CardSkeletonMobile } from '@/components/loading/SkeletonMobile';
 
 interface LoadingSkeletonProps {
   count?: number;
 }
 
 export function LoadingSkeleton({ count = 4 }: LoadingSkeletonProps) {
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-      {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="bg-white p-6 rounded-lg shadow animate-pulse">
-          <div className="h-4 bg-gray-200 rounded w-1/2 mb-4"></div>
-          <div className="h-8 bg-gray-200 rounded w-1/3"></div>
-        </div>
-      ))}
-    </div>
-  );
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    setIsMobile(typeof window !== 'undefined' && window.innerWidth < 768);
+  }, []);
+
+  if (isMobile) {
+    return <CardSkeletonMobile count={count} />;
+  }
+
+  return <CardSkeleton count={count} />;
 }

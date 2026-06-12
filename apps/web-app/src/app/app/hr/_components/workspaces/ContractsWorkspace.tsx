@@ -7,21 +7,20 @@ import {
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
-import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { toast } from '@/components/ui/toast';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { cn } from '@/lib/utils';
+import { cn, formatCurrency } from '@/lib/utils';
 import { ContractTerminationModal } from '../modals/ContractTerminationModal';
 
 const PRIMARY = '#1A2BA6';
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   ACTIVE:     { label: 'En vigueur',                className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
-  PENDING:    { label: 'En attente de signature',  className: 'bg-amber-50 text-amber-700 border border-amber-200' },
   DRAFT:      { label: 'En attente de signature',   className: 'bg-amber-50 text-amber-600 border border-amber-200' },
   EXPIRED:    { label: 'Expiré',                    className: 'bg-slate-100 text-slate-500 border border-slate-200' },
   TERMINATED: { label: 'Résilié',                   className: 'bg-rose-50 text-rose-600 border border-rose-200' },
+  DELETED:    { label: 'Supprimé',                  className: 'bg-slate-100 text-slate-400 border border-slate-200' },
 };
 
 const inputClass =
@@ -55,10 +54,7 @@ export function ContractsWorkspace() {
   const [selectedContract, setSelectedContract] = useState<any>(null);
 
   async function fetchContracts() {
-    if (!tenant?.id) {
-      setLoading(false);
-      return;
-    }
+    if (!tenant?.id) return;
     try {
       setLoading(true);
       const queryParams: Record<string, string> = { tenantId: tenant.id };
@@ -96,7 +92,7 @@ export function ContractsWorkspace() {
           endDate: modalForm.endDate ? new Date(modalForm.endDate).toISOString() : null,
           baseSalary: parseFloat(modalForm.baseSalary),
           paymentMode: modalForm.paymentMode,
-          status: 'PENDING',
+          status: 'ACTIVE',
         },
       });
       toast({ variant: 'success', title: 'Contrat créé avec succès' });
@@ -204,8 +200,8 @@ export function ContractsWorkspace() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: 'Contrats actifs', value: contracts.filter((c) => c.status === 'ACTIVE').length },
-          { label: 'En attente de signature', value: contracts.filter((c) => c.status === 'PENDING' || c.status === 'DRAFT').length },
-          { label: 'CDI en cours', value: contracts.filter((c) => c.contractType === 'CDI' && c.status === 'ACTIVE').length },
+          { label: 'En attente de signature', value: contracts.filter((c) => c.status === 'DRAFT').length },
+          { label: 'Actifs non signés', value: contracts.filter((c) => c.status === 'ACTIVE' && !c.signedAt).length },
           { label: 'Échéances J-30', value: expiringSoon.length },
         ].map((k, i) => (
           <div key={i} className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
@@ -229,10 +225,9 @@ export function ContractsWorkspace() {
             />
           </div>
           <select className={selectClass} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-            <option value="ALL">Tous les contrats</option>
-            <option value="ACTIVE">En vigueur</option>
-            <option value="PENDING">En attente de signature</option>
+            <option value="ACTIVE">Contrats Actifs</option>
             <option value="DRAFT">En attente de signature</option>
+            <option value="ALL">Historique Complet</option>
             <option value="EXPIRED">Expirés</option>
             <option value="TERMINATED">Terminés</option>
           </select>
@@ -271,7 +266,6 @@ export function ContractsWorkspace() {
               index={idx}
               tenantId={tenant.id}
               onTerminate={(c) => { setSelectedContract(c); setTerminationModalOpen(true); }}
-              onRefresh={fetchContracts}
             />
           ))}
         </div>
@@ -289,9 +283,8 @@ export function ContractsWorkspace() {
   );
 }
 
-function ContractRow({ contract, index, tenantId, onTerminate, onRefresh }: { contract: any; index: number; tenantId: string; onTerminate: (contract: any) => void; onRefresh: () => void }) {
+function ContractRow({ contract, index, tenantId, onTerminate }: { contract: any; index: number; tenantId: string; onTerminate: (contract: any) => void }) {
   const [generating, setGenerating] = useState(false);
-  const [downloading, setDownloading] = useState(false);
 
   const isExpiringSoon = () => {
     if (!contract.endDate || contract.status !== 'ACTIVE') return false;
@@ -300,81 +293,17 @@ function ContractRow({ contract, index, tenantId, onTerminate, onRefresh }: { co
   };
   const status = STATUS_CONFIG[contract.status] || STATUS_CONFIG.EXPIRED;
   const isSigned = !!contract.signedAt;
-  const hasPdf = !!(contract.terms as any)?.pdfUrl;
 
   async function handleGeneratePdf() {
     try {
       setGenerating(true);
       await hrFetch(hrUrl(`contracts/${contract.id}/generate-pdf`, { tenantId }), { method: 'POST' });
       toast({ variant: 'success', title: 'PDF généré avec succès !' });
-      onRefresh(); // Refresh to get the updated pdfUrl
-    } catch (err: any) {
-      const msg = err?.message || 'Erreur lors de la génération PDF.';
-      toast({ variant: 'error', title: msg });
+    } catch {
+      toast({ variant: 'error', title: 'Erreur lors de la génération PDF.' });
     } finally {
       setGenerating(false);
     }
-  }
-
-  async function handleDownloadPdf() {
-    try {
-      setDownloading(true);
-      const response = await fetch(`/api/hr/contracts/${contract.id}/pdf?tenantId=${tenantId}`, {
-        method: 'GET',
-        headers: {
-          ...getClientAuthorizationHeader(),
-        },
-        credentials: 'include',
-        cache: 'no-store',
-      });
-
-      if (!response.ok) {
-        // If PDF doesn't exist yet, generate it first then download
-        if (response.status === 404 || response.status === 500) {
-          await hrFetch(hrUrl(`contracts/${contract.id}/generate-pdf`, { tenantId }), { method: 'POST' });
-          const retryResponse = await fetch(`/api/hr/contracts/${contract.id}/pdf?tenantId=${tenantId}`, {
-            method: 'GET',
-            headers: { ...getClientAuthorizationHeader() },
-            credentials: 'include',
-            cache: 'no-store',
-          });
-          if (!retryResponse.ok) throw new Error('Erreur téléchargement après génération');
-          const blob = await retryResponse.blob();
-          triggerPdfDownload(blob);
-        } else {
-          throw new Error('Erreur téléchargement');
-        }
-      } else {
-        const contentType = response.headers.get('content-type') || '';
-        if (contentType.includes('application/pdf') || contentType.includes('octet-stream')) {
-          const blob = await response.blob();
-          triggerPdfDownload(blob);
-        } else {
-          const data = await response.json();
-          if (data.pdfUrl) {
-            const link = document.createElement('a');
-            link.href = data.pdfUrl;
-            link.download = `Contrat_${contract.staff?.lastName}_${contract.staff?.firstName}_${contract.contractType}.pdf`;
-            link.click();
-          }
-        }
-      }
-      toast({ variant: 'success', title: 'Téléchargement lancé.' });
-    } catch (err) {
-      console.error('[Contract PDF Download] Error:', err);
-      toast({ variant: 'error', title: 'Erreur lors du téléchargement PDF.' });
-    } finally {
-      setDownloading(false);
-    }
-  }
-
-  function triggerPdfDownload(blob: Blob) {
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    const staffName = `${contract.staff?.lastName}_${contract.staff?.firstName}`.replace(/\s+/g, '_');
-    link.download = `Contrat_${staffName}_${contract.contractType}.pdf`;
-    link.click();
-    URL.revokeObjectURL(link.href);
   }
 
   return (
@@ -417,7 +346,7 @@ function ContractRow({ contract, index, tenantId, onTerminate, onRefresh }: { co
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Salaire de base</p>
             <div className="flex items-center gap-1.5 text-sm font-bold text-emerald-600">
-              <DollarSign className="h-3.5 w-3.5 shrink-0" />{Number(contract.baseSalary).toLocaleString()} XOF
+              <DollarSign className="h-3.5 w-3.5 shrink-0" />{formatCurrency(contract.baseSalary)}
             </div>
           </div>
           <div className="hidden md:block">
@@ -431,22 +360,14 @@ function ContractRow({ contract, index, tenantId, onTerminate, onRefresh }: { co
         </div>
         <div className="flex items-center gap-2 border-t md:border-none pt-3 md:pt-0 w-full md:w-auto">
           <button
-            onClick={handleDownloadPdf}
-            disabled={downloading}
-            className="flex-shrink-0 p-2 text-slate-400 hover:text-[#1A2BA6] transition-colors rounded-lg hover:bg-slate-50"
-            title="Télécharger PDF"
-          >
-            {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-          </button>
-          <button
             onClick={handleGeneratePdf}
             disabled={generating}
-            className="flex-shrink-0 p-2 text-slate-400 hover:text-emerald-600 transition-colors rounded-lg hover:bg-emerald-50"
-            title="Générer / Régénérer PDF"
+            className="flex-shrink-0 p-2 text-slate-400 hover:text-[#1A2BA6] transition-colors rounded-lg hover:bg-slate-50"
+            title="Générer PDF"
           >
-            {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+            {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
           </button>
-          {(contract.status === 'ACTIVE' || contract.status === 'PENDING') && (
+          {contract.status === 'ACTIVE' && (
             <button
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); onTerminate(contract); }}
               className="flex-shrink-0 p-2 text-rose-400 hover:text-rose-600 transition-colors rounded-lg hover:bg-rose-50"

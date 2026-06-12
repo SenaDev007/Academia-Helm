@@ -6,9 +6,10 @@
  *   - même origine → /api/hr/... → BFF proxy → NestJS
  *   - Auth via localStorage.accessToken (getClientAuthorizationHeader)
  *   - credentials: 'include' pour relay cookies
+ *   - Auto-refresh on 401 before giving up
  */
 
-import { getClientAuthorizationHeader, getClientTenantId } from '@/lib/auth/client-access-token';
+import { getClientAuthorizationHeader, tryRefreshAccessToken } from '@/lib/auth/client-access-token';
 
 export async function hrFetch<T>(
   path: string,
@@ -17,6 +18,7 @@ export async function hrFetch<T>(
     body?: any;
     headers?: Record<string, string>;
   },
+  _isRetry = false,
 ): Promise<T> {
   // Cache-busting pour les requêtes GET : ajoute _t=timestamp
   // pour contourner le cache Cloudflare même si les headers anti-cache
@@ -28,19 +30,11 @@ export async function hrFetch<T>(
     fetchUrl = `${fetchUrl}${separator}_t=${Date.now()}`;
   }
 
-  // Construire les headers avec X-Tenant-ID explicite
-  const tenantId = getClientTenantId();
-  const extraHeaders: Record<string, string> = {};
-  if (tenantId) {
-    extraHeaders['x-tenant-id'] = tenantId;
-  }
-
   const res = await fetch(fetchUrl, {
     method,
     headers: {
       ...(options?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
       ...getClientAuthorizationHeader(),
-      ...extraHeaders,
       ...options?.headers,
     },
     credentials: 'include',
@@ -52,6 +46,14 @@ export async function hrFetch<T>(
           : JSON.stringify(options.body),
     }),
   });
+
+  // On 401, attempt token refresh once before giving up
+  if (res.status === 401 && !_isRetry) {
+    const refreshed = await tryRefreshAccessToken();
+    if (refreshed) {
+      return hrFetch<T>(path, options, true);
+    }
+  }
 
   const text = await res.text();
   if (!res.ok) {

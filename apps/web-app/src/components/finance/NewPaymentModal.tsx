@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/components/ui/use-toast';
 import { financeService } from '@/services/finance.service';
 import { networkDetectionService } from '@/lib/offline/network-detection.service';
+import { formatCurrency } from '@/lib/utils';
 
 const METHODS = [
   { value: 'CASH', label: 'Espèces' },
@@ -83,9 +84,6 @@ export default function NewPaymentModal({
     }
   };
 
-  const formatXOF = (n: number) =>
-    new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', maximumFractionDigits: 0 }).format(n);
-
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50">
       <motion.div
@@ -103,7 +101,7 @@ export default function NewPaymentModal({
               <SelectContent>
                 {accounts.filter((a) => Number(a.balance) > 0).map((a) => (
                   <SelectItem key={a.id} value={a.id}>
-                    {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.studentId} — Solde {formatXOF(Number(a.balance))}
+                    {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.studentId} — Solde {formatCurrency(a.balance)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -134,12 +132,12 @@ export default function NewPaymentModal({
               {preview.lines.map((l, i) => (
                 <div key={i} className="flex justify-between">
                   <span>{l.name}</span>
-                  <span>{formatXOF(l.pay)}</span>
+                  <span>{formatCurrency(l.pay)}</span>
                 </div>
               ))}
               <div className="flex justify-between font-medium mt-2 pt-2 border-t">
                 <span>Total imputé</span>
-                <span>{formatXOF(preview.totalPay)}</span>
+                <span>{formatCurrency(preview.totalPay)}</span>
               </div>
             </div>
           )}

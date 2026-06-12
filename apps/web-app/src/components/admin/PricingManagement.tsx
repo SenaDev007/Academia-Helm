@@ -37,6 +37,7 @@ import {
   CheckCircle,
   History,
 } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
 
 type Tab = 'config' | 'tiers' | 'overrides' | 'history';
 
@@ -260,7 +261,7 @@ export default function PricingManagement() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-900 mb-2">
-                    Prix souscription initiale (FCFA)
+                    Prix souscription initiale (F CFA)
                   </label>
                   <input
                     type="number"
@@ -274,7 +275,7 @@ export default function PricingManagement() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-900 mb-2">
-                    Prix mensuel de base (FCFA)
+                    Prix mensuel de base (F CFA)
                   </label>
                   <input
                     type="number"
@@ -288,7 +289,7 @@ export default function PricingManagement() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-900 mb-2">
-                    Prix annuel de base (FCFA)
+                    Prix annuel de base (F CFA)
                   </label>
                   <input
                     type="number"
@@ -316,7 +317,7 @@ export default function PricingManagement() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-900 mb-2">
-                    Supplément bilingue mensuel (FCFA)
+                    Supplément bilingue mensuel (F CFA)
                   </label>
                   <input
                     type="number"
@@ -330,7 +331,7 @@ export default function PricingManagement() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-900 mb-2">
-                    Supplément bilingue annuel (FCFA)
+                    Supplément bilingue annuel (F CFA)
                   </label>
                   <input
                     type="number"
@@ -344,7 +345,7 @@ export default function PricingManagement() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-900 mb-2">
-                    Prix école supplémentaire (FCFA)
+                    Prix école supplémentaire (F CFA)
                   </label>
                   <input
                     type="number"
@@ -460,7 +461,7 @@ export default function PricingManagement() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-900 mb-2">
-                        Prix mensuel (FCFA)
+                        Prix mensuel (F CFA)
                       </label>
                       <input
                         type="number"
@@ -473,7 +474,7 @@ export default function PricingManagement() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-900 mb-2">
-                        Prix annuel (FCFA)
+                        Prix annuel (F CFA)
                       </label>
                       <input
                         type="number"
@@ -528,8 +529,8 @@ export default function PricingManagement() {
                     {tiers.map((tier) => (
                       <tr key={tier.id}>
                         <td className="px-6 py-4">{tier.schoolsCount}</td>
-                        <td className="px-6 py-4">{tier.monthlyPrice.toLocaleString()} FCFA</td>
-                        <td className="px-6 py-4">{tier.yearlyPrice.toLocaleString()} FCFA</td>
+                        <td className="px-6 py-4">{formatCurrency(tier.monthlyPrice)}</td>
+                        <td className="px-6 py-4">{formatCurrency(tier.yearlyPrice)}</td>
                         <td className="px-6 py-4">
                           <span
                             className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
@@ -692,7 +693,7 @@ export default function PricingManagement() {
                           {override.percentDiscount
                             ? `${override.percentDiscount}%`
                             : override.fixedPrice
-                            ? `${override.fixedPrice.toLocaleString()} FCFA`
+                            ? formatCurrency(override.fixedPrice)
                             : 'N/A'}
                         </td>
                         <td className="px-6 py-4">

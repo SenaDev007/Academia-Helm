@@ -25,7 +25,6 @@ import PilotageSidebar from './PilotageSidebar';
 import { OfflineStatusBadge } from '@/components/offline/OfflineStatusBadge';
 import { SyncToast } from '@/components/offline/SyncToast';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
-import { useIdleTimeout } from '@/hooks/useIdleTimeout';
 import type { User, Tenant } from '@/types';
 
 interface PilotageLayoutProps {
@@ -51,16 +50,9 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
   const handleCloseMobileDrawer = useCallback(() => setMobileDrawerOpen(false), []);
   const handleToggleSidebar = useCallback(() => setSidebarOpen(prev => !prev), []);
 
-  // Déconnexion automatique après 15 minutes d'inactivité
-  useIdleTimeout({
-    userEmail: user.email,
-    tenantId: tenant.id,
-    tenantSlug: tenant.slug,
-  });
-
   return (
     <OfflineGuard>
-      <div className="min-h-screen bg-gray-50 flex flex-col overflow-x-hidden">
+      <div className="min-h-screen bg-gray-50 flex flex-col">
         {/* Top Bar - Fixe en haut, toujours visible — hamburger mobile */}
         <PilotageTopBar
           user={user}
@@ -99,12 +91,18 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
               sidebarOpen ? 'lg:ml-64' : 'lg:ml-16'
             }`}
           >
-            <div
+            <AnimatePresence mode="wait">
+              <motion.div
               className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto w-full"
               key={`${pathname}-${currentLevel?.id ?? 'no-level'}`}
-            >
-              {children}
-            </div>
+              initial={pageMotion.initial}
+              animate={pageMotion.animate}
+              exit={pageMotion.exit}
+              transition={pageMotion.transition}
+              >
+                {children}
+              </motion.div>
+            </AnimatePresence>
           </main>
         </div>
 

@@ -6,17 +6,15 @@ import {
   ArrowLeft, FileText, Download, PenTool, Calendar, DollarSign,
   User, CheckCircle, Clock, AlertCircle, FileCheck, Loader2,
   RefreshCw, Shield, Hash, Briefcase, Building2, ExternalLink,
-  Pencil, Eye,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
-import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
+import { getClientAuthorizationHeader, tryRefreshAccessToken } from '@/lib/auth/client-access-token';
 import { toast } from '@/components/ui/toast';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { ContractSignModal } from '../../_components/modals/ContractSignModal';
-import { ContractEditModal } from '../../_components/modals/ContractEditModal';
-import { ContractDocumentEditor } from '../../_components/modals/ContractDocumentEditor';
+import { formatCurrency } from '@/lib/utils';
 
 const PRIMARY = '#1A2BA6';
 
@@ -30,7 +28,6 @@ const CONTRACT_TYPE_LABELS: Record<string, string> = {
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; border: string; icon: any }> = {
   ACTIVE:     { label: 'En vigueur',  color: '#166534', bg: '#dcfce7', border: '#bbf7d0', icon: CheckCircle },
-  PENDING:    { label: 'En attente',  color: '#92400e', bg: '#fef3c7', border: '#fde68a', icon: Clock },
   EXPIRED:    { label: 'Expiré',      color: '#475569', bg: '#f1f5f9', border: '#e2e8f0', icon: Clock },
   TERMINATED: { label: 'Résilié',     color: '#991b1b', bg: '#fee2e2', border: '#fecaca', icon: AlertCircle },
 };
@@ -45,10 +42,6 @@ export default function ContractDetailPage() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [signModalOpen, setSignModalOpen] = useState(false);
-  const [editModalOpen, setEditModalOpen] = useState(false);
-  const [docEditorOpen, setDocEditorOpen] = useState(false);
-  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
-  const [loadingPreview, setLoadingPreview] = useState(false);
 
   useEffect(() => {
     if (tenant?.id && contractId) fetchContract();
@@ -59,52 +52,11 @@ export default function ContractDetailPage() {
       setLoading(true);
       const data = await hrFetch<any>(hrUrl(`contracts/${contractId}`, { tenantId: tenant.id }));
       setContract(data);
-      // Reset PDF preview so it's re-fetched with fresh data
-      if (pdfPreviewUrl) {
-        URL.revokeObjectURL(pdfPreviewUrl);
-        setPdfPreviewUrl(null);
-      }
     } catch (err) {
       console.error(err);
       toast({ variant: 'error', title: 'Impossible de charger le contrat.' });
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function loadPdfPreview() {
-    try {
-      setLoadingPreview(true);
-      const response = await fetch(`/api/hr/contracts/${contractId}/pdf?tenantId=${tenant.id}`, {
-        method: 'GET',
-        headers: { ...getClientAuthorizationHeader() },
-        credentials: 'include',
-        cache: 'no-store',
-      });
-      if (!response.ok) {
-        // Try generating first, then retry
-        await hrFetch<any>(hrUrl(`contracts/${contractId}/generate-pdf`, { tenantId: tenant.id }), { method: 'POST' });
-        const retryResponse = await fetch(`/api/hr/contracts/${contractId}/pdf?tenantId=${tenant.id}`, {
-          method: 'GET',
-          headers: { ...getClientAuthorizationHeader() },
-          credentials: 'include',
-          cache: 'no-store',
-        });
-        if (!retryResponse.ok) throw new Error('Impossible de charger l\'aperçu.');
-        const blob = await retryResponse.blob();
-        if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
-        setPdfPreviewUrl(URL.createObjectURL(blob));
-      } else {
-        const blob = await response.blob();
-        if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
-        setPdfPreviewUrl(URL.createObjectURL(blob));
-      }
-      toast({ variant: 'success', title: 'Aperçu chargé.' });
-    } catch (err) {
-      console.error(err);
-      toast({ variant: 'error', title: 'Impossible de charger l\'aperçu du PDF.' });
-    } finally {
-      setLoadingPreview(false);
     }
   }
 
@@ -115,9 +67,8 @@ export default function ContractDetailPage() {
       await hrFetch<any>(hrUrl(`contracts/${contractId}/generate-pdf`, { tenantId: tenant.id }), { method: 'POST' });
       toast({ variant: 'success', title: 'PDF généré avec succès !' });
       fetchContract();
-    } catch (err: any) {
-      const msg = err?.message || 'Erreur lors de la génération PDF.';
-      toast({ variant: 'error', title: msg });
+    } catch (err) {
+      toast({ variant: 'error', title: 'Erreur lors de la génération PDF.' });
     } finally {
       setGenerating(false);
     }
@@ -127,74 +78,68 @@ export default function ContractDetailPage() {
     if (!contract) return;
     try {
       setGenerating(true);
-      // Download existing PDF via GET /pdf endpoint (BFF proxy → NestJS)
-      // Must include Authorization header from localStorage for the BFF proxy to forward to NestJS
-      const response = await fetch(`/api/hr/contracts/${contractId}/pdf?tenantId=${tenant.id}`, {
+
+      // Download existing PDF via GET /pdf endpoint with proper auth headers
+      let response = await fetch(`/api/hr/contracts/${contractId}/pdf?tenantId=${tenant.id}`, {
         method: 'GET',
         headers: {
           ...getClientAuthorizationHeader(),
         },
         credentials: 'include',
-        cache: 'no-store',
       });
 
-      if (!response.ok) {
-        // If we get an error, try generating the PDF first then downloading
-        if (response.status === 404 || response.status === 500) {
-          await handleGeneratePdf();
-          // Retry download after generation
-          const retryResponse = await fetch(`/api/hr/contracts/${contractId}/pdf?tenantId=${tenant.id}`, {
+      // On 401, attempt token refresh once before giving up
+      if (response.status === 401) {
+        const refreshed = await tryRefreshAccessToken();
+        if (refreshed) {
+          response = await fetch(`/api/hr/contracts/${contractId}/pdf?tenantId=${tenant.id}`, {
             method: 'GET',
             headers: {
               ...getClientAuthorizationHeader(),
             },
             credentials: 'include',
-            cache: 'no-store',
           });
-          if (!retryResponse.ok) throw new Error('Erreur téléchargement après génération');
-          const blob = await retryResponse.blob();
-          triggerPdfDownload(blob);
-        } else {
-          throw new Error('Erreur téléchargement');
         }
+      }
+
+      if (!response.ok) {
+        // Try to parse error message from response
+        let errorMsg = 'Erreur lors du téléchargement PDF.';
+        try {
+          const errData = await response.json();
+          errorMsg = errData?.message || errData?.error || errorMsg;
+        } catch { /* binary response, ignore parse error */ }
+        throw new Error(errorMsg);
+      }
+
+      // Try to get as blob (binary PDF) first
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/pdf') || contentType.includes('octet-stream')) {
+        const blob = await response.blob();
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        const staffName = `${contract.staff?.lastName}_${contract.staff?.firstName}`.replace(/\s+/g, '_');
+        link.download = `Contrat_${staffName}_${contract.contractType}.pdf`;
+        link.click();
+        URL.revokeObjectURL(link.href);
       } else {
-        // Try to get as blob (binary PDF) first
-        const contentType = response.headers.get('content-type') || '';
-        if (contentType.includes('application/pdf') || contentType.includes('octet-stream')) {
-          const blob = await response.blob();
-          triggerPdfDownload(blob);
-        } else {
-          // If the response is JSON (e.g., contains a pdfUrl), use it
-          const data = await response.json();
-          if (data.pdfUrl) {
-            triggerPdfUrlDownload(data.pdfUrl);
-          }
+        // If the response is JSON (e.g., contains a pdfUrl), use it
+        const data = await response.json();
+        if (data.pdfUrl) {
+          const link = document.createElement('a');
+          link.href = data.pdfUrl;
+          const staffName = `${contract.staff?.lastName}_${contract.staff?.firstName}`.replace(/\s+/g, '_');
+          link.download = `Contrat_${staffName}_${contract.contractType}.pdf`;
+          link.click();
         }
       }
       toast({ variant: 'success', title: 'Téléchargement du PDF lancé.' });
     } catch (err) {
-      console.error('[Contract PDF Download] Error:', err);
-      toast({ variant: 'error', title: 'Erreur lors du téléchargement PDF.' });
+      const msg = err instanceof Error ? err.message : 'Erreur lors du téléchargement PDF.';
+      toast({ variant: 'error', title: msg });
     } finally {
       setGenerating(false);
     }
-  }
-
-  function triggerPdfDownload(blob: Blob) {
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    const staffName = `${contract?.staff?.lastName}_${contract?.staff?.firstName}`.replace(/\s+/g, '_');
-    link.download = `Contrat_${staffName}_${contract?.contractType}.pdf`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-  }
-
-  function triggerPdfUrlDownload(pdfUrl: string) {
-    const link = document.createElement('a');
-    link.href = pdfUrl;
-    const staffName = `${contract?.staff?.lastName}_${contract?.staff?.firstName}`.replace(/\s+/g, '_');
-    link.download = `Contrat_${staffName}_${contract?.contractType}.pdf`;
-    link.click();
   }
 
   if (loading) {
@@ -236,18 +181,6 @@ export default function ContractDetailPage() {
       <ContractSignModal
         isOpen={signModalOpen}
         onClose={() => setSignModalOpen(false)}
-        onSuccess={fetchContract}
-        contract={contract}
-      />
-      <ContractEditModal
-        isOpen={editModalOpen}
-        onClose={() => setEditModalOpen(false)}
-        onSuccess={fetchContract}
-        contract={contract}
-      />
-      <ContractDocumentEditor
-        isOpen={docEditorOpen}
-        onClose={() => setDocEditorOpen(false)}
         onSuccess={fetchContract}
         contract={contract}
       />
@@ -334,16 +267,7 @@ export default function ContractDetailPage() {
             <RefreshCw className={`h-4 w-4 ${generating ? 'animate-spin' : ''}`} />
             Régénérer
           </button>
-          {!isSigned && (
-            <button
-              onClick={() => setDocEditorOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 rounded-xl shadow-sm transition"
-            >
-              <Pencil className="h-4 w-4" />
-              Éditer le document
-            </button>
-          )}
-          {!isSigned && (contract.status === 'ACTIVE' || contract.status === 'PENDING') && (
+          {!isSigned && contract.status === 'ACTIVE' && (
             <button
               onClick={() => setSignModalOpen(true)}
               className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 shadow-sm transition"
@@ -389,7 +313,7 @@ export default function ContractDetailPage() {
                 },
                 {
                   label: 'Référence',
-                  value: contract.staff?.staffCode || contract.staff?.employeeNumber || `CTR-${contractId.substring(0, 8)}`,
+                  value: `CONTRAT-${contractId.substring(0, 8).toUpperCase()}`,
                   icon: Hash,
                 },
                 {
@@ -406,7 +330,7 @@ export default function ContractDetailPage() {
                 },
                 {
                   label: 'Salaire mensuel brut',
-                  value: `${Number(contract.baseSalary).toLocaleString('fr-FR')} ${contract.tenant?.country?.currencyCode || 'XOF'}`,
+                  value: formatCurrency(contract.baseSalary),
                   icon: DollarSign,
                   highlight: true,
                 },
@@ -479,7 +403,7 @@ export default function ContractDetailPage() {
                       Le contrat doit être signé par l'employé(e) pour être pleinement exécutoire.
                     </p>
                   </div>
-                  {contract.status === 'ACTIVE' || contract.status === 'PENDING' ? (
+                  {contract.status === 'ACTIVE' && (
                     <button
                       onClick={() => setSignModalOpen(true)}
                       className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white rounded-xl shadow-sm hover:opacity-90 transition mt-2"
@@ -488,7 +412,7 @@ export default function ContractDetailPage() {
                       <PenTool className="h-4 w-4" />
                       Procéder à la signature
                     </button>
-                  ) : null}
+                  )}
                 </div>
               )}
             </div>
@@ -604,53 +528,6 @@ export default function ContractDetailPage() {
           </div>
         </div>
       </div>
-
-      {/* PDF Preview Section */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
-      >
-        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Eye className="h-4 w-4" style={{ color: PRIMARY }} />
-            <h2 className="text-sm font-bold text-slate-900">Aperçu du Contrat</h2>
-          </div>
-          {!pdfPreviewUrl && (
-            <button
-              onClick={loadPdfPreview}
-              disabled={loadingPreview}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white rounded-xl hover:opacity-90 disabled:opacity-60 transition"
-              style={{ backgroundColor: PRIMARY }}
-            >
-              {loadingPreview ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
-              Charger l&apos;aperçu
-            </button>
-          )}
-        </div>
-        <div className="p-5">
-          {pdfPreviewUrl ? (
-            <iframe
-              src={pdfPreviewUrl}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50"
-              style={{ height: '600px' }}
-              title="Aperçu du contrat PDF"
-            />
-          ) : (
-            <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
-              <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center">
-                <FileText className="h-7 w-7 text-slate-300" />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-slate-700">Aperçu non chargé</p>
-                <p className="text-xs text-slate-400 mt-1 max-w-sm">
-                  Cliquez sur le bouton &quot;Charger l&apos;aperçu&quot; ci-dessus pour visualiser le contrat au format PDF.
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-      </motion.div>
     </div>
   );
 }

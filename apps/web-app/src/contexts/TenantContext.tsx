@@ -168,7 +168,7 @@ export function TenantContextProvider({ children }: { children: ReactNode }) {
             setError('Session expirée. Connectez-vous à Internet pour renouveler vos accès.');
             return;
           }
-          window.location.href = '/login';
+          router.push('/auth/login');
           return;
         }
         if (response.status === 403) {
@@ -182,7 +182,7 @@ export function TenantContextProvider({ children }: { children: ReactNode }) {
             setError('Accès refusé. Connectez-vous à Internet pour vérifier vos droits.');
             return;
           }
-          window.location.href = '/login';
+          router.push('/auth/login');
           return;
         }
         throw new Error(`Failed to load context: ${response.statusText}`);
@@ -209,7 +209,7 @@ export function TenantContextProvider({ children }: { children: ReactNode }) {
           setError('Session non trouvée. Connectez-vous à Internet pour vous identifier.');
           return;
         }
-        window.location.href = '/login';
+        router.push('/auth/login');
       }
     } finally {
       setIsLoading(false);
@@ -230,7 +230,7 @@ export function TenantContextProvider({ children }: { children: ReactNode }) {
     setContext(null);
     clearClientSessionSync();
     offlineCacheService.clearContextCache();
-    window.location.href = '/login';
+    router.push('/auth/login');
   };
 
   // Charger le contexte au montage

@@ -39,7 +39,7 @@ export default function FederisCheckoutPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           federisName,
-          amount: 50000, // 50 000 FCFA / mois
+          amount: 50000, // 50 000 F CFA / mois
           plan: 'PATRONAT_MONTHLY',
         }),
       });
@@ -91,7 +91,7 @@ export default function FederisCheckoutPage() {
                   </div>
                   <div className="text-right">
                     <div className="text-3xl font-bold text-blue-700">50 000</div>
-                    <div className="text-sm text-gray-600">FCFA / mois</div>
+                    <div className="text-sm text-gray-600">F CFA / mois</div>
                   </div>
                 </div>
 

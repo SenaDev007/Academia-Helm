@@ -3,8 +3,8 @@
 import { PieChart, CreditCard, DollarSign, Download, ExternalLink, MoreVertical, Search, Filter } from 'lucide-react';
 
 const MOCK_INVOICES = [
-  { id: 'FACT-2024-001', school: 'Lycée Excellence', amount: '250,000 FCFA', status: 'PAID', date: '2025-05-12' },
-  { id: 'FACT-2024-002', school: 'Collège Jean-Paul II', amount: '150,000 FCFA', status: 'PENDING', date: '2025-05-14' },
+  { id: 'FACT-2024-001', school: 'Lycée Excellence', amount: '250 000 F CFA', status: 'PAID', date: '2025-05-12' },
+  { id: 'FACT-2024-002', school: 'Collège Jean-Paul II', amount: '150 000 F CFA', status: 'PENDING', date: '2025-05-14' },
 ];
 
 export default function PlatformBillingWorkspace() {
@@ -35,7 +35,7 @@ export default function PlatformBillingWorkspace() {
             </div>
             <span className="text-sm font-medium text-slate-500">Chiffre d'Affaires Mensuel</span>
           </div>
-          <div className="text-2xl font-bold text-slate-900">12.4M FCFA</div>
+          <div className="text-2xl font-bold text-slate-900">12,4M F CFA</div>
         </div>
         <div className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
           <div className="flex items-center gap-3 mb-4">
@@ -44,7 +44,7 @@ export default function PlatformBillingWorkspace() {
             </div>
             <span className="text-sm font-medium text-slate-500">Paiements en attente</span>
           </div>
-          <div className="text-2xl font-bold text-slate-900">1.8M FCFA</div>
+          <div className="text-2xl font-bold text-slate-900">1,8M F CFA</div>
         </div>
         <div className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
           <div className="flex items-center gap-3 mb-4">
@@ -53,7 +53,7 @@ export default function PlatformBillingWorkspace() {
             </div>
             <span className="text-sm font-medium text-slate-500">Encaissements aujourd'hui</span>
           </div>
-          <div className="text-2xl font-bold text-slate-900">450K FCFA</div>
+          <div className="text-2xl font-bold text-slate-900">450K F CFA</div>
         </div>
       </div>
 

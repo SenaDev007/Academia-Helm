@@ -15,6 +15,7 @@ import { useTenantContext } from '@/contexts/TenantContext';
 import { dashboardService, DashboardKpi } from '@/services/dashboard.service';
 import { offlineCacheService } from '@/services/offline-cache.service';
 import { KpiCard } from '../widgets/KpiCard';
+import { formatCurrency } from '@/lib/utils';
 
 export function AccountantDashboard() {
   const { context } = useTenantContext();
@@ -133,10 +134,7 @@ export function AccountantDashboard() {
             <div>
               <p className="text-sm text-gray-500">Montant Total</p>
               <p className="text-2xl font-bold">
-                {new Intl.NumberFormat('fr-FR', {
-                  style: 'currency',
-                  currency: 'XOF',
-                }).format(todayFinancials.totalAmount || 0)}
+                {formatCurrency(todayFinancials.totalAmount || 0)}
               </p>
             </div>
             <div>

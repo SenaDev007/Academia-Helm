@@ -12,16 +12,9 @@ import {
   AlertTriangle, CheckCircle2, Clock, ArrowRight,
   TrendingDown, ShoppingCart, UserCheck, Zap, BarChart3
 } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
 
 export default function ShopDashboard() {
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'XOF',
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
-
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
       {/* KPI Section */}
@@ -246,8 +239,6 @@ function StockAlertItem({ name, stock, threshold, isRupture }: any) {
 }
 
 function TransactionRow({ refNo, name, student, items, amount, mode, status, time }: any) {
-  const formatCurrency = (val: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 0 }).format(val);
-  
   return (
     <tr className="hover:bg-gray-50/50 transition-colors group">
       <td className="px-8 py-5">

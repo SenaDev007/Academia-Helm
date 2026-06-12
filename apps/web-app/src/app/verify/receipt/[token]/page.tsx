@@ -14,6 +14,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { CheckCircle, XCircle, FileText, Calendar, Building, AlertCircle } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
 
 interface ReceiptData {
   receiptNumber: string;
@@ -158,7 +159,7 @@ export default function PublicReceiptVerificationPage() {
                   <div>
                     <p className="text-sm text-gray-600">Montant</p>
                     <p className="font-bold text-green-600 text-lg">
-                      {receipt.amount.toLocaleString('fr-FR')} FCFA
+                      {formatCurrency(receipt.amount)}
                     </p>
                   </div>
                   <div>

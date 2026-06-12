@@ -29,7 +29,7 @@ export const dynamic = 'force-dynamic';
 export const config = {
   api: {
     bodyParser: false,
-    responseLimit: '25mb',
+    responseLimit: '10mb',
   },
 };
 

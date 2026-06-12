@@ -24,6 +24,7 @@
 import { useState, useEffect } from 'react';
 import { Users, DollarSign, TrendingUp, AlertTriangle } from 'lucide-react';
 import { useAcademicYear } from '@/hooks/useAcademicYear';
+import { formatCurrency } from '@/lib/utils';
 import ModulePageLayout from './ModulePageLayout';
 
 interface LevelAggregation {
@@ -78,14 +79,6 @@ export default function GeneralModulePage() {
 
     loadConsolidatedData();
   }, [currentYear]);
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'XOF',
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
 
   const getLevelLabel = (levelName: string) => {
     if (levelName.toLowerCase().includes('maternelle')) return 'Maternelle';

@@ -4,7 +4,7 @@ import { PenTool, Plus, Search, Filter, Calendar, Wrench, AlertCircle, CheckCirc
 
 export default function TransportMaintenance() {
   const maintenances = [
-    { id: '1', vehicle: 'Bus #01', type: 'Vidange & Filtres', date: '2026-05-10', cost: '45,000 FCFA', status: 'COMPLETED' },
+    { id: '1', vehicle: 'Bus #01', type: 'Vidange & Filtres', date: '2026-05-10', cost: '45 000 F CFA', status: 'COMPLETED' },
     { id: '2', vehicle: 'Bus #04', type: 'Révision freins', date: '2026-05-18', cost: '—', status: 'PLANNED' },
   ];
 

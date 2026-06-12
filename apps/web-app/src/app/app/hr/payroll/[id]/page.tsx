@@ -22,6 +22,7 @@ import {
 import { ModuleHeader } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
+import { formatCurrency } from '@/lib/utils';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
@@ -188,7 +189,7 @@ export default function PayrollDetailPage() {
         description={`Période du ${new Date(period.startDate).toLocaleDateString()} au ${new Date(period.endDate).toLocaleDateString()}`}
         icon="rh"
         kpis={[
-          { label: 'Total Net', value: totalNet.toLocaleString(), unit: 'XOF' },
+          { label: 'Total Net', value: formatCurrency(totalNet), unit: '' },
           { label: 'Statut', value: period.status, unit: '' },
           { label: 'Agents', value: period.payrolls?.length?.toString() || '0', unit: '' },
         ]}
@@ -262,16 +263,16 @@ export default function PayrollDetailPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <span className="text-sm font-bold text-gray-700">{Number(payroll.grossSalary).toLocaleString()}</span>
+                    <span className="text-sm font-bold text-gray-700">{formatCurrency(payroll.grossSalary)}</span>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex flex-col">
-                      <span className="text-xs text-red-500 font-bold">-{ (Number(payroll.employeeCNSS) + Number(payroll.taxWithheld)).toLocaleString() }</span>
-                      <span className="text-[9px] text-gray-400 font-medium">CNSS: {Number(payroll.employeeCNSS).toLocaleString()} | Tax: {Number(payroll.taxWithheld).toLocaleString()}</span>
+                      <span className="text-xs text-red-500 font-bold">-{ formatCurrency(Number(payroll.employeeCNSS) + Number(payroll.taxWithheld)) }</span>
+                      <span className="text-[9px] text-gray-400 font-medium">CNSS: {formatCurrency(payroll.employeeCNSS)} | Tax: {formatCurrency(payroll.taxWithheld)}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <span className="text-sm font-black text-blue-600">{Number(payroll.netSalary).toLocaleString()} XOF</span>
+                    <span className="text-sm font-black text-blue-600">{formatCurrency(payroll.netSalary)}</span>
                   </td>
                   <td className="px-6 py-4">
                     <Badge className={

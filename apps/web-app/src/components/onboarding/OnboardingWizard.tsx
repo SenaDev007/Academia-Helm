@@ -48,6 +48,7 @@ import {
   TrendingDown,
 } from 'lucide-react';
 import { HELM_PLANS, getRecommendedPlan, type HelmPlanKey } from '@/lib/services/HelmPricingService';
+import { formatCurrency } from '@/lib/utils';
 import FedaPayCheckout from './FedaPayCheckout';
 
 interface OnboardingData {
@@ -1870,7 +1871,7 @@ export default function OnboardingWizard() {
                   {data.bilingual && (
                     <div className="mt-2 space-y-1">
                       <p className="text-sm font-semibold text-blue-600">
-                        +5 000 FCFA / mois pour l'option bilingue
+                        +5 000 F CFA / mois pour l'option bilingue
                       </p>
                       <p className="text-xs text-slate-500">
                         Le mode bilingue activera les parcours académiques en Français et en Anglais pour votre école.
@@ -2576,7 +2577,7 @@ export default function OnboardingWizard() {
                       ) : priceCalculation.monthly ? (
                         <>
                           <div className="text-3xl font-bold text-blue-900 mb-1">
-                            {priceCalculation.monthly.basePrice.toLocaleString()} FCFA
+                            {formatCurrency(priceCalculation.monthly.basePrice)}
                           </div>
                           <div className="text-sm text-graphite-600">/ mois</div>
                         </>
@@ -2619,7 +2620,7 @@ export default function OnboardingWizard() {
                       ) : priceCalculation.yearly ? (
                         <>
                           <div className="text-3xl font-bold text-blue-900 mb-1">
-                            {priceCalculation.yearly.basePrice.toLocaleString()} FCFA
+                            {formatCurrency(priceCalculation.yearly.basePrice)}
                           </div>
                           <div className="text-sm text-graphite-600 mb-2">/ an</div>
                           {priceCalculation.monthly && (
@@ -2657,11 +2658,11 @@ export default function OnboardingWizard() {
                           {priceCalculation.isLoading ? (
                             <Loader className="w-5 h-5 animate-spin text-blue-600" />
                           ) : data.billingPeriod === 'monthly' && priceCalculation.monthly ? (
-                            <>+{priceCalculation.monthly.bilingualPrice.toLocaleString()} FCFA</>
+                            <>+{formatCurrency(priceCalculation.monthly.bilingualPrice)}</>
                           ) : data.billingPeriod === 'yearly' && priceCalculation.yearly ? (
-                            <>+{priceCalculation.yearly.bilingualPrice.toLocaleString()} FCFA</>
+                            <>+{formatCurrency(priceCalculation.yearly.bilingualPrice)}</>
                           ) : (
-                            <>+0 FCFA</>
+                            <>+{formatCurrency(0)}</>
                           )}
                         </div>
                         <div className="text-xs text-graphite-600 mt-1">
@@ -2689,7 +2690,7 @@ export default function OnboardingWizard() {
                     <div className="text-right">
                       <div className="text-3xl font-bold text-white">
                         {initialPayment ? (
-                          `${initialPayment.toLocaleString()} FCFA`
+                          formatCurrency(initialPayment)
                         ) : (
                           <span className="text-lg">Chargement...</span>
                         )}
@@ -2728,16 +2729,15 @@ export default function OnboardingWizard() {
                       ) : (
                         <>
                           <div className="text-3xl font-bold text-green-700">
-                            {data.billingPeriod === 'monthly' && priceCalculation.monthly
-                              ? priceCalculation.monthly.total.toLocaleString()
+                            {formatCurrency(data.billingPeriod === 'monthly' && priceCalculation.monthly
+                              ? priceCalculation.monthly.total
                               : data.billingPeriod === 'yearly' && priceCalculation.yearly
-                              ? priceCalculation.yearly.total.toLocaleString()
-                              : '0'}{' '}
-                            FCFA
+                              ? priceCalculation.yearly.total
+                              : 0)}
                           </div>
                           {data.billingPeriod === 'yearly' && priceCalculation.monthly && priceCalculation.yearly && (
                             <div className="text-xs text-green-600 mt-1 font-medium">
-                              Équivalent {Math.round(priceCalculation.yearly.total / 12).toLocaleString()} FCFA/mois
+                              Équivalent {formatCurrency(Math.round(priceCalculation.yearly.total / 12))}/mois
                             </div>
                           )}
                           <div className="text-xs text-graphite-600 mt-1">
@@ -2816,7 +2816,7 @@ export default function OnboardingWizard() {
                         <p className="text-sm text-blue-200 mb-1">Montant à payer</p>
                         <div className="text-5xl font-bold text-white">
                           {initialPayment ? (
-                            `${initialPayment.toLocaleString()} FCFA`
+                            formatCurrency(initialPayment)
                           ) : (
                             <span className="text-2xl">Chargement...</span>
                           )}
@@ -2907,7 +2907,7 @@ export default function OnboardingWizard() {
                             alt="FedaPay" 
                             className="w-16 h-16 mr-3 object-contain"
                           />
-                          Payer {initialPayment.toLocaleString()} FCFA
+                          Payer {formatCurrency(initialPayment)}
                     </>
                   )}
                 </button>

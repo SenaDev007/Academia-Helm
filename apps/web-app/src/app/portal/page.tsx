@@ -13,7 +13,6 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import dynamic from 'next/dynamic';
 import {
   Building2,
   GraduationCap,
@@ -26,6 +25,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import PremiumHeader from '@/components/layout/PremiumHeader';
 import SchoolSearch from '@/components/portal/SchoolSearch';
+import BeninMap from '@/components/portal/BeninMap';
 import { BENIN_DEPARTMENTS, type DepartmentData } from '@/data/benin-departments';
 import { useTenantRedirect } from '@/lib/hooks/useTenantRedirect';
 import { BRAND } from '@/lib/brand';
@@ -33,16 +33,6 @@ import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-ema
 import { persistClientSession } from '@/lib/auth/client-access-token';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getModalMotion, getMotionDuration } from '@/lib/motion/presets';
-
-// Dynamic import with ssr: false to avoid hydration issues with the map (client-side fetch)
-const BeninMap = dynamic(() => import('@/components/portal/BeninMap'), {
-  ssr: false,
-  loading: () => (
-    <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-lg flex items-center justify-center min-h-[200px]">
-      <div className="text-center text-sm text-slate-400">Chargement de la carte...</div>
-    </div>
-  ),
-});
 
 type PortalType = 'PLATFORM' | 'SCHOOL' | 'TEACHER' | 'PARENT' | 'PUBLIC' | null;
 

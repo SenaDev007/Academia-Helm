@@ -68,14 +68,14 @@ export function DashboardGuard({ children, requiredRole }: DashboardGuardProps) 
     // Vérifier les erreurs
     if (error) {
       console.error('Context error:', error);
-      window.location.href = '/login';
+      router.push('/auth/login');
       return;
     }
 
     // Vérifier que le contexte est chargé
     if (!context) {
       console.warn('No context available');
-      window.location.href = '/login';
+      router.push('/auth/login');
       return;
     }
 
@@ -83,9 +83,9 @@ export function DashboardGuard({ children, requiredRole }: DashboardGuardProps) 
     if (!context.tenant || context.tenant.status !== 'active') {
       console.warn('Invalid tenant');
       if (context.role === 'PLATFORM_OWNER' || context.user?.isPlatformOwner) {
-        window.location.href = '/app/platform';
+        router.push('/app/platform');
       } else {
-        window.location.href = '/login';
+        router.push('/auth/login');
       }
       return;
     }

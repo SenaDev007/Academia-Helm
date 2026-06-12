@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Building2,
@@ -30,9 +31,9 @@ import {
   Phone
 } from 'lucide-react';
 import PremiumHeader from '@/components/layout/PremiumHeader';
-import RecruitmentPlaceholder from '@/components/recruitment/RecruitmentPlaceholder';
-import { apiFetch } from '@/lib/api/client';
-import { getApiBaseUrl } from '@/lib/utils/urls';
+import { JobCardSkeleton } from '@/components/loading/Skeleton';
+import { JobCardSkeletonMobile } from '@/components/loading/SkeletonMobile';
+
 
 const PRIMARY = '#1A2BA6';
 
@@ -43,24 +44,31 @@ interface School {
   schoolName: string;
   tenantName: string;
   slug: string;
-  logoUrl?: string | null;
-  primaryPhone?: string | null;
-  primaryEmail?: string | null;
-  address?: string | null;
-  city?: string | null;
-  country?: string | null;
-  website?: string | null;
+  logoUrl?: string;
+  city?: string;
+  country?: string;
+  primaryPhone?: string;
+  primaryEmail?: string;
+  address?: string;
   activeJobsCount?: number;
+  /** Nested school object from API — school-level contact info takes priority over tenant-level */
+  school?: {
+    primaryPhone?: string;
+    primaryEmail?: string;
+    city?: string;
+    country?: string;
+    logo?: string;
+  };
 }
 
 interface Job {
   id: string;
   ref: string;
+  slug: string;
   title: string;
   dept: string;
   loc: string;
   status: string;
-  slug?: string;
   description?: string;
   missions?: string;
   responsibilities?: string;
@@ -92,18 +100,37 @@ interface EducationItem {
   year: string;
 }
 
-export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedSchoolSlug?: string; forcedJobSlug?: string }) {
-  const [schools, setSchools] = useState<any[]>([]);
-  const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
-  const [jobs, setJobs] = useState<Job[]>([]);
+export interface CareersContentProps {
+  forcedSchoolSlug?: string;
+  forcedJobSlug?: string;
+  /** Pre-fetched schools from Server Component — skips client-side fetch */
+  initialSchools?: any[];
+  /** Pre-fetched selected school from Server Component */
+  initialSchool?: School | null;
+  /** Pre-fetched jobs for the selected school from Server Component */
+  initialJobs?: Job[];
+}
+
+export function CareersContent({
+  forcedSchoolSlug,
+  forcedJobSlug,
+  initialSchools,
+  initialSchool = null,
+  initialJobs,
+}: CareersContentProps) {
+  const [schools, setSchools] = useState<any[]>(initialSchools ?? []);
+  const [selectedSchool, setSelectedSchool] = useState<School | null>(initialSchool);
+  const [jobs, setJobs] = useState<Job[]>(initialJobs ?? []);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
-  const [loading, setLoading] = useState(false);
+  // When no pre-fetched data is provided, start in loading state so the skeleton
+  // is visible immediately instead of a flash of empty grid.
+  const [loading, setLoading] = useState(!initialSchools || initialSchools.length === 0);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   
   const router = useRouter();
   const searchParams = useSearchParams();
   const schoolParam = forcedSchoolSlug || searchParams.get('school');
-  const jobParam = forcedJobSlug || searchParams.get('job');
 
   // Multi-Step Form States
   const [isApplying, setIsApplying] = useState(false);
@@ -147,19 +174,90 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
   const [submitting, setSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<{ success: boolean; message: string } | null>(null);
 
-  // Fetch available schools on mount
+  // When forcedJobSlug is provided, directly deep-link to the specific job via API.
+  // This avoids the fragile multi-step chain (load schools → match slug → load jobs → match slug)
+  // and works reliably for social sharing links.
+  const [deepLinkResolved, setDeepLinkResolved] = useState(false);
+
   useEffect(() => {
+    if (!forcedJobSlug || deepLinkResolved) return;
+    let cancelled = false;
+
+    async function resolveDeepLink() {
+      try {
+        setLoading(true);
+        // Call the public getJobBySlug API — returns job with tenant info
+        const res = await fetch(`/api/hr/recruitment/jobs/by-slug/${encodeURIComponent(forcedJobSlug!)}`);
+        if (!res.ok) {
+          console.warn('Deep-link: job not found for slug', forcedJobSlug);
+          setDeepLinkResolved(true);
+          return;
+        }
+        const jobData = await res.json();
+        if (cancelled || !jobData?.tenant) return;
+
+        // Build a synthetic school object from the job's tenant info
+        const tenantInfo = jobData.tenant;
+        const syntheticSchool: School = {
+          id: tenantInfo.id,
+          tenantId: tenantInfo.id,
+          name: tenantInfo.name,
+          schoolName: tenantInfo.schoolName || tenantInfo.name,
+          tenantName: tenantInfo.name,
+          slug: tenantInfo.slug,
+          logoUrl: tenantInfo.logoUrl || tenantInfo.school?.logo || undefined,
+          city: tenantInfo.city || tenantInfo.school?.city || undefined,
+          country: tenantInfo.country || tenantInfo.school?.country || undefined,
+          primaryPhone: tenantInfo.school?.primaryPhone || tenantInfo.primaryPhone || undefined,
+          primaryEmail: tenantInfo.school?.primaryEmail || tenantInfo.primaryEmail || undefined,
+          address: tenantInfo.address || tenantInfo.school?.address || undefined,
+        };
+
+        // Set school and job directly
+        setSelectedSchool(syntheticSchool);
+        setSelectedJob(jobData);
+
+        // Also load the full jobs list for this school (for sidebar navigation)
+        try {
+          const jobsRes = await fetch(`/api/hr/recruitment/jobs?tenantId=${tenantInfo.id}`);
+          const jobsData = await jobsRes.json();
+          if (Array.isArray(jobsData) && !cancelled) {
+            setJobs(jobsData.filter((j: any) => j.status === 'PUBLIÉE'));
+          }
+        } catch (e) {
+          console.warn('Deep-link: could not load full jobs list', e);
+        }
+
+        setDeepLinkResolved(true);
+      } catch (err) {
+        console.error('Deep-link resolution failed:', err);
+        setDeepLinkResolved(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    resolveDeepLink();
+    return () => { cancelled = true; };
+  }, [forcedJobSlug, deepLinkResolved]);
+
+  // Fetch available schools on mount — skip if data was pre-fetched by Server Component
+  useEffect(() => {
+    // If Server Component already provided schools, skip the client-side fetch entirely
+    if (initialSchools && initialSchools.length > 0) return;
+
     async function loadSchools() {
       try {
         setLoading(true);
-        // Use the optimized public endpoint that returns schools with active job counts
-        // (instead of the old N+1 pattern with /api/auth/dev-available-tenants)
+        setLoadError(null);
+        // Use the optimized endpoint that returns schools with active job counts
+        // and includes logo, contact info, etc.
         const res = await fetch('/api/public/schools/with-jobs');
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data)) {
             setSchools(data);
-            return;
+            return; // Success — no need for fallback
           }
         }
         // Fallback to the basic list endpoint
@@ -175,14 +273,17 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
         } catch {
           // Fallback also failed
         }
+        // Both endpoints failed
+        setLoadError('Impossible de charger les établissements. Vérifiez votre connexion et réessayez.');
       } catch (err) {
         console.error('Failed to load schools:', err);
+        setLoadError('Erreur réseau. Vérifiez votre connexion et réessayez.');
       } finally {
         setLoading(false);
       }
     }
     loadSchools();
-  }, []);
+  }, [initialSchools]);
 
   // Fetch jobs for the selected school
   const handleSelectSchool = async (school: School) => {
@@ -194,7 +295,10 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
     setCurrentStep(1);
     
     // Update path dynamically (personalized tenant URL)
-    router.push(`/jobs/${school.slug}`);
+    // Preserve the jobSlug if we're coming from a direct link (/jobs/{school}/{job})
+    // so that the auto-select job useEffect can still trigger
+    const jobSlugSegment = forcedJobSlug ? `/${forcedJobSlug}` : '';
+    router.push(`/jobs/${school.slug}${jobSlugSegment}`);
 
     try {
       setLoading(true);
@@ -223,9 +327,9 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
     }
     async function loadStats() {
       try {
-        const API_URL = getApiBaseUrl();
         const jobId = selectedJob!.id;
-        const res = await fetch(`${API_URL}/hr/recruitment/jobs/${jobId}/stats`);
+        // Route through BFF proxy to avoid CORS issues on mobile devices
+        const res = await fetch(`/api/hr/recruitment/jobs/${jobId}/stats`);
         if (res.ok) {
           const data = await res.json();
           setJobStats(data);
@@ -237,26 +341,34 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
     loadStats();
   }, [selectedJob?.id]);
 
-  // Auto-select school if query parameter matches
+  // Auto-select school if query parameter matches (only if deep-link hasn't already resolved)
+  // Skip if Server Component already provided initialSchool (already selected)
   useEffect(() => {
-    if (schools.length > 0 && schoolParam) {
+    if (deepLinkResolved && forcedJobSlug) return; // Deep-link already set the school
+    if (initialSchool) return; // Server Component already selected the school
+    if (schools.length > 0 && schoolParam && !selectedSchool) {
       const match = schools.find(s => s.slug === schoolParam);
       if (match) {
         handleSelectSchool(match);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [schools, schoolParam]);
+  }, [schools, schoolParam, deepLinkResolved, forcedJobSlug, selectedSchool, initialSchool]);
+
+  // Select a specific job from the jobs list by slug
+  const handleSelectJobBySlug = (jobSlug: string) => {
+    const match = jobs.find(j => j.slug === jobSlug);
+    if (match) {
+      setSelectedJob(match);
+    }
+  };
 
   // Auto-select job if forcedJobSlug is provided and jobs are loaded
+  // (fallback for when deep-link resolution didn't set the job directly)
   useEffect(() => {
-    if (jobs.length > 0 && jobParam) {
-      const match = jobs.find(j => j.slug === jobParam || j.ref === jobParam || j.id === jobParam);
-      if (match) {
-        setSelectedJob(match);
-      }
+    if (forcedJobSlug && jobs.length > 0 && selectedSchool && !selectedJob) {
+      handleSelectJobBySlug(forcedJobSlug);
     }
-  }, [jobs, jobParam]);
+  }, [forcedJobSlug, jobs, selectedSchool, selectedJob]);
 
   // Form helpers
   const addExperience = () => {
@@ -378,6 +490,14 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
     (s.schoolName || s.tenantName || s.name || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  /**
+   * Resolve contact info with school-level priority over tenant-level.
+   * Prevents the wrong email/phone from being displayed when tenant-level
+   * data belongs to a different entity than the school.
+   */
+  const getSchoolEmail = (s: School) => s.school?.primaryEmail || s.primaryEmail;
+  const getSchoolPhone = (s: School) => s.school?.primaryPhone || s.primaryPhone;
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between">
       <PremiumHeader />
@@ -392,17 +512,58 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
             Espace Candidat Augmenté
           </h1>
           <p className="text-sm md:text-base text-slate-500 mt-2 max-w-xl mx-auto">
-            Postulez instantanément grâce à notre parcours de candidature simplifiée intégrant l'analyse IA.
+            Postulez instantanément grâce à notre parcours de candidature simplifiée intégrant l&apos;analyse IA.
           </p>
         </div>
 
         {loading && (
-          <div className="space-y-4 py-12 max-w-md mx-auto">
-            {[1, 2, 3].map(i => <div key={i} className="h-16 bg-white animate-pulse rounded-xl border border-slate-200" />)}
+          <div className="py-12">
+            {/* Desktop skeleton */}
+            <div className="hidden md:block">
+              <JobCardSkeleton count={3} />
+            </div>
+            {/* Mobile skeleton */}
+            <div className="block md:hidden">
+              <JobCardSkeletonMobile count={3} />
+            </div>
+          </div>
+        )
+
+        {!loading && loadError && (
+          <div className="text-center py-16 max-w-md mx-auto">
+            <div className="h-16 w-16 rounded-full bg-red-50 border border-red-100 flex items-center justify-center mx-auto mb-4">
+              <XCircle className="h-8 w-8 text-red-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">Erreur de chargement</h3>
+            <p className="text-sm text-slate-500 mb-6">{loadError}</p>
+            <button
+              onClick={() => {
+                setLoading(true);
+                setLoadError(null);
+                fetch('/api/public/schools/with-jobs')
+                  .then(res => res.ok ? res.json() : Promise.reject('API error'))
+                  .then(data => { if (Array.isArray(data)) setSchools(data); })
+                  .catch(() => setLoadError('Impossible de charger les établissements. Vérifiez votre connexion et réessayez.'))
+                  .finally(() => setLoading(false));
+              }}
+              className="px-6 py-2.5 bg-[#1A2BA6] text-white text-sm font-semibold rounded-xl hover:bg-[#1521a0] transition-colors"
+            >
+              Réessayer
+            </button>
           </div>
         )}
 
-        {!loading && (
+        {!loading && !loadError && !selectedSchool && schools.length === 0 && (
+          <div className="text-center py-16 max-w-md mx-auto">
+            <div className="h-16 w-16 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center mx-auto mb-4">
+              <Building2 className="h-8 w-8 text-slate-300" />
+            </div>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">Aucun établissement trouvé</h3>
+            <p className="text-sm text-slate-500">Aucun établissement ne recrute actuellement. Revenez bientôt !</p>
+          </div>
+        )}
+
+        {!loading && !loadError && (
           <AnimatePresence mode="wait">
             {/* STEP 1: Select Institution */}
             {!selectedSchool && (
@@ -418,26 +579,30 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
                   />
                 </div>
 
-                <div className="flex flex-wrap justify-center gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {filteredSchools.map((school) => (
                     <div
                       key={school.id}
                       onClick={() => handleSelectSchool(school)}
-                      className="group cursor-pointer bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md hover:border-slate-300 transition-all flex flex-col justify-between relative overflow-hidden w-full sm:w-[calc(50%-12px)] lg:w-[calc(33.333%-16px)]"
+                      className="group cursor-pointer bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md hover:border-slate-300 transition-all flex flex-col justify-between relative overflow-hidden"
                     >
                       <div>
                         <div className="flex justify-between items-start mb-4">
-                          <div className="h-12 w-12 rounded-xl bg-blue-50/80 border border-blue-100 flex items-center justify-center text-[#1A2BA6] overflow-hidden">
-                            {school.logoUrl ? (
-                              <img
-                                src={school.logoUrl}
-                                alt={`Logo ${school.schoolName || school.name}`}
-                                className="w-full h-full object-contain p-1"
-                              />
-                            ) : (
+                          {school.logoUrl ? (
+                            <Image
+                              src={school.logoUrl}
+                              alt={school.schoolName || school.tenantName || school.name}
+                              width={48}
+                              height={48}
+                              className="h-12 w-12 rounded-xl object-contain border border-slate-100 bg-white p-0.5"
+                              loading="lazy"
+                              sizes="48px"
+                            />
+                          ) : (
+                            <div className="h-12 w-12 rounded-xl bg-blue-50/80 border border-blue-100 flex items-center justify-center text-[#1A2BA6]">
                               <Building2 className="h-6 w-6" />
-                            )}
-                          </div>
+                            </div>
+                          )}
                           {school.activeJobsCount > 0 ? (
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 shadow-sm relative">
                               <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
@@ -455,25 +620,12 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
                         <h3 className="font-bold text-slate-900 text-sm leading-snug group-hover:text-[#1A2BA6] transition-colors">
                           {school.schoolName || school.tenantName || school.name}
                         </h3>
+                        <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider mt-1">{school.slug}</p>
                         {(school.city || school.country) && (
-                          <p className="text-[10px] text-slate-500 font-medium flex items-center gap-1 mt-1">
-                            <MapPin className="h-3 w-3" />
+                          <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
+                            <MapPin className="h-2.5 w-2.5" />
                             {[school.city, school.country].filter(Boolean).join(', ')}
                           </p>
-                        )}
-                        {(school.primaryPhone || school.primaryEmail) && (
-                          <div className="mt-2 flex flex-col gap-0.5">
-                            {school.primaryPhone && (
-                              <span className="text-[10px] text-slate-500 flex items-center gap-1">
-                                <Phone className="h-2.5 w-2.5" /> {school.primaryPhone}
-                              </span>
-                            )}
-                            {school.primaryEmail && (
-                              <span className="text-[10px] text-slate-500 flex items-center gap-1 truncate">
-                                <Mail className="h-2.5 w-2.5 shrink-0" /> {school.primaryEmail}
-                              </span>
-                            )}
-                          </div>
                         )}
                       </div>
                       <div className="mt-6 pt-4 border-t border-slate-50 flex items-center justify-between text-xs font-bold text-[#1A2BA6]">
@@ -502,38 +654,34 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
                 </button>
 
                 <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-blue-50/80 border border-blue-100 flex items-center justify-center overflow-hidden">
-                      {selectedSchool.logoUrl ? (
-                        <img
-                          src={selectedSchool.logoUrl}
-                          alt={`Logo ${selectedSchool.schoolName || selectedSchool.name}`}
-                          className="w-full h-full object-contain p-0.5"
-                        />
-                      ) : (
-                        <Building2 className="h-5 w-5 text-[#1A2BA6]" />
-                      )}
-                    </div>
-                    <div>
-                      <h2 className="font-extrabold text-slate-900 text-lg">
+                  <div className="flex items-center gap-4">
+                    {selectedSchool.logoUrl ? (
+                      <Image
+                        src={selectedSchool.logoUrl}
+                        alt={selectedSchool.schoolName || selectedSchool.tenantName || selectedSchool.name}
+                        width={56}
+                        height={56}
+                        className="h-14 w-14 rounded-xl object-contain border border-slate-100 bg-white p-0.5"
+                        sizes="56px"
+                      />
+                    ) : (
+                      <div className="h-14 w-14 rounded-xl bg-blue-50/80 border border-blue-100 flex items-center justify-center text-[#1A2BA6]">
+                        <Building2 className="h-7 w-7" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <h2 className="font-extrabold text-slate-900 text-lg truncate">
                         {selectedSchool.schoolName || selectedSchool.tenantName || selectedSchool.name}
                       </h2>
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5">
+                      <div className="flex flex-wrap items-center gap-3 mt-1 text-xs text-slate-500">
                         {(selectedSchool.city || selectedSchool.country) && (
-                          <span className="text-[10px] text-slate-500 flex items-center gap-1">
-                            <MapPin className="h-3 w-3" />
-                            {[selectedSchool.city, selectedSchool.country].filter(Boolean).join(', ')}
-                          </span>
+                          <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {[selectedSchool.city, selectedSchool.country].filter(Boolean).join(', ')}</span>
                         )}
-                        {selectedSchool.primaryPhone && (
-                          <a href={`tel:${selectedSchool.primaryPhone}`} className="text-[10px] text-blue-600 hover:underline flex items-center gap-1">
-                            <Phone className="h-3 w-3" /> {selectedSchool.primaryPhone}
-                          </a>
+                        {getSchoolPhone(selectedSchool) && (
+                          <a href={`tel:${getSchoolPhone(selectedSchool)}`} className="flex items-center gap-1 hover:text-[#1A2BA6] transition-colors"><Phone className="h-3 w-3" /> {getSchoolPhone(selectedSchool)}</a>
                         )}
-                        {selectedSchool.primaryEmail && (
-                          <a href={`mailto:${selectedSchool.primaryEmail}`} className="text-[10px] text-blue-600 hover:underline flex items-center gap-1">
-                            <Mail className="h-3 w-3" /> {selectedSchool.primaryEmail}
-                          </a>
+                        {getSchoolEmail(selectedSchool) && (
+                          <a href={`mailto:${getSchoolEmail(selectedSchool)}`} className="flex items-center gap-1 hover:text-[#1A2BA6] transition-colors"><Mail className="h-3 w-3" /> {getSchoolEmail(selectedSchool)}</a>
                         )}
                       </div>
                     </div>
@@ -541,40 +689,54 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
                 </div>
 
                 {!isApplying ? (
+                  jobs.length === 0 ? (
+                    /* ─── No open positions — show illustration ─── */
+                    <div className="flex flex-col items-center justify-center py-8">
+                      <div className="relative w-full max-w-lg">
+                        <Image
+                          src="/images/AcademiaHelm_NoRecruitment.jpeg"
+                          alt="Aucune offre de recrutement pour le moment"
+                          width={512}
+                          height={360}
+                          className="rounded-2xl shadow-sm w-full h-auto object-contain"
+                          priority
+                          sizes="(max-width: 768px) 100vw, 512px"
+                        />
+                      </div>
+                      <p className="mt-5 text-sm font-semibold text-slate-700">Aucune offre de recrutement pour le moment</p>
+                      <p className="mt-1 text-xs text-slate-400">Les nouvelles opportunités apparaîtront ici dès leur publication.</p>
+                    </div>
+                  ) : (
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Left: Job list */}
                     <div className="lg:col-span-1 space-y-4">
                       <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Postes ouverts</h3>
-                      {jobs.length === 0 ? (
-                        <p className="text-xs text-slate-400 italic">Aucune offre active publiée par cette école.</p>
-                      ) : (
-                        jobs.map((job) => (
-                          <div
-                            key={job.id}
-                            onClick={() => {
-                              setSelectedJob(job);
-                              // Mettre à jour l'URL pour le partage et la deep-link
-                              const jobSlug = job.slug || job.ref;
-                              router.push(`/jobs/${selectedSchool.slug}/${jobSlug}`, { scroll: false });
-                            }}
-                            className={`cursor-pointer border p-4 rounded-xl transition-all ${
-                              selectedJob?.id === job.id 
-                                ? 'bg-indigo-50/50 border-[#1A2BA6] shadow-sm' 
-                                : 'bg-white border-slate-200 hover:border-slate-300'
-                            }`}
-                          >
-                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{job.ref}</span>
-                            <h4 className="font-bold text-slate-900 text-xs mt-1">{job.title}</h4>
-                            <div className="mt-3 flex items-center gap-3 text-[10px] text-slate-500">
-                              <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {job.loc}</span>
-                              <span className="flex items-center gap-1"><Briefcase className="h-3 w-3" /> {job.contractType || 'CDI'}</span>
-                              {(job._count?.applications ?? 0) > 0 && (
-                                <span className="flex items-center gap-1 text-blue-600 font-semibold"><Users className="h-3 w-3" /> {job._count?.applications ?? 0} candidat{(job._count?.applications ?? 0) > 1 ? 's' : ''}</span>
-                              )}
-                            </div>
+                      {jobs.map((job) => (
+                        <div
+                          key={job.id}
+                          onClick={() => {
+                            setSelectedJob(job);
+                            if (selectedSchool?.slug && job.slug) {
+                              router.push(`/jobs/${selectedSchool.slug}/${job.slug}`, { scroll: false });
+                            }
+                          }}
+                          className={`cursor-pointer border p-4 rounded-xl transition-all ${
+                            selectedJob?.id === job.id 
+                              ? 'bg-indigo-50/50 border-[#1A2BA6] shadow-sm' 
+                              : 'bg-white border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{job.ref}</span>
+                          <h4 className="font-bold text-slate-900 text-xs mt-1">{job.title}</h4>
+                          <div className="mt-3 flex items-center gap-3 text-[10px] text-slate-500">
+                            <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {job.loc}</span>
+                            <span className="flex items-center gap-1"><Briefcase className="h-3 w-3" /> {job.contractType || 'CDI'}</span>
+                            {(job._count?.applications ?? 0) > 0 && (
+                              <span className="flex items-center gap-1 text-blue-600 font-semibold"><Users className="h-3 w-3" /> {job._count?.applications ?? 0} candidat{(job._count?.applications ?? 0) > 1 ? 's' : ''}</span>
+                            )}
                           </div>
-                        ))
-                      )}
+                        </div>
+                      ))}
                     </div>
 
                     {/* Right: Job details */}
@@ -700,10 +862,25 @@ export function CareersContent({ forcedSchoolSlug, forcedJobSlug }: { forcedScho
                           </button>
                         </div>
                       ) : (
-                        <RecruitmentPlaceholder />
+                        <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center shadow-sm">
+                          <div className="relative w-full max-w-md mx-auto">
+                            <Image
+                              src="/images/AcademiaHelm_RecruitmentPortal.jpeg"
+                              alt="Portail de recrutement Academia Helm"
+                              width={512}
+                              height={360}
+                              className="rounded-2xl shadow-sm w-full h-auto object-contain"
+                              priority
+                              sizes="(max-width: 768px) 100vw, 512px"
+                            />
+                          </div>
+                          <p className="mt-5 text-sm font-semibold text-slate-700">Sélectionnez une offre</p>
+                          <p className="mt-1 text-xs text-slate-400">Parcourez les postes ouverts et cliquez sur un poste pour voir les détails.</p>
+                        </div>
                       )}
                     </div>
                   </div>
+                  )}
                 ) : (
                   /* Form: Easy Apply multi-step */
                   <div className="max-w-2xl mx-auto bg-white border border-slate-200 rounded-2xl p-6 shadow-md relative overflow-hidden">

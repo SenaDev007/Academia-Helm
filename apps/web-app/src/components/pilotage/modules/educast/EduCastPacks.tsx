@@ -44,7 +44,7 @@ export default function EduCastPacks() {
               <div className="absolute inset-0 bg-gradient-to-br from-rose-600 to-navy-900 opacity-60 mix-blend-overlay group-hover:opacity-80 transition-opacity" />
               <div className="absolute inset-0 flex flex-col items-center justify-center text-white">
                 <Package className="w-12 h-12 mb-4 text-[#C9A84C]" />
-                <p className="text-3xl font-black tracking-tighter">{pack.price} <span className="text-xs">FCFA</span></p>
+                <p className="text-3xl font-black tracking-tighter">{pack.price} <span className="text-xs">F CFA</span></p>
               </div>
               <div className="absolute top-6 right-6 px-3 py-1 bg-white/10 backdrop-blur-md rounded-full border border-white/10 text-[9px] font-black text-white uppercase tracking-widest">
                 {pack.sales} Ventes

@@ -68,7 +68,7 @@ export const faqData: FAQData = {
     questions: [
       {
         q: "Pourquoi une souscription initiale ?",
-        a: "🚀 Elle permet l'activation réelle de votre établissement : données réelles, sous-domaine, modules complets, mode offline et accès aux IA. Le montant varie selon le plan (75 000 à 200 000 FCFA)."
+        a: "🚀 Elle permet l'activation réelle de votre établissement : données réelles, sous-domaine, modules complets, mode offline et accès aux IA. Le montant varie selon le plan (75 000 à 200 000 F CFA)."
       },
       {
         q: "Est-ce payé une seule fois ?",
@@ -94,7 +94,7 @@ export const faqData: FAQData = {
     questions: [
       {
         q: "J'ai 2 écoles, combien je paie ?",
-        a: "🏫🏫 Vous payez 25 000 FCFA par mois ou 250 000 FCFA par an."
+        a: "🏫🏫 Vous payez 25 000 F CFA par mois ou 250 000 F CFA par an."
       },
       {
         q: "J'ai 3 écoles ou plus, comment ça fonctionne ?",

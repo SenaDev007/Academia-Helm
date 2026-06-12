@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { User, Tenant } from '@/types';
 import { getClientToken } from '@/lib/auth/session-client';
+import { clearClientSessionSync } from '@/lib/auth/client-access-token';
 import { checkAuth } from '@/services/auth.service';
 
 export function useAuth() {
@@ -46,16 +47,17 @@ export function useAuth() {
   }, []);
 
   const logout = async () => {
-    // Utiliser le hook useSecureLogout pour le flow complet
-    // Cette fonction est conservée pour compatibilité mais devrait être remplacée
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
+      clearClientSessionSync();
       setUser(null);
       setTenant(null);
       setIsAuthenticated(false);
-      router.push('/portal');
+      window.location.href = '/';
     } catch (error) {
       console.error('Error logging out:', error);
+      clearClientSessionSync();
+      window.location.href = '/';
     }
   };
 

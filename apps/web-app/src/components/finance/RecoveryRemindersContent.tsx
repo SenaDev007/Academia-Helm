@@ -18,6 +18,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { financeService } from '@/services/finance.service';
 import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
 import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
+import { formatCurrency } from '@/lib/utils';
 
 export default function RecoveryRemindersContent() {
   const { academicYear, tenantId } = useModuleContext();
@@ -80,7 +81,6 @@ export default function RecoveryRemindersContent() {
     }
   };
 
-  const formatXOF = (n: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', maximumFractionDigits: 0 }).format(n);
   const subModuleTabs = FINANCE_SUBMODULE_TABS.map((t) => ({ id: t.id, label: t.label, path: t.path, icon: <t.icon className="w-4 h-4" /> }));
   const levelBadge = (level: string) => {
     const v = level === 'FINAL_NOTICE' ? 'destructive' : level === 'URGENT' ? 'default' : 'secondary';
@@ -136,7 +136,7 @@ export default function RecoveryRemindersContent() {
                   <TableCell>
                     {r.studentAccount?.student ? `${r.studentAccount.student.lastName} ${r.studentAccount.student.firstName}` : r.studentAccountId}
                   </TableCell>
-                  <TableCell>{formatXOF(Number(r.amountDue))}</TableCell>
+                  <TableCell>{formatCurrency(r.amountDue)}</TableCell>
                   <TableCell>{levelBadge(r.reminderLevel)}</TableCell>
                   <TableCell>{r.sentVia}</TableCell>
                   <TableCell>{r.sentAt ? new Date(r.sentAt).toLocaleDateString('fr-FR') : '—'}</TableCell>
@@ -167,7 +167,7 @@ export default function RecoveryRemindersContent() {
                   <SelectContent>
                     {accounts.filter((a) => Number(a.balance) > 0).map((a) => (
                       <SelectItem key={a.id} value={a.id}>
-                        {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.id} — {formatXOF(Number(a.balance))}
+                        {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.id} — {formatCurrency(a.balance)}
                       </SelectItem>
                     ))}
                   </SelectContent>

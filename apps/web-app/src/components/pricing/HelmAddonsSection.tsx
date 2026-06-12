@@ -2,35 +2,35 @@ const ADDONS = [
   {
     code: 'SMS_500',
     name: 'Pack SMS 500',
-    price: '5 000 FCFA / mois',
+    price: '5 000 F CFA / mois',
     description:
       '500 SMS vers parents et personnel via opérateurs béninois.',
   },
   {
     code: 'SMS_2000',
     name: 'Pack SMS 2000',
-    price: '15 000 FCFA / mois',
+    price: '15 000 F CFA / mois',
     description:
       '2000 SMS — pour grandes écoles ou communication intensive.',
   },
   {
     code: 'SUPPORT_PREMIUM',
     name: 'Support Prioritaire',
-    price: '10 000 FCFA / mois',
+    price: '10 000 F CFA / mois',
     description:
       'SLA &lt; 2h, hotline dédiée, gestionnaire de compte attitré.',
   },
   {
     code: 'TRAINING_ONSITE',
     name: 'Formation On-Site',
-    price: '50 000 FCFA / jour',
+    price: '50 000 F CFA / jour',
     description:
       'Formation supplémentaire sur site (hors formation initiale incluse).',
   },
   {
     code: 'BILINGUAL',
     name: 'Bilingue FR/EN',
-    price: '5 000 FCFA / mois',
+    price: '5 000 F CFA / mois',
     description:
       'Interface et tous documents générés en FR et EN simultanément.',
   },

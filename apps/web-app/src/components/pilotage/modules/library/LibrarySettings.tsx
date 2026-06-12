@@ -82,11 +82,11 @@ export default function LibrarySettings() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="space-y-3">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Amende par jour de retard (FCFA)</label>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Amende par jour de retard (F CFA)</label>
               <input type="number" defaultValue={500} className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-slate-900 font-black outline-none focus:ring-2 focus:ring-amber-500/20 transition-all" />
             </div>
             <div className="space-y-3">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Seuil blocage automatique (FCFA)</label>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Seuil blocage automatique (F CFA)</label>
               <input type="number" defaultValue={5000} className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-slate-900 font-black outline-none focus:ring-2 focus:ring-amber-500/20 transition-all" />
             </div>
           </div>

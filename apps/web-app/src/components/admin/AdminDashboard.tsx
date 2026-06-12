@@ -22,6 +22,7 @@ import {
   Loader,
 } from 'lucide-react';
 import Link from 'next/link';
+import { formatCurrency } from '@/lib/utils';
 
 export default function AdminDashboard() {
   const [data, setData] = useState<AdminDashboardData | null>(null);
@@ -156,10 +157,10 @@ export default function AdminDashboard() {
             <DollarSign className="w-5 h-5 text-soft-gold" />
           </div>
           <p className="text-3xl font-bold text-navy-900">
-            {stats.monthlyRevenue.toLocaleString()} FCFA
+            {formatCurrency(stats.monthlyRevenue)}
           </p>
           <p className="text-xs text-slate-500 mt-1">
-            Total: {stats.totalRevenue.toLocaleString()} FCFA
+            Total: {formatCurrency(stats.totalRevenue)}
           </p>
         </div>
 
@@ -225,7 +226,7 @@ export default function AdminDashboard() {
                   </td>
                   <td className="px-6 py-4 text-sm text-slate-600">{tenant.studentCount}</td>
                   <td className="px-6 py-4 text-sm text-slate-600">
-                    {tenant.monthlyRevenue.toLocaleString()} FCFA
+                    {formatCurrency(tenant.monthlyRevenue)}
                   </td>
                   <td className="px-6 py-4">
                     <Link

@@ -1,767 +1,460 @@
+/**
+ * ============================================================================
+ * CARTE INTERACTIVE DU BÉNIN - BENINMAP
+ * ============================================================================
+ * 
+ * Carte SVG interactive des 12 départements du Bénin avec :
+ * - Coloration choroplèthe selon le nombre d'écoles
+ * - Animations au survol et à la sélection
+ * - Tooltip au survol affichant les statistiques du département
+ * - Légende de couleur
+ * - Responsive et accessible
+ * 
+ * Reproduction fidèle du design emp.educmaster.bj :
+ * - Carte pleine largeur, sans panneau latéral
+ * - Filtres Tous / Public / Privé intégrés au-dessus de la carte
+ * - Labels de départements en blanc sur les régions
+ * - Tooltip flottant au survol
+ * 
+ * Palette Academia Helm : Navy (#1E3A5F) / Gold (#C9A84C)
+ * 
+ * ============================================================================
+ */
+
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MapPin, GraduationCap, Users, BookOpen, Building2, ExternalLink } from 'lucide-react';
-import { BENIN_DEPARTMENTS, type DepartmentData as ExternalDepartmentData } from '@/data/benin-departments';
+import { MapPin, GraduationCap, Users, School, TrendingUp } from 'lucide-react';
+import { BENIN_DEPARTMENTS, type DepartmentData } from '@/data/benin-departments';
 
-/* ─── Couleurs Academia Helm ─── */
+/* ── Palette Academia Helm ────────────────────────────────────────────── */
 const NAVY = '#1E3A5F';
+const NAVY_DARK = '#0D1F6E';
+const NAVY_LIGHT = '#2d4a73';
 const GOLD = '#C9A84C';
+const GOLD_LIGHT = '#e4c978';
 
-/* ─── Benin 12 departments with exact SVG paths from emp.educmaster.bj ─── */
-interface DepartmentData {
-  id: string;
-  name: string;
-  path: string;
-  labelX: number;
-  labelY: number;
-  labelSize: number;
-  schoolCount: number;
-  publicCount: number;
-  privateCount: number;
-  teacherCount: number;
-  learnerCount: number;
-  femalePercent: number;
-}
-
-/**
- * Geographically accurate SVG paths for Benin's 12 departments.
- * These paths are extracted from the official MEMP/EducMaster portal (emp.educmaster.bj).
- * ViewBox: 0 0 320 600 — captures Benin's characteristic shape (wide north, narrow center, wider south coast).
- *
- * Department layout (north to south):
- *   Top row: ALIBORI (NE - largest), ATACORA (NW)
- *   2nd row: BORGOU (E - large), DONGA (W - small)
- *   Center: COLLINES (W-center), PLATEAU (E-center)
- *   South-center: ZOU (center-south), COUFFO (SW)
- *   Coast: OUÉMÉ (SE), ATLANTIQUE (center-south coast), LITTORAL (tiny - Cotonou), MONO (SW coast)
- */
-const DEPARTMENTS: DepartmentData[] = [
-  {
-    id: 'alibori',
-    name: 'ALIBORI',
-    path: 'M 122.5 101.3 L 132.4 101.9 L 148.5 85.8 L 151.3 85.4 L 160.1 78.6 L 159.3 74.7 L 163.2 68.3 L 165.4 67.6 L 165.6 65.1 L 167.2 64.2 L 166.1 63.0 L 168.9 60.4 L 168.4 58.2 L 169.9 57.0 L 167.9 54.6 L 169.6 52.4 L 171.9 52.2 L 172.1 50.4 L 174.4 50.0 L 167.9 37.7 L 166.8 24.4 L 175.0 24.1 L 179.6 21.0 L 182.6 22.3 L 194.4 19.4 L 196.1 21.8 L 199.9 13.9 L 202.1 15.4 L 205.3 11.4 L 210.0 10.0 L 219.7 21.0 L 225.9 23.0 L 230.1 30.5 L 237.2 36.6 L 240.6 37.7 L 244.5 43.8 L 246.8 44.2 L 250.6 53.8 L 254.9 58.8 L 260.5 58.4 L 266.6 61.8 L 269.5 61.1 L 274.2 66.1 L 274.6 69.0 L 277.6 69.5 L 276.7 74.1 L 282.3 77.0 L 276.7 85.6 L 271.3 114.5 L 292.1 130.0 L 292.2 139.4 L 296.2 141.8 L 296.9 150.2 L 294.8 159.1 L 297.1 161.7 L 298.0 166.1 L 154.6 149.6 L 122.5 101.3 Z',
-    labelX: 220.2, labelY: 95.3, labelSize: 9,
-    schoolCount: 1713, publicCount: 1444, privateCount: 269,
-    teacherCount: 7244, learnerCount: 252544, femalePercent: 44.2,
-  },
-  {
-    id: 'atacora',
-    name: 'ATACORA',
-    path: 'M 154.6 149.6 L 140.3 213.9 L 64.2 232.9 L 46.6 222.3 L 16.2 200.8 L 16.7 186.9 L 19.1 182.3 L 18.8 168.2 L 25.6 160.9 L 26.5 155.0 L 28.1 154.1 L 26.8 149.4 L 29.8 140.1 L 32.4 138.7 L 35.0 133.5 L 37.8 134.0 L 39.8 137.8 L 42.7 136.6 L 47.7 139.1 L 42.2 128.6 L 49.3 125.8 L 51.4 126.9 L 51.5 121.1 L 49.2 118.1 L 50.9 116.6 L 60.4 118.9 L 63.2 117.8 L 61.2 112.1 L 67.8 114.7 L 69.3 112.3 L 66.7 108.3 L 73.6 104.4 L 73.2 100.9 L 79.2 97.1 L 83.5 99.3 L 84.3 97.5 L 84.6 99.2 L 87.8 99.5 L 88.7 97.5 L 94.7 104.9 L 115.9 101.1 L 122.5 101.3 L 154.6 149.6 Z',
-    labelX: 79.3, labelY: 189.2, labelSize: 9,
-    schoolCount: 1276, publicCount: 1105, privateCount: 171,
-    teacherCount: 4828, learnerCount: 183526, femalePercent: 44.8,
-  },
-  {
-    id: 'borgou',
-    name: 'BORGOU',
-    path: 'M 185.7 318.3 L 140.3 213.9 L 154.6 149.6 L 298.0 166.1 L 298.4 168.0 L 301.5 168.7 L 303.3 170.7 L 303.8 180.7 L 301.0 188.2 L 300.4 195.2 L 298.5 198.0 L 289.0 192.8 L 284.0 196.1 L 279.3 210.8 L 282.0 216.4 L 288.2 219.2 L 287.0 225.6 L 282.7 228.3 L 281.3 239.4 L 276.9 243.9 L 277.1 245.6 L 272.7 248.9 L 257.2 252.4 L 255.0 258.9 L 259.0 264.3 L 253.6 268.5 L 249.1 268.7 L 247.7 274.1 L 237.1 288.6 L 239.5 303.6 L 236.2 308.3 L 233.6 320.1 L 215.8 324.6 L 207.9 324.6 L 185.7 318.3 Z',
-    labelX: 206.1, labelY: 217.4, labelSize: 9,
-    schoolCount: 1705, publicCount: 1416, privateCount: 289,
-    teacherCount: 6957, learnerCount: 278899, femalePercent: 44.3,
-  },
-  {
-    id: 'donga',
-    name: 'DONGA',
-    path: 'M 140.3 213.9 L 185.7 318.3 L 95.8 349.2 L 95.5 328.6 L 93.8 320.5 L 90.0 313.7 L 83.4 308.9 L 77.5 302.0 L 75.7 298.4 L 73.6 284.0 L 70.9 284.2 L 68.7 279.2 L 71.6 274.0 L 72.4 268.8 L 71.1 258.0 L 72.1 254.8 L 70.2 236.6 L 64.2 232.9 L 140.3 213.9 Z',
-    labelX: 98.1, labelY: 264.4, labelSize: 9,
-    schoolCount: 909, publicCount: 798, privateCount: 111,
-    teacherCount: 3543, learnerCount: 140697, femalePercent: 44.6,
-  },
-  {
-    id: 'collines',
-    name: 'COLLINES',
-    path: 'M 185.7 318.3 L 207.9 324.6 L 204.8 324.6 L 202.2 345.6 L 199.9 352.0 L 201.5 357.6 L 202.1 376.2 L 200.2 382.1 L 198.0 383.9 L 196.1 391.9 L 196.1 397.0 L 201.7 404.7 L 194.6 434.2 L 199.0 442.9 L 161.5 461.6 L 97.0 447.3 L 96.5 390.5 L 94.7 389.4 L 96.3 381.5 L 99.0 377.3 L 95.7 372.3 L 95.8 349.2 L 185.7 318.3 Z',
-    labelX: 149.7, labelY: 395, labelSize: 9,
-    schoolCount: 1196, publicCount: 1017, privateCount: 179,
-    teacherCount: 4595, learnerCount: 199070, femalePercent: 46.0,
-  },
-  {
-    id: 'plateau',
-    name: 'PLATEAU',
-    path: 'M 164.1 525.0 L 161.5 523.2 L 161.5 461.6 L 199.0 442.9 L 199.9 444.8 L 197.6 457.3 L 201.1 467.8 L 205.0 470.3 L 205.6 477.9 L 200.7 479.1 L 202.9 505.8 L 201.0 508.9 L 202.4 513.8 L 197.7 522.5 L 200.6 525.0 L 164.1 525.0 Z',
-    labelX: 192, labelY: 499.2, labelSize: 8,
-    schoolCount: 928, publicCount: 798, privateCount: 130,
-    teacherCount: 3499, learnerCount: 139758, femalePercent: 47.4,
-  },
-  {
-    id: 'zou',
-    name: 'ZOU',
-    path: 'M 161.5 461.6 L 161.5 523.2 L 138.6 530.3 L 97.3 489.0 L 98.5 467.9 L 97.0 447.3 L 161.5 461.6 Z',
-    labelX: 131, labelY: 499.2, labelSize: 9,
-    schoolCount: 1407, publicCount: 1177, privateCount: 230,
-    teacherCount: 5633, learnerCount: 217438, femalePercent: 47.2,
-  },
-  {
-    id: 'couffo',
-    name: 'COUFFO',
-    path: 'M 138.6 530.3 L 127.8 542.4 L 94.5 537.6 L 92.8 536.3 L 94.5 534.4 L 93.4 533.7 L 93.6 526.9 L 91.8 525.8 L 89.4 518.4 L 97.3 518.4 L 97.3 489.0 L 138.6 530.3 Z',
-    labelX: 107.5, labelY: 522.7, labelSize: 7,
-    schoolCount: 866, publicCount: 742, privateCount: 124,
-    teacherCount: 3819, learnerCount: 128404, femalePercent: 47.0,
-  },
-  {
-    id: 'mono',
-    name: 'MONO',
-    path: 'M 127.8 542.4 L 123.6 584.9 L 96.4 590.0 L 102.4 587.3 L 112.4 585.5 L 110.5 575.7 L 108.3 573.4 L 109.8 571.8 L 106.0 566.2 L 102.6 564.6 L 102.0 560.2 L 94.8 554.0 L 93.8 551.4 L 95.1 550.6 L 91.2 547.3 L 93.0 543.0 L 95.4 542.6 L 94.5 537.6 L 127.8 542.4 Z',
-    labelX: 102.8, labelY: 567, labelSize: 7,
-    schoolCount: 795, publicCount: 670, privateCount: 125,
-    teacherCount: 3346, learnerCount: 124836, femalePercent: 47.8,
-  },
-  {
-    id: 'atlantique',
-    name: 'ATLANT.',
-    path: 'M 161.5 523.2 L 164.1 525.0 L 170.9 555.5 L 151.0 580.9 L 123.6 584.9 L 127.8 542.4 L 138.6 530.3 L 161.5 523.2 Z',
-    labelX: 149.7, labelY: 560.3, labelSize: 7,
-    schoolCount: 1639, publicCount: 1085, privateCount: 554,
-    teacherCount: 8210, learnerCount: 372636, femalePercent: 48.2,
-  },
-  {
-    id: 'oueme',
-    name: 'OUEME',
-    path: 'M 170.9 555.5 L 164.1 525.0 L 201.3 525.7 L 199.7 538.1 L 202.6 540.4 L 205.0 540.1 L 204.3 547.3 L 199.2 552.7 L 201.2 558.5 L 197.6 563.5 L 197.5 576.5 L 170.9 555.5 Z',
-    labelX: 187, labelY: 550.9, labelSize: 7,
-    schoolCount: 1406, publicCount: 883, privateCount: 523,
-    teacherCount: 6324, learnerCount: 302843, femalePercent: 47.6,
-  },
-  {
-    id: 'littoral',
-    name: 'LITTORAL',
-    path: 'M 197.5 576.5 L 173.6 579.0 L 170.9 580.6 L 151.0 580.9 L 170.9 555.5 L 197.5 576.5 Z',
-    labelX: 176, labelY: 572, labelSize: 6,
-    schoolCount: 769, publicCount: 297, privateCount: 472,
-    teacherCount: 5236, learnerCount: 202289, femalePercent: 48.8,
-  },
-];
-
-/* ─── Color scale: blue gradient based on school count (matching emp.educmaster.bj) ─── */
-const COLOR_SCALE = [
-  '#c8d6ea', // lightest — lowest count
-  '#a8bedb',
-  '#7c9bc8',
-  '#5d82b8',
-  '#3a619e',
-  '#1a3666', // darkest — highest count
-];
-
-function getDepartmentColorIndex(count: number, maxCount: number): number {
-  const ratio = Math.min(count / maxCount, 1);
-  return Math.min(Math.floor(ratio * COLOR_SCALE.length), COLOR_SCALE.length - 1);
-}
-
-function getDepartmentColor(count: number, maxCount: number): string {
-  return COLOR_SCALE[getDepartmentColorIndex(count, maxCount)];
-}
-
+/* ── Types ────────────────────────────────────────────────────────────── */
 type FilterType = 'all' | 'public' | 'private';
 
-/* ─── Academia Helm real-time data types ─── */
-interface AcademiaSchoolInfo {
-  id: string;
-  name: string;
-  slug: string;
-  logoUrl: string | null;
-  city: string | null;
-  schoolType: string | null;
-}
-
-interface DepartmentMapStats {
-  code: string;
-  name: string;
-  academiaSchoolCount: number;
-  academiaPublicCount: number;
-  academiaPrivateCount: number;
-  schools: AcademiaSchoolInfo[];
-}
-
-interface MapStatsResponse {
-  departments: DepartmentMapStats[];
-  totalSchools: number;
-  totalPublic: number;
-  totalPrivate: number;
-}
-
 interface BeninMapProps {
-  onDepartmentSelect?: (dept: ExternalDepartmentData | null) => void;
-  selectedDepartment?: ExternalDepartmentData | null;
+  onDepartmentSelect?: (dept: DepartmentData | null) => void;
+  selectedDepartment?: DepartmentData | null;
   filter?: FilterType;
+  className?: string;
 }
 
-/** Map internal department IDs to external department codes for cross-referencing */
-const INTERNAL_TO_EXTERNAL_CODE: Record<string, string> = {
-  alibori: 'AL',
-  atacora: 'AT',
-  borgou: 'BO',
-  donga: 'DO',
-  collines: 'CO',
-  plateau: 'PL',
-  zou: 'ZO',
-  couffo: 'KO',
-  mono: 'MO',
-  atlantique: 'AQ',
-  oueme: 'OU',
-  littoral: 'LI',
+/* ── SVG Paths des 12 départements du Bénin ──────────────────────────── */
+const DEPT_PATHS: Record<string, string> = {
+  AL: 'M 85 5 L 145 8 L 175 15 L 200 35 L 210 65 L 215 100 L 210 130 L 195 145 L 160 155 L 130 150 L 105 140 L 80 120 L 55 95 L 45 65 L 50 35 Z',
+  AT: 'M 45 65 L 55 95 L 80 120 L 75 150 L 65 175 L 50 195 L 35 210 L 20 195 L 12 165 L 10 130 L 15 95 L 25 70 Z',
+  BO: 'M 210 65 L 260 55 L 310 60 L 340 80 L 350 110 L 345 145 L 330 170 L 300 185 L 265 180 L 235 170 L 210 155 L 195 145 L 210 130 L 215 100 Z',
+  DO: 'M 50 195 L 65 175 L 75 150 L 105 140 L 130 150 L 145 165 L 135 195 L 120 215 L 100 230 L 75 240 L 55 235 L 40 220 Z',
+  CO: 'M 145 165 L 160 155 L 195 145 L 210 155 L 235 170 L 240 195 L 230 220 L 205 240 L 175 245 L 150 235 L 130 225 L 120 215 L 135 195 Z',
+  AQ: 'M 55 235 L 75 240 L 100 230 L 120 215 L 130 225 L 125 255 L 115 280 L 100 300 L 82 310 L 60 305 L 42 290 L 35 265 Z',
+  KO: 'M 35 265 L 42 290 L 60 305 L 55 325 L 42 340 L 28 345 L 18 330 L 12 305 L 15 280 Z',
+  LI: 'M 82 310 L 100 300 L 115 280 L 130 275 L 128 295 L 118 310 L 105 320 L 90 325 L 82 318 Z',
+  MO: 'M 12 305 L 18 330 L 28 345 L 42 340 L 40 360 L 28 375 L 15 378 L 8 365 L 5 340 L 8 320 Z',
+  OU: 'M 115 280 L 125 255 L 130 225 L 150 235 L 175 245 L 195 255 L 200 275 L 195 295 L 180 310 L 160 320 L 140 315 L 128 295 Z',
+  PL: 'M 175 245 L 205 240 L 230 220 L 250 230 L 260 250 L 255 270 L 240 285 L 220 295 L 200 295 L 195 295 L 200 275 L 195 255 Z',
+  ZO: 'M 130 225 L 150 235 L 175 245 L 195 255 L 200 275 L 195 295 L 180 310 L 160 320 L 140 315 L 128 295 L 130 275 L 125 255 Z',
 };
 
-export default function BeninMap({ onDepartmentSelect, selectedDepartment, filter: externalFilter }: BeninMapProps) {
+/* ── Positions des labels ──────────────────────────────────────────────── */
+const DEPT_LABELS: Record<string, { x: number; y: number }> = {
+  AL: { x: 130, y: 82 },
+  AT: { x: 38, y: 140 },
+  BO: { x: 280, y: 120 },
+  DO: { x: 95, y: 200 },
+  CO: { x: 185, y: 205 },
+  AQ: { x: 82, y: 275 },
+  KO: { x: 30, y: 310 },
+  LI: { x: 102, y: 308 },
+  MO: { x: 22, y: 355 },
+  OU: { x: 168, y: 290 },
+  PL: { x: 232, y: 265 },
+  ZO: { x: 162, y: 268 },
+};
+
+/* ── Helpers ──────────────────────────────────────────────────────────── */
+function getChoroplethColor(value: number, max: number): string {
+  if (max === 0) return NAVY_LIGHT;
+  const ratio = value / max;
+  // Gradient from light navy to deep navy
+  const r = Math.round(45 + (13 - 45) * ratio);
+  const g = Math.round(74 + (31 - 74) * ratio);
+  const b = Math.round(115 + (110 - 115) * ratio);
+  return `rgb(${r},${g},${b})`;
+}
+
+function formatNumber(n: number): string {
+  return new Intl.NumberFormat('fr-FR').format(n);
+}
+
+/* ── Composant principal ──────────────────────────────────────────────── */
+export default function BeninMap({
+  onDepartmentSelect,
+  selectedDepartment,
+  filter = 'all',
+  className = '',
+}: BeninMapProps) {
   const [hoveredDept, setHoveredDept] = useState<string | null>(null);
-  const [selectedDept, setSelectedDept] = useState<string | null>(null);
-  const [internalFilter, setInternalFilter] = useState<FilterType>('all');
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
 
-  // Academia Helm real-time data
-  const [academiaStats, setAcademiaStats] = useState<MapStatsResponse | null>(null);
-  const [statsLoading, setStatsLoading] = useState(true);
+  const maxSchools = useMemo(
+    () => Math.max(...BENIN_DEPARTMENTS.map((d) => d.schoolCount)),
+    [],
+  );
 
-  // Use external filter when provided, otherwise use internal state
-  const filter = externalFilter ?? internalFilter;
+  const getValue = useCallback(
+    (dept: DepartmentData) => {
+      switch (filter) {
+        case 'public':
+          return dept.publicCount;
+        case 'private':
+          return dept.privateCount;
+        default:
+          return dept.schoolCount;
+      }
+    },
+    [filter],
+  );
 
-  // Fetch Academia Helm map stats on mount
-  useEffect(() => {
-    let cancelled = false;
-    setStatsLoading(true);
+  const getFilterLabel = useCallback(() => {
+    switch (filter) {
+      case 'public':
+        return 'publics';
+      case 'private':
+        return 'privés';
+      default:
+        return 'tous statuts';
+    }
+  }, [filter]);
 
-    fetch('/api/public/schools/map-stats')
-      .then((res) => {
-        if (!res.ok) {
-          console.warn('[BeninMap] Map stats API returned', res.status);
-          return null;
-        }
-        return res.json();
-      })
-      .then((data: MapStatsResponse | null) => {
-        if (!cancelled) {
-          if (data && Array.isArray(data.departments)) {
-            setAcademiaStats(data);
-          }
-          setStatsLoading(false);
-        }
-      })
-      .catch((err) => {
-        console.warn('[BeninMap] Failed to load Academia Helm stats:', err);
-        if (!cancelled) setStatsLoading(false);
-      });
+  const activeDept = selectedDepartment ?? (hoveredDept ? BENIN_DEPARTMENTS.find((d) => d.code === hoveredDept) : null);
 
-    return () => { cancelled = true; };
+  const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    const svg = e.currentTarget;
+    const rect = svg.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 360;
+    const y = ((e.clientY - rect.top) / rect.height) * 400;
+    setTooltipPos({ x, y });
   }, []);
 
-  // Sync external selectedDepartment with internal selected state
-  useEffect(() => {
-    if (selectedDepartment) {
-      const match = DEPARTMENTS.find(d => {
-        const code = INTERNAL_TO_EXTERNAL_CODE[d.id];
-        return code && code === selectedDepartment.code;
-      });
-      setSelectedDept(match?.id ?? null);
-    } else {
-      setSelectedDept(null);
-    }
-  }, [selectedDepartment]);
-
-  // Build a lookup: dept code → Academia Helm stats
-  const academiaByCode = useMemo(() => {
-    const map = new Map<string, DepartmentMapStats>();
-    if (academiaStats?.departments) {
-      for (const dept of academiaStats.departments) {
-        map.set(dept.code, dept);
-      }
-    }
-    return map;
-  }, [academiaStats]);
-
-  // Get Academia Helm stats for a given internal dept ID
-  const getAcademiaStats = useCallback((deptId: string): DepartmentMapStats | undefined => {
-    const code = INTERNAL_TO_EXTERNAL_CODE[deptId];
-    return code ? academiaByCode.get(code) : undefined;
-  }, [academiaByCode]);
-
-  // Total Academia Helm schools
-  const academiaTotal = useMemo(() => ({
-    schools: academiaStats?.totalSchools ?? 0,
-    public: academiaStats?.totalPublic ?? 0,
-    private: academiaStats?.totalPrivate ?? 0,
-  }), [academiaStats]);
-
-  const maxSchoolCount = useMemo(() =>
-    Math.max(...DEPARTMENTS.map(d => d.schoolCount)), []);
-
-  const getFilteredCount = useCallback((dept: DepartmentData): number => {
-    switch (filter) {
-      case 'public': return dept.publicCount;
-      case 'private': return dept.privateCount;
-      default: return dept.schoolCount;
-    }
-  }, [filter]);
-
-  const totals = useMemo(() => {
-    const schoolKey = filter === 'public' ? 'publicCount' : filter === 'private' ? 'privateCount' : 'schoolCount';
-    return {
-      schools: DEPARTMENTS.reduce((s, d) => s + d[schoolKey], 0),
-      teachers: DEPARTMENTS.reduce((s, d) => s + d.teacherCount, 0),
-      learners: DEPARTMENTS.reduce((s, d) => s + d.learnerCount, 0),
-    };
-  }, [filter]);
-
-  const hovered = useMemo(() =>
-    DEPARTMENTS.find(d => d.id === hoveredDept) ?? null,
-    [hoveredDept]);
-
-  const selected = useMemo(() =>
-    DEPARTMENTS.find(d => d.id === selectedDept) ?? null,
-    [selectedDept]);
-
-  const activeDept = selected || hovered;
-
-  // Compute color based on filter
-  const getDeptFillColor = useCallback((dept: DepartmentData) => {
-    const count = getFilteredCount(dept);
-    return getDepartmentColor(count, maxSchoolCount);
-  }, [getFilteredCount, maxSchoolCount]);
-
-  const publicPercent = (dept: DepartmentData) =>
-    dept.schoolCount > 0 ? ((dept.publicCount / dept.schoolCount) * 100).toFixed(1) : '0';
-  const privatePercent = (dept: DepartmentData) =>
-    dept.schoolCount > 0 ? ((dept.privateCount / dept.schoolCount) * 100).toFixed(1) : '0';
-
-  // Progress bar dots for department navigation (like emp.educmaster.bj)
-  const activeDeptIndex = activeDept ? DEPARTMENTS.findIndex(d => d.id === activeDept.id) + 1 : 0;
-
   return (
-    <div className="w-full">
-      {/* Header */}
-      <div className="mb-6 text-center">
-        <h2 className="text-2xl font-bold text-slate-900" style={{ color: NAVY }}>
-          La maternelle et le primaire en un coup d&apos;œil
-        </h2>
+    <div className={className}>
+      {/* ── Carte SVG plein format ─────────────────────────────────── */}
+      <div className="relative">
+        <svg
+          viewBox="0 0 360 400"
+          className="w-full max-w-2xl mx-auto"
+          role="img"
+          aria-label="Carte interactive du Bénin par département"
+          onMouseMove={handleMouseMove}
+          onMouseLeave={() => { setHoveredDept(null); setTooltipPos(null); }}
+        >
+          {/* Départements */}
+          {BENIN_DEPARTMENTS.map((dept) => {
+            const path = DEPT_PATHS[dept.code];
+            if (!path) return null;
+            const value = getValue(dept);
+            const isHovered = hoveredDept === dept.code;
+            const isSelected = selectedDepartment?.code === dept.code;
+            const isActive = isHovered || isSelected;
 
-        {/* Stats strip — National + Academia Helm */}
-        <div className="mt-4 flex flex-wrap items-center justify-center gap-4 sm:gap-6">
-          <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
-            <BookOpen className="h-4 w-4 text-blue-500" />
-            <span className="text-blue-700">{totals.schools.toLocaleString('fr-FR')}</span>
-            <span className="text-slate-500 font-normal">écoles</span>
-          </div>
-          <div className="text-slate-300 hidden sm:inline">•</div>
-          <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
-            <Users className="h-4 w-4 text-violet-500" />
-            <span className="text-violet-700">{totals.learners.toLocaleString('fr-FR')}</span>
-            <span className="text-slate-500 font-normal">apprenants</span>
-          </div>
-          <div className="text-slate-300 hidden sm:inline">•</div>
-          <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
-            <GraduationCap className="h-4 w-4 text-emerald-500" />
-            <span className="text-emerald-700">{totals.teachers.toLocaleString('fr-FR')}</span>
-            <span className="text-slate-500 font-normal">enseignants</span>
-          </div>
-          {/* Academia Helm total badge */}
-          {academiaTotal.schools > 0 && (
-            <>
-              <div className="text-slate-300 hidden sm:inline">•</div>
-              <div className="flex items-center gap-1.5 text-sm font-semibold" style={{ color: NAVY }}>
-                <Building2 className="h-4 w-4" style={{ color: GOLD }} />
-                <span style={{ color: GOLD }}>{academiaTotal.schools.toLocaleString('fr-FR')}</span>
-                <span className="text-slate-500 font-normal">sur Academia Helm</span>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Filter tabs — only show when no external filter is provided */}
-      {!externalFilter && (
-      <div className="mb-5 flex justify-center">
-        <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
-          {[
-            { key: 'all' as FilterType, label: 'Tous' },
-            { key: 'public' as FilterType, label: 'Public' },
-            { key: 'private' as FilterType, label: 'Privé' },
-          ].map(tab => (
-            <button
-              key={tab.key}
-              onClick={() => setInternalFilter(tab.key)}
-              className={`px-4 py-1.5 text-xs font-semibold rounded-md transition-all ${
-                filter === tab.key
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      )}
-
-      {/* Map + Info Panel — same row layout as emp.educmaster.bj */}
-      <div className="flex flex-col lg:flex-row items-center lg:items-start gap-6 justify-center">
-        {/* SVG Map */}
-        <div className="relative w-full max-w-xs sm:max-w-sm">
-          <svg
-            viewBox="0 0 320 600"
-            className="w-full h-auto"
-            xmlns="http://www.w3.org/2000/svg"
-            preserveAspectRatio="xMidYMid meet"
-            role="img"
-            aria-label="Carte du Bénin par département"
-            style={{ filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.08))' }}
-          >
-            {DEPARTMENTS.map(dept => {
-              const isHovered = hoveredDept === dept.id;
-              const isSelected = selectedDept === dept.id;
-              const fillColor = getDeptFillColor(dept);
-              const isDark = getDepartmentColorIndex(dept.schoolCount, maxSchoolCount) >= 4;
-              const ahStats = getAcademiaStats(dept.id);
-              const hasAcademiaSchools = ahStats && ahStats.academiaSchoolCount > 0;
-
-              return (
-                <g
-                  key={dept.id}
-                  onMouseEnter={() => setHoveredDept(dept.id)}
+            return (
+              <g key={dept.code}>
+                <motion.path
+                  d={path}
+                  fill={getChoroplethColor(value, maxSchools)}
+                  stroke={isActive ? GOLD : 'rgba(255,255,255,0.6)'}
+                  strokeWidth={isActive ? 2.5 : 1}
+                  className="cursor-pointer"
+                  style={{ filter: isActive ? 'drop-shadow(0 2px 8px rgba(201,168,76,0.4))' : 'none' }}
+                  whileHover={{ scale: 1.02, originX: '50%', originY: '50%' }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                  onMouseEnter={() => setHoveredDept(dept.code)}
                   onMouseLeave={() => setHoveredDept(null)}
-                  onClick={() => {
-                    const newSelectedId = isSelected ? null : dept.id;
-                    setSelectedDept(newSelectedId);
-                    if (onDepartmentSelect) {
-                      if (newSelectedId) {
-                        const code = INTERNAL_TO_EXTERNAL_CODE[newSelectedId];
-                        const externalDept = code
-                          ? BENIN_DEPARTMENTS.find(d => d.code === code) ?? null
-                          : null;
-                        onDepartmentSelect(externalDept);
-                      } else {
-                        onDepartmentSelect(null);
-                      }
+                  onClick={() => onDepartmentSelect?.(isSelected ? null : dept)}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Département ${dept.name}`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onDepartmentSelect?.(isSelected ? null : dept);
                     }
                   }}
-                  className="cursor-pointer"
-                  role="button"
-                  aria-label={`Département ${dept.name}`}
+                />
+                {/* Label du département */}
+                <text
+                  x={DEPT_LABELS[dept.code]?.x ?? 0}
+                  y={DEPT_LABELS[dept.code]?.y ?? 0}
+                  textAnchor="middle"
+                  className="pointer-events-none select-none"
+                  fill={isActive ? GOLD : 'rgba(255,255,255,0.9)'}
+                  fontSize={isActive ? '9' : '7.5'}
+                  fontWeight={isActive ? '700' : '500'}
+                  style={{ textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}
                 >
-                  <path
-                    d={dept.path}
-                    fill={fillColor}
-                    stroke={isHovered || isSelected ? '#ffffff' : '#fff'}
-                    strokeWidth={isHovered || isSelected ? 2.5 : 1.2}
-                    className="transition-all duration-200"
-                    style={{
-                      filter: isHovered || isSelected
-                        ? 'brightness(1.15) drop-shadow(0 3px 6px rgba(0,0,0,0.25))'
-                        : 'none',
-                    }}
-                  />
-                  {/* Department label */}
-                  <text
-                    x={dept.labelX}
-                    y={dept.labelY}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    fill={isDark ? '#ffffff' : '#1e293b'}
-                    fontSize={dept.labelSize}
-                    fontWeight="bold"
-                    letterSpacing="0.5"
-                    className="pointer-events-none select-none"
-                    style={{ textShadow: isDark ? '0 1px 3px rgba(0,0,0,0.3)' : '0 1px 2px rgba(255,255,255,0.5)' }}
-                  >
-                    {dept.name}
-                  </text>
+                  {dept.name.toUpperCase()}
+                </text>
+              </g>
+            );
+          })}
 
-                  {/* Academia Helm marker — school icon badge on departments with AH schools */}
-                  {hasAcademiaSchools && (
-                    <g
-                      className="pointer-events-none"
-                      transform={`translate(${dept.labelX + 18}, ${dept.labelY - 16})`}
-                    >
-                      {/* Badge circle with AH colors */}
-                      <circle
-                        r="10"
-                        fill={NAVY}
-                        stroke={GOLD}
-                        strokeWidth="1.5"
-                        style={{ filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.3))' }}
-                      />
-                      {/* Graduation cap icon (simplified SVG) */}
-                      <path
-                        d="M-5.5 0 L0 -3.5 L5.5 0 L0 2 Z"
-                        fill={GOLD}
-                        transform="translate(0, -1)"
-                      />
-                      <rect
-                        x="-1"
-                        y="-1"
-                        width="2"
-                        height="3.5"
-                        fill={GOLD}
-                        transform="translate(0, 0.5)"
-                      />
-                      {/* Count text for 2+ schools */}
-                      {ahStats.academiaSchoolCount > 1 && (
-                        <text
-                          x="12"
-                          y="3"
-                          fontSize="8"
-                          fontWeight="bold"
-                          fill={GOLD}
-                          className="pointer-events-none select-none"
-                          style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}
-                        >
-                          {ahStats.academiaSchoolCount}
-                        </text>
-                      )}
-                    </g>
-                  )}
-                </g>
-              );
-            })}
-          </svg>
-        </div>
+          {/* Tooltip au survol — positionné dynamiquement près du curseur */}
+          {hoveredDept && (() => {
+            const dept = BENIN_DEPARTMENTS.find((d) => d.code === hoveredDept);
+            if (!dept) return null;
+            const tx = tooltipPos ? Math.min(Math.max(tooltipPos.x + 12, 60), 300) : (DEPT_LABELS[dept.code]?.x ?? 130);
+            const ty = tooltipPos ? Math.max(tooltipPos.y - 12, 30) : ((DEPT_LABELS[dept.code]?.y ?? 100) - 30);
+            const value = getValue(dept);
+            const publicPct = ((dept.publicCount / dept.schoolCount) * 100).toFixed(0);
+            const privatePct = ((dept.privateCount / dept.schoolCount) * 100).toFixed(0);
 
-        {/* Side info panel — dual: National stats + Academia Helm schools */}
-        <AnimatePresence mode="wait">
-          {activeDept ? (
-            <motion.div
-              key={activeDept.id}
-              initial={{ opacity: 0, x: 12 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -8 }}
-              transition={{ duration: 0.2 }}
-              className="w-full max-w-xs rounded-2xl border border-slate-200 bg-white shadow-lg overflow-hidden"
-            >
-              {/* Progress dots */}
-              <div className="flex items-center justify-center gap-1.5 px-5 pt-4 pb-2" aria-hidden>
-                {DEPARTMENTS.map((_, i) => (
-                  <span
-                    key={i}
-                    className={`inline-block h-1.5 w-1.5 rounded-full transition-colors ${
-                      i + 1 === activeDeptIndex ? 'bg-blue-600 scale-125' : 'bg-slate-300'
-                    }`}
-                  />
-                ))}
-              </div>
+            return (
+              <g className="pointer-events-none">
+                <rect
+                  x={tx - 75}
+                  y={ty - 62}
+                  width={150}
+                  height={60}
+                  rx={8}
+                  fill="rgba(13,31,110,0.92)"
+                  stroke={GOLD}
+                  strokeWidth={0.5}
+                />
+                <text
+                  x={tx}
+                  y={ty - 44}
+                  textAnchor="middle"
+                  fill="white"
+                  fontSize="8"
+                  fontWeight="700"
+                >
+                  {dept.name}
+                </text>
+                <text
+                  x={tx}
+                  y={ty - 30}
+                  textAnchor="middle"
+                  fill={GOLD_LIGHT}
+                  fontSize="7"
+                  fontWeight="600"
+                >
+                  {formatNumber(value)} écoles — {formatNumber(dept.studentCount)} apprenants
+                </text>
+                <text
+                  x={tx}
+                  y={ty - 18}
+                  textAnchor="middle"
+                  fill="rgba(255,255,255,0.7)"
+                  fontSize="6.5"
+                >
+                  Public {publicPct}% · Privé {privatePct}% · {dept.teacherCount} enseignants
+                </text>
+                {/* Small triangle pointer */}
+                <polygon
+                  points={`${tx - 5},${ty - 2} ${tx + 5},${ty - 2} ${tx},${ty + 4}`}
+                  fill="rgba(13,31,110,0.92)"
+                />
+              </g>
+            );
+          })()}
+        </svg>
 
-              {/* Department eyebrow */}
-              <div className="px-5 pb-1">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                  Département <span className="text-slate-500">({activeDeptIndex}/12)</span>
-                </p>
-              </div>
-
-              {/* Department name */}
-              <div className="px-5 pb-3">
-                <h3 className="text-xl font-extrabold uppercase tracking-wide" style={{ color: '#1a3666' }}>
-                  {activeDept.name}
-                </h3>
-              </div>
-
-              {/* ── Section 1: National stats (EducMaster) ── */}
-              <div className="px-5 pb-2">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                  Statistiques nationales
-                </p>
-              </div>
-              <div className="px-5 pb-3">
-                <table className="w-full text-sm">
-                  <tbody>
-                    <tr className="border-b border-slate-100">
-                      <td className="py-2 text-slate-500 font-medium">Écoles</td>
-                      <td className="py-2 text-right font-bold text-slate-800">
-                        {activeDept.schoolCount.toLocaleString('fr-FR')}
-                      </td>
-                    </tr>
-                    <tr className="border-b border-slate-100">
-                      <td className="py-2 text-slate-500 font-medium">Apprenants</td>
-                      <td className="py-2 text-right font-bold text-slate-800">
-                        {activeDept.learnerCount.toLocaleString('fr-FR')}
-                      </td>
-                    </tr>
-                    <tr className="border-b border-slate-100">
-                      <td className="py-2 text-slate-500 font-medium">Enseignants</td>
-                      <td className="py-2 text-right font-bold text-slate-800">
-                        {activeDept.teacherCount.toLocaleString('fr-FR')}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="py-2 text-slate-500 font-medium">% Filles</td>
-                      <td className="py-2 text-right font-bold text-slate-800">
-                        {activeDept.femalePercent.toLocaleString('fr-FR', { minimumFractionDigits: 1 })} %
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Public / Private split */}
-              <div className="px-5 pb-3 flex items-center gap-4 text-xs">
-                <span>
-                  <strong className="text-slate-700">Public</strong>{' '}
-                  {activeDept.publicCount.toLocaleString('fr-FR')} · {publicPercent(activeDept)} %
-                </span>
-                <span>
-                  <strong className="text-slate-700">Privé</strong>{' '}
-                  {activeDept.privateCount.toLocaleString('fr-FR')} · {privatePercent(activeDept)} %
-                </span>
-              </div>
-
-              {/* ── Section 2: Academia Helm real-time data ── */}
-              {(() => {
-                const ahDeptStats = getAcademiaStats(activeDept.id);
-                const hasAH = ahDeptStats && ahDeptStats.academiaSchoolCount > 0;
-                return (
-                  <>
-                    {/* Divider with AH branding */}
-                    <div className="mx-5 border-t-2 my-1" style={{ borderColor: GOLD }} />
-                    <div className="px-5 pt-2 pb-2">
-                      <div className="flex items-center gap-2">
-                        <Building2 className="h-3.5 w-3.5" style={{ color: GOLD }} />
-                        <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: NAVY }}>
-                          Sur Academia Helm
-                        </p>
-                      </div>
-                    </div>
-
-                    {hasAH ? (
-                      <>
-                        {/* AH school count */}
-                        <div className="px-5 pb-2">
-                          <div className="flex items-baseline gap-2">
-                            <span className="text-2xl font-extrabold" style={{ color: NAVY }}>
-                              {ahDeptStats.academiaSchoolCount}
-                            </span>
-                            <span className="text-sm font-medium text-slate-500">
-                              école{ahDeptStats.academiaSchoolCount > 1 ? 's' : ''} inscrite{ahDeptStats.academiaSchoolCount > 1 ? 's' : ''}
-                            </span>
-                          </div>
-                          {/* AH public/private split */}
-                          <div className="mt-1 flex items-center gap-3 text-xs">
-                            <span className="flex items-center gap-1">
-                              <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: NAVY }} />
-                              <strong className="text-slate-700">Public</strong>{' '}
-                              {ahDeptStats.academiaPublicCount}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: GOLD }} />
-                              <strong className="text-slate-700">Privé</strong>{' '}
-                              {ahDeptStats.academiaPrivateCount}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* AH schools list */}
-                        {ahDeptStats.schools.length > 0 && (
-                          <div className="px-5 pb-3">
-                            <div className="max-h-32 overflow-y-auto space-y-1.5">
-                              {ahDeptStats.schools.map((school) => (
-                                <a
-                                  key={school.id}
-                                  href={`/portal?school=${school.slug}`}
-                                  className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs transition-colors hover:bg-slate-50 group"
-                                >
-                                  {/* School logo or icon */}
-                                  {school.logoUrl ? (
-                                    <img
-                                      src={school.logoUrl}
-                                      alt=""
-                                      className="h-5 w-5 rounded object-cover"
-                                    />
-                                  ) : (
-                                    <div
-                                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[8px] font-bold text-white"
-                                      style={{ backgroundColor: NAVY }}
-                                    >
-                                      {school.name.charAt(0).toUpperCase()}
-                                    </div>
-                                  )}
-                                  <span className="flex-1 truncate font-medium text-slate-700 group-hover:text-slate-900">
-                                    {school.name}
-                                  </span>
-                                  {school.schoolType && (
-                                    <span
-                                      className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold text-white"
-                                      style={{ backgroundColor: school.schoolType === 'PRIMAIRE' ? NAVY : GOLD }}
-                                    >
-                                      {school.schoolType}
-                                    </span>
-                                  )}
-                                  <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-slate-600 shrink-0" />
-                                </a>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <div className="px-5 pb-3">
-                        <p className="text-xs text-slate-400 italic">
-                          {statsLoading
-                            ? 'Chargement...'
-                            : 'Aucune école inscrite sur Academia Helm dans ce département'}
-                        </p>
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-
-              {/* Color indicator bar */}
-              <div
-                className="h-1.5"
-                style={{ backgroundColor: getDeptFillColor(activeDept) }}
-              />
-            </motion.div>
-          ) : (
-            <motion.div
-              key="empty-panel"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="w-full max-w-xs rounded-2xl border border-slate-200 bg-white/80 shadow-sm overflow-hidden"
-            >
-              <div className="p-6 text-center">
-                <MapPin className="h-8 w-8 text-slate-300 mx-auto mb-3" />
-                <p className="text-sm font-semibold text-slate-600">
-                  Survolez ou cliquez sur un département
-                </p>
-                <p className="text-xs text-slate-400 mt-1">
-                  pour voir les statistiques détaillées
-                </p>
-                {academiaTotal.schools > 0 && (
-                  <div className="mt-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium" style={{ backgroundColor: `${GOLD}22`, color: NAVY }}>
-                    <Building2 className="h-3.5 w-3.5" style={{ color: GOLD }} />
-                    {academiaTotal.schools} école{academiaTotal.schools > 1 ? 's' : ''} sur Academia Helm
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      {/* Legend */}
-      <div className="mt-5 flex flex-wrap items-center justify-center gap-3 text-xs text-slate-500">
-        <div className="flex items-center gap-2">
+        {/* Légende */}
+        <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-500">
           <span>Moins</span>
           <div className="flex h-3 w-32 rounded overflow-hidden">
-            {COLOR_SCALE.map((color, i) => (
+            {[0.1, 0.3, 0.5, 0.7, 0.9].map((ratio, i) => (
               <div
                 key={i}
                 className="flex-1"
-                style={{ backgroundColor: color }}
+                style={{ backgroundColor: getChoroplethColor(ratio * maxSchools, maxSchools) }}
               />
             ))}
           </div>
           <span>Plus</span>
-          <span className="text-slate-400 ml-1">Écoles par département</span>
-        </div>
-        {/* Academia Helm marker legend */}
-        <div className="flex items-center gap-1.5 border-l border-slate-200 pl-3">
-          <svg width="16" height="16" viewBox="0 0 20 20">
-            <circle cx="10" cy="10" r="8" fill={NAVY} stroke={GOLD} strokeWidth="1.5" />
-            <path d="M5.5 10 L10 6.5 L14.5 10 L10 12 Z" fill={GOLD} transform="translate(0, -1)" />
-            <rect x="9" y="10" width="2" height="3.5" fill={GOLD} />
-          </svg>
-          <span style={{ color: NAVY }} className="font-medium">Écoles Academia Helm</span>
+          <span className="ml-2 text-slate-400">
+            Écoles par département — {getFilterLabel()}
+          </span>
         </div>
       </div>
+
+      {/* ── Détail du département sélectionné (sous la carte) ──────── */}
+      <AnimatePresence mode="wait">
+        {activeDept && onDepartmentSelect && selectedDepartment?.code === activeDept.code ? (
+          <motion.div
+            key={activeDept.code}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="mt-5 rounded-2xl border border-slate-200/80 bg-white shadow-lg overflow-hidden"
+          >
+            {/* En-tête département */}
+            <div
+              className="px-5 py-3"
+              style={{ background: `linear-gradient(135deg, ${NAVY}, ${NAVY_DARK})` }}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-wider" style={{ color: GOLD_LIGHT }}>
+                    Département ({BENIN_DEPARTMENTS.indexOf(activeDept) + 1}/{BENIN_DEPARTMENTS.length})
+                  </p>
+                  <h3 className="mt-0.5 text-lg font-bold text-white">{activeDept.name}</h3>
+                  <p className="mt-0.5 text-[11px] text-slate-300 flex items-center gap-1">
+                    <MapPin className="h-3 w-3" />
+                    {activeDept.capital} · {formatNumber(activeDept.area)} km²
+                  </p>
+                </div>
+                <div
+                  className="flex h-10 w-10 items-center justify-center rounded-lg"
+                  style={{ background: `${GOLD}22` }}
+                >
+                  <School className="h-5 w-5" style={{ color: GOLD }} />
+                </div>
+              </div>
+            </div>
+
+            {/* Statistiques */}
+            <div className="p-4 space-y-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <StatCard
+                  icon={<School className="h-4 w-4" style={{ color: NAVY }} />}
+                  label="Écoles"
+                  value={formatNumber(getValue(activeDept))}
+                  accent={NAVY}
+                />
+                <StatCard
+                  icon={<Users className="h-4 w-4" style={{ color: NAVY }} />}
+                  label="Apprenants"
+                  value={formatNumber(activeDept.studentCount)}
+                  accent={NAVY}
+                />
+                <StatCard
+                  icon={<GraduationCap className="h-4 w-4" style={{ color: NAVY }} />}
+                  label="Enseignants"
+                  value={formatNumber(activeDept.teacherCount)}
+                  accent={NAVY}
+                />
+                <StatCard
+                  icon={<TrendingUp className="h-4 w-4" style={{ color: NAVY }} />}
+                  label="% Filles"
+                  value={`${activeDept.femalePercent}%`}
+                  accent={NAVY}
+                />
+              </div>
+
+              {/* Répartition Public / Privé */}
+              <div className="rounded-lg bg-slate-50 p-3 space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Répartition
+                </p>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="font-medium text-slate-700">Public</span>
+                      <span className="text-slate-500">
+                        {formatNumber(activeDept.publicCount)} ({((activeDept.publicCount / activeDept.schoolCount) * 100).toFixed(1)}%)
+                      </span>
+                    </div>
+                    <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+                      <motion.div
+                        className="h-full rounded-full"
+                        style={{ backgroundColor: NAVY }}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${(activeDept.publicCount / activeDept.schoolCount) * 100}%` }}
+                        transition={{ duration: 0.6, ease: 'easeOut' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="font-medium text-slate-700">Privé</span>
+                      <span className="text-slate-500">
+                        {formatNumber(activeDept.privateCount)} ({((activeDept.privateCount / activeDept.schoolCount) * 100).toFixed(1)}%)
+                      </span>
+                    </div>
+                    <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+                      <motion.div
+                        className="h-full rounded-full"
+                        style={{ backgroundColor: GOLD }}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${(activeDept.privateCount / activeDept.schoolCount) * 100}%` }}
+                        transition={{ duration: 0.6, ease: 'easeOut', delay: 0.1 }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Communes */}
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
+                  Communes ({activeDept.communes.length})
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {activeDept.communes.map((commune) => (
+                    <span
+                      key={commune}
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-700"
+                    >
+                      <MapPin className="h-3 w-3 text-slate-400" />
+                      {commune}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Action */}
+              <motion.button
+                type="button"
+                onClick={() => onDepartmentSelect(null)}
+                className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-colors"
+                style={{ background: `linear-gradient(135deg, ${NAVY}, ${NAVY_DARK})` }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <span>Voir tous les départements</span>
+              </motion.button>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* ── Micro-composant : StatCard ───────────────────────────────────────── */
+function StatCard({
+  icon,
+  label,
+  value,
+  accent,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  accent: string;
+}) {
+  return (
+    <div
+      className="rounded-lg p-2.5 border border-slate-100"
+      style={{ background: `linear-gradient(135deg, ${accent}08, ${accent}03)` }}
+    >
+      <div className="flex items-center gap-1.5 mb-0.5">
+        {icon}
+        <span className="text-[11px] text-slate-500">{label}</span>
+      </div>
+      <p className="text-base font-bold" style={{ color: accent }}>
+        {value}
+      </p>
     </div>
   );
 }

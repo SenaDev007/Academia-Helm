@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { CheckCircle } from 'lucide-react';
 import { HELM_PLANS, type HelmPlanKey } from '@/lib/services/HelmPricingService';
+import { formatCurrency } from '@/lib/utils';
 
 export interface HelmPricingCardProps {
   plan: HelmPlanKey;
@@ -117,7 +118,7 @@ export default function HelmPricingCard({
         </div>
         <div className="flex items-baseline gap-2">
           <span className="text-3xl font-extrabold text-navy-900">
-            {price == null ? 'Sur devis' : `${price.toLocaleString('fr-FR')} FCFA`}
+            {price == null ? 'Sur devis' : formatCurrency(price)}
           </span>
           {price != null && (
             <span className="text-sm text-slate-600">
@@ -127,7 +128,7 @@ export default function HelmPricingCard({
         </div>
         {billingCycle === 'ANNUAL' && price != null && config.monthlyPrice != null && (
           <p className="mt-1 text-xs text-gold-600 font-medium">
-            Équivalent {Math.round(price / 12).toLocaleString('fr-FR')} FCFA/mois — 2 mois offerts
+            Équivalent {formatCurrency(Math.round(price / 12))}/mois — 2 mois offerts
           </p>
         )}
       </div>
@@ -145,7 +146,7 @@ export default function HelmPricingCard({
         </div>
         <div className="flex items-baseline gap-2">
           <span className="text-lg font-bold text-navy-900">
-            {config.setupFee.toLocaleString('fr-FR')} FCFA
+            {formatCurrency(config.setupFee)}
           </span>
           <span className="text-xs text-slate-600">one-shot à l&apos;ouverture</span>
         </div>

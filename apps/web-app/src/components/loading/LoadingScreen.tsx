@@ -82,7 +82,7 @@ export function LoadingScreen({
   return (
     <div
       className={cn(
-        'fixed inset-0 z-50 flex items-center justify-center overflow-hidden',
+        'fixed inset-0 z-50 flex items-center justify-center overflow-hidden safe-area-inset-top safe-area-inset-bottom',
         variants[variant],
         className
       )}
@@ -163,10 +163,44 @@ export function LoadingScreen({
 
 /**
  * LoadingScreen minimal pour les transitions rapides
+ * 
+ * Intègre une durée minimale d'affichage de 10 secondes par défaut.
+ * Le contenu est rendu via la prop `children` après la durée minimale.
+ * Si pas de children, affiche simplement le spinner pendant minDuration.
  */
-export function MinimalLoadingScreen({ message }: { message?: string }) {
+export function MinimalLoadingScreen({ 
+  message,
+  minDuration = 10000,
+  children,
+}: { 
+  message?: string;
+  /** Durée minimale d'affichage en ms (défaut: 10000). Mettre 0 pour désactiver. */
+  minDuration?: number;
+  /** Contenu à afficher après la durée minimale */
+  children?: React.ReactNode;
+}) {
+  const [minElapsed, setMinElapsed] = useState(false);
+
+  useEffect(() => {
+    if (minDuration <= 0) {
+      setMinElapsed(true);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setMinElapsed(true);
+    }, minDuration);
+
+    return () => clearTimeout(timer);
+  }, [minDuration]);
+
+  // Si la durée minimale est écoulée et qu'on a du contenu, l'afficher
+  if (minElapsed && children) {
+    return <>{children}</>;
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm safe-area-inset-top safe-area-inset-bottom">
       <div className="text-center">
         <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
         {message && <p className="text-gray-600">{message}</p>}

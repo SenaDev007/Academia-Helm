@@ -15,6 +15,7 @@ import { financeService } from '@/services/finance.service';
 import { classesService } from '@/services/classes.service';
 import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
 import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
+import { formatCurrency } from '@/lib/utils';
 
 const STATUS_COLORS: Record<string, string> = {
   PAID: 'bg-green-100 text-green-800',
@@ -87,8 +88,6 @@ export default function StudentAccountsContent() {
     }
   };
 
-  const formatXOF = (n: number) =>
-    new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', maximumFractionDigits: 0 }).format(n);
   const subModuleTabs = FINANCE_SUBMODULE_TABS.map((t) => ({
     id: t.id,
     label: t.label,
@@ -155,9 +154,9 @@ export default function StudentAccountsContent() {
                   <TableCell className="font-medium">
                     {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.studentId}
                   </TableCell>
-                  <TableCell>{formatXOF(Number(a.totalDue))}</TableCell>
-                  <TableCell>{formatXOF(Number(a.totalPaid))}</TableCell>
-                  <TableCell>{formatXOF(Number(a.balance))}</TableCell>
+                  <TableCell>{formatCurrency(a.totalDue)}</TableCell>
+                  <TableCell>{formatCurrency(a.totalPaid)}</TableCell>
+                  <TableCell>{formatCurrency(a.balance)}</TableCell>
                   <TableCell>
                     <Badge className={STATUS_COLORS[a.status] ?? 'bg-gray-100 text-gray-800'}>{a.status}</Badge>
                   </TableCell>
@@ -187,12 +186,12 @@ export default function StudentAccountsContent() {
               {detailAccount.student ? `${detailAccount.student.lastName} ${detailAccount.student.firstName}` : 'Détail compte'}
             </h3>
             <div className="grid grid-cols-2 gap-4 mb-4">
-              <div><span className="text-gray-600">Total dû :</span> {formatXOF(Number(detailAccount.totalDue))}</div>
-              <div><span className="text-gray-600">Total payé :</span> {formatXOF(Number(detailAccount.totalPaid))}</div>
-              <div><span className="text-gray-600">Solde :</span> {formatXOF(Number(detailAccount.balance))}</div>
+              <div><span className="text-gray-600">Total dû :</span> {formatCurrency(detailAccount.totalDue)}</div>
+              <div><span className="text-gray-600">Total payé :</span> {formatCurrency(detailAccount.totalPaid)}</div>
+              <div><span className="text-gray-600">Solde :</span> {formatCurrency(detailAccount.balance)}</div>
               <div><span className="text-gray-600">Statut :</span> <Badge className={STATUS_COLORS[detailAccount.status]}>{detailAccount.status}</Badge></div>
               {Number(detailAccount.arrearsAmount) > 0 && (
-                <div className="col-span-2"><span className="text-gray-600">Arriérés (année précédente) :</span> {formatXOF(Number(detailAccount.arrearsAmount))}</div>
+                <div className="col-span-2"><span className="text-gray-600">Arriérés (année précédente) :</span> {formatCurrency(detailAccount.arrearsAmount)}</div>
               )}
             </div>
             <h4 className="font-medium mb-2">Détail par frais</h4>
@@ -200,13 +199,13 @@ export default function StudentAccountsContent() {
               {Number(detailAccount.arrearsAmount) > 0 && (
                 <li className="flex justify-between text-sm">
                   <span>Arriéré</span>
-                  <span>{formatXOF(Number(detailAccount.arrearsAmount))} — Non payé</span>
+                  <span>{formatCurrency(detailAccount.arrearsAmount)} — Non payé</span>
                 </li>
               )}
               {detailAccount.breakdowns?.map((b: any) => (
                 <li key={b.id} className="flex justify-between text-sm">
                   <span>{b.feeStructure?.name ?? b.feeStructureId}</span>
-                  <span>{formatXOF(Number(b.initialAmount))} — Soldé: {formatXOF(Number(b.paidAmount))}</span>
+                  <span>{formatCurrency(b.initialAmount)} — Soldé: {formatCurrency(b.paidAmount)}</span>
                 </li>
               ))}
             </ul>
@@ -215,7 +214,7 @@ export default function StudentAccountsContent() {
                 <h4 className="font-medium mb-2">Dernières transactions</h4>
                 <ul className="space-y-1 text-sm text-gray-600">
                   {detailAccount.transactions.slice(0, 5).map((t: any) => (
-                    <li key={t.id}>{t.receiptNumber} — {formatXOF(Number(t.amount))} — {t.createdAt ? new Date(t.createdAt).toLocaleDateString('fr-FR') : ''}</li>
+                    <li key={t.id}>{t.receiptNumber} — {formatCurrency(t.amount)} — {t.createdAt ? new Date(t.createdAt).toLocaleDateString('fr-FR') : ''}</li>
                   ))}
                 </ul>
               </div>

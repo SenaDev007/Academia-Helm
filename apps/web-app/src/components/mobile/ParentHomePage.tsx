@@ -17,6 +17,7 @@
 import { useState, useEffect } from 'react';
 import { DollarSign, AlertCircle, FileText, MessageSquare, Bell, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
+import { formatCurrency } from '@/lib/utils';
 
 interface StudentInfo {
   id: string;
@@ -53,14 +54,6 @@ export default function ParentHomePage() {
 
     loadStudents();
   }, []);
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'XOF',
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
 
   return (
     <div className="space-y-4">

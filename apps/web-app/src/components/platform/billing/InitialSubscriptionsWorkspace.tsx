@@ -15,13 +15,14 @@ import {
   DollarSign,
   Download,
 } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
 
 const MOCK_INITIAL_SUBS = [
   {
     id: '1',
     schoolName: 'Lycée Excellence',
     amount: 250000,
-    currency: 'FCFA',
+    currency: 'F CFA',
     status: 'PAID',
     issuedAt: '2025-05-10',
     paidAt: '2025-05-12',
@@ -31,7 +32,7 @@ const MOCK_INITIAL_SUBS = [
     id: '2',
     schoolName: 'Collège Jean-Paul II',
     amount: 150000,
-    currency: 'FCFA',
+    currency: 'F CFA',
     status: 'PENDING',
     issuedAt: '2025-05-14',
     paidAt: null,
@@ -41,7 +42,7 @@ const MOCK_INITIAL_SUBS = [
     id: '3',
     schoolName: 'Maternelle Les Anges',
     amount: 75000,
-    currency: 'FCFA',
+    currency: 'F CFA',
     status: 'PARTIAL',
     issuedAt: '2025-05-08',
     paidAt: null,
@@ -87,7 +88,7 @@ export default function InitialSubscriptionsWorkspace() {
             </div>
             <span className="text-sm font-medium text-slate-500">Payées ce mois</span>
           </div>
-          <div className="text-2xl font-bold text-slate-900">1.25M FCFA</div>
+          <div className="text-2xl font-bold text-slate-900">1,25 M F CFA</div>
           <p className="text-xs text-emerald-600 font-medium mt-1">+12% vs mois dernier</p>
         </div>
         <div className="p-5 bg-white rounded-2xl border border-slate-100 shadow-sm">
@@ -97,7 +98,7 @@ export default function InitialSubscriptionsWorkspace() {
             </div>
             <span className="text-sm font-medium text-slate-500">En attente</span>
           </div>
-          <div className="text-2xl font-bold text-slate-900">450K FCFA</div>
+          <div className="text-2xl font-bold text-slate-900">450 k F CFA</div>
           <p className="text-xs text-amber-600 font-medium mt-1">5 dossiers à valider</p>
         </div>
         <div className="p-5 bg-white rounded-2xl border border-slate-100 shadow-sm">
@@ -107,7 +108,7 @@ export default function InitialSubscriptionsWorkspace() {
             </div>
             <span className="text-sm font-medium text-slate-500">Factures émises</span>
           </div>
-          <div className="text-2xl font-bold text-slate-900">1.7M FCFA</div>
+          <div className="text-2xl font-bold text-slate-900">1,7 M F CFA</div>
           <p className="text-xs text-blue-600 font-medium mt-1">Total période</p>
         </div>
       </div>
@@ -133,7 +134,7 @@ export default function InitialSubscriptionsWorkspace() {
                     <div className="text-xs text-slate-500 font-mono">Ref: {sub.reference}</div>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="text-sm font-bold text-slate-900">{sub.amount.toLocaleString()} {sub.currency}</div>
+                    <div className="text-sm font-bold text-slate-900">{formatCurrency(sub.amount)}</div>
                     <div className="text-[10px] text-slate-400">Toutes taxes comprises</div>
                   </td>
                   <td className="px-6 py-4">

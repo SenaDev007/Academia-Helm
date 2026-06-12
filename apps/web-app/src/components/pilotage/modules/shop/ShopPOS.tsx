@@ -7,6 +7,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { formatCurrency } from '@/lib/utils';
 import { 
   Search, Plus, Minus, Trash2, CreditCard, 
   Wallet, Banknote, QrCode, User, Package,
@@ -22,8 +23,6 @@ export default function ShopPOS() {
   const subtotal = cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
   const tax = subtotal * 0.18; // 18% TVA
   const total = subtotal + tax;
-
-  const formatCurrency = (val: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 0 }).format(val);
 
   return (
     <div className="flex flex-col lg:flex-row gap-8 h-[calc(100vh-250px)] min-h-[600px] animate-in fade-in duration-700">
@@ -119,8 +118,6 @@ export default function ShopPOS() {
 }
 
 function POSProductCard({ index }: any) {
-  const formatCurrency = (val: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 0 }).format(val);
-  
   return (
     <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm hover:shadow-xl hover:border-navy-200 transition-all duration-300 group cursor-pointer active:scale-95">
       <div className="h-24 bg-gray-50 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden">
@@ -142,8 +139,6 @@ function POSProductCard({ index }: any) {
 }
 
 function CartItem({ item }: any) {
-  const formatCurrency = (val: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 0 }).format(val);
-  
   return (
     <div className="flex items-center space-x-4 p-3 bg-gray-50/50 rounded-2xl border border-gray-100 group">
       <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-xl shadow-sm">

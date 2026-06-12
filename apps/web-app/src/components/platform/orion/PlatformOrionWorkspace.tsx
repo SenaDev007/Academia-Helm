@@ -86,7 +86,7 @@ export default function PlatformOrionWorkspace() {
           </div>
           <div className="space-y-4">
             {[
-              { school: 'Lycée Excellence', type: 'Dépassement Quota Storage', impact: '+15k FCFA' },
+              { school: 'Lycée Excellence', type: 'Dépassement Quota Storage', impact: '+15k F CFA' },
               { school: 'Primaire Nord', type: 'Paiement Stripe Échoué', impact: 'Retard' },
             ].map((item, i) => (
               <div key={i} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">

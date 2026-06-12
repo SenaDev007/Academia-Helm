@@ -18,6 +18,7 @@ import { useState, useEffect } from 'react';
 import { DollarSign, TrendingUp, TrendingDown, FileText, AlertCircle } from 'lucide-react';
 import { useAcademicYear } from '@/hooks/useAcademicYear';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
+import { formatCurrency } from '@/lib/utils';
 import Link from 'next/link';
 
 interface FinanceSummary {
@@ -60,14 +61,6 @@ export default function AccountantDashboard() {
 
     loadFinanceSummary();
   }, [currentYear, currentLevel]);
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'XOF',
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
 
   return (
     <div className="space-y-6">

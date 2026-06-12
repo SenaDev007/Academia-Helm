@@ -110,7 +110,7 @@ export default function EduCastTeacherStudio() {
                 <div className="flex justify-between items-end">
                   <div>
                     <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Solde Disponible</p>
-                    <p className="text-3xl font-black text-[#C9A84C]">125.400 <span className="text-xs">FCFA</span></p>
+                    <p className="text-3xl font-black text-[#C9A84C]">125.400 <span className="text-xs">F CFA</span></p>
                   </div>
                   <button className="text-[10px] font-black text-white uppercase tracking-widest hover:underline">Détails</button>
                 </div>

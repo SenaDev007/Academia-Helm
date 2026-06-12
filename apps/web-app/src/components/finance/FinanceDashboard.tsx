@@ -32,13 +32,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { financeService } from '@/services/finance.service';
 import { orionService } from '@/services/orion.service';
-
-const formatXOF = (n: number) =>
-  new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'XOF',
-    maximumFractionDigits: 0,
-  }).format(n);
+import { formatCurrency } from '@/lib/utils';
 
 /**
  * Composant Mini-Chart (SVG) pour l'esthétique
@@ -143,7 +137,7 @@ function FinanceDashboardArrears({
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="font-bold text-red-600 text-sm">{formatXOF(Number(a.balanceDue))}</p>
+                  <p className="font-bold text-red-600 text-sm">{formatCurrency(a.balanceDue)}</p>
                   <Badge variant="outline" className="text-[10px] uppercase font-black border-red-200 text-red-700 bg-red-50">
                     {a.arrearsLevel ?? 'CRITIQUE'}
                   </Badge>
@@ -459,7 +453,7 @@ function KPICard({
           <p className="text-sm font-semibold text-slate-500 tracking-wide uppercase">{title}</p>
           <div className="flex items-end justify-between">
             <h4 className="text-2xl font-black text-slate-900 tracking-tight">
-              {loading ? '—' : (typeof value === 'number' && isCurrency ? formatXOF(value) : value)}
+              {loading ? '—' : (typeof value === 'number' && isCurrency ? formatCurrency(value) : value)}
             </h4>
             {!loading && <Sparkline data={sparklineData} color={sparkColor[color]} />}
           </div>

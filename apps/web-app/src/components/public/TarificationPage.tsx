@@ -12,10 +12,11 @@ import Link from 'next/link';
 import { CheckCircle, Users, ArrowRight, Building2 } from 'lucide-react';
 import { useState } from 'react';
 import { HELM_PLANS, type HelmPlanKey } from '@/lib/services/HelmPricingService';
+import { formatCurrency } from '@/lib/utils';
 
 function formatAmount(amount: number | null) {
   if (amount == null) return 'Sur devis';
-  return `${amount.toLocaleString('fr-FR')} FCFA`;
+  return formatCurrency(amount);
 }
 
 interface PlanMeta {
@@ -209,7 +210,7 @@ export default function TarificationPage() {
                     </div>
                     {billingCycle === 'ANNUAL' && price != null && plan.monthlyPrice != null && (
                       <p className="mt-1 text-xs text-gold-600 font-medium">
-                        Équivalent {Math.round(price / 12).toLocaleString('fr-FR')} FCFA/mois
+                        Équivalent {formatCurrency(Math.round(price / 12))}/mois
                       </p>
                     )}
                   </div>

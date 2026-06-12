@@ -4,8 +4,8 @@ import { CreditCard, Plus, Search, Filter, Download, ArrowUpRight, ArrowDownRigh
 
 export default function TransportPayments() {
   const payments = [
-    { id: '1', student: 'Fatou Sow', amount: '25,000 FCFA', date: '2026-05-10', method: 'Orange Money', status: 'PAID' },
-    { id: '2', student: 'Abdoulaye Diallo', amount: '25,000 FCFA', date: '—', method: '—', status: 'UNPAID' },
+    { id: '1', student: 'Fatou Sow', amount: '25 000 F CFA', date: '2026-05-10', method: 'Orange Money', status: 'PAID' },
+    { id: '2', student: 'Abdoulaye Diallo', amount: '25 000 F CFA', date: '—', method: '—', status: 'UNPAID' },
   ];
 
   return (
@@ -14,7 +14,7 @@ export default function TransportPayments() {
         <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Recettes du mois</p>
           <div className="flex items-center justify-between">
-            <p className="text-2xl font-black text-slate-900 tracking-tighter">1,250,000 FCFA</p>
+            <p className="text-2xl font-black text-slate-900 tracking-tighter">1 250 000 F CFA</p>
             <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600">
               <ArrowUpRight className="w-4 h-4" />
             </div>
@@ -23,7 +23,7 @@ export default function TransportPayments() {
         <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Impayés</p>
           <div className="flex items-center justify-between">
-            <p className="text-2xl font-black text-rose-600 tracking-tighter">175,000 FCFA</p>
+            <p className="text-2xl font-black text-rose-600 tracking-tighter">175 000 F CFA</p>
             <div className="p-2 bg-rose-50 rounded-lg text-rose-600">
               <ArrowDownRight className="w-4 h-4" />
             </div>

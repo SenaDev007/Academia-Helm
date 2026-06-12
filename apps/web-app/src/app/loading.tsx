@@ -1,11 +1,16 @@
 /**
  * Loading Component - Root Level
  *
- * Écran de chargement premium avec le logo Academia Helm animé.
+ * Affiché pendant le chargement initial des pages racine.
+ * Durée minimale de 15 secondes pour une expérience visuelle professionnelle.
  */
 
-import AcademiaLoader from '@/components/ui/AcademiaLoader';
+'use client';
+
+import { MinDurationScreen } from '@/components/loading/MinDurationScreen';
 
 export default function Loading() {
-  return <AcademiaLoader />;
+  return (
+    <MinDurationScreen ready={false} />
+  );
 }

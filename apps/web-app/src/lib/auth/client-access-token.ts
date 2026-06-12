@@ -32,23 +32,6 @@ export function getClientAuthorizationHeader(): Record<string, string> {
   return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
-/**
- * Récupère le tenant ID depuis la session locale (localStorage).
- * Utilisé pour envoyer le header X-Tenant-ID explicite dans les fetch client → proxy BFF,
- * garantissant que le backend NestJS peut résoudre le tenant même si les cookies ne sont pas propagés.
- */
-export function getClientTenantId(): string | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem('session')?.trim();
-    if (!raw) return null;
-    const session = JSON.parse(raw) as { tenantId?: string; tenant?: { id?: string }; user?: { tenantId?: string } };
-    return session?.tenantId || session?.tenant?.id || session?.user?.tenantId || null;
-  } catch {
-    return null;
-  }
-}
-
 export function persistClientAccessToken(data: {
   accessToken?: string | null;
   refreshToken?: string | null;
@@ -129,10 +112,20 @@ export async function tryRefreshAccessToken(): Promise<boolean> {
     };
     if (!data.accessToken?.trim()) return false;
 
+    // Update localStorage (used by hrFetch / getClientAuthorizationHeader)
     localStorage.setItem('accessToken', data.accessToken.trim());
     if (data.refreshToken?.trim()) {
       localStorage.setItem('refreshToken', data.refreshToken.trim());
     }
+
+    // Update the academia_token cookie (used by Axios / getClientToken)
+    try {
+      const { setClientToken } = await import('@/lib/auth/session-client');
+      setClientToken(data.accessToken.trim());
+    } catch {
+      // Cookie update is best-effort
+    }
+
     return true;
   } catch {
     return false;
@@ -146,60 +139,4 @@ export function hasLocalSessionHints(): boolean {
     localStorage.getItem('refreshToken')?.trim() ||
       localStorage.getItem('session')?.trim(),
   );
-}
-
-/**
- * Vérifie que la session serveur est disponible via /api/auth/me.
- *
- * Sur mobile (iOS Safari, Chrome Android), les cookies Set-Cookie ne sont
- * pas toujours persistés immédiatement après un fetch(). Un window.location.href
- * effectué trop tôt provoque une page blanche car getServerSession() ne trouve
- * pas le cookie.
- *
- * Cette fonction interroge le BFF proxy pour confirmer que la session est
- * lisible côté serveur avant de procéder à la redirection.
- *
- * @param maxAttempts Nombre maximal de tentatives (défaut 10)
- * @param baseDelay Délai initial entre les tentatives en ms (défaut 200)
- * @returns true si la session est confirmée, false si timeout
- */
-export async function waitForServerSession(
-  maxAttempts = 10,
-  baseDelay = 200,
-): Promise<boolean> {
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      const res = await fetch('/api/auth/me', {
-        method: 'GET',
-        credentials: 'include',
-        cache: 'no-store',
-        headers: { 'Cache-Control': 'no-cache' },
-      });
-      if (res.ok) {
-        // Mobile browsers (iOS Safari, Chrome Android) don't always persist
-        // cookies from fetch() immediately. Add a small delay on mobile to
-        // ensure the cookie is written to disk before any cross-domain redirect.
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        if (isMobile) {
-          // Mobile browsers (iOS Safari, Chrome Android) need extra time to
-          // persist cookies from fetch() Set-Cookie headers. 1200ms ensures
-          // the cookie is written to disk before any cross-domain redirect.
-          await new Promise((resolve) => setTimeout(resolve, 1200));
-          // Double-check: verify the non-httpOnly token cookie is readable
-          const hasTokenCookie = document.cookie.includes('academia_token');
-          if (!hasTokenCookie) {
-            // Cookie still not visible — wait a bit more
-            await new Promise((resolve) => setTimeout(resolve, 800));
-          }
-        }
-        return true;
-      }
-    } catch {
-      // Network error — retry
-    }
-    // Progressif : 200ms, 300ms, 400ms, 500ms, … (max 1s)
-    const delay = Math.min(baseDelay + i * 100, 1000);
-    await new Promise((resolve) => setTimeout(resolve, delay));
-  }
-  return false;
 }

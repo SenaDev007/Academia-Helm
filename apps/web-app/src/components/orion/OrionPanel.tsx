@@ -40,6 +40,7 @@ import {
   X,
 } from 'lucide-react';
 import AppIcon from '@/components/ui/AppIcon';
+import { formatCurrency } from '@/lib/utils';
 
 interface OrionPanelProps {
   userRole: string;
@@ -372,7 +373,7 @@ export default function OrionPanel({ userRole }: OrionPanelProps) {
                     <div className="bg-cloud rounded-lg p-4 border border-gray-200">
                       <p className="text-xs text-graphite-500 mb-1">Financier</p>
                       <p className="text-sm text-graphite-700">
-                        Recettes: {monthlySummary.facts.financial.totalRevenue.toLocaleString()} FCFA
+                        Recettes: {formatCurrency(monthlySummary.facts.financial.totalRevenue)}
                       </p>
                       <p className="text-sm text-graphite-700">
                         Taux recouvrement: {monthlySummary.facts.financial.recoveryRate}%

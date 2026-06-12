@@ -9,7 +9,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
 import { motion, useScroll, useSpring, useTransform } from 'framer-motion';
-import { useMemo, useEffect, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import {
   ShieldCheck,
   Brain,
@@ -24,6 +24,8 @@ import {
 } from 'lucide-react';
 import PremiumHeader from '../layout/PremiumHeader';
 import InstitutionalFooter from './InstitutionalFooter';
+import { LoadingScreen } from '@/components/loading/LoadingScreen';
+import { LoadingScreenMobile } from '@/components/loading/LoadingScreenMobile';
 import { BLOG_POSTS } from '@/content/blog/posts';
 
 const SaraWidget = dynamic(() => import('./SaraWidget'), {
@@ -156,7 +158,116 @@ const modules = [
 /** Aperçu blog sur la landing (les articles MDX auto-générés apparaissent aussi sur /blog). */
 const featuredBlogPosts = BLOG_POSTS.slice(0, 3);
 
+/** Bande défilante animée — alerte recrutement sur le landing page */
+function RecruitmentBanner() {
+  const [activeSchoolsCount, setActiveSchoolsCount] = useState<number | null>(null);
+  const [isPaused, setIsPaused] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchActiveSchools() {
+      try {
+        const res = await fetch('/api/public/schools/with-jobs');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data) && !cancelled) {
+          setActiveSchoolsCount(data.filter((s: any) => (s.activeJobsCount ?? 0) > 0).length);
+        }
+      } catch {
+        // Silently fail — banner is non-critical
+      }
+    }
+    fetchActiveSchools();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!activeSchoolsCount || activeSchoolsCount === 0) return null;
+
+  return (
+    <div
+      className="overflow-hidden relative bg-gradient-to-r from-[#f5b335] via-[#ffd166] to-[#f5b335] py-2.5 shadow-lg cursor-pointer select-none"
+      onMouseEnter={() => setIsPaused(true)}
+      onMouseLeave={() => setIsPaused(false)}
+      onTouchStart={() => setIsPaused(true)}
+      onTouchEnd={() => {
+        // Reprend après 2s sur mobile pour ne pas bloquer définitivement
+        setTimeout(() => setIsPaused(false), 2000);
+      }}
+    >
+      <div className="absolute inset-0 opacity-20">
+        <div
+          className="h-full w-1/3 bg-gradient-to-r from-transparent via-white/50 to-transparent"
+          style={{ animation: 'bannerShimmer 3s ease-in-out infinite' }}
+        />
+      </div>
+      <div
+        className="flex items-center relative z-10"
+        style={{
+          animation: 'bannerScroll 40s linear infinite',
+          animationPlayState: isPaused ? 'paused' : 'running',
+        }}
+      >
+        {Array.from({ length: 8 }).map((_, i) => (
+          <span key={i} className="flex items-center gap-2 text-[#0b2f73] text-xs font-bold whitespace-nowrap px-8">
+            <Megaphone className="h-4 w-4" />
+            Appels d&apos;offres en cours — {activeSchoolsCount} établissement{activeSchoolsCount > 1 ? 's' : ''} recrutent actuellement
+          </span>
+        ))}
+      </div>
+      <style>{`
+        @keyframes bannerShimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(300%); }
+        }
+        @keyframes bannerScroll {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+const LANDING_MIN_LOADING_MS = 10000;
+
 export default function PremiumLandingPage() {
+  const [showContent, setShowContent] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Détecter mobile pour le loading screen
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Loading minimum de 10 secondes avant d'afficher le contenu
+  useEffect(() => {
+    const startTime = Date.now();
+    const totalSteps = 90;
+    const stepDuration = LANDING_MIN_LOADING_MS / totalSteps;
+    let currentStep = 0;
+
+    const interval = setInterval(() => {
+      currentStep++;
+      const elapsed = Date.now() - startTime;
+
+      if (elapsed >= LANDING_MIN_LOADING_MS) {
+        setLoadingProgress(100);
+        clearInterval(interval);
+        // Petit délai pour l'animation de 100%
+        setTimeout(() => setShowContent(true), 300);
+      } else {
+        const baseProgress = (currentStep / totalSteps) * 90;
+        setLoadingProgress(Math.min(Math.round(baseProgress), 90));
+      }
+    }, stepDuration);
+
+    return () => clearInterval(interval);
+  }, []);
+
   const { scrollYProgress } = useScroll();
   const progress = useSpring(scrollYProgress, {
     stiffness: 120,
@@ -168,25 +279,6 @@ export default function PremiumLandingPage() {
   const cinemaBlueOpacity = useTransform(scrollYProgress, [0.05, 0.35], [0, 0.26]);
   const cinemaGoldOpacity = useTransform(scrollYProgress, [0.3, 0.7], [0, 0.2]);
   const cinemaNavyOpacity = useTransform(scrollYProgress, [0.62, 0.98], [0, 0.24]);
-
-  // ---- Recruitment announcements marquee ----
-  const [recruitAnnouncements, setRecruitAnnouncements] = useState<string[]>([]);
-  const [isPaused, setIsPaused] = useState(false);
-  useEffect(() => {
-    async function loadAnnouncements() {
-      try {
-        const res = await fetch('/api/public/schools/with-jobs');
-        const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          const msgs = data
-            .filter((s: any) => (s.activeJobsCount ?? 0) > 0)
-            .map((s: any) => `${s.schoolName || s.tenantName || s.name} recrute ! ${s.activeJobsCount} poste${s.activeJobsCount > 1 ? 's' : ''} ouvert${s.activeJobsCount > 1 ? 's' : ''}`);
-          setRecruitAnnouncements(msgs);
-        }
-      } catch { /* silently ignore */ }
-    }
-    loadAnnouncements();
-  }, []);
   const heroParticles = useMemo(
     () =>
       Array.from({ length: 18 }).map((_, index) => {
@@ -200,53 +292,43 @@ export default function PremiumLandingPage() {
     []
   );
 
+  // Afficher le loading screen pendant 15 secondes minimum
+  // Sur mobile : LoadingScreenMobile (CSS-only, léger)
+  // Sur desktop : LoadingScreen (framer-motion, animations riches)
+  if (!showContent) {
+    const loadingMessage = { title: 'Bienvenue sur Academia Helm', subtitle: 'Plateforme de pilotage éducatif nouvelle génération' };
+
+    if (isMobile) {
+      return (
+        <LoadingScreenMobile
+          message={loadingMessage}
+          progress={loadingProgress}
+          showProgress={true}
+          variant="pwa"
+          minDuration={0}
+        />
+      );
+    }
+
+    return (
+      <LoadingScreen
+        message={loadingMessage}
+        progress={loadingProgress}
+        showProgress={true}
+        variant="orion"
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen overflow-x-hidden bg-white text-slate-900 [word-break:normal] [overflow-wrap:normal] hyphens-none">
       <PremiumHeader />
 
-      {/* Bande défilante recrutement — uniquement si des offres sont publiées */}
-      {recruitAnnouncements.length > 0 && (
-        <div
-          className="mt-16 md:mt-20 relative z-30 overflow-hidden select-none bg-gradient-to-r from-[#0b2f73] via-[#103e91] to-[#0b2f73] border-y border-amber-400/20 shadow-md cursor-pointer"
-          onMouseEnter={() => setIsPaused(true)}
-          onMouseLeave={() => setIsPaused(false)}
-          onTouchStart={() => setIsPaused(true)}
-          onTouchEnd={() => {
-            // Reprend après 2s sur mobile pour ne pas bloquer définitivement
-            setTimeout(() => setIsPaused(false), 2000);
-          }}
-        >
-          <div className="marquee-track flex items-center py-2.5">
-            <div
-              className="marquee-content flex items-center whitespace-nowrap"
-              style={{
-                animationPlayState: isPaused ? 'paused' : 'running',
-              }}
-            >
-              {[...recruitAnnouncements, ...recruitAnnouncements, ...recruitAnnouncements, ...recruitAnnouncements, ...recruitAnnouncements, ...recruitAnnouncements, ...recruitAnnouncements, ...recruitAnnouncements].map((msg, i) => (
-                <span key={i} className="inline-flex items-center gap-2.5 mx-8 text-[13px] font-semibold tracking-wide text-amber-100">
-                  <Megaphone className="h-3.5 w-3.5 text-[#f5b335] shrink-0" />
-                  <Link href="/jobs" className="hover:text-[#f5b335] transition-colors">{msg}</Link>
-                  <span className="ml-8 text-[#f5b335]/30 text-sm">&#9670;</span>
-                </span>
-              ))}
-            </div>
-          </div>
-          <div className="pointer-events-none absolute inset-y-0 left-0 w-14 bg-gradient-to-r from-[#0b2f73] to-transparent z-10" />
-          <div className="pointer-events-none absolute inset-y-0 right-0 w-14 bg-gradient-to-l from-[#0b2f73] to-transparent z-10" />
-          <style>{`
-            .marquee-track { overflow: hidden; }
-            .marquee-content {
-              animation: marquee-scroll 200s linear infinite;
-            }
-            @keyframes marquee-scroll {
-              0% { transform: translateX(0); }
-              100% { transform: translateX(-50%); }
-            }
-          `}</style>
-        </div>
-      )}
+      {/* Spacer for fixed navbar */}
+      <div className="h-14 md:h-16" aria-hidden />
 
+      <RecruitmentBanner />
+      
       <motion.div
         style={{ scaleX: progress }}
         className="fixed top-14 md:top-16 left-0 right-0 h-1 bg-gradient-to-r from-[#f5b335] via-[#ffd166] to-[#0b2f73] origin-left z-50"
@@ -266,11 +348,11 @@ export default function PremiumLandingPage() {
         />
       </div>
 
+      <div className="h-14 md:h-16" aria-hidden />
+
       <section className="relative overflow-hidden bg-gradient-to-br from-[#0b2f73] via-[#103e91] to-[#1d4fa5]">
-        {/* Spacer pour compenser la navbar fixe — même fond que le hero */}
-        <div className="h-14 md:h-16" aria-hidden />
         <Image
-          src="/images/AH background.png"
+          src="/images/AH background.webp"
           alt="Fond hero Academia Helm"
           fill
           className="object-cover opacity-45"
@@ -381,7 +463,7 @@ export default function PremiumLandingPage() {
                     controls
                     preload="none"
                     playsInline
-                    poster="/images/Miniature Présentation Academia Hub.png"
+                    poster="/images/Miniature Présentation Academia Hub.webp"
                   >
                     <source src="/videos/academia-hub-presentation.mp4" type="video/mp4" />
                     Votre navigateur ne supporte pas la lecture video.
@@ -610,7 +692,7 @@ export default function PremiumLandingPage() {
             >
               <div className="flex items-center gap-4 mb-4">
                 <Image
-                  src="/images/ORION-Academia-Hub.png"
+                  src="/images/ORION-Academia-Hub.webp"
                   alt="ORION Academia Helm"
                   width={52}
                   height={52}

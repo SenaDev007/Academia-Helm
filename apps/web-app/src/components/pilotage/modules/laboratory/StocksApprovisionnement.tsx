@@ -21,10 +21,10 @@ import {
 
 export default function StocksApprovisionnement() {
   const requests = [
-    { id: 'REQ-001', item: 'Lames de microscope', qty: 200, cost: '45,000 FCFA', status: 'APPROVED', date: '14/05/2026' },
-    { id: 'REQ-002', item: 'Acide Sulfurique', qty: 5, cost: '32,000 FCFA', status: 'PENDING', date: '15/05/2026' },
-    { id: 'REQ-003', item: 'Ordinateurs Portables HP', qty: 2, cost: '850,000 FCFA', status: 'REJECTED', date: '10/05/2026' },
-    { id: 'REQ-004', item: 'Kits Électroniques Arduino', qty: 10, cost: '150,000 FCFA', status: 'ORDERED', date: '08/05/2026' },
+    { id: 'REQ-001', item: 'Lames de microscope', qty: 200, cost: '45 000 F CFA', status: 'APPROVED', date: '14/05/2026' },
+    { id: 'REQ-002', item: 'Acide Sulfurique', qty: 5, cost: '32 000 F CFA', status: 'PENDING', date: '15/05/2026' },
+    { id: 'REQ-003', item: 'Ordinateurs Portables HP', qty: 2, cost: '850 000 F CFA', status: 'REJECTED', date: '10/05/2026' },
+    { id: 'REQ-004', item: 'Kits Électroniques Arduino', qty: 10, cost: '150 000 F CFA', status: 'ORDERED', date: '08/05/2026' },
   ];
 
   return (

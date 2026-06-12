@@ -12,16 +12,9 @@ import {
   CheckCircle2, ChevronRight, MoreVertical, Edit,
   Users, Trash2, Info, Star
 } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
 
 export default function ShopKits() {
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'XOF',
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
-
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
       {/* Header */}
@@ -99,8 +92,6 @@ export default function ShopKits() {
 }
 
 function KitCard({ level, name, items, price, popularity, color, isPromoted }: any) {
-  const formatCurrency = (val: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 0 }).format(val);
-  
   const colors: any = {
     emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
     navy: 'bg-navy-50 text-navy-600 border-navy-100',
@@ -150,8 +141,6 @@ function KitCard({ level, name, items, price, popularity, color, isPromoted }: a
 }
 
 function KitItemRow({ name, qty, price, isOptional }: any) {
-  const formatCurrency = (val: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 0 }).format(val);
-
   return (
     <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100 group hover:bg-white hover:border-navy-200 transition-all">
        <div className="flex items-center space-x-4">

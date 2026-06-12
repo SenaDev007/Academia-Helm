@@ -926,15 +926,20 @@ export function CareersContent({
               <motion.div key="step-jobs" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }} className="space-y-6">
                 <button
                   onClick={() => {
-                    // Full page navigation — do NOT reset React state before navigating
-                    // because setSelectedSchool(null) + setSchoolAutoSelected(false)
-                    // would trigger the auto-select useEffect which re-pushes /jobs/[slug]
-                    // and cancels the navigation to /jobs.
-                    window.location.href = '/jobs';
+                    if (isApplying) {
+                      // Exit application form → back to school's job listing
+                      setIsApplying(false);
+                      setSubmitResult(null);
+                      setCurrentStep(1);
+                    } else {
+                      // Exit school's job listing → back to all schools
+                      window.location.href = '/jobs';
+                    }
                   }}
                   className="inline-flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-[#0b2f73] transition-colors group"
                 >
-                  <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" /> Retour aux établissements
+                  <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
+                  {isApplying ? 'Retour aux offres' : 'Retour aux établissements'}
                 </button>
 
                 {/* School header card with full contact info */}

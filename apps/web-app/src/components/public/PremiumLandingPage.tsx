@@ -174,6 +174,7 @@ interface BannerSchool {
 /** Bande défilante animée — appels d'offres par établissement avec liens cliquables */
 function RecruitmentBanner() {
   const [schools, setSchools] = useState<BannerSchool[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
 
   useEffect(() => {
@@ -181,7 +182,7 @@ function RecruitmentBanner() {
     async function fetchActiveSchools() {
       try {
         const res = await fetch('/api/public/schools/with-jobs');
-        if (!res.ok) return;
+        if (!res.ok) { setIsLoading(false); return; }
         const data = await res.json();
         if (Array.isArray(data) && !cancelled) {
           // Ne garder que les écoles avec au moins 1 offre active
@@ -202,12 +203,32 @@ function RecruitmentBanner() {
         }
       } catch {
         // Silently fail — banner is non-critical
+      } finally {
+        if (!cancelled) setIsLoading(false);
       }
     }
     fetchActiveSchools();
     return () => { cancelled = true; };
   }, []);
 
+  // En cours de chargement : afficher un bandeau simplifié
+  if (isLoading) {
+    return (
+      <div className="overflow-hidden relative shadow-lg select-none z-[40]">
+        <div className="absolute inset-0 bg-gradient-to-r from-[#0b2f73] via-[#103e91] to-[#1d4fa5]" />
+        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#f5b335] to-transparent" />
+        <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#f5b335] to-transparent" />
+        <div className="flex items-center gap-3 relative z-10 py-2.5 px-4">
+          <div className="flex items-center justify-center w-7 h-7 rounded-full bg-[#f5b335] shadow-md">
+            <Megaphone className="h-3.5 w-3.5 text-[#0b2f73]" />
+          </div>
+          <span className="text-white/70 text-sm font-medium">Chargement des appels d&apos;offres…</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Aucune école avec offres : ne pas afficher
   if (schools.length === 0) return null;
 
   const totalJobs = schools.reduce((sum, s) => sum + s.activeJobsCount, 0);
@@ -217,7 +238,7 @@ function RecruitmentBanner() {
     <Link
       key={school.id}
       href={`/jobs?school=${school.slug}`}
-      className="flex items-center gap-2.5 bg-white/15 hover:bg-white/30 backdrop-blur-sm rounded-full px-4 py-1.5 transition-all duration-200 border border-white/20 hover:border-white/40 hover:scale-[1.03] shrink-0 group"
+      className="flex items-center gap-2.5 bg-white/90 hover:bg-white rounded-full px-4 py-1.5 transition-all duration-200 border border-[#f5b335]/30 hover:border-[#f5b335]/70 hover:scale-[1.03] shadow-sm hover:shadow-md shrink-0 group"
     >
       {school.logoUrl ? (
         <Image
@@ -225,10 +246,10 @@ function RecruitmentBanner() {
           alt={school.name}
           width={24}
           height={24}
-          className="w-6 h-6 rounded-full object-cover ring-1 ring-white/30"
+          className="w-6 h-6 rounded-full object-cover ring-2 ring-[#f5b335]/30"
         />
       ) : (
-        <span className="w-6 h-6 rounded-full bg-[#0b2f73] flex items-center justify-center text-[10px] font-bold text-[#f5b335] ring-1 ring-white/30">
+        <span className="w-6 h-6 rounded-full bg-[#0b2f73] flex items-center justify-center text-[10px] font-bold text-[#f5b335] ring-2 ring-[#f5b335]/30">
           {school.name.charAt(0).toUpperCase()}
         </span>
       )}
@@ -236,7 +257,7 @@ function RecruitmentBanner() {
         {school.name}
       </span>
       {school.city && (
-        <span className="text-[#0b2f73]/60 text-xs whitespace-nowrap hidden sm:inline">
+        <span className="text-[#1d4fa5]/60 text-xs whitespace-nowrap hidden sm:inline">
           • {school.city}
         </span>
       )}
@@ -254,7 +275,7 @@ function RecruitmentBanner() {
 
   return (
     <div
-      className="overflow-hidden relative shadow-lg select-none"
+      className="overflow-hidden relative shadow-lg select-none z-[40]"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
       onTouchStart={() => setIsPaused(true)}
@@ -279,8 +300,8 @@ function RecruitmentBanner() {
       {/* Ligne dorée en bas */}
       <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#f5b335] to-transparent" />
 
-      {/* En-tête fixe à gauche */}
-      <div className="absolute left-0 top-0 bottom-0 z-20 flex items-center bg-gradient-to-r from-[#0b2f73] via-[#0b2f73] to-transparent pr-8 pl-4">
+      {/* En-tête fixe à gauche — caché sur mobile, visible sur md+ */}
+      <div className="hidden md:flex absolute left-0 top-0 bottom-0 z-20 items-center bg-gradient-to-r from-[#0b2f73] via-[#0b2f73] to-transparent pr-8 pl-4">
         <div className="flex items-center gap-2">
           <div className="flex items-center justify-center w-8 h-8 rounded-full bg-[#f5b335] shadow-md">
             <Megaphone className="h-4 w-4 text-[#0b2f73]" />
@@ -294,9 +315,17 @@ function RecruitmentBanner() {
         </div>
       </div>
 
+      {/* Résumé mobile — icône + compteur */}
+      <div className="flex md:hidden absolute left-2 top-0 bottom-0 z-20 items-center">
+        <div className="flex items-center gap-1.5 bg-[#f5b335] rounded-full px-2 py-0.5">
+          <Megaphone className="h-3 w-3 text-[#0b2f73]" />
+          <span className="text-[#0b2f73] text-[10px] font-bold">{totalJobs}</span>
+        </div>
+      </div>
+
       {/* Zone défilante */}
       <div
-        className="flex items-center gap-4 relative z-10 py-2.5 pl-56"
+        className="flex items-center gap-4 relative z-10 py-2.5 pl-16 md:pl-56"
         style={{
           animation: 'bannerScroll 60s linear infinite',
           animationPlayState: isPaused ? 'paused' : 'running',
@@ -306,7 +335,7 @@ function RecruitmentBanner() {
         {duplicatedItems.map((item, i) => (
           <div key={`item-${i}`} className="flex items-center gap-4 shrink-0">
             {item}
-            <span className="text-white/25 text-lg">|</span>
+            <span className="text-[#f5b335]/40 text-lg">|</span>
           </div>
         ))}
       </div>
@@ -421,8 +450,8 @@ export default function PremiumLandingPage() {
     <div className="min-h-screen overflow-x-hidden bg-white text-slate-900 [word-break:normal] [overflow-wrap:normal] hyphens-none">
       <PremiumHeader />
 
-      {/* Petit espacement après navbar avant la bande */}
-      <div className="h-2" aria-hidden />
+      {/* Espace pour la navbar fixe + petit espacement avant la bande */}
+      <div className="h-16 md:h-18" aria-hidden />
 
       <RecruitmentBanner />
       

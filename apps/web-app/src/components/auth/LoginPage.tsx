@@ -1,19 +1,5 @@
 /**
  * ============================================================================
-<<<<<<< HEAD
- * LOGIN PAGE — Multi-Portal Support
- * ============================================================================
- *
- * Page de connexion unifiée pour tous les portails Academia Helm.
- * Palette unifiée : Navy (#0b2f73) / Blue (#1d4fa5) / Gold (#f5b335)
- *
- * Portails :
- * - École : email + mot de passe
- * - Enseignant : matricule + mot de passe
- * - Parent / Élève : téléphone + OTP (2 étapes)
- * - Plateforme : email + mot de passe + sélection tenant
- * - Public : accès invité ou pré-inscription
-=======
  * LOGIN PAGE — MULTI-PORTAL CONFORME AU DOCUMENT ACADEMIA-HELM-PORTAILS.MD
  * ============================================================================
  *
@@ -30,7 +16,6 @@
  * Palette Academia Helm exclusive :
  *   Navy  #0b2f73  |  Blue  #1d4fa5  |  Gold  #f5b335
  *   Aucune autre couleur par portail — palette unifiée professionnelle.
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
  *
  * ============================================================================
  */
@@ -56,17 +41,10 @@ import {
   Home,
   Shield,
   Globe,
-<<<<<<< HEAD
-  Eye,
-  EyeOff,
-  CheckCircle2,
-  XCircle,
-=======
   BookOpen,
   Baby,
   GraduationCap as GradCap,
   FileText,
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BRAND } from '@/lib/brand';
@@ -102,19 +80,6 @@ interface ParentCredentials {
   otp?: string;
 }
 
-<<<<<<< HEAD
-interface SchoolInfo {
-  name: string;
-  logoUrl: string | null;
-  city: string | null;
-  schoolType: string | null;
-}
-
-/** Palette Academia Helm — unifiée pour tous les portails */
-const NAVY = '#0b2f73';
-const BLUE = '#1d4fa5';
-const GOLD = '#f5b335';
-=======
 interface PreEnrollmentData {
   candidateType: PublicCandidateType;
   parentFirstName: string;
@@ -126,7 +91,6 @@ interface PreEnrollmentData {
   targetLevel: string;
   message?: string;
 }
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
 
 function normalizePortal(raw: string | null | undefined): PortalType {
   const x = raw?.toLowerCase();
@@ -134,60 +98,6 @@ function normalizePortal(raw: string | null | undefined): PortalType {
   return null;
 }
 
-<<<<<<< HEAD
-/** Validation helpers */
-function isValidEmail(email: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
-function isValidBeninPhone(phone: string): boolean {
-  // Accepte +229XXXXXXXX ou 9XXXXXXXX ou 0XXXXXXXXX
-  const cleaned = phone.replace(/[\s\-()]/g, '');
-  return /^(\+229|0)?\d{8,9}$/.test(cleaned);
-}
-
-function getPasswordStrength(password: string): { score: number; label: string; color: string } {
-  if (!password) return { score: 0, label: '', color: '' };
-  let score = 0;
-  if (password.length >= 8) score++;
-  if (password.length >= 12) score++;
-  if (/[A-Z]/.test(password)) score++;
-  if (/[0-9]/.test(password)) score++;
-  if (/[^A-Za-z0-9]/.test(password)) score++;
-
-  if (score <= 1) return { score: 1, label: 'Faible', color: '#ef4444' };
-  if (score <= 2) return { score: 2, label: 'Moyen', color: '#f59e0b' };
-  if (score <= 3) return { score: 3, label: 'Bon', color: BLUE };
-  return { score: 4, label: 'Fort', color: '#16a34a' };
-}
-
-/** Portal metadata — icône et titre uniquement (palette unifiée) */
-const PORTAL_META: Record<string, { title: string; subtitle: string; Icon: typeof Building2 }> = {
-  platform: {
-    title: 'Portail Plateforme',
-    subtitle: 'Administration SaaS · Supervision Globale',
-    Icon: Shield,
-  },
-  school: {
-    title: 'Portail École',
-    subtitle: 'Direction · Administration · Finances · Scolarité',
-    Icon: Building2,
-  },
-  teacher: {
-    title: 'Portail Enseignant',
-    subtitle: 'Pédagogie · Suivi · Notes · Cahier de texte',
-    Icon: GraduationCap,
-  },
-  parent: {
-    title: 'Portail Parent / Élève',
-    subtitle: 'Suivi scolaire · Paiements · Communication',
-    Icon: Users,
-  },
-  public: {
-    title: 'Portail Public',
-    subtitle: 'Pré-inscription · Admissions · Informations',
-    Icon: Globe,
-=======
 /**
  * Définition des portails pour la page login — conforme au document
  */
@@ -232,7 +142,6 @@ const PORTAL_LOGIN_DEFS: Record<string, {
     roleCount: 5,
     Icon: Globe,
     authMethod: 'Aucune authentification requise',
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
   },
 };
 
@@ -401,37 +310,11 @@ export default function LoginPage() {
 
   const isStandardLogin = !portalType;
 
-<<<<<<< HEAD
-  // ── Unified theme ────────────────────────────────────────────────────
-  const meta = portalType ? PORTAL_META[portalType] : null;
-  const PortalIcon = meta?.Icon ?? null;
-
-  // ── Form validation ──────────────────────────────────────────────────
-  const canSubmit = useCallback((): boolean => {
-    if (isLoading) return false;
-    if (portalType === 'school' || portalType === 'platform' || isStandardLogin) {
-      if (!schoolCredentials.email || !schoolCredentials.password) return false;
-      if (emailError) return false;
-    }
-    if (portalType === 'teacher') {
-      if (!teacherCredentials.teacherIdentifier || !teacherCredentials.password) return false;
-    }
-    if (portalType === 'parent') {
-      if (!parentCredentials.phone) return false;
-      if (phoneError) return false;
-      if (parentOtpSent && !parentCredentials.otp) return false;
-    }
-    return true;
-  }, [isLoading, portalType, isStandardLogin, schoolCredentials, teacherCredentials, parentCredentials, emailError, phoneError, parentOtpSent]);
-
-  // ── Submit handler ───────────────────────────────────────────────────
-=======
   // ── Portal definition for current portal ──
   const portalDef = portalType ? PORTAL_LOGIN_DEFS[portalType] : null;
   const PortalIcon = portalDef?.Icon || null;
 
   // ── Form submit handlers ──
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -692,16 +575,6 @@ export default function LoginPage() {
     window.location.href = redirectUrl;
   };
 
-<<<<<<< HEAD
-  const formBlockKey = portalType || 'standard';
-
-  // ──────────────────────────────────────────────────────────────────────
-  // RENDER
-  // ──────────────────────────────────────────────────────────────────────
-  return (
-    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-gradient-to-br from-slate-50 via-white to-blue-50/90 px-4 py-16 sm:px-6 lg:px-8">
-      {/* ── Animated background (Navy/Blue/Gold only) ── */}
-=======
   // ── Public portal: pre-enrollment (aucune authentification requise) ──
   const handlePreEnrollmentSubmit = async () => {
     const schoolId = tenantIdForApi || schoolSlugFromUrl;
@@ -747,50 +620,32 @@ export default function LoginPage() {
   return (
     <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-gradient-to-br from-slate-50 via-white to-blue-50/90 px-4 py-16 sm:px-6 lg:px-8">
       {/* ── Background blobs — palette Helm ── */}
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
       <div className="pointer-events-none absolute inset-0 opacity-40" aria-hidden>
         {!shouldReduceMotion ? (
           <>
             <motion.div
               className="absolute -left-20 top-24 h-72 w-72 rounded-full blur-3xl"
-<<<<<<< HEAD
-              style={{ background: `${NAVY}25` }}
-=======
               style={{ backgroundColor: `${NAVY}25` }}
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
               animate={{ x: [0, 20, 0], y: [0, -10, 0] }}
               transition={{ duration: 14, repeat: Infinity, ease: 'easeInOut' }}
             />
             <motion.div
               className="absolute -right-16 bottom-24 h-80 w-80 rounded-full blur-3xl"
-<<<<<<< HEAD
-              style={{ background: `${BLUE}20` }}
-=======
               style={{ backgroundColor: `${GOLD}20` }}
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
               animate={{ x: [0, -16, 0], y: [0, 14, 0] }}
               transition={{ duration: 17, repeat: Infinity, ease: 'easeInOut' }}
             />
             <motion.div
               className="absolute left-1/2 top-1/3 h-56 w-56 -translate-x-1/2 rounded-full blur-3xl"
-<<<<<<< HEAD
-              style={{ background: `${GOLD}12` }}
-              animate={{ scale: [1, 1.06, 1], opacity: [0.2, 0.32, 0.2] }}
-=======
               style={{ background: `${BLUE}18` }}
               animate={{ scale: [1, 1.06, 1], opacity: [0.25, 0.38, 0.25] }}
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
               transition={{ duration: 11, repeat: Infinity, ease: 'easeInOut' }}
             />
           </>
         ) : null}
       </div>
 
-<<<<<<< HEAD
-      {/* ── Top navigation ── */}
-=======
       {/* ── Navigation ── */}
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
       <motion.nav
         initial={shouldReduceMotion ? false : { opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
@@ -799,48 +654,28 @@ export default function LoginPage() {
       >
         <Link
           href="/"
-<<<<<<< HEAD
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200/90 bg-white/80 px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm backdrop-blur-sm transition-colors hover:border-slate-300 hover:text-slate-900"
-=======
           className="inline-flex items-center gap-2 rounded-full border bg-white/80 px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm backdrop-blur-sm transition-colors hover:text-slate-900"
           style={{ borderColor: `${NAVY}18` }}
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
         >
           <Home className="h-4 w-4" style={{ color: NAVY }} />
           Accueil
         </Link>
         <Link
           href="/portal"
-<<<<<<< HEAD
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200/90 bg-white/80 px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm backdrop-blur-sm transition-colors hover:border-slate-300 hover:text-slate-900"
-=======
           className="inline-flex items-center gap-2 rounded-full border bg-white/80 px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm backdrop-blur-sm transition-colors hover:text-slate-900"
           style={{ borderColor: `${NAVY}18` }}
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
         >
           <ArrowLeft className="h-4 w-4" />
           Portails
         </Link>
       </motion.nav>
 
-<<<<<<< HEAD
-      {/* ── Login card ── */}
-=======
       {/* ── Main login card ── */}
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
       <div className="relative z-10 w-full max-w-md">
         <motion.div
           initial={shouldReduceMotion ? false : { opacity: 0, y: 20, scale: 0.99 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: dur, ease: 'easeOut' }}
-<<<<<<< HEAD
-          className="rounded-2xl border border-slate-200/80 bg-white/95 p-8 shadow-2xl backdrop-blur-md md:p-10"
-          style={{
-            boxShadow: `0 24px 48px -12px rgba(11,47,115,0.12), 0 0 0 1px ${GOLD}14, inset 0 0 0 1px ${NAVY}10`,
-          }}
-        >
-          {/* ── Card header ── */}
-=======
           className="rounded-2xl border bg-white/95 p-8 shadow-2xl backdrop-blur-md md:p-10"
           style={{
             borderColor: `${NAVY}18`,
@@ -848,7 +683,6 @@ export default function LoginPage() {
           }}
         >
           {/* ── Header ── */}
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
           <motion.div
             className="mb-6 text-center"
             variants={heroVariants}
@@ -858,24 +692,15 @@ export default function LoginPage() {
             {/* Logo */}
             <motion.div
               variants={heroItem}
-<<<<<<< HEAD
-              className="mb-4 inline-flex items-center justify-center"
-=======
               className="mb-5 inline-flex items-center justify-center"
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
               animate={shouldReduceMotion ? undefined : { y: [0, -4, 0] }}
               transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
             >
               <Image
                 src="/images/logo-Academia Hub.png"
                 alt={BRAND.name}
-<<<<<<< HEAD
-                width={100}
-                height={100}
-=======
                 width={120}
                 height={120}
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
                 className="h-20 w-20 object-contain drop-shadow-lg md:h-24 md:w-24"
                 priority
               />
@@ -887,14 +712,6 @@ export default function LoginPage() {
               className="mb-2 flex flex-col items-center justify-center gap-2"
             >
               {PortalIcon && (
-<<<<<<< HEAD
-                <div
-                  className="flex h-12 w-12 items-center justify-center rounded-xl ring-1 ring-white/70"
-                  style={{ background: `${NAVY}10` }}
-                >
-                  <PortalIcon className="h-6 w-6" style={{ color: NAVY }} />
-                </div>
-=======
                 <motion.div
                   className="flex h-12 w-12 items-center justify-center rounded-2xl ring-1 ring-white/70"
                   style={{
@@ -905,58 +722,16 @@ export default function LoginPage() {
                 >
                   <PortalIcon className="h-6 w-6" style={{ color: NAVY }} />
                 </motion.div>
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
               )}
               <h1
                 className="text-2xl font-extrabold tracking-tight md:text-3xl"
                 style={{ color: NAVY }}
               >
-<<<<<<< HEAD
-                {meta?.title ?? BRAND.name}
-=======
                 {portalDef?.title || BRAND.name}
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
               </h1>
             </motion.div>
 
             <motion.p variants={heroItem} className="text-sm text-slate-600">
-<<<<<<< HEAD
-              {meta?.subtitle ?? BRAND.subtitle}
-            </motion.p>
-
-            {/* School info badge */}
-            {schoolInfo && (
-              <motion.div
-                variants={heroItem}
-                className="mt-3 inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs"
-                style={{
-                  borderColor: `${NAVY}20`,
-                  background: `linear-gradient(135deg, ${NAVY}06, ${BLUE}08)`,
-                }}
-              >
-                {schoolInfo.logoUrl ? (
-                  <Image
-                    src={schoolInfo.logoUrl}
-                    alt={schoolInfo.name}
-                    width={20}
-                    height={20}
-                    className="h-5 w-5 rounded object-cover"
-                  />
-                ) : (
-                  <Building2 className="h-4 w-4" style={{ color: NAVY }} />
-                )}
-                <span className="font-medium" style={{ color: NAVY }}>
-                  {schoolInfo.name}
-                </span>
-                {schoolInfo.city && (
-                  <span className="text-slate-500">· {schoolInfo.city}</span>
-                )}
-              </motion.div>
-            )}
-          </motion.div>
-
-          {/* ── Error message ── */}
-=======
               {portalDef?.subtitle || BRAND.subtitle}
             </motion.p>
 
@@ -1001,7 +776,6 @@ export default function LoginPage() {
           </motion.div>
 
           {/* ── Error display ── */}
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
           <AnimatePresence>
             {error ? (
               <motion.div
@@ -1054,12 +828,6 @@ export default function LoginPage() {
                 initial={shouldReduceMotion ? false : { opacity: 0, y: -6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
-<<<<<<< HEAD
-                className="mb-5 rounded-xl border border-amber-300/80 bg-amber-50/95 p-4"
-              >
-                <p className="mb-1 text-sm font-semibold text-amber-900">Code OTP (DEV)</p>
-                <p className="text-center text-2xl font-bold tracking-widest text-amber-950">
-=======
                 className="mb-6 rounded-xl border bg-amber-50/95 p-4"
                 style={{ borderColor: `${GOLD}50` }}
               >
@@ -1067,17 +835,12 @@ export default function LoginPage() {
                   Code OTP (DEV)
                 </p>
                 <p className="text-center text-2xl font-bold tracking-widest" style={{ color: NAVY }}>
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
                   {parentOtpCode}
                 </p>
               </motion.div>
             ) : null}
           </AnimatePresence>
 
-<<<<<<< HEAD
-          {/* ── Form ── */}
-          <form onSubmit={handleSubmit} className="space-y-5" noValidate>
-=======
           {/* ── Pre-enrollment success message (PUBLIC portal) ── */}
           <AnimatePresence>
             {preEnrollmentSubmitted && portalType === 'public' ? (
@@ -1118,7 +881,6 @@ export default function LoginPage() {
               ════════════════════════════════════════════════════════════════ */}
 
           <form onSubmit={handleSubmit} className="space-y-6">
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
             <AnimatePresence mode="wait">
               <motion.div
                 key={formBlockKey}
@@ -1128,11 +890,7 @@ export default function LoginPage() {
                 transition={{ duration: dur, ease: 'easeOut' }}
                 className="space-y-5"
               >
-<<<<<<< HEAD
-                {/* ── Email + Password (School / Platform / Standard) ── */}
-=======
                 {/* ── PLATFORM + SCHOOL : Email + Mot de passe ── */}
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
                 {(isStandardLogin || portalType === 'school' || portalType === 'platform') && (
                   <>
                     {/* Email field */}
@@ -1160,13 +918,6 @@ export default function LoginPage() {
                               email: e.target.value,
                             })
                           }
-<<<<<<< HEAD
-                          onBlur={() => setEmailTouched(true)}
-                          className={`w-full rounded-xl border-2 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2 focus:ring-offset-1 focus:ring-[#0b2f73] focus:border-[#0b2f73] ${
-                            emailError ? 'border-red-300 bg-red-50/30' : 'border-slate-200'
-                          }`}
-                          placeholder="votre.email@etablissement.com"
-=======
                           className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                           placeholder={
@@ -1174,7 +925,6 @@ export default function LoginPage() {
                               ? 'admin@academiahelm.com'
                               : 'votre.email@etablissement.com'
                           }
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
                         />
                         {emailTouched && schoolCredentials.email && (
                           <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
@@ -1186,14 +936,7 @@ export default function LoginPage() {
                           </div>
                         )}
                       </div>
-<<<<<<< HEAD
-                      {emailError && (
-                        <p className="mt-1 text-xs text-red-600">{emailError}</p>
-                      )}
-                      {getSavedEmailForTenant(tenantStorageKey) && !emailError && (
-=======
                       {getSavedEmailForTenant(tenantStorageKey) && (
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
                         <p className="mt-1 text-xs text-slate-500">
                           Dernière connexion pour cet établissement (ce poste uniquement).
                         </p>
@@ -1232,17 +975,10 @@ export default function LoginPage() {
                             setSchoolCredentials({
                               ...schoolCredentials,
                               password: e.target.value,
-<<<<<<< HEAD
-                            });
-                            setPasswordTouched(true);
-                          }}
-                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-10 transition-all placeholder:text-slate-400 focus:ring-2 focus:ring-offset-1 focus:ring-[#0b2f73] focus:border-[#0b2f73]"
-=======
                             })
-                          }
+                          }}
                           className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
                           placeholder="••••••••"
                         />
                         <button
@@ -1283,11 +1019,7 @@ export default function LoginPage() {
                   </>
                 )}
 
-<<<<<<< HEAD
-                {/* ── Teacher login fields ── */}
-=======
                 {/* ── TEACHER : Matricule + Mot de passe ── */}
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
                 {portalType === 'teacher' && (
                   <>
                     <div>
@@ -1312,14 +1044,6 @@ export default function LoginPage() {
                               teacherIdentifier: e.target.value,
                             })
                           }
-<<<<<<< HEAD
-                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2 focus:ring-offset-1 focus:ring-[#0b2f73] focus:border-[#0b2f73]"
-                          placeholder="EMP001"
-                        />
-                      </div>
-                      <p className="mt-1 text-[10px] text-slate-500">
-                        Votre identifiant unique fourni par l&apos;établissement
-=======
                           className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                           placeholder="EMP001"
@@ -1327,7 +1051,6 @@ export default function LoginPage() {
                       </div>
                       <p className="mt-1 text-xs text-slate-500">
                         Votre matricule vous a été communiqué par l&apos;établissement.
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
                       </p>
                     </div>
 
@@ -1360,17 +1083,10 @@ export default function LoginPage() {
                             setTeacherCredentials({
                               ...teacherCredentials,
                               password: e.target.value,
-<<<<<<< HEAD
-                            });
-                            setPasswordTouched(true);
-                          }}
-                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-10 transition-all placeholder:text-slate-400 focus:ring-2 focus:ring-offset-1 focus:ring-[#0b2f73] focus:border-[#0b2f73]"
-=======
                             })
-                          }
+                          }}
                           className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
                           placeholder="••••••••"
                         />
                         <button
@@ -1407,11 +1123,7 @@ export default function LoginPage() {
                   </>
                 )}
 
-<<<<<<< HEAD
-                {/* ── Parent login fields ── */}
-=======
                 {/* ── PARENT : Téléphone + OTP ── */}
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
                 {portalType === 'parent' && (
                   <>
                     <div>
@@ -1437,15 +1149,8 @@ export default function LoginPage() {
                               phone: e.target.value,
                             })
                           }
-<<<<<<< HEAD
-                          onBlur={() => setPhoneTouched(true)}
-                          className={`w-full rounded-xl border-2 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 disabled:bg-slate-100 focus:ring-2 focus:ring-offset-1 focus:ring-[#0b2f73] focus:border-[#0b2f73] ${
-                            phoneError ? 'border-red-300 bg-red-50/30' : 'border-slate-200'
-                          }`}
-=======
                           className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2 disabled:bg-slate-100"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
                           placeholder="+229 90 00 00 00"
                         />
                         {phoneTouched && parentCredentials.phone && !parentOtpSent && (
@@ -1458,20 +1163,9 @@ export default function LoginPage() {
                           </div>
                         )}
                       </div>
-<<<<<<< HEAD
-                      {phoneError && (
-                        <p className="mt-1 text-xs text-red-600">{phoneError}</p>
-                      )}
-                      {!phoneError && (
-                        <p className="mt-1 text-[10px] text-slate-500">
-                          Format attendu : +229 XX XX XX XX ou 9X XX XX XX
-                        </p>
-                      )}
-=======
                       <p className="mt-1 text-xs text-slate-500">
                         Numéro utilisé lors de l&apos;inscription de votre enfant.
                       </p>
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
                     </div>
 
                     <AnimatePresence>
@@ -1504,12 +1198,8 @@ export default function LoginPage() {
                                   otp: e.target.value,
                                 })
                               }
-<<<<<<< HEAD
-                              className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2 focus:ring-offset-1 focus:ring-[#0b2f73] focus:border-[#0b2f73]"
-=======
                               className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2"
                               style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
                               placeholder="123456"
                               maxLength={6}
                               inputMode="numeric"
@@ -1716,46 +1406,6 @@ export default function LoginPage() {
               </motion.div>
             </AnimatePresence>
 
-<<<<<<< HEAD
-            {/* ── Submit button ── */}
-            <motion.button
-              type="submit"
-              disabled={!canSubmit()}
-              whileHover={
-                shouldReduceMotion
-                  ? undefined
-                  : { scale: 1.01, boxShadow: '0 14px 32px rgba(11,47,115,0.22)' }
-              }
-              whileTap={shouldReduceMotion ? undefined : { scale: 0.99 }}
-              transition={springSoft}
-              className="flex w-full items-center justify-center rounded-xl px-6 py-3.5 font-semibold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-50 transition-all"
-              style={{
-                background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
-              }}
-            >
-              {isLoading ? (
-                <>
-                  <Loader className="mr-2 h-5 w-5 animate-spin" />
-                  {parentOtpSent && portalType === 'parent'
-                    ? 'Vérification...'
-                    : 'Connexion en cours...'}
-                </>
-              ) : parentOtpSent && portalType === 'parent' ? (
-                'Vérifier le code'
-              ) : (
-                'Se connecter'
-              )}
-            </motion.button>
-          </form>
-
-          {/* ── Security badge ── */}
-          <div className="mt-5 flex items-center justify-center gap-1.5 text-[10px] text-slate-400">
-            <Shield className="h-3 w-3" style={{ color: NAVY }} />
-            <span>Connexion chiffrée TLS · Portail sécurisé {BRAND.name}</span>
-          </div>
-
-          {/* ── Links ── */}
-=======
             {/* ── Submit button — palette Helm unifiée ── */}
             {!(portalType === 'public' && preEnrollmentSubmitted) && (
               <motion.button
@@ -1794,52 +1444,12 @@ export default function LoginPage() {
           </form>
 
           {/* ── Footer links ── */}
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
           <motion.div
             initial={shouldReduceMotion ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: shouldReduceMotion ? 0 : 0.12, duration: dur }}
             className="mt-6 space-y-3 text-center"
           >
-<<<<<<< HEAD
-            {/* "Mot de passe oublié" pour tous les portails authentifiés */}
-            {(isStandardLogin || portalType === 'school' || portalType === 'platform' || portalType === 'teacher') && (
-              <div>
-                <Link
-                  href="/forgot-password"
-                  className="text-sm font-medium transition-colors hover:underline"
-                  style={{ color: NAVY }}
-                >
-                  Mot de passe oublié ?
-                </Link>
-              </div>
-            )}
-
-            {/* Retour à la sélection du portail */}
-            {!isStandardLogin && (
-              <div>
-                <Link
-                  href="/portal"
-                  className="inline-flex items-center gap-1 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900"
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                  Retour à la sélection du portail
-                </Link>
-              </div>
-            )}
-
-            {/* Signup */}
-            {isStandardLogin && (
-              <p className="text-sm text-slate-600">
-                Pas encore de compte ?{' '}
-                <Link
-                  href="/signup"
-                  className="font-semibold transition-colors hover:underline"
-                  style={{ color: NAVY }}
-                >
-                  Activer Academia Helm
-                </Link>
-=======
             {!isStandardLogin && portalType !== 'public' ? (
               <Link
                 href="/portal"
@@ -1875,7 +1485,6 @@ export default function LoginPage() {
               <p className="text-xs text-slate-500">
                 Conforme au document : aucune authentification requise pour le portail public.
                 Vos données sont traitées conformément à notre politique de confidentialité.
->>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
               </p>
             )}
           </motion.div>

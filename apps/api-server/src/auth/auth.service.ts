@@ -323,43 +323,79 @@ export class AuthService {
    *   - PARENT/ÉLÈVE (9 rôles) : PARENT, GUARDIAN, STUDENT, etc.
    *   - PUBLIC (5 rôles) : pas d'authentification requise
    */
+  /**
+   * Retourne les portails autorisés pour un rôle donné.
+   * Conforme au document academia-helm-portails.md (77+ rôles, 5 portails).
+   */
   private getAllowedPortalsForRole(role: string): PortalType[] {
-    // ── Rôles PLATEFORME (7 rôles) ──
+    // ── Rôles PLATEFORME (7 rôles) — Document §01 ──
     const platformRoles = [
-      'PLATFORM_OWNER', 'SUPER_ADMIN', 'PLATFORM_ADMIN',
-      'PLATFORM_SUPPORT', 'PLATFORM_BILLING', 'PLATFORM_AUDITOR', 'PLATFORM_MODERATOR',
+      'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_ADMIN',
+      'BILLING_MANAGER', 'SUPPORT_AGENT', 'TECHNICAL_OPERATOR', 'PLATFORM_AUDITOR',
+      // Legacy
+      'SUPER_ADMIN', 'PLATFORM_SUPPORT', 'PLATFORM_BILLING', 'PLATFORM_MODERATOR',
     ];
     if (platformRoles.includes(role)) return [PortalType.PLATFORM];
 
-    // ── Rôles ÉCOLE (45 rôles) ──
+    // ── Rôles ÉCOLE (45 rôles) — Document §02 ──
     const schoolRoles = [
-      'DIRECTOR', 'SUPER_DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'DISCIPLINE_MASTER',
+      // 3.1 Gouvernance et Direction Générale
+      'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR',
+      // 3.2 Administration Générale
+      'SCHOOL_ADMIN', 'ADMIN_AGENT', 'RESP_SCOLARITE', 'DATA_MANAGER', 'INTERNAL_AUDITOR',
+      // 3.3 Maternelle
+      'RESP_MATERNELLE', 'PEDAGOGIC_COORDINATOR', 'EXAM_MANAGER', 'SECRETARY', 'MONITOR',
+      'TEACHING_ASSISTANT', 'ACTIVITIES_MANAGER',
+      // 3.4 Primaire
+      'RESP_PRIMAIRE',
+      // 3.5 Secondaire
+      'RESP_SECONDAIRE', 'CENSOR', 'GENERAL_MONITOR', 'ORIENTATION_MANAGER',
+      // 3.6 Finance et Économat
+      'CFO', 'FINANCE_MANAGER', 'ACCOUNTANT', 'CASHIER', 'RECOVERY_MANAGER',
+      // 3.7 Pédagogie, Vie Scolaire et Services
+      'PEDAGOGIC_DIRECTOR', 'SCHOOL_LIFE_MANAGER', 'COMMUNICATION_MANAGER', 'COMMUNICATION_AGENT',
+      'HR_MANAGER', 'PAYROLL_MANAGER', 'IT_MANAGER', 'LIBRARIAN', 'CANTEEN_MANAGER',
+      'TRANSPORT_MANAGER', 'BOARDING_MANAGER', 'HEALTH_MANAGER', 'SECURITY_MANAGER', 'SETTINGS_MANAGER',
+      // Legacy
+      'DIRECTOR', 'SUPER_DIRECTOR', 'ADMIN', 'DISCIPLINE_MASTER',
       'EDUCATION_INSPECTOR', 'GENERAL_SUPERVISOR', 'BOARDING_MASTER', 'DAYCARE_MANAGER',
-      'CANTEEN_MANAGER', 'TRANSPORT_MANAGER', 'LIBRARIAN', 'LABORATORY_MANAGER',
-      'IT_MANAGER', 'COMMUNICATION_MANAGER', 'HR_MANAGER', 'RECRUITMENT_OFFICER',
-      'PAYROLL_MANAGER', 'CNSS_MANAGER', 'LEAVE_MANAGER', 'CONTRACT_MANAGER',
-      'STAFF_MANAGER', 'QUALITY_MANAGER', 'QHSE_MANAGER', 'EVENT_MANAGER',
+      'LABORATORY_MANAGER', 'RECRUITMENT_OFFICER', 'CNSS_MANAGER', 'LEAVE_MANAGER',
+      'CONTRACT_MANAGER', 'STAFF_MANAGER', 'QUALITY_MANAGER', 'QHSE_MANAGER', 'EVENT_MANAGER',
       'ALUMNI_MANAGER', 'PARTNERSHIP_MANAGER', 'FUNDING_MANAGER', 'GRANT_MANAGER',
-      'MAINTENANCE_MANAGER', 'SECURITY_MANAGER', 'RECEPTIONIST', 'SECRETARY',
-      'ASSISTANT_DIRECTOR', 'DEAN_OF_STUDIES', 'PEDAGOGICAL_COORDINATOR',
-      'LEVEL_HEAD', 'DEPARTMENT_HEAD', 'INTERNSHIP_MANAGER', 'ORIENTATION_COUNSELOR',
-      'SOCIAL_WORKER', 'NURSE', 'INFIRMARY_MANAGER', 'SHOP_MANAGER',
+      'MAINTENANCE_MANAGER', 'RECEPTIONIST', 'ASSISTANT_DIRECTOR', 'DEAN_OF_STUDIES',
+      'PEDAGOGICAL_COORDINATOR', 'LEVEL_HEAD', 'DEPARTMENT_HEAD', 'INTERNSHIP_MANAGER',
+      'ORIENTATION_COUNSELOR', 'SOCIAL_WORKER', 'NURSE', 'INFIRMARY_MANAGER', 'SHOP_MANAGER',
+      // Frontend legacy roles
+      'SCOLARITE', 'CAISSIER', 'COMPTABLE', 'ECONOME',
+      'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'CENSEUR', 'SURVEILLANT_GENERAL',
     ];
     if (schoolRoles.includes(role)) return [PortalType.SCHOOL];
 
-    // ── Rôles ENSEIGNANT (11 rôles) ──
+    // ── Rôles ENSEIGNANT (11 rôles) — Document §03 ──
     const teacherRoles = [
-      'TEACHER', 'TEACHER_RESPONSIBLE', 'TEACHER_INTERNSHIP', 'SUBSTITUTE_TEACHER',
-      'TUTOR', 'MENTOR', 'EXAMINER', 'CORRECTOR', 'SUPERVISOR', 'ANIMATOR', 'CONSULTANT',
+      'TEACHER', 'HEAD_TEACHER', 'SUBSTITUTE_TEACHER', 'TEACHER_ASSISTANT',
+      'DEPARTMENT_COORDINATOR', 'PEDAGOGIC_ADVISOR', 'TEACHER_RESP',
+      'TEACHER_INTERNSHIP', 'TUTOR', 'MENTOR', 'EXAMINER',
+      // Legacy
+      'TEACHER_RESPONSIBLE', 'CORRECTOR', 'SUPERVISOR', 'ANIMATOR', 'CONSULTANT',
+      'INSTITUTEUR',
     ];
     if (teacherRoles.includes(role)) return [PortalType.TEACHER];
 
-    // ── Rôles PARENT / ÉLÈVE (9 rôles) ──
+    // ── Rôles PARENT / ÉLÈVE (9 rôles) — Document §04 ──
     const parentRoles = [
-      'PARENT', 'GUARDIAN', 'STUDENT', 'ALUMNUS', 'PROSPECT_PARENT',
-      'PROSPECT_STUDENT', 'SPONSOR', 'AMBASSADOR', 'VOLUNTEER',
+      'PARENT', 'PARENT_PRIMARY', 'PARENT_SECONDARY', 'LEGAL_GUARDIAN',
+      'FINANCIAL_RESPONSIBLE', 'GUARDIAN', 'STUDENT', 'CLASS_DELEGATE', 'ALUMNI',
+      // Legacy
+      'ALUMNUS', 'PROSPECT_PARENT', 'PROSPECT_STUDENT', 'SPONSOR', 'AMBASSADOR', 'VOLUNTEER',
     ];
     if (parentRoles.includes(role)) return [PortalType.PARENT];
+
+    // ── Rôles PUBLIC (5 rôles) — Document §05 ──
+    const publicRoles = [
+      'VISITOR', 'PROSPECT_PARENT', 'APPLICANT', 'SPONSOR', 'AMBASSADOR',
+    ];
+    if (publicRoles.includes(role)) return [PortalType.PATRONAT]; // PUBLIC = PATRONAT in backend enum
 
     // Rôle non reconnu : autoriser SCHOOL par défaut (compatibilité arrière)
     return [PortalType.SCHOOL];

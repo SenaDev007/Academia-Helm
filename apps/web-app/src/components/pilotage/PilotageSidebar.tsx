@@ -51,6 +51,7 @@ import {
 import type { User } from '@/types';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { useEnabledFeatureCodes } from '@/hooks/useEnabledFeatureCodes';
+import { getPortalForRole, getVisibleModulesForRole } from '@/lib/auth/role-portal-map';
 
 /**
  * Construit l'URL de la landing page (domaine principal sans sous-domaine).
@@ -81,6 +82,38 @@ function getLandingPageUrl(): string {
   } catch {
     return '/';
   }
+}
+
+/**
+ * Filtre un module en fonction de sa visibilité par accréditation.
+ * Mapping chemin → catégorie de visibilité.
+ */
+function filterModuleByVisibility(
+  path: string,
+  visibility: ReturnType<typeof getVisibleModulesForRole>,
+): boolean {
+  // Mapping des chemins vers les catégories de visibilité
+  if (path.startsWith('/app/platform')) return visibility.showPlatformModules;
+  if (path.startsWith('/app/orion') || path.startsWith('/app/meetings') || path.startsWith('/app/general'))
+    return visibility.showDirectionModules;
+  if (path.startsWith('/app/finance')) return visibility.showFinanceModules;
+  if (path.startsWith('/app/pedagogy') || path.startsWith('/app/aggregation'))
+    return visibility.showPedagogyModules;
+  if (path.startsWith('/app/hr')) return visibility.showHrModules;
+  if (path.startsWith('/app/communication')) return visibility.showCommunicationModules;
+  if (path.startsWith('/app/students')) return visibility.showStudentModules;
+  if (path.startsWith('/app/exams')) return visibility.showExamModules;
+  if (path.startsWith('/app/settings')) return visibility.showSettingsModules;
+  // Supplementary modules
+  if (path.startsWith('/app/library') || path.startsWith('/app/transport') ||
+      path.startsWith('/app/canteen') || path.startsWith('/app/infirmary') ||
+      path.startsWith('/app/qhse') || path.startsWith('/app/educast') ||
+      path.startsWith('/app/shop'))
+    return visibility.showSupplementaryModules;
+  // Dashboard always visible
+  if (path === '/app') return true;
+  // Default: visible
+  return true;
 }
 
 interface PilotageSidebarProps {
@@ -158,6 +191,18 @@ export default function PilotageSidebar({
   const [mainModulesOpen, setMainModulesOpen] = useState(true);
   const [supplementaryModulesOpen, setSupplementaryModulesOpen] = useState(true);
 
+  // ── Accreditation-based module visibility ──
+  // Utilise le mapping rôle-portail pour déterminer quels modules sont visibles
+  const moduleVisibility = useMemo(
+    () => getVisibleModulesForRole(user?.role || ''),
+    [user?.role],
+  );
+
+  const userPortal = useMemo(
+    () => getPortalForRole(user?.role || ''),
+    [user?.role],
+  );
+
   // Filtrer par modules activés : sans featureCode = toujours visible ; avec featureCode = visible si activé (ou pendant le chargement)
   // Filtrer par modules activés et rôles autorisés
   const showModule = (featureCode?: string, roles?: string[]) => {
@@ -167,13 +212,23 @@ export default function PilotageSidebar({
   };
 
   const mainModules = useMemo(
-    () => MAIN_MODULES.filter((m) => showModule(m.featureCode, m.roles as string[])),
-    [enabledSet, loading, user?.role],
+    () => MAIN_MODULES.filter((m) => {
+      const featureOk = !m.featureCode || loading || enabledSet.has(m.featureCode);
+      const roleOk = !m.roles || !user?.role || (m.roles as string[]).includes(user.role);
+      // Accreditation-based filtering from role-portal-map
+      const accredOk = filterModuleByVisibility(m.path, moduleVisibility);
+      return featureOk && roleOk && accredOk;
+    }),
+    [enabledSet, loading, user?.role, moduleVisibility],
   );
 
   const supplementaryModules = useMemo(
-    () => SUPPLEMENTARY_MODULES.filter((m) => showModule(m.featureCode, (m as any).roles as string[])),
-    [enabledSet, loading, user?.role],
+    () => SUPPLEMENTARY_MODULES.filter((m) => {
+      const featureOk = !m.featureCode || loading || enabledSet.has(m.featureCode);
+      const accredOk = filterModuleByVisibility(m.path, moduleVisibility);
+      return featureOk && accredOk;
+    }),
+    [enabledSet, loading, moduleVisibility],
   );
 
   const platformModules = useMemo(

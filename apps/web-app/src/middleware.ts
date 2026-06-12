@@ -158,6 +158,17 @@ const publicRoutes = [
   '/avis', // Formulaire public pour laisser un avis
   '/public/pre-enrollment', // Portail Public : pré-inscription (aucune auth requise)
   '/portal', // Page de sélection des portails
+  '/school-portal', // Sélection portail spécifique à l'école (sous-domaine)
+];
+
+/**
+ * Routes accessibles sur un sous-domaine d'école même sans session.
+ * Ces routes présentent le contexte de l'école (login spécifique, sélection de portails).
+ */
+const schoolSubdomainPublicRoutes = [
+  '/login',
+  '/school-portal',
+  '/public/pre-enrollment',
 ];
 
 /**
@@ -233,8 +244,16 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  // Route racine `/` toujours accessible, même avec subdomain (landing page principale)
+  // ── Route racine `/` avec sous-domaine d'école ──
+  // Si l'utilisateur accède à school.academiahelm.com/ sans session,
+  // rediriger vers /school-portal pour afficher les options de connexion
+  // spécifiques à cette école (au lieu du landing page générique).
   if (pathname === '/') {
+    if (subdomain && !user?.id) {
+      // Sur un sous-domaine sans session → school portal selector
+      const schoolPortalUrl = new URL('/school-portal', request.nextUrl.origin);
+      return NextResponse.redirect(schoolPortalUrl);
+    }
     return response;
   }
 
@@ -245,15 +264,19 @@ export async function middleware(request: NextRequest) {
       return response;
     }
 
-    // Sur un sous-domaine : les routes publiques sont accessibles si l'utilisateur
-    // a une session valide (ex: /login sur enant.academiahelm.com après auth).
-    // Sans session, on redirige vers le domaine principal pour éviter une boucle
-    // (login sur sous-domaine → session absente → redirect vers login sur sous-domaine).
+    // Sur un sous-domaine d'école : les routes spécifiques au contexte école
+    // sont toujours accessibles même sans session (login, school-portal, pré-inscription)
+    if (schoolSubdomainPublicRoutes.some(route => pathname.startsWith(route))) {
+      return response;
+    }
+
+    // Autres routes publiques sur sous-domaine : accessibles si session valide
     if (subdomain && !pathname.startsWith('/app') && !pathname.startsWith('/admin')) {
-      // Si l'utilisateur a une session valide, laisser passer (il est déjà authentifié sur ce sous-domaine)
+      // Si l'utilisateur a une session valide, laisser passer
       if (user?.id) {
         return response;
       }
+      // Sans session, rediriger vers le domaine principal pour éviter une boucle
       const mainDomain = getAppBaseUrl();
       const targetUrl = new URL(pathname, mainDomain);
       if (request.nextUrl.origin !== targetUrl.origin) {

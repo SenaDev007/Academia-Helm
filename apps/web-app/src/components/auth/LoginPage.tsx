@@ -58,8 +58,12 @@ import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getMotionDuration } from '@/lib/motion/presets';
 import { getTenantRedirectUrl } from '@/lib/utils/tenant-redirect';
 import { getAppBaseUrl } from '@/lib/utils/urls';
+import { detectAccessContext, getAvailablePortals, getPortalForRole, canRoleUsePortal } from '@/lib/auth/role-portal-map';
 
 type PortalType = 'platform' | 'school' | 'teacher' | 'parent' | 'public' | null;
+
+/** Contexte d'accès détecté (domaine principal vs sous-domaine école) */
+type AccessContext = 'main-domain' | 'school-subdomain';
 
 /** ── Palette Academia Helm — Conforme charte ── */
 const NAVY = '#0b2f73';
@@ -211,11 +215,36 @@ export default function LoginPage() {
   const tenantIdForApi = tenantIdFromUrl || tenantSlug;
   const redirectPath = searchParams?.get('redirect') || '/app';
 
-  const [portalType, setPortalType] = useState<PortalType>(() => normalizePortal(portalParam));
+  // ── Access context detection (subdomain vs main domain) ──
+  const [accessContext, setAccessContext] = useState<AccessContext>('main-domain');
 
   useEffect(() => {
-    setPortalType(normalizePortal(portalParam));
-  }, [portalParam]);
+    const ctx = detectAccessContext();
+    setAccessContext(ctx);
+  }, []);
+
+  const availablePortals = useMemo(() => {
+    return getAvailablePortals(accessContext);
+  }, [accessContext]);
+
+  const [portalType, setPortalType] = useState<PortalType>(() => {
+    const normalized = normalizePortal(portalParam);
+    // Sur sous-domaine école, si le portail demandé est PLATFORM, l'ignorer
+    if (normalized === 'platform' && detectAccessContext() === 'school-subdomain') {
+      return null;
+    }
+    return normalized;
+  });
+
+  useEffect(() => {
+    const normalized = normalizePortal(portalParam);
+    // Sur sous-domaine école, ne pas permettre PLATFORM
+    if (normalized === 'platform' && accessContext === 'school-subdomain') {
+      setPortalType(null);
+    } else {
+      setPortalType(normalized);
+    }
+  }, [portalParam, accessContext]);
 
   // ── School info from sessionStorage ──────────────────────────────────
   const [schoolInfo, setSchoolInfo] = useState<SchoolInfo | null>(null);
@@ -997,6 +1026,33 @@ export default function LoginPage() {
               <motion.p variants={heroItem} className="mt-1 text-xs font-medium text-slate-500">
                 {BRAND.slogan}
               </motion.p>
+            )}
+
+            {/* ── Portal selection buttons (school subdomain context) ── */}
+            {portalType === null && accessContext === 'school-subdomain' && (
+              <motion.div variants={heroItem} className="mt-4 grid grid-cols-2 gap-2 sm:gap-3">
+                {([
+                  { type: 'school' as const, label: 'École', Icon: Building2, desc: 'Direction, admin' },
+                  { type: 'teacher' as const, label: 'Enseignant', Icon: GraduationCap, desc: 'Pédagogie' },
+                  { type: 'parent' as const, label: 'Parent / Élève', Icon: Users, desc: 'Suivi' },
+                  { type: 'public' as const, label: 'Public', Icon: Globe, desc: 'Pré-inscription' },
+                ]).map((opt) => (
+                  <button
+                    key={opt.type}
+                    type="button"
+                    onClick={() => setPortalType(opt.type)}
+                    className="flex flex-col items-center gap-1 rounded-xl border-2 p-3 min-h-[56px] text-center transition-all hover:shadow-md"
+                    style={{
+                      borderColor: `${NAVY}20`,
+                      background: `${NAVY}04`,
+                    }}
+                  >
+                    <opt.Icon className="h-4 w-4 sm:h-5 sm:w-5" style={{ color: NAVY }} />
+                    <span className="text-[11px] sm:text-xs font-bold" style={{ color: NAVY }}>{opt.label}</span>
+                    <span className="text-[9px] sm:text-[10px] text-slate-500">{opt.desc}</span>
+                  </button>
+                ))}
+              </motion.div>
             )}
           </motion.div>
 

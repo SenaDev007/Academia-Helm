@@ -212,7 +212,7 @@ export function CareersContent({
     const container = jobListRef.current;
     if (!container || jobs.length <= 5) return;
 
-    const speed = 0.4; // px per frame — smooth and visible
+    const speed = 0.8; // px per frame — visible smooth scrolling
 
     function animate() {
       if (!container) return;
@@ -1029,12 +1029,13 @@ export function CareersContent({
                       </div>
                       <div
                         ref={jobListRef}
-                        className={`space-y-3 ${jobs.length > 5 ? 'max-h-[340px] md:max-h-[420px] overflow-hidden' : ''}`}
+                        className={`space-y-3 ${jobs.length > 5 ? 'max-h-[340px] md:max-h-[420px] hide-scrollbar' : ''}`}
                         onMouseEnter={() => { if (jobs.length > 5) isHoveredRef.current = true; }}
                         onMouseLeave={() => { if (jobs.length > 5) isHoveredRef.current = false; }}
                         onTouchStart={() => { if (jobs.length > 5) isHoveredRef.current = true; }}
                         onTouchEnd={() => { if (jobs.length > 5) setTimeout(() => { isHoveredRef.current = false; }, 3000); }}
                         style={jobs.length > 5 ? {
+                          overflowY: 'scroll',
                           maskImage: 'linear-gradient(to bottom, transparent 0%, black 4%, black 96%, transparent 100%)',
                           WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 4%, black 96%, transparent 100%)',
                         } : undefined}
@@ -1204,20 +1205,20 @@ export function CareersContent({
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
                           transition={{ duration: 0.4 }}
-                          className="relative h-full min-h-[300px] lg:min-h-[620px] rounded-2xl overflow-hidden"
+                          className="relative rounded-2xl overflow-hidden bg-gradient-to-br from-[#0b2f73]/[0.04] via-white to-[#1d4fa5]/[0.06]"
                         >
                           <Image
                             src="/images/AcademiaHelm_RecruitmentPortal_Portrait.jpeg"
                             alt="Portail de recrutement Academia Helm"
-                            fill
-                            className="object-cover"
+                            width={896}
+                            height={1200}
+                            className="w-full h-auto rounded-2xl shadow-lg"
+                            style={{ objectFit: 'contain' }}
                             priority
                             sizes="(max-width: 1024px) 100vw, 66vw"
                           />
-                          {/* Gradient overlay for text readability */}
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
-                          <div className="absolute bottom-5 left-5 right-5 text-center">
-                            <p className="text-xs font-semibold text-white/90 bg-white/15 backdrop-blur-md rounded-lg px-4 py-2 inline-flex items-center gap-2">
+                          <div className="py-4 text-center">
+                            <p className="text-xs font-semibold text-[#0b2f73]/70 bg-white/80 backdrop-blur-sm rounded-lg px-4 py-2 inline-flex items-center gap-2 shadow-sm">
                               <Briefcase className="h-3.5 w-3.5 text-[#f5b335]" />
                               Sélectionnez un poste pour voir les détails
                             </p>

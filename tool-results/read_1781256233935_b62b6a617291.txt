@@ -1,0 +1,1203 @@
+     1→'use client';
+     2→
+     3→import { useState, useEffect } from 'react';
+     4→import { useRouter, useSearchParams } from 'next/navigation';
+     5→import Image from 'next/image';
+     6→import { motion, AnimatePresence } from 'framer-motion';
+     7→import {
+     8→  Building2,
+     9→  Briefcase,
+    10→  Search,
+    11→  MapPin,
+    12→  GraduationCap,
+    13→  ChevronRight,
+    14→  ArrowLeft,
+    15→  Upload,
+    16→  CheckCircle,
+    17→  XCircle,
+    18→  FileText,
+    19→  User,
+    20→  Plus,
+    21→  Trash2,
+    22→  BookOpen,
+    23→  Award,
+    24→  Sparkles,
+    25→  Send,
+    26→  Linkedin,
+    27→  Users,
+    28→  Globe,
+    29→  Map,
+    30→  Mail,
+    31→  Phone
+    32→} from 'lucide-react';
+    33→import PremiumHeader from '@/components/layout/PremiumHeader';
+    34→import { JobCardSkeleton } from '@/components/loading/Skeleton';
+    35→import { JobCardSkeletonMobile } from '@/components/loading/SkeletonMobile';
+    36→
+    37→
+    38→const PRIMARY = '#1A2BA6';
+    39→
+    40→interface School {
+    41→  id: string;
+    42→  tenantId: string;
+    43→  name: string;
+    44→  schoolName: string;
+    45→  tenantName: string;
+    46→  slug: string;
+    47→  logoUrl?: string;
+    48→  city?: string;
+    49→  country?: string;
+    50→  primaryPhone?: string;
+    51→  primaryEmail?: string;
+    52→  address?: string;
+    53→  activeJobsCount?: number;
+    54→  /** Nested school object from API — school-level contact info takes priority over tenant-level */
+    55→  school?: {
+    56→    primaryPhone?: string;
+    57→    primaryEmail?: string;
+    58→    city?: string;
+    59→    country?: string;
+    60→    logo?: string;
+    61→  };
+    62→}
+    63→
+    64→interface Job {
+    65→  id: string;
+    66→  ref: string;
+    67→  slug: string;
+    68→  title: string;
+    69→  dept: string;
+    70→  loc: string;
+    71→  status: string;
+    72→  description?: string;
+    73→  missions?: string;
+    74→  responsibilities?: string;
+    75→  academicLevel?: string;
+    76→  experience?: string;
+    77→  skillsRequired?: string;
+    78→  salary?: string;
+    79→  contractType?: string;
+    80→  _count?: { applications: number };
+    81→}
+    82→
+    83→interface JobStats {
+    84→  jobId: string;
+    85→  totalApplicants: number;
+    86→  countries: { name: string; count: number }[];
+    87→  cities: { name: string; count: number }[];
+    88→}
+    89→
+    90→interface WorkExperience {
+    91→  title: string;
+    92→  company: string;
+    93→  years: string;
+    94→  description: string;
+    95→}
+    96→
+    97→interface EducationItem {
+    98→  degree: string;
+    99→  school: string;
+   100→  year: string;
+   101→}
+   102→
+   103→export interface CareersContentProps {
+   104→  forcedSchoolSlug?: string;
+   105→  forcedJobSlug?: string;
+   106→  /** Pre-fetched schools from Server Component — skips client-side fetch */
+   107→  initialSchools?: any[];
+   108→  /** Pre-fetched selected school from Server Component */
+   109→  initialSchool?: School | null;
+   110→  /** Pre-fetched jobs for the selected school from Server Component */
+   111→  initialJobs?: Job[];
+   112→}
+   113→
+   114→export function CareersContent({
+   115→  forcedSchoolSlug,
+   116→  forcedJobSlug,
+   117→  initialSchools,
+   118→  initialSchool = null,
+   119→  initialJobs,
+   120→}: CareersContentProps) {
+   121→  const [schools, setSchools] = useState<any[]>(initialSchools ?? []);
+   122→  const [selectedSchool, setSelectedSchool] = useState<School | null>(initialSchool);
+   123→  const [jobs, setJobs] = useState<Job[]>(initialJobs ?? []);
+   124→  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+   125→  // When no pre-fetched data is provided, start in loading state so the skeleton
+   126→  // is visible immediately instead of a flash of empty grid.
+   127→  const [loading, setLoading] = useState(!initialSchools || initialSchools.length === 0);
+   128→  const [loadError, setLoadError] = useState<string | null>(null);
+   129→  const [searchQuery, setSearchQuery] = useState('');
+   130→  
+   131→  const router = useRouter();
+   132→  const searchParams = useSearchParams();
+   133→  const schoolParam = forcedSchoolSlug || searchParams.get('school');
+   134→
+   135→  // Multi-Step Form States
+   136→  const [isApplying, setIsApplying] = useState(false);
+   137→  const [currentStep, setCurrentStep] = useState(1);
+   138→  
+   139→  // Step 1: Contact & Identity
+   140→  const [firstName, setFirstName] = useState('');
+   141→  const [lastName, setLastName] = useState('');
+   142→  const [email, setEmail] = useState('');
+   143→  const [phone, setPhone] = useState('');
+   144→  const [address, setAddress] = useState('');
+   145→  const [country, setCountry] = useState('Bénin');
+   146→  const [city, setCity] = useState('');
+   147→  const [gender, setGender] = useState('M');
+   148→  const [linkedinUrl, setLinkedinUrl] = useState('');
+   149→  const [jobStats, setJobStats] = useState<JobStats | null>(null);
+   150→
+   151→  // Step 2: Work Experience List
+   152→  const [experiences, setExperiences] = useState<WorkExperience[]>([]);
+   153→  const [expTitle, setExpTitle] = useState('');
+   154→  const [expCompany, setExpCompany] = useState('');
+   155→  const [expYears, setExpYears] = useState('');
+   156→  const [expDesc, setExpDesc] = useState('');
+   157→
+   158→  // Step 3: Education List
+   159→  const [education, setEducation] = useState<EducationItem[]>([]);
+   160→  const [eduDegree, setEduDegree] = useState('');
+   161→  const [eduSchool, setEduSchool] = useState('');
+   162→  const [eduYear, setEduYear] = useState('');
+   163→
+   164→  // Step 4: Skills & Pitch
+   165→  const [skills, setSkills] = useState<string[]>([]);
+   166→  const [skillInput, setSkillInput] = useState('');
+   167→  const [pitch, setPitch] = useState('');
+   168→
+   169→  // Step 5: Document Uploads
+   170→  const [cvFile, setCvFile] = useState<File | null>(null);
+   171→  const [coverFile, setCoverFile] = useState<File | null>(null);
+   172→  const [recoFile, setRecoFile] = useState<File | null>(null);
+   173→
+   174→  const [submitting, setSubmitting] = useState(false);
+   175→  const [submitResult, setSubmitResult] = useState<{ success: boolean; message: string } | null>(null);
+   176→
+   177→  // When forcedJobSlug is provided, directly deep-link to the specific job via API.
+   178→  // This avoids the fragile multi-step chain (load schools → match slug → load jobs → match slug)
+   179→  // and works reliably for social sharing links.
+   180→  const [deepLinkResolved, setDeepLinkResolved] = useState(false);
+   181→
+   182→  useEffect(() => {
+   183→    if (!forcedJobSlug || deepLinkResolved) return;
+   184→    let cancelled = false;
+   185→
+   186→    async function resolveDeepLink() {
+   187→      try {
+   188→        setLoading(true);
+   189→        // Call the public getJobBySlug API — returns job with tenant info
+   190→        const res = await fetch(`/api/hr/recruitment/jobs/by-slug/${encodeURIComponent(forcedJobSlug!)}`);
+   191→        if (!res.ok) {
+   192→          console.warn('Deep-link: job not found for slug', forcedJobSlug);
+   193→          setDeepLinkResolved(true);
+   194→          return;
+   195→        }
+   196→        const jobData = await res.json();
+   197→        if (cancelled || !jobData?.tenant) return;
+   198→
+   199→        // Build a synthetic school object from the job's tenant info
+   200→        const tenantInfo = jobData.tenant;
+   201→        const syntheticSchool: School = {
+   202→          id: tenantInfo.id,
+   203→          tenantId: tenantInfo.id,
+   204→          name: tenantInfo.name,
+   205→          schoolName: tenantInfo.schoolName || tenantInfo.name,
+   206→          tenantName: tenantInfo.name,
+   207→          slug: tenantInfo.slug,
+   208→          logoUrl: tenantInfo.logoUrl || tenantInfo.school?.logo || undefined,
+   209→          city: tenantInfo.city || tenantInfo.school?.city || undefined,
+   210→          country: tenantInfo.country || tenantInfo.school?.country || undefined,
+   211→          primaryPhone: tenantInfo.school?.primaryPhone || tenantInfo.primaryPhone || undefined,
+   212→          primaryEmail: tenantInfo.school?.primaryEmail || tenantInfo.primaryEmail || undefined,
+   213→          address: tenantInfo.address || tenantInfo.school?.address || undefined,
+   214→        };
+   215→
+   216→        // Set school and job directly
+   217→        setSelectedSchool(syntheticSchool);
+   218→        setSelectedJob(jobData);
+   219→
+   220→        // Also load the full jobs list for this school (for sidebar navigation)
+   221→        try {
+   222→          const jobsRes = await fetch(`/api/hr/recruitment/jobs?tenantId=${tenantInfo.id}`);
+   223→          const jobsData = await jobsRes.json();
+   224→          if (Array.isArray(jobsData) && !cancelled) {
+   225→            setJobs(jobsData.filter((j: any) => j.status === 'PUBLIÉE'));
+   226→          }
+   227→        } catch (e) {
+   228→          console.warn('Deep-link: could not load full jobs list', e);
+   229→        }
+   230→
+   231→        setDeepLinkResolved(true);
+   232→      } catch (err) {
+   233→        console.error('Deep-link resolution failed:', err);
+   234→        setDeepLinkResolved(true);
+   235→      } finally {
+   236→        if (!cancelled) setLoading(false);
+   237→      }
+   238→    }
+   239→
+   240→    resolveDeepLink();
+   241→    return () => { cancelled = true; };
+   242→  }, [forcedJobSlug, deepLinkResolved]);
+   243→
+   244→  // Fetch available schools on mount — skip if data was pre-fetched by Server Component
+   245→  useEffect(() => {
+   246→    // If Server Component already provided schools, skip the client-side fetch entirely
+   247→    if (initialSchools && initialSchools.length > 0) return;
+   248→
+   249→    async function loadSchools() {
+   250→      try {
+   251→        setLoading(true);
+   252→        setLoadError(null);
+   253→        // Use the optimized endpoint that returns schools with active job counts
+   254→        // and includes logo, contact info, etc.
+   255→        const res = await fetch('/api/public/schools/with-jobs');
+   256→        if (res.ok) {
+   257→          const data = await res.json();
+   258→          if (Array.isArray(data)) {
+   259→            setSchools(data);
+   260→            return; // Success — no need for fallback
+   261→          }
+   262→        }
+   263→        // Fallback to the basic list endpoint
+   264→        try {
+   265→          const fallbackRes = await fetch('/api/public/schools/list');
+   266→          if (fallbackRes.ok) {
+   267→            const fallbackData = await fallbackRes.json();
+   268→            if (Array.isArray(fallbackData)) {
+   269→              setSchools(fallbackData);
+   270→              return;
+   271→            }
+   272→          }
+   273→        } catch {
+   274→          // Fallback also failed
+   275→        }
+   276→        // Both endpoints failed
+   277→        setLoadError('Impossible de charger les établissements. Vérifiez votre connexion et réessayez.');
+   278→      } catch (err) {
+   279→        console.error('Failed to load schools:', err);
+   280→        setLoadError('Erreur réseau. Vérifiez votre connexion et réessayez.');
+   281→      } finally {
+   282→        setLoading(false);
+   283→      }
+   284→    }
+   285→    loadSchools();
+   286→  }, [initialSchools]);
+   287→
+   288→  // Fetch jobs for the selected school
+   289→  const handleSelectSchool = async (school: School) => {
+   290→    setSelectedSchool(school);
+   291→    setSelectedJob(null);
+   292→    setIsApplying(false);
+   293→    setSubmitResult(null);
+   294→    setJobStats(null);
+   295→    setCurrentStep(1);
+   296→    
+   297→    // Update path dynamically (personalized tenant URL)
+   298→    // Preserve the jobSlug if we're coming from a direct link (/jobs/{school}/{job})
+   299→    // so that the auto-select job useEffect can still trigger
+   300→    const jobSlugSegment = forcedJobSlug ? `/${forcedJobSlug}` : '';
+   301→    router.push(`/jobs/${school.slug}${jobSlugSegment}`);
+   302→
+   303→    try {
+   304→      setLoading(true);
+   305→      // Use BFF proxy (not apiFetch) for public job listings.
+   306→      // apiFetch sends X-Tenant-ID from the auth cookie, which overrides
+   307→      // the query param tenantId in NestJS — causing wrong-tenant jobs.
+   308→      const res = await fetch(`/api/hr/recruitment/jobs?tenantId=${school.tenantId || school.id}`);
+   309→      if (res.ok) {
+   310→        const data = await res.json();
+   311→        setJobs(Array.isArray(data) ? data.filter((j: any) => j.status === 'PUBLIÉE') : []);
+   312→      } else {
+   313→        console.error('Failed to load jobs:', res.status, res.statusText);
+   314→      }
+   315→    } catch (err) {
+   316→      console.error('Failed to load jobs:', err);
+   317→    } finally {
+   318→      setLoading(false);
+   319→    }
+   320→  };
+   321→
+   322→  // Fetch stats when a job is selected
+   323→  useEffect(() => {
+   324→    if (!selectedJob) {
+   325→      setJobStats(null);
+   326→      return;
+   327→    }
+   328→    async function loadStats() {
+   329→      try {
+   330→        const jobId = selectedJob!.id;
+   331→        // Route through BFF proxy to avoid CORS issues on mobile devices
+   332→        const res = await fetch(`/api/hr/recruitment/jobs/${jobId}/stats`);
+   333→        if (res.ok) {
+   334→          const data = await res.json();
+   335→          setJobStats(data);
+   336→        }
+   337→      } catch (err) {
+   338→        console.error('Failed to load job stats:', err);
+   339→      }
+   340→    }
+   341→    loadStats();
+   342→  }, [selectedJob?.id]);
+   343→
+   344→  // Auto-select school if query parameter matches (only if deep-link hasn't already resolved)
+   345→  // Skip if Server Component already provided initialSchool (already selected)
+   346→  useEffect(() => {
+   347→    if (deepLinkResolved && forcedJobSlug) return; // Deep-link already set the school
+   348→    if (initialSchool) return; // Server Component already selected the school
+   349→    if (schools.length > 0 && schoolParam && !selectedSchool) {
+   350→      const match = schools.find(s => s.slug === schoolParam);
+   351→      if (match) {
+   352→        handleSelectSchool(match);
+   353→      }
+   354→    }
+   355→  }, [schools, schoolParam, deepLinkResolved, forcedJobSlug, selectedSchool, initialSchool]);
+   356→
+   357→  // Select a specific job from the jobs list by slug
+   358→  const handleSelectJobBySlug = (jobSlug: string) => {
+   359→    const match = jobs.find(j => j.slug === jobSlug);
+   360→    if (match) {
+   361→      setSelectedJob(match);
+   362→    }
+   363→  };
+   364→
+   365→  // Auto-select job if forcedJobSlug is provided and jobs are loaded
+   366→  // (fallback for when deep-link resolution didn't set the job directly)
+   367→  useEffect(() => {
+   368→    if (forcedJobSlug && jobs.length > 0 && selectedSchool && !selectedJob) {
+   369→      handleSelectJobBySlug(forcedJobSlug);
+   370→    }
+   371→  }, [forcedJobSlug, jobs, selectedSchool, selectedJob]);
+   372→
+   373→  // Form helpers
+   374→  const addExperience = () => {
+   375→    if (!expTitle || !expCompany) return;
+   376→    setExperiences([...experiences, { title: expTitle, company: expCompany, years: expYears, description: expDesc }]);
+   377→    setExpTitle('');
+   378→    setExpCompany('');
+   379→    setExpYears('');
+   380→    setExpDesc('');
+   381→  };
+   382→
+   383→  const removeExperience = (index: number) => {
+   384→    setExperiences(experiences.filter((_, i) => i !== index));
+   385→  };
+   386→
+   387→  const addEducation = () => {
+   388→    if (!eduDegree || !eduSchool) return;
+   389→    setEducation([...education, { degree: eduDegree, school: eduSchool, year: eduYear }]);
+   390→    setEduDegree('');
+   391→    setEduSchool('');
+   392→    setEduYear('');
+   393→  };
+   394→
+   395→  const removeEducation = (index: number) => {
+   396→    setEducation(education.filter((_, i) => i !== index));
+   397→  };
+   398→
+   399→  const addSkill = (e: React.KeyboardEvent) => {
+   400→    if (e.key === 'Enter' && skillInput.trim()) {
+   401→      e.preventDefault();
+   402→      if (!skills.includes(skillInput.trim())) {
+   403→        setSkills([...skills, skillInput.trim()]);
+   404→      }
+   405→      setSkillInput('');
+   406→    }
+   407→  };
+   408→
+   409→  const removeSkill = (tag: string) => {
+   410→    setSkills(skills.filter(s => s !== tag));
+   411→  };
+   412→
+   413→  // Easy Apply submission
+   414→  const handleSubmitApplication = async () => {
+   415→    if (!selectedSchool || !selectedJob) return;
+   416→
+   417→    setSubmitting(true);
+   418→    setSubmitResult(null);
+   419→
+   420→    try {
+   421→      const formData = new FormData();
+   422→      formData.append('tenantId', selectedSchool.tenantId || selectedSchool.id);
+   423→      formData.append('jobId', selectedJob.id);
+   424→      formData.append('firstName', firstName);
+   425→      formData.append('lastName', lastName);
+   426→      formData.append('email', email);
+   427→      formData.append('phone', phone);
+   428→      formData.append('address', address);
+   429→      formData.append('country', country);
+   430→      formData.append('city', city);
+   431→      formData.append('gender', gender);
+   432→      formData.append('linkedinUrl', linkedinUrl);
+   433→      
+   434→      // Structured profile fields serialized
+   435→      formData.append('experiences', JSON.stringify(experiences));
+   436→      formData.append('education', JSON.stringify(education));
+   437→      formData.append('skills', JSON.stringify(skills));
+   438→      formData.append('pitch', pitch);
+   439→
+   440→      if (cvFile) formData.append('cv', cvFile);
+   441→      if (coverFile) formData.append('coverLetter', coverFile);
+   442→      if (recoFile) formData.append('recommendationLetter', recoFile);
+   443→
+   444→      // NOTE: Route through the BFF proxy (/api/hr/recruitment/apply) instead of
+   445→      // making a direct cross-origin call to the NestJS API. This avoids CORS issues,
+   446→      // works reliably on mobile devices, and ensures the multipart/form-data body
+   447→      // is forwarded correctly with authentication headers.
+   448→      //
+   449→      // Do NOT set Content-Type header manually — the browser must auto-set
+   450→      // "multipart/form-data; boundary=..." so the server can parse the body.
+   451→      const res = await fetch('/api/hr/recruitment/apply', {
+   452→        method: 'POST',
+   453→        body: formData,
+   454→      });
+   455→
+   456→      const data = await res.json();
+   457→
+   458→      if (res.ok && data) {
+   459→        setSubmitResult({
+   460→          success: true,
+   461→          message: 'Candidature Easy Apply transmise ! Notre IA procède à l\'extraction sémantique et à la validation des diplômes/certifications.'
+   462→        });
+   463→      } else {
+   464→        // Extract error details from various response formats
+   465→        const serverMsg = data?.message || data?.error || '';
+   466→        const detail = data?.detail || '';
+   467→        const fullMsg = [serverMsg, detail].filter(Boolean).join(' — ');
+   468→        setSubmitResult({
+   469→          success: false,
+   470→          message: fullMsg
+   471→            ? `Erreur : ${fullMsg}`
+   472→            : `Erreur serveur (${res.status}). Veuillez réessayer.`
+   473→        });
+   474→      }
+   475→    } catch (err: any) {
+   476→      console.error('Submission failed:', err);
+   477→      const errMsg = err?.message || '';
+   478→      setSubmitResult({
+   479→        success: false,
+   480→        message: errMsg
+   481→          ? `Erreur réseau : ${errMsg}`
+   482→          : 'Une erreur réseau est survenue. Veuillez vérifier votre connexion et soumettre à nouveau.'
+   483→      });
+   484→    } finally {
+   485→      setSubmitting(false);
+   486→    }
+   487→  };
+   488→
+   489→  const filteredSchools = schools.filter(s => 
+   490→    (s.schoolName || s.tenantName || s.name || '').toLowerCase().includes(searchQuery.toLowerCase())
+   491→  );
+   492→
+   493→  /**
+   494→   * Resolve contact info with school-level priority over tenant-level.
+   495→   * Prevents the wrong email/phone from being displayed when tenant-level
+   496→   * data belongs to a different entity than the school.
+   497→   */
+   498→  const getSchoolEmail = (s: School) => s.school?.primaryEmail || s.primaryEmail;
+   499→  const getSchoolPhone = (s: School) => s.school?.primaryPhone || s.primaryPhone;
+   500→
+   501→  return (
+   502→    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between">
+   503→      <PremiumHeader />
+   504→
+   505→      <main className="flex-grow pt-28 pb-20 px-4 md:px-8 max-w-6xl mx-auto w-full">
+   506→        {/* Banner Section */}
+   507→        <div className="text-center mb-10">
+   508→          <span className="px-4 py-1.5 rounded-full border text-xs font-bold uppercase tracking-wider bg-indigo-50 border-indigo-200 text-[#1A2BA6] mb-4 inline-block">
+   509→            Portail Talent Academia
+   510→          </span>
+   511→          <h1 className="text-3xl md:text-5xl font-extrabold text-slate-900 leading-tight">
+   512→            Espace Candidat Augmenté
+   513→          </h1>
+   514→          <p className="text-sm md:text-base text-slate-500 mt-2 max-w-xl mx-auto">
+   515→            Postulez instantanément grâce à notre parcours de candidature simplifiée intégrant l&apos;analyse IA.
+   516→          </p>
+   517→        </div>
+   518→
+   519→        {loading && (
+   520→          <div className="py-12">
+   521→            {/* Desktop skeleton */}
+   522→            <div className="hidden md:block">
+   523→              <JobCardSkeleton count={3} />
+   524→            </div>
+   525→            {/* Mobile skeleton */}
+   526→            <div className="block md:hidden">
+   527→              <JobCardSkeletonMobile count={3} />
+   528→            </div>
+   529→          </div>
+   530→        )}
+   531→
+   532→        {!loading && loadError && (
+   533→          <div className="text-center py-16 max-w-md mx-auto">
+   534→            <div className="h-16 w-16 rounded-full bg-red-50 border border-red-100 flex items-center justify-center mx-auto mb-4">
+   535→              <XCircle className="h-8 w-8 text-red-400" />
+   536→            </div>
+   537→            <h3 className="text-lg font-semibold text-slate-900 mb-2">Erreur de chargement</h3>
+   538→            <p className="text-sm text-slate-500 mb-6">{loadError}</p>
+   539→            <button
+   540→              onClick={() => {
+   541→                setLoading(true);
+   542→                setLoadError(null);
+   543→                fetch('/api/public/schools/with-jobs')
+   544→                  .then(res => res.ok ? res.json() : Promise.reject('API error'))
+   545→                  .then(data => { if (Array.isArray(data)) setSchools(data); })
+   546→                  .catch(() => setLoadError('Impossible de charger les établissements. Vérifiez votre connexion et réessayez.'))
+   547→                  .finally(() => setLoading(false));
+   548→              }}
+   549→              className="px-6 py-2.5 bg-[#1A2BA6] text-white text-sm font-semibold rounded-xl hover:bg-[#1521a0] transition-colors"
+   550→            >
+   551→              Réessayer
+   552→            </button>
+   553→          </div>
+   554→        )}
+   555→
+   556→        {!loading && !loadError && !selectedSchool && schools.length === 0 && (
+   557→          <div className="text-center py-16 max-w-md mx-auto">
+   558→            <div className="h-16 w-16 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center mx-auto mb-4">
+   559→              <Building2 className="h-8 w-8 text-slate-300" />
+   560→            </div>
+   561→            <h3 className="text-lg font-semibold text-slate-900 mb-2">Aucun établissement trouvé</h3>
+   562→            <p className="text-sm text-slate-500">Aucun établissement ne recrute actuellement. Revenez bientôt !</p>
+   563→          </div>
+   564→        )}
+   565→
+   566→        {!loading && !loadError && (
+   567→          <AnimatePresence mode="wait">
+   568→            {/* STEP 1: Select Institution */}
+   569→            {!selectedSchool && (
+   570→              <motion.div key="step-schools" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }} className="space-y-6">
+   571→                <div className="max-w-md mx-auto relative">
+   572→                  <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
+   573→                  <input
+   574→                    type="text"
+   575→                    placeholder="Rechercher un établissement..."
+   576→                    value={searchQuery}
+   577→                    onChange={(e) => setSearchQuery(e.target.value)}
+   578→                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-white text-xs shadow-sm focus:outline-none focus:border-[#1A2BA6] transition"
+   579→                  />
+   580→                </div>
+   581→
+   582→                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+   583→                  {filteredSchools.map((school) => (
+   584→                    <div
+   585→                      key={school.id}
+   586→                      onClick={() => handleSelectSchool(school)}
+   587→                      className="group cursor-pointer bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md hover:border-slate-300 transition-all flex flex-col justify-between relative overflow-hidden"
+   588→                    >
+   589→                      <div>
+   590→                        <div className="flex justify-between items-start mb-4">
+   591→                          {school.logoUrl ? (
+   592→                            <Image
+   593→                              src={school.logoUrl}
+   594→                              alt={school.schoolName || school.tenantName || school.name}
+   595→                              width={48}
+   596→                              height={48}
+   597→                              className="h-12 w-12 rounded-xl object-contain border border-slate-100 bg-white p-0.5"
+   598→                              loading="lazy"
+   599→                              sizes="48px"
+   600→                            />
+   601→                          ) : (
+   602→                            <div className="h-12 w-12 rounded-xl bg-blue-50/80 border border-blue-100 flex items-center justify-center text-[#1A2BA6]">
+   603→                              <Building2 className="h-6 w-6" />
+   604→                            </div>
+   605→                          )}
+   606→                          {school.activeJobsCount > 0 ? (
+   607→                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 shadow-sm relative">
+   608→                              <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
+   609→                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+   610→                                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+   611→                              </span>
+   612→                              {school.activeJobsCount} {school.activeJobsCount > 1 ? 'recrutements' : 'recrutement'}
+   613→                            </span>
+   614→                          ) : (
+   615→                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium bg-slate-50 text-slate-400 border border-slate-100">
+   616→                              Pas d'offre
+   617→                            </span>
+   618→                          )}
+   619→                        </div>
+   620→                        <h3 className="font-bold text-slate-900 text-sm leading-snug group-hover:text-[#1A2BA6] transition-colors">
+   621→                          {school.schoolName || school.tenantName || school.name}
+   622→                        </h3>
+   623→                        <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider mt-1">{school.slug}</p>
+   624→                        {(school.city || school.country) && (
+   625→                          <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
+   626→                            <MapPin className="h-2.5 w-2.5" />
+   627→                            {[school.city, school.country].filter(Boolean).join(', ')}
+   628→                          </p>
+   629→                        )}
+   630→                      </div>
+   631→                      <div className="mt-6 pt-4 border-t border-slate-50 flex items-center justify-between text-xs font-bold text-[#1A2BA6]">
+   632→                        <span>Découvrir les offres</span>
+   633→                        <ChevronRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+   634→                      </div>
+   635→                    </div>
+   636→                  ))}
+   637→                </div>
+   638→              </motion.div>
+   639→            )}
+   640→
+   641→            {/* STEP 2: Job Board or Application */}
+   642→            {selectedSchool && (
+   643→              <motion.div key="step-jobs" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }} className="space-y-6">
+   644→                <button
+   645→                  onClick={() => {
+   646→                    setSelectedSchool(null);
+   647→                    setSelectedJob(null);
+   648→                    setIsApplying(false);
+   649→                    router.push('/jobs');
+   650→                  }}
+   651→                  className="inline-flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-slate-900 transition-colors"
+   652→                >
+   653→                  <ArrowLeft className="h-4 w-4" /> Retour aux établissements
+   654→                </button>
+   655→
+   656→                <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+   657→                  <div className="flex items-center gap-4">
+   658→                    {selectedSchool.logoUrl ? (
+   659→                      <Image
+   660→                        src={selectedSchool.logoUrl}
+   661→                        alt={selectedSchool.schoolName || selectedSchool.tenantName || selectedSchool.name}
+   662→                        width={56}
+   663→                        height={56}
+   664→                        className="h-14 w-14 rounded-xl object-contain border border-slate-100 bg-white p-0.5"
+   665→                        sizes="56px"
+   666→                      />
+   667→                    ) : (
+   668→                      <div className="h-14 w-14 rounded-xl bg-blue-50/80 border border-blue-100 flex items-center justify-center text-[#1A2BA6]">
+   669→                        <Building2 className="h-7 w-7" />
+   670→                      </div>
+   671→                    )}
+   672→                    <div className="flex-1 min-w-0">
+   673→                      <h2 className="font-extrabold text-slate-900 text-lg truncate">
+   674→                        {selectedSchool.schoolName || selectedSchool.tenantName || selectedSchool.name}
+   675→                      </h2>
+   676→                      <div className="flex flex-wrap items-center gap-3 mt-1 text-xs text-slate-500">
+   677→                        {(selectedSchool.city || selectedSchool.country) && (
+   678→                          <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {[selectedSchool.city, selectedSchool.country].filter(Boolean).join(', ')}</span>
+   679→                        )}
+   680→                        {getSchoolPhone(selectedSchool) && (
+   681→                          <a href={`tel:${getSchoolPhone(selectedSchool)}`} className="flex items-center gap-1 hover:text-[#1A2BA6] transition-colors"><Phone className="h-3 w-3" /> {getSchoolPhone(selectedSchool)}</a>
+   682→                        )}
+   683→                        {getSchoolEmail(selectedSchool) && (
+   684→                          <a href={`mailto:${getSchoolEmail(selectedSchool)}`} className="flex items-center gap-1 hover:text-[#1A2BA6] transition-colors"><Mail className="h-3 w-3" /> {getSchoolEmail(selectedSchool)}</a>
+   685→                        )}
+   686→                      </div>
+   687→                    </div>
+   688→                  </div>
+   689→                </div>
+   690→
+   691→                {!isApplying ? (
+   692→                  jobs.length === 0 ? (
+   693→                    /* ─── No open positions — show illustration ─── */
+   694→                    <div className="flex flex-col items-center justify-center py-8">
+   695→                      <div className="relative w-full max-w-lg">
+   696→                        <Image
+   697→                          src="/images/AcademiaHelm_NoRecruitment.jpeg"
+   698→                          alt="Aucune offre de recrutement pour le moment"
+   699→                          width={512}
+   700→                          height={360}
+   701→                          className="rounded-2xl shadow-sm w-full h-auto object-contain"
+   702→                          priority
+   703→                          sizes="(max-width: 768px) 100vw, 512px"
+   704→                        />
+   705→                      </div>
+   706→                      <p className="mt-5 text-sm font-semibold text-slate-700">Aucune offre de recrutement pour le moment</p>
+   707→                      <p className="mt-1 text-xs text-slate-400">Les nouvelles opportunités apparaîtront ici dès leur publication.</p>
+   708→                    </div>
+   709→                  ) : (
+   710→                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+   711→                    {/* Left: Job list */}
+   712→                    <div className="lg:col-span-1 space-y-4">
+   713→                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Postes ouverts</h3>
+   714→                      {jobs.map((job) => (
+   715→                        <div
+   716→                          key={job.id}
+   717→                          onClick={() => {
+   718→                            setSelectedJob(job);
+   719→                            if (selectedSchool?.slug && job.slug) {
+   720→                              router.push(`/jobs/${selectedSchool.slug}/${job.slug}`, { scroll: false });
+   721→                            }
+   722→                          }}
+   723→                          className={`cursor-pointer border p-4 rounded-xl transition-all ${
+   724→                            selectedJob?.id === job.id 
+   725→                              ? 'bg-indigo-50/50 border-[#1A2BA6] shadow-sm' 
+   726→                              : 'bg-white border-slate-200 hover:border-slate-300'
+   727→                          }`}
+   728→                        >
+   729→                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{job.ref}</span>
+   730→                          <h4 className="font-bold text-slate-900 text-xs mt-1">{job.title}</h4>
+   731→                          <div className="mt-3 flex items-center gap-3 text-[10px] text-slate-500">
+   732→                            <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {job.loc}</span>
+   733→                            <span className="flex items-center gap-1"><Briefcase className="h-3 w-3" /> {job.contractType || 'CDI'}</span>
+   734→                            {(job._count?.applications ?? 0) > 0 && (
+   735→                              <span className="flex items-center gap-1 text-blue-600 font-semibold"><Users className="h-3 w-3" /> {job._count?.applications ?? 0} candidat{(job._count?.applications ?? 0) > 1 ? 's' : ''}</span>
+   736→                            )}
+   737→                          </div>
+   738→                        </div>
+   739→                      ))}
+   740→                    </div>
+   741→
+   742→                    {/* Right: Job details */}
+   743→                    <div className="lg:col-span-2">
+   744→                      {selectedJob ? (
+   745→                        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
+   746→                          <div>
+   747→                            <div className="flex justify-between items-start">
+   748→                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{selectedJob.ref}</span>
+   749→                              <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-emerald-50 text-emerald-700 border border-emerald-100">{selectedJob.contractType || 'CDI'}</span>
+   750→                            </div>
+   751→                            <h3 className="font-extrabold text-slate-900 text-base mt-2">{selectedJob.title}</h3>
+   752→                            <p className="text-xs text-slate-500 mt-1">{selectedJob.dept} · {selectedJob.loc}</p>
+   753→                          </div>
+   754→
+   755→                          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 border-y border-slate-100 py-4 text-xs">
+   756→                            {selectedJob.salary && (
+   757→                              <div>
+   758→                                <span className="text-[10px] text-slate-400 font-bold uppercase">Salaire</span>
+   759→                                <p className="font-semibold text-slate-900 mt-0.5">{selectedJob.salary}</p>
+   760→                              </div>
+   761→                            )}
+   762→                            {selectedJob.academicLevel && (
+   763→                              <div>
+   764→                                <span className="text-[10px] text-slate-400 font-bold uppercase">Niveau d'études</span>
+   765→                                <p className="font-semibold text-slate-900 mt-0.5">{selectedJob.academicLevel}</p>
+   766→                              </div>
+   767→                            )}
+   768→                            {selectedJob.experience && (
+   769→                              <div>
+   770→                                <span className="text-[10px] text-slate-400 font-bold uppercase">Expérience</span>
+   771→                                <p className="font-semibold text-slate-900 mt-0.5">{selectedJob.experience}</p>
+   772→                              </div>
+   773→                            )}
+   774→                            {/* Applicant count stat */}
+   775→                            <div>
+   776→                              <span className="text-[10px] text-slate-400 font-bold uppercase">Candidats</span>
+   777→                              <p className="font-semibold text-[#1A2BA6] mt-0.5 flex items-center gap-1">
+   778→                                <Users className="h-3.5 w-3.5" />
+   779→                                {selectedJob._count?.applications ?? 0} candidat{((selectedJob._count?.applications ?? 0) > 1) ? 's' : ''}
+   780→                              </p>
+   781→                            </div>
+   782→                          </div>
+   783→
+   784→                          {/* LinkedIn-style applicant stats */}
+   785→                          {jobStats && jobStats.totalApplicants > 0 && (
+   786→                            <div className="bg-gradient-to-br from-slate-50 to-blue-50/30 border border-slate-200 rounded-xl p-4 space-y-3">
+   787→                              <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2">
+   788→                                <Users className="h-4 w-4 text-[#1A2BA6]" />
+   789→                                Statistiques des candidats
+   790→                              </h4>
+   791→                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+   792→                                {/* By country */}
+   793→                                {jobStats.countries.length > 0 && (
+   794→                                  <div>
+   795→                                    <span className="text-[10px] text-slate-400 font-bold uppercase flex items-center gap-1"><Globe className="h-3 w-3" /> Par pays</span>
+   796→                                    <div className="mt-1.5 space-y-1">
+   797→                                      {jobStats.countries.map((c) => (
+   798→                                        <div key={c.name} className="flex items-center gap-2">
+   799→                                          <div className="flex-1 bg-slate-200 rounded-full h-2 overflow-hidden">
+   800→                                            <div
+   801→                                              className="bg-[#1A2BA6] h-full rounded-full transition-all duration-500"
+   802→                                              style={{ width: `${Math.round((c.count / jobStats.totalApplicants) * 100)}%` }}
+   803→                                            />
+   804→                                          </div>
+   805→                                          <span className="text-[10px] text-slate-700 font-medium whitespace-nowrap min-w-[70px]">{c.name}</span>
+   806→                                          <span className="text-[10px] text-slate-400 font-bold">{c.count}</span>
+   807→                                        </div>
+   808→                                      ))}
+   809→                                    </div>
+   810→                                  </div>
+   811→                                )}
+   812→                                {/* By city */}
+   813→                                {jobStats.cities.length > 0 && jobStats.cities.some(c => c.name !== 'Non spécifié') && (
+   814→                                  <div>
+   815→                                    <span className="text-[10px] text-slate-400 font-bold uppercase flex items-center gap-1"><Map className="h-3 w-3" /> Par ville</span>
+   816→                                    <div className="mt-1.5 space-y-1">
+   817→                                      {jobStats.cities.filter(c => c.name !== 'Non spécifié').map((c) => (
+   818→                                        <div key={c.name} className="flex items-center gap-2">
+   819→                                          <div className="flex-1 bg-slate-200 rounded-full h-2 overflow-hidden">
+   820→                                            <div
+   821→                                              className="bg-emerald-500 h-full rounded-full transition-all duration-500"
+   822→                                              style={{ width: `${Math.round((c.count / jobStats.totalApplicants) * 100)}%` }}
+   823→                                            />
+   824→                                          </div>
+   825→                                          <span className="text-[10px] text-slate-700 font-medium whitespace-nowrap min-w-[70px]">{c.name}</span>
+   826→                                          <span className="text-[10px] text-slate-400 font-bold">{c.count}</span>
+   827→                                        </div>
+   828→                                      ))}
+   829→                                    </div>
+   830→                                  </div>
+   831→                                )}
+   832→                              </div>
+   833→                            </div>
+   834→                          )}
+   835→
+   836→                          {selectedJob.description && (
+   837→                            <div>
+   838→                              <h4 className="font-bold text-slate-900 text-xs mb-1.5">Description du poste</h4>
+   839→                              <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line">{selectedJob.description}</p>
+   840→                            </div>
+   841→                          )}
+   842→
+   843→                          {selectedJob.missions && (
+   844→                            <div>
+   845→                              <h4 className="font-bold text-slate-900 text-xs mb-1.5">Missions clés</h4>
+   846→                              <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line">{selectedJob.missions}</p>
+   847→                            </div>
+   848→                          )}
+   849→
+   850→                          {selectedJob.responsibilities && (
+   851→                            <div>
+   852→                              <h4 className="font-bold text-slate-900 text-xs mb-1.5">Responsabilités</h4>
+   853→                              <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line">{selectedJob.responsibilities}</p>
+   854→                            </div>
+   855→                          )}
+   856→
+   857→                          <button
+   858→                            onClick={() => setIsApplying(true)}
+   859→                            className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold text-white transition hover:opacity-90 shadow-md bg-blue-600"
+   860→                          >
+   861→                            <Sparkles className="h-4 w-4 text-white fill-white" /> Postuler instantanément
+   862→                          </button>
+   863→                        </div>
+   864→                      ) : (
+   865→                        <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center shadow-sm">
+   866→                          <div className="relative w-full max-w-md mx-auto">
+   867→                            <Image
+   868→                              src="/images/AcademiaHelm_RecruitmentPortal.jpeg"
+   869→                              alt="Portail de recrutement Academia Helm"
+   870→                              width={512}
+   871→                              height={360}
+   872→                              className="rounded-2xl shadow-sm w-full h-auto object-contain"
+   873→                              priority
+   874→                              sizes="(max-width: 768px) 100vw, 512px"
+   875→                            />
+   876→                          </div>
+   877→                          <p className="mt-5 text-sm font-semibold text-slate-700">Sélectionnez une offre</p>
+   878→                          <p className="mt-1 text-xs text-slate-400">Parcourez les postes ouverts et cliquez sur un poste pour voir les détails.</p>
+   879→                        </div>
+   880→                      )}
+   881→                    </div>
+   882→                  </div>
+   883→                  )
+   884→                ) : (
+   885→                  /* Form: Easy Apply multi-step */
+   886→                  <div className="max-w-2xl mx-auto bg-white border border-slate-200 rounded-2xl p-6 shadow-md relative overflow-hidden">
+   887→                    {/* Top step progress bar */}
+   888→                    <div className="w-full bg-slate-100 h-1.5 absolute top-0 left-0">
+   889→                      <div className="bg-blue-600 h-full transition-all duration-300" style={{ width: `${(currentStep / 5) * 100}%` }} />
+   890→                    </div>
+   891→
+   892→                    <div className="flex justify-between items-center border-b border-slate-100 pb-4 mb-6 mt-2">
+   893→                      <div>
+   894→                        <span className="text-[9px] font-bold text-blue-600 uppercase tracking-widest">Étape {currentStep} sur 5</span>
+   895→                        <h3 className="font-extrabold text-slate-900 text-sm">Candidature Simplifiée : {selectedJob?.title}</h3>
+   896→                      </div>
+   897→                      <button
+   898→                        onClick={() => setIsApplying(false)}
+   899→                        className="text-xs text-slate-500 font-semibold hover:underline"
+   900→                      >
+   901→                        Annuler
+   902→                      </button>
+   903→                    </div>
+   904→
+   905→                    {submitResult ? (
+   906→                      <div className="text-center py-8 space-y-4">
+   907→                        {submitResult.success ? (
+   908→                          <>
+   909→                            <CheckCircle className="h-12 w-12 text-emerald-500 mx-auto" />
+   910→                            <h4 className="font-bold text-slate-900 text-base">Candidature Transmise avec Succès</h4>
+   911→                            <p className="text-xs text-slate-600 max-w-md mx-auto leading-relaxed">{submitResult.message}</p>
+   912→                          </>
+   913→                        ) : (
+   914→                          <>
+   915→                            <XCircle className="h-12 w-12 text-red-500 mx-auto" />
+   916→                            <h4 className="font-bold text-slate-900 text-base">Échec de la soumission</h4>
+   917→                            <p className="text-xs text-slate-600 max-w-md mx-auto leading-relaxed">{submitResult.message}</p>
+   918→                          </>
+   919→                        )}
+   920→                        <button
+   921→                          onClick={() => { setSelectedSchool(null); setSelectedJob(null); setIsApplying(false); }}
+   922→                          className="mt-6 rounded-xl border border-slate-200 px-5 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+   923→                        >
+   924→                          Retourner à l'accueil
+   925→                        </button>
+   926→                      </div>
+   927→                    ) : (
+   928→                      <div className="space-y-6">
+   929→                        {/* STEP 1: Contact Information */}
+   930→                        {currentStep === 1 && (
+   931→                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+   932→                            <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><User className="h-4 w-4 text-blue-600" /> Informations de contact</h4>
+   933→                            <div className="grid grid-cols-2 gap-4">
+   934→                              <div>
+   935→                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Prénom</label>
+   936→                                <input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} required className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+   937→                              </div>
+   938→                              <div>
+   939→                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Nom de famille</label>
+   940→                                <input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} required className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+   941→                              </div>
+   942→                            </div>
+   943→
+   944→                            <div className="grid grid-cols-2 gap-4">
+   945→                              <div>
+   946→                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Adresse email</label>
+   947→                                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+   948→                              </div>
+   949→                              <div>
+   950→                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Téléphone</label>
+   951→                                <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} required className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="Ex: +229 90000000" />
+   952→                              </div>
+   953→                            </div>
+   954→
+   955→                            <div className="grid grid-cols-2 gap-4">
+   956→                              <div>
+   957→                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Adresse résidentielle</label>
+   958→                                <input type="text" value={address} onChange={(e) => setAddress(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+   959→                              </div>
+   960→                              <div>
+   961→                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Genre</label>
+   962→                                <select value={gender} onChange={(e) => setGender(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs bg-white">
+   963→                                  <option value="M">Masculin</option>
+   964→                                  <option value="F">Féminin</option>
+   965→                                </select>
+   966→                              </div>
+   967→                            </div>
+   968→
+   969→                            <div className="grid grid-cols-2 gap-4">
+   970→                              <div>
+   971→                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Pays</label>
+   972→                                <select value={country} onChange={(e) => setCountry(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs bg-white">
+   973→                                  <option value="Bénin">Bénin</option>
+   974→                                  <option value="Togo">Togo</option>
+   975→                                  <option value="Niger">Niger</option>
+   976→                                  <option value="Nigéria">Nigéria</option>
+   977→                                  <option value="Côte d'Ivoire">Côte d'Ivoire</option>
+   978→                                  <option value="Sénégal">Sénégal</option>
+   979→                                  <option value="Mali">Mali</option>
+   980→                                  <option value="Burkina Faso">Burkina Faso</option>
+   981→                                  <option value="Guinée">Guinée</option>
+   982→                                  <option value="Cameroun">Cameroun</option>
+   983→                                  <option value="Gabon">Gabon</option>
+   984→                                  <option value="Congo">Congo</option>
+   985→                                  <option value="RDC">RDC</option>
+   986→                                  <option value="France">France</option>
+   987→                                  <option value="Autre">Autre</option>
+   988→                                </select>
+   989→                              </div>
+   990→                              <div>
+   991→                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Ville / Commune</label>
+   992→                                <input type="text" value={city} onChange={(e) => setCity(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="Ex: Cotonou, Parakou..." />
+   993→                              </div>
+   994→                            </div>
+   995→
+   996→                            <div>
+   997→                              <label className="block text-[10px] font-bold text-slate-500 mb-1 flex items-center gap-1"><Linkedin className="h-3.5 w-3.5 text-[#0A66C2] fill-[#0A66C2]" /> Profil LinkedIn (optionnel)</label>
+   998→                              <input type="url" value={linkedinUrl} onChange={(e) => setLinkedinUrl(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="https://linkedin.com/in/nom-d-utilisateur" />
+   999→                            </div>
+  1000→                          </motion.div>
+  1001→                        )}
+  1002→
+  1003→                        {/* STEP 2: Work Experience */}
+  1004→                        {currentStep === 2 && (
+  1005→                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+  1006→                            <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><Briefcase className="h-4 w-4 text-blue-600" /> Expériences professionnelles</h4>
+  1007→                            
+  1008→                            {/* Experience list */}
+  1009→                            <div className="space-y-2">
+  1010→                              {experiences.map((exp, i) => (
+  1011→                                <div key={i} className="flex justify-between items-start bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs">
+  1012→                                  <div>
+  1013→                                    <p className="font-bold text-slate-900">{exp.title}</p>
+  1014→                                    <p className="text-[10px] text-slate-500">{exp.company} · {exp.years}</p>
+  1015→                                    {exp.description && <p className="text-[10px] text-slate-600 mt-1 italic">{exp.description}</p>}
+  1016→                                  </div>
+  1017→                                  <button onClick={() => removeExperience(i)} className="text-red-500 hover:text-red-700 transition">
+  1018→                                    <Trash2 className="h-3.5 w-3.5" />
+  1019→                                  </button>
+  1020→                                </div>
+  1021→                              ))}
+  1022→                            </div>
+  1023→
+  1024→                            {/* Add Experience sub-form */}
+  1025→                            <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+  1026→                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Ajouter une expérience</span>
+  1027→                              <div className="grid grid-cols-2 gap-3">
+  1028→                                <input type="text" placeholder="Intitulé du poste (ex: Enseignant)" value={expTitle} onChange={(e) => setExpTitle(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+  1029→                                <input type="text" placeholder="Établissement / École" value={expCompany} onChange={(e) => setExpCompany(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+  1030→                              </div>
+  1031→                              <div className="grid grid-cols-3 gap-3">
+  1032→                                <input type="text" placeholder="Durée (ex: 2022 - 2025)" value={expYears} onChange={(e) => setExpYears(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs col-span-1" />
+  1033→                                <input type="text" placeholder="Brève description des responsabilités" value={expDesc} onChange={(e) => setExpDesc(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs col-span-2" />
+  1034→                              </div>
+  1035→                              <button type="button" onClick={addExperience} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-[10px] font-semibold hover:opacity-90 transition">
+  1036→                                <Plus className="h-3.5 w-3.5" /> Enregistrer le poste
+  1037→                              </button>
+  1038→                            </div>
+  1039→                          </motion.div>
+  1040→                        )}
+  1041→
+  1042→                        {/* STEP 3: Education */}
+  1043→                        {currentStep === 3 && (
+  1044→                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+  1045→                            <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><BookOpen className="h-4 w-4 text-blue-600" /> Études et Formations</h4>
+  1046→                            
+  1047→                            {/* Education list */}
+  1048→                            <div className="space-y-2">
+  1049→                              {education.map((edu, i) => (
+  1050→                                <div key={i} className="flex justify-between items-start bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs">
+  1051→                                  <div>
+  1052→                                    <p className="font-bold text-slate-900">{edu.degree}</p>
+  1053→                                    <p className="text-[10px] text-slate-500">{edu.school} · {edu.year}</p>
+  1054→                                  </div>
+  1055→                                  <button onClick={() => removeEducation(i)} className="text-red-500 hover:text-red-700 transition">
+  1056→                                    <Trash2 className="h-3.5 w-3.5" />
+  1057→                                  </button>
+  1058→                                </div>
+  1059→                              ))}
+  1060→                            </div>
+  1061→
+  1062→                            {/* Add Education sub-form */}
+  1063→                            <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+  1064→                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Ajouter un diplôme</span>
+  1065→                              <div className="grid grid-cols-2 gap-3">
+  1066→                                <input type="text" placeholder="Diplôme (ex: Master Mathématiques)" value={eduDegree} onChange={(e) => setEduDegree(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+  1067→                                <input type="text" placeholder="Université / École" value={eduSchool} onChange={(e) => setEduSchool(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+  1068→                              </div>
+  1069→                              <div className="flex gap-3">
+  1070→                                <input type="text" placeholder="Année d'obtention" value={eduYear} onChange={(e) => setEduYear(e.target.value)} className="w-1/3 rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+  1071→                                <button type="button" onClick={addEducation} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-[10px] font-semibold hover:opacity-90 transition">
+  1072→                                  <Plus className="h-3.5 w-3.5" /> Enregistrer le diplôme
+  1073→                                </button>
+  1074→                              </div>
+  1075→                            </div>
+  1076→                          </motion.div>
+  1077→                        )}
+  1078→
+  1079→                        {/* STEP 4: Skills & Pitch */}
+  1080→                        {currentStep === 4 && (
+  1081→                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+  1082→                            <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><Award className="h-4 w-4 text-blue-600" /> Compétences & Présentation</h4>
+  1083→                            
+  1084→                            <div>
+  1085→                              <label className="block text-[10px] font-bold text-slate-500 mb-1">Compétences clés (Appuyez sur Entrée)</label>
+  1086→                              <input
+  1087→                                type="text"
+  1088→                                value={skillInput}
+  1089→                                onChange={(e) => setSkillInput(e.target.value)}
+  1090→                                onKeyDown={addSkill}
+  1091→                                placeholder="Ajouter une compétence... (ex: Didactique, Python)"
+  1092→                                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs"
+  1093→                              />
+  1094→                              <div className="flex flex-wrap gap-1.5 mt-2">
+  1095→                                {skills.map(s => (
+  1096→                                  <span key={s} className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 rounded-full text-slate-700 text-[10px] font-semibold">
+  1097→                                    {s}
+  1098→                                    <button type="button" onClick={() => removeSkill(s)} className="text-slate-400 hover:text-slate-600">✕</button>
+  1099→                                  </span>
+  1100→                                ))}
+  1101→                              </div>
+  1102→                            </div>
+  1103→
+  1104→                            <div>
+  1105→                              <label className="block text-[10px] font-bold text-slate-500 mb-1">Pourquoi vous ? Pitch de motivation (1-2 paragraphes)</label>
+  1106→                              <textarea
+  1107→                                value={pitch}
+  1108→                                onChange={(e) => setPitch(e.target.value)}
+  1109→                                placeholder="Présentez brièvement vos atouts pour ce poste scolaire..."
+  1110→                                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-28"
+  1111→                              />
+  1112→                            </div>
+  1113→                          </motion.div>
+  1114→                        )}
+  1115→
+  1116→                        {/* STEP 5: Document Uploads */}
+  1117→                        {currentStep === 5 && (
+  1118→                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+  1119→                            <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><FileText className="h-4 w-4 text-blue-600" /> Fichiers & Justificatifs</h4>
+  1120→                            
+  1121→                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  1122→                              {/* CV */}
+  1123→                              <div className="border border-dashed border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center text-center relative hover:bg-slate-50 transition cursor-pointer">
+  1124→                                <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setCvFile(e.target.files?.[0] || null)} required className="absolute inset-0 opacity-0 cursor-pointer" />
+  1125→                                <Upload className="h-6 w-6 text-[#1A2BA6] mb-2" />
+  1126→                                <span className="text-[10px] font-bold text-slate-700">Curriculum Vitae *</span>
+  1127→                                <span className="text-[9px] text-slate-400 mt-1">{cvFile ? cvFile.name : 'PDF, DOCX'}</span>
+  1128→                              </div>
+  1129→
+  1130→                              {/* Letter */}
+  1131→                              <div className="border border-dashed border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center text-center relative hover:bg-slate-50 transition cursor-pointer">
+  1132→                                <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setCoverFile(e.target.files?.[0] || null)} className="absolute inset-0 opacity-0 cursor-pointer" />
+  1133→                                <Upload className="h-6 w-6 text-[#1A2BA6] mb-2" />
+  1134→                                <span className="text-[10px] font-bold text-slate-700">Lettre de motivation</span>
+  1135→                                <span className="text-[9px] text-slate-400 mt-1">{coverFile ? coverFile.name : 'PDF, DOCX'}</span>
+  1136→                              </div>
+  1137→                            </div>
+  1138→
+  1139→                            {/* Recommendation */}
+  1140→                            <div className="border border-dashed border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center text-center relative hover:bg-slate-50 transition cursor-pointer">
+  1141→                              <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setRecoFile(e.target.files?.[0] || null)} className="absolute inset-0 opacity-0 cursor-pointer" />
+  1142→                              <Upload className="h-6 w-6 text-[#1A2BA6] mb-2" />
+  1143→                              <span className="text-[10px] font-bold text-slate-700">Lettre de recommandation académique</span>
+  1144→                              <span className="text-[9px] text-slate-400 mt-1">{recoFile ? recoFile.name : 'PDF, DOCX'}</span>
+  1145→                            </div>
+  1146→
+  1147→                            {/* AI Processing notice */}
+  1148→                            <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-lg flex gap-2 text-[10px] text-slate-600">
+  1149→                              <Sparkles className="h-4 w-4 text-blue-600 shrink-0 mt-0.5 animate-pulse" />
+  1150→                              <p>En transmettant vos documents, le système **HDIE Engine** analysera la cohérence de vos diplômes et rédigera une note de synthèse pour la direction.</p>
+  1151→                            </div>
+  1152→                          </motion.div>
+  1153→                        )}
+  1154→
+  1155→                        {/* Navigation buttons */}
+  1156→                        <div className="flex justify-between items-center pt-4 border-t border-slate-100">
+  1157→                          <button
+  1158→                            type="button"
+  1159→                            disabled={currentStep === 1 || submitting}
+  1160→                            onClick={() => setCurrentStep(prev => prev - 1)}
+  1161→                            className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs hover:bg-slate-50 disabled:opacity-40"
+  1162→                          >
+  1163→                            Précédent
+  1164→                          </button>
+  1165→
+  1166→                          {currentStep < 5 ? (
+  1167→                            <button
+  1168→                              type="button"
+  1169→                              onClick={() => setCurrentStep(prev => prev + 1)}
+  1170→                              className="px-5 py-2 text-white rounded-lg text-xs font-bold transition hover:opacity-90"
+  1171→                              style={{ backgroundColor: PRIMARY }}
+  1172→                            >
+  1173→                              Continuer
+  1174→                            </button>
+  1175→                          ) : (
+  1176→                            <button
+  1177→                              type="button"
+  1178→                              onClick={handleSubmitApplication}
+  1179→                              disabled={submitting}
+  1180→                              className="px-5 py-2 text-white rounded-lg text-xs font-bold transition hover:opacity-90 flex items-center gap-1 bg-blue-600"
+  1181→                            >
+  1182→                              {submitting ? 'Transmission...' : 'Soumettre le dossier'}
+  1183→                              <Send className="h-3 w-3" />
+  1184→                            </button>
+  1185→                          )}
+  1186→                        </div>
+  1187→                      </div>
+  1188→                    )}
+  1189→                  </div>
+  1190→                )}
+  1191→              </motion.div>
+  1192→            )}
+  1193→          </AnimatePresence>
+  1194→        )}
+  1195→      </main>
+  1196→
+  1197→      <footer className="bg-slate-900 text-slate-500 py-8 border-t border-slate-800 text-center text-xs">
+  1198→        <p>© 2026 Academia Helm. Tous droits réservés. Propulsé par HDIE Engine.</p>
+  1199→      </footer>
+  1200→    </div>
+  1201→  );
+  1202→}
+  1203→

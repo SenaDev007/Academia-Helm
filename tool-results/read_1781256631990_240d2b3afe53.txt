@@ -1,0 +1,1082 @@
+     1→/**
+     2→ * DualWriteService — Persistance double simultanée (IndexedDB + PostgreSQL)
+     3→ *
+     4→ * PRINCIPE FONDAMENTAL :
+     5→ *   Chaque sauvegarde persiste SIMULTANÉMENT dans la base locale (IndexedDB)
+     6→ *   ET dans la base mère (PostgreSQL). Aucun déphasage n'est toléré.
+     7→ *
+     8→ * FLUX NOMINAL (en ligne) :
+     9→ *   1. Écrire dans IndexedDB (_isDirty = true) — garantie immédiate
+    10→ *   2. Écrire dans PostgreSQL via l'API distante — en parallèle si possible
+    11→ *   3. Si les deux réussissent → _isDirty = false, résultat = SYNCED
+    12→ *   4. Si seul le local réussit → outbox prend le relais, résultat = LOCAL_ONLY
+    13→ *   5. Si seul le remote réussit → on synchronise le local avec le remote, résultat = REMOTE_ONLY
+    14→ *
+    15→ * FLUX HORS LIGNE :
+    16→ *   1. Écrire dans IndexedDB (_isDirty = true)
+    17→ *   2. Créer un événement dans l'outbox
+    18→ *   3. Le sync engine poussera quand la connexion reviendra
+    19→ *
+    20→ * MODULES COUVERTS :
+    21→ *   - Élèves & Scolarité, Personnel RH & Paie, Classes & Structure
+    22→ *   - Examens Notes & Bulletins, Finances & Économat
+    23→ *   - Organisation Pédagogique, Discipline & Incidents
+    24→ *   - Réunions, Communication, Agrégation & Décision
+    25→ *   - ORION (Pilotage Direction), Paramètres / Settings
+    26→ *   - Cantine, Transport, Infirmerie, QHSE, EduCast, Boutique, Bibliothèque
+    27→ */
+    28→
+    29→import { localDb } from './local-db.service';
+    30→import { outboxService } from './outbox.service';
+    31→import { offlineSyncService } from './offline-sync.service';
+    32→import { networkDetectionService } from './network-detection.service';
+    33→import { LocalAuditService } from './local-audit.service';
+    34→import { conflictResolverService, type ConflictResolutionStrategy } from './conflict-resolver.service';
+    35→import type { SyncEntityType, SyncOperationType } from '@/types';
+    36→import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
+    37→
+    38→// ─────────────────────────────────────────────────────────────────
+    39→// Types
+    40→// ─────────────────────────────────────────────────────────────────
+    41→
+    42→/** Résultat d'une opération dual-write */
+    43→export type DualWriteStatus = 'SYNCED' | 'LOCAL_ONLY' | 'REMOTE_ONLY' | 'FAILED';
+    44→
+    45→export interface DualWriteResult<T = any> {
+    46→  /** Statut global de l'opération */
+    47→  status: DualWriteStatus;
+    48→  /** Données telles que persistées localement */
+    49→  localData: T | null;
+    50→  /** Données telles que retournées par le serveur (peut inclure id auto-généré, updatedAt serveur, etc.) */
+    51→  remoteData: T | null;
+    52→  /** L'écriture locale a réussi */
+    53→  localSuccess: boolean;
+    54→  /** L'écriture distante a réussi */
+    55→  remoteSuccess: boolean;
+    56→  /** Message d'erreur éventuel (local ou remote) */
+    57→  error?: string;
+    58→  /** ID de l'événement outbox (si local uniquement) */
+    59→  outboxEventId?: string;
+    60→}
+    61→
+    62→/** Configuration d'une opération dual-write */
+    63→export interface DualWriteConfig {
+    64→  /** ID du tenant (obligatoire) */
+    65→  tenantId: string;
+    66→  /** Type d'entité (ex: 'STUDENT', 'PAYMENT', etc.) */
+    67→  entityType: SyncEntityType;
+    68→  /** ID de l'entité (obligatoire pour UPDATE et DELETE) */
+    69→  entityId?: string;
+    70→  /** Type d'opération */
+    71→  operation: SyncOperationType;
+    72→  /** Données à persister */
+    73→  data?: any;
+    74→  /** URL de l'API distante (surcharge si différente du pattern standard) */
+    75→  remoteUrl?: string;
+    76→  /** Méthode HTTP pour l'API distante (défaut: auto-détecté selon l'opération) */
+    77→  remoteMethod?: string;
+    78→  /** Données supplémentaires à envoyer au remote (payload custom) */
+    79→  remotePayload?: any;
+    80→  /** Stratégie de résolution de conflit (défaut: LAST_WRITE_WINS) */
+    81→  conflictStrategy?: ConflictResolutionStrategy;
+    82→  /** ID utilisateur pour l'audit */
+    83→  userId?: string;
+    84→  /** Métadonnées additionnelles pour l'outbox */
+    85→  metadata?: any;
+    86→  /** Si true, ne pas tenter l'écriture distante (forcement local-only) */
+    87→  localOnly?: boolean;
+    88→  /** Si true, ne pas écrire localement (forcement remote-only — rare) */
+    89→  remoteOnly?: boolean;
+    90→  /** Nom du store local (surcharge si différent du mapping standard) */
+    91→  storeName?: string;
+    92→  /** Timeout pour la requête distante en ms (défaut: 10000) */
+    93→  remoteTimeout?: number;
+    94→  /** Nombre max de tentatives remote (défaut: 2) */
+    95→  maxRemoteRetries?: number;
+    96→}
+    97→
+    98→// ─────────────────────────────────────────────────────────────────
+    99→// Mapping EntityType → Store IndexedDB
+   100→// ─────────────────────────────────────────────────────────────────
+   101→
+   102→const ENTITY_TO_STORE: Record<SyncEntityType, string> = {
+   103→  // ─── Élèves & Scolarité ───
+   104→  STUDENT: 'students',
+   105→  GUARDIAN: 'guardians',
+   106→  STUDENT_GUARDIAN: 'student_guardians',
+   107→  // ─── Personnel, RH & Paie ───
+   108→  TEACHER: 'teachers',
+   109→  STAFF: 'staff',
+   110→  CONTRACT: 'contracts',
+   111→  CONTRACT_AMENDMENT: 'contract_amendments',
+   112→  LEAVE_REQUEST: 'leave_requests',
+   113→  STAFF_ALLOWANCE: 'staff_allowances',
+   114→  STAFF_SCHEDULE: 'staff_schedules',
+   115→  STAFF_ATTENDANCE: 'staff_attendance',
+   116→  STAFF_EVALUATION: 'staff_evaluations',
+   117→  STAFF_DOCUMENT: 'staff_documents',
+   118→  STAFF_ASSIGNMENT: 'staff_assignments',
+   119→  OVERTIME_RECORD: 'overtime_records',
+   120→  SALARY_PAYMENT: 'salary_payments',
+   121→  SALARY_SLIP: 'salary_slips',
+   122→  PAYROLL: 'payrolls',
+   123→  PAYROLL_ITEM: 'payroll_items',
+   124→  PAYROLL_PERIOD: 'payroll_periods',
+   125→  // ─── Classes & Structure ───
+   126→  CLASS: 'classes',
+   127→  CLASS_STUDENT: 'class_students',
+   128→  CLASS_SUBJECT: 'class_subjects',
+   129→  SUBJECT: 'subjects',
+   130→  SCHOOL_LEVEL: 'school_levels',
+   131→  ACADEMIC_YEAR: 'academic_years',
+   132→  ACADEMIC_PERIOD: 'academic_periods',
+   133→  // ─── Examens, Notes & Bulletins ───
+   134→  EXAM: 'exams',
+   135→  GRADE: 'grades',
+   136→  EXAM_CANDIDATE: 'exam_candidates',
+   137→  EXAM_RESULT: 'exam_results',
+   138→  EXAM_SCORE: 'exam_scores',
+   139→  EXAM_SESSION: 'exam_sessions',
+   140→  EXAM_PV: 'exam_pvs',
+   141→  EXAM_COMPOSITION: 'exam_compositions',
+   142→  EXAM_DELIBERATION: 'exam_deliberations',
+   143→  REPORT_CARD: 'report_cards',
+   144→  REPORT_CARD_ITEM: 'report_card_items',
+   145→  EVALUATION: 'evaluations',
+   146→  GRADE_CALCULATION: 'grade_calculations',
+   147→  STUDENT_PERIOD_AVERAGE: 'student_period_averages',
+   148→  STUDENT_SUBJECT_AVERAGE: 'student_subject_averages',
+   149→  // ─── Finances & Économat ───
+   150→  PAYMENT: 'payments',
+   151→  INVOICE: 'invoices',
+   152→  FEE_STRUCTURE: 'fee_structures',
+   153→  FEE_CONFIGURATION: 'fee_configurations',
+   154→  FEE_DEFINITION: 'fee_definitions',
+   155→  FEE_REGIME: 'fee_regimes',
+   156→  EXPENSE: 'expenses',
+   157→  FINANCE_SETTING: 'finance_settings',
+   158→  FINANCE_TRANSACTION: 'finance_transactions',
+   159→  FINANCE_BUDGET: 'finance_budgets',
+   160→  TREASURY_MOVEMENT: 'treasury_movements',
+   161→  TUITION_INSTALLMENT: 'tuition_installments',
+   162→  TUITION_PAYMENT: 'tuition_payments',
+   163→  PAYMENT_PLAN: 'payment_plans',
+   164→  PAYMENT_FLOW: 'payment_flows',
+   165→  // ─── Organisation Pédagogique ───
+   166→  ATTENDANCE: 'attendance',
+   167→  ABSENCE: 'absences',
+   168→  HOMEWORK: 'homeworks',
+   169→  HOMEWORK_ENTRY: 'homework_entries',
+   170→  HOMEWORK_SUBMISSION: 'homework_submissions',
+   171→  PEDAGOGICAL_FILE: 'pedagogical_files',
+   172→  CLASS_DIARY: 'class_diaries',
+   173→  LESSON_PLAN: 'lesson_plans',
+   174→  LESSON_JOURNAL: 'lesson_journals',
+   175→  LESSON_JOURNAL_ENTRY: 'lesson_journal_entries',
+   176→  WEEKLY_SEMAINIER: 'weekly_semainier_daily_entries',
+   177→  TEACHER_CLASS_ASSIGNMENT: 'teacher_class_assignments',
+   178→  ACADEMIC_SERIES: 'academic_series',
+   179→  SERIES_SUBJECT: 'series_subjects',
+   180→  TEACHER_PROFILE: 'teacher_profiles',
+   181→  PEDAGOGICAL_MATERIAL: 'pedagogical_materials',
+   182→  MATERIAL_STOCK: 'material_stocks',
+   183→  MATERIAL_MOVEMENT: 'material_movements',
+   184→  TEACHER_MATERIAL_ASSIGNMENT: 'teacher_material_assignments',
+   185→  TEACHING_ASSIGNMENT: 'teaching_assignments',
+   186→  SUBJECT_PROGRAM: 'subject_programs',
+   187→  TIMETABLE: 'timetables',
+   188→  TIMETABLE_ENTRY: 'timetable_entries',
+   189→  ACADEMIC_CLASS: 'academic_classes',
+   190→  ACADEMIC_CYCLE: 'academic_cycles',
+   191→  ACADEMIC_LEVEL: 'academic_levels',
+   192→  // ─── Discipline & Incidents ───
+   193→  DISCIPLINARY_INCIDENT: 'disciplinary_incidents',
+   194→  INCIDENT: 'incidents',
+   195→  // ─── Réunions ───
+   196→  MEETING: 'meetings',
+   197→  MEETING_PARTICIPANT: 'meeting_participants',
+   198→  MEETING_AGENDA_ITEM: 'meeting_agenda_items',
+   199→  MEETING_MINUTE: 'meeting_minutes',
+   200→  // ─── Communication ───
+   201→  MESSAGE: 'messages',
+   202→  MESSAGE_RECIPIENT: 'message_recipients',
+   203→  MESSAGE_TEMPLATE: 'message_templates',
+   204→  ANNOUNCEMENT: 'announcements',
+   205→  SMS_LOG: 'sms_logs',
+   206→  EMAIL_LOG: 'email_logs',
+   207→  PUSH_NOTIFICATION: 'push_notifications',
+   208→  COMMUNICATION_CHANNEL: 'communication_channels',
+   209→  NOTIFICATION: 'notifications',
+   210→  ALERT: 'alerts',
+   211→  // ─── Agrégation & Décision ───
+   212→  AGGREGATION_RESULT: 'aggregation_results',
+   213→  AGGREGATION_SESSION: 'aggregation_sessions',
+   214→  AGGREGATION_DECISION: 'aggregation_decisions',
+   215→  RANKING: 'rankings',
+   216→  HONOR_ROLL: 'honor_rolls',
+   217→  // ─── ORION (Pilotage Direction) ───
+   218→  ORION_ALERT: 'orion_alerts',
+   219→  ORION_INSIGHT: 'orion_insights',
+   220→  ORION_FORECAST: 'orion_forecasts',
+   221→  ORION_SETTINGS: 'orion_settings',
+   222→  // ─── Paramètres / Settings ───
+   223→  SCHOOL_ACADEMIC_SETTING: 'school_academic_settings',
+   224→  SCHOOL_SETTINGS: 'school_settings',
+   225→  TENANT_IDENTITY_PROFILE: 'tenant_identity_profiles',
+   226→  SETTINGS_PEDAGOGICAL_STRUCTURE: 'settings_pedagogical_structures',
+   227→  SETTINGS_BILINGUAL: 'settings_bilingual',
+   228→  TENANT_FEATURE: 'tenant_features',
+   229→  SECURITY_SETTINGS: 'security_settings',
+   230→  OFFLINE_SYNC_SETTINGS: 'offline_sync_settings',
+   231→  SETTINGS_COMMUNICATION: 'settings_communications',
+   232→  TENANT_STAMP: 'tenant_stamps',
+   233→  TENANT_SIGNATURE: 'tenant_signatures',
+   234→  ROLE: 'roles',
+   235→  PERMISSION: 'permissions',
+   236→  SETTINGS_HISTORY: 'settings_histories',
+   237→  // ─── Cantine ───
+   238→  CANTEEN_SETTINGS: 'canteen_settings',
+   239→  CANTEEN_MENU: 'canteen_menus',
+   240→  CANTEEN_MEAL_SERVICE: 'canteen_meal_services',
+   241→  CANTEEN_ATTENDANCE: 'canteen_attendance',
+   242→  CANTEEN_SUBSCRIPTION: 'canteen_subscriptions',
+   243→  CANTEEN_PAYMENT: 'canteen_payments',
+   244→  // ─── Transport ───
+   245→  VEHICLE: 'vehicles',
+   246→  ROUTE: 'routes',
+   247→  TRANSPORT_DRIVER: 'transport_drivers',
+   248→  TRANSPORT_TRIP: 'transport_trips',
+   249→  TRANSPORT_ASSIGNMENT: 'transport_assignments',
+   250→  TRANSPORT_SETTINGS: 'transport_settings',
+   251→  // ─── Infirmerie ───
+   252→  INFIRMARY_VISIT: 'infirmary_visits',
+   253→  INFIRMARY_MEDICAL_RECORD: 'infirmary_medical_records',
+   254→  INFIRMARY_MEDICATION_STOCK: 'infirmary_medication_stocks',
+   255→  INFIRMARY_SETTINGS: 'infirmary_settings',
+   256→  // ─── QHSE ───
+   257→  QHSE_AUDIT: 'qhse_audits',
+   258→  QHSE_INCIDENT: 'qhse_incidents',
+   259→  QHSE_RISK: 'qhse_risks',
+   260→  QHSE_ACTION_PLAN: 'qhse_action_plans',
+   261→  QHSE_SETTING: 'qhse_settings',
+   262→  // ─── EduCast ───
+   263→  EDUCAST_CONTENT: 'educast_contents',
+   264→  EDUCAST_CHANNEL: 'educast_channels',
+   265→  EDUCAST_PLAYLIST: 'educast_playlists',
+   266→  EDUCAST_SETTINGS: 'educast_settings',
+   267→  // ─── Boutique / Shop ───
+   268→  SHOP_PRODUCT: 'shop_products',
+   269→  SHOP_CATEGORY: 'shop_categories',
+   270→  SHOP_ORDER: 'shop_orders',
+   271→  SHOP_SALE: 'shop_sales',
+   272→  SHOP_SETTINGS: 'shop_settings',
+   273→  // ─── Bibliothèque ───
+   274→  LIBRARY_BOOK: 'library_books',
+   275→  LIBRARY_LOAN: 'library_loans',
+   276→  LIBRARY_RESERVATION: 'library_reservations',
+   277→  LIBRARY_SETTINGS: 'library_settings',
+   278→  // ─── Divers / Legacy ───
+   279→  SESSION: 'sessions',
+   280→  LOAN: 'loans',
+   281→  REPORT: 'reports',
+   282→  MODULE: 'modules',
+   283→};
+   284→
+   285→// ─────────────────────────────────────────────────────────────────
+   286→// Mapping EntityType → API Route
+   287→// ─────────────────────────────────────────────────────────────────
+   288→
+   289→/**
+   290→ * Génère l'URL de l'API distante pour une entité et une opération données.
+   291→ * Convention REST :
+   292→ *   CREATE  → POST   /api/{module}/{resource}
+   293→ *   UPDATE  → PUT    /api/{module}/{resource}/{id}
+   294→ *   DELETE  → DELETE /api/{module}/{resource}/{id}
+   295→ */
+   296→function getDefaultRemoteUrl(entityType: SyncEntityType, operation: SyncOperationType, entityId?: string): string | null {
+   297→  // Mapping EntityType → (module, resource)
+   298→  const routeMap: Record<string, [string, string]> = {
+   299→    // Élèves
+   300→    STUDENT: ['students', 'students'],
+   301→    GUARDIAN: ['students', 'guardians'],
+   302→    STUDENT_GUARDIAN: ['students', 'student-guardians'],
+   303→    // RH
+   304→    TEACHER: ['hr', 'teachers'],
+   305→    STAFF: ['hr', 'staff'],
+   306→    CONTRACT: ['hr', 'contracts'],
+   307→    CONTRACT_AMENDMENT: ['hr', 'contract-amendments'],
+   308→    LEAVE_REQUEST: ['hr', 'leave-requests'],
+   309→    STAFF_ALLOWANCE: ['hr', 'staff-allowances'],
+   310→    STAFF_SCHEDULE: ['hr', 'staff-schedules'],
+   311→    STAFF_ATTENDANCE: ['hr', 'staff-attendance'],
+   312→    STAFF_EVALUATION: ['hr', 'staff-evaluations'],
+   313→    STAFF_DOCUMENT: ['hr', 'staff-documents'],
+   314→    STAFF_ASSIGNMENT: ['hr', 'staff-assignments'],
+   315→    OVERTIME_RECORD: ['hr', 'overtime-records'],
+   316→    SALARY_PAYMENT: ['hr', 'salary-payments'],
+   317→    SALARY_SLIP: ['hr', 'salary-slips'],
+   318→    PAYROLL: ['hr', 'payrolls'],
+   319→    PAYROLL_ITEM: ['hr', 'payroll-items'],
+   320→    PAYROLL_PERIOD: ['hr', 'payroll-periods'],
+   321→    // Classes
+   322→    CLASS: ['students', 'classes'],
+   323→    CLASS_STUDENT: ['students', 'class-students'],
+   324→    CLASS_SUBJECT: ['pedagogy', 'class-subjects'],
+   325→    SUBJECT: ['pedagogy', 'subjects'],
+   326→    SCHOOL_LEVEL: ['pedagogy', 'school-levels'],
+   327→    ACADEMIC_YEAR: ['settings', 'academic-years'],
+   328→    ACADEMIC_PERIOD: ['settings', 'academic-periods'],
+   329→    // Examens
+   330→    EXAM: ['exams', 'exams'],
+   331→    GRADE: ['exams', 'grades'],
+   332→    EXAM_CANDIDATE: ['exams', 'exam-candidates'],
+   333→    EXAM_RESULT: ['exams', 'exam-results'],
+   334→    EXAM_SCORE: ['exams', 'exam-scores'],
+   335→    EXAM_SESSION: ['exams', 'exam-sessions'],
+   336→    EXAM_PV: ['exams', 'exam-pvs'],
+   337→    EXAM_COMPOSITION: ['exams', 'exam-compositions'],
+   338→    EXAM_DELIBERATION: ['exams', 'exam-deliberations'],
+   339→    REPORT_CARD: ['exams', 'report-cards'],
+   340→    REPORT_CARD_ITEM: ['exams', 'report-card-items'],
+   341→    EVALUATION: ['exams', 'evaluations'],
+   342→    GRADE_CALCULATION: ['exams', 'grade-calculations'],
+   343→    STUDENT_PERIOD_AVERAGE: ['exams', 'student-period-averages'],
+   344→    STUDENT_SUBJECT_AVERAGE: ['exams', 'student-subject-averages'],
+   345→    // Finances
+   346→    PAYMENT: ['finance', 'payments'],
+   347→    INVOICE: ['finance', 'invoices'],
+   348→    FEE_STRUCTURE: ['finance', 'fee-structures'],
+   349→    FEE_CONFIGURATION: ['finance', 'fee-configurations'],
+   350→    FEE_DEFINITION: ['finance', 'fee-definitions'],
+   351→    FEE_REGIME: ['finance', 'fee-regimes'],
+   352→    EXPENSE: ['finance', 'expenses'],
+   353→    FINANCE_SETTING: ['finance', 'settings'],
+   354→    FINANCE_TRANSACTION: ['finance', 'transactions'],
+   355→    FINANCE_BUDGET: ['finance', 'budgets'],
+   356→    TREASURY_MOVEMENT: ['finance', 'treasury-movements'],
+   357→    TUITION_INSTALLMENT: ['finance', 'tuition-installments'],
+   358→    TUITION_PAYMENT: ['finance', 'tuition-payments'],
+   359→    PAYMENT_PLAN: ['finance', 'payment-plans'],
+   360→    PAYMENT_FLOW: ['finance', 'payment-flows'],
+   361→    // Pédagogie
+   362→    ATTENDANCE: ['pedagogy', 'attendance'],
+   363→    ABSENCE: ['pedagogy', 'absences'],
+   364→    HOMEWORK: ['pedagogy', 'homeworks'],
+   365→    HOMEWORK_ENTRY: ['pedagogy', 'homework-entries'],
+   366→    HOMEWORK_SUBMISSION: ['pedagogy', 'homework-submissions'],
+   367→    PEDAGOGICAL_FILE: ['pedagogy', 'pedagogical-files'],
+   368→    CLASS_DIARY: ['pedagogy', 'class-diaries'],
+   369→    LESSON_PLAN: ['pedagogy', 'lesson-plans'],
+   370→    LESSON_JOURNAL: ['pedagogy', 'lesson-journals'],
+   371→    LESSON_JOURNAL_ENTRY: ['pedagogy', 'lesson-journal-entries'],
+   372→    WEEKLY_SEMAINIER: ['pedagogy', 'weekly-semainier'],
+   373→    TEACHER_CLASS_ASSIGNMENT: ['pedagogy', 'teacher-class-assignments'],
+   374→    ACADEMIC_SERIES: ['pedagogy', 'academic-series'],
+   375→    SERIES_SUBJECT: ['pedagogy', 'series-subjects'],
+   376→    TEACHER_PROFILE: ['pedagogy', 'teacher-profiles'],
+   377→    PEDAGOGICAL_MATERIAL: ['pedagogy', 'pedagogical-materials'],
+   378→    MATERIAL_STOCK: ['pedagogy', 'material-stocks'],
+   379→    MATERIAL_MOVEMENT: ['pedagogy', 'material-movements'],
+   380→    TEACHER_MATERIAL_ASSIGNMENT: ['pedagogy', 'teacher-material-assignments'],
+   381→    TEACHING_ASSIGNMENT: ['pedagogy', 'teaching-assignments'],
+   382→    SUBJECT_PROGRAM: ['pedagogy', 'subject-programs'],
+   383→    TIMETABLE: ['pedagogy', 'timetables'],
+   384→    TIMETABLE_ENTRY: ['pedagogy', 'timetable-entries'],
+   385→    ACADEMIC_CLASS: ['pedagogy', 'academic-classes'],
+   386→    ACADEMIC_CYCLE: ['pedagogy', 'academic-cycles'],
+   387→    ACADEMIC_LEVEL: ['pedagogy', 'academic-levels'],
+   388→    // Discipline
+   389→    DISCIPLINARY_INCIDENT: ['students', 'disciplinary-incidents'],
+   390→    INCIDENT: ['students', 'incidents'],
+   391→    // Réunions
+   392→    MEETING: ['meetings', 'meetings'],
+   393→    MEETING_PARTICIPANT: ['meetings', 'participants'],
+   394→    MEETING_AGENDA_ITEM: ['meetings', 'agenda-items'],
+   395→    MEETING_MINUTE: ['meetings', 'minutes'],
+   396→    // Communication
+   397→    MESSAGE: ['communication', 'messages'],
+   398→    MESSAGE_RECIPIENT: ['communication', 'message-recipients'],
+   399→    MESSAGE_TEMPLATE: ['communication', 'message-templates'],
+   400→    ANNOUNCEMENT: ['communication', 'announcements'],
+   401→    SMS_LOG: ['communication', 'sms-logs'],
+   402→    EMAIL_LOG: ['communication', 'email-logs'],
+   403→    PUSH_NOTIFICATION: ['communication', 'push-notifications'],
+   404→    COMMUNICATION_CHANNEL: ['communication', 'channels'],
+   405→    NOTIFICATION: ['communication', 'notifications'],
+   406→    ALERT: ['communication', 'alerts'],
+   407→    // Agrégation
+   408→    AGGREGATION_RESULT: ['aggregation', 'results'],
+   409→    AGGREGATION_SESSION: ['aggregation', 'sessions'],
+   410→    AGGREGATION_DECISION: ['aggregation', 'decisions'],
+   411→    RANKING: ['aggregation', 'rankings'],
+   412→    HONOR_ROLL: ['aggregation', 'honor-rolls'],
+   413→    // ORION
+   414→    ORION_ALERT: ['orion', 'alerts'],
+   415→    ORION_INSIGHT: ['orion', 'insights'],
+   416→    ORION_FORECAST: ['orion', 'forecasts'],
+   417→    ORION_SETTINGS: ['orion', 'settings'],
+   418→    // Settings
+   419→    SCHOOL_ACADEMIC_SETTING: ['settings', 'academic-settings'],
+   420→    SCHOOL_SETTINGS: ['settings', 'school-settings'],
+   421→    TENANT_IDENTITY_PROFILE: ['settings', 'identity'],
+   422→    SETTINGS_PEDAGOGICAL_STRUCTURE: ['settings', 'pedagogical-structure'],
+   423→    SETTINGS_BILINGUAL: ['settings', 'bilingual'],
+   424→    TENANT_FEATURE: ['settings', 'features'],
+   425→    SECURITY_SETTINGS: ['settings', 'security'],
+   426→    OFFLINE_SYNC_SETTINGS: ['settings', 'offline-sync'],
+   427→    SETTINGS_COMMUNICATION: ['settings', 'communication'],
+   428→    TENANT_STAMP: ['settings', 'stamps'],
+   429→    TENANT_SIGNATURE: ['settings', 'signatures'],
+   430→    ROLE: ['settings', 'roles'],
+   431→    PERMISSION: ['settings', 'permissions'],
+   432→    SETTINGS_HISTORY: ['settings', 'history'],
+   433→    // Cantine
+   434→    CANTEEN_SETTINGS: ['canteen', 'settings'],
+   435→    CANTEEN_MENU: ['canteen', 'menus'],
+   436→    CANTEEN_MEAL_SERVICE: ['canteen', 'meal-services'],
+   437→    CANTEEN_ATTENDANCE: ['canteen', 'attendance'],
+   438→    CANTEEN_SUBSCRIPTION: ['canteen', 'subscriptions'],
+   439→    CANTEEN_PAYMENT: ['canteen', 'payments'],
+   440→    // Transport
+   441→    VEHICLE: ['transport', 'vehicles'],
+   442→    ROUTE: ['transport', 'routes'],
+   443→    TRANSPORT_DRIVER: ['transport', 'drivers'],
+   444→    TRANSPORT_TRIP: ['transport', 'trips'],
+   445→    TRANSPORT_ASSIGNMENT: ['transport', 'assignments'],
+   446→    TRANSPORT_SETTINGS: ['transport', 'settings'],
+   447→    // Infirmerie
+   448→    INFIRMARY_VISIT: ['infirmary', 'visits'],
+   449→    INFIRMARY_MEDICAL_RECORD: ['infirmary', 'medical-records'],
+   450→    INFIRMARY_MEDICATION_STOCK: ['infirmary', 'medication-stocks'],
+   451→    INFIRMARY_SETTINGS: ['infirmary', 'settings'],
+   452→    // QHSE
+   453→    QHSE_AUDIT: ['qhse', 'audits'],
+   454→    QHSE_INCIDENT: ['qhse', 'incidents'],
+   455→    QHSE_RISK: ['qhse', 'risks'],
+   456→    QHSE_ACTION_PLAN: ['qhse', 'action-plans'],
+   457→    QHSE_SETTING: ['qhse', 'settings'],
+   458→    // EduCast
+   459→    EDUCAST_CONTENT: ['educast', 'contents'],
+   460→    EDUCAST_CHANNEL: ['educast', 'channels'],
+   461→    EDUCAST_PLAYLIST: ['educast', 'playlists'],
+   462→    EDUCAST_SETTINGS: ['educast', 'settings'],
+   463→    // Boutique
+   464→    SHOP_PRODUCT: ['shop', 'products'],
+   465→    SHOP_CATEGORY: ['shop', 'categories'],
+   466→    SHOP_ORDER: ['shop', 'orders'],
+   467→    SHOP_SALE: ['shop', 'sales'],
+   468→    SHOP_SETTINGS: ['shop', 'settings'],
+   469→    // Bibliothèque
+   470→    LIBRARY_BOOK: ['library', 'books'],
+   471→    LIBRARY_LOAN: ['library', 'loans'],
+   472→    LIBRARY_RESERVATION: ['library', 'reservations'],
+   473→    LIBRARY_SETTINGS: ['library', 'settings'],
+   474→    // Divers
+   475→    SESSION: ['pedagogy', 'sessions'],
+   476→    LOAN: ['library', 'loans'],
+   477→    REPORT: ['exams', 'reports'],
+   478→    MODULE: ['settings', 'modules'],
+   479→  };
+   480→
+   481→  const mapping = routeMap[entityType];
+   482→  if (!mapping) return null;
+   483→
+   484→  const [module, resource] = mapping;
+   485→  const base = `/api/${module}/${resource}`;
+   486→
+   487→  switch (operation) {
+   488→    case 'CREATE':
+   489→      return base;
+   490→    case 'UPDATE':
+   491→      return entityId ? `${base}/${entityId}` : base;
+   492→    case 'DELETE':
+   493→      return entityId ? `${base}/${entityId}` : base;
+   494→    default:
+   495→      return base;
+   496→  }
+   497→}
+   498→
+   499→/**
+   500→ * Détermine la méthode HTTP selon l'opération
+   501→ */
+   502→function getHttpMethod(operation: SyncOperationType): string {
+   503→  switch (operation) {
+   504→    case 'CREATE': return 'POST';
+   505→    case 'UPDATE': return 'PUT';
+   506→    case 'DELETE': return 'DELETE';
+   507→    default: return 'POST';
+   508→  }
+   509→}
+   510→
+   511→// ─────────────────────────────────────────────────────────────────
+   512→// Service principal
+   513→// ─────────────────────────────────────────────────────────────────
+   514→
+   515→class DualWriteService {
+   516→  /**
+   517→   * Opération dual-write universelle — persiste simultanément en local et à distance.
+   518→   *
+   519→   * C'EST LA MÉTHODE CENTRALE. Tous les modules doivent passer par ici
+   520→   * pour toute opération de création, mise à jour ou suppression.
+   521→   */
+   522→  async execute<T = any>(config: DualWriteConfig): Promise<DualWriteResult<T>> {
+   523→    const {
+   524→      tenantId,
+   525→      entityType,
+   526→      entityId,
+   527→      operation,
+   528→      data,
+   529→      conflictStrategy = 'LAST_WRITE_WINS',
+   530→      userId,
+   531→      metadata,
+   532→      localOnly = false,
+   533→      remoteOnly = false,
+   534→      storeName: customStoreName,
+   535→      remoteUrl: customRemoteUrl,
+   536→      remoteMethod: customRemoteMethod,
+   537→      remotePayload,
+   538→      remoteTimeout = 10000,
+   539→      maxRemoteRetries = 2,
+   540→    } = config;
+   541→
+   542→    const storeName = customStoreName || ENTITY_TO_STORE[entityType] || `${entityType.toLowerCase()}s`;
+   543→    const now = new Date().toISOString();
+   544→    const resolvedEntityId = entityId || data?.id || generateUUID();
+   545→
+   546→    // Résultat par défaut
+   547→    const result: DualWriteResult<T> = {
+   548→      status: 'FAILED',
+   549→      localData: null,
+   550→      remoteData: null,
+   551→      localSuccess: false,
+   552→      remoteSuccess: false,
+   553→    };
+   554→
+   555→    // ── 1. ÉCRITURE LOCALE (sauf si remoteOnly) ──
+   556→    if (!remoteOnly) {
+   557→      try {
+   558→        const localEntity = this.prepareLocalEntity(data, resolvedEntityId, tenantId, operation, now, storeName);
+   559→        await localDb.execute(storeName, 'put', localEntity);
+   560→        result.localData = localEntity as T;
+   561→        result.localSuccess = true;
+   562→      } catch (localError: any) {
+   563→        console.error(`[DualWrite] Local write failed for ${entityType}:`, localError);
+   564→        result.error = `Local: ${localError.message}`;
+   565→
+   566→        // Si l'écriture locale échoue, on ne continue pas — la donnée serait perdue
+   567→        if (!remoteOnly) {
+   568→          return result;
+   569→        }
+   570→      }
+   571→    }
+   572→
+   573→    // ── 2. ÉCRITURE DISTANTE (sauf si localOnly ou hors ligne) ──
+   574→    const isOnline = networkDetectionService.isConnected();
+   575→
+   576→    if (!localOnly && isOnline) {
+   577→      try {
+   578→        const remoteResult = await this.writeRemote<T>(
+   579→          entityType,
+   580→          operation,
+   581→          resolvedEntityId,
+   582→          remotePayload || data,
+   583→          customRemoteUrl,
+   584→          customRemoteMethod,
+   585→          remoteTimeout,
+   586→          maxRemoteRetries
+   587→        );
+   588→
+   589→        if (remoteResult.success) {
+   590→          result.remoteData = remoteResult.data;
+   591→          result.remoteSuccess = true;
+   592→
+   593→          // Si les deux ont réussi → SYNCED
+   594→          if (result.localSuccess) {
+   595→            // Mettre à jour le local avec les données serveur (id auto, updatedAt serveur, etc.)
+   596→            await this.reconcileLocalWithRemote(storeName, resolvedEntityId, remoteResult.data, tenantId);
+   597→            result.localData = { ...result.localData, ...remoteResult.data } as T;
+   598→            result.status = 'SYNCED';
+   599→          } else {
+   600→            // Seul le remote a réussi (remoteOnly ou local échoué)
+   601→            result.status = 'REMOTE_ONLY';
+   602→            // Persister quand même localement pour cohérence
+   603→            try {
+   604→              await localDb.execute(storeName, 'put', {
+   605→                ...remoteResult.data,
+   606→                tenantId,
+   607→                _isDirty: false,
+   608→                _lastSync: now,
+   609→              });
+   610→              result.localData = remoteResult.data;
+   611→              result.localSuccess = true;
+   612→            } catch {
+   613→              // On ne bloque pas si la mise à jour locale échoue ici
+   614→            }
+   615→          }
+   616→        } else {
+   617→          // Remote a échoué → on garde le local et on met dans l'outbox
+   618→          result.error = remoteResult.error;
+   619→
+   620→          if (result.localSuccess) {
+   621→            // Créer l'événement outbox pour retry ultérieur
+   622→            const outboxEventId = await outboxService.createEvent(
+   623→              tenantId,
+   624→              operation,
+   625→              entityType,
+   626→              resolvedEntityId,
+   627→              remotePayload || data,
+   628→              { ...metadata, conflictStrategy, failedRemoteAttempt: true }
+   629→            );
+   630→            result.outboxEventId = outboxEventId;
+   631→            result.status = 'LOCAL_ONLY';
+   632→
+   633→            // Déclencher sync pour retry
+   634→            offlineSyncService.sync().catch(() => {});
+   635→          }
+   636→        }
+   637→      } catch (remoteError: any) {
+   638→        console.error(`[DualWrite] Remote write failed for ${entityType}:`, remoteError);
+   639→        result.error = `Remote: ${remoteError.message}`;
+   640→
+   641→        if (result.localSuccess) {
+   642→          const outboxEventId = await outboxService.createEvent(
+   643→            tenantId,
+   644→            operation,
+   645→            entityType,
+   646→            resolvedEntityId,
+   647→            remotePayload || data,
+   648→            { ...metadata, conflictStrategy, failedRemoteAttempt: true }
+   649→          );
+   650→          result.outboxEventId = outboxEventId;
+   651→          result.status = 'LOCAL_ONLY';
+   652→          offlineSyncService.sync().catch(() => {});
+   653→        }
+   654→      }
+   655→    } else if (result.localSuccess && !isOnline) {
+   656→      // ── HORS LIGNE : local réussi, remote impossible → outbox ──
+   657→      const outboxEventId = await outboxService.createEvent(
+   658→        tenantId,
+   659→        operation,
+   660→        entityType,
+   661→        resolvedEntityId,
+   662→        remotePayload || data,
+   663→        { ...metadata, conflictStrategy, offline: true }
+   664→      );
+   665→      result.outboxEventId = outboxEventId;
+   666→      result.status = 'LOCAL_ONLY';
+   667→    } else if (result.localSuccess && localOnly) {
+   668→      // ── LOCAL SEULEMENT (demandé explicitement) → outbox pour sync futur ──
+   669→      const outboxEventId = await outboxService.createEvent(
+   670→        tenantId,
+   671→        operation,
+   672→        entityType,
+   673→        resolvedEntityId,
+   674→        remotePayload || data,
+   675→        { ...metadata, conflictStrategy, localOnlyRequested: true }
+   676→      );
+   677→      result.outboxEventId = outboxEventId;
+   678→      result.status = 'LOCAL_ONLY';
+   679→    }
+   680→
+   681→    // ── 3. AUDIT LOG ──
+   682→    if (userId && result.status !== 'FAILED') {
+   683→      try {
+   684→        await LocalAuditService.log(
+   685→          tenantId,
+   686→          userId,
+   687→          operation as any,
+   688→          entityType,
+   689→          resolvedEntityId,
+   690→          { status: result.status, localSuccess: result.localSuccess, remoteSuccess: result.remoteSuccess }
+   691→        );
+   692→      } catch {
+   693→        // L'audit ne doit jamais bloquer l'opération
+   694→      }
+   695→    }
+   696→
+   697→    return result;
+   698→  }
+   699→
+   700→  /**
+   701→   * Création dual-write — raccourci pour operation='CREATE'
+   702→   */
+   703→  async create<T = any>(
+   704→    tenantId: string,
+   705→    entityType: SyncEntityType,
+   706→    data: any,
+   707→    options?: Partial<DualWriteConfig>
+   708→  ): Promise<DualWriteResult<T>> {
+   709→    return this.execute<T>({
+   710→      tenantId,
+   711→      entityType,
+   712→      operation: 'CREATE',
+   713→      data,
+   714→      ...options,
+   715→    });
+   716→  }
+   717→
+   718→  /**
+   719→   * Mise à jour dual-write — raccourci pour operation='UPDATE'
+   720→   */
+   721→  async update<T = any>(
+   722→    tenantId: string,
+   723→    entityType: SyncEntityType,
+   724→    entityId: string,
+   725→    data: any,
+   726→    options?: Partial<DualWriteConfig>
+   727→  ): Promise<DualWriteResult<T>> {
+   728→    return this.execute<T>({
+   729→      tenantId,
+   730→      entityType,
+   731→      entityId,
+   732→      operation: 'UPDATE',
+   733→      data,
+   734→      ...options,
+   735→    });
+   736→  }
+   737→
+   738→  /**
+   739→   * Suppression dual-write — raccourci pour operation='DELETE'
+   740→   */
+   741→  async delete<T = any>(
+   742→    tenantId: string,
+   743→    entityType: SyncEntityType,
+   744→    entityId: string,
+   745→    options?: Partial<DualWriteConfig>
+   746→  ): Promise<DualWriteResult<T>> {
+   747→    return this.execute<T>({
+   748→      tenantId,
+   749→      entityType,
+   750→      entityId,
+   751→      operation: 'DELETE',
+   752→      data: { id: entityId },
+   753→      ...options,
+   754→    });
+   755→  }
+   756→
+   757→  /**
+   758→   * Lecture dual-write — lit d'abord localement, puis tente de rafraîchir depuis le serveur.
+   759→   * Retourne les données locales immédiatement, et les données rafraîchies si en ligne.
+   760→   */
+   761→  async read<T = any>(
+   762→    tenantId: string,
+   763→    entityType: SyncEntityType,
+   764→    entityId: string,
+   765→    options?: { storeName?: string; remoteUrl?: string; forceRemote?: boolean }
+   766→  ): Promise<{ data: T | null; source: 'local' | 'remote' | 'cached' }> {
+   767→    const storeName = options?.storeName || ENTITY_TO_STORE[entityType] || `${entityType.toLowerCase()}s`;
+   768→
+   769→    // 1. Lire localement d'abord
+   770→    let localEntity: T | null = null;
+   771→    try {
+   772→      const entities = await localDb.query<T & { id: string }>(storeName);
+   773→      localEntity = entities.find((e: any) => e.id === entityId) as T || null;
+   774→    } catch {
+   775→      // Store peut ne pas exister encore
+   776→    }
+   777→
+   778→    // 2. Si en ligne et forceRemote, rafraîchir depuis le serveur
+   779→    if (networkDetectionService.isConnected() && (options?.forceRemote || !localEntity)) {
+   780→      try {
+   781→        const remoteUrl = options?.remoteUrl || getDefaultRemoteUrl(entityType, 'UPDATE', entityId);
+   782→        if (remoteUrl) {
+   783→          const response = await this.fetchWithAuth(remoteUrl, { method: 'GET' });
+   784→          if (response.ok) {
+   785→            const remoteData = await response.json();
+   786→            // Mettre à jour le cache local
+   787→            try {
+   788→              await localDb.execute(storeName, 'put', {
+   789→                ...remoteData,
+   790→                tenantId,
+   791→                _isDirty: false,
+   792→                _lastSync: new Date().toISOString(),
+   793→              });
+   794→            } catch {
+   795→              // Mise à jour cache non critique
+   796→            }
+   797→            return { data: remoteData, source: 'remote' };
+   798→          }
+   799→        }
+   800→      } catch {
+   801→        // Remote échoué → on retourne le local
+   802→      }
+   803→    }
+   804→
+   805→    if (localEntity) {
+   806→      return { data: localEntity, source: 'cached' };
+   807→    }
+   808→
+   809→    return { data: null, source: 'local' };
+   810→  }
+   811→
+   812→  /**
+   813→   * Lecture par query local — retourne toutes les entités d'un type pour un tenant
+   814→   */
+   815→  async readAll<T = any>(
+   816→    tenantId: string,
+   817→    entityType: SyncEntityType,
+   818→    options?: { storeName?: string }
+   819→  ): Promise<T[]> {
+   820→    const storeName = options?.storeName || ENTITY_TO_STORE[entityType] || `${entityType.toLowerCase()}s`;
+   821→    try {
+   822→      const entities = await localDb.query<T & { tenantId: string; _deleted?: boolean }>(storeName);
+   823→      return entities.filter((e: any) => e.tenantId === tenantId && !e._deleted);
+   824→    } catch {
+   825→      return [];
+   826→    }
+   827→  }
+   828→
+   829→  // ─────────────────────────────────────────────────────────────────
+   830→  // Méthodes internes
+   831→  // ─────────────────────────────────────────────────────────────────
+   832→
+   833→  /**
+   834→   * Prépare l'entité pour l'écriture locale avec les champs techniques
+   835→   */
+   836→  private prepareLocalEntity(
+   837→    data: any,
+   838→    entityId: string,
+   839→    tenantId: string,
+   840→    operation: SyncOperationType,
+   841→    now: string,
+   842→    storeName: string
+   843→  ): any {
+   844→    if (operation === 'DELETE') {
+   845→      return {
+   846→        id: entityId,
+   847→        tenantId,
+   848→        _deleted: true,
+   849→        _isDirty: true,
+   850→        _version: Date.now(),
+   851→        updatedAt: now,
+   852→      };
+   853→    }
+   854→
+   855→    return {
+   856→      ...data,
+   857→      id: entityId,
+   858→      tenantId,
+   859→      _isDirty: true,
+   860→      _deleted: false,
+   861→      _version: Date.now(),
+   862→      _lastSync: null,
+   863→      createdAt: data?.createdAt || now,
+   864→      updatedAt: now,
+   865→    };
+   866→  }
+   867→
+   868→  /**
+   869→   * Écrit à distance via fetch avec retry
+   870→   */
+   871→  private async writeRemote<T>(
+   872→    entityType: SyncEntityType,
+   873→    operation: SyncOperationType,
+   874→    entityId: string,
+   875→    data: any,
+   876→    customUrl?: string,
+   877→    customMethod?: string,
+   878→    timeout: number = 10000,
+   879→    maxRetries: number = 2
+   880→  ): Promise<{ success: boolean; data: T | null; error?: string }> {
+   881→    const url = customUrl || getDefaultRemoteUrl(entityType, operation, entityId);
+   882→    if (!url) {
+   883→      return { success: false, data: null, error: 'No remote URL available' };
+   884→    }
+   885→
+   886→    const method = customMethod || getHttpMethod(operation);
+   887→    let lastError: string = '';
+   888→
+   889→    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+   890→      try {
+   891→        const body = operation === 'DELETE' ? undefined : JSON.stringify(data);
+   892→        const response = await this.fetchWithAuth(url, {
+   893→          method,
+   894→          body,
+   895→          signal: AbortSignal.timeout(timeout),
+   896→        });
+   897→
+   898→        if (response.ok) {
+   899→          let responseData: T | null = null;
+   900→          try {
+   901→            responseData = await response.json();
+   902→          } catch {
+   903→            // 204 No Content ou réponse non-JSON
+   904→          }
+   905→          return { success: true, data: responseData };
+   906→        }
+   907→
+   908→        // Conflit détecté (409 Conflict)
+   909→        if (response.status === 409) {
+   910→          const conflictData = await response.json().catch(() => ({}));
+   911→          return {
+   912→            success: false,
+   913→            data: null,
+   914→            error: `CONFLICT: ${conflictData.message || 'Data conflict detected'}`,
+   915→          };
+   916→        }
+   917→
+   918→        // Erreur serveur → retry
+   919→        lastError = `HTTP ${response.status}: ${response.statusText}`;
+   920→        if (response.status >= 500 && attempt < maxRetries) {
+   921→          await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)));
+   922→          continue;
+   923→        }
+   924→
+   925→        // Erreur client (4xx) → pas de retry
+   926→        return { success: false, data: null, error: lastError };
+   927→      } catch (error: any) {
+   928→        lastError = error.message || 'Network error';
+   929→        if (attempt < maxRetries) {
+   930→          await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)));
+   931→          continue;
+   932→        }
+   933→      }
+   934→    }
+   935→
+   936→    return { success: false, data: null, error: lastError };
+   937→  }
+   938→
+   939→  /**
+   940→   * Réconcilie les données locales avec les données distantes après un SYNCED
+   941→   * Met à jour l'ID local si le serveur en a généré un différent,
+   942→   * et marque _isDirty = false.
+   943→   */
+   944→  private async reconcileLocalWithRemote(
+   945→    storeName: string,
+   946→    localEntityId: string,
+   947→    remoteData: any,
+   948→    tenantId: string
+   949→  ): Promise<void> {
+   950→    if (!remoteData) return;
+   951→
+   952→    try {
+   953→      // Le serveur peut avoir généré un nouvel ID
+   954→      const serverId = remoteData.id || localEntityId;
+   955→
+   956→      // Si l'ID local est différent de l'ID serveur, il faut mettre à jour
+   957→      if (serverId !== localEntityId) {
+   958→        // Supprimer l'ancienne entrée locale (avec l'ancien ID)
+   959→        try {
+   960→          await localDb.execute(storeName, 'delete', localEntityId);
+   961→        } catch {
+   962→          // L'ancienne entrée peut ne pas exister
+   963→        }
+   964→      }
+   965→
+   966→      // Écrire les données serveur dans le store local
+   967→      await localDb.execute(storeName, 'put', {
+   968→        ...remoteData,
+   969→        tenantId,
+   970→        _isDirty: false,
+   971→        _lastSync: new Date().toISOString(),
+   972→      });
+   973→    } catch (error) {
+   974→      console.error(`[DualWrite] Reconciliation failed for ${storeName}:${localEntityId}:`, error);
+   975→    }
+   976→  }
+   977→
+   978→  /**
+   979→   * Fetch avec authentification automatique
+   980→   */
+   981→  private async fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
+   982→    const authHeaders = getClientAuthorizationHeader();
+   983→    return fetch(url, {
+   984→      ...options,
+   985→      credentials: 'include',
+   986→      headers: {
+   987→        'Content-Type': 'application/json',
+   988→        ...authHeaders,
+   989→        ...options.headers,
+   990→      },
+   991→    });
+   992→  }
+   993→
+   994→  /**
+   995→   * Retourne le nom du store pour un entityType donné
+   996→   */
+   997→  getStoreName(entityType: SyncEntityType): string {
+   998→    return ENTITY_TO_STORE[entityType] || `${entityType.toLowerCase()}s`;
+   999→  }
+  1000→
+  1001→  /**
+  1002→   * Retourne le mapping complet EntityType → Store
+  1003→   */
+  1004→  getEntityToStoreMapping(): Record<SyncEntityType, string> {
+  1005→    return { ...ENTITY_TO_STORE };
+  1006→  }
+  1007→
+  1008→  /**
+  1009→   * Vérifie la cohérence entre les données locales et distantes
+  1010→   * pour un entityType donné. Retourne les IDs en désynchronisation.
+  1011→   */
+  1012→  async checkConsistency(
+  1013→    tenantId: string,
+  1014→    entityType: SyncEntityType
+  1015→  ): Promise<{ dirtyIds: string[]; missingRemoteIds: string[]; missingLocalIds: string[] }> {
+  1016→    const storeName = this.getStoreName(entityType);
+  1017→    const dirtyIds: string[] = [];
+  1018→
+  1019→    try {
+  1020→      const localEntities = await localDb.query<{ id: string; _isDirty?: boolean; tenantId: string }>(storeName);
+  1021→      const tenantEntities = localEntities.filter((e: any) => e.tenantId === tenantId);
+  1022→
+  1023→      for (const entity of tenantEntities) {
+  1024→        if (entity._isDirty) {
+  1025→          dirtyIds.push(entity.id);
+  1026→        }
+  1027→      }
+  1028→    } catch {
+  1029→      // Store peut ne pas exister
+  1030→    }
+  1031→
+  1032→    return {
+  1033→      dirtyIds,
+  1034→      missingRemoteIds: [], // Nécessite un appel serveur — à implémenter dans Phase 3
+  1035→      missingLocalIds: [],  // Nécessite un appel serveur — à implémenter dans Phase 3
+  1036→    };
+  1037→  }
+  1038→
+  1039→  /**
+  1040→   * Force la synchronisation de toutes les entités dirty d'un tenant
+  1041→   */
+  1042→  async forceSyncAll(tenantId: string): Promise<{ synced: number; failed: number }> {
+  1043→    try {
+  1044→      await offlineSyncService.sync();
+  1045→      const state = await localDb.query<any>('sync_state');
+  1046→      const tenantState = state.find((s: any) => s.tenantId === tenantId);
+  1047→      return {
+  1048→        synced: tenantState?.pendingEventsCount === 0 ? 1 : 0,
+  1049→        failed: 0,
+  1050→      };
+  1051→    } catch {
+  1052→      return { synced: 0, failed: 1 };
+  1053→    }
+  1054→  }
+  1055→}
+  1056→
+  1057→// ─────────────────────────────────────────────────────────────────
+  1058→// Utilitaires
+  1059→// ─────────────────────────────────────────────────────────────────
+  1060→
+  1061→/**
+  1062→ * Génère un UUID v4 (cryptographiquement sûr si crypto.randomUUID disponible)
+  1063→ */
+  1064→function generateUUID(): string {
+  1065→  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+  1066→    return crypto.randomUUID();
+  1067→  }
+  1068→  // Fallback pour les environnements sans crypto.randomUUID
+  1069→  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+  1070→    const r = (Math.random() * 16) | 0;
+  1071→    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+  1072→    return v.toString(16);
+  1073→  });
+  1074→}
+  1075→
+  1076→// ─────────────────────────────────────────────────────────────────
+  1077→// Export singleton
+  1078→// ─────────────────────────────────────────────────────────────────
+  1079→
+  1080→export const dualWriteService = new DualWriteService();
+  1081→export default dualWriteService;
+  1082→

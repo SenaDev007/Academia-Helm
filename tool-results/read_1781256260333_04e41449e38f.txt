@@ -1,0 +1,403 @@
+     1→   801→                                              className="bg-[#1A2BA6] h-full rounded-full transition-all duration-500"
+     2→   802→                                              style={{ width: `${Math.round((c.count / jobStats.totalApplicants) * 100)}%` }}
+     3→   803→                                            />
+     4→   804→                                          </div>
+     5→   805→                                          <span className="text-[10px] text-slate-700 font-medium whitespace-nowrap min-w-[70px]">{c.name}</span>
+     6→   806→                                          <span className="text-[10px] text-slate-400 font-bold">{c.count}</span>
+     7→   807→                                        </div>
+     8→   808→                                      ))}
+     9→   809→                                    </div>
+    10→   810→                                  </div>
+    11→   811→                                )}
+    12→   812→                                {/* By city */}
+    13→   813→                                {jobStats.cities.length > 0 && jobStats.cities.some(c => c.name !== 'Non spécifié') && (
+    14→   814→                                  <div>
+    15→   815→                                    <span className="text-[10px] text-slate-400 font-bold uppercase flex items-center gap-1"><Map className="h-3 w-3" /> Par ville</span>
+    16→   816→                                    <div className="mt-1.5 space-y-1">
+    17→   817→                                      {jobStats.cities.filter(c => c.name !== 'Non spécifié').map((c) => (
+    18→   818→                                        <div key={c.name} className="flex items-center gap-2">
+    19→   819→                                          <div className="flex-1 bg-slate-200 rounded-full h-2 overflow-hidden">
+    20→   820→                                            <div
+    21→   821→                                              className="bg-emerald-500 h-full rounded-full transition-all duration-500"
+    22→   822→                                              style={{ width: `${Math.round((c.count / jobStats.totalApplicants) * 100)}%` }}
+    23→   823→                                            />
+    24→   824→                                          </div>
+    25→   825→                                          <span className="text-[10px] text-slate-700 font-medium whitespace-nowrap min-w-[70px]">{c.name}</span>
+    26→   826→                                          <span className="text-[10px] text-slate-400 font-bold">{c.count}</span>
+    27→   827→                                        </div>
+    28→   828→                                      ))}
+    29→   829→                                    </div>
+    30→   830→                                  </div>
+    31→   831→                                )}
+    32→   832→                              </div>
+    33→   833→                            </div>
+    34→   834→                          )}
+    35→   835→
+    36→   836→                          {selectedJob.description && (
+    37→   837→                            <div>
+    38→   838→                              <h4 className="font-bold text-slate-900 text-xs mb-1.5">Description du poste</h4>
+    39→   839→                              <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line">{selectedJob.description}</p>
+    40→   840→                            </div>
+    41→   841→                          )}
+    42→   842→
+    43→   843→                          {selectedJob.missions && (
+    44→   844→                            <div>
+    45→   845→                              <h4 className="font-bold text-slate-900 text-xs mb-1.5">Missions clés</h4>
+    46→   846→                              <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line">{selectedJob.missions}</p>
+    47→   847→                            </div>
+    48→   848→                          )}
+    49→   849→
+    50→   850→                          {selectedJob.responsibilities && (
+    51→   851→                            <div>
+    52→   852→                              <h4 className="font-bold text-slate-900 text-xs mb-1.5">Responsabilités</h4>
+    53→   853→                              <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line">{selectedJob.responsibilities}</p>
+    54→   854→                            </div>
+    55→   855→                          )}
+    56→   856→
+    57→   857→                          <button
+    58→   858→                            onClick={() => setIsApplying(true)}
+    59→   859→                            className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold text-white transition hover:opacity-90 shadow-md bg-blue-600"
+    60→   860→                          >
+    61→   861→                            <Sparkles className="h-4 w-4 text-white fill-white" /> Postuler instantanément
+    62→   862→                          </button>
+    63→   863→                        </div>
+    64→   864→                      ) : (
+    65→   865→                        <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center shadow-sm">
+    66→   866→                          <div className="relative w-full max-w-md mx-auto">
+    67→   867→                            <Image
+    68→   868→                              src="/images/AcademiaHelm_RecruitmentPortal.jpeg"
+    69→   869→                              alt="Portail de recrutement Academia Helm"
+    70→   870→                              width={512}
+    71→   871→                              height={360}
+    72→   872→                              className="rounded-2xl shadow-sm w-full h-auto object-contain"
+    73→   873→                              priority
+    74→   874→                              sizes="(max-width: 768px) 100vw, 512px"
+    75→   875→                            />
+    76→   876→                          </div>
+    77→   877→                          <p className="mt-5 text-sm font-semibold text-slate-700">Sélectionnez une offre</p>
+    78→   878→                          <p className="mt-1 text-xs text-slate-400">Parcourez les postes ouverts et cliquez sur un poste pour voir les détails.</p>
+    79→   879→                        </div>
+    80→   880→                      )}
+    81→   881→                    </div>
+    82→   882→                  </div>
+    83→   883→                  )
+    84→   884→                ) : (
+    85→   885→                  /* Form: Easy Apply multi-step */
+    86→   886→                  <div className="max-w-2xl mx-auto bg-white border border-slate-200 rounded-2xl p-6 shadow-md relative overflow-hidden">
+    87→   887→                    {/* Top step progress bar */}
+    88→   888→                    <div className="w-full bg-slate-100 h-1.5 absolute top-0 left-0">
+    89→   889→                      <div className="bg-blue-600 h-full transition-all duration-300" style={{ width: `${(currentStep / 5) * 100}%` }} />
+    90→   890→                    </div>
+    91→   891→
+    92→   892→                    <div className="flex justify-between items-center border-b border-slate-100 pb-4 mb-6 mt-2">
+    93→   893→                      <div>
+    94→   894→                        <span className="text-[9px] font-bold text-blue-600 uppercase tracking-widest">Étape {currentStep} sur 5</span>
+    95→   895→                        <h3 className="font-extrabold text-slate-900 text-sm">Candidature Simplifiée : {selectedJob?.title}</h3>
+    96→   896→                      </div>
+    97→   897→                      <button
+    98→   898→                        onClick={() => setIsApplying(false)}
+    99→   899→                        className="text-xs text-slate-500 font-semibold hover:underline"
+   100→   900→                      >
+   101→   901→                        Annuler
+   102→   902→                      </button>
+   103→   903→                    </div>
+   104→   904→
+   105→   905→                    {submitResult ? (
+   106→   906→                      <div className="text-center py-8 space-y-4">
+   107→   907→                        {submitResult.success ? (
+   108→   908→                          <>
+   109→   909→                            <CheckCircle className="h-12 w-12 text-emerald-500 mx-auto" />
+   110→   910→                            <h4 className="font-bold text-slate-900 text-base">Candidature Transmise avec Succès</h4>
+   111→   911→                            <p className="text-xs text-slate-600 max-w-md mx-auto leading-relaxed">{submitResult.message}</p>
+   112→   912→                          </>
+   113→   913→                        ) : (
+   114→   914→                          <>
+   115→   915→                            <XCircle className="h-12 w-12 text-red-500 mx-auto" />
+   116→   916→                            <h4 className="font-bold text-slate-900 text-base">Échec de la soumission</h4>
+   117→   917→                            <p className="text-xs text-slate-600 max-w-md mx-auto leading-relaxed">{submitResult.message}</p>
+   118→   918→                          </>
+   119→   919→                        )}
+   120→   920→                        <button
+   121→   921→                          onClick={() => { setSelectedSchool(null); setSelectedJob(null); setIsApplying(false); }}
+   122→   922→                          className="mt-6 rounded-xl border border-slate-200 px-5 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+   123→   923→                        >
+   124→   924→                          Retourner à l'accueil
+   125→   925→                        </button>
+   126→   926→                      </div>
+   127→   927→                    ) : (
+   128→   928→                      <div className="space-y-6">
+   129→   929→                        {/* STEP 1: Contact Information */}
+   130→   930→                        {currentStep === 1 && (
+   131→   931→                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+   132→   932→                            <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><User className="h-4 w-4 text-blue-600" /> Informations de contact</h4>
+   133→   933→                            <div className="grid grid-cols-2 gap-4">
+   134→   934→                              <div>
+   135→   935→                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Prénom</label>
+   136→   936→                                <input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} required className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+   137→   937→                              </div>
+   138→   938→                              <div>
+   139→   939→                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Nom de famille</label>
+   140→   940→                                <input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} required className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+   141→   941→                              </div>
+   142→   942→                            </div>
+   143→   943→
+   144→   944→                            <div className="grid grid-cols-2 gap-4">
+   145→   945→                              <div>
+   146→   946→                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Adresse email</label>
+   147→   947→                                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+   148→   948→                              </div>
+   149→   949→                              <div>
+   150→   950→                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Téléphone</label>
+   151→   951→                                <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} required className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="Ex: +229 90000000" />
+   152→   952→                              </div>
+   153→   953→                            </div>
+   154→   954→
+   155→   955→                            <div className="grid grid-cols-2 gap-4">
+   156→   956→                              <div>
+   157→   957→                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Adresse résidentielle</label>
+   158→   958→                                <input type="text" value={address} onChange={(e) => setAddress(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+   159→   959→                              </div>
+   160→   960→                              <div>
+   161→   961→                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Genre</label>
+   162→   962→                                <select value={gender} onChange={(e) => setGender(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs bg-white">
+   163→   963→                                  <option value="M">Masculin</option>
+   164→   964→                                  <option value="F">Féminin</option>
+   165→   965→                                </select>
+   166→   966→                              </div>
+   167→   967→                            </div>
+   168→   968→
+   169→   969→                            <div className="grid grid-cols-2 gap-4">
+   170→   970→                              <div>
+   171→   971→                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Pays</label>
+   172→   972→                                <select value={country} onChange={(e) => setCountry(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs bg-white">
+   173→   973→                                  <option value="Bénin">Bénin</option>
+   174→   974→                                  <option value="Togo">Togo</option>
+   175→   975→                                  <option value="Niger">Niger</option>
+   176→   976→                                  <option value="Nigéria">Nigéria</option>
+   177→   977→                                  <option value="Côte d'Ivoire">Côte d'Ivoire</option>
+   178→   978→                                  <option value="Sénégal">Sénégal</option>
+   179→   979→                                  <option value="Mali">Mali</option>
+   180→   980→                                  <option value="Burkina Faso">Burkina Faso</option>
+   181→   981→                                  <option value="Guinée">Guinée</option>
+   182→   982→                                  <option value="Cameroun">Cameroun</option>
+   183→   983→                                  <option value="Gabon">Gabon</option>
+   184→   984→                                  <option value="Congo">Congo</option>
+   185→   985→                                  <option value="RDC">RDC</option>
+   186→   986→                                  <option value="France">France</option>
+   187→   987→                                  <option value="Autre">Autre</option>
+   188→   988→                                </select>
+   189→   989→                              </div>
+   190→   990→                              <div>
+   191→   991→                                <label className="block text-[10px] font-bold text-slate-500 mb-1">Ville / Commune</label>
+   192→   992→                                <input type="text" value={city} onChange={(e) => setCity(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="Ex: Cotonou, Parakou..." />
+   193→   993→                              </div>
+   194→   994→                            </div>
+   195→   995→
+   196→   996→                            <div>
+   197→   997→                              <label className="block text-[10px] font-bold text-slate-500 mb-1 flex items-center gap-1"><Linkedin className="h-3.5 w-3.5 text-[#0A66C2] fill-[#0A66C2]" /> Profil LinkedIn (optionnel)</label>
+   198→   998→                              <input type="url" value={linkedinUrl} onChange={(e) => setLinkedinUrl(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="https://linkedin.com/in/nom-d-utilisateur" />
+   199→   999→                            </div>
+   200→  1000→                          </motion.div>
+   201→  1001→                        )}
+   202→  1002→
+   203→  1003→                        {/* STEP 2: Work Experience */}
+   204→  1004→                        {currentStep === 2 && (
+   205→  1005→                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+   206→  1006→                            <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><Briefcase className="h-4 w-4 text-blue-600" /> Expériences professionnelles</h4>
+   207→  1007→                            
+   208→  1008→                            {/* Experience list */}
+   209→  1009→                            <div className="space-y-2">
+   210→  1010→                              {experiences.map((exp, i) => (
+   211→  1011→                                <div key={i} className="flex justify-between items-start bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs">
+   212→  1012→                                  <div>
+   213→  1013→                                    <p className="font-bold text-slate-900">{exp.title}</p>
+   214→  1014→                                    <p className="text-[10px] text-slate-500">{exp.company} · {exp.years}</p>
+   215→  1015→                                    {exp.description && <p className="text-[10px] text-slate-600 mt-1 italic">{exp.description}</p>}
+   216→  1016→                                  </div>
+   217→  1017→                                  <button onClick={() => removeExperience(i)} className="text-red-500 hover:text-red-700 transition">
+   218→  1018→                                    <Trash2 className="h-3.5 w-3.5" />
+   219→  1019→                                  </button>
+   220→  1020→                                </div>
+   221→  1021→                              ))}
+   222→  1022→                            </div>
+   223→  1023→
+   224→  1024→                            {/* Add Experience sub-form */}
+   225→  1025→                            <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+   226→  1026→                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Ajouter une expérience</span>
+   227→  1027→                              <div className="grid grid-cols-2 gap-3">
+   228→  1028→                                <input type="text" placeholder="Intitulé du poste (ex: Enseignant)" value={expTitle} onChange={(e) => setExpTitle(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+   229→  1029→                                <input type="text" placeholder="Établissement / École" value={expCompany} onChange={(e) => setExpCompany(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+   230→  1030→                              </div>
+   231→  1031→                              <div className="grid grid-cols-3 gap-3">
+   232→  1032→                                <input type="text" placeholder="Durée (ex: 2022 - 2025)" value={expYears} onChange={(e) => setExpYears(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs col-span-1" />
+   233→  1033→                                <input type="text" placeholder="Brève description des responsabilités" value={expDesc} onChange={(e) => setExpDesc(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs col-span-2" />
+   234→  1034→                              </div>
+   235→  1035→                              <button type="button" onClick={addExperience} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-[10px] font-semibold hover:opacity-90 transition">
+   236→  1036→                                <Plus className="h-3.5 w-3.5" /> Enregistrer le poste
+   237→  1037→                              </button>
+   238→  1038→                            </div>
+   239→  1039→                          </motion.div>
+   240→  1040→                        )}
+   241→  1041→
+   242→  1042→                        {/* STEP 3: Education */}
+   243→  1043→                        {currentStep === 3 && (
+   244→  1044→                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+   245→  1045→                            <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><BookOpen className="h-4 w-4 text-blue-600" /> Études et Formations</h4>
+   246→  1046→                            
+   247→  1047→                            {/* Education list */}
+   248→  1048→                            <div className="space-y-2">
+   249→  1049→                              {education.map((edu, i) => (
+   250→  1050→                                <div key={i} className="flex justify-between items-start bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs">
+   251→  1051→                                  <div>
+   252→  1052→                                    <p className="font-bold text-slate-900">{edu.degree}</p>
+   253→  1053→                                    <p className="text-[10px] text-slate-500">{edu.school} · {edu.year}</p>
+   254→  1054→                                  </div>
+   255→  1055→                                  <button onClick={() => removeEducation(i)} className="text-red-500 hover:text-red-700 transition">
+   256→  1056→                                    <Trash2 className="h-3.5 w-3.5" />
+   257→  1057→                                  </button>
+   258→  1058→                                </div>
+   259→  1059→                              ))}
+   260→  1060→                            </div>
+   261→  1061→
+   262→  1062→                            {/* Add Education sub-form */}
+   263→  1063→                            <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+   264→  1064→                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Ajouter un diplôme</span>
+   265→  1065→                              <div className="grid grid-cols-2 gap-3">
+   266→  1066→                                <input type="text" placeholder="Diplôme (ex: Master Mathématiques)" value={eduDegree} onChange={(e) => setEduDegree(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+   267→  1067→                                <input type="text" placeholder="Université / École" value={eduSchool} onChange={(e) => setEduSchool(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+   268→  1068→                              </div>
+   269→  1069→                              <div className="flex gap-3">
+   270→  1070→                                <input type="text" placeholder="Année d'obtention" value={eduYear} onChange={(e) => setEduYear(e.target.value)} className="w-1/3 rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+   271→  1071→                                <button type="button" onClick={addEducation} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-[10px] font-semibold hover:opacity-90 transition">
+   272→  1072→                                  <Plus className="h-3.5 w-3.5" /> Enregistrer le diplôme
+   273→  1073→                                </button>
+   274→  1074→                              </div>
+   275→  1075→                            </div>
+   276→  1076→                          </motion.div>
+   277→  1077→                        )}
+   278→  1078→
+   279→  1079→                        {/* STEP 4: Skills & Pitch */}
+   280→  1080→                        {currentStep === 4 && (
+   281→  1081→                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+   282→  1082→                            <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><Award className="h-4 w-4 text-blue-600" /> Compétences & Présentation</h4>
+   283→  1083→                            
+   284→  1084→                            <div>
+   285→  1085→                              <label className="block text-[10px] font-bold text-slate-500 mb-1">Compétences clés (Appuyez sur Entrée)</label>
+   286→  1086→                              <input
+   287→  1087→                                type="text"
+   288→  1088→                                value={skillInput}
+   289→  1089→                                onChange={(e) => setSkillInput(e.target.value)}
+   290→  1090→                                onKeyDown={addSkill}
+   291→  1091→                                placeholder="Ajouter une compétence... (ex: Didactique, Python)"
+   292→  1092→                                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs"
+   293→  1093→                              />
+   294→  1094→                              <div className="flex flex-wrap gap-1.5 mt-2">
+   295→  1095→                                {skills.map(s => (
+   296→  1096→                                  <span key={s} className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 rounded-full text-slate-700 text-[10px] font-semibold">
+   297→  1097→                                    {s}
+   298→  1098→                                    <button type="button" onClick={() => removeSkill(s)} className="text-slate-400 hover:text-slate-600">✕</button>
+   299→  1099→                                  </span>
+   300→  1100→                                ))}
+   301→  1101→                              </div>
+   302→  1102→                            </div>
+   303→  1103→
+   304→  1104→                            <div>
+   305→  1105→                              <label className="block text-[10px] font-bold text-slate-500 mb-1">Pourquoi vous ? Pitch de motivation (1-2 paragraphes)</label>
+   306→  1106→                              <textarea
+   307→  1107→                                value={pitch}
+   308→  1108→                                onChange={(e) => setPitch(e.target.value)}
+   309→  1109→                                placeholder="Présentez brièvement vos atouts pour ce poste scolaire..."
+   310→  1110→                                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-28"
+   311→  1111→                              />
+   312→  1112→                            </div>
+   313→  1113→                          </motion.div>
+   314→  1114→                        )}
+   315→  1115→
+   316→  1116→                        {/* STEP 5: Document Uploads */}
+   317→  1117→                        {currentStep === 5 && (
+   318→  1118→                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+   319→  1119→                            <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><FileText className="h-4 w-4 text-blue-600" /> Fichiers & Justificatifs</h4>
+   320→  1120→                            
+   321→  1121→                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+   322→  1122→                              {/* CV */}
+   323→  1123→                              <div className="border border-dashed border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center text-center relative hover:bg-slate-50 transition cursor-pointer">
+   324→  1124→                                <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setCvFile(e.target.files?.[0] || null)} required className="absolute inset-0 opacity-0 cursor-pointer" />
+   325→  1125→                                <Upload className="h-6 w-6 text-[#1A2BA6] mb-2" />
+   326→  1126→                                <span className="text-[10px] font-bold text-slate-700">Curriculum Vitae *</span>
+   327→  1127→                                <span className="text-[9px] text-slate-400 mt-1">{cvFile ? cvFile.name : 'PDF, DOCX'}</span>
+   328→  1128→                              </div>
+   329→  1129→
+   330→  1130→                              {/* Letter */}
+   331→  1131→                              <div className="border border-dashed border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center text-center relative hover:bg-slate-50 transition cursor-pointer">
+   332→  1132→                                <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setCoverFile(e.target.files?.[0] || null)} className="absolute inset-0 opacity-0 cursor-pointer" />
+   333→  1133→                                <Upload className="h-6 w-6 text-[#1A2BA6] mb-2" />
+   334→  1134→                                <span className="text-[10px] font-bold text-slate-700">Lettre de motivation</span>
+   335→  1135→                                <span className="text-[9px] text-slate-400 mt-1">{coverFile ? coverFile.name : 'PDF, DOCX'}</span>
+   336→  1136→                              </div>
+   337→  1137→                            </div>
+   338→  1138→
+   339→  1139→                            {/* Recommendation */}
+   340→  1140→                            <div className="border border-dashed border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center text-center relative hover:bg-slate-50 transition cursor-pointer">
+   341→  1141→                              <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setRecoFile(e.target.files?.[0] || null)} className="absolute inset-0 opacity-0 cursor-pointer" />
+   342→  1142→                              <Upload className="h-6 w-6 text-[#1A2BA6] mb-2" />
+   343→  1143→                              <span className="text-[10px] font-bold text-slate-700">Lettre de recommandation académique</span>
+   344→  1144→                              <span className="text-[9px] text-slate-400 mt-1">{recoFile ? recoFile.name : 'PDF, DOCX'}</span>
+   345→  1145→                            </div>
+   346→  1146→
+   347→  1147→                            {/* AI Processing notice */}
+   348→  1148→                            <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-lg flex gap-2 text-[10px] text-slate-600">
+   349→  1149→                              <Sparkles className="h-4 w-4 text-blue-600 shrink-0 mt-0.5 animate-pulse" />
+   350→  1150→                              <p>En transmettant vos documents, le système **HDIE Engine** analysera la cohérence de vos diplômes et rédigera une note de synthèse pour la direction.</p>
+   351→  1151→                            </div>
+   352→  1152→                          </motion.div>
+   353→  1153→                        )}
+   354→  1154→
+   355→  1155→                        {/* Navigation buttons */}
+   356→  1156→                        <div className="flex justify-between items-center pt-4 border-t border-slate-100">
+   357→  1157→                          <button
+   358→  1158→                            type="button"
+   359→  1159→                            disabled={currentStep === 1 || submitting}
+   360→  1160→                            onClick={() => setCurrentStep(prev => prev - 1)}
+   361→  1161→                            className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs hover:bg-slate-50 disabled:opacity-40"
+   362→  1162→                          >
+   363→  1163→                            Précédent
+   364→  1164→                          </button>
+   365→  1165→
+   366→  1166→                          {currentStep < 5 ? (
+   367→  1167→                            <button
+   368→  1168→                              type="button"
+   369→  1169→                              onClick={() => setCurrentStep(prev => prev + 1)}
+   370→  1170→                              className="px-5 py-2 text-white rounded-lg text-xs font-bold transition hover:opacity-90"
+   371→  1171→                              style={{ backgroundColor: PRIMARY }}
+   372→  1172→                            >
+   373→  1173→                              Continuer
+   374→  1174→                            </button>
+   375→  1175→                          ) : (
+   376→  1176→                            <button
+   377→  1177→                              type="button"
+   378→  1178→                              onClick={handleSubmitApplication}
+   379→  1179→                              disabled={submitting}
+   380→  1180→                              className="px-5 py-2 text-white rounded-lg text-xs font-bold transition hover:opacity-90 flex items-center gap-1 bg-blue-600"
+   381→  1181→                            >
+   382→  1182→                              {submitting ? 'Transmission...' : 'Soumettre le dossier'}
+   383→  1183→                              <Send className="h-3 w-3" />
+   384→  1184→                            </button>
+   385→  1185→                          )}
+   386→  1186→                        </div>
+   387→  1187→                      </div>
+   388→  1188→                    )}
+   389→  1189→                  </div>
+   390→  1190→                )}
+   391→  1191→              </motion.div>
+   392→  1192→            )}
+   393→  1193→          </AnimatePresence>
+   394→  1194→        )}
+   395→  1195→      </main>
+   396→  1196→
+   397→  1197→      <footer className="bg-slate-900 text-slate-500 py-8 border-t border-slate-800 text-center text-xs">
+   398→  1198→        <p>© 2026 Academia Helm. Tous droits réservés. Propulsé par HDIE Engine.</p>
+   399→  1199→      </footer>
+   400→  1200→    </div>
+   401→  1201→  );
+   402→  1202→}
+   403→  1203→

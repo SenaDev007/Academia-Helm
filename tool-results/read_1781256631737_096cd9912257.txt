@@ -1,0 +1,1253 @@
+     1→/**
+     2→ * Types globaux pour Academia Hub Next.js App
+     3→ */
+     4→
+     5→/**
+     6→ * États d'abonnement normalisés pour un établissement
+     7→ */
+     8→export type SubscriptionStatus =
+     9→  | 'PENDING'
+    10→  | 'ACTIVE_TRIAL'
+    11→  | 'ACTIVE_SUBSCRIBED'
+    12→  | 'SUSPENDED'
+    13→  | 'TERMINATED';
+    14→
+    15→export interface Tenant {
+    16→  id: string;
+    17→  slug: string;
+    18→  name: string;
+    19→  subdomain: string;
+    20→  /**
+    21→   * Statut général (legacy + nouveaux états)
+    22→   * - active / trial / suspended / cancelled (backend existant)
+    23→   * - PENDING / ACTIVE_TRIAL / ACTIVE_SUBSCRIBED / SUSPENDED / TERMINATED (nouveau modèle)
+    24→   */
+    25→  status: 'active' | 'suspended' | 'trial' | 'cancelled' | SubscriptionStatus;
+    26→  /**
+    27→   * Statut d'abonnement normalisé côté application
+    28→   */
+    29→  subscriptionStatus: SubscriptionStatus;
+    30→  /**
+    31→   * Fin de la période d'essai (ISO string)
+    32→   */
+    33→  trialEndsAt?: string;
+    34→  /**
+    35→   * Prochaine échéance de paiement (ISO string)
+    36→   */
+    37→  nextPaymentDueAt?: string;
+    38→  /**
+    39→   * Dernier paiement réussi (ISO string)
+    40→   */
+    41→  lastPaymentAt?: string;
+    42→  createdAt: string;
+    43→  updatedAt: string;
+    44→}
+    45→
+    46→/**
+    47→ * Rôles utilisateur
+    48→ */
+    49→export type UserRole = 
+    50→  | 'admin' 
+    51→  | 'director' 
+    52→  | 'teacher' 
+    53→  | 'secretary' 
+    54→  | 'accountant'
+    55→  // Portail Plateforme
+    56→  | 'PLATFORM_OWNER'
+    57→  | 'PLATFORM_SUPER_ADMIN'
+    58→  | 'PLATFORM_ADMIN'
+    59→  | 'PLATFORM_BILLING'
+    60→  | 'PLATFORM_SUPPORT'
+    61→  | 'PLATFORM_DEVOPS'
+    62→  | 'PLATFORM_AUDITOR'
+    63→  // Portail École
+    64→  | 'SCHOOL_OWNER'
+    65→  | 'SCHOOL_ADMIN'
+    66→  | 'RESP_SECONDAIRE'
+    67→  | 'RESP_PRIMAIRE'
+    68→  | 'RESP_MATERNELLE'
+    69→  | 'SCOLARITE'
+    70→  | 'CAISSIER'
+    71→  | 'COMPTABLE'
+    72→  | 'ECONOME'
+    73→  | 'DIRECTEUR_GENERAL'
+    74→  | 'DIRECTEUR_ETABLISSEMENT'
+    75→  | 'CENSEUR'
+    76→  | 'SURVEILLANT_GENERAL'
+    77→  // Portail Enseignant
+    78→  | 'TEACHER'
+    79→  | 'TEACHER_RESP'
+    80→  // Portail Parent / Élève
+    81→  | 'PARENT'
+    82→  | 'STUDENT'
+    83→  // Rôles Spéciaux
+    84→  | 'SUPER_DIRECTOR'
+    85→  | 'SUPER_ADMIN';
+    86→
+    87→export type PortalType = 'PLATFORM' | 'SCHOOL' | 'TEACHER' | 'PARENT' | 'PUBLIC';
+    88→
+    89→/**
+    90→ * Groupe Scolaire (regroupe plusieurs établissements/tenants)
+    91→ */
+    92→export interface SchoolGroup {
+    93→  id: string;
+    94→  name: string;
+    95→  ownerId: string; // ID du promoteur (SUPER_DIRECTOR)
+    96→  tenantIds: string[]; // Liste des IDs des tenants (établissements) du groupe
+    97→  createdAt: string;
+    98→  updatedAt: string;
+    99→}
+   100→
+   101→export interface User {
+   102→  id: string;
+   103→  email: string;
+   104→  firstName: string;
+   105→  lastName: string;
+   106→  role: UserRole;
+   107→  portal: PortalType;
+   108→  function?: string; // Fonction métier spécifique (ex: "Censeur", "Comptable")
+   109→  accreditations?: ('MATERNELLE' | 'PRIMAIRE' | 'SECONDAIRE')[];
+   110→  levelScopes?: string[]; // IDs des niveaux autorisés
+   111→  classScopes?: string[]; // IDs des classes autorisées
+   112→  tenantId: string;
+   113→  permissions: string[];
+   114→  accessibleTenants?: Tenant[];
+   115→  schoolGroupId?: string;
+   116→  staffId?: string;
+   117→  createdAt: string;
+   118→}
+   119→
+   120→export interface AuthSession {
+   121→  user: User;
+   122→  tenant: Tenant;
+   123→  token: string;
+   124→  expiresAt: string;
+   125→}
+   126→
+   127→export interface ApiError {
+   128→  message: string;
+   129→  code?: string;
+   130→  statusCode?: number;
+   131→}
+   132→
+   133→/**
+   134→ * Facturation & paiements
+   135→ */
+   136→
+   137→export type InvoiceStatus = 'ISSUED' | 'PAID' | 'CANCELLED'; // Pas de brouillon côté SaaS, uniquement des factures émises
+   138→
+   139→export interface Invoice {
+   140→  id: string;
+   141→  tenantId: string;
+   142→  number: string; // Numérotation unique, générée côté backend
+   143→  amount: number;
+   144→  currency: string; // ex: 'XOF'
+   145→  description: string;
+   146→  status: InvoiceStatus;
+   147→  issuedAt: string;
+   148→  dueAt?: string;
+   149→  paidAt?: string;
+   150→  createdAt: string;
+   151→}
+   152→
+   153→export type PaymentMethod = 'FEDAPAY' | 'CASH' | 'BANK_TRANSFER' | 'MOBILE_MONEY';
+   154→
+   155→export interface Payment {
+   156→  id: string;
+   157→  tenantId: string;
+   158→  invoiceId: string;
+   159→  amount: number;
+   160→  currency: string;
+   161→  method: PaymentMethod;
+   162→  provider: 'FEDAPAY';
+   163→  providerReference: string; // ID paiement Fedapay
+   164→  status: 'PENDING' | 'COMPLETED' | 'FAILED';
+   165→  paidAt?: string;
+   166→  createdAt: string;
+   167→}
+   168→
+   169→export interface Receipt {
+   170→  id: string;
+   171→  tenantId: string;
+   172→  invoiceId: string;
+   173→  paymentId: string;
+   174→  number: string; // Numérotation unique, immuable
+   175→  issuedAt: string;
+   176→  pdfUrl: string; // URL sécurisée signée, générée par le backend
+   177→  // Métadonnées minimales pour l'affichage institutionnel
+   178→  schoolName?: string;
+   179→  schoolAddress?: string;
+   180→}
+   181→
+   182→/**
+   183→ * KPI Direction & Bilans
+   184→ *
+   185→ * Ces types décrivent les agrégations renvoyées par le backend
+   186→ * pour le module Bilans & Indicateurs, en lecture seule.
+   187→ */
+   188→
+   189→export interface DirectionKpiSummary {
+   190→  totalStudents: number;
+   191→  totalTeachers: number;
+   192→  periodLabel: string; // ex: "Année 2024-2025" ou "Mois en cours"
+   193→  // Recettes globales sur la période
+   194→  totalRevenue: number;
+   195→  currency: string; // ex: 'XOF'
+   196→  // Taux de recouvrement (0-100)
+   197→  recoveryRate: number;
+   198→  // Présence enseignants (0-100)
+   199→  teacherPresenceRate: number;
+   200→  // Indicateur synthétique d'activité examens (0-100)
+   201→  examsActivityIndex: number;
+   202→}
+   203→
+   204→export interface RevenueByPeriodPoint {
+   205→  period: string; // ex: "Jan", "Fév 2025", "T1 2025"
+   206→  amount: number;
+   207→}
+   208→
+   209→export interface ModuleKpi {
+   210→  module: 'SCOLARITY' | 'FINANCE' | 'HR' | 'EXAMS';
+   211→  label: string;
+   212→  indicators: {
+   213→    name: string;
+   214→    value: number;
+   215→    unit?: string; // ex: '%', 'élèves', 'F CFA'
+   216→  }[];
+   217→}
+   218→
+   219→export interface DirectionKpiResponse {
+   220→  summary: DirectionKpiSummary;
+   221→  revenueByPeriod: RevenueByPeriodPoint[];
+   222→  moduleKpis: ModuleKpi[];
+   223→}
+   224→
+   225→/**
+   226→ * KPI Spécifiques pour ORION
+   227→ */
+   228→export interface KpiFinancialMonthly {
+   229→  period: string;
+   230→  variationPercent: number;
+   231→  revenueExpected?: number;
+   232→  revenueCollected?: number;
+   233→  collectionRate?: number;
+   234→}
+   235→
+   236→export interface KpiHrMonthly {
+   237→  period: string;
+   238→  absenceRate: number;
+   239→  teachersAbsent?: number;
+   240→  teachersTotal?: number;
+   241→}
+   242→
+   243→export interface KpiPedagogyTerm {
+   244→  term: string;
+   245→  averageScore: number;
+   246→  passRate: number;
+   247→  attendanceRate: number;
+   248→}
+   249→
+   250→export interface KpiSystemHealth {
+   251→  period: string;
+   252→  dataCompleteness: number;
+   253→  syncStatus: 'UP_TO_DATE' | 'DELAYED' | 'FAILED';
+   254→}
+   255→
+   256→/**
+   257→ * Bilans consolidés multi-écoles (lecture seule, agrégation explicite)
+   258→ * Uniquement pour les SUPER_DIRECTOR
+   259→ */
+   260→export interface ConsolidatedKpiResponse {
+   261→  /**
+   262→   * Nombre total d'établissements dans le groupe
+   263→   */
+   264→  totalSchools: number;
+   265→  /**
+   266→   * Agrégations consolidées (somme des valeurs de tous les tenants du groupe)
+   267→   */
+   268→  consolidated: {
+   269→    totalStudents: number;
+   270→    totalTeachers: number;
+   271→    totalRevenue: number;
+   272→    currency: string;
+   273→    averageRecoveryRate: number; // Moyenne pondérée
+   274→    averageTeacherPresenceRate: number; // Moyenne pondérée
+   275→  };
+   276→  /**
+   277→   * KPI par établissement (données isolées, pas de mélange)
+   278→   */
+   279→  bySchool: Array<{
+   280→    tenantId: string;
+   281→    schoolName: string;
+   282→    subdomain: string;
+   283→    kpi: DirectionKpiSummary;
+   284→  }>;
+   285→  /**
+   286→   * Période de référence
+   287→   */
+   288→  periodLabel: string;
+   289→}
+   290→
+   291→/**
+   292→ * Synchronisation Offline-First
+   293→ * 
+   294→ * Types pour le moteur de synchronisation entre Desktop (SQLite) et Web SaaS (PostgreSQL)
+   295→ * Utilise le Outbox Pattern pour garantir la cohérence
+   296→ */
+   297→
+   298→/**
+   299→ * Type d'opération de synchronisation
+   300→ */
+   301→export type SyncOperationType = 'CREATE' | 'UPDATE' | 'DELETE';
+   302→
+   303→/**
+   304→ * Entité synchronisable
+   305→ */
+   306→export type SyncEntityType = 
+   307→  // ─── Élèves & Scolarité ───
+   308→  | 'STUDENT'
+   309→  | 'GUARDIAN'
+   310→  | 'STUDENT_GUARDIAN'
+   311→  // ─── Personnel, RH & Paie ───
+   312→  | 'TEACHER'
+   313→  | 'STAFF'
+   314→  | 'CONTRACT'
+   315→  | 'CONTRACT_AMENDMENT'
+   316→  | 'LEAVE_REQUEST'
+   317→  | 'STAFF_ALLOWANCE'
+   318→  | 'STAFF_SCHEDULE'
+   319→  | 'STAFF_ATTENDANCE'
+   320→  | 'STAFF_EVALUATION'
+   321→  | 'STAFF_DOCUMENT'
+   322→  | 'STAFF_ASSIGNMENT'
+   323→  | 'OVERTIME_RECORD'
+   324→  | 'SALARY_PAYMENT'
+   325→  | 'SALARY_SLIP'
+   326→  | 'PAYROLL'
+   327→  | 'PAYROLL_ITEM'
+   328→  | 'PAYROLL_PERIOD'
+   329→  // ─── Classes & Structure ───
+   330→  | 'CLASS'
+   331→  | 'CLASS_STUDENT'
+   332→  | 'CLASS_SUBJECT'
+   333→  | 'SUBJECT'
+   334→  | 'SCHOOL_LEVEL'
+   335→  | 'ACADEMIC_YEAR'
+   336→  | 'ACADEMIC_PERIOD'
+   337→  // ─── Examens, Notes & Bulletins ───
+   338→  | 'EXAM'
+   339→  | 'GRADE'
+   340→  | 'EXAM_CANDIDATE'
+   341→  | 'EXAM_RESULT'
+   342→  | 'EXAM_SCORE'
+   343→  | 'EXAM_SESSION'
+   344→  | 'EXAM_PV'
+   345→  | 'EXAM_COMPOSITION'
+   346→  | 'EXAM_DELIBERATION'
+   347→  | 'REPORT_CARD'
+   348→  | 'REPORT_CARD_ITEM'
+   349→  | 'EVALUATION'
+   350→  | 'GRADE_CALCULATION'
+   351→  | 'STUDENT_PERIOD_AVERAGE'
+   352→  | 'STUDENT_SUBJECT_AVERAGE'
+   353→  // ─── Finances & Économat ───
+   354→  | 'PAYMENT'
+   355→  | 'INVOICE'
+   356→  | 'FEE_STRUCTURE'
+   357→  | 'FEE_CONFIGURATION'
+   358→  | 'FEE_DEFINITION'
+   359→  | 'FEE_REGIME'
+   360→  | 'EXPENSE'
+   361→  | 'FINANCE_SETTING'
+   362→  | 'FINANCE_TRANSACTION'
+   363→  | 'FINANCE_BUDGET'
+   364→  | 'TREASURY_MOVEMENT'
+   365→  | 'TUITION_INSTALLMENT'
+   366→  | 'TUITION_PAYMENT'
+   367→  | 'PAYMENT_PLAN'
+   368→  | 'PAYMENT_FLOW'
+   369→  // ─── Organisation Pédagogique ───
+   370→  | 'ATTENDANCE'
+   371→  | 'ABSENCE'
+   372→  | 'HOMEWORK'
+   373→  | 'HOMEWORK_ENTRY'
+   374→  | 'HOMEWORK_SUBMISSION'
+   375→  | 'PEDAGOGICAL_FILE'
+   376→  | 'CLASS_DIARY'
+   377→  | 'LESSON_PLAN'
+   378→  | 'LESSON_JOURNAL'
+   379→  | 'LESSON_JOURNAL_ENTRY'
+   380→  | 'WEEKLY_SEMAINIER'
+   381→  | 'TEACHER_CLASS_ASSIGNMENT'
+   382→  | 'ACADEMIC_SERIES'
+   383→  | 'SERIES_SUBJECT'
+   384→  | 'TEACHER_PROFILE'
+   385→  | 'PEDAGOGICAL_MATERIAL'
+   386→  | 'MATERIAL_STOCK'
+   387→  | 'MATERIAL_MOVEMENT'
+   388→  | 'TEACHER_MATERIAL_ASSIGNMENT'
+   389→  | 'TEACHING_ASSIGNMENT'
+   390→  | 'SUBJECT_PROGRAM'
+   391→  | 'TIMETABLE'
+   392→  | 'TIMETABLE_ENTRY'
+   393→  | 'ACADEMIC_CLASS'
+   394→  | 'ACADEMIC_CYCLE'
+   395→  | 'ACADEMIC_LEVEL'
+   396→  // ─── Discipline & Incidents ───
+   397→  | 'DISCIPLINARY_INCIDENT'
+   398→  | 'INCIDENT'
+   399→  // ─── Réunions ───
+   400→  | 'MEETING'
+   401→  | 'MEETING_PARTICIPANT'
+   402→  | 'MEETING_AGENDA_ITEM'
+   403→  | 'MEETING_MINUTE'
+   404→  // ─── Communication ───
+   405→  | 'MESSAGE'
+   406→  | 'MESSAGE_RECIPIENT'
+   407→  | 'MESSAGE_TEMPLATE'
+   408→  | 'ANNOUNCEMENT'
+   409→  | 'SMS_LOG'
+   410→  | 'EMAIL_LOG'
+   411→  | 'PUSH_NOTIFICATION'
+   412→  | 'COMMUNICATION_CHANNEL'
+   413→  | 'NOTIFICATION'
+   414→  | 'ALERT'
+   415→  // ─── Agrégation & Décision ───
+   416→  | 'AGGREGATION_RESULT'
+   417→  | 'AGGREGATION_SESSION'
+   418→  | 'AGGREGATION_DECISION'
+   419→  | 'RANKING'
+   420→  | 'HONOR_ROLL'
+   421→  // ─── ORION (Pilotage Direction) ───
+   422→  | 'ORION_ALERT'
+   423→  | 'ORION_INSIGHT'
+   424→  | 'ORION_FORECAST'
+   425→  | 'ORION_SETTINGS'
+   426→  // ─── Paramètres / Settings ───
+   427→  | 'SCHOOL_ACADEMIC_SETTING'
+   428→  | 'SCHOOL_SETTINGS'
+   429→  | 'TENANT_IDENTITY_PROFILE'
+   430→  | 'SETTINGS_PEDAGOGICAL_STRUCTURE'
+   431→  | 'SETTINGS_BILINGUAL'
+   432→  | 'TENANT_FEATURE'
+   433→  | 'SECURITY_SETTINGS'
+   434→  | 'OFFLINE_SYNC_SETTINGS'
+   435→  | 'SETTINGS_COMMUNICATION'
+   436→  | 'TENANT_STAMP'
+   437→  | 'TENANT_SIGNATURE'
+   438→  | 'ROLE'
+   439→  | 'PERMISSION'
+   440→  | 'SETTINGS_HISTORY'
+   441→  // ─── Cantine ───
+   442→  | 'CANTEEN_SETTINGS'
+   443→  | 'CANTEEN_MENU'
+   444→  | 'CANTEEN_MEAL_SERVICE'
+   445→  | 'CANTEEN_ATTENDANCE'
+   446→  | 'CANTEEN_SUBSCRIPTION'
+   447→  | 'CANTEEN_PAYMENT'
+   448→  // ─── Transport ───
+   449→  | 'VEHICLE'
+   450→  | 'ROUTE'
+   451→  | 'TRANSPORT_DRIVER'
+   452→  | 'TRANSPORT_TRIP'
+   453→  | 'TRANSPORT_ASSIGNMENT'
+   454→  | 'TRANSPORT_SETTINGS'
+   455→  // ─── Infirmerie ───
+   456→  | 'INFIRMARY_VISIT'
+   457→  | 'INFIRMARY_MEDICAL_RECORD'
+   458→  | 'INFIRMARY_MEDICATION_STOCK'
+   459→  | 'INFIRMARY_SETTINGS'
+   460→  // ─── QHSE ───
+   461→  | 'QHSE_AUDIT'
+   462→  | 'QHSE_INCIDENT'
+   463→  | 'QHSE_RISK'
+   464→  | 'QHSE_ACTION_PLAN'
+   465→  | 'QHSE_SETTING'
+   466→  // ─── EduCast ───
+   467→  | 'EDUCAST_CONTENT'
+   468→  | 'EDUCAST_CHANNEL'
+   469→  | 'EDUCAST_PLAYLIST'
+   470→  | 'EDUCAST_SETTINGS'
+   471→  // ─── Boutique / Shop ───
+   472→  | 'SHOP_PRODUCT'
+   473→  | 'SHOP_CATEGORY'
+   474→  | 'SHOP_ORDER'
+   475→  | 'SHOP_SALE'
+   476→  | 'SHOP_SETTINGS'
+   477→  // ─── Bibliothèque ───
+   478→  | 'LIBRARY_BOOK'
+   479→  | 'LIBRARY_LOAN'
+   480→  | 'LIBRARY_RESERVATION'
+   481→  | 'LIBRARY_SETTINGS'
+   482→  // ─── Divers / Legacy ───
+   483→  | 'SESSION'
+   484→  | 'LOAN'
+   485→  | 'REPORT'
+   486→  | 'MODULE';
+   487→
+   488→/**
+   489→ * État d'un événement dans l'Outbox
+   490→ */
+   491→export type OutboxEventStatus = 
+   492→  | 'PENDING'      // En attente d'envoi
+   493→  | 'SENT'         // Envoyé au serveur
+   494→  | 'ACKNOWLEDGED' // Confirmé par le serveur
+   495→  | 'FAILED'       // Échec d'envoi
+   496→  | 'CONFLICT';    // Conflit détecté
+   497→
+   498→/**
+   499→ * Événement Outbox (Desktop → Server)
+   500→ * 
+   501→ * Pattern Outbox : chaque modification locale est enregistrée
+   502→ * dans une table outbox avant d'être synchronisée
+   503→ */
+   504→export interface OutboxEvent {
+   505→  id: string; // UUID généré côté Desktop
+   506→  tenantId: string;
+   507→  entityType: SyncEntityType;
+   508→  entityId: string; // ID de l'entité modifiée
+   509→  operation: SyncOperationType;
+   510→  /**
+   511→   * Données de l'entité (JSON)
+   512→   * Pour CREATE/UPDATE : données complètes
+   513→   * Pour DELETE : seulement l'ID
+   514→   */
+   515→  payload: Record<string, any>;
+   516→  /**
+   517→   * Version locale (timestamp ou version number)
+   518→   * Utilisé pour la détection de conflits
+   519→   */
+   520→  localVersion: number;
+   521→  /**
+   522→   * Timestamp de création côté Desktop
+   523→   */
+   524→  createdAt: string;
+   525→  /**
+   526→   * Timestamp de dernière tentative d'envoi
+   527→   */
+   528→  lastAttemptAt?: string;
+   529→  /**
+   530→   * Nombre de tentatives d'envoi
+   531→   */
+   532→  attemptCount: number;
+   533→  status: OutboxEventStatus;
+   534→  /**
+   535→   * Message d'erreur si échec
+   536→   */
+   537→  errorMessage?: string;
+   538→}
+   539→
+   540→/**
+   541→ * Requête de synchronisation montante (Desktop → Server)
+   542→ */
+   543→export interface SyncUpRequest {
+   544→  /**
+   545→   * ID du client Desktop (identifiant unique de l'installation)
+   546→   */
+   547→  clientId: string;
+   548→  /**
+   549→   * Liste des événements à synchroniser
+   550→   */
+   551→  events: OutboxEvent[];
+   552→  /**
+   553→   * Timestamp de la dernière synchronisation réussie
+   554→   * Permet au serveur de savoir quels changements envoyer en retour
+   555→   */
+   556→  lastSyncTimestamp?: string;
+   557→}
+   558→
+   559→/**
+   560→ * Réponse de synchronisation montante
+   561→ */
+   562→export interface SyncUpResponse {
+   563→  /**
+   564→   * Événements acceptés (avec leur ID serveur)
+   565→   */
+   566→  acknowledged: Array<{
+   567→    outboxEventId: string; // ID original côté Desktop
+   568→    serverEventId: string; // ID généré côté serveur
+   569→    entityId: string;      // ID final de l'entité (peut différer si création)
+   570→    serverVersion: number; // Version serveur
+   571→  }>;
+   572→  /**
+   573→   * Événements en conflit
+   574→   */
+   575→  conflicts: Array<{
+   576→    outboxEventId: string;
+   577→    reason: string;
+   578→    serverData?: Record<string, any>; // Données serveur pour résolution
+   579→  }>;
+   580→  /**
+   581→   * Événements rejetés (erreur de validation)
+   582→   */
+   583→  rejected: Array<{
+   584→    outboxEventId: string;
+   585→    reason: string;
+   586→  }>;
+   587→  /**
+   588→   * Timestamp de synchronisation (pour la prochaine sync)
+   589→   */
+   590→  syncTimestamp: string;
+   591→}
+   592→
+   593→/**
+   594→ * Requête de synchronisation descendante (Server → Desktop)
+   595→ */
+   596→export interface SyncDownRequest {
+   597→  /**
+   598→   * ID du client Desktop
+   599→   */
+   600→  clientId: string;
+   601→  /**
+   602→   * Timestamp de la dernière synchronisation réussie
+   603→   * Le serveur renvoie tous les changements depuis ce timestamp
+   604→   */
+   605→  lastSyncTimestamp: string;
+   606→  /**
+   607→   * Liste des entités à synchroniser (optionnel, si vide = toutes)
+   608→   */
+   609→  entityTypes?: SyncEntityType[];
+   610→}
+   611→
+   612→/**
+   613→ * Changement serveur à appliquer côté Desktop
+   614→ */
+   615→export interface ServerChange {
+   616→  id: string; // ID serveur de l'événement
+   617→  entityType: SyncEntityType;
+   618→  entityId: string;
+   619→  operation: SyncOperationType;
+   620→  /**
+   621→   * Données de l'entité (JSON)
+   622→   */
+   623→  payload: Record<string, any>;
+   624→  /**
+   625→   * Version serveur
+   626→   */
+   627→  serverVersion: number;
+   628→  /**
+   629→   * Timestamp de modification côté serveur
+   630→   */
+   631→  modifiedAt: string;
+   632→}
+   633→
+   634→/**
+   635→ * Réponse de synchronisation descendante
+   636→ */
+   637→export interface SyncDownResponse {
+   638→  /**
+   639→   * Changements à appliquer côté Desktop
+   640→   */
+   641→  changes: ServerChange[];
+   642→  /**
+   643→   * Timestamp de synchronisation
+   644→   */
+   645→  syncTimestamp: string;
+   646→  /**
+   647→   * Indique s'il y a plus de changements (pagination)
+   648→   */
+   649→  hasMore: boolean;
+   650→}
+   651→
+   652→/**
+   653→ * Journal de synchronisation (audit trail)
+   654→ */
+   655→export interface SyncLog {
+   656→  id: string;
+   657→  tenantId: string;
+   658→  clientId: string;
+   659→  direction: 'UP' | 'DOWN';
+   660→  /**
+   661→   * Nombre d'événements synchronisés
+   662→   */
+   663→  eventsCount: number;
+   664→  /**
+   665→   * Nombre de conflits détectés
+   666→   */
+   667→  conflictsCount: number;
+   668→  /**
+   669→   * Statut global de la synchronisation
+   670→   */
+   671→  status: 'SUCCESS' | 'PARTIAL' | 'FAILED';
+   672→  /**
+   673→   * Timestamp de début
+   674→   */
+   675→  startedAt: string;
+   676→  /**
+   677→   * Timestamp de fin
+   678→   */
+   679→  completedAt?: string;
+   680→  /**
+   681→   * Durée en millisecondes
+   682→   */
+   683→  duration?: number;
+   684→  /**
+   685→   * Message d'erreur si échec
+   686→   */
+   687→  errorMessage?: string;
+   688→}
+   689→
+   690→/**
+   691→ * Résumé de synchronisation (pour affichage dans l'UI)
+   692→ */
+   693→export interface SyncSummary {
+   694→  /**
+   695→   * Nombre d'événements en attente de synchronisation
+   696→   */
+   697→  pendingEvents: number;
+   698→  /**
+   699→   * Dernière synchronisation réussie
+   700→   */
+   701→  lastSyncAt?: string;
+   702→  /**
+   703→   * Nombre de conflits non résolus
+   704→   */
+   705→  unresolvedConflicts: number;
+   706→  /**
+   707→   * Statut de connectivité
+   708→   */
+   709→  isOnline: boolean;
+   710→  /**
+   711→   * Progression de la synchronisation en cours (0-100)
+   712→   */
+   713→  syncProgress?: number;
+   714→}
+   715→
+   716→/**
+   717→ * Témoignages Clients
+   718→ * 
+   719→ * Système de témoignages avec validation manuelle obligatoire
+   720→ * Contrôle éditorial strict pour maintenir la crédibilité
+   721→ */
+   722→
+   723→/**
+   724→ * Statut d'un témoignage
+   725→ */
+   726→export type TestimonialStatus = 
+   727→  | 'PENDING'    // Soumis, en attente de validation
+   728→  | 'APPROVED'   // Validé et publié
+   729→  | 'REJECTED'   // Rejeté (non publié)
+   730→  | 'ARCHIVED';  // Archivé (anciennement publié)
+   731→
+   732→/**
+   733→ * Témoignage client
+   734→ */
+   735→export interface Testimonial {
+   736→  id: string;
+   737→  tenantId: string; // École qui a soumis le témoignage
+   738→  /**
+   739→   * Informations du témoin
+   740→   */
+   741→  authorName: string;
+   742→  authorFunction: string; // Ex: "Directeur", "Promoteur", "Secrétaire Général"
+   743→  authorPhotoUrl?: string; // URL de la photo (optionnel)
+   744→  schoolName: string; // Nom de l'établissement
+   745→  schoolCity?: string; // Ville de l'établissement
+   746→  
+   747→  /**
+   748→   * Contenu du témoignage
+   749→   */
+   750→  content: string; // Texte du témoignage
+   751→  rating: number; // Note de 1 à 5
+   752→  
+   753→  /**
+   754→   * Validation et publication
+   755→   */
+   756→  status: TestimonialStatus;
+   757→  submittedAt: string; // Date de soumission
+   758→  reviewedAt?: string; // Date de validation/rejet
+   759→  reviewedBy?: string; // ID de l'admin qui a validé/rejeté
+   760→  rejectionReason?: string; // Raison du rejet si applicable
+   761→  
+   762→  /**
+   763→   * Métadonnées
+   764→   */
+   765→  featured: boolean; // Témoignage mis en avant
+   766→  displayOrder: number; // Ordre d'affichage
+   767→  createdAt: string;
+   768→  updatedAt: string;
+   769→}
+   770→
+   771→/**
+   772→ * Requête de soumission d'un témoignage
+   773→ */
+   774→export interface TestimonialSubmission {
+   775→  authorName: string;
+   776→  authorFunction: string;
+   777→  authorPhotoUrl?: string;
+   778→  schoolName: string;
+   779→  schoolCity?: string;
+   780→  content: string;
+   781→  rating: number;
+   782→}
+   783→
+   784→/**
+   785→ * Réponse après soumission
+   786→ */
+   787→export interface TestimonialSubmissionResponse {
+   788→  success: boolean;
+   789→  testimonialId: string;
+   790→  message: string;
+   791→}
+   792→
+   793→/**
+   794→ * Panel Super Admin
+   795→ * 
+   796→ * Système de gestion globale pour le fondateur (YEHI OR Tech)
+   797→ * Accès ultra sécurisé avec journalisation complète
+   798→ */
+   799→
+   800→/**
+   801→ * Vue globale d'un tenant pour le Super Admin
+   802→ */
+   803→export interface AdminTenantView {
+   804→  id: string;
+   805→  name: string;
+   806→  subdomain: string;
+   807→  slug: string;
+   808→  subscriptionStatus: SubscriptionStatus;
+   809→  trialEndsAt?: string;
+   810→  nextPaymentDueAt?: string;
+   811→  lastPaymentAt?: string;
+   812→  createdAt: string;
+   813→  updatedAt: string;
+   814→  // Statistiques
+   815→  studentCount: number;
+   816→  teacherCount: number;
+   817→  monthlyRevenue: number;
+   818→  lastActivityAt?: string;
+   819→  // Groupe scolaire (si applicable)
+   820→  groupId?: string;
+   821→  groupName?: string;
+   822→}
+   823→
+   824→/**
+   825→ * Statistiques globales pour le Super Admin
+   826→ */
+   827→export interface GlobalStats {
+   828→  totalTenants: number;
+   829→  activeSubscriptions: number;
+   830→  trialTenants: number;
+   831→  suspendedTenants: number;
+   832→  totalRevenue: number;
+   833→  monthlyRevenue: number;
+   834→  totalStudents: number;
+   835→  totalTeachers: number;
+   836→  // Répartition par statut
+   837→  tenantsByStatus: Record<SubscriptionStatus, number>;
+   838→  // Activité
+   839→  newTenantsLast30Days: number;
+   840→  churnedTenantsLast30Days: number;
+   841→}
+   842→
+   843→/**
+   844→ * Action d'audit (journalisation)
+   845→ */
+   846→export type AdminActionType = 
+   847→  | 'TENANT_SUSPEND'
+   848→  | 'TENANT_ACTIVATE'
+   849→  | 'TENANT_TERMINATE'
+   850→  | 'SUBSCRIPTION_MODIFY'
+   851→  | 'TESTIMONIAL_APPROVE'
+   852→  | 'TESTIMONIAL_REJECT'
+   853→  | 'CONTENT_UPDATE'
+   854→  | 'USER_ACCESS_REVOKE'
+   855→  | 'SETTINGS_UPDATE';
+   856→
+   857→/**
+   858→ * Journal d'audit (audit trail)
+   859→ */
+   860→export interface AdminAuditLog {
+   861→  id: string;
+   862→  adminId: string; // ID du Super Admin
+   863→  adminEmail: string; // Email du Super Admin (pour traçabilité)
+   864→  action: AdminActionType;
+   865→  targetType: 'TENANT' | 'TESTIMONIAL' | 'CONTENT' | 'USER' | 'SETTINGS';
+   866→  targetId: string; // ID de l'entité concernée
+   867→  description: string; // Description de l'action
+   868→  metadata?: Record<string, any>; // Données supplémentaires (JSON)
+   869→  ipAddress?: string; // Adresse IP de l'admin
+   870→  userAgent?: string; // User agent du navigateur
+   871→  createdAt: string;
+   872→}
+   873→
+   874→/**
+   875→ * Requête de suspension/activation d'un tenant
+   876→ */
+   877→export interface TenantActionRequest {
+   878→  tenantId: string;
+   879→  reason: string; // Raison obligatoire pour traçabilité
+   880→  notifyTenant?: boolean; // Notifier l'établissement par email
+   881→}
+   882→
+   883→/**
+   884→ * Requête de modification d'abonnement
+   885→ */
+   886→export interface SubscriptionModificationRequest {
+   887→  tenantId: string;
+   888→  newStatus: SubscriptionStatus;
+   889→  reason: string;
+   890→  effectiveDate?: string; // Date d'effet (optionnel, défaut: immédiat)
+   891→  notifyTenant?: boolean;
+   892→}
+   893→
+   894→/**
+   895→ * Vue consolidée pour le dashboard Super Admin
+   896→ */
+   897→export interface AdminDashboardData {
+   898→  stats: GlobalStats;
+   899→  recentTenants: AdminTenantView[];
+   900→  recentActivity: AdminAuditLog[];
+   901→  pendingTestimonials: number;
+   902→  systemHealth: {
+   903→    apiStatus: 'healthy' | 'degraded' | 'down';
+   904→    databaseStatus: 'healthy' | 'degraded' | 'down';
+   905→    lastCheckAt: string;
+   906→  };
+   907→}
+   908→
+   909→/**
+   910→ * ORION - Assistant de Direction Institutionnel
+   911→ * 
+   912→ * Architecture en 4 couches :
+   913→ * 1. Couche Données : Vues agrégées et KPI stabilisés uniquement
+   914→ * 2. Couche Logique : Règles explicites, aucune probabilité non contrôlée
+   915→ * 3. Couche Interprétation : Faits, interprétation, vigilance
+   916→ * 4. Couche Présentation : Ton institutionnel, concis, professionnel
+   917→ * 
+   918→ * CONTRAINTES ABSOLUES :
+   919→ * - 100% lecture seule
+   920→ * - Aucune modification de données
+   921→ * - Aucune exécution d'action
+   922→ * - Aucune supposition
+   923→ * - Uniquement données réelles et agrégées
+   924→ */
+   925→
+   926→/**
+   927→ * Niveau d'alerte ORION (hiérarchisé)
+   928→ */
+   929→export type OrionAlertLevel = 
+   930→  | 'INFO'      // Information
+   931→  | 'ATTENTION' // Point d'attention
+   932→  | 'CRITIQUE'; // Situation critique
+   933→
+   934→/**
+   935→ * Alerte ORION
+   936→ */
+   937→export interface OrionAlert {
+   938→  id: string;
+   939→  level: OrionAlertLevel;
+   940→  category: 'FINANCIAL' | 'ACADEMIC' | 'OPERATIONAL' | 'COMPLIANCE';
+   941→  title: string;
+   942→  /**
+   943→   * Faits observés (données réelles uniquement)
+   944→   */
+   945→  facts: string[];
+   946→  /**
+   947→   * Interprétation structurée
+   948→   */
+   949→  interpretation: string;
+   950→  /**
+   951→   * Point de vigilance
+   952→   */
+   953→  vigilance: string;
+   954→  /**
+   955→   * Données sources (références aux KPI)
+   956→   */
+   957→  dataSources: {
+   958→    kpi: string;
+   959→    value: number;
+   960→    period: string;
+   961→    comparison?: {
+   962→      previousValue: number;
+   963→      change: number;
+   964→      changePercent: number;
+   965→    };
+   966→  }[];
+   967→  createdAt: string;
+   968→  acknowledgedAt?: string;
+   969→}
+   970→
+   971→/**
+   972→ * Résumé mensuel ORION
+   973→ */
+   974→export interface OrionMonthlySummary {
+   975→  id: string;
+   976→  tenantId: string;
+   977→  period: string; // Format: "YYYY-MM" (ex: "2025-01")
+   978→  /**
+   979→   * Faits observés (données réelles)
+   980→   */
+   981→  facts: {
+   982→    financial: {
+   983→      totalRevenue: number;
+   984→      recoveryRate: number;
+   985→      pendingPayments: number;
+   986→      pendingAmount: number;
+   987→    };
+   988→    academic: {
+   989→      totalStudents: number;
+   990→      totalClasses: number;
+   991→      averageAttendance: number;
+   992→      examsCompleted: number;
+   993→    };
+   994→    operational: {
+   995→      totalTeachers: number;
+   996→      teacherPresenceRate: number;
+   997→      activeModules: number;
+   998→    };
+   999→  };
+  1000→  /**
+  1001→   * Interprétation structurée
+  1002→   */
+  1003→  interpretation: {
+  1004→    overview: string; // Vue d'ensemble factuelle
+  1005→    trends: Array<{
+  1006→      metric: string;
+  1007→      direction: 'UP' | 'DOWN' | 'STABLE';
+  1008→      magnitude: number; // Pourcentage de changement
+  1009→      description: string; // Description factuelle
+  1010→    }>;
+  1011→    highlights: string[]; // Points clés (3-5 maximum)
+  1012→  };
+  1013→  /**
+  1014→   * Points de vigilance
+  1015→   */
+  1016→  vigilance: OrionAlert[];
+  1017→  /**
+  1018→   * Données KPI sources
+  1019→   */
+  1020→  kpiData: DirectionKpiSummary;
+  1021→  generatedAt: string;
+  1022→}
+  1023→
+  1024→/**
+  1025→ * Requête ORION (question en langage naturel)
+  1026→ */
+  1027→export interface OrionQuery {
+  1028→  id: string;
+  1029→  tenantId: string;
+  1030→  userId: string;
+  1031→  query: string;
+  1032→  /**
+  1033→   * Contexte métier fourni à ORION
+  1034→   */
+  1035→  context: {
+  1036→    period: string;
+  1037→    focus?: string; // ex: "finance", "scolarité"
+  1038→  };
+  1039→  /**
+  1040→   * Réponse structurée
+  1041→   */
+  1042→  response: {
+  1043→    text: string;
+  1044→    facts: string[];
+  1045→    dataPoints?: Array<{ label: string; value: any; unit?: string }>;
+  1046→    suggestedQueries?: string[];
+  1047→  };
+  1048→  createdAt: string;
+  1049→}
+  1050→
+  1051→/**
+  1052→ * ORION - Règles et Moteur
+  1053→ */
+  1054→export type RuleOperator = '<' | '<=' | '>' | '>=' | '==' | '!=';
+  1055→
+  1056→export interface OrionRule {
+  1057→  id: string;
+  1058→  enabled: boolean;
+  1059→  category: 'FINANCE' | 'RH' | 'PEDAGOGY' | 'SYSTEM';
+  1060→  severity: 'CRITICAL' | 'WARNING' | 'ALERT' | 'INFO';
+  1061→  condition: {
+  1062→    metric: string;
+  1063→    operator: RuleOperator;
+  1064→    value: number;
+  1065→  };
+  1066→  message: string;
+  1067→  description?: string;
+  1068→}
+  1069→
+  1070→export interface OrionRulesVersion {
+  1071→  version: string;
+  1072→  rules: OrionRule[];
+  1073→}
+  1074→
+  1075→/**
+  1076→ * ORION - Réponse et Historique
+  1077→ */
+  1078→export interface OrionResponse {
+  1079→  answer: {
+  1080→    facts: string[];
+  1081→    interpretation: string;
+  1082→    vigilance: string | null;
+  1083→  };
+  1084→  confidence: number;
+  1085→  dataSufficient: boolean;
+  1086→  dataSources: Array<{
+  1087→    kpi: string;
+  1088→    value: number;
+  1089→    period: string;
+  1090→    source: 'DirectionKpiSummary' | 'Custom';
+  1091→  }>;
+  1092→}
+  1093→
+  1094→export interface OrionQueryRequest {
+  1095→  query: string;
+  1096→  context?: {
+  1097→    period?: string;
+  1098→    focus?: 'finance' | 'scolarité' | 'rh' | 'global';
+  1099→  };
+  1100→}
+  1101→
+  1102→export interface OrionAnalysisHistory {
+  1103→  id: string;
+  1104→  tenantId: string;
+  1105→  userId: string;
+  1106→  type: 'QUERY' | 'MONTHLY_SUMMARY' | 'ALERT';
+  1107→  content: {
+  1108→    title: string;
+  1109→    facts: string[];
+  1110→    interpretation: string;
+  1111→    vigilance?: string;
+  1112→  };
+  1113→  dataSources: Array<{
+  1114→    kpi: string;
+  1115→    value: number;
+  1116→    period: string;
+  1117→    source: 'DirectionKpiSummary' | 'Custom';
+  1118→  }>;
+  1119→  createdAt: string;
+  1120→}
+  1121→
+  1122→export interface OrionConfig {
+  1123→  enabled: boolean;
+  1124→  llmProvider: 'openai' | 'anthropic' | 'local';
+  1125→  llmModel: string;
+  1126→  temperature: number;
+  1127→  maxTokens: number;
+  1128→  systemPrompt: string;
+  1129→  lastUpdated: string;
+  1130→}
+  1131→
+  1132→/**
+  1133→ * ATLAS - Intelligence de Soutien Pédagogique
+  1134→ * 
+  1135→ * Spécialisé dans :
+  1136→ * - Analyse des plans de cours
+  1137→ * - Recommandations pédagogiques
+  1138→ * - Support aux enseignants
+  1139→ */
+  1140→
+  1141→export interface AtlasMessage {
+  1142→  id: string;
+  1143→  tenantId: string;
+  1144→  userId: string;
+  1145→  role: 'user' | 'assistant';
+  1146→  content: string;
+  1147→  /**
+  1148→   * Références pédagogiques (livres, chapitres, etc.)
+  1149→   */
+  1150→  references?: Array<{
+  1151→    type: 'MATERIAL' | 'CURRICULUM' | 'EXTERNAL';
+  1152→    title: string;
+  1153→    url?: string;
+  1154→  }>;
+  1155→  createdAt: string;
+  1156→}
+  1157→
+  1158→/**
+  1159→ * Structure Académique & Cycles
+  1160→ */
+  1161→
+  1162→export interface SchoolCycle {
+  1163→  id: string;
+  1164→  name: string;
+  1165→  code: string;
+  1166→  levelId: string;
+  1167→  order: number;
+  1168→}
+  1169→
+  1170→export interface SchoolLevel {
+  1171→  id: string;
+  1172→  name: string;
+  1173→  code: string;
+  1174→  cycles: SchoolCycle[];
+  1175→}
+  1176→
+  1177→export interface AcademicYear {
+  1178→  id: string;
+  1179→  label: string;
+  1180→  startDate: string;
+  1181→  endDate: string;
+  1182→  status: 'ACTIVE' | 'ARCHIVED' | 'UPCOMING';
+  1183→}
+  1184→
+  1185→/**
+  1186→ * Matières & Programmes
+  1187→ */
+  1188→
+  1189→export interface Subject {
+  1190→  id: string;
+  1191→  name: string;
+  1192→  code: string;
+  1193→  description?: string;
+  1194→  coefficient?: number;
+  1195→  category?: 'GENERAL' | 'TECHNICAL' | 'LITERARY' | 'SCIENTIFIC';
+  1196→}
+  1197→
+  1198→export interface PedagogicalMaterial {
+  1199→  id: string;
+  1200→  name: string;
+  1201→  code: string;
+  1202→  category: 'BOOK' | 'KIT' | 'EQUIPMENT' | 'TECH' | 'OTHER';
+  1203→  description?: string;
+  1204→  isActive: boolean;
+  1205→  subjectId?: string;
+  1206→  subject?: Subject;
+  1207→}
+  1208→
+  1209→/**
+  1210→ * Module Pédagogique - Événements & Planning
+  1211→ */
+  1212→
+  1213→export interface LessonPlan {
+  1214→  id: string;
+  1215→  teacherId: string;
+  1216→  subjectId: string;
+  1217→  classId: string;
+  1218→  academicYearId: string;
+  1219→  title: string;
+  1220→  objectives: string[];
+  1221→  status: 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED';
+  1222→  submittedAt?: string;
+  1223→  approvedAt?: string;
+  1224→}
+  1225→
+  1226→export interface ClassJournalEntry {
+  1227→  id: string;
+  1228→  classId: string;
+  1229→  subjectId: string;
+  1230→  teacherId: string;
+  1231→  date: string;
+  1232→  startTime: string;
+  1233→  endTime: string;
+  1234→  topic: string;
+  1235→  content: string;
+  1236→  observations?: string;
+  1237→}
+  1238→
+  1239→/**
+  1240→ * Notifications & Alertes Système
+  1241→ */
+  1242→
+  1243→export interface AppNotification {
+  1244→  id: string;
+  1245→  userId: string;
+  1246→  title: string;
+  1247→  message: string;
+  1248→  type: 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR' | 'SYNC';
+  1249→  read: boolean;
+  1250→  createdAt: string;
+  1251→  link?: string;
+  1252→}
+  1253→

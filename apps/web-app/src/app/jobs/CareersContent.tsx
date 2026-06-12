@@ -35,7 +35,6 @@ import {
   Bookmark,
 } from 'lucide-react';
 import PremiumHeader from '@/components/layout/PremiumHeader';
-import InstitutionalFooter from '@/components/public/InstitutionalFooter';
 import { JobCardSkeleton } from '@/components/loading/Skeleton';
 import { JobCardSkeletonMobile } from '@/components/loading/SkeletonMobile';
 
@@ -1299,10 +1298,10 @@ export function CareersContent({
         )}
       </main>
 
-      {/* ═══════════════════════════════════════════════════════
-          FOOTER — Academia Helm branded, using InstitutionalFooter
-          ═══════════════════════════════════════════════════════ */}
-      <InstitutionalFooter />
+      {/* Simple copyright footer */}
+      <footer className="bg-[#0b2f73] text-white/60 py-6 border-t border-[#1d4fa5]/30 text-center text-xs">
+        <p>© {new Date().getFullYear()} Academia Helm. Tous droits réservés.</p>
+      </footer>
     </div>
   );
 }

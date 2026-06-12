@@ -203,6 +203,8 @@ export function CareersContent({
   const scrollAnimRef = useRef<number | null>(null);
   const isHoveredRef = useRef(false);
   const boundaryPauseRef = useRef(false);
+  // Ref for scrolling to job detail on mobile
+  const jobDetailRef = useRef<HTMLDivElement>(null);
 
   // Smooth bottom-to-top auto-scroll animation
   useEffect(() => {
@@ -245,6 +247,17 @@ export function CareersContent({
       if (boundaryTimeout) clearTimeout(boundaryTimeout);
     };
   }, [jobs.length]);
+
+  // On mobile, scroll to job detail panel when a job is selected
+  useEffect(() => {
+    if (!selectedJob || !jobDetailRef.current) return;
+    // Only auto-scroll on small screens (mobile)
+    if (window.innerWidth < 1024) {
+      setTimeout(() => {
+        jobDetailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 300);
+    }
+  }, [selectedJob?.id]);
 
   // When forcedJobSlug is provided, directly deep-link to the specific job via API.
   const [deepLinkResolved, setDeepLinkResolved] = useState(false);
@@ -652,7 +665,7 @@ export function CareersContent({
       {/* ═══════════════════════════════════════════════════════
           HERO — Premium navy gradient with golden accents
           ═══════════════════════════════════════════════════════ */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-[#0b2f73] via-[#103e91] to-[#1d4fa5] pt-28 pb-16 md:pb-20">
+      <section className="relative overflow-hidden bg-gradient-to-br from-[#0b2f73] via-[#103e91] to-[#1d4fa5] pt-24 pb-12 md:pt-28 md:pb-20">
         {/* Ambient light particles */}
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute -top-20 -left-10 w-72 h-72 bg-[#f5b335]/8 rounded-full blur-[100px]" />
@@ -681,7 +694,7 @@ export function CareersContent({
 
           {/* Stats strip */}
           {schools.length > 0 && (
-            <div className="mt-8 flex flex-wrap justify-center gap-6 md:gap-10">
+            <div className="mt-6 md:mt-8 flex flex-wrap justify-center gap-4 md:gap-10">
               <div className="text-center">
                 <p className="text-2xl md:text-3xl font-extrabold text-white">{schools.length}</p>
                 <p className="text-[10px] md:text-xs text-blue-200/60 font-medium uppercase tracking-wider">Établissements</p>
@@ -712,7 +725,7 @@ export function CareersContent({
         </div>
       </section>
 
-      <main className="flex-grow pb-20 px-4 md:px-8 max-w-6xl mx-auto w-full">
+      <main className="flex-grow pb-12 md:pb-20 px-4 md:px-8 max-w-6xl mx-auto w-full">
 
         {loading && (
           <div className="py-12">
@@ -779,12 +792,13 @@ export function CareersContent({
                 </div>
 
                 {/* Dynamically centered school cards grid */}
-                <div className="flex flex-wrap justify-center gap-6">
+                <div className="flex flex-wrap justify-center gap-4 md:gap-6">
                   {filteredSchools.map((school) => (
                     <motion.div
                       key={school.id}
                       onClick={() => handleSelectSchool(school)}
                       whileHover={{ y: -6, boxShadow: '0 20px 40px rgba(11,47,115,0.12)' }}
+                      whileTap={{ scale: 0.98 }}
                       transition={{ type: 'spring', stiffness: 260, damping: 20 }}
                       className="group cursor-pointer bg-white border border-slate-100 rounded-2xl shadow-md shadow-slate-100/60 hover:border-[#f5b335]/30 transition-colors flex flex-col relative overflow-hidden w-full sm:w-[calc(50%-12px)] lg:w-[calc(33.333%-16px)]"
                     >
@@ -930,8 +944,8 @@ export function CareersContent({
                 </button>
 
                 {/* School header card with full contact info */}
-                <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-                  <div className="flex items-start gap-4">
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 md:p-6 shadow-sm">
+                  <div className="flex items-start gap-3 md:gap-4">
                     {selectedSchool.logoUrl ? (
                       <Image
                         src={selectedSchool.logoUrl}
@@ -953,7 +967,7 @@ export function CareersContent({
                       {getSchoolSlogan(selectedSchool) && (
                         <p className="text-[11px] text-slate-400 italic mt-0.5">{getSchoolSlogan(selectedSchool)}</p>
                       )}
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-2 text-xs text-slate-500">
+                      <div className="flex flex-wrap items-center gap-x-3 md:gap-x-4 gap-y-1.5 mt-2 text-xs text-slate-500">
                         {buildSmartAddress(selectedSchool) && (
                           <span className="flex items-center gap-1">
                             <MapPin className="h-3 w-3" />
@@ -1004,7 +1018,7 @@ export function CareersContent({
                       <p className="mt-1 text-xs text-slate-400">Les nouvelles opportunités apparaîtront ici dès leur publication.</p>
                     </div>
                   ) : (
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
                     {/* Left: Job list — Premium Academia Helm design */}
                     <div className="lg:col-span-1">
                       <div className="flex items-center justify-between mb-1">
@@ -1012,13 +1026,15 @@ export function CareersContent({
                           <Briefcase className="h-3.5 w-3.5 text-[#f5b335]" />
                           Postes ouverts
                         </h3>
-                        <span className="text-[10px] font-bold text-white bg-gradient-to-r from-[#0b2f73] to-[#1d4fa5] rounded-full px-3 py-0.5 shadow-sm shadow-[#0b2f73]/20">{jobs.length}</span>
+                        <span className="text-[10px] font-bold text-white bg-gradient-to-r from-[#0b2f73] to-[#1d4fa5] rounded-full px-3 py-1 shadow-sm shadow-[#0b2f73]/20">{jobs.length}</span>
                       </div>
                       <div
                         ref={jobListRef}
-                        className={`space-y-3 overflow-y-auto ${jobs.length > 5 ? 'max-h-[420px] scroll-smooth' : ''} ${jobs.length > 5 ? 'scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent' : ''}`}
+                        className={`space-y-3 overflow-y-auto ${jobs.length > 5 ? 'max-h-[340px] md:max-h-[420px] scroll-smooth' : ''} ${jobs.length > 5 ? 'scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent' : ''}`}
                         onMouseEnter={() => { if (jobs.length > 5) isHoveredRef.current = true; }}
                         onMouseLeave={() => { if (jobs.length > 5) isHoveredRef.current = false; }}
+                        onTouchStart={() => { if (jobs.length > 5) isHoveredRef.current = true; }}
+                        onTouchEnd={() => { setTimeout(() => { isHoveredRef.current = false; }, 2000); }}
                         style={jobs.length > 5 ? {
                           scrollbarWidth: 'thin',
                           scrollbarColor: '#cbd5e1 transparent',
@@ -1036,6 +1052,7 @@ export function CareersContent({
                             }
                           }}
                           whileHover={{ x: 4 }}
+                          whileTap={{ scale: 0.98 }}
                           transition={{ type: 'spring', stiffness: 300, damping: 25 }}
                           className={`group relative p-4 rounded-xl border cursor-pointer transition-all overflow-hidden ${
                             selectedJob?.id === job.id
@@ -1060,7 +1077,7 @@ export function CareersContent({
 
                           {/* Department badge */}
                           {job.dept && (
-                            <span className={`inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                            <span className={`inline-flex items-center gap-1 mt-1.5 px-2 py-1 rounded-md text-[10px] font-bold ${
                               selectedJob?.id === job.id
                                 ? 'bg-[#0b2f73]/10 text-[#0b2f73]'
                                 : 'bg-[#1d4fa5]/8 text-[#1d4fa5]/80 group-hover:bg-[#0b2f73]/8 group-hover:text-[#0b2f73]'
@@ -1072,7 +1089,7 @@ export function CareersContent({
                           {/* Contract type + Location */}
                           <div className="flex flex-wrap items-center gap-2 mt-2.5">
                             {job.contractType && (
-                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold ${
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${
                                 selectedJob?.id === job.id
                                   ? 'bg-[#f5b335]/15 text-[#0b2f73] ring-1 ring-[#f5b335]/20'
                                   : 'bg-[#0b2f73]/6 text-[#0b2f73]/70 group-hover:bg-[#0b2f73]/10'
@@ -1109,7 +1126,7 @@ export function CareersContent({
                     </div>
 
                     {/* Right: Job detail OR recruitment portrait placeholder */}
-                    <div className="lg:col-span-2">
+                    <div className="lg:col-span-2" ref={jobDetailRef}>
                       {selectedJob ? (
                         <motion.div
                           key={selectedJob.id}
@@ -1118,19 +1135,19 @@ export function CareersContent({
                           className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden"
                         >
                           {/* Job detail header */}
-                          <div className="p-6 border-b border-slate-100 bg-gradient-to-r from-[#0b2f73]/[0.03] to-white">
-                            <h2 className="text-xl font-extrabold text-[#0b2f73]">{selectedJob.title}</h2>
-                            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-2 text-xs text-slate-500">
+                          <div className="p-4 md:p-6 border-b border-slate-100 bg-gradient-to-r from-[#0b2f73]/[0.03] to-white">
+                            <h2 className="text-lg md:text-xl font-extrabold text-[#0b2f73]">{selectedJob.title}</h2>
+                            <div className="flex flex-wrap items-center gap-x-3 md:gap-x-4 gap-y-2 mt-2 text-xs text-slate-500">
                               <span className="flex items-center gap-1"><Building2 className="h-3.5 w-3.5" />{selectedJob.dept}</span>
                               {selectedJob.loc && <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{selectedJob.loc}</span>}
-                              {selectedJob.contractType && <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#0b2f73]/5 text-[#0b2f73] font-semibold">{selectedJob.contractType}</span>}
+                              {selectedJob.contractType && <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#0b2f73]/5 text-[#0b2f73] font-semibold">{selectedJob.contractType}</span>}
                               {selectedJob.salary && <span className="flex items-center gap-1 font-bold text-[#0b2f73]"><DollarSign className="h-3.5 w-3.5 text-[#f5b335]" />{formatSalary(selectedJob.salary)}</span>}
                               {selectedJob.academicLevel && <span className="flex items-center gap-1"><GraduationCap className="h-3.5 w-3.5" />{selectedJob.academicLevel}</span>}
                               {selectedJob.experience && <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{selectedJob.experience}</span>}
                             </div>
                           </div>
 
-                          <div className="p-6 space-y-5">
+                          <div className="p-4 md:p-6 space-y-5">
                             {selectedJob.description && (
                               <div>
                                 <h4 className="text-xs font-bold text-slate-800 mb-2 uppercase tracking-wider">Description</h4>
@@ -1185,7 +1202,7 @@ export function CareersContent({
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
                           transition={{ duration: 0.4 }}
-                          className="flex items-center justify-center min-h-[400px]"
+                          className="flex items-center justify-center min-h-[280px] md:min-h-[400px]"
                         >
                           <div className="relative w-full max-w-md mx-auto">
                             <Image
@@ -1212,8 +1229,8 @@ export function CareersContent({
                 ) : (
                   /* ─── Application Form ─── */
                   <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-                    <div className="p-6 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
-                      <h3 className="text-base font-extrabold text-slate-900">Candidature — {selectedJob?.title}</h3>
+                    <div className="p-4 md:p-6 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
+                      <h3 className="text-sm md:text-base font-extrabold text-slate-900">Candidature — {selectedJob?.title}</h3>
                       <p className="text-[11px] text-slate-500 mt-1">Étape {currentStep} sur 5</p>
                       {/* Progress bar */}
                       <div className="mt-3 h-1.5 bg-slate-100 rounded-full overflow-hidden">
@@ -1221,7 +1238,7 @@ export function CareersContent({
                       </div>
                     </div>
 
-                    <div className="p-6 space-y-5">
+                    <div className="p-4 md:p-6 space-y-5">
                       {/* Submission result */}
                       {submitResult && (
                         <div className={`p-4 rounded-xl flex gap-3 text-sm ${submitResult.success ? 'bg-emerald-50 text-emerald-800 border border-emerald-100' : 'bg-red-50 text-red-800 border border-red-100'}`}>
@@ -1237,42 +1254,42 @@ export function CareersContent({
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                               <label className="block text-[10px] font-bold text-slate-500 mb-1">Prénom *</label>
-                              <input type="text" value={firstName} onChange={e => setFirstName(e.target.value)} required className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="Prénom" />
+                              <input type="text" value={firstName} onChange={e => setFirstName(e.target.value)} required className="w-full rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs" placeholder="Prénom" />
                             </div>
                             <div>
                               <label className="block text-[10px] font-bold text-slate-500 mb-1">Nom *</label>
-                              <input type="text" value={lastName} onChange={e => setLastName(e.target.value)} required className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="Nom de famille" />
+                              <input type="text" value={lastName} onChange={e => setLastName(e.target.value)} required className="w-full rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs" placeholder="Nom de famille" />
                             </div>
                             <div>
                               <label className="block text-[10px] font-bold text-slate-500 mb-1">Email *</label>
-                              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="votre@email.com" />
+                              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required className="w-full rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs" placeholder="votre@email.com" />
                             </div>
                             <div>
                               <label className="block text-[10px] font-bold text-slate-500 mb-1">Téléphone</label>
-                              <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="+229 90 00 00 00" />
+                              <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs" placeholder="+229 90 00 00 00" />
                             </div>
                             <div>
                               <label className="block text-[10px] font-bold text-slate-500 mb-1">Adresse</label>
-                              <input type="text" value={address} onChange={e => setAddress(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="Adresse" />
+                              <input type="text" value={address} onChange={e => setAddress(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs" placeholder="Adresse" />
                             </div>
                             <div>
                               <label className="block text-[10px] font-bold text-slate-500 mb-1">Pays</label>
-                              <input type="text" value={country} onChange={e => setCountry(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+                              <input type="text" value={country} onChange={e => setCountry(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs" />
                             </div>
                             <div>
                               <label className="block text-[10px] font-bold text-slate-500 mb-1">Ville</label>
-                              <input type="text" value={city} onChange={e => setCity(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="Ville" />
+                              <input type="text" value={city} onChange={e => setCity(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs" placeholder="Ville" />
                             </div>
                             <div>
                               <label className="block text-[10px] font-bold text-slate-500 mb-1">Genre</label>
-                              <select value={gender} onChange={e => setGender(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs">
+                              <select value={gender} onChange={e => setGender(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs">
                                 <option value="M">Masculin</option>
                                 <option value="F">Féminin</option>
                               </select>
                             </div>
                             <div className="md:col-span-2">
                               <label className="block text-[10px] font-bold text-slate-500 mb-1">LinkedIn</label>
-                              <input type="url" value={linkedinUrl} onChange={e => setLinkedinUrl(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder="https://linkedin.com/in/votrenom" />
+                              <input type="url" value={linkedinUrl} onChange={e => setLinkedinUrl(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs" placeholder="https://linkedin.com/in/votrenom" />
                             </div>
                           </div>
                         </motion.div>
@@ -1292,19 +1309,19 @@ export function CareersContent({
                                     <p className="text-slate-500">{exp.years}</p>
                                     {exp.description && <p className="text-slate-500 mt-1">{exp.description}</p>}
                                   </div>
-                                  <button type="button" onClick={() => removeExperience(i)} className="text-slate-400 hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>
+                                  <button type="button" onClick={() => removeExperience(i)} className="p-1.5 -m-1.5 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
                                 </div>
                               ))}
                             </div>
                           )}
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 border border-dashed border-slate-200 rounded-xl">
-                            <input type="text" value={expTitle} onChange={e => setExpTitle(e.target.value)} placeholder="Poste occupé" className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
-                            <input type="text" value={expCompany} onChange={e => setExpCompany(e.target.value)} placeholder="Établissement / Entreprise" className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
-                            <input type="text" value={expYears} onChange={e => setExpYears(e.target.value)} placeholder="Période (ex: 2020-2023)" className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+                            <input type="text" value={expTitle} onChange={e => setExpTitle(e.target.value)} placeholder="Poste occupé" className="rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs" />
+                            <input type="text" value={expCompany} onChange={e => setExpCompany(e.target.value)} placeholder="Établissement / Entreprise" className="rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs" />
+                            <input type="text" value={expYears} onChange={e => setExpYears(e.target.value)} placeholder="Période (ex: 2020-2023)" className="rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs" />
                             <div className="flex gap-2">
-                              <input type="text" value={expDesc} onChange={e => setExpDesc(e.target.value)} placeholder="Description (optionnel)" className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs" />
-                              <button type="button" onClick={addExperience} className="px-3 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 transition"><Plus className="h-4 w-4 text-slate-600" /></button>
+                              <input type="text" value={expDesc} onChange={e => setExpDesc(e.target.value)} placeholder="Description (optionnel)" className="flex-1 rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs" />
+                              <button type="button" onClick={addExperience} className="px-3 py-2.5 md:py-2 bg-slate-100 rounded-lg hover:bg-slate-200 transition"><Plus className="h-4 w-4 text-slate-600" /></button>
                             </div>
                           </div>
                         </motion.div>
@@ -1323,18 +1340,18 @@ export function CareersContent({
                                     <p className="font-semibold text-slate-800">{edu.degree} — {edu.school}</p>
                                     <p className="text-slate-500">{edu.year}</p>
                                   </div>
-                                  <button type="button" onClick={() => removeEducation(i)} className="text-slate-400 hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>
+                                  <button type="button" onClick={() => removeEducation(i)} className="p-1.5 -m-1.5 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
                                 </div>
                               ))}
                             </div>
                           )}
 
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 border border-dashed border-slate-200 rounded-xl">
-                            <input type="text" value={eduDegree} onChange={e => setEduDegree(e.target.value)} placeholder="Diplôme" className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
-                            <input type="text" value={eduSchool} onChange={e => setEduSchool(e.target.value)} placeholder="Établissement" className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+                            <input type="text" value={eduDegree} onChange={e => setEduDegree(e.target.value)} placeholder="Diplôme" className="rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs" />
+                            <input type="text" value={eduSchool} onChange={e => setEduSchool(e.target.value)} placeholder="Établissement" className="rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs" />
                             <div className="flex gap-2">
-                              <input type="text" value={eduYear} onChange={e => setEduYear(e.target.value)} placeholder="Année" className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs" />
-                              <button type="button" onClick={addEducation} className="px-3 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 transition"><Plus className="h-4 w-4 text-slate-600" /></button>
+                              <input type="text" value={eduYear} onChange={e => setEduYear(e.target.value)} placeholder="Année" className="flex-1 rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs" />
+                              <button type="button" onClick={addEducation} className="px-3 py-2.5 md:py-2 bg-slate-100 rounded-lg hover:bg-slate-200 transition"><Plus className="h-4 w-4 text-slate-600" /></button>
                             </div>
                           </div>
                         </motion.div>
@@ -1353,13 +1370,13 @@ export function CareersContent({
                               onChange={(e) => setSkillInput(e.target.value)}
                               onKeyDown={addSkill}
                               placeholder="Ajouter une compétence... (ex: Didactique, Python)"
-                              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs"
+                              className="w-full rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs"
                             />
                             <div className="flex flex-wrap gap-1.5 mt-2">
                               {skills.map(s => (
                                 <span key={s} className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 rounded-full text-slate-700 text-[10px] font-semibold">
                                   {s}
-                                  <button type="button" onClick={() => removeSkill(s)} className="text-slate-400 hover:text-slate-600">✕</button>
+                                  <button type="button" onClick={() => removeSkill(s)} className="p-0.5 -m-0.5 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-200 transition-colors">✕</button>
                                 </span>
                               ))}
                             </div>
@@ -1371,7 +1388,7 @@ export function CareersContent({
                               value={pitch}
                               onChange={(e) => setPitch(e.target.value)}
                               placeholder="Présentez brièvement vos atouts pour ce poste scolaire..."
-                              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-28"
+                              className="w-full rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs h-28"
                             />
                           </div>
                         </motion.div>
@@ -1388,7 +1405,7 @@ export function CareersContent({
                               <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setCvFile(e.target.files?.[0] || null)} required className="absolute inset-0 opacity-0 cursor-pointer" />
                               <Upload className="h-6 w-6 text-[#0b2f73] mb-2" />
                               <span className="text-[10px] font-bold text-slate-700">Curriculum Vitae *</span>
-                              <span className="text-[9px] text-slate-400 mt-1">{cvFile ? cvFile.name : 'PDF, DOCX'}</span>
+                              <span className="text-[10px] text-slate-400 mt-1">{cvFile ? cvFile.name : 'PDF, DOCX'}</span>
                             </div>
 
                             {/* Letter */}
@@ -1396,7 +1413,7 @@ export function CareersContent({
                               <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setCoverFile(e.target.files?.[0] || null)} className="absolute inset-0 opacity-0 cursor-pointer" />
                               <Upload className="h-6 w-6 text-[#0b2f73] mb-2" />
                               <span className="text-[10px] font-bold text-slate-700">Lettre de motivation</span>
-                              <span className="text-[9px] text-slate-400 mt-1">{coverFile ? coverFile.name : 'PDF, DOCX'}</span>
+                              <span className="text-[10px] text-slate-400 mt-1">{coverFile ? coverFile.name : 'PDF, DOCX'}</span>
                             </div>
                           </div>
 
@@ -1405,7 +1422,7 @@ export function CareersContent({
                             <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setRecoFile(e.target.files?.[0] || null)} className="absolute inset-0 opacity-0 cursor-pointer" />
                             <Upload className="h-6 w-6 text-[#0b2f73] mb-2" />
                             <span className="text-[10px] font-bold text-slate-700">Lettre de recommandation académique</span>
-                            <span className="text-[9px] text-slate-400 mt-1">{recoFile ? recoFile.name : 'PDF, DOCX'}</span>
+                            <span className="text-[10px] text-slate-400 mt-1">{recoFile ? recoFile.name : 'PDF, DOCX'}</span>
                           </div>
 
                           {/* AI Processing notice */}
@@ -1422,7 +1439,7 @@ export function CareersContent({
                           type="button"
                           disabled={currentStep === 1 || submitting}
                           onClick={() => setCurrentStep(prev => prev - 1)}
-                          className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs hover:bg-slate-50 disabled:opacity-40"
+                          className="px-4 py-2.5 md:py-2 border border-slate-200 text-slate-600 rounded-lg text-xs hover:bg-slate-50 disabled:opacity-40"
                         >
                           Précédent
                         </button>
@@ -1431,7 +1448,7 @@ export function CareersContent({
                           <button
                             type="button"
                             onClick={() => setCurrentStep(prev => prev + 1)}
-                            className="px-5 py-2 text-white rounded-lg text-xs font-bold transition hover:opacity-90"
+                            className="px-5 py-2.5 md:py-2 text-white rounded-lg text-xs font-bold transition hover:opacity-90"
                             style={{ backgroundColor: PRIMARY }}
                           >
                             Continuer
@@ -1441,7 +1458,7 @@ export function CareersContent({
                             type="button"
                             onClick={handleSubmitApplication}
                             disabled={submitting}
-                            className="px-5 py-2 text-white rounded-lg text-xs font-bold transition hover:opacity-90 flex items-center gap-1 bg-blue-600"
+                            className="px-5 py-2.5 md:py-2 text-white rounded-lg text-xs font-bold transition hover:opacity-90 flex items-center gap-1 bg-blue-600"
                           >
                             {submitting ? 'Transmission...' : 'Soumettre le dossier'}
                             <Send className="h-3 w-3" />

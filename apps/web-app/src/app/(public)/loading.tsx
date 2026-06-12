@@ -1,16 +1,5 @@
-/**
- * Loading Component - Public Pages
- *
- * Affiché pendant le chargement des pages publiques.
- * Durée minimale de 10 secondes pour une expérience visuelle professionnelle.
- */
+import AcademiaLoader from "@/components/ui/AcademiaLoader";
 
-'use client';
-
-import { MinDurationScreen } from '@/components/loading/MinDurationScreen';
-
-export default function PublicLoading() {
-  return (
-    <MinDurationScreen ready={false} />
-  );
+export default function PageLoading() {
+  return <AcademiaLoader inline />;
 }

@@ -1,10 +1,14 @@
 /**
- * MinDurationScreen Component — v2 Modern
+ * MinDurationScreen Component — v3 Real Progress
  *
  * Garantit que l'écran de chargement s'affiche pendant une durée minimale
- * avant de révéler le contenu. Design moderne, captivant et professionnel.
+ * avant de révéler le contenu. PLUS DE PROGRESSION FICTIVE.
  *
- * DURÉE PAR DÉFAUT : 10 secondes (réduit de 15s)
+ * CHANGEMENTS MAJEURS :
+ * - La progression vient UNIQUEMENT du parent via la prop `progress`
+ * - Plus de timer interne qui simule un pourcentage
+ * - Le composant ne fait que : attendre `ready` + durée minimale, puis révéler
+ * - L'affichage de la barre de progression est optionnel et contrôlé par le parent
  *
  * MOBILE : Sur mobile, utilise LoadingScreenMobile (CSS-only, léger)
  * au lieu de LoadingScreen (framer-motion, ~30KB) pour de meilleures performances.
@@ -14,11 +18,11 @@
 
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { LoadingScreen } from './LoadingScreen';
 import { LoadingScreenMobile } from './LoadingScreenMobile';
 
-/** Durée minimale par défaut (ms) — réduit à 10s */
+/** Durée minimale par défaut (ms) */
 const DEFAULT_MIN_DURATION_MS = 10000;
 
 export interface MinDurationScreenProps {
@@ -32,36 +36,37 @@ export interface MinDurationScreenProps {
   message?: { title: string; subtitle?: string };
   /** Variante visuelle */
   variant?: 'default' | 'minimal' | 'orion';
-  /** Force l'affichage du loading (même si ready=true et durée écoulée) */
+  /** Force l'affichage du loading */
   forceLoading?: boolean;
+  /** Progression réelle 0-100 (provenant du parent, PAS fictive) */
+  progress?: number;
+  /** Étape actuelle (pour affichage contextuel) */
+  step?: string;
 }
 
 /**
  * Hook léger pour détecter mobile côté client.
- * Retourne false pendant SSR pour éviter les mismatches.
  */
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
-
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
     check();
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
   }, []);
-
   return isMobile;
 }
 
 /**
- * Composant qui garantit une durée minimale d'affichage du loading screen.
+ * MinDurationScreen — Progression réelle uniquement
  *
  * Le contenu n'est révélé que lorsque DEUX conditions sont remplies :
  * 1. `ready` est true (les données sont chargées)
  * 2. La durée minimale s'est écoulée
  *
- * Sur mobile, utilise LoadingScreenMobile (CSS-only) au lieu de LoadingScreen
- * (framer-motion) pour de meilleures performances sur appareils bas de gamme.
+ * La barre de progression affiche la valeur `progress` fournie par le parent.
+ * Si aucun `progress` n'est fourni, aucune barre ne s'affiche (mode minimal).
  */
 export function MinDurationScreen({
   ready,
@@ -70,43 +75,26 @@ export function MinDurationScreen({
   message,
   variant = 'default',
   forceLoading = false,
+  progress,
+  step,
 }: MinDurationScreenProps) {
   const [minDurationElapsed, setMinDurationElapsed] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const startTimeRef = useRef(Date.now());
   const isMobile = useIsMobile();
 
+  // Timer pour la durée minimale (seulement pour éviter les flash)
+  // Ne simule AUCUNE progression
   useEffect(() => {
-    startTimeRef.current = Date.now();
-
-    // Progression de 0% à 85% pendant la durée minimale
-    const totalSteps = 85;
-    const stepDuration = minDuration / totalSteps;
-    let currentStep = 0;
-
-    const interval = setInterval(() => {
-      currentStep++;
-      const elapsed = Date.now() - startTimeRef.current;
-
-      if (elapsed >= minDuration) {
-        setProgress(85);
-        setMinDurationElapsed(true);
-        clearInterval(interval);
-      } else {
-        const baseProgress = (currentStep / totalSteps) * 85;
-        setProgress(Math.min(baseProgress, 85));
-      }
-    }, stepDuration);
-
-    return () => clearInterval(interval);
-  }, [minDuration]);
-
-  // Quand les données sont prêtes, monter à 100%
-  useEffect(() => {
-    if (ready && minDurationElapsed) {
-      setProgress(100);
+    if (minDuration <= 0) {
+      setMinDurationElapsed(true);
+      return;
     }
-  }, [ready, minDurationElapsed]);
+
+    const timer = setTimeout(() => {
+      setMinDurationElapsed(true);
+    }, minDuration);
+
+    return () => clearTimeout(timer);
+  }, [minDuration]);
 
   const showLoading = forceLoading || !ready || !minDurationElapsed;
 
@@ -114,14 +102,16 @@ export function MinDurationScreen({
     return <>{children}</>;
   }
 
-  const effectiveProgress = ready ? Math.max(progress, 90) : progress;
+  // Si on n'a pas de progression réelle, afficher un mode minimal
+  const realProgress = typeof progress === 'number' ? progress : undefined;
+  const showProgressBar = realProgress !== undefined;
 
   if (isMobile) {
     return (
       <LoadingScreenMobile
         message={message ?? { title: 'Chargement…' }}
-        progress={effectiveProgress}
-        showProgress={true}
+        progress={realProgress ?? 0}
+        showProgress={showProgressBar}
         variant={variant === 'orion' ? 'pwa' : 'default'}
         minDuration={0}
       />
@@ -131,8 +121,8 @@ export function MinDurationScreen({
   return (
     <LoadingScreen
       message={message ?? { title: 'Chargement…' }}
-      progress={effectiveProgress}
-      showProgress={true}
+      progress={realProgress ?? 0}
+      showProgress={showProgressBar}
       variant={variant}
     />
   );

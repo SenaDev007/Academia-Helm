@@ -1,9 +1,5 @@
-'use client';
+import AcademiaLoader from "@/components/ui/AcademiaLoader";
 
-import { MinDurationScreen } from '@/components/loading/MinDurationScreen';
-
-export default function ModuleLoading() {
-  return (
-    <MinDurationScreen ready={false} variant="default" />
-  );
+export default function PageLoading() {
+  return <AcademiaLoader inline />;
 }

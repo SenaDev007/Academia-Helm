@@ -1,16 +1,5 @@
-/**
- * Loading State - App Shell
- *
- * Affiché pendant les transitions de pages dans l'espace app.
- * Durée minimale de 10 secondes pour une expérience visuelle professionnelle.
- */
+import AcademiaLoader from "@/components/ui/AcademiaLoader";
 
-'use client';
-
-import { MinDurationScreen } from '@/components/loading/MinDurationScreen';
-
-export default function AppLoading() {
-  return (
-    <MinDurationScreen ready={false} variant="default" />
-  );
+export default function PageLoading() {
+  return <AcademiaLoader inline />;
 }

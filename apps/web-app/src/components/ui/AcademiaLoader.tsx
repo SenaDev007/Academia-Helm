@@ -1,13 +1,14 @@
 'use client';
 
 /**
- * AcademiaLoader — v2 Modern Captivating
+ * AcademiaLoader — v3 Real Progress
  *
- * Écran de chargement premium avec design immersif Academia Helm.
- * Fond Navy profond, halo doré pulsant, progression branded.
- * Affiche dynamiquement le nom de la page en cours de chargement.
+ * Écran de chargement premium Academia Helm.
+ * DEUX modes :
+ * - inline (route transitions) : Logo animé + nom de page, PAS de pourcentage fictif.
+ *   Next.js remplace automatiquement loading.tsx quand la page est prête.
+ * - fullscreen (PostLoginFlow) : Logo animé + progression RÉELLE basée sur les étapes.
  *
- * Durée : 10s par défaut (réduit de 15s)
  * Palette : Navy (#0b2f73), Blue (#1d4fa5), Gold (#f5b335)
  */
 
@@ -17,21 +18,26 @@ import { BRAND } from '@/lib/brand';
 import { getPageDisplayName } from '@/lib/loading/page-names';
 
 interface AcademiaLoaderProps {
-  /** Mode compact pour les transitions inline (pas plein écran) */
+  /** Mode compact pour les transitions inline (pas plein écran, pas de %) */
   inline?: boolean;
-  /** Message personnalisé — surcharge le nom de page dynamique */
+  /** Message personnalisé */
   message?: string;
+  /** Progression réelle 0-100 (uniquement pour le mode fullscreen) */
+  progress?: number;
+  /** Étape actuelle (uniquement pour le mode fullscreen) */
+  step?: string;
 }
 
-export default function AcademiaLoader({ inline = false, message }: AcademiaLoaderProps) {
+export default function AcademiaLoader({ inline = false, message, progress, step }: AcademiaLoaderProps) {
   const pathname = usePathname();
   const pageName = message ?? getPageDisplayName(pathname);
 
+  // ── Mode inline : pour loading.tsx (route transitions)
+  // Pas de pourcentage — Next.js remplace automatiquement quand la page est prête
   if (inline) {
     return (
       <div className="flex items-center justify-center py-10">
         <div className="relative">
-          {/* Anneau rotatif inline */}
           <div className="academia-loader-ring-sm" />
           <Image
             src={BRAND.logoPath}
@@ -59,6 +65,9 @@ export default function AcademiaLoader({ inline = false, message }: AcademiaLoad
     );
   }
 
+  // ── Mode fullscreen : pour PostLoginFlow (progression réelle)
+  const realProgress = typeof progress === 'number' ? progress : 0;
+
   return (
     <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#0b2f73]">
       {/* Orbes d'ambiance */}
@@ -70,13 +79,9 @@ export default function AcademiaLoader({ inline = false, message }: AcademiaLoad
 
       {/* Logo avec halo premium */}
       <div className="relative academia-loader-container">
-        {/* Halo doré pulsant */}
         <div className="academia-loader-halo" />
-        {/* Anneau rotatif */}
         <div className="academia-loader-ring" />
-        {/* Deuxième anneau inversé */}
         <div className="academia-loader-ring-outer" />
-        {/* Logo */}
         <Image
           src={BRAND.logoPath}
           alt={BRAND.name}
@@ -98,51 +103,54 @@ export default function AcademiaLoader({ inline = false, message }: AcademiaLoad
         </p>
       </div>
 
-      {/* Barre de progression premium */}
-      <div className="mt-8 w-52 h-[3px] rounded-full bg-white/8 overflow-hidden">
-        <div className="academia-loader-progress" />
+      {/* Message de l'étape réelle */}
+      <div className="mt-6 text-center academia-loader-step">
+        <p className="text-sm font-medium text-white/90">
+          {message || 'Chargement…'}
+        </p>
+        {step && (
+          <p className="text-[10px] text-blue-200/40 mt-1 tracking-wider uppercase">
+            {step}
+          </p>
+        )}
       </div>
 
-      {/* Nom de la page */}
-      <p className="mt-4 text-[11px] text-[#f5b335]/60 tracking-wide font-medium academia-loader-page">
-        {pageName}
-      </p>
+      {/* Barre de progression RÉELLE — pas de pourcentage fictif */}
+      <div className="mt-8 w-52">
+        <div className="h-[3px] rounded-full bg-white/8 overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-500 ease-out"
+            style={{
+              width: `${realProgress}%`,
+              background: 'linear-gradient(90deg, #1d4fa5, #f5b335)',
+            }}
+          />
+        </div>
+        <div className="flex justify-between mt-2">
+          <span className="text-[9px] text-blue-200/30 uppercase tracking-wider">Progression</span>
+          <span className="text-[11px] text-[#f5b335] font-semibold tabular-nums">{Math.round(realProgress)}%</span>
+        </div>
+      </div>
 
       <style>{`
-        /* Orbital rotation */
         @keyframes academiaOrbitSpin {
           to { transform: rotate(360deg); }
         }
         @keyframes academiaOrbitReverse {
           to { transform: rotate(-360deg); }
         }
-
-        /* Breathing pulse */
         @keyframes academiaPulse {
           0%, 100% { transform: scale(1); opacity: 0.9; }
           50% { transform: scale(1.05); opacity: 1; }
         }
-
-        /* Halo expansion */
         @keyframes academiaHaloPulse {
           0%, 100% { transform: scale(1); opacity: 0.2; }
           50% { transform: scale(1.4); opacity: 0.06; }
         }
-
-        /* Progress sweep */
-        @keyframes academiaProgress {
-          0% { transform: translateX(-100%); }
-          50% { transform: translateX(0%); }
-          100% { transform: translateX(100%); }
-        }
-
-        /* Fade up entrance */
         @keyframes academiaFadeUp {
           from { opacity: 0; transform: translateY(14px); }
           to { opacity: 1; transform: translateY(0); }
         }
-
-        /* Floating orbs */
         @keyframes academiaFloatOrb {
           0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.15; }
           33% { transform: translate(25px, -35px) scale(1.1); opacity: 0.1; }
@@ -154,7 +162,6 @@ export default function AcademiaLoader({ inline = false, message }: AcademiaLoad
           width: 84px; height: 84px;
           display: flex; align-items: center; justify-content: center;
         }
-
         .academia-loader-ring {
           position: absolute; inset: 0;
           border-radius: 50%;
@@ -162,7 +169,6 @@ export default function AcademiaLoader({ inline = false, message }: AcademiaLoad
           border-top-color: #f5b335;
           animation: academiaOrbitSpin 1.1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
         }
-
         .academia-loader-ring-outer {
           position: absolute; inset: -10px;
           border-radius: 50%;
@@ -170,33 +176,21 @@ export default function AcademiaLoader({ inline = false, message }: AcademiaLoad
           border-bottom-color: rgba(29, 79, 165, 0.5);
           animation: academiaOrbitReverse 2.5s linear infinite;
         }
-
         .academia-loader-halo {
           position: absolute; inset: -20px;
           border-radius: 50%;
           background: radial-gradient(circle, rgba(245,179,53,0.15) 0%, transparent 70%);
           animation: academiaHaloPulse 2.5s ease-in-out infinite;
         }
-
         .academia-loader-logo {
           animation: academiaPulse 2.8s ease-in-out infinite;
         }
-
         .academia-loader-text {
           animation: academiaFadeUp 0.6s ease-out 0.15s both;
         }
-
-        .academia-loader-page {
-          animation: academiaFadeUp 0.5s ease-out 0.35s both;
+        .academia-loader-step {
+          animation: academiaFadeUp 0.5s ease-out 0.3s both;
         }
-
-        .academia-loader-progress {
-          width: 100%; height: 100%;
-          background: linear-gradient(90deg, transparent, #f5b335, transparent);
-          border-radius: 9999px;
-          animation: academiaProgress 1.6s ease-in-out infinite;
-        }
-
         .academia-loader-orb {
           position: absolute; border-radius: 50%; filter: blur(80px); pointer-events: none;
         }

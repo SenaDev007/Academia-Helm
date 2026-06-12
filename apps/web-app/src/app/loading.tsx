@@ -1,16 +1,5 @@
-/**
- * Loading Component - Root Level
- *
- * Affiché pendant le chargement initial des pages racine.
- * Durée minimale de 10 secondes pour une expérience visuelle professionnelle.
- */
+import AcademiaLoader from "@/components/ui/AcademiaLoader";
 
-'use client';
-
-import { MinDurationScreen } from '@/components/loading/MinDurationScreen';
-
-export default function Loading() {
-  return (
-    <MinDurationScreen ready={false} />
-  );
+export default function PageLoading() {
+  return <AcademiaLoader inline />;
 }

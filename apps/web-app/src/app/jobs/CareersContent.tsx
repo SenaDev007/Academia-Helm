@@ -197,6 +197,50 @@ export function CareersContent({
 
   const [submitting, setSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [applicationSubmitted, setApplicationSubmitted] = useState(false);
+
+  /** Validate current step before allowing progression */
+  const canProceed = (): boolean => {
+    switch (currentStep) {
+      case 1:
+        return !!(firstName.trim() && lastName.trim() && email.trim());
+      case 5:
+        return !!cvFile;
+      default:
+        return true;
+    }
+  };
+
+  /** Reset all form fields to initial values */
+  const resetForm = () => {
+    setFirstName('');
+    setLastName('');
+    setEmail('');
+    setPhone('');
+    setAddress('');
+    setCountry('Bénin');
+    setCity('');
+    setGender('M');
+    setLinkedinUrl('');
+    setExperiences([]);
+    setExpTitle('');
+    setExpCompany('');
+    setExpYears('');
+    setExpDesc('');
+    setEducation([]);
+    setEduDegree('');
+    setEduSchool('');
+    setEduYear('');
+    setSkills([]);
+    setSkillInput('');
+    setPitch('');
+    setCvFile(null);
+    setCoverFile(null);
+    setRecoFile(null);
+    setCurrentStep(1);
+    setSubmitResult(null);
+    setApplicationSubmitted(false);
+  };
 
   // Auto-scroll ref for job list when > 5 cards
   const jobListRef = useRef<HTMLDivElement>(null);
@@ -523,6 +567,7 @@ export function CareersContent({
           success: true,
           message: 'Candidature transmise avec succès ! Notre IA procède à l\'extraction sémantique et à la validation des diplômes/certifications.'
         });
+        setApplicationSubmitted(true);
       } else {
         const serverMsg = data?.message || data?.error || '';
         const detail = data?.detail || '';
@@ -926,11 +971,10 @@ export function CareersContent({
               <motion.div key="step-jobs" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }} className="space-y-6">
                 <button
                   onClick={() => {
-                    if (isApplying) {
-                      // Exit application form → back to school's job listing
+                    if (isApplying || applicationSubmitted) {
+                      // Exit application form / success screen → back to school's job listing
                       setIsApplying(false);
-                      setSubmitResult(null);
-                      setCurrentStep(1);
+                      resetForm();
                     } else {
                       // Exit school's job listing → back to all schools
                       window.location.href = '/jobs';
@@ -939,7 +983,7 @@ export function CareersContent({
                   className="inline-flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-[#0b2f73] transition-colors group"
                 >
                   <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
-                  {isApplying ? 'Retour aux offres' : 'Retour aux établissements'}
+                  {(isApplying || applicationSubmitted) ? 'Retour aux offres' : 'Retour aux établissements'}
                 </button>
 
                 {/* School header card with full contact info */}
@@ -998,7 +1042,76 @@ export function CareersContent({
                   </div>
                 </div>
 
-                {!isApplying ? (
+                {applicationSubmitted && submitResult?.success ? (
+                  /* ─── Success Confirmation Screen ─── */
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.4 }}
+                    className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden"
+                  >
+                    <div className="p-6 md:p-10 flex flex-col items-center text-center">
+                      {/* Animated checkmark */}
+                      <motion.div
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ type: 'spring', stiffness: 200, damping: 15, delay: 0.2 }}
+                        className="w-20 h-20 rounded-full bg-emerald-100 flex items-center justify-center mb-6"
+                      >
+                        <CheckCircle className="w-12 h-12 text-emerald-600" />
+                      </motion.div>
+
+                      <h3 className="text-lg md:text-xl font-extrabold text-slate-900 mb-2">
+                        Candidature transmise !
+                      </h3>
+                      <p className="text-sm text-slate-500 mb-6 max-w-md">
+                        Votre candidature pour le poste de <span className="font-bold text-slate-800">{selectedJob?.title}</span> a été envoyée avec succès. Notre IA procède à l'extraction sémantique et à la validation des diplômes/certifications.
+                      </p>
+
+                      {/* Summary card */}
+                      <div className="w-full max-w-sm bg-slate-50 border border-slate-100 rounded-xl p-4 mb-6 text-left space-y-2">
+                        <div className="flex items-center gap-2 text-xs text-slate-600">
+                          <User className="h-4 w-4 text-[#0b2f73]" />
+                          <span className="font-semibold">{firstName} {lastName}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-slate-600">
+                          <Mail className="h-4 w-4 text-[#0b2f73]" />
+                          <span>{email}</span>
+                        </div>
+                        {phone && (
+                          <div className="flex items-center gap-2 text-xs text-slate-600">
+                            <Phone className="h-4 w-4 text-[#0b2f73]" />
+                            <span>{phone}</span>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 text-xs text-slate-600">
+                          <Building2 className="h-4 w-4 text-[#f5b335]" />
+                          <span>{selectedSchool?.schoolName || selectedSchool?.tenantName}</span>
+                        </div>
+                      </div>
+
+                      {/* AI Processing notice */}
+                      <div className="w-full max-w-sm p-3 bg-indigo-50 border border-indigo-100 rounded-lg flex gap-2 text-[11px] text-slate-600 mb-6">
+                        <Sparkles className="h-4 w-4 text-blue-600 shrink-0 mt-0.5 animate-pulse" />
+                        <p>Le système analyse la cohérence de vos diplômes et rédigera une note de synthèse pour la direction.</p>
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="flex flex-col sm:flex-row gap-3 w-full max-w-sm">
+                        <button
+                          onClick={() => {
+                            setIsApplying(false);
+                            resetForm();
+                          }}
+                          className="flex-1 px-5 py-3 bg-[#0b2f73] text-white rounded-xl text-xs font-bold hover:bg-[#1521a0] transition-colors flex items-center justify-center gap-2"
+                        >
+                          <Briefcase className="h-4 w-4" />
+                          Voir les autres offres
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                ) : !isApplying ? (
                   jobs.length === 0 ? (
                     /* ─── No open positions — show illustration ─── */
                     <div className="flex flex-col items-center justify-center py-8">
@@ -1192,7 +1305,7 @@ export function CareersContent({
 
                             {/* Bouton Postuler */}
                             <button
-                              onClick={() => { setIsApplying(true); setCurrentStep(1); setSubmitResult(null); }}
+                              onClick={() => { setIsApplying(true); setCurrentStep(1); setSubmitResult(null); setApplicationSubmitted(false); }}
                               className="w-full py-3 bg-[#0b2f73] text-white rounded-xl font-bold text-sm hover:bg-[#1521a0] transition-colors flex items-center justify-center gap-2"
                             >
                               <Send className="h-4 w-4" /> Postuler
@@ -1241,10 +1354,10 @@ export function CareersContent({
                     </div>
 
                     <div className="p-4 md:p-6 space-y-5">
-                      {/* Submission result */}
-                      {submitResult && (
-                        <div className={`p-4 rounded-xl flex gap-3 text-sm ${submitResult.success ? 'bg-emerald-50 text-emerald-800 border border-emerald-100' : 'bg-red-50 text-red-800 border border-red-100'}`}>
-                          {submitResult.success ? <CheckCircle className="h-5 w-5 shrink-0" /> : <XCircle className="h-5 w-5 shrink-0" />}
+                      {/* Submission error — success is handled by the confirmation screen */}
+                      {submitResult && !submitResult.success && (
+                        <div className="p-4 rounded-xl flex gap-3 text-sm bg-red-50 text-red-800 border border-red-100">
+                          <XCircle className="h-5 w-5 shrink-0" />
                           <p>{submitResult.message}</p>
                         </div>
                       )}
@@ -1449,8 +1562,9 @@ export function CareersContent({
                         {currentStep < 5 ? (
                           <button
                             type="button"
-                            onClick={() => setCurrentStep(prev => prev + 1)}
-                            className="px-5 py-2.5 md:py-2 text-white rounded-lg text-xs font-bold transition hover:opacity-90"
+                            disabled={!canProceed()}
+                            onClick={() => canProceed() && setCurrentStep(prev => prev + 1)}
+                            className="px-5 py-2.5 md:py-2 text-white rounded-lg text-xs font-bold transition hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
                             style={{ backgroundColor: PRIMARY }}
                           >
                             Continuer

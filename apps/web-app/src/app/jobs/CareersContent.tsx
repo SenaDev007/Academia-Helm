@@ -202,39 +202,34 @@ export function CareersContent({
   const jobListRef = useRef<HTMLDivElement>(null);
   const scrollAnimRef = useRef<number | null>(null);
   const isHoveredRef = useRef(false);
-  const boundaryPauseRef = useRef(false);
   // Ref for scrolling to job detail on mobile
   const jobDetailRef = useRef<HTMLDivElement>(null);
 
-  // Smooth bottom-to-top auto-scroll animation
+  // Infinite auto-scroll animation — seamless loop, pauses on hover/touch
+  // Cards are duplicated in JSX when > 5, so scrollHeight = 2 × singleSetHeight.
+  // When scrollTop passes one full set, we seamlessly reset by subtracting singleSetHeight.
   useEffect(() => {
     const container = jobListRef.current;
     if (!container || jobs.length <= 5) return;
 
-    let direction = 1; // 1 = scrolling up (content moves up), -1 = scrolling down
-    const speed = 0.4; // px per frame — smooth and gentle
-    let boundaryTimeout: ReturnType<typeof setTimeout> | null = null;
+    const speed = 0.5; // px per frame — smooth and gentle
 
     function animate() {
       if (!container) return;
 
-      // Pause on hover
-      if (isHoveredRef.current || boundaryPauseRef.current) {
+      // Pause on hover or touch
+      if (isHoveredRef.current) {
         scrollAnimRef.current = requestAnimationFrame(animate);
         return;
       }
 
-      container.scrollTop += direction * speed;
+      container.scrollTop += speed;
 
-      // Reverse direction at boundaries with a brief pause
-      if (container.scrollTop <= 0) {
-        direction = 1;
-        boundaryPauseRef.current = true;
-        boundaryTimeout = setTimeout(() => { boundaryPauseRef.current = false; }, 2000);
-      } else if (container.scrollTop >= container.scrollHeight - container.clientHeight - 1) {
-        direction = -1;
-        boundaryPauseRef.current = true;
-        boundaryTimeout = setTimeout(() => { boundaryPauseRef.current = false; }, 2000);
+      // Seamless reset: when scrollTop passes one full set of cards,
+      // jump back by one set height (duplicated cards make this invisible)
+      const singleSetHeight = container.scrollHeight / 2;
+      if (singleSetHeight > 0 && container.scrollTop >= singleSetHeight) {
+        container.scrollTop -= singleSetHeight;
       }
 
       scrollAnimRef.current = requestAnimationFrame(animate);
@@ -244,7 +239,6 @@ export function CareersContent({
 
     return () => {
       if (scrollAnimRef.current) cancelAnimationFrame(scrollAnimRef.current);
-      if (boundaryTimeout) clearTimeout(boundaryTimeout);
     };
   }, [jobs.length]);
 
@@ -1030,21 +1024,19 @@ export function CareersContent({
                       </div>
                       <div
                         ref={jobListRef}
-                        className={`space-y-3 overflow-y-auto ${jobs.length > 5 ? 'max-h-[340px] md:max-h-[420px] scroll-smooth' : ''} ${jobs.length > 5 ? 'scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent' : ''}`}
+                        className={`space-y-3 ${jobs.length > 5 ? 'max-h-[340px] md:max-h-[420px] overflow-hidden' : ''}`}
                         onMouseEnter={() => { if (jobs.length > 5) isHoveredRef.current = true; }}
                         onMouseLeave={() => { if (jobs.length > 5) isHoveredRef.current = false; }}
                         onTouchStart={() => { if (jobs.length > 5) isHoveredRef.current = true; }}
-                        onTouchEnd={() => { setTimeout(() => { isHoveredRef.current = false; }, 2000); }}
+                        onTouchEnd={() => { if (jobs.length > 5) setTimeout(() => { isHoveredRef.current = false; }, 3000); }}
                         style={jobs.length > 5 ? {
-                          scrollbarWidth: 'thin',
-                          scrollbarColor: '#cbd5e1 transparent',
-                          maskImage: 'linear-gradient(to bottom, transparent 0%, black 5%, black 92%, transparent 100%)',
-                          WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 5%, black 92%, transparent 100%)',
+                          maskImage: 'linear-gradient(to bottom, transparent 0%, black 4%, black 96%, transparent 100%)',
+                          WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 4%, black 96%, transparent 100%)',
                         } : undefined}
                       >
-                      {jobs.map((job) => (
+                      {(jobs.length > 5 ? [...jobs, ...jobs] : jobs).map((job, index) => (
                         <motion.div
-                          key={job.id}
+                          key={jobs.length > 5 ? `${job.id}-${index}` : job.id}
                           onClick={() => {
                             setSelectedJob(job);
                             if (selectedSchool?.slug && job.slug) {
@@ -1202,17 +1194,18 @@ export function CareersContent({
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
                           transition={{ duration: 0.4 }}
-                          className="flex items-center justify-center min-h-[280px] md:min-h-[400px]"
+                          className="flex items-center justify-center min-h-[300px] md:min-h-[500px] lg:min-h-[600px]"
                         >
-                          <div className="relative w-full max-w-md mx-auto">
+                          <div className="relative w-full mx-auto px-4" style={{ maxWidth: '34rem' }}>
                             <Image
                               src="/images/AcademiaHelm_RecruitmentPortal_Portrait.jpeg"
                               alt="Portail de recrutement Academia Helm"
                               width={600}
                               height={800}
-                              className="rounded-2xl shadow-lg w-full h-auto object-contain"
+                              className="rounded-2xl shadow-lg w-full h-auto"
+                              style={{ maxHeight: '65vh', objectFit: 'contain' }}
                               priority
-                              sizes="(max-width: 768px) 100vw, 600px"
+                              sizes="(max-width: 768px) 100vw, 50vw"
                             />
                             {/* Subtle overlay text */}
                             <div className="absolute bottom-4 left-4 right-4 text-center">

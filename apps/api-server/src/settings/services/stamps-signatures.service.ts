@@ -257,6 +257,7 @@ export class StampsSignaturesService {
       await this.prisma.tenantStamp.upsert({
         where: { tenantId_educationLevelId: { tenantId, educationLevelId } },
         create: {
+          ...prismaCreateDefaults(),
           tenantId,
           educationLevelId,
           circularStampUrl,
@@ -348,6 +349,7 @@ export class StampsSignaturesService {
           tenantId_educationLevelId_role: { tenantId, educationLevelId: levelId, role },
         },
         create: {
+          ...prismaCreateNoUpdatedAt(),
           tenantId,
           educationLevelId: levelId,
           role,
@@ -357,7 +359,6 @@ export class StampsSignaturesService {
           generatedAt: now,
         },
         update: {
-          ...prismaUpdateDefaults(),
           holderFirstName: first,
           holderLastName: last,
           generatedAt: now,
@@ -371,7 +372,6 @@ export class StampsSignaturesService {
         row = await this.prisma.tenantSignature.update({
           where: { id: existing.id },
           data: {
-        ...prismaUpdateDefaults(),
             holderFirstName: first,
             holderLastName: last,
             generatedAt: now,

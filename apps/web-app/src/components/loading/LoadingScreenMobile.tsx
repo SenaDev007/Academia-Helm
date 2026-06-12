@@ -17,7 +17,7 @@ import { getMessageText } from '@/lib/messages/system-messages';
 import { LoadingScreen } from './LoadingScreen';
 
 /** Durée minimale par défaut (ms) */
-const DEFAULT_MIN_DURATION_MS = 10000;
+const DEFAULT_MIN_DURATION_MS = 15000;
 
 export interface LoadingScreenMobileProps {
   message?: LoadingMessage;
@@ -25,7 +25,7 @@ export interface LoadingScreenMobileProps {
   showProgress?: boolean;
   variant?: 'default' | 'pwa';
   className?: string;
-  /** Durée minimale d'affichage en ms (défaut: 5000). Mettre 0 pour désactiver. */
+  /** Durée minimale d'affichage en ms (défaut: 15000). Mettre 0 pour désactiver. */
   minDuration?: number;
 }
 

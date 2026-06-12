@@ -5,7 +5,7 @@
  * avant de révéler le contenu. Utilisé pour toutes les transitions de chargement
  * afin d'offrir une expérience visuelle fluide et professionnelle.
  *
- * DURÉE PAR DÉFAUT : 10 secondes
+ * DURÉE PAR DÉFAUT : 15 secondes
  *
  * MOBILE : Sur mobile, utilise LoadingScreenMobile (CSS-only, léger)
  * au lieu de LoadingScreen (framer-motion, ~30KB) pour de meilleures performances.
@@ -18,12 +18,12 @@ import { LoadingScreen } from './LoadingScreen';
 import { LoadingScreenMobile } from './LoadingScreenMobile';
 
 /** Durée minimale par défaut (ms) */
-const DEFAULT_MIN_DURATION_MS = 10000;
+const DEFAULT_MIN_DURATION_MS = 15000;
 
 export interface MinDurationScreenProps {
   /** Si true, le contenu est prêt à être affiché */
   ready: boolean;
-  /** Durée minimale d'affichage du loading en ms (défaut: 5000) */
+  /** Durée minimale d'affichage du loading en ms (défaut: 15000) */
   minDuration?: number;
   /** Contenu à afficher une fois prêt et la durée minimale écoulée */
   children?: React.ReactNode;

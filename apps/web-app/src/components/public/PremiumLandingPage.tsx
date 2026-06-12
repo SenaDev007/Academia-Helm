@@ -228,7 +228,7 @@ function RecruitmentBanner() {
   );
 }
 
-const LANDING_MIN_LOADING_MS = 10000;
+const LANDING_MIN_LOADING_MS = 15000;
 
 export default function PremiumLandingPage() {
   const [showContent, setShowContent] = useState(false);
@@ -243,7 +243,7 @@ export default function PremiumLandingPage() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Loading minimum de 10 secondes avant d'afficher le contenu
+  // Loading minimum de 15 secondes avant d'afficher le contenu
   useEffect(() => {
     const startTime = Date.now();
     const totalSteps = 90;

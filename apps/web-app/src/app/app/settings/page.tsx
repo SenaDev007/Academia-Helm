@@ -839,6 +839,7 @@ export default function SettingsPage() {
       showToast('success', 'Paramètres de sécurité enregistrés');
       const updated = await settingsService.getSecuritySettings(tid);
       setSecuritySettings(updated);
+      setSecurityForm(updated || {});
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
     } finally {
@@ -854,6 +855,7 @@ export default function SettingsPage() {
       showToast('success', 'Paramètres ORION enregistrés');
       const updated = await settingsService.getOrionSettings(tid);
       setOrionSettings(updated);
+      setOrionForm(updated || {});
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
     } finally {
@@ -869,6 +871,7 @@ export default function SettingsPage() {
       showToast('success', 'Paramètres ATLAS enregistrés');
       const updated = await settingsService.getAtlasSettings(tid);
       setAtlasSettings(updated);
+      setAtlasForm(updated || {});
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
     } finally {
@@ -884,6 +887,7 @@ export default function SettingsPage() {
       showToast('success', 'Paramètres offline enregistrés');
       const updated = await settingsService.getOfflineSyncSettings(tid);
       setOfflineSyncSettings(updated);
+      setOfflineForm(updated || {});
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
     } finally {
@@ -898,6 +902,7 @@ export default function SettingsPage() {
       showToast('success', 'Structure pédagogique enregistrée');
       const updated = await settingsService.getPedagogicalStructure(effectiveTenantId ?? undefined);
       setPedagogicalStructure(updated);
+      setStructureForm(updated || {});
       notifySchoolLevelsUpdated();
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
@@ -1116,6 +1121,7 @@ export default function SettingsPage() {
       showToast('success', 'Paramètres bilingues enregistrés');
       const updated = await settingsService.getBilingualSettings(effectiveTenantId ?? undefined);
       setBilingualSettings(updated);
+      setBilingualForm(updated || {});
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent(SETTINGS_BILINGUAL_UPDATED_EVENT));
       }
@@ -1177,6 +1183,7 @@ export default function SettingsPage() {
       showToast('success', 'Paramètres de communication enregistrés');
       const updated = await settingsService.getCommunicationSettings(tid);
       setCommunicationSettings(updated);
+      setCommunicationForm(updated || {});
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
     } finally {
@@ -1404,6 +1411,7 @@ export default function SettingsPage() {
       showToast('success', 'Paramètres de facturation enregistrés');
       const updated = await settingsService.getBillingSettings(tid);
       setBillingSettings(updated);
+      setBillingForm(updated || {});
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
     } finally {

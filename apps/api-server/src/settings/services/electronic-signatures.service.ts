@@ -281,7 +281,7 @@ export class ElectronicSignaturesService {
 
     const updated = await this.prisma.certifiedElectronicSignature.update({
       where: { id: signatureId },
-      data: { status: 'revoked' },
+      data: { ...prismaUpdateDefaults(), status: 'revoked' },
     });
 
     this.logger.log(`Signature révoquée: ${signatureId} par ${userId}`);

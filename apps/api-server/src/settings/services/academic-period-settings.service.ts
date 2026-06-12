@@ -48,7 +48,7 @@ export class AcademicPeriodSettingsService {
     });
     await this.prisma.academicPeriod.update({
       where: { id: activePeriodId },
-      data: { isActive: true },
+      data: { ...prismaUpdateDefaults(), isActive: true },
     });
   }
 
@@ -165,7 +165,7 @@ export class AcademicPeriodSettingsService {
 
     const period = await this.prisma.academicPeriod.update({
       where: { id, tenantId },
-      data: updatePayload as Parameters<typeof this.prisma.academicPeriod.update>[0]['data'],
+      data: { ...prismaUpdateDefaults(), ...updatePayload as Parameters<typeof this.prisma.academicPeriod.update>[0]['data'] },
     });
 
     await this.historyService.logSettingChange(
@@ -208,7 +208,7 @@ export class AcademicPeriodSettingsService {
     if (period.isClosed) throw new BadRequestException('Période déjà clôturée.');
     const updated = await this.prisma.academicPeriod.update({
       where: { id, tenantId },
-      data: { isClosed: true, isActive: false },
+      data: { ...prismaUpdateDefaults(), isClosed: true, isActive: false },
     });
     await this.historyService.logSettingChange(
       tenantId,

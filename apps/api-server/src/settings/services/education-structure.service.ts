@@ -102,8 +102,8 @@ export class EducationStructureService {
         name === 'MATERNELLE' ? maternelleEnabled : name === 'PRIMAIRE' ? primaireEnabled : secondaireEnabled;
       await this.prisma.educationLevel.upsert({
         where: { tenantId_name: { tenantId, name } },
-        create: { tenantId, name, isEnabled, order },
-        update: { isEnabled, order },
+        create: { ...prismaCreateDefaults(), tenantId, name, isEnabled, order },
+        update: { ...prismaUpdateDefaults(), isEnabled, order },
       });
     }
 
@@ -116,8 +116,8 @@ export class EducationStructureService {
     for (const s of DEFAULT_SERIES) {
       await this.prisma.educationSeries.upsert({
         where: { tenantId_code: { tenantId, code: s.code } },
-        create: { tenantId, code: s.code, name: s.name, order: s.order },
-        update: { name: s.name, order: s.order },
+        create: { ...prismaCreateDefaults(), tenantId, code: s.code, name: s.name, order: s.order },
+        update: { ...prismaUpdateDefaults(), name: s.name, order: s.order },
       });
     }
 
@@ -139,7 +139,7 @@ export class EducationStructureService {
         } else {
           await this.prisma.educationCycle.update({
             where: { id: cycle.id },
-            data: { order: cy.order },
+            data: { ...prismaUpdateDefaults(), order: cy.order },
           });
         }
         for (const gr of cy.grades) {
@@ -161,7 +161,7 @@ export class EducationStructureService {
           } else {
             await this.prisma.educationGrade.update({
               where: { id: existingGrade.id },
-              data: { name: gr.name, order: gr.order, seriesId: seriesId ?? undefined },
+              data: { ...prismaUpdateDefaults(), name: gr.name, order: gr.order, seriesId: seriesId ?? undefined },
             });
           }
         }
@@ -373,7 +373,7 @@ export class EducationStructureService {
     if (!level) throw new NotFoundException('Niveau non trouvé.');
     return this.prisma.educationLevel.update({
       where: { id: levelId },
-      data: { isEnabled },
+      data: { ...prismaUpdateDefaults(), isEnabled },
     });
   }
 }

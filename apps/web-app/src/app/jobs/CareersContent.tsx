@@ -527,7 +527,7 @@ export function CareersContent({
               <JobCardSkeletonMobile count={3} />
             </div>
           </div>
-        )
+        )}
 
         {!loading && loadError && (
           <div className="text-center py-16 max-w-md mx-auto">
@@ -880,7 +880,7 @@ export function CareersContent({
                       )}
                     </div>
                   </div>
-                  )}
+                  )
                 ) : (
                   /* Form: Easy Apply multi-step */
                   <div className="max-w-2xl mx-auto bg-white border border-slate-200 rounded-2xl p-6 shadow-md relative overflow-hidden">

@@ -1,22 +1,21 @@
 /**
  * PostLoginFlowWrapper Component
- * 
+ *
  * Wrapper client pour gérer le flow post-login.
  * S'affiche automatiquement après l'authentification.
- * 
+ *
  * IMPORTANT: Le flow ne s'exécute qu'une seule fois par session navigateur.
  * Les navigations ultérieures entre modules/onglets n'affichent PAS le loading.
  *
- * FIX: Utilise localStorage (partagé entre sous-domaines si même origine de base)
- * au lieu de sessionStorage (isolé par sous-domaine) pour le flag de complétion.
- * De plus, quand le layout serveur a déjà validé la session (user + tenant fournis),
- * on saute le checkAuth() redondant du flow post-login.
+ * FIX: Quand un fresh_login est détecté (flag sessionStorage positionné par
+ * la page de login/portal avant la redirection), le loading screen s'affiche
+ * TOUJOURS avec progression réelle, même si la session serveur est valide.
+ * Cela garantit une UX professionnelle après authentification.
  */
 
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { MinDurationScreen } from './MinDurationScreen';
 import { PostLoginLoading } from './PostLoginLoading';
 import type { PostLoginFlowResult } from '@/lib/loading/post-login-flow.service';
 
@@ -27,6 +26,7 @@ export interface PostLoginFlowWrapperProps {
 }
 
 const SESSION_KEY = 'academia_post_login_done';
+const FRESH_LOGIN_KEY = 'academia_fresh_login';
 const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes TTL
 
 /**
@@ -52,6 +52,30 @@ function wasFlowCompletedThisSession(): boolean {
 }
 
 /**
+ * Vérifie si l'utilisateur vient de se connecter (fresh login).
+ * Le flag est positionné par la page de login/portal AVANT la redirection.
+ * Il est nettoyé après l'affichage du loading screen.
+ */
+function isFreshLogin(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return sessionStorage.getItem(FRESH_LOGIN_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Nettoie le flag fresh login après usage.
+ */
+function clearFreshLoginFlag(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.removeItem(FRESH_LOGIN_KEY);
+  } catch { /* ignore */ }
+}
+
+/**
  * Marque le flow post-login comme complété pour cette session.
  */
 function markFlowCompleted(): void {
@@ -68,10 +92,13 @@ let moduleLevelFlowDone = false;
 
 /**
  * Wrapper pour gérer le flow post-login
- * 
- * Affiche le loading screen pendant l'initialisation,
+ *
+ * Affiche le loading screen avec progression réelle pendant l'initialisation,
  * puis affiche le contenu une fois le flow terminé.
- * Le flow ne s'exécute qu'une seule fois par session navigateur.
+ *
+ * Comportement :
+ * - Fresh login → TOUJOURS afficher le loading screen avec progression réelle
+ * - Navigation intra-app (pas de fresh login, déjà fait) → afficher directement le contenu
  */
 export function PostLoginFlowWrapper({
   children,
@@ -81,26 +108,31 @@ export function PostLoginFlowWrapper({
   // Vérifier immédiatement si le flow a déjà été fait (pas de loading flash)
   const alreadyDone = wasFlowCompletedThisSession() || moduleLevelFlowDone;
 
-  // FIX: Si le layout serveur a déjà validé la session (user + tenant fournis),
-  // on peut court-circuiter le flow post-login directement.
-  // Le checkAuth() du flow est redondant car le layout a déjà appelé getServerSession().
-  const hasValidServerSession = !!(user?.id && tenant?.id);
+  // Fresh login : l'utilisateur vient de s'authentifier → afficher le loading
+  const freshLogin = isFreshLogin();
+
+  // Si ce n'est PAS un fresh login ET que le flow a déjà été complété,
+  // on affiche directement le contenu (navigation intra-app)
+  const shouldSkipLoading = !freshLogin && alreadyDone;
 
   const [flowResult, setFlowResult] = useState<PostLoginFlowResult | null>(
-    alreadyDone || hasValidServerSession
+    shouldSkipLoading
       ? { success: true, user, tenant, academicYear: null, permissions: [], offlineStatus: { isOnline: true, pendingOperations: 0, syncRequired: false }, orionAlerts: [] }
       : null
   );
   const [error, setError] = useState<any>(null);
   const hasRunRef = useRef(false);
 
-  // Marquer le flow comme complété si on a court-circuité grâce à la session serveur
+  // Nettoyer le flag fresh login et marquer le flow comme complété si on skip
   useEffect(() => {
-    if (hasValidServerSession && !moduleLevelFlowDone) {
-      markFlowCompleted();
-      moduleLevelFlowDone = true;
+    if (shouldSkipLoading) {
+      clearFreshLoginFlag();
+      if (!moduleLevelFlowDone) {
+        markFlowCompleted();
+        moduleLevelFlowDone = true;
+      }
     }
-  }, [hasValidServerSession]);
+  }, [shouldSkipLoading]);
 
   // Réinitialiser le flag module-level lors du logout
   useEffect(() => {
@@ -116,6 +148,7 @@ export function PostLoginFlowWrapper({
     setFlowResult(result);
     markFlowCompleted();
     moduleLevelFlowDone = true;
+    clearFreshLoginFlag();
 
     // Stocker les résultats dans le contexte global si nécessaire
     if (typeof window !== 'undefined') {
@@ -146,6 +179,7 @@ export function PostLoginFlowWrapper({
     // Pour les autres erreurs, continuer quand même
     markFlowCompleted();
     moduleLevelFlowDone = true;
+    clearFreshLoginFlag();
     setFlowResult({
       success: false,
       user,
@@ -159,12 +193,11 @@ export function PostLoginFlowWrapper({
   };
 
   // Si le flow a déjà été complété dans cette session, afficher directement le contenu
-  // Plus de durée minimale artificielle — quand c'est prêt, c'est prêt
   if (flowResult) {
     return <>{children}</>;
   }
 
-  // Sinon, exécuter le flow post-login (une seule fois)
+  // Sinon, exécuter le flow post-login (une seule fois) avec loading screen
   if (!hasRunRef.current) {
     hasRunRef.current = true;
   }

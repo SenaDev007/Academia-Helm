@@ -40,7 +40,7 @@ import { type DepartmentData } from '@/data/benin-departments';
 import { useTenantRedirect } from '@/lib/hooks/useTenantRedirect';
 import { BRAND } from '@/lib/brand';
 import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-email';
-import { persistClientSession } from '@/lib/auth/client-access-token';
+import { persistClientSession, markFreshLogin } from '@/lib/auth/client-access-token';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getModalMotion, getMotionDuration } from '@/lib/motion/presets';
 
@@ -316,6 +316,7 @@ export default function PortalPage() {
           expiresAt: selectData.expiresAt,
         });
         saveEmailForTenant(devEmail.trim(), tenantId);
+        markFreshLogin();
         await redirectToTenant({
           tenantSlug: selectedDevTenant.slug || tenantId,
           tenantId,
@@ -337,6 +338,7 @@ export default function PortalPage() {
         expiresAt: data.expiresAt,
       });
       saveEmailForTenant(devEmail.trim(), tenantId);
+      markFreshLogin();
       await redirectToTenant({
         tenantSlug: selectedDevTenant.slug || tenantId,
         tenantId,
@@ -346,7 +348,10 @@ export default function PortalPage() {
       console.error('[Dev Login] Error:', error);
       const msg = error instanceof Error ? error.message : 'Impossible de se connecter';
       let userMessage = msg;
-      if (msg.includes('timeout') || msg.includes('ne répond pas') || msg.includes('30 secondes')) {
+      if (msg.includes('PORTAL_MISMATCH')) {
+        const match = msg.match(/PORTAL_MISMATCH:\s*(.*)/);
+        userMessage = match?.[1] || 'Ce compte n\'est pas autorisé sur ce portail. Veuillez utiliser le portail correspondant à votre profil.';
+      } else if (msg.includes('timeout') || msg.includes('ne répond pas') || msg.includes('30 secondes')) {
         userMessage = 'Le serveur est en cours de démarrage. Veuillez réessayer dans quelques secondes.';
       } else if (msg.includes('Internal server error') || msg.includes('500')) {
         userMessage = 'Erreur serveur temporaire. Veuillez réessayer dans quelques instants.';
@@ -401,7 +406,7 @@ export default function PortalPage() {
 
       <PremiumHeader />
 
-      <main className="relative z-[1] pb-6 pt-20 md:pt-22">
+      <main className="relative z-[1] pb-6 pt-16 sm:pt-20 md:pt-22">
         <div className="mx-auto max-w-7xl px-3 sm:px-4 lg:px-6">
 
           {/* ── Layout : BeninMap (majeur) + Portails (compact latéral) ── */}
@@ -412,7 +417,7 @@ export default function PortalPage() {
               initial={shouldReduceMotion ? false : { opacity: 0, x: -16 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: dur, ease: 'easeOut' }}
-              className="lg:w-[68%]"
+              className="w-full lg:w-[68%]"
             >
               <div
                 className="rounded-xl border bg-white p-3 shadow-lg sm:p-4"
@@ -426,14 +431,14 @@ export default function PortalPage() {
                     Carte du Bénin — Données éducatives
                   </h3>
                   <div
-                    className="flex overflow-hidden rounded-lg border text-[10px]"
+                    className="flex overflow-hidden rounded-lg border text-xs sm:text-[10px]"
                     style={{ borderColor: `${NAVY}20` }}
                   >
                     {(['all', 'public', 'private'] as const).map((f) => (
                       <button
                         key={f}
                         onClick={() => setMapFilter(f)}
-                        className="px-2.5 py-1 font-medium transition-colors"
+                        className="min-h-[44px] px-3 py-2 sm:px-2.5 sm:py-1 font-medium transition-colors"
                         style={
                           mapFilter === f
                             ? { background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`, color: '#fff' }
@@ -458,7 +463,7 @@ export default function PortalPage() {
               initial={shouldReduceMotion ? false : { opacity: 0, x: 16 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: shouldReduceMotion ? 0 : 0.1, duration: dur, ease: 'easeOut' }}
-              className="lg:w-[32%] flex flex-col gap-3"
+              className="w-full lg:w-[32%] flex flex-col gap-3"
             >
               {/* Titre compact */}
               <div className="text-center lg:text-left">
@@ -500,7 +505,7 @@ export default function PortalPage() {
                       }
                       whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
                       onClick={() => handlePortalSelect(portal.type)}
-                      className="group relative flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left outline-none transition-all sm:px-4 sm:py-3"
+                      className="group relative flex items-center gap-3 rounded-xl border px-3 py-3 text-left outline-none transition-all min-h-[44px] sm:px-4 sm:py-3"
                       style={{
                         borderColor: isActive ? GOLD : `${NAVY}15`,
                         background: isActive
@@ -531,7 +536,7 @@ export default function PortalPage() {
                             {portal.title}
                           </h3>
                           <span
-                            className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
+                            className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] sm:text-[9px] font-semibold uppercase tracking-wide"
                             style={{
                               color: NAVY,
                               background: `${GOLD}20`,
@@ -541,7 +546,7 @@ export default function PortalPage() {
                             {portal.roleCount} rôles
                           </span>
                         </div>
-                        <p className="mt-0.5 text-[11px] leading-snug text-slate-500">
+                        <p className="mt-0.5 text-xs sm:text-[11px] leading-snug text-slate-500">
                           {portal.description}
                         </p>
                       </div>
@@ -578,7 +583,7 @@ export default function PortalPage() {
                     <button
                       type="button"
                       onClick={() => setShowSchoolSearch(true)}
-                      className="flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:shadow-lg"
+                      className="flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-white shadow-md transition-all hover:shadow-lg min-h-[44px]"
                       style={{
                         background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
                       }}
@@ -597,7 +602,7 @@ export default function PortalPage() {
 
               {/* Footer sécurité compact */}
               <div
-                className="mt-auto flex items-center justify-center gap-1.5 rounded-lg border bg-white/80 px-3 py-2 text-[11px] text-slate-500 backdrop-blur-sm lg:justify-start"
+                className="mt-auto flex items-center justify-center gap-1.5 rounded-lg border bg-white/80 px-3 py-2 text-xs sm:text-[11px] text-slate-500 backdrop-blur-sm lg:justify-start"
                 style={{ borderColor: `${NAVY}10` }}
               >
                 <Shield className="h-3 w-3" style={{ color: NAVY }} />
@@ -620,7 +625,7 @@ export default function PortalPage() {
                   }
                   whileTap={shouldReduceMotion ? undefined : { scale: 0.97 }}
                   transition={cardSpring}
-                  className="group relative inline-flex items-center gap-1.5 rounded-lg border-2 px-3 py-1.5 text-xs font-semibold shadow"
+                  className="group relative inline-flex items-center gap-1.5 rounded-lg border-2 px-3 py-2 text-xs font-semibold shadow min-h-[44px]"
                   style={{
                     borderColor: GOLD,
                     background: `linear-gradient(135deg, ${GOLD}, #e6a020)`,
@@ -655,7 +660,7 @@ export default function PortalPage() {
           >
             <motion.div
               key="school-search-modal"
-              className="relative w-full max-w-lg rounded-2xl border bg-white/95 p-6 shadow-2xl backdrop-blur-md sm:p-8"
+              className="relative w-full max-w-lg rounded-2xl border bg-white/95 p-4 shadow-2xl backdrop-blur-md sm:p-6 md:p-8 max-h-[90vh] overflow-y-auto"
               style={{
                 borderColor: `${NAVY}18`,
                 boxShadow: `0 24px 48px -12px ${NAVY}20, 0 0 0 1px ${GOLD}14`,
@@ -664,10 +669,10 @@ export default function PortalPage() {
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
-              <div className="mb-5 flex items-start justify-between">
-                <div className="flex items-center gap-3">
+              <div className="mb-4 sm:mb-5 flex items-start justify-between">
+                <div className="flex items-center gap-2 sm:gap-3">
                   <div
-                    className="flex h-10 w-10 items-center justify-center rounded-xl"
+                    className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl"
                     style={{
                       background: `linear-gradient(135deg, ${NAVY}18, ${BLUE}12)`,
                     }}
@@ -677,7 +682,7 @@ export default function PortalPage() {
                     )}
                   </div>
                   <div>
-                    <h2 className="text-lg font-bold" style={{ color: NAVY }}>
+                    <h2 className="text-base sm:text-lg font-bold" style={{ color: NAVY }}>
                       {activePortalDef?.title || 'Portail'}
                     </h2>
                     <p className="text-xs text-slate-500">
@@ -691,7 +696,7 @@ export default function PortalPage() {
                   type="button"
                   whileTap={{ scale: 0.92 }}
                   onClick={handleCloseSchoolSearch}
-                  className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                  className="rounded-lg p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
                   aria-label="Fermer"
                 >
                   <X className="h-5 w-5" />
@@ -726,7 +731,7 @@ export default function PortalPage() {
                           : { scale: 1.01, boxShadow: `0 12px 28px ${NAVY}25` }
                       }
                       whileTap={isContinuing || shouldReduceMotion ? undefined : { scale: 0.99 }}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 font-semibold text-white shadow-md transition-all disabled:cursor-not-allowed disabled:opacity-80"
+                      className="flex w-full items-center justify-center gap-2 rounded-xl px-4 sm:px-6 py-3.5 font-semibold text-white shadow-md transition-all disabled:cursor-not-allowed disabled:opacity-80 min-h-[44px]"
                       style={{
                         background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
                       }}
@@ -755,7 +760,7 @@ export default function PortalPage() {
               <button
                 type="button"
                 onClick={handleCloseSchoolSearch}
-                className="mt-4 flex w-full items-center justify-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-slate-700"
+                className="mt-3 sm:mt-4 flex w-full items-center justify-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-slate-700 min-h-[44px]"
               >
                 <ArrowRight className="h-3.5 w-3.5 rotate-180" />
                 <span>Retour à la sélection du portail</span>
@@ -780,7 +785,7 @@ export default function PortalPage() {
           >
             <motion.div
               key="dev-modal"
-              className="relative w-full max-w-md rounded-2xl border bg-white p-6 shadow-2xl"
+              className="relative w-full max-w-md rounded-2xl border bg-white p-4 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto"
               style={{
                 borderColor: `${NAVY}18`,
                 boxShadow: `0 24px 48px -12px ${NAVY}20, 0 0 0 1px ${GOLD}14`,
@@ -788,22 +793,23 @@ export default function PortalPage() {
               {...modalMotion}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="mb-6 flex items-center justify-between">
-                <h3 className="flex items-center gap-2 text-lg font-bold" style={{ color: NAVY }}>
-                  <Code2 className="h-5 w-5" style={{ color: GOLD }} />
-                  Connexion en mode développement
+              <div className="mb-4 sm:mb-6 flex items-center justify-between">
+                <h3 className="flex items-center gap-2 text-base sm:text-lg font-bold" style={{ color: NAVY }}>
+                  <Code2 className="h-4 w-4 sm:h-5 sm:w-5" style={{ color: GOLD }} />
+                  <span className="hidden sm:inline">Connexion en mode développement</span>
+                  <span className="sm:hidden">Mode DEV</span>
                 </h3>
                 <motion.button
                   type="button"
                   whileTap={{ scale: 0.92 }}
                   onClick={handleDevPanelClose}
-                  className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                  className="rounded-lg p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
                   aria-label="Fermer"
                 >
                   <X className="h-5 w-5" />
                 </motion.button>
               </div>
-              <p className="mb-4 text-sm text-slate-600">
+              <p className="mb-3 sm:mb-4 text-sm text-slate-600">
                 Choisissez d&apos;abord l&apos;école (tenant), puis saisissez vos
                 identifiants pour vous connecter à l&apos;app avec ce contexte.
               </p>
@@ -818,7 +824,7 @@ export default function PortalPage() {
                       const t = devTenants.find((x) => x.id === e.target.value);
                       setSelectedDevTenant(t ?? null);
                     }}
-                    className="w-full rounded-lg border px-3 py-2 text-sm focus:ring-2"
+                    className="w-full rounded-lg border px-3 py-2.5 min-h-[44px] text-sm focus:ring-2"
                     style={{
                       borderColor: `${NAVY}25`,
                       '--tw-ring-color': `${NAVY}30`,
@@ -846,7 +852,7 @@ export default function PortalPage() {
                     value={devEmail}
                     onChange={(e) => setDevEmail(e.target.value)}
                     placeholder="votre@email.com"
-                    className="w-full rounded-lg border px-3 py-2 text-sm focus:ring-2"
+                    className="w-full rounded-lg border px-3 py-2.5 min-h-[44px] text-sm focus:ring-2"
                     style={{
                       borderColor: `${NAVY}25`,
                       '--tw-ring-color': `${NAVY}30`,
@@ -869,7 +875,7 @@ export default function PortalPage() {
                     value={devPassword}
                     onChange={(e) => setDevPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full rounded-lg border px-3 py-2 text-sm focus:ring-2"
+                    className="w-full rounded-lg border px-3 py-2.5 min-h-[44px] text-sm focus:ring-2"
                     style={{
                       borderColor: `${NAVY}25`,
                       '--tw-ring-color': `${NAVY}30`,
@@ -881,7 +887,7 @@ export default function PortalPage() {
                   <button
                     type="button"
                     onClick={handleDevPanelClose}
-                    className="flex-1 rounded-lg border px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    className="flex-1 rounded-lg border px-4 py-2.5 min-h-[44px] text-sm font-medium text-slate-700 hover:bg-slate-50"
                     style={{ borderColor: `${NAVY}20` }}
                   >
                     Annuler
@@ -889,7 +895,7 @@ export default function PortalPage() {
                   <button
                     type="submit"
                     disabled={isDevLoggingIn}
-                    className="flex-1 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex-1 rounded-lg px-4 py-2.5 min-h-[44px] text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                     style={{
                       background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
                     }}

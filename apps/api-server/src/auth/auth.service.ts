@@ -127,6 +127,25 @@ export class AuthService {
       throw new ForbiddenException('Only PLATFORM_OWNER can use PLATFORM portal type');
     }
 
+    // ── Validation stricte rôle ↔ portail (RBAC 7 dimensions) ──
+    // Un utilisateur ne peut se connecter QUE via le portail correspondant à son rôle.
+    if (loginDto.portal_type) {
+      const allowedPortals = this.getAllowedPortalsForRole(user.role);
+      if (!allowedPortals.includes(loginDto.portal_type)) {
+        const portalNames: Record<string, string> = {
+          PLATFORM: 'Plateforme',
+          SCHOOL: 'École',
+          TEACHER: 'Enseignant',
+          PARENT: 'Parent / Élève',
+        };
+        const currentPortalName = portalNames[loginDto.portal_type] || loginDto.portal_type;
+        const allowedNames = allowedPortals.map(p => portalNames[p] || p).join(' ou ');
+        throw new ForbiddenException(
+          `PORTAL_MISMATCH: Ce compte ne peut pas utiliser le portail ${currentPortalName}. Veuillez utiliser le portail ${allowedNames}.`,
+        );
+      }
+    }
+
     // Si portal_type est SCHOOL, TEACHER ou PARENT, tenant_id est requis
     if (loginDto.portal_type) {
       if (!loginDto.tenant_id) {
@@ -293,6 +312,57 @@ export class AuthService {
       return result;
     }
     return null;
+  }
+
+  /**
+   * Retourne les portails autorisés pour un rôle donné.
+   * Conforme au document academia-helm-portails.md :
+   *   - PLATFORM (7 rôles) : PLATFORM_OWNER, SUPER_ADMIN, PLATFORM_ADMIN, etc.
+   *   - SCHOOL (45 rôles) : DIRECTOR, ADMIN, ACCOUNTANT, DISCIPLINE_MASTER, etc.
+   *   - TEACHER (11 rôles) : TEACHER, TEACHER_RESPONSIBLE, etc.
+   *   - PARENT/ÉLÈVE (9 rôles) : PARENT, GUARDIAN, STUDENT, etc.
+   *   - PUBLIC (5 rôles) : pas d'authentification requise
+   */
+  private getAllowedPortalsForRole(role: string): PortalType[] {
+    // ── Rôles PLATEFORME (7 rôles) ──
+    const platformRoles = [
+      'PLATFORM_OWNER', 'SUPER_ADMIN', 'PLATFORM_ADMIN',
+      'PLATFORM_SUPPORT', 'PLATFORM_BILLING', 'PLATFORM_AUDITOR', 'PLATFORM_MODERATOR',
+    ];
+    if (platformRoles.includes(role)) return [PortalType.PLATFORM];
+
+    // ── Rôles ÉCOLE (45 rôles) ──
+    const schoolRoles = [
+      'DIRECTOR', 'SUPER_DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'DISCIPLINE_MASTER',
+      'EDUCATION_INSPECTOR', 'GENERAL_SUPERVISOR', 'BOARDING_MASTER', 'DAYCARE_MANAGER',
+      'CANTEEN_MANAGER', 'TRANSPORT_MANAGER', 'LIBRARIAN', 'LABORATORY_MANAGER',
+      'IT_MANAGER', 'COMMUNICATION_MANAGER', 'HR_MANAGER', 'RECRUITMENT_OFFICER',
+      'PAYROLL_MANAGER', 'CNSS_MANAGER', 'LEAVE_MANAGER', 'CONTRACT_MANAGER',
+      'STAFF_MANAGER', 'QUALITY_MANAGER', 'QHSE_MANAGER', 'EVENT_MANAGER',
+      'ALUMNI_MANAGER', 'PARTNERSHIP_MANAGER', 'FUNDING_MANAGER', 'GRANT_MANAGER',
+      'MAINTENANCE_MANAGER', 'SECURITY_MANAGER', 'RECEPTIONIST', 'SECRETARY',
+      'ASSISTANT_DIRECTOR', 'DEAN_OF_STUDIES', 'PEDAGOGICAL_COORDINATOR',
+      'LEVEL_HEAD', 'DEPARTMENT_HEAD', 'INTERNSHIP_MANAGER', 'ORIENTATION_COUNSELOR',
+      'SOCIAL_WORKER', 'NURSE', 'INFIRMARY_MANAGER', 'SHOP_MANAGER',
+    ];
+    if (schoolRoles.includes(role)) return [PortalType.SCHOOL];
+
+    // ── Rôles ENSEIGNANT (11 rôles) ──
+    const teacherRoles = [
+      'TEACHER', 'TEACHER_RESPONSIBLE', 'TEACHER_INTERNSHIP', 'SUBSTITUTE_TEACHER',
+      'TUTOR', 'MENTOR', 'EXAMINER', 'CORRECTOR', 'SUPERVISOR', 'ANIMATOR', 'CONSULTANT',
+    ];
+    if (teacherRoles.includes(role)) return [PortalType.TEACHER];
+
+    // ── Rôles PARENT / ÉLÈVE (9 rôles) ──
+    const parentRoles = [
+      'PARENT', 'GUARDIAN', 'STUDENT', 'ALUMNUS', 'PROSPECT_PARENT',
+      'PROSPECT_STUDENT', 'SPONSOR', 'AMBASSADOR', 'VOLUNTEER',
+    ];
+    if (parentRoles.includes(role)) return [PortalType.PARENT];
+
+    // Rôle non reconnu : autoriser SCHOOL par défaut (compatibilité arrière)
+    return [PortalType.SCHOOL];
   }
 
   /**

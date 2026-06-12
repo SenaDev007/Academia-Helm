@@ -81,6 +81,22 @@ export function persistClientSession(data: PersistClientSessionInput): void {
   }
 }
 
+/**
+ * Positionne le flag « fresh login » dans sessionStorage.
+ * Ce flag est lu par PostLoginFlowWrapper pour afficher le loading screen
+ * avec progression réelle après une authentification réussie.
+ * Il est automatiquement nettoyé après l'affichage du loading.
+ */
+export function markFreshLogin(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.setItem('academia_fresh_login', 'true');
+    // S'assurer que le flag de complétion du flow post-login est réinitialisé
+    // pour que le loading screen puisse s'afficher
+    localStorage.removeItem('academia_post_login_done');
+  } catch { /* ignore */ }
+}
+
 export function clearClientSessionSync(): void {
   if (typeof window === 'undefined') return;
   localStorage.removeItem('accessToken');

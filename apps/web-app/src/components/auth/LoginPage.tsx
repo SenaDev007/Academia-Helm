@@ -53,7 +53,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { BRAND } from '@/lib/brand';
 import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-email';
-import { persistClientSession } from '@/lib/auth/client-access-token';
+import { persistClientSession, markFreshLogin } from '@/lib/auth/client-access-token';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getMotionDuration } from '@/lib/motion/presets';
 import { getTenantRedirectUrl } from '@/lib/utils/tenant-redirect';
@@ -385,8 +385,19 @@ export default function LoginPage() {
         userMessage = 'Erreur serveur temporaire. Veuillez réessayer dans quelques instants.';
       } else if (rawMessage.includes('Unauthorized') || rawMessage.includes('401')) {
         userMessage = 'Email ou mot de passe incorrect. Vérifiez vos identifiants.';
+      } else if (rawMessage.includes('PORTAL_MISMATCH')) {
+        // Erreur de portail inadéquat — extraire le message du backend
+        const match = rawMessage.match(/PORTAL_MISMATCH:\s*(.*)/);
+        userMessage = match?.[1] || 'Ce compte n\'est pas autorisé sur ce portail. Veuillez utiliser le portail correspondant à votre profil.';
       } else if (rawMessage.includes('403') || rawMessage.includes('Forbidden')) {
-        userMessage = 'Accès refusé. Vérifiez vos identifiants et le portail sélectionné.';
+        // Autres erreurs 403 — vérifier si c'est une erreur de portail
+        if (rawMessage.includes('PLATFORM_OWNER') || rawMessage.includes('PLATFORM portal')) {
+          userMessage = 'Ce compte plateforme doit utiliser le portail Plateforme pour se connecter.';
+        } else if (rawMessage.includes('Only PLATFORM_OWNER')) {
+          userMessage = 'Seul un compte plateforme peut utiliser le portail Plateforme.';
+        } else {
+          userMessage = 'Accès refusé. Vérifiez vos identifiants et le portail sélectionné.';
+        }
       }
       setError(userMessage);
     } finally {
@@ -455,6 +466,7 @@ export default function LoginPage() {
         path: redirectPath,
         portalType: 'PLATFORM',
       });
+      markFreshLogin();
       window.location.href = redirectUrl;
       return;
     }
@@ -488,6 +500,7 @@ export default function LoginPage() {
 
     if (!resolvedSlug && !resolvedTenantId) {
       const mainDomain = getAppBaseUrl();
+      markFreshLogin();
       window.location.href = `${mainDomain}${redirectPath}`;
       return;
     }
@@ -498,6 +511,7 @@ export default function LoginPage() {
       path: redirectPath,
       portalType: 'PLATFORM',
     });
+    markFreshLogin();
     window.location.href = redirectUrl;
   };
 
@@ -555,6 +569,7 @@ export default function LoginPage() {
 
     if (!resolvedSlug && !resolvedTenantId) {
       const mainDomain = getAppBaseUrl();
+      markFreshLogin();
       window.location.href = `${mainDomain}${redirectPath}`;
       return;
     }
@@ -566,6 +581,7 @@ export default function LoginPage() {
         path: redirectPath,
         portalType: (portalType?.toUpperCase() as 'PLATFORM' | 'SCHOOL' | 'TEACHER' | 'PARENT' | 'PUBLIC') || undefined,
       });
+      markFreshLogin();
       window.location.href = redirectUrl;
     } catch {
       const baseUrl = window.location.origin;
@@ -573,6 +589,7 @@ export default function LoginPage() {
       if (resolvedSlug) url.searchParams.set('tenant', resolvedSlug);
       if (resolvedTenantId) url.searchParams.set('tenant_id', resolvedTenantId);
       if (portalType) url.searchParams.set('portal', portalType);
+      markFreshLogin();
       window.location.href = url.toString();
     }
   };
@@ -641,6 +658,7 @@ export default function LoginPage() {
         path: redirectPath,
         portalType: 'PLATFORM',
       });
+      markFreshLogin();
       window.location.href = redirectUrl;
       return;
     }
@@ -671,6 +689,7 @@ export default function LoginPage() {
       path: redirectPath,
       portalType: 'SCHOOL',
     });
+    markFreshLogin();
     window.location.href = redirectUrl;
   };
 
@@ -711,6 +730,7 @@ export default function LoginPage() {
       path: redirectPath,
       portalType: 'TEACHER',
     });
+    markFreshLogin();
     window.location.href = redirectUrl;
   };
 
@@ -776,6 +796,7 @@ export default function LoginPage() {
       path: redirectPath,
       portalType: 'PARENT',
     });
+    markFreshLogin();
     window.location.href = redirectUrl;
   };
 
@@ -822,7 +843,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-gradient-to-br from-slate-50 via-white to-blue-50/90 px-4 py-16 sm:px-6 lg:px-8">
+    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-gradient-to-br from-slate-50 via-white to-blue-50/90 px-3 py-12 sm:px-6 sm:py-16 lg:px-8">
       {/* ── Background blobs — palette Helm ── */}
       <div className="pointer-events-none absolute inset-0 opacity-40" aria-hidden>
         {!shouldReduceMotion ? (
@@ -854,11 +875,11 @@ export default function LoginPage() {
         initial={shouldReduceMotion ? false : { opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: dur }}
-        className="absolute left-0 right-0 top-0 z-20 flex items-center justify-between px-4 py-4 sm:px-8"
+        className="absolute left-0 right-0 top-0 z-20 flex items-center justify-between px-3 py-3 sm:px-8 sm:py-4"
       >
         <Link
           href="/"
-          className="inline-flex items-center gap-2 rounded-full border bg-white/80 px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm backdrop-blur-sm transition-colors hover:text-slate-900"
+          className="inline-flex items-center gap-2 rounded-full border bg-white/80 px-3 py-2 min-h-[44px] text-sm font-medium text-slate-700 shadow-sm backdrop-blur-sm transition-colors hover:text-slate-900"
           style={{ borderColor: `${NAVY}18` }}
         >
           <Home className="h-4 w-4" style={{ color: NAVY }} />
@@ -866,7 +887,7 @@ export default function LoginPage() {
         </Link>
         <Link
           href="/portal"
-          className="inline-flex items-center gap-2 rounded-full border bg-white/80 px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm backdrop-blur-sm transition-colors hover:text-slate-900"
+          className="inline-flex items-center gap-2 rounded-full border bg-white/80 px-3 py-2 min-h-[44px] text-sm font-medium text-slate-700 shadow-sm backdrop-blur-sm transition-colors hover:text-slate-900"
           style={{ borderColor: `${NAVY}18` }}
         >
           <ArrowLeft className="h-4 w-4" />
@@ -875,12 +896,12 @@ export default function LoginPage() {
       </motion.nav>
 
       {/* ── Main login card ── */}
-      <div className="relative z-10 w-full max-w-md">
+      <div className="relative z-10 w-full max-w-md px-1 sm:px-0">
         <motion.div
           initial={shouldReduceMotion ? false : { opacity: 0, y: 20, scale: 0.99 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: dur, ease: 'easeOut' }}
-          className="rounded-2xl border bg-white/95 p-8 shadow-2xl backdrop-blur-md md:p-10"
+          className="rounded-2xl border bg-white/95 p-5 shadow-2xl backdrop-blur-md sm:p-8 md:p-10"
           style={{
             borderColor: `${NAVY}18`,
             boxShadow: `0 24px 48px -12px ${NAVY}14, 0 0 0 1px ${GOLD}12`,
@@ -905,7 +926,7 @@ export default function LoginPage() {
                 alt={BRAND.name}
                 width={120}
                 height={120}
-                className="h-20 w-20 object-contain drop-shadow-lg md:h-24 md:w-24"
+                className="h-16 w-16 object-contain drop-shadow-lg sm:h-20 sm:w-20 md:h-24 md:w-24"
                 priority
               />
             </motion.div>
@@ -928,7 +949,7 @@ export default function LoginPage() {
                 </motion.div>
               )}
               <h1
-                className="text-2xl font-extrabold tracking-tight md:text-3xl"
+                className="text-xl font-extrabold tracking-tight sm:text-2xl md:text-3xl"
                 style={{ color: NAVY }}
               >
                 {portalDef?.title || BRAND.name}
@@ -943,7 +964,7 @@ export default function LoginPage() {
             {portalDef && (
               <motion.div variants={heroItem} className="mt-2">
                 <span
-                  className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                  className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] sm:text-[10px] font-semibold uppercase tracking-wide"
                   style={{
                     color: NAVY,
                     background: `${GOLD}20`,
@@ -1084,7 +1105,7 @@ export default function LoginPage() {
               Conformes au document academia-helm-portails.md
               ════════════════════════════════════════════════════════════════ */}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
             <AnimatePresence mode="wait">
               <motion.div
                 key={formBlockKey}
@@ -1092,7 +1113,7 @@ export default function LoginPage() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={shouldReduceMotion ? undefined : { opacity: 0, x: -12 }}
                 transition={{ duration: dur, ease: 'easeOut' }}
-                className="space-y-5"
+                className="space-y-4 sm:space-y-5"
               >
                 {/* ── PLATFORM + SCHOOL : Email + Mot de passe ── */}
                 {(isStandardLogin || portalType === 'school' || portalType === 'platform') && (
@@ -1122,7 +1143,7 @@ export default function LoginPage() {
                               email: e.target.value,
                             })
                           }
-                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2"
+                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                           placeholder={
                             portalType === 'platform'
@@ -1158,7 +1179,7 @@ export default function LoginPage() {
                         </label>
                         <Link
                           href="/forgot-password"
-                          className="text-xs font-medium transition-colors hover:underline"
+                          className="text-xs font-medium transition-colors hover:underline min-h-[44px] inline-flex items-center"
                           style={{ color: BLUE }}
                         >
                           Mot de passe oublié ?
@@ -1181,14 +1202,14 @@ export default function LoginPage() {
                               password: e.target.value,
                             })
                           }}
-                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2"
+                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                           placeholder="••••••••"
                         />
                         <button
                           type="button"
                           onClick={() => setShowPassword(!showPassword)}
-                          className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-700 transition-colors"
+                          className="absolute inset-y-0 right-0 flex items-center justify-center w-11 min-h-[44px] pr-1 text-slate-400 hover:text-slate-700 transition-colors"
                           aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
                         >
                           {showPassword ? (
@@ -1248,7 +1269,7 @@ export default function LoginPage() {
                               teacherIdentifier: e.target.value,
                             })
                           }
-                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2"
+                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                           placeholder="EMP001"
                         />
@@ -1268,7 +1289,7 @@ export default function LoginPage() {
                         </label>
                         <Link
                           href="/forgot-password"
-                          className="text-xs font-medium transition-colors hover:underline"
+                          className="text-xs font-medium transition-colors hover:underline min-h-[44px] inline-flex items-center"
                           style={{ color: BLUE }}
                         >
                           Mot de passe oublié ?
@@ -1289,14 +1310,14 @@ export default function LoginPage() {
                               password: e.target.value,
                             })
                           }}
-                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2"
+                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                           placeholder="••••••••"
                         />
                         <button
                           type="button"
                           onClick={() => setShowPassword(!showPassword)}
-                          className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-700 transition-colors"
+                          className="absolute inset-y-0 right-0 flex items-center justify-center w-11 min-h-[44px] pr-1 text-slate-400 hover:text-slate-700 transition-colors"
                           aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
                         >
                           {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -1353,7 +1374,7 @@ export default function LoginPage() {
                               phone: e.target.value,
                             })
                           }
-                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2 disabled:bg-slate-100"
+                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2 disabled:bg-slate-100"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                           placeholder="+229 90 00 00 00"
                         />
@@ -1402,7 +1423,7 @@ export default function LoginPage() {
                                   otp: e.target.value,
                                 })
                               }
-                              className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2"
+                              className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2"
                               style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                               placeholder="123456"
                               maxLength={6}
@@ -1420,7 +1441,7 @@ export default function LoginPage() {
                               setParentOtpCode('');
                               setParentCredentials((prev) => ({ ...prev, otp: '' }));
                             }}
-                            className="mt-1 text-xs font-medium transition-colors hover:underline"
+                            className="mt-1 text-xs font-medium transition-colors hover:underline min-h-[44px] inline-flex items-center"
                             style={{ color: BLUE }}
                           >
                             Renvoyer le code
@@ -1450,7 +1471,7 @@ export default function LoginPage() {
                             key={opt.type}
                             type="button"
                             onClick={() => setPreEnrollment((prev) => ({ ...prev, candidateType: opt.type, targetLevel: '' }))}
-                            className="flex flex-col items-center gap-1 rounded-xl border-2 p-3 text-center transition-all"
+                            className="flex flex-col items-center gap-1 rounded-xl border-2 p-3 min-h-[44px] text-center transition-all"
                             style={{
                               borderColor: preEnrollment.candidateType === opt.type ? GOLD : `${NAVY}18`,
                               background: preEnrollment.candidateType === opt.type ? `${GOLD}12` : `${NAVY}04`,
@@ -1465,7 +1486,7 @@ export default function LoginPage() {
                     </div>
 
                     {/* Parent info */}
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="mb-1 block text-xs font-semibold text-slate-900">
                           Prénom (parent)
@@ -1475,7 +1496,7 @@ export default function LoginPage() {
                           required
                           value={preEnrollment.parentFirstName}
                           onChange={(e) => setPreEnrollment((prev) => ({ ...prev, parentFirstName: e.target.value }))}
-                          className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                          className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                           placeholder="Prénom"
                         />
@@ -1489,14 +1510,14 @@ export default function LoginPage() {
                           required
                           value={preEnrollment.parentLastName}
                           onChange={(e) => setPreEnrollment((prev) => ({ ...prev, parentLastName: e.target.value }))}
-                          className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                          className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                           placeholder="Nom"
                         />
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="mb-1 block text-xs font-semibold text-slate-900">
                           Téléphone
@@ -1510,7 +1531,7 @@ export default function LoginPage() {
                             required
                             value={preEnrollment.parentPhone}
                             onChange={(e) => setPreEnrollment((prev) => ({ ...prev, parentPhone: e.target.value }))}
-                            className="w-full rounded-xl border-2 border-slate-200 py-2.5 pl-9 pr-3 text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                            className="w-full rounded-xl border-2 border-slate-200 py-2.5 pl-9 pr-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2"
                             style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                             placeholder="+229 90 00 00 00"
                           />
@@ -1528,7 +1549,7 @@ export default function LoginPage() {
                             type="email"
                             value={preEnrollment.parentEmail}
                             onChange={(e) => setPreEnrollment((prev) => ({ ...prev, parentEmail: e.target.value }))}
-                            className="w-full rounded-xl border-2 border-slate-200 py-2.5 pl-9 pr-3 text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                            className="w-full rounded-xl border-2 border-slate-200 py-2.5 pl-9 pr-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2"
                             style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                             placeholder="email@exemple.com"
                           />
@@ -1539,7 +1560,7 @@ export default function LoginPage() {
                     {/* Child info (not for PROSPECT_PARENT) */}
                     {preEnrollment.candidateType !== 'PROSPECT_PARENT' && (
                       <>
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
                             <label className="mb-1 block text-xs font-semibold text-slate-900">
                               Prénom de l&apos;enfant
@@ -1549,7 +1570,7 @@ export default function LoginPage() {
                               required
                               value={preEnrollment.childFirstName}
                               onChange={(e) => setPreEnrollment((prev) => ({ ...prev, childFirstName: e.target.value }))}
-                              className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                              className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2"
                               style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                               placeholder="Prénom"
                             />
@@ -1563,7 +1584,7 @@ export default function LoginPage() {
                               required
                               value={preEnrollment.childLastName}
                               onChange={(e) => setPreEnrollment((prev) => ({ ...prev, childLastName: e.target.value }))}
-                              className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                              className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2"
                               style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                               placeholder="Nom"
                             />
@@ -1579,7 +1600,7 @@ export default function LoginPage() {
                             required
                             value={preEnrollment.targetLevel}
                             onChange={(e) => setPreEnrollment((prev) => ({ ...prev, targetLevel: e.target.value }))}
-                            className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 text-sm transition-all focus:ring-2"
+                            className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all focus:ring-2"
                             style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                           >
                             <option value="">— Sélectionner —</option>
@@ -1600,7 +1621,7 @@ export default function LoginPage() {
                         value={preEnrollment.message}
                         onChange={(e) => setPreEnrollment((prev) => ({ ...prev, message: e.target.value }))}
                         rows={2}
-                        className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 text-sm transition-all placeholder:text-slate-400 focus:ring-2 resize-none"
+                        className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2 resize-none"
                         style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                         placeholder="Précisez votre demande..."
                       />
@@ -1622,7 +1643,7 @@ export default function LoginPage() {
                 }
                 whileTap={shouldReduceMotion ? undefined : { scale: 0.99 }}
                 transition={springSoft}
-                className="flex w-full items-center justify-center rounded-xl px-6 py-3.5 font-semibold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex w-full items-center justify-center rounded-xl px-4 sm:px-6 py-3.5 font-semibold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-50 min-h-[44px]"
                 style={{
                   background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
                 }}
@@ -1652,12 +1673,12 @@ export default function LoginPage() {
             initial={shouldReduceMotion ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: shouldReduceMotion ? 0 : 0.12, duration: dur }}
-            className="mt-6 space-y-3 text-center"
+            className="mt-4 sm:mt-6 space-y-3 text-center"
           >
             {!isStandardLogin && portalType !== 'public' ? (
               <Link
                 href="/portal"
-                className="inline-flex items-center justify-center text-sm font-medium text-slate-600 transition-colors hover:text-slate-900"
+                className="inline-flex items-center justify-center text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 min-h-[44px]"
               >
                 ← Retour à la sélection du portail
               </Link>
@@ -1667,7 +1688,7 @@ export default function LoginPage() {
                 <div>
                   <Link
                     href="/forgot-password"
-                    className="text-sm font-medium transition-colors hover:underline"
+                    className="text-sm font-medium transition-colors hover:underline inline-flex items-center min-h-[44px]"
                     style={{ color: BLUE }}
                   >
                     Mot de passe oublié ?
@@ -1677,7 +1698,7 @@ export default function LoginPage() {
                   Pas encore de compte ?{' '}
                   <Link
                     href="/signup"
-                    className="font-semibold transition-colors hover:underline"
+                    className="font-semibold transition-colors hover:underline inline-flex items-center min-h-[44px]"
                     style={{ color: NAVY }}
                   >
                     Activer Academia Helm

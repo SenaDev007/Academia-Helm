@@ -355,8 +355,11 @@ export function CareersContent({
   // Auto-select school if query parameter matches
   // Uses schoolAutoSelected guard to prevent re-running when URL changes
   // (e.g. when clicking a job card pushes /jobs/school/job-slug)
+  // CRITICAL: If forcedJobSlug is set, the deep-link useEffect handles
+  // both school AND job selection — this useEffect must NOT interfere,
+  // otherwise it calls handleSelectSchool() which resets selectedJob to null.
   useEffect(() => {
-    if (deepLinkResolved && forcedJobSlug) return;
+    if (forcedJobSlug) return; // Deep-link will handle everything
     if (initialSchool) return;
     if (schoolAutoSelected) return; // Already auto-selected, don't re-run
     if (schools.length > 0 && schoolParam && !selectedSchool) {
@@ -366,7 +369,7 @@ export function CareersContent({
         handleSelectSchool(match);
       }
     }
-  }, [schools, schoolParam, deepLinkResolved, forcedJobSlug, selectedSchool, initialSchool, schoolAutoSelected]);
+  }, [schools, schoolParam, forcedJobSlug, selectedSchool, initialSchool, schoolAutoSelected]);
 
   // Select a specific job from the jobs list by slug
   const handleSelectJobBySlug = (jobSlug: string) => {
@@ -867,17 +870,15 @@ export function CareersContent({
               <motion.div key="step-jobs" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }} className="space-y-6">
                 <button
                   onClick={() => {
-                    setSelectedSchool(null);
-                    setSelectedJob(null);
-                    setIsApplying(false);
-                    setSchoolAutoSelected(false);
-                    // Use replace + href to fully navigate away from /jobs/[slug]
-                    // router.push('/jobs') alone just re-renders the same [slug] page
+                    // Full page navigation — do NOT reset React state before navigating
+                    // because setSelectedSchool(null) + setSchoolAutoSelected(false)
+                    // would trigger the auto-select useEffect which re-pushes /jobs/[slug]
+                    // and cancels the navigation to /jobs.
                     window.location.href = '/jobs';
                   }}
-                  className="inline-flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-slate-900 transition-colors"
+                  className="inline-flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-[#0b2f73] transition-colors group"
                 >
-                  <ArrowLeft className="h-4 w-4" /> Retour aux établissements
+                  <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" /> Retour aux établissements
                 </button>
 
                 {/* School header card with full contact info */}
@@ -956,11 +957,14 @@ export function CareersContent({
                     </div>
                   ) : (
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Left: Job list — redesigned with Academia palette */}
+                    {/* Left: Job list — Premium Academia Helm design */}
                     <div className="lg:col-span-1 space-y-3">
                       <div className="flex items-center justify-between mb-1">
-                        <h3 className="text-xs font-bold text-[#0b2f73] uppercase tracking-wider">Postes ouverts</h3>
-                        <span className="text-[10px] font-bold text-white bg-[#0b2f73] rounded-full px-2.5 py-0.5">{jobs.length}</span>
+                        <h3 className="text-xs font-bold text-[#0b2f73] uppercase tracking-wider flex items-center gap-1.5">
+                          <Briefcase className="h-3.5 w-3.5 text-[#f5b335]" />
+                          Postes ouverts
+                        </h3>
+                        <span className="text-[10px] font-bold text-white bg-gradient-to-r from-[#0b2f73] to-[#1d4fa5] rounded-full px-3 py-0.5 shadow-sm shadow-[#0b2f73]/20">{jobs.length}</span>
                       </div>
                       {jobs.map((job) => (
                         <motion.div
@@ -975,47 +979,68 @@ export function CareersContent({
                           transition={{ type: 'spring', stiffness: 300, damping: 25 }}
                           className={`group relative p-4 rounded-xl border cursor-pointer transition-all overflow-hidden ${
                             selectedJob?.id === job.id
-                              ? 'border-[#f5b335]/50 bg-gradient-to-r from-[#f5b335]/8 to-[#0b2f73]/5 shadow-md shadow-[#f5b335]/10'
-                              : 'border-slate-100 bg-white hover:border-[#0b2f73]/20 hover:shadow-md hover:shadow-slate-100/50'
+                              ? 'border-[#f5b335]/60 bg-gradient-to-br from-[#f5b335]/10 via-white to-[#0b2f73]/5 shadow-lg shadow-[#f5b335]/15 ring-1 ring-[#f5b335]/20'
+                              : 'border-slate-200/80 bg-white hover:border-[#0b2f73]/25 hover:shadow-lg hover:shadow-[#0b2f73]/8'
                           }`}
                         >
-                          {/* Gold accent left bar when selected */}
-                          {selectedJob?.id === job.id && (
-                            <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#f5b335] rounded-r" />
+                          {/* Animated gold accent left bar when selected */}
+                          {selectedJob?.id === job.id ? (
+                            <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-gradient-to-b from-[#f5b335] via-[#ffd166] to-[#f5b335] rounded-r" />
+                          ) : (
+                            <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#0b2f73]/0 group-hover:bg-[#0b2f73]/40 rounded-r transition-colors duration-300" />
                           )}
 
+                          {/* Top row: title + bookmark */}
                           <div className="flex items-start justify-between gap-2">
-                            <h4 className={`font-bold text-sm leading-snug ${selectedJob?.id === job.id ? 'text-[#0b2f73]' : 'text-slate-800 group-hover:text-[#0b2f73]'} transition-colors`}>
+                            <h4 className={`font-bold text-sm leading-snug transition-colors ${selectedJob?.id === job.id ? 'text-[#0b2f73]' : 'text-slate-800 group-hover:text-[#0b2f73]'}`}>
                               {job.title}
                             </h4>
-                            <Bookmark className={`h-4 w-4 shrink-0 transition-colors ${selectedJob?.id === job.id ? 'text-[#f5b335] fill-[#f5b335]/20' : 'text-slate-200 group-hover:text-[#0b2f73]/30'}`} />
+                            <Bookmark className={`h-4 w-4 shrink-0 transition-all ${selectedJob?.id === job.id ? 'text-[#f5b335] fill-[#f5b335]/30' : 'text-slate-200 group-hover:text-[#1d4fa5]/40'}`} />
                           </div>
 
+                          {/* Department badge */}
                           {job.dept && (
-                            <p className="text-[11px] text-[#1d4fa5]/70 mt-0.5 font-medium">{job.dept}</p>
+                            <span className={`inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                              selectedJob?.id === job.id
+                                ? 'bg-[#0b2f73]/10 text-[#0b2f73]'
+                                : 'bg-[#1d4fa5]/8 text-[#1d4fa5]/80 group-hover:bg-[#0b2f73]/8 group-hover:text-[#0b2f73]'
+                            } transition-colors`}>
+                              <Building2 className="h-2.5 w-2.5" />{job.dept}
+                            </span>
                           )}
 
-                          <div className="flex flex-wrap items-center gap-2 mt-2">
+                          {/* Contract type + Location */}
+                          <div className="flex flex-wrap items-center gap-2 mt-2.5">
                             {job.contractType && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#0b2f73]/8 text-[#0b2f73] text-[9px] font-bold">
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold ${
+                                selectedJob?.id === job.id
+                                  ? 'bg-[#f5b335]/15 text-[#0b2f73] ring-1 ring-[#f5b335]/20'
+                                  : 'bg-[#0b2f73]/6 text-[#0b2f73]/70 group-hover:bg-[#0b2f73]/10'
+                              } transition-colors`}>
                                 <Clock className="h-2.5 w-2.5" />{job.contractType}
                               </span>
                             )}
                             {job.loc && (
-                              <span className="flex items-center gap-1 text-[10px] text-slate-400">
+                              <span className="flex items-center gap-1 text-[10px] text-slate-400 group-hover:text-slate-500 transition-colors">
                                 <MapPin className="h-2.5 w-2.5" />{job.loc}
                               </span>
                             )}
                           </div>
 
+                          {/* Salary — gold highlighted */}
                           {job.salary && (
-                            <p className="text-[11px] font-bold text-[#0b2f73] mt-2 flex items-center gap-1 bg-[#f5b335]/10 rounded-lg px-2 py-1 w-fit">
-                              <DollarSign className="h-3 w-3 text-[#f5b335]" />{formatSalary(job.salary)}
-                            </p>
+                            <div className={`mt-3 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 w-fit ${
+                              selectedJob?.id === job.id
+                                ? 'bg-gradient-to-r from-[#f5b335]/15 to-[#f5b335]/5'
+                                : 'bg-[#f5b335]/8 group-hover:bg-[#f5b335]/12'
+                            } transition-colors`}>
+                              <DollarSign className="h-3.5 w-3.5 text-[#f5b335]" />
+                              <span className="text-[11px] font-extrabold text-[#0b2f73]">{formatSalary(job.salary)}</span>
+                            </div>
                           )}
 
                           {/* Chevron indicator */}
-                          <div className={`absolute right-2 top-1/2 -translate-y-1/2 transition-all ${selectedJob?.id === job.id ? 'opacity-100 text-[#f5b335]' : 'opacity-0 group-hover:opacity-60 text-slate-300'}`}>
+                          <div className={`absolute right-2.5 top-1/2 -translate-y-1/2 transition-all ${selectedJob?.id === job.id ? 'opacity-100 text-[#f5b335]' : 'opacity-0 group-hover:opacity-50 text-[#1d4fa5]'}`}>
                             <ChevronRight className="h-4 w-4" />
                           </div>
                         </motion.div>

@@ -5,7 +5,9 @@
  * 
  * Page centrale pour accéder aux différents portails Academia Helm.
  * Refonte motion (Framer Motion) : entrées échelonnées, cartes interactives,
- * transitions entre choix du portail et recherche d’établissement.
+ * transitions entre choix du portail et recherche d'établissement.
+ * 
+ * Palette Academia Helm : Navy (#0b2f73) / Blue (#1d4fa5) / Gold (#f5b335)
  * 
  * ============================================================================
  */
@@ -21,12 +23,14 @@ import {
   Shield,
   Code2,
   X,
+  School,
+  TrendingUp,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import PremiumHeader from '@/components/layout/PremiumHeader';
 import SchoolSearch from '@/components/portal/SchoolSearch';
 import BeninMap from '@/components/portal/BeninMap';
-import { BENIN_DEPARTMENTS, type DepartmentData } from '@/data/benin-departments';
+import { BENIN_DEPARTMENTS, BENIN_TOTALS, BENIN_SECONDAIRE_TOTALS, type DepartmentData } from '@/data/benin-departments';
 import { useTenantRedirect } from '@/lib/hooks/useTenantRedirect';
 import { BRAND } from '@/lib/brand';
 import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-email';
@@ -55,8 +59,9 @@ interface DevTenant {
 }
 
 /** Aligné charte Academia Helm (landing / portail) */
-const NAVY = '#1E3A5F';
-const GOLD = '#C9A84C';
+const NAVY = '#0b2f73';
+const BLUE = '#1d4fa5';
+const GOLD = '#f5b335';
 
 export default function PortalPage() {
   const [selectedPortal, setSelectedPortal] = useState<PortalType>(null);
@@ -128,50 +133,50 @@ export default function PortalPage() {
           title: 'Portail Plateforme',
           subtitle: 'Administration SaaS • Supervision globale • Business',
           Icon: Shield,
-          iconBg: 'from-slate-700/20 to-slate-800/10',
-          iconColor: 'text-slate-800',
-          accentBar: 'bg-slate-800',
-          cta: 'text-slate-800 group-hover:text-slate-900',
+          iconBg: `linear-gradient(135deg, ${NAVY}22, ${NAVY}11)`,
+          iconColor: NAVY,
+          accentBar: `linear-gradient(90deg, ${NAVY}, ${BLUE})`,
+          hoverBg: `linear-gradient(135deg, ${NAVY}08, ${BLUE}06)`,
         },
         {
           type: 'SCHOOL' as const,
           title: 'Portail École',
           subtitle: 'Direction • Administration • Finances • Scolarité',
           Icon: Building2,
-          iconBg: 'from-blue-500/20 to-blue-600/10',
-          iconColor: 'text-blue-600',
-          accentBar: 'bg-blue-500',
-          cta: 'text-blue-600 group-hover:text-blue-700',
+          iconBg: `linear-gradient(135deg, ${BLUE}22, ${BLUE}11)`,
+          iconColor: BLUE,
+          accentBar: `linear-gradient(90deg, ${BLUE}, #2d6bc4)`,
+          hoverBg: `linear-gradient(135deg, ${BLUE}08, ${BLUE}04)`,
         },
         {
           type: 'TEACHER' as const,
           title: 'Portail Enseignant',
           subtitle: 'Pédagogie • Suivi • Notes • Cahier de texte',
           Icon: GraduationCap,
-          iconBg: 'from-emerald-500/20 to-emerald-600/10',
-          iconColor: 'text-emerald-600',
-          accentBar: 'bg-emerald-500',
-          cta: 'text-emerald-600 group-hover:text-emerald-700',
+          iconBg: `linear-gradient(135deg, ${GOLD}22, ${GOLD}11)`,
+          iconColor: GOLD,
+          accentBar: `linear-gradient(90deg, ${GOLD}, #f7c76e)`,
+          hoverBg: `linear-gradient(135deg, ${GOLD}0a, ${GOLD}04)`,
         },
         {
           type: 'PARENT' as const,
           title: 'Portail Parent / Élève',
           subtitle: 'Suivi scolaire • Paiements • Communication',
           Icon: Users,
-          iconBg: 'from-violet-500/20 to-violet-600/10',
-          iconColor: 'text-violet-600',
-          accentBar: 'bg-violet-500',
-          cta: 'text-violet-600 group-hover:text-violet-700',
+          iconBg: `linear-gradient(135deg, #0b2f7322, #0b2f7311)`,
+          iconColor: NAVY,
+          accentBar: `linear-gradient(90deg, ${NAVY}, ${GOLD})`,
+          hoverBg: `linear-gradient(135deg, ${NAVY}08, ${GOLD}04)`,
         },
         {
           type: 'PUBLIC' as const,
           title: 'Portail Public',
           subtitle: 'Pré-inscription • Admissions • Informations',
-          Icon: ArrowRight, // Replace with more appropriate if needed
-          iconBg: 'from-amber-500/20 to-amber-600/10',
-          iconColor: 'text-amber-600',
-          accentBar: 'bg-amber-500',
-          cta: 'text-amber-600 group-hover:text-amber-700',
+          Icon: ArrowRight,
+          iconBg: `linear-gradient(135deg, ${GOLD}22, ${BLUE}11)`,
+          iconColor: GOLD,
+          accentBar: `linear-gradient(90deg, ${GOLD}, ${BLUE})`,
+          hoverBg: `linear-gradient(135deg, ${GOLD}08, ${BLUE}04)`,
         },
       ] as const,
     [],
@@ -222,9 +227,8 @@ export default function PortalPage() {
 
   const handleContinue = async () => {
     if (selectedPortal === 'PLATFORM') {
-      // Pour le portail plateforme, on redirige directement vers le login global ou avec le tenant sélectionné si applicable
       await redirectToTenant({
-        tenantSlug: selectedSchool?.slug || 'platform', // Par défaut platform si pas d'école choisie
+        tenantSlug: selectedSchool?.slug || 'platform',
         tenantId: selectedSchool?.id || 'platform',
         path: '/login',
         portalType: 'PLATFORM',
@@ -236,7 +240,6 @@ export default function PortalPage() {
     if (!selectedPortal || !selectedSchool) return;
 
     if (selectedPortal === 'PUBLIC') {
-      // Pour le portail public, on redirige vers l'espace carrières / offres d'emploi public
       window.location.href = `/jobs?school=${selectedSchool.slug}`;
       return;
     }
@@ -272,11 +275,11 @@ export default function PortalPage() {
   const handleDevLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedDevTenant) {
-      alert('Veuillez d’abord sélectionner une école.');
+      alert('Veuillez d\'abord sélectionner une école.');
       return;
     }
     if (!devEmail.trim() || !devPassword) {
-      alert('Veuillez saisir l’email et le mot de passe.');
+      alert('Veuillez saisir l\'email et le mot de passe.');
       return;
     }
     setIsDevLoggingIn(true);
@@ -296,12 +299,9 @@ export default function PortalPage() {
         });
       };
 
-      // 1) Essai standard : connexion au tenant sélectionné (utilisateur rattaché au tenant)
       let response = await attemptLogin('SCHOOL');
       let data = await response.json();
 
-      // 2) Si c'est un PLATFORM_OWNER, le backend exige portal_type=PLATFORM.
-      // On retente en PLATFORM puis on sélectionne le tenant via /auth/select-tenant.
       const message = typeof data?.message === 'string' ? data.message : '';
       if (
         response.status === 403 &&
@@ -313,7 +313,6 @@ export default function PortalPage() {
         if (!response.ok || !data.success) {
           throw new Error(data.message || 'Connexion impossible');
         }
-        // Enrichir le token avec le tenant choisi
         const selectResp = await fetch('/api/auth/select-tenant', {
           method: 'POST',
           headers: {
@@ -343,7 +342,6 @@ export default function PortalPage() {
         return;
       }
 
-      // 3) Sinon, continuer le flux standard
       if (!response.ok || !data.success) {
         throw new Error(data.message || 'Connexion impossible');
       }
@@ -366,7 +364,6 @@ export default function PortalPage() {
       console.error('[Dev Login] Error:', error);
       const message =
         error instanceof Error ? error.message : 'Impossible de se connecter';
-      // Messages plus clairs selon le type d'erreur
       let userMessage = message;
       if (message.includes('timeout') || message.includes('ne répond pas') || message.includes('30 secondes')) {
         userMessage = 'Le serveur est en cours de démarrage. Veuillez réessayer dans quelques secondes.';
@@ -391,7 +388,8 @@ export default function PortalPage() {
         {!shouldReduceMotion ? (
           <>
             <motion.div
-              className="absolute -left-24 top-24 h-72 w-72 rounded-full bg-blue-400/25 blur-3xl"
+              className="absolute -left-24 top-24 h-72 w-72 rounded-full blur-3xl"
+              style={{ backgroundColor: `${NAVY}40` }}
               animate={{ x: [0, 24, 0], y: [0, -12, 0] }}
               transition={{
                 duration: 14,
@@ -400,7 +398,8 @@ export default function PortalPage() {
               }}
             />
             <motion.div
-              className="absolute -right-20 bottom-32 h-80 w-80 rounded-full bg-amber-300/20 blur-3xl"
+              className="absolute -right-20 bottom-32 h-80 w-80 rounded-full blur-3xl"
+              style={{ backgroundColor: `${GOLD}33` }}
               animate={{ x: [0, -18, 0], y: [0, 16, 0] }}
               transition={{
                 duration: 18,
@@ -410,7 +409,7 @@ export default function PortalPage() {
             />
             <motion.div
               className="absolute left-1/2 top-1/3 h-64 w-64 -translate-x-1/2 rounded-full blur-3xl"
-              style={{ backgroundColor: `${NAVY}1a` }}
+              style={{ backgroundColor: `${BLUE}1a` }}
               animate={{ scale: [1, 1.08, 1], opacity: [0.2, 0.32, 0.2] }}
               transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
             />
@@ -442,7 +441,7 @@ export default function PortalPage() {
             </motion.div>
             <motion.h1
               variants={heroItem}
-              className="mb-4 text-4xl font-extrabold tracking-tight text-slate-900 md:text-5xl"
+              className="mb-4 text-4xl font-extrabold tracking-tight md:text-5xl"
               style={{ color: NAVY }}
             >
               Accéder à votre portail
@@ -470,11 +469,15 @@ export default function PortalPage() {
                 whileHover={
                   shouldReduceMotion
                     ? undefined
-                    : { scale: 1.03, boxShadow: '0 20px 40px rgba(245,179,53,0.35)' }
+                    : { scale: 1.03, boxShadow: `0 20px 40px ${GOLD}55` }
                 }
                 whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
                 transition={cardSpring}
-                className="group relative inline-flex items-center justify-center gap-2 rounded-xl border-2 border-amber-400 bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-3 font-semibold text-white shadow-lg"
+                className="group relative inline-flex items-center justify-center gap-2 rounded-xl border-2 px-6 py-3 font-semibold text-white shadow-lg"
+                style={{
+                  background: `linear-gradient(135deg, ${GOLD}, #e09e2a)`,
+                  borderColor: `${GOLD}cc`,
+                }}
               title="Ouvrir la fenêtre : choisir une école puis saisir vos identifiants"
             >
                 <motion.span
@@ -517,7 +520,7 @@ export default function PortalPage() {
                 >
                   <div className="mb-6 flex items-center justify-between">
                     <h3 className="flex items-center gap-2 text-lg font-bold text-slate-900">
-                      <Code2 className="h-5 w-5 text-amber-500" />
+                      <Code2 className="h-5 w-5" style={{ color: GOLD }} />
                     Connexion en mode développement
                   </h3>
                     <motion.button
@@ -531,8 +534,8 @@ export default function PortalPage() {
                     </motion.button>
                 </div>
                   <p className="mb-4 text-sm text-slate-600">
-                    Choisissez d’abord l’école (tenant), puis saisissez vos
-                    identifiants pour vous connecter à l’app avec ce contexte.
+                    Choisissez d'abord l'école (tenant), puis saisissez vos
+                    identifiants pour vous connecter à l'app avec ce contexte.
                 </p>
                 <form onSubmit={handleDevLogin} className="space-y-4">
                   <div>
@@ -547,7 +550,8 @@ export default function PortalPage() {
                           );
                         setSelectedDevTenant(t ?? null);
                       }}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30"
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-offset-1"
+                        style={{ '--tw-ring-color': GOLD } as React.CSSProperties}
                       required
                     >
                       <option value="">— Choisir une école —</option>
@@ -577,7 +581,8 @@ export default function PortalPage() {
                       value={devEmail}
                       onChange={(e) => setDevEmail(e.target.value)}
                       placeholder="votre@email.com"
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30"
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-offset-1"
+                        style={{ '--tw-ring-color': GOLD } as React.CSSProperties}
                       required
                     />
                       {selectedDevTenant &&
@@ -600,7 +605,8 @@ export default function PortalPage() {
                       value={devPassword}
                       onChange={(e) => setDevPassword(e.target.value)}
                       placeholder="••••••••"
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30"
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-offset-1"
+                        style={{ '--tw-ring-color': GOLD } as React.CSSProperties}
                       required
                     />
                   </div>
@@ -615,7 +621,8 @@ export default function PortalPage() {
                     <button
                       type="submit"
                       disabled={isDevLoggingIn}
-                        className="flex-1 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="flex-1 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        style={{ background: `linear-gradient(135deg, ${GOLD}, #e09e2a)` }}
                     >
                       {isDevLoggingIn ? 'Connexion…' : 'Se connecter'}
                     </button>
@@ -680,15 +687,25 @@ export default function PortalPage() {
                         }}
                         role="button"
                         tabIndex={0}
-                        className="group relative cursor-pointer overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-md outline-none ring-slate-200/60 transition-shadow focus-visible:ring-2 focus-visible:ring-[#C9A84C] focus-visible:ring-offset-2 hover:border-slate-300 hover:shadow-xl"
+                        className="group relative cursor-pointer overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-md outline-none transition-all focus-visible:ring-2 focus-visible:ring-offset-2 hover:shadow-xl"
+                        style={{ '--tw-ring-color': GOLD } as React.CSSProperties}
                       >
+                        {/* Gold accent top bar */}
                         <div
-                          className={`absolute left-0 top-0 h-1 w-full ${card.accentBar} opacity-90`}
+                          className="absolute left-0 top-0 h-1 w-full opacity-90"
+                          style={{ background: card.accentBar }}
                           aria-hidden
                         />
-                        <div className="flex items-center gap-4 p-4 sm:p-5">
+                        {/* Hover background overlay */}
+                        <div
+                          className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                          style={{ background: card.hoverBg }}
+                        />
+                        <div className="relative flex items-center gap-4 p-4 sm:p-5">
+                          {/* Circular icon container */}
                           <motion.div
-                            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br shadow-inner sm:h-14 sm:w-14 ${card.iconBg} ring-1 ring-white/80`}
+                            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl shadow-inner ring-1 ring-white/80 sm:h-14 sm:w-14"
+                            style={{ background: card.iconBg }}
                             whileHover={
                               shouldReduceMotion
                                 ? undefined
@@ -696,7 +713,7 @@ export default function PortalPage() {
                             }
                             transition={cardSpring}
                           >
-                            <Icon className={`h-6 w-6 sm:h-7 sm:w-7 ${card.iconColor}`} />
+                            <Icon className="h-6 w-6 sm:h-7 sm:w-7" style={{ color: card.iconColor }} />
                           </motion.div>
                           <div className="min-w-0 flex-1">
                             <h3
@@ -710,9 +727,10 @@ export default function PortalPage() {
                             </p>
                           </div>
                           <div
-                            className={`shrink-0 inline-flex items-center text-sm font-semibold ${card.cta}`}
+                            className="shrink-0 inline-flex items-center text-sm font-semibold transition-colors"
+                            style={{ color: card.iconColor }}
                           >
-                            <span>Accéder</span>
+                            <span className="group-hover:text-white group-hover:drop-shadow-sm transition-colors duration-200">Accéder</span>
                             <motion.span
                               className="ml-1.5 inline-flex"
                               initial={false}
@@ -725,6 +743,76 @@ export default function PortalPage() {
                       </motion.div>
                     );
                   })}
+
+                  {/* ── Stats Banner ── */}
+                  <motion.div
+                    initial={shouldReduceMotion ? false : { opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: shouldReduceMotion ? 0 : 0.55, duration: dur, ease: 'easeOut' }}
+                    className="rounded-2xl border border-slate-200/80 bg-white shadow-md overflow-hidden"
+                  >
+                    <div
+                      className="px-5 py-3"
+                      style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+                    >
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
+                        <School className="h-4 w-4" style={{ color: GOLD }} />
+                        Statistiques nationales — Éducation au Bénin
+                      </h3>
+                    </div>
+                    <div className="p-4">
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="text-center">
+                          <div className="flex items-center justify-center mb-1">
+                            <div className="h-8 w-8 rounded-lg flex items-center justify-center" style={{ background: `${NAVY}12` }}>
+                              <School className="h-4 w-4" style={{ color: NAVY }} />
+                            </div>
+                          </div>
+                          <p className="text-lg font-bold" style={{ color: NAVY }}>
+                            {new Intl.NumberFormat('fr-FR').format(BENIN_TOTALS.schools + BENIN_SECONDAIRE_TOTALS.schools)}
+                          </p>
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wide">Écoles</p>
+                          <div className="mt-1 flex justify-center gap-2 text-[9px] text-slate-400">
+                            <span>Primaire: {new Intl.NumberFormat('fr-FR').format(BENIN_TOTALS.schools)}</span>
+                            <span>•</span>
+                            <span>Secondaire: {new Intl.NumberFormat('fr-FR').format(BENIN_SECONDAIRE_TOTALS.schools)}</span>
+                          </div>
+                        </div>
+                        <div className="text-center">
+                          <div className="flex items-center justify-center mb-1">
+                            <div className="h-8 w-8 rounded-lg flex items-center justify-center" style={{ background: `${BLUE}12` }}>
+                              <Users className="h-4 w-4" style={{ color: BLUE }} />
+                            </div>
+                          </div>
+                          <p className="text-lg font-bold" style={{ color: BLUE }}>
+                            {new Intl.NumberFormat('fr-FR').format(BENIN_TOTALS.students + BENIN_SECONDAIRE_TOTALS.students)}
+                          </p>
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wide">Apprenants</p>
+                          <div className="mt-1 flex justify-center gap-2 text-[9px] text-slate-400">
+                            <span>Primaire: {new Intl.NumberFormat('fr-FR').format(BENIN_TOTALS.students)}</span>
+                            <span>•</span>
+                            <span>Secondaire: {new Intl.NumberFormat('fr-FR').format(BENIN_SECONDAIRE_TOTALS.students)}</span>
+                          </div>
+                        </div>
+                        <div className="text-center">
+                          <div className="flex items-center justify-center mb-1">
+                            <div className="h-8 w-8 rounded-lg flex items-center justify-center" style={{ background: `${GOLD}12` }}>
+                              <GraduationCap className="h-4 w-4" style={{ color: GOLD }} />
+                            </div>
+                          </div>
+                          <p className="text-lg font-bold" style={{ color: GOLD }}>
+                            {new Intl.NumberFormat('fr-FR').format(BENIN_TOTALS.teachers + BENIN_SECONDAIRE_TOTALS.teachers)}
+                          </p>
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wide">Enseignants</p>
+                          <div className="mt-1 flex justify-center gap-2 text-[9px] text-slate-400">
+                            <span>Primaire: {new Intl.NumberFormat('fr-FR').format(BENIN_TOTALS.teachers)}</span>
+                            <span>•</span>
+                            <span>Secondaire: {new Intl.NumberFormat('fr-FR').format(BENIN_SECONDAIRE_TOTALS.teachers)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
                 </div>
 
                 {/* ── Colonne droite : Carte du Bénin ── */}
@@ -734,11 +822,22 @@ export default function PortalPage() {
                   transition={{ delay: shouldReduceMotion ? 0 : 0.35, duration: dur, ease: 'easeOut' }}
                   className="lg:w-[45%]"
                 >
-                  <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-lg">
-                    <div className="mb-3 flex items-center justify-between">
-                      <h3 className="text-sm font-bold uppercase tracking-wider" style={{ color: NAVY }}>
-                        Carte du Bénin
+                  <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-lg overflow-hidden">
+                    {/* Section header */}
+                    <div className="mb-4">
+                      <h3
+                        className="text-base font-bold tracking-tight"
+                        style={{ color: NAVY }}
+                      >
+                        L'éducation au Bénin en un coup d'œil
                       </h3>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Cliquez sur un département pour voir les statistiques détaillées
+                      </p>
+                    </div>
+                    {/* Filter tabs */}
+                    <div className="mb-3 flex items-center justify-between">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Filtre</span>
                       <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs">
                         {(['all', 'public', 'private'] as const).map((f) => (
                           <button
@@ -751,7 +850,7 @@ export default function PortalPage() {
                             }`}
                             style={
                               mapFilter === f
-                                ? { background: `linear-gradient(135deg, ${NAVY}, #144798)` }
+                                ? { background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }
                                 : undefined
                             }
                           >
@@ -789,9 +888,9 @@ export default function PortalPage() {
                   <motion.button
                     type="button"
                   onClick={handleBack}
-                    whileHover={
-                      shouldReduceMotion ? undefined : { x: -3 }
-                    }
+                  whileHover={
+                    shouldReduceMotion ? undefined : { x: -3 }
+                  }
                     className="mb-6 flex items-center gap-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900"
                 >
                     <ArrowRight className="h-4 w-4 rotate-180" />
@@ -802,7 +901,7 @@ export default function PortalPage() {
                     <div className="mb-2 flex items-center gap-3">
                     {selectedPortal === 'PLATFORM' && (
                       <>
-                          <Shield className="h-7 w-7 text-slate-700" />
+                          <Shield className="h-7 w-7" style={{ color: NAVY }} />
                           <h2
                             className="text-2xl font-bold"
                             style={{ color: NAVY }}
@@ -813,7 +912,7 @@ export default function PortalPage() {
                     )}
                     {selectedPortal === 'PUBLIC' && (
                       <>
-                          <ArrowRight className="h-7 w-7 text-amber-600" />
+                          <ArrowRight className="h-7 w-7" style={{ color: GOLD }} />
                           <h2
                             className="text-2xl font-bold"
                             style={{ color: NAVY }}
@@ -824,7 +923,7 @@ export default function PortalPage() {
                     )}
                     {selectedPortal === 'SCHOOL' && (
                       <>
-                          <Building2 className="h-7 w-7 text-blue-600" />
+                          <Building2 className="h-7 w-7" style={{ color: BLUE }} />
                           <h2
                             className="text-2xl font-bold"
                             style={{ color: NAVY }}
@@ -835,7 +934,7 @@ export default function PortalPage() {
                     )}
                     {selectedPortal === 'TEACHER' && (
                       <>
-                          <GraduationCap className="h-7 w-7 text-emerald-600" />
+                          <GraduationCap className="h-7 w-7" style={{ color: GOLD }} />
                           <h2
                             className="text-2xl font-bold"
                             style={{ color: NAVY }}
@@ -846,7 +945,7 @@ export default function PortalPage() {
                     )}
                     {selectedPortal === 'PARENT' && (
                       <>
-                          <Users className="h-7 w-7 text-violet-600" />
+                          <Users className="h-7 w-7" style={{ color: NAVY }} />
                           <h2
                             className="text-2xl font-bold"
                             style={{ color: NAVY }}
@@ -889,12 +988,12 @@ export default function PortalPage() {
                           whileHover={
                             shouldReduceMotion
                               ? undefined
-                              : { scale: 1.01, boxShadow: '0 12px 28px rgba(11,47,115,0.25)' }
+                              : { scale: 1.01, boxShadow: `0 12px 28px ${NAVY}40` }
                           }
                           whileTap={shouldReduceMotion ? undefined : { scale: 0.99 }}
                           className="flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 font-semibold text-white shadow-md transition-colors"
                           style={{
-                            background: `linear-gradient(135deg, ${NAVY}, #144798)`,
+                            background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
                           }}
                     >
                       <span>Continuer vers la connexion</span>

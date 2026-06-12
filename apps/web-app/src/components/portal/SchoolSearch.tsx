@@ -1,10 +1,11 @@
 /**
  * ============================================================================
- * SCHOOL SEARCH COMPONENT - SÉLECTEUR INTELLIGENT D'ÉTABLISSEMENT
+ * SCHOOL SEARCH COMPONENT — SÉLECTEUR INTELLIGENT D'ÉTABLISSEMENT
  * ============================================================================
- * 
- * Composant sélecteur avec recherche intelligente et liste complète
- * 
+ *
+ * Composant sélecteur avec recherche intelligente et liste complète.
+ * Palette Academia Helm : Navy (#0b2f73) / Blue (#1d4fa5) / Gold (#f5b335)
+ *
  * ============================================================================
  */
 
@@ -32,6 +33,11 @@ interface SchoolSearchProps {
   portalType: 'PLATFORM' | 'SCHOOL' | 'TEACHER' | 'PARENT' | 'PUBLIC' | null;
 }
 
+/** Palette Academia Helm */
+const NAVY = '#0b2f73';
+const BLUE = '#1d4fa5';
+const GOLD = '#f5b335';
+
 export default function SchoolSearch({
   onSchoolSelect,
   selectedSchool,
@@ -49,7 +55,6 @@ export default function SchoolSearch({
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Liste des établissements : route App Router → BFF qui appelle Nest
-  // (NEXT_PUBLIC_API_URL / getApiBaseUrl côté serveur dans route.ts, pas de localhost en dur ici).
   useEffect(() => {
     const loadAllSchools = async () => {
       setIsLoading(true);
@@ -104,7 +109,7 @@ export default function SchoolSearch({
       const slugMatch = school.slug?.toLowerCase().includes(query);
       const subdomainMatch = school.subdomain?.toLowerCase().includes(query);
       const countryMatch = school.country?.toLowerCase().includes(query);
-      
+
       return nameMatch || cityMatch || slugMatch || subdomainMatch || countryMatch;
     });
   }, [allSchools, searchQuery]);
@@ -125,7 +130,6 @@ export default function SchoolSearch({
   // Ouvrir/fermer le dropdown
   const handleToggleDropdown = () => {
     if (selectedSchool && !isOpen) {
-      // Si une école est sélectionnée, réinitialiser
       setSearchQuery('');
       onSchoolSelect(null);
     }
@@ -171,10 +175,11 @@ export default function SchoolSearch({
         <div className="relative">
           <div
             onClick={handleToggleDropdown}
-            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg cursor-pointer hover:border-blue-500 transition-colors flex items-center justify-between bg-white"
+            className="w-full px-4 py-3 rounded-xl cursor-pointer hover:border-slate-400 transition-colors flex items-center justify-between bg-white"
+            style={{ border: `2px solid ${NAVY}25` }}
           >
             <div className="flex items-center space-x-3 flex-1 min-w-0">
-              <Search className="w-5 h-5 text-gray-400 flex-shrink-0" />
+              <Search className="w-5 h-5 flex-shrink-0" style={{ color: NAVY }} />
               <input
                 ref={inputRef}
                 type="text"
@@ -189,14 +194,17 @@ export default function SchoolSearch({
                   setIsOpen(true);
                 }}
                 placeholder="Rechercher ou sélectionner un établissement..."
-                className="flex-1 outline-none bg-transparent text-gray-700 placeholder-gray-400"
+                className="flex-1 outline-none bg-transparent text-slate-700 placeholder-slate-400"
                 autoComplete="off"
               />
             </div>
             {isLoading ? (
-              <Loader className="w-5 h-5 text-gray-400 animate-spin flex-shrink-0" />
+              <Loader className="w-5 h-5 animate-spin flex-shrink-0 text-slate-400" />
             ) : (
-              <ChevronDown className={`w-5 h-5 text-gray-400 flex-shrink-0 transition-transform ${isOpen ? 'transform rotate-180' : ''}`} />
+              <ChevronDown
+                className={`w-5 h-5 flex-shrink-0 transition-transform ${isOpen ? 'transform rotate-180' : ''}`}
+                style={{ color: NAVY }}
+              />
             )}
           </div>
 
@@ -205,97 +213,98 @@ export default function SchoolSearch({
             {showDropdown && (
               <motion.div
                 key="school-dropdown"
-                initial={
-                  reduceMotion ? false : { opacity: 0, y: -8, scale: 0.98 }
-                }
+                initial={reduceMotion ? false : { opacity: 0, y: -8, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={
-                  reduceMotion ? undefined : { opacity: 0, y: -6, scale: 0.99 }
-                }
+                exit={reduceMotion ? undefined : { opacity: 0, y: -6, scale: 0.99 }}
                 transition={{ duration: reduceMotion ? 0 : 0.2, ease: 'easeOut' }}
-                className="absolute z-[200] mt-2 flex max-h-96 w-full flex-col overflow-hidden rounded-lg border-2 border-gray-200 bg-white shadow-xl"
+                className="absolute z-[200] mt-2 flex max-h-96 w-full flex-col overflow-hidden rounded-xl border-2 bg-white shadow-xl"
+                style={{ borderColor: `${NAVY}15` }}
               >
-              {/* Header avec compteur */}
-              <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-700">
-                  {searchQuery ? (
-                    <>
-                      {filteredSchools.length} résultat{filteredSchools.length > 1 ? 's' : ''} trouvé{filteredSchools.length > 1 ? 's' : ''}
-                    </>
-                  ) : (
-                    <>
-                      {allSchools.length} établissement{allSchools.length > 1 ? 's' : ''} disponible{allSchools.length > 1 ? 's' : ''}
-                    </>
+                {/* Header avec compteur */}
+                <div
+                  className="px-4 py-2 border-b flex items-center justify-between"
+                  style={{ background: `${NAVY}06`, borderColor: `${NAVY}12` }}
+                >
+                  <span className="text-sm font-medium" style={{ color: NAVY }}>
+                    {searchQuery ? (
+                      <>
+                        {filteredSchools.length} résultat{filteredSchools.length > 1 ? 's' : ''} trouvé{filteredSchools.length > 1 ? 's' : ''}
+                      </>
+                    ) : (
+                      <>
+                        {allSchools.length} établissement{allSchools.length > 1 ? 's' : ''} disponible{allSchools.length > 1 ? 's' : ''}
+                      </>
+                    )}
+                  </span>
+                  {isSearching && (
+                    <Loader className="w-4 h-4 animate-spin text-slate-400" />
                   )}
-                </span>
-                {isSearching && (
-                  <Loader className="w-4 h-4 text-gray-400 animate-spin" />
-                )}
-              </div>
+                </div>
 
-              {/* Liste des résultats */}
-              <div className="overflow-y-auto max-h-80">
-                {filteredSchools.length > 0 ? (
-                  filteredSchools.map((school) => (
-                    <button
-                      key={school.id}
-                      onClick={() => handleSchoolClick(school)}
-                      className="w-full px-4 py-3 hover:bg-blue-50 flex items-center space-x-3 text-left border-b border-gray-100 last:border-b-0 transition-colors group"
-                    >
-                      {school.logoUrl ? (
-                        <Image
-                          src={school.logoUrl}
-                          alt={school.name}
-                          width={48}
-                          height={48}
-                          className="rounded-lg flex-shrink-0 object-cover"
-                        />
-                      ) : (
-                        <div className="w-12 h-12 bg-gradient-to-br from-blue-100 to-blue-200 rounded-lg flex items-center justify-center flex-shrink-0 group-hover:from-blue-200 group-hover:to-blue-300 transition-colors">
-                          <Building2 className="w-6 h-6 text-blue-600" />
+                {/* Liste des résultats */}
+                <div className="overflow-y-auto max-h-80">
+                  {filteredSchools.length > 0 ? (
+                    filteredSchools.map((school) => (
+                      <button
+                        key={school.id}
+                        onClick={() => handleSchoolClick(school)}
+                        className="w-full px-4 py-3 hover:bg-slate-50 flex items-center space-x-3 text-left border-b border-slate-100 last:border-b-0 transition-colors group"
+                      >
+                        {school.logoUrl ? (
+                          <Image
+                            src={school.logoUrl}
+                            alt={school.name}
+                            width={48}
+                            height={48}
+                            className="rounded-lg flex-shrink-0 object-cover"
+                          />
+                        ) : (
+                          <div
+                            className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors"
+                            style={{
+                              background: `linear-gradient(135deg, ${NAVY}10, ${BLUE}15)`,
+                            }}
+                          >
+                            <Building2 className="w-6 h-6" style={{ color: NAVY }} />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-slate-900 truncate group-hover:text-slate-700 transition-colors">
+                            {school.name}
+                          </p>
+                          <div className="flex items-center space-x-3 mt-1 text-sm text-slate-500">
+                            {school.city && (
+                              <span className="flex items-center space-x-1">
+                                <MapPin className="w-3 h-3" />
+                                <span>{school.city}</span>
+                              </span>
+                            )}
+                            {school.schoolType && (
+                              <span className="flex items-center space-x-1">
+                                <GraduationCap className="w-3 h-3" />
+                                <span>{getSchoolTypeLabel(school.schoolType)}</span>
+                              </span>
+                            )}
+                            {school.country && (
+                              <span className="text-slate-400">· {school.country}</span>
+                            )}
+                          </div>
                         </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-gray-900 truncate group-hover:text-blue-700 transition-colors">
-                          {school.name}
-                        </p>
-                        <div className="flex items-center space-x-3 mt-1 text-sm text-gray-600">
-                          {school.city && (
-                            <span className="flex items-center space-x-1">
-                              <MapPin className="w-3 h-3" />
-                              <span>{school.city}</span>
-                            </span>
-                          )}
-                          {school.schoolType && (
-                            <span className="flex items-center space-x-1">
-                              <GraduationCap className="w-3 h-3" />
-                              <span>{getSchoolTypeLabel(school.schoolType)}</span>
-                            </span>
-                          )}
-                          {school.country && (
-                            <span className="text-gray-500">• {school.country}</span>
-                          )}
-                        </div>
-                      </div>
-                    </button>
-                  ))
-                ) : (
-                  <div className="px-4 py-8 text-center">
-                    <p className="text-sm text-gray-600">
-                      {searchQuery ? (
-                        <>
-                          Aucun établissement trouvé pour &quot;{searchQuery}&quot;
-                        </>
-                      ) : (
-                        <>
-                          Aucun établissement disponible
-                        </>
-                      )}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </motion.div>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-4 py-8 text-center">
+                      <p className="text-sm text-slate-500">
+                        {searchQuery ? (
+                          <>Aucun établissement trouvé pour &quot;{searchQuery}&quot;</>
+                        ) : (
+                          <>Aucun établissement disponible</>
+                        )}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
             )}
           </AnimatePresence>
         </div>
@@ -305,7 +314,11 @@ export default function SchoolSearch({
           initial={reduceMotion ? false : { opacity: 0, scale: 0.98 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: reduceMotion ? 0 : 0.22, ease: 'easeOut' }}
-          className="rounded-lg border-2 border-blue-300 bg-gradient-to-r from-blue-50 to-blue-100 p-4"
+          className="rounded-xl border-2 p-4"
+          style={{
+            borderColor: `${NAVY}25`,
+            background: `linear-gradient(135deg, ${NAVY}06, ${BLUE}08)`,
+          }}
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3 flex-1 min-w-0">
@@ -318,16 +331,21 @@ export default function SchoolSearch({
                   className="rounded-lg flex-shrink-0 object-cover"
                 />
               ) : (
-                <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                <div
+                  className="w-14 h-14 rounded-lg flex items-center justify-center flex-shrink-0"
+                  style={{
+                    background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+                  }}
+                >
                   <Building2 className="w-7 h-7 text-white" />
                 </div>
               )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center space-x-2">
-                  <p className="font-bold text-gray-900 truncate">{selectedSchool.name}</p>
-                  <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+                  <p className="font-bold text-slate-900 truncate">{selectedSchool.name}</p>
+                  <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
                 </div>
-                <div className="flex items-center space-x-4 mt-1 text-sm text-gray-700">
+                <div className="flex items-center space-x-4 mt-1 text-sm text-slate-600">
                   {selectedSchool.city && (
                     <div className="flex items-center space-x-1">
                       <MapPin className="w-4 h-4" />
@@ -345,10 +363,10 @@ export default function SchoolSearch({
             </div>
             <button
               onClick={handleClearSelection}
-              className="ml-4 p-2 hover:bg-blue-200 rounded-lg transition-colors flex-shrink-0"
+              className="ml-4 p-2 hover:bg-slate-100 rounded-lg transition-colors flex-shrink-0"
               title="Changer d'établissement"
             >
-              <X className="w-5 h-5 text-gray-600 hover:text-gray-900" />
+              <X className="w-5 h-5 text-slate-500 hover:text-slate-800" />
             </button>
           </div>
         </motion.div>

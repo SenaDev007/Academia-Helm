@@ -45,6 +45,10 @@ import {
   Baby,
   GraduationCap as GradCap,
   FileText,
+  Eye,
+  EyeOff,
+  XCircle,
+  CheckCircle2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BRAND } from '@/lib/brand';
@@ -92,10 +96,47 @@ interface PreEnrollmentData {
   message?: string;
 }
 
+/** Info école stockée dans sessionStorage pour affichage sur la page login */
+interface SchoolInfo {
+  name: string;
+  logoUrl: string | null;
+  city: string | null;
+  schoolType: string | null;
+}
+
 function normalizePortal(raw: string | null | undefined): PortalType {
   const x = raw?.toLowerCase();
   if (x === 'platform' || x === 'school' || x === 'teacher' || x === 'parent' || x === 'public') return x as PortalType;
   return null;
+}
+
+/** Valide le format d'un email */
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+/** Valide un numéro de téléphone béninois (format +229 ou 9 chiffres locaux) */
+function isValidBeninPhone(phone: string): boolean {
+  const digits = phone.replace(/[\s\-().]/g, '');
+  return /^(\+229|00229)?\d{8}$/.test(digits);
+}
+
+/** Évalue la force d'un mot de passe — retourne { score, label, color } */
+function getPasswordStrength(password: string): { score: number; label: string; color: string } {
+  if (!password) return { score: 0, label: '—', color: '#94a3b8' };
+  let score = 0;
+  if (password.length >= 6) score++;
+  if (password.length >= 8) score++;
+  if (password.length >= 12) score++;
+  if (/[A-Z]/.test(password)) score++;
+  if (/[a-z]/.test(password)) score++;
+  if (/\d/.test(password)) score++;
+  if (/[^A-Za-z0-9]/.test(password)) score++;
+
+  if (score <= 2) return { score: 1, label: 'Faible', color: '#ef4444' };
+  if (score <= 4) return { score: 2, label: 'Moyen', color: GOLD };
+  if (score <= 5) return { score: 3, label: 'Bon', color: BLUE };
+  return { score: 4, label: 'Fort', color: '#16a34a' };
 }
 
 /**
@@ -414,7 +455,7 @@ export default function LoginPage() {
         tenantSlug: resolvedSlug || resolvedTenantId || 'unknown',
         tenantId: resolvedTenantId,
         path: redirectPath,
-        portalType: portalType?.toUpperCase() || undefined,
+        portalType: (portalType?.toUpperCase() as 'PLATFORM' | 'SCHOOL' | 'TEACHER' | 'PARENT' | 'PUBLIC') || undefined,
       });
       window.location.href = redirectUrl;
     } catch {
@@ -720,7 +761,7 @@ export default function LoginPage() {
                   whileHover={shouldReduceMotion ? undefined : { scale: 1.05, rotate: -2 }}
                   transition={springSoft}
                 >
-                  <PortalIcon className="h-6 w-6" style={{ color: NAVY }} />
+                  <PortalIcon className="h-6 w-6" />
                 </motion.div>
               )}
               <h1

@@ -49,8 +49,8 @@ const BENIN_DEPARTMENTS = [
   },
   {
     code: 'KO',
-    name: 'Kouffo',
-    variants: ['kouffo', 'couffo'],
+    name: 'Couffo',
+    variants: ['couffo', 'kouffo'],
   },
   {
     code: 'LI',

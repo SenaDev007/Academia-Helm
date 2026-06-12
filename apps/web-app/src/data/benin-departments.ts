@@ -223,8 +223,8 @@ export const BENIN_DEPARTMENTS: DepartmentData[] = [
   },
   {
     code: 'KO',
-    name: 'Kouffo',
-    capital: 'Aplahoué',
+    name: 'Couffo',
+    capital: 'Dogbo',
     area: 2404,
     population: 554418,
     schoolCount: 867,

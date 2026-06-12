@@ -1,271 +1,155 @@
----
-Task ID: 1
-Agent: Main Agent
-Task: Fix RH module - personnel not loading (P2022 missing column error)
+# Work Log: Benin Education Data Scraping (Task ID: 3)
 
-Work Log:
-- Analyzed error screenshot: "Colonne manquante en base de données (colonne inconnue)"
-- Investigated codebase: found add_termination_fields.sql was NOT in a proper Prisma migration folder
-- Root cause: Prisma schema references 5 termination columns + 6 HR fields + matricule columns that don't exist in DB
-- Created proper migration folder: 20260608120000_add_staff_termination_fields/migration.sql
-- Added comprehensive fallback SQL in main.ts covering ALL unapplied migrations (20260606→20260609):
-  - Staff: globalMatricule, tenantMatricule, termination fields, HR fields (nationality, maritalStatus, etc.)
-  - Staff documents: category, description, validationStatus, expiresAt, version
-  - Staff photos table, staff_number_sequences table
-  - Contract: terminatedAt, terminationReason
-  - HR jobs: publishedAt
-- Updated Dockerfile CMD to include all recent migrations in conflict resolution list
-- Committed and pushed: 394435fd
+## Date: 2026-03-05
 
-Stage Summary:
-- Fix deployed to Railway via auto-deploy on push
-- Fallback SQL ensures columns exist even if prisma migrate deploy fails
-- All unapplied migrations are now covered by idempotent IF NOT EXISTS statements
+## Objective
+Scrape education data from two Benin government websites:
+1. Primary/Maternelle: https://emp.educmaster.bj/
+2. Secondaire: https://secondaire.educmaster.bj/
 
----
-Task ID: 2
-Agent: Main Agent
-Task: Fix mobile blank page after authentication
+## Approach
 
-Work Log:
-- Investigated authentication flow: LoginPage.tsx → waitForServerSession → window.location.href redirect
-- Root cause: Cross-domain cookie loss on mobile (iOS Safari, Chrome Android)
-  - After fetch('/api/auth/login') sets cookies, window.location.href to a different subdomain
-    may not carry the cookies because mobile browsers don't persist them fast enough
-- Fix 1: Increased waitForServerSession mobile delay from 500ms to 1200ms + cookie verification
-- Fix 2: Added mobile-safe redirect in getTenantRedirectUrl - uses query params on same domain
-  instead of cross-domain subdomain redirect on mobile
-- Fix 3: Created SessionRecovery component - instead of immediate redirect('/login') when
-  session cookie is missing, attempts to recover from localStorage and refresh token first
-- Committed and pushed: 109cb565
+### Step 1: Initial Page Fetching (web-reader)
+- Used `z-ai page_reader` CLI to fetch HTML from all 6 URLs (main pages, /statistiques, /departements)
+- Discovered both sites are Nuxt.js Single Page Applications (SPAs) that load data dynamically via API
+- The static HTML contained no department-level data - only JavaScript framework code
 
-Stage Summary:
-- Three-layer fix for mobile blank page:
-  1. More time for cookie persistence on mobile (1200ms + verification)
-  2. Same-domain redirect on mobile (avoids cross-domain cookie loss)
-  3. Graceful session recovery instead of blank redirect
----
-Task ID: 1
-Agent: Main
-Task: Fix recruitment module display issues (candidatures, tests, embauches not showing)
+### Step 2: Browser Automation (agent-browser)
+- Used `agent-browser` to render the SPA pages and extract data from the dynamically-loaded content
+- Found that the EMP site displays:
+  - National KPIs: 2,293,903 apprenants, 63,305 enseignants, 17,141 écoles
+  - Interactive Benin map with clickable departments
+  - Side panel with department details including circonscriptions scolaires
 
-Work Log:
-- Connected to production app at academiahelm.com using platform owner credentials (dev@academia-hub.local)
-- Navigated to RH module > Recrutement and identified that Candidatures, Tests, and Embauches tabs were not displaying data
-- Checked network requests and found /api/hr/recruitment/candidates and /api/hr/recruitment/tests returning HTTP 500
-- Error was Prisma P2022: "Colonne manquante en base de données (colonne inconnue)" - missing DB columns
-- Root cause: Prisma schema defined columns that were never created in the PostgreSQL database via migration
-- Missing columns:
-  - hr_tests: duration, instructions, maxScore, passingScore, status, updatedAt (6 columns)
-  - hr_test_results: notes, evaluatedAt (2 columns)
-  - hr_jobs: slug already had fallback in main.ts
-- Created migration file: 20260611120000_add_hr_tests_slug_and_missing_columns/migration.sql
-- Added idempotent ALTER TABLE fallback in main.ts startup (ensures columns exist even if migration fails)
-- Committed and pushed to GitHub
-- Waited for Railway to redeploy and apply migration
-- Verified all APIs now return 200:
-  - /api/hr/recruitment/candidates: Returns 10 candidates
-  - /api/hr/recruitment/tests: Returns 11 tests
-  - /api/hr/recruitment/jobs: Returns 6 jobs (already working)
-- Verified all tabs work in the UI:
-  - Candidatures: Shows 10 candidates with names, scores, statuses
-  - Tests: Shows 11 tests with types, descriptions
-  - Embauches: Shows 1 ready-to-hire + 8 recruited candidates
-  - Personnel: Shows 8 staff members
-  - Contrats: Shows 9 contracts
+### Step 3: API Endpoint Discovery
+- Intercepted network requests using `agent-browser network requests --filter api`
+- Discovered key API endpoints:
+  - EMP: `https://emp.educmaster.bj/api/public/indicateurs-accueil?sous_systeme=all&statut=all&cycle=tous`
+  - Secondaire: `https://secondaire.educmaster.bj/api/public/indicateurs-accueil?sous_systeme=all&statut=all`
+- Both APIs return comprehensive JSON with department-level data
 
-Stage Summary:
-- Root cause was missing database columns (Prisma P2022 error)
-- Fixed by creating migration + adding idempotent ALTER TABLE fallback
-- All recruitment module tabs now display data correctly
-- Tab switching works properly (confirmed with JavaScript dispatchEvent)
-- Code pushed to GitHub and deployed on Railway/Vercel
----
-Task ID: 3
-Agent: Main
-Task: Fix organigram initialization failure in RH module (Collaborators > Organigramme tab)
+### Step 4: Data Extraction
+- Fetched and parsed both API endpoints
+- EMP data includes: 12 departments, 90 circonscriptions scolaires, public/private breakdown
+- Secondaire data includes: 12 departments, public/private breakdown, no circonscription data
+- Cycle-specific KPIs extracted via browser (Maternelle, CI-CP, CE, CM)
+- Sub-system KPIs extracted via browser (ESG, ETFP)
 
-Work Log:
-- Analyzed user screenshot: "Organigramme non initialisé" + "Erreur lors de l'initialisation" toast
-- Traced full request flow: Frontend (OrganigramWorkspace.tsx) → BFF proxy → NestJS controller → Prisma service
-- Identified 3 root causes:
-  1. **Controller missing tenantId validation**: When a PLATFORM_OWNER accesses the organigram without a selected tenant, `req.tenantId` is `undefined` (TenantGuard allows platform owners through without setting tenantId). The seed endpoint then calls `seedOrganigram(undefined)`, causing Prisma to fail on the required `tenantId` field with a foreign key constraint violation.
-  2. **Seed method not atomic**: The original seed method created 100+ nodes sequentially without a transaction, meaning a partial failure would leave the database in an inconsistent state (some nodes created, some not).
-  3. **buildTree silently drops orphaned nodes**: When filtering by schoolLevelCode, nodes whose parent was filtered out (not in the result set) were silently dropped from the tree instead of being promoted to root level.
+### Step 5: Map/Visualization Description
+- Both sites use interactive SVG choropleth maps of Benin
+- EMP map color-codes by school count, with department labels
+- Secondaire map uses 6-level discrete color scale with legend
+- Both have filter buttons for status (Public/Private) and cycle/sub-system
 
-Fixes applied:
-1. **Controller**: Added `tenantId` validation in seed (throws BadRequestException), tree (returns []), and stats (returns zeroed stats) endpoints
-2. **Service**: Wrapped seed in `this.prisma.$transaction()` for atomicity; Fixed `buildTree` to promote orphaned nodes to root level instead of silently dropping them
-3. **Frontend**: Added tenant validation with clear error message; Improved error handling with specific messages for tenant-related vs generic errors; Added "Aucun établissement sélectionné" state when no tenant is selected
+## Data Summary
 
-Files modified:
-- apps/api-server/src/hr/organigram-prisma.controller.ts
-- apps/api-server/src/hr/organigram-prisma.service.ts
-- apps/web-app/src/app/app/hr/_components/workspaces/OrganigramWorkspace.tsx
-- Academia-Helm/apps/api-server/src/hr/organigram-prisma.controller.ts (mirror)
-- Academia-Helm/apps/api-server/src/hr/organigram-prisma.service.ts (mirror)
-- Academia-Helm/apps/web-app/src/app/app/hr/_components/workspaces/OrganigramWorkspace.tsx (mirror)
+### Primary/Maternelle (EMP)
+- **National**: 2,293,903 students, 63,305 teachers, 17,141 schools, 48.4% girls
+- **By Cycle**: Maternelle (85,995), CI-CP (817,982), CE (792,020), CM (597,906)
+- **12 Departments** with full breakdown (schools, students, teachers by public/private)
+- **90 Circonscriptions Scolaires** with detailed stats
 
-Stage Summary:
-- Primary bug: Missing tenantId validation for PLATFORM_OWNER users causes Prisma foreign key violation
-- Secondary bugs: Non-atomic seed, orphaned nodes in buildTree
-- All fixes applied to both main and mirror codebases
----
-Task ID: 1
-Agent: Main Agent
-Task: Fix collaborator status bug - PENDING_SIGNATURE status + organigramme fix
+### Secondaire (MESTFP)
+- **National**: 1,089,068 students, 53,341 teachers, 3,552 schools, 48.1% girls
+- **By Sub-system**: ESG (1,066,386 students, 2,948 schools), ETFP (22,682 students, 604 schools)
+- **12 Departments** with full breakdown (schools, students, teachers by public/private)
+- No circonscription data available
 
-Work Log:
-- Analyzed the full HR module codebase (backend + frontend) to understand status management
-- Identified root cause: No "en attente de signature" status existed; hired candidates were immediately set to ACTIVE/En poste
-- Modified recruitment.service.ts: Staff created with PENDING_SIGNATURE, Contract created with DRAFT when EMBAUCHÉ
-- Modified contract-pdf.service.ts: signContract() now updates Contract status from DRAFT→ACTIVE and Staff status from PENDING_SIGNATURE→ACTIVE
-- Modified OnboardingWizardModal: Staff created with PENDING_SIGNATURE, Contract created with DRAFT
-- Updated StaffWorkspace: Added PENDING_SIGNATURE to STATUS_CONFIG, filter, KPI strip, and card styling (amber color for pending)
-- Updated ContractsWorkspace: Changed DRAFT label to "En attente de signature", updated filters and KPI
-- Updated hr-kpi.service.ts: Included PENDING_SIGNATURE in staff counts
-- Updated hr-orion.service.ts: Added CONTRACT_PENDING_SIGNATURE alert for contracts unsigned >7 days, added pendingSignatureStaff/pendingSignatureContracts KPIs
-- Updated hr-overview.controller.ts: Added KPI data to dashboard response
-- Updated HROverview.tsx: Added "En attente signature" KPI card
-- Updated staff-prisma.service.ts: findAllStaff includes DRAFT contracts in related data
-- Fixed organigramme CSS issues (invalid borderColor style) and added error state with retry button
-- Created SQL migration script for fixing existing data (fix_pending_signature_status.sql)
-- Changed default filters to show all statuses (not just ACTIVE) so pending items are visible
+## Files Created
+- `/home/z/my-project/benin_education_data.json` - Comprehensive structured JSON output
+- `/home/z/my-project/emp_data_clean.json` - Raw EMP API data
+- `/home/z/my-project/secondaire_data_clean.json` - Raw Secondaire API data
+- `/home/z/my-project/emp_main_page.png` - Screenshot of EMP main page
+- `/home/z/my-project/secondaire_main_page.png` - Screenshot of Secondaire main page
+- `/home/z/my-project/emp_map_default.png` - Screenshot of EMP map (all)
+- `/home/z/my-project/emp_map_public.png` - Screenshot of EMP map (public filter)
+- `/home/z/my-project/emp_map_prive.png` - Screenshot of EMP map (private filter)
+- `/home/z/my-project/secondaire_map_default.png` - Screenshot of Secondaire map
 
-Stage Summary:
-- New status flow: EMBAUCHÉ → Staff:PENDING_SIGNATURE + Contract:DRAFT → Signature → Staff:ACTIVE + Contract:ACTIVE
-- All affected tabs (Personnel, Contrats, Collaborateurs, Overview) now correctly display the pending signature status
-- ORION vigilance now alerts on unsigned contracts older than 7 days
-- Data migration script created at /home/z/my-project/api-server/prisma/migrations/fix_pending_signature_status.sql
+## Key Findings
+1. Both sites serve static JSON files via API endpoints (generated periodically, not real-time)
+2. EMP data was generated: 2026-06-12 02:21:27
+3. Secondaire data was generated: 2026-06-12T03:01:03.137Z
+4. The API filtering parameters (cycle, statut, sous_systeme) appear to be ignored by the server - all return the same dataset
+5. Client-side JavaScript handles the filtering/interactivity
+6. The Secondaire site has no circonscription scolaire breakdown unlike the EMP site
+7. The private sector dominates in urban departments (Atlantique, Littoral, Ouémé) especially in secondaire
 
 ---
-Task ID: 1
-Agent: main
-Task: Intégration illustration RecruitmentPlaceholder sur page recrutement
 
-Work Log:
-- Créé le composant RecruitmentPlaceholder.tsx dans components/recruitment/
-- L'illustration utilise Image de next/image avec object-contain, centrage, et animation fade-in via framer-motion
-- Remplacé l'ancien état vide (texte "Veuillez sélectionner un poste...") par <RecruitmentPlaceholder />
-- Ajouté l'import du composant dans CareersContent.tsx
-- Vérifié TypeScript compilation sans erreur
-- Commité et poussé sur GitHub
-- Vérifié sur le site live : l'illustration s'affiche correctement quand aucun poste n'est sélectionné
-- Vérifié la transition : cliquer sur une offre masque l'illustration et affiche les détails du poste
+# Work Log: Benin SVG Map - Accurate Department Boundaries (Task ID: 3b)
 
-Stage Summary:
-- Nouveau composant: apps/web-app/src/components/recruitment/RecruitmentPlaceholder.tsx
-- Image: /public/images/AcademiaHelm_RecruitmentPortal.jpeg
-- L'illustration est centrée, responsive, avec animation fade-in
-- La transition illustration → détail du poste est fluide
-- Plus de "zone vide" sur la page recrutement
----
-Task ID: 4
-Agent: main
-Task: Analyze and fix all Settings (Paramètres) module tabs
+## Date: 2026-03-05
 
-Work Log:
-- Analyzed 2 user screenshots: Bug #1 (Prisma error on updatedAt in SettingsHistory.create) and Bug #2 (v5 displayed instead of v7)
-- Found root cause: `prismaCreateDefaults()` injects `{ id, updatedAt, createdAt }` but `SettingsHistory` model has NO `updatedAt` or `createdAt` fields
-- Fixed `settings-history.service.ts`: replaced `...prismaCreateDefaults()` with `id: uuid()` in `logFeatureChange()`
-- Fixed `enhanced-audit.service.ts`: added `id: uuid()` to both `logChange()` and `logBatchChanges()` + imported `uuid` from prisma-helpers
-- Bug #2 (wrong version display) is caused by Bug #1: the transaction succeeds (v7 is created in DB) but `logSettingChange()` fails (throws Prisma error), causing the API to return 500, so frontend never receives v7 data
-- Fixed systemic bug: added `setXxxForm(updated || {})` after save in 7 handlers: handleSaveBilingual, handleSaveCommunication, handleSaveSecurity, handleSaveOrion, handleSaveAtlas, handleSaveOffline, handleSaveBilling
-- Added 11 missing fields to Security tab: passwordRequireUppercase/Lowercase/Numbers/Special, passwordExpirationDays, twoFactorEnabled, requireEmailVerification, auditLogRetentionDays, dataRetentionYears, gdprCompliant, allowInspectionAccess
-- Added 5 missing fields to Orion tab: kpiCalculationFrequency, insightsFrequency, autoGenerateInsights, allowOrionExports
-- Added 5 missing fields to Atlas tab: scope, language, conversationHistoryDays, maxConversationsPerDay
-- Added 4 missing fields to Offline tab: conflictResolution, autoSyncOnConnect, allowOfflineModification, syncOnBackground
-- Enhanced History tab: added refresh button, category badges, old/new value diff display
-- Verified all tab sections have balanced HTML divs
+## Objective
+Replace the approximate/hand-drawn SVG paths in the BeninMap component with geographically accurate SVG path data derived from real GeoJSON boundary data for all 12 Benin departments.
 
-Stage Summary:
-- 3 backend bugs fixed (prismaCreateDefaults misuse in 2 files)
-- 7 frontend form re-sync bugs fixed
-- 4 tabs enhanced with missing fields (Security: +11, Orion: +5, Atlas: +5, Offline: +4)
-- History tab upgraded from stub to functional with refresh + diff display
-- Root cause of user's 2 reported bugs (Prisma error + wrong version) fully resolved
----
-Task ID: fix-settings-prisma-helpers
-Agent: Main Agent
-Task: Fix prismaCreateDefaults() mismatch bugs in Settings module services
+## Approach
 
-Work Log:
-- Investigated Identity tab save error + version mismatch (v5 vs v7)
-- Root cause: settings-history.service.ts used prismaCreateDefaults() which injects { id, updatedAt, createdAt } into prisma.settingsHistory.create(), but SettingsHistory model has NO updatedAt/createdAt
-- Fixed settings-history.service.ts: prismaCreateDefaults() → prismaCreateIdOnly()
-- Fixed identity-profile.service.ts: added prismaCreateDefaults() to syncToSchoolSettings upsert create
-- Fixed administrative-seals.service.ts: AdministrativeSealVersion → prismaCreateNoUpdatedAt(), AdministrativeSealUsage → prismaCreateIdOnly()
-- Fixed stamps-signatures.service.ts: TenantSignature → prismaCreateNoUpdatedAt()
-- Fixed electronic-signatures.service.ts: SignedDocument → prismaCreateNoUpdatedAt()
-- Fixed billing-settings.service.ts: BillingEvent → prismaCreateNoUpdatedAt()
-- Fixed roles-permissions.service.ts: UserRole → removed prismaCreateDefaults() (composite key, no id)
-- Fixed education-structure.service.ts: Added prismaCreateDefaults() to EducationLevel, EducationSeries, EducationCycle creates; added prismaUpdateDefaults() to all updates
-- Fixed communication-settings.service.ts: Added prismaCreateDefaults() to fallback create
-- Fixed roles-permissions-bootstrap.service.ts: Added prismaCreateNoUpdatedAt() to Permission upsert create
-- Fixed academic-period-settings.service.ts: Added prismaUpdateDefaults() to ensureSingleActivePeriod, update, close
-- Fixed administrative-seals.service.ts: Added prismaUpdateDefaults() to updateSeal
+### Step 1: Web Search for SVG/GeoJSON Sources
+- Searched for "Benin departments SVG map", "Bénin départements carte SVG", "Benin GeoJSON departments", "Bénin 12 départements carte interactive"
+- Found multiple data sources:
+  - **Wikimedia Commons**: "Benin_departments_map_in_colors.svg" (couldn't download raw SVG directly)
+  - **simplemaps.com**: Free SVG maps of Benin (404 on direct download)
+  - **amCharts**: GeoJSON with 12 departments (downloaded successfully: `amcharts_benin.json`)
+  - **geoBoundaries (wmgeolab/geoBoundaries)**: ADM1 simplified GeoJSON (downloaded successfully from GitHub: `benin_adm1.geojson`)
+  - **data.humdata.org**: Humanitarian Data Exchange with Benin ADM1 boundaries
 
-Stage Summary:
-- 2 commits pushed: 8a127be2, 5c7d2c89
-- 12 files modified total
-- Fixed critical bug causing ALL Settings tab saves to fail
-- Fixed version mismatch (v5 vs v7) in Identity tab
-- Fixed Structure tab initialization on fresh tenants
-- Fixed RBAC bootstrap on fresh tenants
-- All Settings module tabs should now be functional
----
-Task ID: inline-loading-redesign
-Agent: main
-Task: Redesign all inline loading components to be personalized, professional, captivating, and mobile-compatible
+### Step 2: GeoJSON Data Acquisition
+- Downloaded **geoBoundaries-BEN-ADM1_simplified.geojson** from GitHub (56,979 bytes)
+  - Source: `https://github.com/wmgeolab/geoBoundaries/raw/9469f09/releaseData/gbOpen/BEN/ADM1/geoBoundaries-BEN-ADM1_simplified.geojson`
+  - License: CC-BY 4.0
+  - Contains all 12 departments with 1,286 total coordinate points
+  - Note: Some department names have typos in the data (Atakora→Atacora, Atlanique→Atlantique, Kouffo→Couffo, Oueme→Ouémé)
+- Also downloaded **amCharts Benin GeoJSON** (36,042 bytes) for comparison
+  - Contains 1,836 total points (more detailed)
+  - Has proper accents (Ouémé) and ISO codes (BJ-AL, BJ-AK, etc.)
+  - Name typos: Atakora→Atacora, Kouffo→Couffo
 
-Work Log:
-- Read all 7 existing inline loading components: InlineSpinner, Skeleton, SkeletonMobile, LoadingState, OrionLoadingIndicator, ModuleLoading, LoadingSkeleton
-- Added 10 new CSS keyframe animations to globals.css: academiaWave, academiaOrbit, academiaOrbitReverse, academiaPulse, academiaGlow, academiaWaveDot, academiaSlideUp, academiaShimmerWave, academiaFlow, academiaFloat, academiaRingDash
-- Redesigned InlineSpinner.tsx: Added branded gradient trail effect, glowing core dot, mobile detection (lighter CSS-only on mobile), new OrbitalSpinner component with double SVG ring animation
-- Redesigned Skeleton.tsx: Enhanced shimmer with branded wave gradient (Navy→Blue→Gold), added CornerAccent component for cards, slide-up animations for skeleton blocks, new InlineContentSkeleton and JobCardSkeleton components
-- Redesigned SkeletonMobile.tsx: Added MobileCornerAccent, slide-up animations, branded shimmer on job cards, new JobCardSkeletonMobile component
-- Redesigned LoadingState.tsx: Added mobile detection, OrbitalSpinner on desktop ORION variant, wave dots on mobile SARA variant, new 'wave' variant with branded gradient bar, RotatingMessage component for contextual loading messages
-- Redesigned OrionLoadingIndicator.tsx: Added OrbitalSpinner on desktop, mobile-responsive sizing, mobile gold ring + pulse core, phase-colored badges
-- Updated CareersContent.tsx: Replaced inline skeleton HTML with JobCardSkeleton (desktop) + JobCardSkeletonMobile (mobile) components
-- Updated LoadingSkeleton.tsx: Added mobile detection with CardSkeletonMobile fallback
-- Updated ModuleLoading.tsx: Added mobile detection with DashboardSkeletonMobile fallback
-- Validated all imports/exports consistency across all components
+### Step 3: GeoJSON to SVG Path Conversion
+- Wrote Python script to project geographic coordinates (WGS84 lon/lat) to SVG coordinates
+- Used the existing component's viewBox (`0 0 360 400`) for consistency
+- Projection: Equirectangular with Y-axis flip (standard for SVG)
+- Geographic bounds: Lon 0.7687-3.8433, Lat 6.2107-12.4114
+- Scale factor: ~61.93 pixels per degree
+- Computed geographic centroids for label placement
+- Generated optimized SVG path data using compact notation (no `L` prefix for line segments)
 
-Stage Summary:
-- All 7 inline loading components redesigned with premium branded effects
-- Mobile compatibility added to all components via isMobile detection
-- New reusable components: OrbitalSpinner, JobCardSkeleton, JobCardSkeletonMobile, InlineContentSkeleton, CornerAccent, MobileCornerAccent, RotatingMessage
-- 10 new CSS keyframe animations for branded loading effects
-- Build validation limited by disk space (node_modules partially broken), but import/export validation passed 100%
----
-Task ID: jobs-page-redesign
-Agent: Main Agent
-Task: Redesign /jobs page with centered school cards, full contact info, and fix footer
+### Step 4: Data Comparison
+| Source | Points | Names | Notes |
+|--------|--------|-------|-------|
+| Original (hand-drawn) | ~15-25 per dept | Correct | Very approximate polygons |
+| geoBoundaries simplified | 80-300 per dept | Some typos | Accurate boundaries |
+| amCharts | 66-279 per dept | Mostly correct | More detail, ISO codes |
 
-Work Log:
-- Analyzed full CareersContent.tsx (1230 lines) and SchoolSearchService backend
-- Updated SchoolSearchService.listSchoolsWithJobs() to return ALL identity profile fields:
-  schoolAcronym, phoneSecondary, website, department, postalCode, identityVersion
-- Added postalCode to IDENTITY_PROFILE_SELECT and extractSchoolData()
-- Redesigned CareersContent.tsx with:
-  - Enriched School interface with all TenantIdentityProfile fields
-  - New helper functions: getSchoolPhoneSecondary, getSchoolWebsite, getSchoolSlogan, getSchoolAcronym, getSchoolAddress, getSchoolDepartment, getSchoolDisplayName
-  - Dynamically centered school cards using flex-wrap justify-center (1 card centered, 2 centered, 3 centered, etc.)
-  - Full contact info on each school card: phonePrimary, phoneSecondary, email, website, address
-  - Display name format: "Full Name (Acronym)"
-  - Slogan displayed in italic below name
-  - Address + city + department + country in location section
-  - Stats strip in hero section (number of schools, active offers, currently recruiting)
-  - Subtle grid pattern in hero background
-  - School header card in Step 2 also shows all contact info
-  - Replaced inline footer with InstitutionalFooter component (proper Academia Helm palette)
-  - Removed "Propulsé par HDIE Engine" text
-  - Changed "HDIE Engine" in AI notice to generic wording
-- TypeScript compilation passes with zero errors
+Chose geoBoundaries as primary source (cleaner, well-maintained, CC-BY licensed).
 
-Stage Summary:
-- Backend: SchoolSearchService returns full identity profile data (latest versioned)
-- Frontend: School cards dynamically centered with complete contact information
-- Footer: Now uses InstitutionalFooter (navy/gold palette) instead of slate-900 inline footer
-- "Propulsé par HDIE Engine" removed
-- All data sourced from TenantIdentityProfile (source of truth, versioned, active)
+### Step 5: Component Update
+- Updated `BeninMap.tsx` (`/home/z/my-project/apps/web-app/src/components/portal/BeninMap.tsx`):
+  - Replaced `DEPT_PATHS` constant with accurate GeoJSON-derived SVG paths
+  - Updated `DEPT_LABELS` positions to use geographic centroids instead of manual estimates
+  - Comment updated to reflect new data source: "geoBoundaries ADM1, accurate"
+- Fixed department name typo in `benin-departments.ts`: "Kouffo" → "Couffo", capital "Aplahoué" → "Dogbo"
+
+### Step 6: Standalone Files Generated
+- `/home/z/my-project/benin_departments.svg` - Standalone SVG file (300×600 viewBox)
+- `/home/z/my-project/beninDepartments.ts` - TypeScript data file with path data and metadata
+- `/home/z/my-project/BeninMap.tsx` - Standalone React component
+
+## Files Modified
+- `/home/z/my-project/apps/web-app/src/components/portal/BeninMap.tsx` - Updated DEPT_PATHS and DEPT_LABELS with accurate data
+- `/home/z/my-project/apps/web-app/src/data/benin-departments.ts` - Fixed "Kouffo" → "Couffo" and capital
+
+## Files Created
+- `/home/z/my-project/benin_adm1.geojson` - Source GeoJSON data (geoBoundaries)
+- `/home/z/my-project/amcharts_benin.json` - Alternative GeoJSON data (amCharts)
+- `/home/z/my-project/benin_departments.svg` - Standalone SVG map
+- `/home/z/my-project/beninDepartments.ts` - TypeScript path data module
+- `/home/z/my-project/BeninMap.tsx` - Standalone React component
+
+## Geographic Accuracy Notes
+- Northern departments (top): Alibori (NE), Atacora (NW), Borgou (E), Donga (W-center)
+- Central departments (middle): Collines (W-center), Plateau (E-center), Zou (center)
+- Southern departments (bottom): Atlantique (center), Littoral (tiny, coast), Mono (SW), Couffo (W), Ouémé (SE)
+- Littoral is the smallest department (79 km², contains Cotonou)
+- Benin is approximately 2:1 height-to-width ratio (tall, narrow country)

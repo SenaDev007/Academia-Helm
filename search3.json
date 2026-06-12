@@ -1,0 +1,92 @@
+[
+  {
+    "url": "https://github.com/datasets/geo-nuts-administrative-boundaries",
+    "name": "Geo Boundaries for NUTS administrative levels 1, 2 and 3 - GitHub",
+    "snippet": "We provide data as GeoJSON. Data is stored in the data folder. Datasets are available for NUTS levels 1, 2, and 3. The columns are:.",
+    "host_name": "github.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://gist.github.com/drnextgis/61dfa1d9edd4141d9be6da7c711d0b14",
+    "name": "Extract administrative boundaries from citypopulation.de as GeoJSON",
+    "snippet": "Extract administrative boundaries from citypopulation.de as GeoJSON.",
+    "host_name": "gist.github.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://data.humdata.org/dataset/geoboundaries-admin-boundaries-for-benin",
+    "name": "Benin - Subnational Administrative Boundaries | Humanitarian Dataset",
+    "snippet": "This dataset contains the following administrative boundaries: ADM0, ADM1, ADM2, ADM3. Produced and maintained since 2017, the geoBoundaries Global Database ...",
+    "host_name": "data.humdata.org",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/jusuff/PolandGeoJson",
+    "name": "jusuff/PolandGeoJson: Set of Polish administrative borders  - GitHub",
+    "snippet": "Download administrative borders from https://gis-support.pl/granice ... Convert the shapefile to geoJson format and simplify the boundaries (if you need).",
+    "host_name": "github.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/faeldon/philippines-json-maps",
+    "name": "Philippines Administrative Boundaries JSON Maps - GitHub",
+    "snippet": "This repository contains Philippines vector maps suitable for use on web applications either as an overlay to interactive map services (ex. Leaflet) or rendered ...",
+    "host_name": "github.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/OpenDataDE/State-zip-code-GeoJSON",
+    "name": "OpenDataDE/State-zip-code-GeoJSON - GitHub",
+    "snippet": "This is a collection of zip code boundrary files for each of the 50 states, plus DC. Thanks to Github user jgoodall for his us-maps example!",
+    "host_name": "github.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/PublicaMundi/MappingAPI/blob/master/data/geojson/us-states.json",
+    "name": "MappingAPI/data/geojson/us-states.json at master - GitHub",
+    "snippet": "Raw. Copy raw file. Download raw file. Edit and raw actions. us-states.json rendered with ❤ by GitHub. Visit azure.microsoft.comProvide Map Data Feedback ...",
+    "host_name": "github.com",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://martinjc.github.io/UK-GeoJSON",
+    "name": "UK-GeoJSON",
+    "snippet": "UK-GeoJSON. GeoJSON and TopoJSON versions of UK Boundary Data. This project is maintained by martinjc -- martinjc.com · View the Project on GitHub.",
+    "host_name": "martinjc.github.io",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://gist.github.com/sdwfrost/d1c73f91dd9d175998ed166eb216994a",
+    "name": "US Counties data in geojson - GitHub Gist",
+    "snippet": "Download ZIP. US Counties data in geojson. Display the source blob. Display the rendered blob. Raw. counties.geojson. Loading. Sorry, something went wrong.",
+    "host_name": "gist.github.com",
+    "rank": 8,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://energydata.info/dataset/benin-an-indicative-least-cost-geospatial-electrification-plan/resource/5cf4f114-5b9c-49ad-bb4f-c9604d1b3ac9",
+    "name": "Administrative Boundaries (GeoJSON) - Benin - ENERGYDATA.INFO",
+    "snippet": "Administrative Boundaries (GeoJSON). Download · Original Format. Administrative Boundaries (GeoJSON). Administrative boundary of benin. View.",
+    "host_name": "energydata.info",
+    "rank": 9,
+    "date": "",
+    "favicon": ""
+  }
+]

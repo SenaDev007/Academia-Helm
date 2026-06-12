@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://www.youtube.com/watch?v=M0p7EqjGgH4",
+    "name": "Add Interactive Maps to React Easily - YouTube",
+    "snippet": "In this video, I show you how to use MapCN, a modern and simple React map component, to build interactive maps with minimal setup 🛠️ Tools ...",
+    "host_name": "www.youtube.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://vimeo.com/1136901236",
+    "name": "React Maps: The Ultimate Feature Walkthrough - Vimeo",
+    "snippet": "In this video, we will explore the features of Syncfusion® React Maps, a powerful tool for visualizing data using rich, interactive ...",
+    "host_name": "vimeo.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.telerik.com/blogs/how-to-create-dynamic-interactive-maps-kendoreact-map-component",
+    "name": "How to Create Dynamic and Interactive Maps with KendoReact",
+    "snippet": "In this article, we will walk through the process of setting up and using the KendoReact Map component in a React application!",
+    "host_name": "www.telerik.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.react-simple-maps.io",
+    "name": "React Simple Maps",
+    "snippet": "React Simple Maps consists of isolated helper components that can be freely composed. Creating and styling map charts is as simple as writing html layouts.",
+    "host_name": "www.react-simple-maps.io",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.syncfusion.com/react-components/react-maps-library",
+    "name": "React Maps Library | Interactive Maps Component | Syncfusion",
+    "snippet": "The React Maps library is a geographical data visualization tool that renders interactive maps using GeoJSON or by connecting to map providers like Bing, ...",
+    "host_name": "www.syncfusion.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

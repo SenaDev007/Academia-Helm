@@ -1,0 +1,92 @@
+[
+  {
+    "url": "https://github.com/datakind/hxl-metadata-prediction/blob/main/openai-hxl-prediction.ipynb",
+    "name": "hxl-metadata-prediction/openai-hxl-prediction.ipynb at main - GitHub",
+    "snippet": "The dataset seems to focus on health posts, health centers, and villages in Sierra Leone, providing information on their locations and ...",
+    "host_name": "github.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://gist.github.com/toff63/ebac38d718e81a48b53dd06cee07b45a",
+    "name": "00.geoname_postgis.md - GitHub Gist",
+    "snippet": "A.ADM1 first-order administrative division a primary administrative division of a country, such as a state in the United States. A.ADM1H historical first ...",
+    "host_name": "gist.github.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://data.humdata.org/dataset/geoboundaries-admin-boundaries-for-benin",
+    "name": "Benin - Subnational Administrative Boundaries | Humanitarian Dataset",
+    "snippet": "This dataset contains the following administrative boundaries: ADM0, ADM1, ADM2, ADM3. Produced and maintained since 2017, the geoBoundaries Global Database ...",
+    "host_name": "data.humdata.org",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://data.humdata.org/dataset/cod-ab-ben",
+    "name": "Benin - Subnational Administrative Boundaries | Humanitarian Dataset",
+    "snippet": "Benin administrative level 0-2 boundaries (COD-AB) dataset version 01. This dataset is structured into 2 levels: - Admin 1: 12 nan - Admin 2: 77 nan.",
+    "host_name": "data.humdata.org",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://energydata.info/dataset/benin-an-indicative-least-cost-geospatial-electrification-plan/resource/5cf4f114-5b9c-49ad-bb4f-c9604d1b3ac9",
+    "name": "Administrative Boundaries (GeoJSON) - Benin - ENERGYDATA.INFO",
+    "snippet": "Benin distribution... Benin transmission... Benin solar sites (GeoJSON) · Benin hydro sites (GeoJSON) · Benin healthcare... Benin education ...",
+    "host_name": "energydata.info",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://earthworks.stanford.edu/catalog/stanford-fm341nh3001",
+    "name": "First-level Administrative Divisions, Benin, 2015 - EarthWorks",
+    "snippet": "This polygon shapefile contains the first-level administrative divisions of Benin (adm1). Level 1 divisions include departments.",
+    "host_name": "earthworks.stanford.edu",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.geopostcodes.com/country/benin/shapefile",
+    "name": "Download Benin Shapefiles: Municipalities, Departments",
+    "snippet": "Download Benin Shapefiles: Municipalities, Departments. Download high-quality, up-to-date shapefile boundaries (SHP, projection system SRID 4326).",
+    "host_name": "www.geopostcodes.com",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://datahub.io/core/geo-ne-admin1",
+    "name": "GeoBoundaries Admin1 Polygons as GeoJSON - DataHub.io",
+    "snippet": "Geodata data package providing GeoJSON polygons for first-order administrative subdivisions worldwide. Data. The data comes from Natural Earth, ...",
+    "host_name": "datahub.io",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://data.humdata.org/dataset/3fe08fc8-f4ac-4aa2-981c-7faa39ef343e/resource/b599bcf5-72d3-4d77-a163-e58916305951",
+    "name": "geoBoundaries-BEN-ADM1_simplified.geojson | Benin",
+    "snippet": "OCHA coordinates the global emergency response to save lives and protect people in humanitarian crises. We advocate for effective and principled humanitarian ...",
+    "host_name": "data.humdata.org",
+    "rank": 8,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.africageoportal.com/maps/386ed1434b954c96be7b334c49a7de35",
+    "name": "Benin Department Boundaries | Africa GeoPortal - powered by Esri",
+    "snippet": "Benin Department Boundaries provides a 2023 boundary with a total population count. (Retiring). Retirement Notice: This item is in mature support as of ...",
+    "host_name": "www.africageoportal.com",
+    "rank": 9,
+    "date": "",
+    "favicon": ""
+  }
+]

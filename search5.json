@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://github.com/wmgeolab/geoBoundaries",
+    "name": "A Political Administrative Boundaries Dataset (www.geoboundaries",
+    "snippet": "We provide three different mechanisms to download geoBoundaries data: a web-based GUI, HTML file access on GitHub (for archival versions), and an API. Releases ...",
+    "host_name": "github.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.geoboundaries.org/api.html",
+    "name": "Web-based Archival Access - geoBoundaries",
+    "snippet": "To download a file from the current release, you can navigate to our commits page, and choose the date (and commit) you are interested in retrieving files from.",
+    "host_name": "www.geoboundaries.org",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/wmgeolab/geoBoundaries/blob/main/releaseData/gbOpen/MYS/ADM1/geoBoundaries-MYS-ADM1_simplified.geojson",
+    "name": "geoBoundaries-MYS-ADM1_simplified.geojson - gbOpen - GitHub",
+    "snippet": "geoBoundaries : A Political Administrative Boundaries Dataset (www.geoboundaries.org) ...",
+    "host_name": "github.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://data.humdata.org/dataset/ce3efcd6-7a23-41c1-b463-5a46125b0bc5/resource/82dc0f1f-d39d-4a78-84a1-a52a65843f3b",
+    "name": "geoBoundaries-IND-ADM1.geojson - Humanitarian Data Exchange",
+    "snippet": "GeoJSON ADM1 boundaries for India. ... geojson. URL: https://github.com/wmgeolab/geoBoundaries/raw/9469f09/releaseData/gbOpen/IND/ADM1/geoBoundaries-IND-ADM1.",
+    "host_name": "data.humdata.org",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/wmgeolab/rgeoboundaries",
+    "name": "GitHub - wmgeolab/rgeoboundaries: R client to geoBoundaries",
+    "snippet": "rgeoboundaries is an R client for the geoBoundaries API, providing country political administrative boundaries.",
+    "host_name": "github.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

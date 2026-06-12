@@ -1,0 +1,19 @@
+{
+  "code": 200,
+  "data": {
+    "description": "",
+    "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">import{u as d,b as V}from\"./C-vJ0ijj.js\";import{q as f,x as g,W as y,az as k,aD as C,b7 as P,A as z,j as e,h as S,n as I,aF as A,a0 as h,a1 as x,a2 as B,aH as D,a3 as b,I as R,aL as T,M as F,V as j}from\"./F9kqpm_8.js\";import{u as q,m as H}from\"./Dsyh0a9O.js\";import{V as L}from\"./K86yJF8x.js\";const M=g({start:Boolean,end:Boolean,icon:R,image:String,text:String,...V(),...b(),...H(),...D(),...B(),...x(),...h(),...A({variant:\"flat\"})},\"VAvatar\"),E=f()({name:\"VAvatar\",props:M(),setup(a,t){let{slots:s}=t;const{themeClasses:n}=y(a),{borderClasses:o}=d(a),{colorClasses:l,colorStyles:r,variantClasses:i}=k(a),{densityClasses:u}=q(a),{roundedClasses:m}=C(a),{sizeClasses:c,sizeStyles:v}=P(a);return z(()=>e(a.tag,{class:I([\"v-avatar\",{\"v-avatar--start\":a.start,\"v-avatar--end\":a.end},n.value,o.value,l.value,u.value,m.value,c.value,i.value,a.class]),style:S([r.value,v.value,a.style])},{default:()=>[s.default?e(j,{key:\"content-defaults\",defaults:{VImg:{cover:!0,src:a.image},VIcon:{icon:a.icon}}},{default:()=>[s.default()]}):a.image?e(L,{key:\"image\",src:a.image,alt:\"\",cover:!0},null):a.icon?e(F,{key:\"icon\",icon:a.icon},null):a.text,T(!1,\"v-avatar\")]})),{}}});export{E as V};\n</pre></body></html>",
+    "publishedTime": "Fri, 12 Jun 2026 07:04:38 GMT",
+    "title": "",
+    "url": "https://emp.educmaster.bj/_nuxt/2AcMqQAz.js",
+    "usage": {
+      "tokens": 475
+    }
+  },
+  "meta": {
+    "usage": {
+      "tokens": 475
+    }
+  },
+  "status": 20000
+}

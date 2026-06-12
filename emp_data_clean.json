@@ -1,0 +1,1106 @@
+{
+  "status": 200,
+  "data": {
+    "disponible": true,
+    "annee": "2025-2026",
+    "generated_at": "2026-06-12 02:21:27",
+    "source": "filesystem-json",
+    "cycle": "tous",
+    "cycle_data_available": true,
+    "kpi_nationaux": {
+      "apprenants": 2293903,
+      "enseignants": 63305,
+      "etablissements": 17141,
+      "pct_filles": 48.4
+    },
+    "par_departement": [
+      {
+        "nom": "ALIBORI",
+        "code": "alibori",
+        "dep_id": 1,
+        "etablissements": {
+          "total": 855,
+          "public": 659,
+          "prive": 196
+        },
+        "apprenants": {
+          "total": 155225,
+          "public": 137727,
+          "prive": 17498
+        },
+        "enseignants": {
+          "total": 2853,
+          "public": 2292,
+          "prive": 561
+        },
+        "pct_filles": 48,
+        "circonscriptions": [
+          {
+            "id": 1,
+            "nom": "Banikoara",
+            "slug": "banikoara",
+            "etablissements": 279,
+            "apprenants": 41792,
+            "enseignants": 889,
+            "pct_filles": 46.5
+          },
+          {
+            "id": 3,
+            "nom": "Kandi",
+            "slug": "kandi",
+            "etablissements": 191,
+            "apprenants": 32843,
+            "enseignants": 704,
+            "pct_filles": 48.2
+          },
+          {
+            "id": 5,
+            "nom": "Malanville",
+            "slug": "malanville",
+            "etablissements": 128,
+            "apprenants": 27397,
+            "enseignants": 415,
+            "pct_filles": 46
+          },
+          {
+            "id": 2,
+            "nom": "Gogounou",
+            "slug": "gogounou",
+            "etablissements": 119,
+            "apprenants": 26245,
+            "enseignants": 428,
+            "pct_filles": 50.9
+          },
+          {
+            "id": 6,
+            "nom": "Ségbana",
+            "slug": "segbana",
+            "etablissements": 77,
+            "apprenants": 18191,
+            "enseignants": 249,
+            "pct_filles": 49
+          },
+          {
+            "id": 4,
+            "nom": "Karimama",
+            "slug": "karimama",
+            "etablissements": 61,
+            "apprenants": 8757,
+            "enseignants": 168,
+            "pct_filles": 49.6
+          }
+        ]
+      },
+      {
+        "nom": "ATACORA",
+        "code": "atacora",
+        "dep_id": 2,
+        "etablissements": {
+          "total": 1159,
+          "public": 909,
+          "prive": 250
+        },
+        "apprenants": {
+          "total": 151819,
+          "public": 137127,
+          "prive": 14692
+        },
+        "enseignants": {
+          "total": 3928,
+          "public": 3317,
+          "prive": 611
+        },
+        "pct_filles": 49.4,
+        "circonscriptions": [
+          {
+            "id": 12,
+            "nom": "Natitingou",
+            "slug": "natitingou",
+            "etablissements": 219,
+            "apprenants": 21755,
+            "enseignants": 861,
+            "pct_filles": 50.6
+          },
+          {
+            "id": 11,
+            "nom": "Matéri",
+            "slug": "materi",
+            "etablissements": 159,
+            "apprenants": 20446,
+            "enseignants": 511,
+            "pct_filles": 50.2
+          },
+          {
+            "id": 7,
+            "nom": "Boukoumbé",
+            "slug": "boukoumbe",
+            "etablissements": 142,
+            "apprenants": 15222,
+            "enseignants": 471,
+            "pct_filles": 48.6
+          },
+          {
+            "id": 10,
+            "nom": "Kouandé",
+            "slug": "kouande",
+            "etablissements": 138,
+            "apprenants": 13070,
+            "enseignants": 463,
+            "pct_filles": 50
+          },
+          {
+            "id": 14,
+            "nom": "Tanguiéta",
+            "slug": "tanguieta",
+            "etablissements": 115,
+            "apprenants": 17687,
+            "enseignants": 371,
+            "pct_filles": 48.7
+          },
+          {
+            "id": 8,
+            "nom": "Cobly",
+            "slug": "cobly",
+            "etablissements": 108,
+            "apprenants": 20785,
+            "enseignants": 368,
+            "pct_filles": 48.4
+          },
+          {
+            "id": 9,
+            "nom": "Kérou",
+            "slug": "kerou",
+            "etablissements": 104,
+            "apprenants": 17004,
+            "enseignants": 348,
+            "pct_filles": 48
+          },
+          {
+            "id": 13,
+            "nom": "Péhunco",
+            "slug": "pehunco",
+            "etablissements": 102,
+            "apprenants": 16690,
+            "enseignants": 320,
+            "pct_filles": 50.2
+          },
+          {
+            "id": 15,
+            "nom": "Toucountouna",
+            "slug": "toucountouna",
+            "etablissements": 72,
+            "apprenants": 9160,
+            "enseignants": 215,
+            "pct_filles": 49.7
+          }
+        ]
+      },
+      {
+        "nom": "ATLANTIQUE",
+        "code": "atlantique",
+        "dep_id": 3,
+        "etablissements": {
+          "total": 3514,
+          "public": 1028,
+          "prive": 2486
+        },
+        "apprenants": {
+          "total": 408418,
+          "public": 197826,
+          "prive": 210592
+        },
+        "enseignants": {
+          "total": 12540,
+          "public": 4807,
+          "prive": 7733
+        },
+        "pct_filles": 48.2,
+        "circonscriptions": [
+          {
+            "id": 17,
+            "nom": "Abomey-Calavi 2",
+            "slug": "abomey-calavi-2",
+            "etablissements": 647,
+            "apprenants": 61924,
+            "enseignants": 2117,
+            "pct_filles": 49.3
+          },
+          {
+            "id": 91,
+            "nom": "ABOMEY-CALAVI 4",
+            "slug": "abomey-calavi-4",
+            "etablissements": 580,
+            "apprenants": 62775,
+            "enseignants": 2043,
+            "pct_filles": 48.7
+          },
+          {
+            "id": 21,
+            "nom": "Ouidah",
+            "slug": "ouidah",
+            "etablissements": 527,
+            "apprenants": 57641,
+            "enseignants": 1768,
+            "pct_filles": 48.3
+          },
+          {
+            "id": 16,
+            "nom": "Abomey-Calavi 1",
+            "slug": "abomey-calavi-1",
+            "etablissements": 471,
+            "apprenants": 50373,
+            "enseignants": 1800,
+            "pct_filles": 49.6
+          },
+          {
+            "id": 19,
+            "nom": "Allada",
+            "slug": "allada",
+            "etablissements": 298,
+            "apprenants": 37948,
+            "enseignants": 1054,
+            "pct_filles": 47.7
+          },
+          {
+            "id": 25,
+            "nom": "Zè",
+            "slug": "ze",
+            "etablissements": 243,
+            "apprenants": 30134,
+            "enseignants": 852,
+            "pct_filles": 47.9
+          },
+          {
+            "id": 18,
+            "nom": "Abomey-Calavi 3",
+            "slug": "abomey-calavi-3",
+            "etablissements": 228,
+            "apprenants": 26262,
+            "enseignants": 787,
+            "pct_filles": 48.5
+          },
+          {
+            "id": 24,
+            "nom": "Tori-Bossito",
+            "slug": "tori-bossito",
+            "etablissements": 189,
+            "apprenants": 24591,
+            "enseignants": 658,
+            "pct_filles": 47.8
+          },
+          {
+            "id": 23,
+            "nom": "Toffo",
+            "slug": "toffo",
+            "etablissements": 156,
+            "apprenants": 27051,
+            "enseignants": 669,
+            "pct_filles": 46.4
+          },
+          {
+            "id": 20,
+            "nom": "Kpomassè",
+            "slug": "kpomasse",
+            "etablissements": 104,
+            "apprenants": 14077,
+            "enseignants": 455,
+            "pct_filles": 47.5
+          },
+          {
+            "id": 22,
+            "nom": "So-Ava",
+            "slug": "so-ava",
+            "etablissements": 71,
+            "apprenants": 15642,
+            "enseignants": 337,
+            "pct_filles": 42.2
+          }
+        ]
+      },
+      {
+        "nom": "BORGOU",
+        "code": "borgou",
+        "dep_id": 4,
+        "etablissements": {
+          "total": 1704,
+          "public": 1112,
+          "prive": 592
+        },
+        "apprenants": {
+          "total": 290164,
+          "public": 231293,
+          "prive": 58871
+        },
+        "enseignants": {
+          "total": 6300,
+          "public": 4349,
+          "prive": 1951
+        },
+        "pct_filles": 50.3,
+        "circonscriptions": [
+          {
+            "id": 30,
+            "nom": "Parakou 1",
+            "slug": "parakou-1",
+            "etablissements": 289,
+            "apprenants": 44276,
+            "enseignants": 1219,
+            "pct_filles": 49
+          },
+          {
+            "id": 31,
+            "nom": "Parakou 2",
+            "slug": "parakou-2",
+            "etablissements": 252,
+            "apprenants": 39291,
+            "enseignants": 1119,
+            "pct_filles": 49.5
+          },
+          {
+            "id": 29,
+            "nom": "Nikki",
+            "slug": "nikki",
+            "etablissements": 205,
+            "apprenants": 33624,
+            "enseignants": 643,
+            "pct_filles": 51.9
+          },
+          {
+            "id": 34,
+            "nom": "Tchaourou 1",
+            "slug": "tchaourou-1",
+            "etablissements": 182,
+            "apprenants": 37075,
+            "enseignants": 717,
+            "pct_filles": 48
+          },
+          {
+            "id": 26,
+            "nom": "Bembèrèkè",
+            "slug": "bembereke",
+            "etablissements": 168,
+            "apprenants": 30277,
+            "enseignants": 549,
+            "pct_filles": 51.3
+          },
+          {
+            "id": 28,
+            "nom": "N'Dali",
+            "slug": "ndali",
+            "etablissements": 149,
+            "apprenants": 28894,
+            "enseignants": 641,
+            "pct_filles": 51.1
+          },
+          {
+            "id": 27,
+            "nom": "Kalalé",
+            "slug": "kalale",
+            "etablissements": 135,
+            "apprenants": 22127,
+            "enseignants": 347,
+            "pct_filles": 52.1
+          },
+          {
+            "id": 33,
+            "nom": "Sinendé",
+            "slug": "sinende",
+            "etablissements": 117,
+            "apprenants": 22923,
+            "enseignants": 366,
+            "pct_filles": 52
+          },
+          {
+            "id": 32,
+            "nom": "Pèrérè",
+            "slug": "perere",
+            "etablissements": 111,
+            "apprenants": 13539,
+            "enseignants": 329,
+            "pct_filles": 52
+          },
+          {
+            "id": 92,
+            "nom": "Tchaourou 2",
+            "slug": "tchaourou-2",
+            "etablissements": 96,
+            "apprenants": 18138,
+            "enseignants": 370,
+            "pct_filles": 48.9
+          }
+        ]
+      },
+      {
+        "nom": "COLLINES",
+        "code": "collines",
+        "dep_id": 5,
+        "etablissements": {
+          "total": 1105,
+          "public": 908,
+          "prive": 197
+        },
+        "apprenants": {
+          "total": 156462,
+          "public": 135936,
+          "prive": 20526
+        },
+        "enseignants": {
+          "total": 4242,
+          "public": 3541,
+          "prive": 701
+        },
+        "pct_filles": 47.8,
+        "circonscriptions": [
+          {
+            "id": 36,
+            "nom": "Dassa-Zoumè",
+            "slug": "dassa-zoume",
+            "etablissements": 218,
+            "apprenants": 23555,
+            "enseignants": 766,
+            "pct_filles": 48.5
+          },
+          {
+            "id": 37,
+            "nom": "Glazoué",
+            "slug": "glazoue",
+            "etablissements": 208,
+            "apprenants": 30789,
+            "enseignants": 806,
+            "pct_filles": 48.5
+          },
+          {
+            "id": 39,
+            "nom": "Savalou",
+            "slug": "savalou",
+            "etablissements": 203,
+            "apprenants": 31733,
+            "enseignants": 800,
+            "pct_filles": 47.6
+          },
+          {
+            "id": 40,
+            "nom": "Savè",
+            "slug": "save",
+            "etablissements": 164,
+            "apprenants": 19772,
+            "enseignants": 600,
+            "pct_filles": 47.2
+          },
+          {
+            "id": 35,
+            "nom": "Bantè",
+            "slug": "bante",
+            "etablissements": 163,
+            "apprenants": 26703,
+            "enseignants": 635,
+            "pct_filles": 48.2
+          },
+          {
+            "id": 38,
+            "nom": "Ouèssè",
+            "slug": "ouesse",
+            "etablissements": 149,
+            "apprenants": 23910,
+            "enseignants": 635,
+            "pct_filles": 46.3
+          }
+        ]
+      },
+      {
+        "nom": "COUFFO",
+        "code": "couffo",
+        "dep_id": 6,
+        "etablissements": {
+          "total": 867,
+          "public": 742,
+          "prive": 125
+        },
+        "apprenants": {
+          "total": 129465,
+          "public": 116955,
+          "prive": 12510
+        },
+        "enseignants": {
+          "total": 3819,
+          "public": 3342,
+          "prive": 477
+        },
+        "pct_filles": 47,
+        "circonscriptions": [
+          {
+            "id": 41,
+            "nom": "Aplahoué",
+            "slug": "aplahoue",
+            "etablissements": 204,
+            "apprenants": 25102,
+            "enseignants": 803,
+            "pct_filles": 46.1
+          },
+          {
+            "id": 44,
+            "nom": "Klouékanmè",
+            "slug": "klouekanme",
+            "etablissements": 154,
+            "apprenants": 24332,
+            "enseignants": 689,
+            "pct_filles": 47.5
+          },
+          {
+            "id": 43,
+            "nom": "Dogbo",
+            "slug": "dogbo",
+            "etablissements": 143,
+            "apprenants": 16090,
+            "enseignants": 664,
+            "pct_filles": 47.8
+          },
+          {
+            "id": 42,
+            "nom": "Djakotomey",
+            "slug": "djakotomey",
+            "etablissements": 141,
+            "apprenants": 25109,
+            "enseignants": 667,
+            "pct_filles": 47.3
+          },
+          {
+            "id": 45,
+            "nom": "Lalo",
+            "slug": "lalo",
+            "etablissements": 118,
+            "apprenants": 23667,
+            "enseignants": 534,
+            "pct_filles": 45.2
+          },
+          {
+            "id": 46,
+            "nom": "Toviklin",
+            "slug": "toviklin",
+            "etablissements": 107,
+            "apprenants": 15165,
+            "enseignants": 462,
+            "pct_filles": 49.3
+          }
+        ]
+      },
+      {
+        "nom": "DONGA",
+        "code": "donga",
+        "dep_id": 7,
+        "etablissements": {
+          "total": 899,
+          "public": 722,
+          "prive": 177
+        },
+        "apprenants": {
+          "total": 143783,
+          "public": 127229,
+          "prive": 16554
+        },
+        "enseignants": {
+          "total": 3287,
+          "public": 2743,
+          "prive": 544
+        },
+        "pct_filles": 48.1,
+        "circonscriptions": [
+          {
+            "id": 49,
+            "nom": "Djougou I",
+            "slug": "djougou-i",
+            "etablissements": 244,
+            "apprenants": 39498,
+            "enseignants": 975,
+            "pct_filles": 47.7
+          },
+          {
+            "id": 50,
+            "nom": "Djougou II",
+            "slug": "djougou-ii",
+            "etablissements": 228,
+            "apprenants": 38203,
+            "enseignants": 803,
+            "pct_filles": 47.8
+          },
+          {
+            "id": 51,
+            "nom": "Ouaké",
+            "slug": "ouake",
+            "etablissements": 128,
+            "apprenants": 18506,
+            "enseignants": 450,
+            "pct_filles": 49.2
+          },
+          {
+            "id": 47,
+            "nom": "Bassila 1",
+            "slug": "bassila-1",
+            "etablissements": 120,
+            "apprenants": 21522,
+            "enseignants": 483,
+            "pct_filles": 48.7
+          },
+          {
+            "id": 48,
+            "nom": "Copargo",
+            "slug": "copargo",
+            "etablissements": 104,
+            "apprenants": 12882,
+            "enseignants": 313,
+            "pct_filles": 48.1
+          },
+          {
+            "id": 89,
+            "nom": "Bassila 2",
+            "slug": "bassila-2",
+            "etablissements": 75,
+            "apprenants": 13172,
+            "enseignants": 263,
+            "pct_filles": 47.4
+          }
+        ]
+      },
+      {
+        "nom": "LITTORAL",
+        "code": "littoral",
+        "dep_id": 8,
+        "etablissements": {
+          "total": 1105,
+          "public": 269,
+          "prive": 835
+        },
+        "apprenants": {
+          "total": 104637,
+          "public": 46752,
+          "prive": 57885
+        },
+        "enseignants": {
+          "total": 3729,
+          "public": 1365,
+          "prive": 2364
+        },
+        "pct_filles": 49.6,
+        "circonscriptions": [
+          {
+            "id": 52,
+            "nom": "Cotonou 2 ( Ex Cotonou-Akpakpa )",
+            "slug": "cotonou-2-ex-cotonou-akpakpa",
+            "etablissements": 422,
+            "apprenants": 37747,
+            "enseignants": 1380,
+            "pct_filles": 49.7
+          },
+          {
+            "id": 53,
+            "nom": "Cotonou 1 (Ex Cotonou-Gbégamey)",
+            "slug": "cotonou-1-ex-cotonou-gbegamey",
+            "etablissements": 330,
+            "apprenants": 29599,
+            "enseignants": 1152,
+            "pct_filles": 50.2
+          },
+          {
+            "id": 55,
+            "nom": "Cotonou 3 (Ex Cotonou-Sikè)",
+            "slug": "cotonou-3-ex-cotonou-sike",
+            "etablissements": 246,
+            "apprenants": 22887,
+            "enseignants": 765,
+            "pct_filles": 49.2
+          },
+          {
+            "id": 54,
+            "nom": "Cotonou 4 (Ex Cotonou-Lagune)",
+            "slug": "cotonou-4-ex-cotonou-lagune",
+            "etablissements": 107,
+            "apprenants": 14404,
+            "enseignants": 432,
+            "pct_filles": 48.8
+          }
+        ]
+      },
+      {
+        "nom": "MONO",
+        "code": "mono",
+        "dep_id": 9,
+        "etablissements": {
+          "total": 836,
+          "public": 636,
+          "prive": 200
+        },
+        "apprenants": {
+          "total": 101807,
+          "public": 82765,
+          "prive": 19042
+        },
+        "enseignants": {
+          "total": 3670,
+          "public": 2806,
+          "prive": 864
+        },
+        "pct_filles": 48.3,
+        "circonscriptions": [
+          {
+            "id": 60,
+            "nom": "Houéyogbé",
+            "slug": "houeyogbe",
+            "etablissements": 183,
+            "apprenants": 18886,
+            "enseignants": 771,
+            "pct_filles": 48.2
+          },
+          {
+            "id": 61,
+            "nom": "Lokossa",
+            "slug": "lokossa",
+            "etablissements": 166,
+            "apprenants": 27357,
+            "enseignants": 841,
+            "pct_filles": 48.9
+          },
+          {
+            "id": 58,
+            "nom": "Comè",
+            "slug": "come",
+            "etablissements": 165,
+            "apprenants": 19369,
+            "enseignants": 746,
+            "pct_filles": 48.8
+          },
+          {
+            "id": 57,
+            "nom": "Bopa",
+            "slug": "bopa",
+            "etablissements": 129,
+            "apprenants": 14317,
+            "enseignants": 534,
+            "pct_filles": 46.9
+          },
+          {
+            "id": 59,
+            "nom": "Grand-Popo",
+            "slug": "grand-popo",
+            "etablissements": 102,
+            "apprenants": 9117,
+            "enseignants": 388,
+            "pct_filles": 48.5
+          },
+          {
+            "id": 56,
+            "nom": "Athiémé&nbsp;",
+            "slug": "athieme",
+            "etablissements": 91,
+            "apprenants": 12761,
+            "enseignants": 390,
+            "pct_filles": 48.2
+          }
+        ]
+      },
+      {
+        "nom": "OUEME",
+        "code": "oueme",
+        "dep_id": 10,
+        "etablissements": {
+          "total": 2660,
+          "public": 938,
+          "prive": 1722
+        },
+        "apprenants": {
+          "total": 303832,
+          "public": 171587,
+          "prive": 132245
+        },
+        "enseignants": {
+          "total": 9560,
+          "public": 4247,
+          "prive": 5313
+        },
+        "pct_filles": 48.4,
+        "circonscriptions": [
+          {
+            "id": 70,
+            "nom": "Porto-Novo 1 (Ex Porto-Novo Oganla)",
+            "slug": "porto-novo-1-ex-porto-novo-oganla",
+            "etablissements": 470,
+            "apprenants": 40555,
+            "enseignants": 1523,
+            "pct_filles": 49.1
+          },
+          {
+            "id": 93,
+            "nom": "Sèmè-Podji 2",
+            "slug": "seme-podji-2",
+            "etablissements": 342,
+            "apprenants": 36365,
+            "enseignants": 1302,
+            "pct_filles": 49
+          },
+          {
+            "id": 65,
+            "nom": "Akpro-Missérété",
+            "slug": "akpro-misserete",
+            "etablissements": 339,
+            "apprenants": 46776,
+            "enseignants": 1308,
+            "pct_filles": 47.6
+          },
+          {
+            "id": 71,
+            "nom": "Sèmè-Podji 1",
+            "slug": "seme-podji-1",
+            "etablissements": 325,
+            "apprenants": 31972,
+            "enseignants": 1081,
+            "pct_filles": 48.6
+          },
+          {
+            "id": 62,
+            "nom": "Adjarra",
+            "slug": "adjarra",
+            "etablissements": 303,
+            "apprenants": 30657,
+            "enseignants": 1052,
+            "pct_filles": 48.5
+          },
+          {
+            "id": 66,
+            "nom": "Avrankou",
+            "slug": "avrankou",
+            "etablissements": 290,
+            "apprenants": 42614,
+            "enseignants": 1203,
+            "pct_filles": 48.4
+          },
+          {
+            "id": 69,
+            "nom": "Porto-Novo 2 ( Ex Porto-Novo Attakê)",
+            "slug": "porto-novo-2-ex-porto-novo-attake",
+            "etablissements": 184,
+            "apprenants": 15972,
+            "enseignants": 553,
+            "pct_filles": 48.7
+          },
+          {
+            "id": 68,
+            "nom": "Dangbo",
+            "slug": "dangbo",
+            "etablissements": 171,
+            "apprenants": 23754,
+            "enseignants": 656,
+            "pct_filles": 46.9
+          },
+          {
+            "id": 63,
+            "nom": "Adjohoun",
+            "slug": "adjohoun",
+            "etablissements": 124,
+            "apprenants": 19161,
+            "enseignants": 463,
+            "pct_filles": 48.5
+          },
+          {
+            "id": 67,
+            "nom": "Bonou",
+            "slug": "bonou",
+            "etablissements": 75,
+            "apprenants": 10955,
+            "enseignants": 280,
+            "pct_filles": 48.7
+          },
+          {
+            "id": 64,
+            "nom": "Aguégués",
+            "slug": "aguegues",
+            "etablissements": 37,
+            "apprenants": 5051,
+            "enseignants": 139,
+            "pct_filles": 49.2
+          }
+        ]
+      },
+      {
+        "nom": "PLATEAU",
+        "code": "plateau",
+        "dep_id": 11,
+        "etablissements": {
+          "total": 928,
+          "public": 624,
+          "prive": 304
+        },
+        "apprenants": {
+          "total": 139774,
+          "public": 111338,
+          "prive": 28436
+        },
+        "enseignants": {
+          "total": 3505,
+          "public": 2560,
+          "prive": 945
+        },
+        "pct_filles": 47,
+        "circonscriptions": [
+          {
+            "id": 74,
+            "nom": "Kétou",
+            "slug": "ketou",
+            "etablissements": 226,
+            "apprenants": 38155,
+            "enseignants": 849,
+            "pct_filles": 46
+          },
+          {
+            "id": 73,
+            "nom": "Ifangni",
+            "slug": "ifangni",
+            "etablissements": 195,
+            "apprenants": 25999,
+            "enseignants": 772,
+            "pct_filles": 48.3
+          },
+          {
+            "id": 72,
+            "nom": "Adja-Ouèrè",
+            "slug": "adja-ouere",
+            "etablissements": 177,
+            "apprenants": 28133,
+            "enseignants": 664,
+            "pct_filles": 46.6
+          },
+          {
+            "id": 75,
+            "nom": "Pobè",
+            "slug": "pobe",
+            "etablissements": 169,
+            "apprenants": 27006,
+            "enseignants": 627,
+            "pct_filles": 46.5
+          },
+          {
+            "id": 76,
+            "nom": "Sakété",
+            "slug": "sakete",
+            "etablissements": 161,
+            "apprenants": 20481,
+            "enseignants": 593,
+            "pct_filles": 48.2
+          }
+        ]
+      },
+      {
+        "nom": "ZOU",
+        "code": "zou",
+        "dep_id": 12,
+        "etablissements": {
+          "total": 1509,
+          "public": 1097,
+          "prive": 412
+        },
+        "apprenants": {
+          "total": 208339,
+          "public": 164245,
+          "prive": 44094
+        },
+        "enseignants": {
+          "total": 5872,
+          "public": 4472,
+          "prive": 1400
+        },
+        "pct_filles": 47.8,
+        "circonscriptions": [
+          {
+            "id": 90,
+            "nom": "BOHICON 2",
+            "slug": "bohicon-2",
+            "etablissements": 231,
+            "apprenants": 31494,
+            "enseignants": 909,
+            "pct_filles": 48.7
+          },
+          {
+            "id": 84,
+            "nom": "Za-Kpota",
+            "slug": "za-kpota",
+            "etablissements": 199,
+            "apprenants": 32771,
+            "enseignants": 805,
+            "pct_filles": 46.7
+          },
+          {
+            "id": 81,
+            "nom": "Djidja",
+            "slug": "djidja",
+            "etablissements": 192,
+            "apprenants": 22543,
+            "enseignants": 701,
+            "pct_filles": 46.2
+          },
+          {
+            "id": 77,
+            "nom": "Abomey",
+            "slug": "abomey",
+            "etablissements": 187,
+            "apprenants": 24977,
+            "enseignants": 703,
+            "pct_filles": 48.8
+          },
+          {
+            "id": 85,
+            "nom": "Zogbodomey",
+            "slug": "zogbodomey",
+            "etablissements": 164,
+            "apprenants": 25900,
+            "enseignants": 642,
+            "pct_filles": 47.2
+          },
+          {
+            "id": 79,
+            "nom": "Bohicon 1",
+            "slug": "bohicon-1",
+            "etablissements": 140,
+            "apprenants": 23705,
+            "enseignants": 632,
+            "pct_filles": 49.3
+          },
+          {
+            "id": 78,
+            "nom": "Agbangnizou",
+            "slug": "agbangnizou",
+            "etablissements": 133,
+            "apprenants": 17555,
+            "enseignants": 534,
+            "pct_filles": 47.9
+          },
+          {
+            "id": 83,
+            "nom": "Zagnanado",
+            "slug": "zagnanado",
+            "etablissements": 100,
+            "apprenants": 8748,
+            "enseignants": 329,
+            "pct_filles": 47
+          },
+          {
+            "id": 82,
+            "nom": "Ouinhi",
+            "slug": "ouinhi",
+            "etablissements": 89,
+            "apprenants": 9465,
+            "enseignants": 316,
+            "pct_filles": 45.9
+          },
+          {
+            "id": 80,
+            "nom": "Covè",
+            "slug": "cove",
+            "etablissements": 74,
+            "apprenants": 11181,
+            "enseignants": 301,
+            "pct_filles": 49.2
+          }
+        ]
+      }
+    ]
+  },
+  "cache": "hit"
+}

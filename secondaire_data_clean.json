@@ -1,0 +1,265 @@
+{
+  "status": 200,
+  "data": {
+    "disponible": true,
+    "meta": {
+      "year": "2025",
+      "academic_year": "2025-2026",
+      "generated_at": "2026-06-12T03:01:03.137Z",
+      "version": "v15.30",
+      "source_path": "/srv/educmaster/secondaire/server/storage/indicateurs.json",
+      "sous_systeme": "all",
+      "statut": "all",
+      "enseignants_non_ventile_par_sous_secteur": false,
+      "par_departement_complet": true
+    },
+    "kpi_nationaux": {
+      "apprenants": 1089068,
+      "enseignants": 53341,
+      "etablissements": 3552,
+      "pct_filles": 48.1
+    },
+    "par_departement": [
+      {
+        "dep_id": 3,
+        "nom": "ATLANTIQUE",
+        "etablissements": {
+          "total": 1161,
+          "public": 108,
+          "prive": 1053
+        },
+        "apprenants": {
+          "total": 250062,
+          "public": 153615,
+          "prive": 96447
+        },
+        "enseignants": {
+          "total": 14965,
+          "public": 5534,
+          "prive": 9388
+        },
+        "pct_filles": 49.2
+      },
+      {
+        "dep_id": 10,
+        "nom": "OUEME",
+        "etablissements": {
+          "total": 575,
+          "public": 89,
+          "prive": 486
+        },
+        "apprenants": {
+          "total": 191593,
+          "public": 146969,
+          "prive": 44624
+        },
+        "enseignants": {
+          "total": 10642,
+          "public": 5435,
+          "prive": 5109
+        },
+        "pct_filles": 50.3
+      },
+      {
+        "dep_id": 8,
+        "nom": "LITTORAL",
+        "etablissements": {
+          "total": 371,
+          "public": 24,
+          "prive": 347
+        },
+        "apprenants": {
+          "total": 93167,
+          "public": 57020,
+          "prive": 36147
+        },
+        "enseignants": {
+          "total": 5914,
+          "public": 2202,
+          "prive": 3613
+        },
+        "pct_filles": 49.9
+      },
+      {
+        "dep_id": 4,
+        "nom": "BORGOU",
+        "etablissements": {
+          "total": 299,
+          "public": 101,
+          "prive": 198
+        },
+        "apprenants": {
+          "total": 109201,
+          "public": 93739,
+          "prive": 15462
+        },
+        "enseignants": {
+          "total": 4906,
+          "public": 3211,
+          "prive": 1658
+        },
+        "pct_filles": 50
+      },
+      {
+        "dep_id": 12,
+        "nom": "ZOU",
+        "etablissements": {
+          "total": 218,
+          "public": 93,
+          "prive": 125
+        },
+        "apprenants": {
+          "total": 85349,
+          "public": 77403,
+          "prive": 7946
+        },
+        "enseignants": {
+          "total": 4028,
+          "public": 2993,
+          "prive": 999
+        },
+        "pct_filles": 45.1
+      },
+      {
+        "dep_id": 5,
+        "nom": "COLLINES",
+        "etablissements": {
+          "total": 161,
+          "public": 104,
+          "prive": 57
+        },
+        "apprenants": {
+          "total": 64990,
+          "public": 60160,
+          "prive": 4830
+        },
+        "enseignants": {
+          "total": 2861,
+          "public": 2315,
+          "prive": 521
+        },
+        "pct_filles": 44.8
+      },
+      {
+        "dep_id": 9,
+        "nom": "MONO",
+        "etablissements": {
+          "total": 148,
+          "public": 74,
+          "prive": 74
+        },
+        "apprenants": {
+          "total": 56867,
+          "public": 51447,
+          "prive": 5420
+        },
+        "enseignants": {
+          "total": 3091,
+          "public": 2307,
+          "prive": 757
+        },
+        "pct_filles": 47.2
+      },
+      {
+        "dep_id": 2,
+        "nom": "ATACORA",
+        "etablissements": {
+          "total": 146,
+          "public": 83,
+          "prive": 63
+        },
+        "apprenants": {
+          "total": 50269,
+          "public": 45708,
+          "prive": 4561
+        },
+        "enseignants": {
+          "total": 2577,
+          "public": 1877,
+          "prive": 670
+        },
+        "pct_filles": 45.6
+      },
+      {
+        "dep_id": 11,
+        "nom": "PLATEAU",
+        "etablissements": {
+          "total": 132,
+          "public": 65,
+          "prive": 67
+        },
+        "apprenants": {
+          "total": 57815,
+          "public": 53794,
+          "prive": 4021
+        },
+        "enseignants": {
+          "total": 2684,
+          "public": 2101,
+          "prive": 566
+        },
+        "pct_filles": 47.1
+      },
+      {
+        "dep_id": 7,
+        "nom": "DONGA",
+        "etablissements": {
+          "total": 124,
+          "public": 68,
+          "prive": 56
+        },
+        "apprenants": {
+          "total": 41008,
+          "public": 37061,
+          "prive": 3947
+        },
+        "enseignants": {
+          "total": 1942,
+          "public": 1472,
+          "prive": 442
+        },
+        "pct_filles": 45.6
+      },
+      {
+        "dep_id": 6,
+        "nom": "COUFFO",
+        "etablissements": {
+          "total": 114,
+          "public": 83,
+          "prive": 31
+        },
+        "apprenants": {
+          "total": 44832,
+          "public": 42557,
+          "prive": 2275
+        },
+        "enseignants": {
+          "total": 2170,
+          "public": 1879,
+          "prive": 268
+        },
+        "pct_filles": 43.8
+      },
+      {
+        "dep_id": 1,
+        "nom": "ALIBORI",
+        "etablissements": {
+          "total": 103,
+          "public": 51,
+          "prive": 52
+        },
+        "apprenants": {
+          "total": 43915,
+          "public": 40881,
+          "prive": 3034
+        },
+        "enseignants": {
+          "total": 1833,
+          "public": 1357,
+          "prive": 471
+        },
+        "pct_filles": 46.6
+      }
+    ]
+  }
+}

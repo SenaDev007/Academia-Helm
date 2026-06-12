@@ -1402,11 +1402,11 @@ export function CareersContent({
                           
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {/* CV */}
-                            <div className="border border-dashed border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center text-center relative hover:bg-slate-50 transition cursor-pointer">
-                              <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setCvFile(e.target.files?.[0] || null)} required className="absolute inset-0 opacity-0 cursor-pointer" />
-                              <Upload className="h-6 w-6 text-[#0b2f73] mb-2" />
+                            <div className={`border border-dashed rounded-xl p-4 flex flex-col items-center justify-center text-center relative hover:bg-slate-50 transition cursor-pointer ${cvFile ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-200'}`}>
+                              <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setCvFile(e.target.files?.[0] || null)} className="absolute inset-0 opacity-0 cursor-pointer" />
+                              <Upload className={`h-6 w-6 mb-2 ${cvFile ? 'text-emerald-600' : 'text-[#0b2f73]'}`} />
                               <span className="text-[10px] font-bold text-slate-700">Curriculum Vitae *</span>
-                              <span className="text-[10px] text-slate-400 mt-1">{cvFile ? cvFile.name : 'PDF, DOCX'}</span>
+                              <span className={`text-[10px] mt-1 ${cvFile ? 'text-emerald-600 font-semibold' : 'text-slate-400'}`}>{cvFile ? cvFile.name : 'PDF, DOCX — obligatoire'}</span>
                             </div>
 
                             {/* Letter */}
@@ -1458,10 +1458,10 @@ export function CareersContent({
                           <button
                             type="button"
                             onClick={handleSubmitApplication}
-                            disabled={submitting}
-                            className="px-5 py-2.5 md:py-2 text-white rounded-lg text-xs font-bold transition hover:opacity-90 flex items-center gap-1 bg-blue-600"
+                            disabled={submitting || !cvFile}
+                            className="px-5 py-2.5 md:py-2 text-white rounded-lg text-xs font-bold transition hover:opacity-90 flex items-center gap-1 bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            {submitting ? 'Transmission...' : 'Soumettre le dossier'}
+                            {submitting ? 'Transmission...' : !cvFile ? 'CV requis pour soumettre' : 'Soumettre le dossier'}
                             <Send className="h-3 w-3" />
                           </button>
                         )}

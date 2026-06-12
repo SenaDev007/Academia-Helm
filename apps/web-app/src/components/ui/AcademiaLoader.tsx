@@ -1,13 +1,17 @@
 'use client';
 
 /**
- * AcademiaLoader — v4 Clean Premium
+ * AcademiaLoader — v5 Global CSS
  *
  * Écran de chargement premium Academia Helm.
  * DEUX modes :
  * - inline (route transitions) : Logo animé + nom de page, PAS de pourcentage fictif.
  *   Next.js remplace automatiquement loading.tsx quand la page est prête.
  * - fullscreen (PostLoginFlow) : Logo circulaire + progression RÉELLE.
+ *
+ * ⚠️ All CSS animations are defined in globals.css so they are available
+ * immediately during SSR — before JS hydration. This prevents the static
+ * blue screen with no animation on initial page load.
  *
  * Palette : Royal Blue (#1A237E), Blue (#3F51B5), Gold (#f5b335)
  */
@@ -51,15 +55,6 @@ export default function AcademiaLoader({ inline = false, message, progress, step
           </div>
         </div>
         <span className="ml-3 text-sm text-slate-500 font-medium">{pageName}</span>
-        <style>{`
-          .academia-loader-ring-sm {
-            position: absolute; inset: -5px;
-            border-radius: 50%;
-            border: 2px solid rgba(245, 179, 53, 0.12);
-            border-top-color: #f5b335;
-            animation: academiaOrbit 0.9s linear infinite;
-          }
-        `}</style>
       </div>
     );
   }
@@ -138,96 +133,6 @@ export default function AcademiaLoader({ inline = false, message, progress, step
         <div className="h-2 w-2 rounded-full bg-[#3F51B5] academia-loader-dot" style={{ animationDelay: '120ms' }} />
         <div className="h-1.5 w-1.5 rounded-full bg-[#f5b335] academia-loader-dot" style={{ animationDelay: '240ms' }} />
       </div>
-
-      <style>{`
-        @keyframes academiaOrbitSpin {
-          to { transform: rotate(360deg); }
-        }
-        @keyframes academiaOrbitReverse {
-          to { transform: rotate(-360deg); }
-        }
-        @keyframes academiaPulse {
-          0%, 100% { transform: scale(1); opacity: 0.9; }
-          50% { transform: scale(1.05); opacity: 1; }
-        }
-        @keyframes academiaHaloPulse {
-          0%, 100% { transform: scale(1); opacity: 0.15; }
-          50% { transform: scale(1.35); opacity: 0.05; }
-        }
-        @keyframes academiaFadeUp {
-          from { opacity: 0; transform: translateY(14px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes academiaFloatOrb {
-          0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.1; }
-          33% { transform: translate(25px, -35px) scale(1.1); opacity: 0.06; }
-          66% { transform: translate(-20px, 20px) scale(0.95); opacity: 0.15; }
-        }
-        @keyframes academiaDotBounce {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-6px); }
-        }
-
-        .academia-loader-container {
-          position: relative;
-          width: 84px; height: 84px;
-          display: flex; align-items: center; justify-content: center;
-        }
-        .academia-loader-ring {
-          position: absolute; inset: 0;
-          border-radius: 50%;
-          border: 2px solid rgba(255, 255, 255, 0.1);
-          border-top-color: #f5b335;
-          animation: academiaOrbitSpin 1.1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-        }
-        .academia-loader-ring-outer {
-          position: absolute; inset: -10px;
-          border-radius: 50%;
-          border: 1.5px solid rgba(63, 81, 181, 0.1);
-          border-bottom-color: rgba(63, 81, 181, 0.5);
-          animation: academiaOrbitReverse 2.5s linear infinite;
-        }
-        .academia-loader-halo {
-          position: absolute; inset: -20px;
-          border-radius: 50%;
-          background: radial-gradient(circle, rgba(245,179,53,0.12) 0%, transparent 70%);
-          animation: academiaHaloPulse 3s ease-in-out infinite;
-        }
-        .academia-loader-logo-circle {
-          position: relative; z-index: 10;
-          width: 56px; height: 56px;
-          border-radius: 50%;
-          background: rgba(255,255,255,0.08);
-          border: 2px solid rgba(255,255,255,0.25);
-          display: flex; align-items: center; justify-content: center;
-          backdrop-filter: blur(4px);
-          animation: academiaPulse 2.8s ease-in-out infinite;
-        }
-        .academia-loader-text {
-          animation: academiaFadeUp 0.6s ease-out 0.15s both;
-        }
-        .academia-loader-step {
-          animation: academiaFadeUp 0.5s ease-out 0.3s both;
-        }
-        .academia-loader-orb {
-          position: absolute; border-radius: 50%; filter: blur(90px); pointer-events: none;
-        }
-        .academia-loader-orb-1 {
-          width: 240px; height: 240px;
-          background: rgba(245, 179, 53, 0.07);
-          top: -8%; left: -6%;
-          animation: academiaFloatOrb 10s ease-in-out infinite;
-        }
-        .academia-loader-orb-2 {
-          width: 200px; height: 200px;
-          background: rgba(63, 81, 181, 0.1);
-          bottom: -4%; right: -4%;
-          animation: academiaFloatOrb 13s ease-in-out infinite reverse;
-        }
-        .academia-loader-dot {
-          animation: academiaDotBounce 0.8s ease-in-out infinite;
-        }
-      `}</style>
     </div>
   );
 }

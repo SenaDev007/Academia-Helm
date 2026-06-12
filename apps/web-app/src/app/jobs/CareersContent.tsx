@@ -152,6 +152,10 @@ export function CareersContent({
   const searchParams = useSearchParams();
   const schoolParam = forcedSchoolSlug || searchParams.get('school');
 
+  // Track whether the school was auto-selected from URL to prevent
+  // handleSelectSchool from re-running on every URL change
+  const [schoolAutoSelected, setSchoolAutoSelected] = useState(false);
+
   // Multi-Step Form States
   const [isApplying, setIsApplying] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
@@ -349,16 +353,20 @@ export function CareersContent({
   }, [selectedJob?.id]);
 
   // Auto-select school if query parameter matches
+  // Uses schoolAutoSelected guard to prevent re-running when URL changes
+  // (e.g. when clicking a job card pushes /jobs/school/job-slug)
   useEffect(() => {
     if (deepLinkResolved && forcedJobSlug) return;
     if (initialSchool) return;
+    if (schoolAutoSelected) return; // Already auto-selected, don't re-run
     if (schools.length > 0 && schoolParam && !selectedSchool) {
       const match = schools.find(s => s.slug === schoolParam);
       if (match) {
+        setSchoolAutoSelected(true);
         handleSelectSchool(match);
       }
     }
-  }, [schools, schoolParam, deepLinkResolved, forcedJobSlug, selectedSchool, initialSchool]);
+  }, [schools, schoolParam, deepLinkResolved, forcedJobSlug, selectedSchool, initialSchool, schoolAutoSelected]);
 
   // Select a specific job from the jobs list by slug
   const handleSelectJobBySlug = (jobSlug: string) => {
@@ -506,6 +514,21 @@ export function CareersContent({
     const name = s.schoolName || s.tenantName || s.name;
     const acronym = getSchoolAcronym(s);
     return acronym ? `${name} (${acronym})` : name;
+  };
+
+  /**
+   * Format salary with F CFA suffix if not already present.
+   * Examples: "52000" → "52 000 F CFA", "52000 F CFA" → "52 000 F CFA"
+   */
+  const formatSalary = (salary: string) => {
+    const trimmed = salary.trim();
+    // Already has currency suffix
+    if (/\s*(F\s*CFA|CFA|FCFA|XOF)\s*$/i.test(trimmed)) {
+      return trimmed;
+    }
+    // Add space as thousands separator if it's a plain number
+    const withSpaces = trimmed.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    return `${withSpaces} F CFA`;
   };
 
   /**
@@ -847,7 +870,10 @@ export function CareersContent({
                     setSelectedSchool(null);
                     setSelectedJob(null);
                     setIsApplying(false);
-                    router.push('/jobs');
+                    setSchoolAutoSelected(false);
+                    // Use replace + href to fully navigate away from /jobs/[slug]
+                    // router.push('/jobs') alone just re-renders the same [slug] page
+                    window.location.href = '/jobs';
                   }}
                   className="inline-flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-slate-900 transition-colors"
                 >
@@ -930,11 +956,14 @@ export function CareersContent({
                     </div>
                   ) : (
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Left: Job list */}
-                    <div className="lg:col-span-1 space-y-4">
-                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Postes ouverts</h3>
+                    {/* Left: Job list — redesigned with Academia palette */}
+                    <div className="lg:col-span-1 space-y-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <h3 className="text-xs font-bold text-[#0b2f73] uppercase tracking-wider">Postes ouverts</h3>
+                        <span className="text-[10px] font-bold text-white bg-[#0b2f73] rounded-full px-2.5 py-0.5">{jobs.length}</span>
+                      </div>
                       {jobs.map((job) => (
-                        <div
+                        <motion.div
                           key={job.id}
                           onClick={() => {
                             setSelectedJob(job);
@@ -942,35 +971,58 @@ export function CareersContent({
                               router.push(`/jobs/${selectedSchool.slug}/${job.slug}`, { scroll: false });
                             }
                           }}
-                          className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                          whileHover={{ x: 4 }}
+                          transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+                          className={`group relative p-4 rounded-xl border cursor-pointer transition-all overflow-hidden ${
                             selectedJob?.id === job.id
-                              ? 'border-[#f5b335]/40 bg-[#f5b335]/5 shadow-sm'
-                              : 'border-slate-100 bg-white hover:border-slate-200 hover:shadow-sm'
+                              ? 'border-[#f5b335]/50 bg-gradient-to-r from-[#f5b335]/8 to-[#0b2f73]/5 shadow-md shadow-[#f5b335]/10'
+                              : 'border-slate-100 bg-white hover:border-[#0b2f73]/20 hover:shadow-md hover:shadow-slate-100/50'
                           }`}
                         >
+                          {/* Gold accent left bar when selected */}
+                          {selectedJob?.id === job.id && (
+                            <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#f5b335] rounded-r" />
+                          )}
+
                           <div className="flex items-start justify-between gap-2">
-                            <h4 className="font-semibold text-sm text-slate-800 leading-snug">{job.title}</h4>
-                            <Bookmark className={`h-4 w-4 shrink-0 ${selectedJob?.id === job.id ? 'text-[#f5b335]' : 'text-slate-300'}`} />
+                            <h4 className={`font-bold text-sm leading-snug ${selectedJob?.id === job.id ? 'text-[#0b2f73]' : 'text-slate-800 group-hover:text-[#0b2f73]'} transition-colors`}>
+                              {job.title}
+                            </h4>
+                            <Bookmark className={`h-4 w-4 shrink-0 transition-colors ${selectedJob?.id === job.id ? 'text-[#f5b335] fill-[#f5b335]/20' : 'text-slate-200 group-hover:text-[#0b2f73]/30'}`} />
                           </div>
-                          <p className="text-[11px] text-slate-500 mt-1">{job.dept}</p>
-                          <div className="flex items-center gap-3 mt-2 text-[10px] text-slate-400">
+
+                          {job.dept && (
+                            <p className="text-[11px] text-[#1d4fa5]/70 mt-0.5 font-medium">{job.dept}</p>
+                          )}
+
+                          <div className="flex flex-wrap items-center gap-2 mt-2">
                             {job.contractType && (
-                              <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{job.contractType}</span>
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#0b2f73]/8 text-[#0b2f73] text-[9px] font-bold">
+                                <Clock className="h-2.5 w-2.5" />{job.contractType}
+                              </span>
                             )}
                             {job.loc && (
-                              <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{job.loc}</span>
+                              <span className="flex items-center gap-1 text-[10px] text-slate-400">
+                                <MapPin className="h-2.5 w-2.5" />{job.loc}
+                              </span>
                             )}
                           </div>
+
                           {job.salary && (
-                            <p className="text-[10px] font-semibold text-[#0b2f73] mt-1.5 flex items-center gap-1">
-                              <DollarSign className="h-3 w-3" />{job.salary}
+                            <p className="text-[11px] font-bold text-[#0b2f73] mt-2 flex items-center gap-1 bg-[#f5b335]/10 rounded-lg px-2 py-1 w-fit">
+                              <DollarSign className="h-3 w-3 text-[#f5b335]" />{formatSalary(job.salary)}
                             </p>
                           )}
-                        </div>
+
+                          {/* Chevron indicator */}
+                          <div className={`absolute right-2 top-1/2 -translate-y-1/2 transition-all ${selectedJob?.id === job.id ? 'opacity-100 text-[#f5b335]' : 'opacity-0 group-hover:opacity-60 text-slate-300'}`}>
+                            <ChevronRight className="h-4 w-4" />
+                          </div>
+                        </motion.div>
                       ))}
                     </div>
 
-                    {/* Right: Job detail */}
+                    {/* Right: Job detail OR recruitment portrait placeholder */}
                     <div className="lg:col-span-2">
                       {selectedJob ? (
                         <motion.div
@@ -980,13 +1032,13 @@ export function CareersContent({
                           className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden"
                         >
                           {/* Job detail header */}
-                          <div className="p-6 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
-                            <h2 className="text-xl font-extrabold text-slate-900">{selectedJob.title}</h2>
+                          <div className="p-6 border-b border-slate-100 bg-gradient-to-r from-[#0b2f73]/[0.03] to-white">
+                            <h2 className="text-xl font-extrabold text-[#0b2f73]">{selectedJob.title}</h2>
                             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-2 text-xs text-slate-500">
                               <span className="flex items-center gap-1"><Building2 className="h-3.5 w-3.5" />{selectedJob.dept}</span>
                               {selectedJob.loc && <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{selectedJob.loc}</span>}
                               {selectedJob.contractType && <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#0b2f73]/5 text-[#0b2f73] font-semibold">{selectedJob.contractType}</span>}
-                              {selectedJob.salary && <span className="flex items-center gap-1"><DollarSign className="h-3.5 w-3.5" />{selectedJob.salary}</span>}
+                              {selectedJob.salary && <span className="flex items-center gap-1 font-bold text-[#0b2f73]"><DollarSign className="h-3.5 w-3.5 text-[#f5b335]" />{formatSalary(selectedJob.salary)}</span>}
                               {selectedJob.academicLevel && <span className="flex items-center gap-1"><GraduationCap className="h-3.5 w-3.5" />{selectedJob.academicLevel}</span>}
                               {selectedJob.experience && <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{selectedJob.experience}</span>}
                             </div>
@@ -1042,10 +1094,31 @@ export function CareersContent({
                           </div>
                         </motion.div>
                       ) : (
-                        <div className="flex flex-col items-center justify-center h-64 text-slate-400">
-                          <Briefcase className="h-12 w-12 mb-3 text-slate-200" />
-                          <p className="text-sm font-medium">Sélectionnez un poste pour voir les détails</p>
-                        </div>
+                        /* Recruitment portal portrait — shown when no job is selected yet */
+                        <motion.div
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ duration: 0.4 }}
+                          className="flex items-center justify-center min-h-[400px]"
+                        >
+                          <div className="relative w-full max-w-md mx-auto">
+                            <Image
+                              src="/images/AcademiaHelm_RecruitmentPortal_Portrait.jpeg"
+                              alt="Portail de recrutement Academia Helm"
+                              width={600}
+                              height={800}
+                              className="rounded-2xl shadow-lg w-full h-auto object-contain"
+                              priority
+                              sizes="(max-width: 768px) 100vw, 600px"
+                            />
+                            {/* Subtle overlay text */}
+                            <div className="absolute bottom-4 left-4 right-4 text-center">
+                              <p className="text-[11px] text-slate-500 font-medium bg-white/80 backdrop-blur-sm rounded-lg px-3 py-1.5 inline-block">
+                                Sélectionnez un poste pour voir les détails
+                              </p>
+                            </div>
+                          </div>
+                        </motion.div>
                       )}
                     </div>
                   </div>

@@ -212,7 +212,7 @@ export function CareersContent({
     const container = jobListRef.current;
     if (!container || jobs.length <= 5) return;
 
-    const speed = 0.5; // px per frame — smooth and gentle
+    const speed = 0.25; // px per frame — slow and gentle
 
     function animate() {
       if (!container) return;
@@ -1199,22 +1199,27 @@ export function CareersContent({
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
                           transition={{ duration: 0.4 }}
-                          className="flex items-center justify-center min-h-[300px] md:min-h-[500px] lg:min-h-[600px]"
+                          className="relative flex flex-col items-center justify-center h-full min-h-[300px] lg:min-h-[620px] rounded-2xl overflow-hidden"
                         >
-                          <div className="relative w-full mx-auto px-4" style={{ maxWidth: '34rem' }}>
+                          {/* Decorative background that fills the entire panel */}
+                          <div className="absolute inset-0 bg-gradient-to-br from-[#0b2f73]/[0.04] via-white to-[#1d4fa5]/[0.06]" />
+                          <div className="absolute top-0 right-0 w-64 h-64 bg-[#f5b335]/[0.07] rounded-full blur-[80px]" />
+                          <div className="absolute bottom-0 left-0 w-72 h-72 bg-[#1d4fa5]/[0.06] rounded-full blur-[90px]" />
+
+                          <div className="relative z-10 flex flex-col items-center justify-center w-full h-full py-6 px-4 lg:px-8">
                             <Image
                               src="/images/AcademiaHelm_RecruitmentPortal_Portrait.jpeg"
                               alt="Portail de recrutement Academia Helm"
-                              width={600}
-                              height={800}
-                              className="rounded-2xl shadow-lg w-full h-auto"
-                              style={{ maxHeight: '65vh', objectFit: 'contain' }}
+                              width={896}
+                              height={1200}
+                              className="rounded-2xl shadow-xl"
+                              style={{ maxWidth: '100%', maxHeight: '75vh', width: 'auto', height: '100%', objectFit: 'contain' }}
                               priority
-                              sizes="(max-width: 768px) 100vw, 50vw"
+                              sizes="(max-width: 1024px) 100vw, 66vw"
                             />
-                            {/* Subtle overlay text */}
-                            <div className="absolute bottom-4 left-4 right-4 text-center">
-                              <p className="text-[11px] text-slate-500 font-medium bg-white/80 backdrop-blur-sm rounded-lg px-3 py-1.5 inline-block">
+                            <div className="mt-5 text-center">
+                              <p className="text-xs font-semibold text-[#0b2f73]/70 bg-white/80 backdrop-blur-sm rounded-lg px-4 py-2 inline-flex items-center gap-2 shadow-sm">
+                                <Briefcase className="h-3.5 w-3.5 text-[#f5b335]" />
                                 Sélectionnez un poste pour voir les détails
                               </p>
                             </div>

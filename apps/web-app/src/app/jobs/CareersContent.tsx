@@ -509,6 +509,69 @@ export function CareersContent({
     return acronym ? `${name} (${acronym})` : name;
   };
 
+  /**
+   * Construit une adresse complète intelligente en évitant les répétitions.
+   *
+   * Si la ville, le département ou le pays sont déjà mentionnés dans l'adresse
+   * complète, ils ne sont pas ajoutés une seconde fois. La comparaison est
+   * insensible à la casse et aux accents (diacritiques) pour détecter :
+   *   "Cotonou" dans "Rue 5, Cotonou, Bénin"
+   *   "Benin" dans "Rue 5, Cotonou, Bénin"  (sans accent)
+   *   "Littoral" dans "Rue 5, Cotonou, Littoral"
+   *
+   * Exemples :
+   *   address="Rue 5, Cotonou", city="Cotonou" → "Rue 5, Cotonou"
+   *   address="Rue 5", city="Cotonou", country="Bénin" → "Rue 5, Cotonou, Bénin"
+   *   address="Rue 5, Cotonou, Littoral, Bénin", city="Cotonou" → "Rue 5, Cotonou, Littoral, Bénin"
+   *   address=null, city="Cotonou", department="Littoral", country="Bénin" → "Cotonou, Littoral, Bénin"
+   */
+  const buildSmartAddress = (s: School): string | null => {
+    const address = s.address?.trim();
+    const city = s.city?.trim();
+    const department = s.department?.trim();
+    const country = s.country?.trim();
+
+    if (!address && !city && !department && !country) return null;
+
+    // Normalise pour la comparaison : minuscules, sans accents, sans ponctuation
+    const normalizeForCompare = (str: string) =>
+      str
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '') // supprime les diacritiques
+        .replace(/[^a-z0-9]/g, '');     // ne garde que lettres et chiffres
+
+    const addressNorm = address ? normalizeForCompare(address) : '';
+
+    const parts: string[] = [];
+
+    // Toujours commencer par l'adresse si elle existe
+    if (address) {
+      parts.push(address);
+    }
+
+    // Ajoute la ville uniquement si elle n'est pas déjà dans l'adresse
+    if (city && !addressNorm.includes(normalizeForCompare(city))) {
+      parts.push(city);
+    }
+
+    // Ajoute le département uniquement s'il n'est ni dans l'adresse ni identique à la ville
+    if (
+      department &&
+      !addressNorm.includes(normalizeForCompare(department)) &&
+      normalizeForCompare(department) !== normalizeForCompare(city || '')
+    ) {
+      parts.push(department);
+    }
+
+    // Ajoute le pays uniquement s'il n'est pas déjà dans l'adresse
+    if (country && !addressNorm.includes(normalizeForCompare(country))) {
+      parts.push(country);
+    }
+
+    return parts.length > 0 ? parts.join(', ') : null;
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50 text-slate-900 flex flex-col">
       <PremiumHeader />
@@ -700,14 +763,11 @@ export function CareersContent({
                           </p>
                         )}
 
-                        {/* Location */}
-                        {(school.city || school.country || getSchoolAddress(school)) && (
+                        {/* Location — smart deduplication */}
+                        {buildSmartAddress(school) && (
                           <p className="text-[11px] text-slate-500 mt-1.5 flex items-start gap-1">
                             <MapPin className="h-3 w-3 mt-0.5 shrink-0 text-slate-400" />
-                            <span className="line-clamp-2">
-                              {getSchoolAddress(school) && <span>{getSchoolAddress(school)}, </span>}
-                              {[school.city, school.department, school.country].filter(Boolean).join(', ')}
-                            </span>
+                            <span className="line-clamp-2">{buildSmartAddress(school)}</span>
                           </p>
                         )}
                       </div>
@@ -820,11 +880,10 @@ export function CareersContent({
                         <p className="text-[11px] text-slate-400 italic mt-0.5">{getSchoolSlogan(selectedSchool)}</p>
                       )}
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-2 text-xs text-slate-500">
-                        {(selectedSchool.city || selectedSchool.country || getSchoolAddress(selectedSchool)) && (
+                        {buildSmartAddress(selectedSchool) && (
                           <span className="flex items-center gap-1">
                             <MapPin className="h-3 w-3" />
-                            {getSchoolAddress(selectedSchool) && <span>{getSchoolAddress(selectedSchool)}, </span>}
-                            {[selectedSchool.city, selectedSchool.department, selectedSchool.country].filter(Boolean).join(', ')}
+                            {buildSmartAddress(selectedSchool)}
                           </span>
                         )}
                         {getSchoolPhone(selectedSchool) && (

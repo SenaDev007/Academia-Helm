@@ -1,11 +1,10 @@
 /**
- * LoadingScreen Component — v3 Real Progress
+ * LoadingScreen Component — v4 Clean Premium
  *
- * Écran de chargement plein écran avec design premium Academia Helm.
- * La progression est RÉELLE, fournie par le parent.
- * Aucune animation de pourcentage fictif.
+ * Écran de chargement plein écran avec design épuré Academia Helm.
+ * Logo circulaire, barre de progression épaisse, pourcentage, dots animés.
  *
- * Palette : Navy (#0b2f73), Blue (#1d4fa5), Gold (#f5b335)
+ * Palette : Royal Blue (#1A237E→#283593), Gold (#f5b335)
  */
 
 'use client';
@@ -39,9 +38,9 @@ export function LoadingScreen({
   const { shouldReduceMotion } = useMotionBudget();
 
   const variants = {
-    default: 'bg-[#0b2f73]',
-    minimal: 'bg-[#0D1F6E]',
-    orion: 'bg-gradient-to-br from-[#0b2f73] via-[#0D1F6E] to-[#1A3490]',
+    default: 'bg-[#1A237E]',
+    minimal: 'bg-[#1A237E]',
+    orion: 'bg-gradient-to-br from-[#1A237E] via-[#1E2A8A] to-[#283593]',
   };
 
   return (
@@ -52,50 +51,58 @@ export function LoadingScreen({
         className
       )}
     >
-      {/* Ambiance — orbes lumineux */}
+      {/* Orbes d'ambiance subtiles */}
       <motion.div
         className="pointer-events-none absolute inset-0"
-        animate={shouldReduceMotion ? { opacity: 0.15 } : { opacity: [0.15, 0.3, 0.15] }}
-        transition={shouldReduceMotion ? { duration: 0 } : { duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+        animate={shouldReduceMotion ? { opacity: 0.1 } : { opacity: [0.1, 0.2, 0.1] }}
+        transition={shouldReduceMotion ? { duration: 0 } : { duration: 8, repeat: Infinity, ease: 'easeInOut' }}
       >
-        <div className="absolute -top-32 -left-16 w-96 h-96 bg-[#f5b335]/10 rounded-full blur-[100px]" />
-        <div className="absolute -bottom-40 -right-20 w-[500px] h-[500px] bg-[#1d4fa5]/15 rounded-full blur-[120px]" />
-        <div className="absolute top-1/3 right-1/4 w-64 h-64 bg-[#f5b335]/5 rounded-full blur-[80px]" />
+        <div className="absolute -top-32 -left-16 w-96 h-96 bg-[#f5b335]/6 rounded-full blur-[120px]" />
+        <div className="absolute -bottom-40 -right-20 w-[500px] h-[500px] bg-[#3F51B5]/10 rounded-full blur-[140px]" />
       </motion.div>
 
       {/* Contenu central */}
-      <div className="w-full max-w-md px-8 text-center relative z-10">
-        {/* Logo avec halo premium */}
-        <div className="mb-10 flex justify-center">
-          <motion.div
-            className="relative"
-            animate={shouldReduceMotion ? { scale: 1 } : { scale: [1, 1.04, 1] }}
-            transition={shouldReduceMotion ? { duration: 0 } : { duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-          >
+      <div className="w-full max-w-sm px-8 text-center relative z-10">
+        {/* Logo circulaire avec bordure */}
+        <motion.div
+          className="mb-8 flex justify-center"
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+        >
+          <div className="relative">
             {/* Halo doré pulsant */}
-            <div className="absolute inset-0 -m-5 rounded-full bg-[#f5b335]/8 blur-xl" style={{ animation: 'academiaPulse 2.5s ease-in-out infinite' }} />
-            {/* Anneau rotatif */}
-            <div className="absolute inset-0 -m-3 rounded-full border-2 border-[#f5b335]/20 border-t-[#f5b335]" style={{ animation: 'academiaOrbit 1.2s linear infinite' }} />
-            {/* Logo */}
-            <Image
-              src={BRAND.logoPath}
-              alt={BRAND.name}
-              width={72}
-              height={72}
-              className="relative z-10 rounded-2xl"
+            <div
+              className="absolute inset-0 -m-6 rounded-full bg-[#f5b335]/8 blur-xl"
               style={{ animation: 'academiaPulse 3s ease-in-out infinite' }}
-              priority
             />
-          </motion.div>
-        </div>
+            {/* Anneau rotatif doré */}
+            <div
+              className="absolute inset-0 -m-3 rounded-full border-2 border-white/10 border-t-[#f5b335]"
+              style={{ animation: 'academiaOrbit 1.2s linear infinite' }}
+            />
+            {/* Conteneur circulaire blanc pour le logo */}
+            <div className="relative z-10 w-20 h-20 rounded-full bg-white/10 border-2 border-white/30 flex items-center justify-center backdrop-blur-sm">
+              <Image
+                src={BRAND.logoPath}
+                alt={BRAND.name}
+                width={52}
+                height={52}
+                className="rounded-full"
+                style={{ animation: 'academiaPulse 3s ease-in-out infinite' }}
+                priority
+              />
+            </div>
+          </div>
+        </motion.div>
 
         {/* Nom de marque */}
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.2 }}
+          transition={{ duration: 0.5, delay: 0.15 }}
         >
-          <h1 className="text-2xl font-bold text-white tracking-tight mb-1">
+          <h1 className="text-2xl font-bold text-white tracking-tight mb-0.5">
             {BRAND.name.split(' ')[0]}
             <span className="text-[#f5b335] ml-1.5">{BRAND.name.split(' ')[1]}</span>
           </h1>
@@ -104,53 +111,55 @@ export function LoadingScreen({
           </p>
         </motion.div>
 
-        {/* Message de l'étape réelle */}
+        {/* Message de chargement */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: 0.5, delay: 0.5 }}
-          className="mt-8"
+          transition={{ duration: 0.4, delay: 0.35 }}
+          className="mt-6"
         >
-          <h2 className="text-base font-medium text-white/90 mb-1">
+          <h2 className="text-base font-medium text-white/90 mb-0.5">
             {message?.title || 'Chargement…'}
           </h2>
           {message?.subtitle && (
-            <p className="text-xs text-blue-200/60">{message.subtitle}</p>
+            <p className="text-xs text-blue-200/50">{message.subtitle}</p>
           )}
         </motion.div>
 
-        {/* Barre de progression RÉELLE */}
+        {/* Barre de progression épaisse */}
         {showProgress && (
           <motion.div
             initial={{ opacity: 0, scaleX: 0.8 }}
             animate={{ opacity: 1, scaleX: 1 }}
-            transition={{ duration: 0.5, delay: 0.7 }}
-            className="mt-8"
+            transition={{ duration: 0.5, delay: 0.5 }}
+            className="mt-7"
           >
-            <div className="relative h-1 w-full bg-white/10 rounded-full overflow-hidden">
+            {/* Piste de progression */}
+            <div className="relative h-2 w-full bg-white/12 rounded-full overflow-hidden">
               <div
                 className="h-full rounded-full transition-all duration-500 ease-out"
                 style={{
-                  width: `${Math.max(2, progress)}%`,
-                  background: 'linear-gradient(90deg, #1d4fa5, #f5b335)',
+                  width: `${Math.max(3, progress)}%`,
+                  background: 'linear-gradient(90deg, #3F51B5, #f5b335)',
                 }}
               />
             </div>
+            {/* Label + pourcentage */}
             <div className="flex justify-between mt-2">
-              <p className="text-[10px] text-blue-200/40 uppercase tracking-wider">Progression</p>
-              <p className="text-xs text-[#f5b335] font-semibold tabular-nums">{Math.round(progress)}%</p>
+              <p className="text-[10px] text-blue-200/40 uppercase tracking-wider font-medium">Progression</p>
+              <p className="text-sm text-[#f5b335] font-bold tabular-nums">{Math.round(progress)}%</p>
             </div>
           </motion.div>
         )}
 
         {/* Dots animés branded */}
-        <div className="flex justify-center items-center space-x-2 mt-8">
+        <div className="flex justify-center items-center space-x-2.5 mt-7">
           {[0, 1, 2].map((i) => (
             <motion.div
               key={i}
               className={cn(
                 'rounded-full',
-                i === 0 ? 'h-2 w-2 bg-[#1d4fa5]/60' : i === 1 ? 'h-2.5 w-2.5 bg-[#1d4fa5]' : 'h-2 w-2 bg-[#f5b335]',
+                i === 0 ? 'h-2 w-2 bg-[#3F51B5]/70' : i === 1 ? 'h-2.5 w-2.5 bg-[#3F51B5]' : 'h-2 w-2 bg-[#f5b335]',
               )}
               animate={shouldReduceMotion ? { y: 0 } : { y: [0, -8, 0] }}
               transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.8, repeat: Infinity, delay: i * 0.15, ease: 'easeInOut' }}
@@ -167,7 +176,7 @@ export function LoadingScreen({
  */
 export function MinimalLoadingScreen({
   message,
-  minDuration = 10000,
+  minDuration = 6000,
   children,
 }: {
   message?: string;
@@ -190,15 +199,15 @@ export function MinimalLoadingScreen({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0b2f73] safe-area-inset-top safe-area-inset-bottom">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1A237E] safe-area-inset-top safe-area-inset-bottom">
       <div className="text-center">
         <div className="relative w-14 h-14 mx-auto mb-5">
           <div
-            className="absolute inset-0 rounded-full border-2 border-[#f5b335]/15 border-t-[#f5b335]"
+            className="absolute inset-0 rounded-full border-2 border-white/10 border-t-[#f5b335]"
             style={{ animation: 'academiaOrbit 1s linear infinite' }}
           />
           <div className="absolute inset-0 flex items-center justify-center">
-            <Image src={BRAND.logoPath} alt={BRAND.name} width={24} height={24} className="relative z-10 rounded" style={{ animation: 'academiaPulse 2s ease-in-out infinite' }} priority />
+            <Image src={BRAND.logoPath} alt={BRAND.name} width={24} height={24} className="relative z-10 rounded-full" style={{ animation: 'academiaPulse 2s ease-in-out infinite' }} priority />
           </div>
         </div>
         {message && <p className="text-sm text-white/70">{message}</p>}

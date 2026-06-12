@@ -1,12 +1,11 @@
 /**
- * LoadingScreenMobile Component — v2 Modern Captivating
+ * LoadingScreenMobile Component — v4 Clean Premium
  *
  * Écran de chargement optimisé mobile/PWA — CSS-only, zero JS runtime.
- * Design immersif avec palette Academia Helm, noir profond,
- * halo doré pulsant et progression branded.
+ * Design épuré avec logo circulaire, barre épaisse, pourcentage, dots.
  *
- * Durée minimale : 10 secondes (réduit de 15s)
- * Palette : Navy (#0b2f73), Blue (#1d4fa5), Gold (#f5b335)
+ * Durée minimale : 6 secondes (réduit de 10s)
+ * Palette : Royal Blue (#1A237E), Blue (#3F51B5), Gold (#f5b335)
  */
 
 'use client';
@@ -18,8 +17,8 @@ import { getMessageText } from '@/lib/messages/system-messages';
 import Image from 'next/image';
 import { BRAND } from '@/lib/brand';
 
-/** Durée minimale par défaut (ms) — réduit à 10s */
-const DEFAULT_MIN_DURATION_MS = 10000;
+/** Durée minimale par défaut (ms) — réduit à 6s */
+const DEFAULT_MIN_DURATION_MS = 6000;
 
 export interface LoadingScreenMobileProps {
   message?: LoadingMessage;
@@ -50,7 +49,7 @@ export function LoadingScreenMobile({
     setIsPWA(isStandalone);
   }, []);
 
-  // Timer pour la durée minimale de 10 secondes
+  // Timer pour la durée minimale de 6 secondes
   useEffect(() => {
     if (minDuration <= 0) {
       setMinElapsed(true);
@@ -91,34 +90,37 @@ export function LoadingScreenMobile({
   return (
     <div
       className={cn(
-        'fixed inset-0 z-50 flex items-center justify-center bg-[#0b2f73] safe-area-inset-top safe-area-inset-bottom',
-        variant === 'pwa' && 'bg-gradient-to-br from-[#0b2f73] via-[#0D1F6E] to-[#1A3490]',
+        'fixed inset-0 z-50 flex items-center justify-center bg-[#1A237E] safe-area-inset-top safe-area-inset-bottom',
+        variant === 'pwa' && 'bg-gradient-to-br from-[#1A237E] via-[#1E2A8A] to-[#283593]',
         className
       )}
     >
-      {/* Orbes d'ambiance — CSS-only */}
+      {/* Orbes d'ambiance subtiles — CSS-only */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-20 -left-10 w-56 h-56 bg-[#f5b335]/8 rounded-full blur-[80px]" style={{ animation: 'academiaPulse 5s ease-in-out infinite' }} />
-        <div className="absolute -bottom-24 -right-12 w-64 h-64 bg-[#1d4fa5]/12 rounded-full blur-[90px]" style={{ animation: 'academiaPulse 7s ease-in-out infinite reverse' }} />
+        <div className="absolute -top-20 -left-10 w-48 h-48 bg-[#f5b335]/5 rounded-full blur-[90px]" style={{ animation: 'academiaPulse 6s ease-in-out infinite' }} />
+        <div className="absolute -bottom-24 -right-12 w-56 h-56 bg-[#3F51B5]/8 rounded-full blur-[100px]" style={{ animation: 'academiaPulse 8s ease-in-out infinite reverse' }} />
       </div>
 
-      <div className="w-full max-w-sm px-6 text-center relative z-10">
-        {/* Logo + halo */}
-        <div className="mb-8 flex justify-center">
+      <div className="w-full max-w-xs px-6 text-center relative z-10">
+        {/* Logo circulaire avec bordure */}
+        <div className="mb-6 flex justify-center">
           <div className="relative">
             {/* Halo doré */}
-            <div className="absolute inset-0 -m-4 rounded-full bg-[#f5b335]/6 blur-lg" style={{ animation: 'academiaPulse 2.5s ease-in-out infinite' }} />
+            <div className="absolute inset-0 -m-5 rounded-full bg-[#f5b335]/6 blur-lg" style={{ animation: 'academiaPulse 3s ease-in-out infinite' }} />
             {/* Anneau rotatif */}
-            <div className="absolute inset-0 -m-2 rounded-full border-2 border-[#f5b335]/15 border-t-[#f5b335]" style={{ animation: 'academiaOrbit 1.2s linear infinite' }} />
-            <Image
-              src={BRAND.logoPath}
-              alt={BRAND.name}
-              width={56}
-              height={56}
-              className="relative z-10 rounded-xl"
-              style={{ animation: 'academiaPulse 3s ease-in-out infinite' }}
-              priority
-            />
+            <div className="absolute inset-0 -m-2 rounded-full border-2 border-white/10 border-t-[#f5b335]" style={{ animation: 'academiaOrbit 1.2s linear infinite' }} />
+            {/* Conteneur circulaire blanc */}
+            <div className="relative z-10 w-16 h-16 rounded-full bg-white/10 border-2 border-white/30 flex items-center justify-center backdrop-blur-sm">
+              <Image
+                src={BRAND.logoPath}
+                alt={BRAND.name}
+                width={40}
+                height={40}
+                className="rounded-full"
+                style={{ animation: 'academiaPulse 3s ease-in-out infinite' }}
+                priority
+              />
+            </div>
           </div>
         </div>
 
@@ -127,41 +129,41 @@ export function LoadingScreenMobile({
           {BRAND.name.split(' ')[0]}
           <span className="text-[#f5b335] ml-1">{BRAND.name.split(' ')[1]}</span>
         </h1>
-        <p className="text-[9px] text-blue-200/40 tracking-[0.2em] uppercase font-medium mb-6">
+        <p className="text-[9px] text-blue-200/40 tracking-[0.2em] uppercase font-medium mb-5">
           {BRAND.subtitle}
         </p>
 
         {/* Message */}
-        <h2 className="text-sm font-medium text-white/85 mb-1">
+        <h2 className="text-sm font-medium text-white/85 mb-0.5">
           {pwaMessage || message?.title || 'Chargement…'}
         </h2>
         {message?.subtitle && !isPWA && (
-          <p className="text-[10px] text-blue-200/50 mb-4">{message.subtitle}</p>
+          <p className="text-[10px] text-blue-200/45">{message.subtitle}</p>
         )}
 
-        {/* Barre de progression compacte */}
+        {/* Barre de progression épaisse */}
         {showProgress && (
-          <div className="mt-6">
-            <div className="h-1 bg-white/8 rounded-full overflow-hidden">
+          <div className="mt-5">
+            <div className="h-2 bg-white/10 rounded-full overflow-hidden">
               <div
                 className="h-full rounded-full transition-all duration-300 ease-out"
                 style={{
                   width: `${displayProgress}%`,
-                  background: 'linear-gradient(90deg, #1d4fa5, #f5b335)',
+                  background: 'linear-gradient(90deg, #3F51B5, #f5b335)',
                 }}
               />
             </div>
-            <div className="flex justify-between mt-1.5">
-              <span className="text-[9px] text-blue-200/30 uppercase tracking-wider">Progression</span>
-              <span className="text-[10px] text-[#f5b335] font-semibold tabular-nums">{Math.round(displayProgress)}%</span>
+            <div className="flex justify-between mt-2">
+              <span className="text-[9px] text-blue-200/35 uppercase tracking-wider font-medium">Progression</span>
+              <span className="text-xs text-[#f5b335] font-bold tabular-nums">{Math.round(displayProgress)}%</span>
             </div>
           </div>
         )}
 
         {/* Dots animés CSS-only */}
-        <div className="flex justify-center items-center space-x-1.5 mt-6">
-          <div className="h-1.5 w-1.5 rounded-full bg-[#0b2f73] animate-bounce" style={{ animationDelay: '0ms', animationDuration: '0.7s' }} />
-          <div className="h-2 w-2 rounded-full bg-[#1d4fa5] animate-bounce" style={{ animationDelay: '120ms', animationDuration: '0.7s' }} />
+        <div className="flex justify-center items-center space-x-2 mt-5">
+          <div className="h-1.5 w-1.5 rounded-full bg-[#3F51B5]/70 animate-bounce" style={{ animationDelay: '0ms', animationDuration: '0.7s' }} />
+          <div className="h-2 w-2 rounded-full bg-[#3F51B5] animate-bounce" style={{ animationDelay: '120ms', animationDuration: '0.7s' }} />
           <div className="h-1.5 w-1.5 rounded-full bg-[#f5b335] animate-bounce" style={{ animationDelay: '240ms', animationDuration: '0.7s' }} />
         </div>
       </div>
@@ -196,22 +198,23 @@ export function AdaptiveLoadingScreen(props: LoadingScreenMobileProps) {
     return <LoadingScreenMobile {...props} />;
   }
 
-  // Import dynamique évité — on utilise le LoadingScreen directement
   const desktopVariant = props.variant === 'pwa' ? 'orion' : 'default';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0b2f73]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1A237E]">
       <div className="text-center">
         <div className="relative w-16 h-16 mx-auto mb-6">
-          <div className="absolute inset-0 -m-3 rounded-full bg-[#f5b335]/6 blur-xl" style={{ animation: 'academiaPulse 2.5s ease-in-out infinite' }} />
-          <div className="absolute inset-0 -m-2 rounded-full border-2 border-[#f5b335]/15 border-t-[#f5b335]" style={{ animation: 'academiaOrbit 1s linear infinite' }} />
-          <Image src={BRAND.logoPath} alt={BRAND.name} width={48} height={48} className="relative z-10 rounded-xl" style={{ animation: 'academiaPulse 3s ease-in-out infinite' }} priority />
+          <div className="absolute inset-0 -m-3 rounded-full bg-[#f5b335]/6 blur-xl" style={{ animation: 'academiaPulse 3s ease-in-out infinite' }} />
+          <div className="absolute inset-0 -m-2 rounded-full border-2 border-white/10 border-t-[#f5b335]" style={{ animation: 'academiaOrbit 1s linear infinite' }} />
+          <div className="absolute inset-0 m-1 rounded-full bg-white/10 border-2 border-white/30 flex items-center justify-center backdrop-blur-sm">
+            <Image src={BRAND.logoPath} alt={BRAND.name} width={36} height={36} className="relative z-10 rounded-full" style={{ animation: 'academiaPulse 3s ease-in-out infinite' }} priority />
+          </div>
         </div>
         <h2 className="text-sm font-medium text-white/85">{props.message?.title || 'Chargement…'}</h2>
         {props.showProgress && props.progress !== undefined && (
           <div className="mt-4 w-48 mx-auto">
-            <div className="h-1 bg-white/10 rounded-full overflow-hidden">
-              <div className="h-full rounded-full" style={{ width: `${props.progress}%`, background: 'linear-gradient(90deg, #1d4fa5, #f5b335)' }} />
+            <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+              <div className="h-full rounded-full" style={{ width: `${props.progress}%`, background: 'linear-gradient(90deg, #3F51B5, #f5b335)' }} />
             </div>
           </div>
         )}

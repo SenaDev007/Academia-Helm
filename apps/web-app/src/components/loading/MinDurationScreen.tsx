@@ -1,5 +1,5 @@
 /**
- * MinDurationScreen Component — v3 Real Progress
+ * MinDurationScreen Component — v4 Clean Premium
  *
  * Garantit que l'écran de chargement s'affiche pendant une durée minimale
  * avant de révéler le contenu. PLUS DE PROGRESSION FICTIVE.
@@ -13,7 +13,8 @@
  * MOBILE : Sur mobile, utilise LoadingScreenMobile (CSS-only, léger)
  * au lieu de LoadingScreen (framer-motion, ~30KB) pour de meilleures performances.
  *
- * Palette : Navy (#0b2f73), Blue (#1d4fa5), Gold (#f5b335)
+ * Durée minimale : 6 secondes (réduit de 10s)
+ * Palette : Royal Blue (#1A237E), Blue (#3F51B5), Gold (#f5b335)
  */
 
 'use client';
@@ -22,13 +23,13 @@ import { useState, useEffect } from 'react';
 import { LoadingScreen } from './LoadingScreen';
 import { LoadingScreenMobile } from './LoadingScreenMobile';
 
-/** Durée minimale par défaut (ms) */
-const DEFAULT_MIN_DURATION_MS = 10000;
+/** Durée minimale par défaut (ms) — réduit à 6s */
+const DEFAULT_MIN_DURATION_MS = 6000;
 
 export interface MinDurationScreenProps {
   /** Si true, le contenu est prêt à être affiché */
   ready: boolean;
-  /** Durée minimale d'affichage du loading en ms (défaut: 10000) */
+  /** Durée minimale d'affichage du loading en ms (défaut: 6000) */
   minDuration?: number;
   /** Contenu à afficher une fois prêt et la durée minimale écoulée */
   children?: React.ReactNode;

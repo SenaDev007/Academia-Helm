@@ -1,4 +1,4 @@
-import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
+import { prismaCreateDefaults, prismaCreateNoUpdatedAt, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { BillingEventType } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
@@ -205,7 +205,7 @@ export class BillingSettingsService {
 
     await this.prisma.billingEvent.create({
       data: {
-        ...prismaCreateDefaults(),
+        ...prismaCreateNoUpdatedAt(),
         tenantId,
         subscriptionId: updated.id,
         type: BillingEventType.ADJUSTMENT,
@@ -345,7 +345,7 @@ export class BillingSettingsService {
 
     await this.prisma.billingEvent.create({
       data: {
-        ...prismaCreateDefaults(),
+        ...prismaCreateNoUpdatedAt(),
         tenantId,
         subscriptionId: updated.id,
         type: BillingEventType.ADJUSTMENT,

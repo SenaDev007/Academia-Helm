@@ -1,4 +1,4 @@
-import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
+import { prismaCreateDefaults, prismaCreateNoUpdatedAt, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 /**
  * ============================================================================
  * ELECTRONIC SIGNATURES SERVICE
@@ -174,7 +174,7 @@ export class ElectronicSignaturesService {
     // Créer l'enregistrement de signature
     const signedDocument = await this.prisma.signedDocument.create({
       data: {
-        ...prismaCreateDefaults(),
+        ...prismaCreateNoUpdatedAt(),
         tenantId,
         documentType: data.documentType,
         documentId: data.documentId,

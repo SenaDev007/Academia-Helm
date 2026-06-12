@@ -89,7 +89,7 @@ export class CommunicationSettingsService {
 
     if (!existing) {
       existing = await this.prisma.settingsCommunication.create({
-        data: { tenantId },
+        data: { ...prismaCreateDefaults(), tenantId },
       });
     }
 

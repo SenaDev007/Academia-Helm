@@ -134,7 +134,7 @@ export class EducationStructureService {
         });
         if (!cycle) {
           cycle = await this.prisma.educationCycle.create({
-            data: { levelId: level.id, name: cy.name, order: cy.order },
+            data: { ...prismaCreateDefaults(), levelId: level.id, name: cy.name, order: cy.order },
           });
         } else {
           await this.prisma.educationCycle.update({

@@ -444,7 +444,6 @@ export class RolesPermissionsService {
     } else {
       await this.prisma.userRole.create({
         data: {
-        ...prismaCreateDefaults(),
           userId,
           roleId,
           tenantId: assignmentTenantId,

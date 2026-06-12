@@ -96,34 +96,22 @@ export function LoadingScreen({
           </div>
         </motion.div>
 
-        {/* Nom de marque */}
+        {/* Texte unifié : Bienvenue sur + Academia Helm + sous-titre */}
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.15 }}
         >
+          <p className="text-sm text-blue-200/60 font-medium mb-1">
+            {message?.title || 'Chargement…'}
+          </p>
           <h1 className="text-2xl font-bold text-white tracking-tight mb-0.5">
             {BRAND.name.split(' ')[0]}
             <span className="text-[#f5b335] ml-1.5">{BRAND.name.split(' ')[1]}</span>
           </h1>
-          <p className="text-[11px] text-blue-200/50 tracking-[0.2em] uppercase font-medium">
-            {BRAND.subtitle}
+          <p className="text-[11px] text-blue-200/50 tracking-[0.15em] uppercase font-medium">
+            {message?.subtitle || BRAND.subtitle}
           </p>
-        </motion.div>
-
-        {/* Message de chargement */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.4, delay: 0.35 }}
-          className="mt-6"
-        >
-          <h2 className="text-base font-medium text-white/90 mb-0.5">
-            {message?.title || 'Chargement…'}
-          </h2>
-          {message?.subtitle && (
-            <p className="text-xs text-blue-200/50">{message.subtitle}</p>
-          )}
         </motion.div>
 
         {/* Barre de progression épaisse */}

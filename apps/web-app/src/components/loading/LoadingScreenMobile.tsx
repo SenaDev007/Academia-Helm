@@ -124,22 +124,17 @@ export function LoadingScreenMobile({
           </div>
         </div>
 
-        {/* Nom de marque */}
+        {/* Texte unifié : Bienvenue sur + Academia Helm + sous-titre */}
+        <p className="text-xs text-blue-200/55 font-medium mb-0.5">
+          {pwaMessage || message?.title || 'Chargement…'}
+        </p>
         <h1 className="text-lg font-bold text-white tracking-tight mb-0.5">
           {BRAND.name.split(' ')[0]}
           <span className="text-[#f5b335] ml-1">{BRAND.name.split(' ')[1]}</span>
         </h1>
-        <p className="text-[9px] text-blue-200/40 tracking-[0.2em] uppercase font-medium mb-5">
-          {BRAND.subtitle}
+        <p className="text-[9px] text-blue-200/40 tracking-[0.15em] uppercase font-medium mb-5">
+          {message?.subtitle || BRAND.subtitle}
         </p>
-
-        {/* Message */}
-        <h2 className="text-sm font-medium text-white/85 mb-0.5">
-          {pwaMessage || message?.title || 'Chargement…'}
-        </h2>
-        {message?.subtitle && !isPWA && (
-          <p className="text-[10px] text-blue-200/45">{message.subtitle}</p>
-        )}
 
         {/* Barre de progression épaisse */}
         {showProgress && (

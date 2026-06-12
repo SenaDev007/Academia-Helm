@@ -422,7 +422,7 @@ export default function PremiumLandingPage() {
   // Sur mobile : LoadingScreenMobile (CSS-only, léger)
   // Sur desktop : LoadingScreen (framer-motion, animations riches)
   if (!showContent) {
-    const loadingMessage = { title: 'Bienvenue sur Academia Helm', subtitle: 'Plateforme de pilotage éducatif nouvelle génération' };
+    const loadingMessage = { title: 'Bienvenue sur', subtitle: 'Plateforme de pilotage éducatif nouvelle génération' };
 
     if (isMobile) {
       return (

@@ -35,7 +35,9 @@ import { JobCardSkeleton } from '@/components/loading/Skeleton';
 import { JobCardSkeletonMobile } from '@/components/loading/SkeletonMobile';
 
 
-const PRIMARY = '#1A2BA6';
+const PRIMARY = '#0b2f73';
+const BLUE = '#1d4fa5';
+const GOLD = '#f5b335';
 
 interface School {
   id: string;
@@ -499,22 +501,41 @@ export function CareersContent({
   const getSchoolPhone = (s: School) => s.school?.primaryPhone || s.primaryPhone;
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between">
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50 text-slate-900 flex flex-col justify-between">
       <PremiumHeader />
 
-      <main className="flex-grow pt-28 pb-20 px-4 md:px-8 max-w-6xl mx-auto w-full">
-        {/* Banner Section */}
-        <div className="text-center mb-10">
-          <span className="px-4 py-1.5 rounded-full border text-xs font-bold uppercase tracking-wider bg-indigo-50 border-indigo-200 text-[#1A2BA6] mb-4 inline-block">
+      {/* Hero premium */}
+      <section className="relative overflow-hidden bg-gradient-to-br from-[#0b2f73] via-[#103e91] to-[#1d4fa5] pt-28 pb-14 md:pb-16">
+        {/* Particules d'ambiance */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute -top-20 -left-10 w-64 h-64 bg-[#f5b335]/8 rounded-full blur-[100px]" />
+          <div className="absolute -bottom-16 -right-16 w-72 h-72 bg-[#1d4fa5]/15 rounded-full blur-[110px]" />
+          <div className="absolute top-1/3 right-1/4 w-40 h-40 bg-[#f5b335]/5 rounded-full blur-[80px]" />
+        </div>
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(245,179,53,0.06)_0%,transparent_50%)]" />
+
+        <div className="relative z-10 max-w-5xl mx-auto px-4 md:px-8 text-center">
+          <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border text-[11px] font-bold uppercase tracking-widest bg-[#f5b335]/10 border-[#f5b335]/25 text-[#f5b335] mb-5">
+            <Sparkles className="h-3.5 w-3.5" />
             Portail Talent Academia
           </span>
-          <h1 className="text-3xl md:text-5xl font-extrabold text-slate-900 leading-tight">
-            Espace Candidat Augmenté
+          <h1 className="text-3xl md:text-5xl font-extrabold text-white leading-tight mb-3">
+            Espace Candidat <span className="text-[#f5b335]">Augmenté</span>
           </h1>
-          <p className="text-sm md:text-base text-slate-500 mt-2 max-w-xl mx-auto">
+          <p className="text-sm md:text-base text-blue-100/70 max-w-xl mx-auto">
             Postulez instantanément grâce à notre parcours de candidature simplifiée intégrant l&apos;analyse IA.
           </p>
         </div>
+
+        {/* Vague séparateur SVG */}
+        <div className="absolute bottom-0 left-0 right-0">
+          <svg viewBox="0 0 1440 60" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full">
+            <path d="M0 60V30C240 0 480 0 720 30C960 60 1200 60 1440 30V60H0Z" fill="#f8fafc" />
+          </svg>
+        </div>
+      </section>
+
+      <main className="flex-grow pb-20 px-4 md:px-8 max-w-6xl mx-auto w-full">
 
         {loading && (
           <div className="py-12">
@@ -546,7 +567,7 @@ export function CareersContent({
                   .catch(() => setLoadError('Impossible de charger les établissements. Vérifiez votre connexion et réessayez.'))
                   .finally(() => setLoading(false));
               }}
-              className="px-6 py-2.5 bg-[#1A2BA6] text-white text-sm font-semibold rounded-xl hover:bg-[#1521a0] transition-colors"
+              className="px-6 py-2.5 bg-[#0b2f73] text-white text-sm font-semibold rounded-xl hover:bg-[#1521a0] transition-colors"
             >
               Réessayer
             </button>
@@ -567,25 +588,32 @@ export function CareersContent({
           <AnimatePresence mode="wait">
             {/* STEP 1: Select Institution */}
             {!selectedSchool && (
-              <motion.div key="step-schools" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }} className="space-y-6">
-                <div className="max-w-md mx-auto relative">
-                  <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
+              <motion.div key="step-schools" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }} className="space-y-8">
+                {/* Barre de recherche premium */}
+                <div className="max-w-lg mx-auto relative">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[#0b2f73]/40" />
                   <input
                     type="text"
                     placeholder="Rechercher un établissement..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-white text-xs shadow-sm focus:outline-none focus:border-[#1A2BA6] transition"
+                    className="w-full pl-11 pr-4 py-3.5 rounded-2xl border border-slate-200 bg-white text-sm shadow-md shadow-slate-200/50 focus:outline-none focus:border-[#f5b335] focus:ring-2 focus:ring-[#f5b335]/20 transition-all"
                   />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {/* Grille de cartes centrée dynamiquement */}
+                <div className="flex flex-wrap justify-center gap-6">
                   {filteredSchools.map((school) => (
-                    <div
+                    <motion.div
                       key={school.id}
                       onClick={() => handleSelectSchool(school)}
-                      className="group cursor-pointer bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md hover:border-slate-300 transition-all flex flex-col justify-between relative overflow-hidden"
+                      whileHover={{ y: -6, boxShadow: '0 20px 40px rgba(11,47,115,0.12)' }}
+                      transition={{ type: 'spring', stiffness: 260, damping: 20 }}
+                      className="group cursor-pointer bg-white border border-slate-100 rounded-2xl p-6 shadow-md shadow-slate-100/60 hover:border-[#f5b335]/30 transition-colors flex flex-col justify-between relative overflow-hidden w-full sm:w-[calc(50%-12px)] lg:w-[calc(33.333%-16px)]"
                     >
+                      {/* Barre dorée en haut de la carte */}
+                      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#f5b335] via-[#ffd166] to-[#f5b335] opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+
                       <div>
                         <div className="flex justify-between items-start mb-4">
                           {school.logoUrl ? (
@@ -599,40 +627,39 @@ export function CareersContent({
                               sizes="48px"
                             />
                           ) : (
-                            <div className="h-12 w-12 rounded-xl bg-blue-50/80 border border-blue-100 flex items-center justify-center text-[#1A2BA6]">
+                            <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-[#0b2f73]/5 to-[#1d4fa5]/10 border border-[#0b2f73]/10 flex items-center justify-center text-[#0b2f73]">
                               <Building2 className="h-6 w-6" />
                             </div>
                           )}
                           {school.activeJobsCount > 0 ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 shadow-sm relative">
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-[#f5b335]/10 text-[#0b2f73] border border-[#f5b335]/20 shadow-sm relative">
                               <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#f5b335] opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#f5b335]"></span>
                               </span>
                               {school.activeJobsCount} {school.activeJobsCount > 1 ? 'recrutements' : 'recrutement'}
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium bg-slate-50 text-slate-400 border border-slate-100">
-                              Pas d'offre
+                              Pas d&apos;offre
                             </span>
                           )}
                         </div>
-                        <h3 className="font-bold text-slate-900 text-sm leading-snug group-hover:text-[#1A2BA6] transition-colors">
+                        <h3 className="font-bold text-[#0b2f73] text-sm leading-snug group-hover:text-[#1d4fa5] transition-colors">
                           {school.schoolName || school.tenantName || school.name}
                         </h3>
-                        <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider mt-1">{school.slug}</p>
                         {(school.city || school.country) && (
-                          <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
-                            <MapPin className="h-2.5 w-2.5" />
+                          <p className="text-[11px] text-slate-400 mt-1.5 flex items-center gap-1">
+                            <MapPin className="h-3 w-3" />
                             {[school.city, school.country].filter(Boolean).join(', ')}
                           </p>
                         )}
                       </div>
-                      <div className="mt-6 pt-4 border-t border-slate-50 flex items-center justify-between text-xs font-bold text-[#1A2BA6]">
+                      <div className="mt-5 pt-3.5 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-[#0b2f73] group-hover:text-[#f5b335] transition-colors">
                         <span>Découvrir les offres</span>
                         <ChevronRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
                       </div>
-                    </div>
+                    </motion.div>
                   ))}
                 </div>
               </motion.div>
@@ -665,7 +692,7 @@ export function CareersContent({
                         sizes="56px"
                       />
                     ) : (
-                      <div className="h-14 w-14 rounded-xl bg-blue-50/80 border border-blue-100 flex items-center justify-center text-[#1A2BA6]">
+                      <div className="h-14 w-14 rounded-xl bg-blue-50/80 border border-blue-100 flex items-center justify-center text-[#0b2f73]">
                         <Building2 className="h-7 w-7" />
                       </div>
                     )}
@@ -678,10 +705,10 @@ export function CareersContent({
                           <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {[selectedSchool.city, selectedSchool.country].filter(Boolean).join(', ')}</span>
                         )}
                         {getSchoolPhone(selectedSchool) && (
-                          <a href={`tel:${getSchoolPhone(selectedSchool)}`} className="flex items-center gap-1 hover:text-[#1A2BA6] transition-colors"><Phone className="h-3 w-3" /> {getSchoolPhone(selectedSchool)}</a>
+                          <a href={`tel:${getSchoolPhone(selectedSchool)}`} className="flex items-center gap-1 hover:text-[#0b2f73] transition-colors"><Phone className="h-3 w-3" /> {getSchoolPhone(selectedSchool)}</a>
                         )}
                         {getSchoolEmail(selectedSchool) && (
-                          <a href={`mailto:${getSchoolEmail(selectedSchool)}`} className="flex items-center gap-1 hover:text-[#1A2BA6] transition-colors"><Mail className="h-3 w-3" /> {getSchoolEmail(selectedSchool)}</a>
+                          <a href={`mailto:${getSchoolEmail(selectedSchool)}`} className="flex items-center gap-1 hover:text-[#0b2f73] transition-colors"><Mail className="h-3 w-3" /> {getSchoolEmail(selectedSchool)}</a>
                         )}
                       </div>
                     </div>
@@ -722,7 +749,7 @@ export function CareersContent({
                           }}
                           className={`cursor-pointer border p-4 rounded-xl transition-all ${
                             selectedJob?.id === job.id 
-                              ? 'bg-indigo-50/50 border-[#1A2BA6] shadow-sm' 
+                              ? 'bg-indigo-50/50 border-[#0b2f73] shadow-sm' 
                               : 'bg-white border-slate-200 hover:border-slate-300'
                           }`}
                         >
@@ -774,7 +801,7 @@ export function CareersContent({
                             {/* Applicant count stat */}
                             <div>
                               <span className="text-[10px] text-slate-400 font-bold uppercase">Candidats</span>
-                              <p className="font-semibold text-[#1A2BA6] mt-0.5 flex items-center gap-1">
+                              <p className="font-semibold text-[#0b2f73] mt-0.5 flex items-center gap-1">
                                 <Users className="h-3.5 w-3.5" />
                                 {selectedJob._count?.applications ?? 0} candidat{((selectedJob._count?.applications ?? 0) > 1) ? 's' : ''}
                               </p>
@@ -785,7 +812,7 @@ export function CareersContent({
                           {jobStats && jobStats.totalApplicants > 0 && (
                             <div className="bg-gradient-to-br from-slate-50 to-blue-50/30 border border-slate-200 rounded-xl p-4 space-y-3">
                               <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2">
-                                <Users className="h-4 w-4 text-[#1A2BA6]" />
+                                <Users className="h-4 w-4 text-[#0b2f73]" />
                                 Statistiques des candidats
                               </h4>
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -798,7 +825,7 @@ export function CareersContent({
                                         <div key={c.name} className="flex items-center gap-2">
                                           <div className="flex-1 bg-slate-200 rounded-full h-2 overflow-hidden">
                                             <div
-                                              className="bg-[#1A2BA6] h-full rounded-full transition-all duration-500"
+                                              className="bg-[#0b2f73] h-full rounded-full transition-all duration-500"
                                               style={{ width: `${Math.round((c.count / jobStats.totalApplicants) * 100)}%` }}
                                             />
                                           </div>
@@ -1122,7 +1149,7 @@ export function CareersContent({
                               {/* CV */}
                               <div className="border border-dashed border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center text-center relative hover:bg-slate-50 transition cursor-pointer">
                                 <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setCvFile(e.target.files?.[0] || null)} required className="absolute inset-0 opacity-0 cursor-pointer" />
-                                <Upload className="h-6 w-6 text-[#1A2BA6] mb-2" />
+                                <Upload className="h-6 w-6 text-[#0b2f73] mb-2" />
                                 <span className="text-[10px] font-bold text-slate-700">Curriculum Vitae *</span>
                                 <span className="text-[9px] text-slate-400 mt-1">{cvFile ? cvFile.name : 'PDF, DOCX'}</span>
                               </div>
@@ -1130,7 +1157,7 @@ export function CareersContent({
                               {/* Letter */}
                               <div className="border border-dashed border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center text-center relative hover:bg-slate-50 transition cursor-pointer">
                                 <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setCoverFile(e.target.files?.[0] || null)} className="absolute inset-0 opacity-0 cursor-pointer" />
-                                <Upload className="h-6 w-6 text-[#1A2BA6] mb-2" />
+                                <Upload className="h-6 w-6 text-[#0b2f73] mb-2" />
                                 <span className="text-[10px] font-bold text-slate-700">Lettre de motivation</span>
                                 <span className="text-[9px] text-slate-400 mt-1">{coverFile ? coverFile.name : 'PDF, DOCX'}</span>
                               </div>
@@ -1139,7 +1166,7 @@ export function CareersContent({
                             {/* Recommendation */}
                             <div className="border border-dashed border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center text-center relative hover:bg-slate-50 transition cursor-pointer">
                               <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setRecoFile(e.target.files?.[0] || null)} className="absolute inset-0 opacity-0 cursor-pointer" />
-                              <Upload className="h-6 w-6 text-[#1A2BA6] mb-2" />
+                              <Upload className="h-6 w-6 text-[#0b2f73] mb-2" />
                               <span className="text-[10px] font-bold text-slate-700">Lettre de recommandation académique</span>
                               <span className="text-[9px] text-slate-400 mt-1">{recoFile ? recoFile.name : 'PDF, DOCX'}</span>
                             </div>

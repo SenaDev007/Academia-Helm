@@ -32,6 +32,9 @@ import {
   BarChart3,
   Building2,
   ChevronRight,
+  RefreshCw,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 import {
   BENIN_DEPARTMENTS,
@@ -39,6 +42,7 @@ import {
   BENIN_SECONDAIRE_TOTALS,
   type DepartmentData,
 } from '@/data/benin-departments';
+import { useGovData } from '@/lib/hooks/use-gov-data';
 
 /* ── Palette Academia Helm ────────────────────────────────────────────── */
 const NAVY = '#0b2f73';
@@ -137,6 +141,14 @@ export default function BeninMap({
   const [primaireCycle, setPrimaireCycle] = useState<PrimaireCycle>('all');
   const [circumscriptionOpen, setCircumscriptionOpen] = useState(false);
 
+  /* ── Données gouvernementales en temps réel ─────────────────────────── */
+  const govData = useGovData();
+
+  // Utiliser les données live si disponibles, sinon les données statiques
+  const departments = govData.departments;
+  const primaireTotals = govData.primaireTotals;
+  const secondaireTotals = govData.secondaireTotals;
+
   /* ── Get the school count for a department based on current filters ── */
   const getSchoolCount = useCallback(
     (dept: DepartmentData) => {
@@ -159,7 +171,7 @@ export default function BeninMap({
 
   /* ── Compute breakpoints for 6-level discrete scale (like gov site) ── */
   const breakpoints = useMemo(() => {
-    const values = BENIN_DEPARTMENTS.map((d) => getSchoolCount(d)).sort(
+    const values = departments.map((d) => getSchoolCount(d)).sort(
       (a, b) => a - b,
     );
     const n = values.length;
@@ -174,8 +186,8 @@ export default function BeninMap({
   }, [getSchoolCount]);
 
   const maxSchools = useMemo(
-    () => Math.max(...BENIN_DEPARTMENTS.map(getSchoolCount)),
-    [getSchoolCount],
+    () => Math.max(...departments.map(getSchoolCount)),
+    [getSchoolCount, departments],
   );
 
   const getFilterLabel = useCallback(() => {
@@ -194,7 +206,7 @@ export default function BeninMap({
   const activeDept =
     selectedDepartment ??
     (hoveredDept
-      ? BENIN_DEPARTMENTS.find((d) => d.code === hoveredDept)
+      ? departments.find((d) => d.code === hoveredDept)
       : null);
 
   const getActiveData = useCallback(
@@ -224,11 +236,11 @@ export default function BeninMap({
   /* ── National totals based on current education level ── */
   const nationalTotals = useMemo(() => {
     if (educationLevel === 'secondaire') {
-      const t = BENIN_SECONDAIRE_TOTALS;
+      const t = secondaireTotals;
       const femalePercent =
         t.students > 0
           ? Math.round(
-              (BENIN_DEPARTMENTS.reduce(
+              (departments.reduce(
                 (s, d) => s + d.secondaire.studentCount * (d.secondaire.femalePercent / 100),
                 0,
               ) /
@@ -246,11 +258,11 @@ export default function BeninMap({
         privateCount: t.privateCount,
       };
     }
-    const t = BENIN_TOTALS;
+    const t = primaireTotals;
     const femalePercent =
       t.students > 0
         ? Math.round(
-            (BENIN_DEPARTMENTS.reduce(
+            (departments.reduce(
               (s, d) => s + d.studentCount * (d.femalePercent / 100),
               0,
             ) /
@@ -267,13 +279,14 @@ export default function BeninMap({
       publicCount: t.publicCount,
       privateCount: t.privateCount,
     };
-  }, [educationLevel]);
+  }, [educationLevel, departments, primaireTotals, secondaireTotals]);
 
   /* ── Caption text (like government site) ── */
   const captionText = useMemo(() => {
     const entityLabel = educationLevel === 'secondaire' ? 'établissements' : 'écoles';
-    return `Carte : nombre d'${entityLabel} par département · ${getFilterLabel()}`;
-  }, [educationLevel, getFilterLabel]);
+    const yearSuffix = govData.academicYear ? ` · ${govData.academicYear}` : '';
+    return `Carte : nombre d'${entityLabel} par département · ${getFilterLabel()}${yearSuffix}`;
+  }, [educationLevel, getFilterLabel, govData.academicYear]);
 
   /* ── The selected department for the panel ── */
   const panelDept = selectedDepartment ?? null;
@@ -363,7 +376,7 @@ export default function BeninMap({
               onMouseLeave={() => setHoveredDept(null)}
             >
               {/* Départements */}
-              {BENIN_DEPARTMENTS.map((dept) => {
+              {departments.map((dept) => {
                 const path = DEPT_PATHS[dept.code];
                 if (!path) return null;
                 const value = getSchoolCount(dept);
@@ -419,7 +432,7 @@ export default function BeninMap({
               {/* Hover info overlay inside SVG */}
               {hoveredDept &&
                 (() => {
-                  const dept = BENIN_DEPARTMENTS.find(
+                  const dept = departments.find(
                     (d) => d.code === hoveredDept,
                   );
                   if (!dept) return null;
@@ -832,8 +845,20 @@ export default function BeninMap({
                       </h3>
                       <p className="mt-0.5 text-[11px] text-blue-200 flex items-center gap-1">
                         <Building2 className="h-3 w-3" />
-                        {BENIN_TOTALS.departments} départements ·{' '}
+                        {departments.length} départements ·{' '}
                         {educationLevel === 'secondaire' ? 'Secondaire' : 'Primaire'}
+                        {' · '}
+                        {govData.isLive ? (
+                          <span className="flex items-center gap-0.5 text-emerald-300">
+                            <Wifi className="h-2.5 w-2.5" />
+                            <span className="text-[9px]">Live</span>
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-0.5 text-amber-300">
+                            <WifiOff className="h-2.5 w-2.5" />
+                            <span className="text-[9px]">Cache</span>
+                          </span>
+                        )}
                       </p>
                     </div>
                   </div>
@@ -980,7 +1005,7 @@ export default function BeninMap({
                         Départements
                       </p>
                       <div className="space-y-0.5">
-                        {BENIN_DEPARTMENTS.map((dept) => {
+                        {departments.map((dept) => {
                           const value = getSchoolCount(dept);
                           const color = getDiscreteColor(value, breakpoints);
                           return (

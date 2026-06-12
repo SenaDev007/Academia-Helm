@@ -147,9 +147,117 @@ Chose geoBoundaries as primary source (cleaner, well-maintained, CC-BY licensed)
 - `/home/z/my-project/beninDepartments.ts` - TypeScript path data module
 - `/home/z/my-project/BeninMap.tsx` - Standalone React component
 
+<<<<<<< HEAD
 ## Geographic Accuracy Notes
 - Northern departments (top): Alibori (NE), Atacora (NW), Borgou (E), Donga (W-center)
 - Central departments (middle): Collines (W-center), Plateau (E-center), Zou (center)
 - Southern departments (bottom): Atlantique (center), Littoral (tiny, coast), Mono (SW), Couffo (W), Ouémé (SE)
 - Littoral is the smallest department (79 km², contains Cotonou)
 - Benin is approximately 2:1 height-to-width ratio (tall, narrow country)
+=======
+Work Log:
+- Analyzed 2 user screenshots: Bug #1 (Prisma error on updatedAt in SettingsHistory.create) and Bug #2 (v5 displayed instead of v7)
+- Found root cause: `prismaCreateDefaults()` injects `{ id, updatedAt, createdAt }` but `SettingsHistory` model has NO `updatedAt` or `createdAt` fields
+- Fixed `settings-history.service.ts`: replaced `...prismaCreateDefaults()` with `id: uuid()` in `logFeatureChange()`
+- Fixed `enhanced-audit.service.ts`: added `id: uuid()` to both `logChange()` and `logBatchChanges()` + imported `uuid` from prisma-helpers
+- Bug #2 (wrong version display) is caused by Bug #1: the transaction succeeds (v7 is created in DB) but `logSettingChange()` fails (throws Prisma error), causing the API to return 500, so frontend never receives v7 data
+- Fixed systemic bug: added `setXxxForm(updated || {})` after save in 7 handlers: handleSaveBilingual, handleSaveCommunication, handleSaveSecurity, handleSaveOrion, handleSaveAtlas, handleSaveOffline, handleSaveBilling
+- Added 11 missing fields to Security tab: passwordRequireUppercase/Lowercase/Numbers/Special, passwordExpirationDays, twoFactorEnabled, requireEmailVerification, auditLogRetentionDays, dataRetentionYears, gdprCompliant, allowInspectionAccess
+- Added 5 missing fields to Orion tab: kpiCalculationFrequency, insightsFrequency, autoGenerateInsights, allowOrionExports
+- Added 5 missing fields to Atlas tab: scope, language, conversationHistoryDays, maxConversationsPerDay
+- Added 4 missing fields to Offline tab: conflictResolution, autoSyncOnConnect, allowOfflineModification, syncOnBackground
+- Enhanced History tab: added refresh button, category badges, old/new value diff display
+- Verified all tab sections have balanced HTML divs
+
+Stage Summary:
+- 3 backend bugs fixed (prismaCreateDefaults misuse in 2 files)
+- 7 frontend form re-sync bugs fixed
+- 4 tabs enhanced with missing fields (Security: +11, Orion: +5, Atlas: +5, Offline: +4)
+- History tab upgraded from stub to functional with refresh + diff display
+- Root cause of user's 2 reported bugs (Prisma error + wrong version) fully resolved
+---
+Task ID: fix-settings-prisma-helpers
+Agent: Main Agent
+Task: Fix prismaCreateDefaults() mismatch bugs in Settings module services
+
+Work Log:
+- Investigated Identity tab save error + version mismatch (v5 vs v7)
+- Root cause: settings-history.service.ts used prismaCreateDefaults() which injects { id, updatedAt, createdAt } into prisma.settingsHistory.create(), but SettingsHistory model has NO updatedAt/createdAt
+- Fixed settings-history.service.ts: prismaCreateDefaults() → prismaCreateIdOnly()
+- Fixed identity-profile.service.ts: added prismaCreateDefaults() to syncToSchoolSettings upsert create
+- Fixed administrative-seals.service.ts: AdministrativeSealVersion → prismaCreateNoUpdatedAt(), AdministrativeSealUsage → prismaCreateIdOnly()
+- Fixed stamps-signatures.service.ts: TenantSignature → prismaCreateNoUpdatedAt()
+- Fixed electronic-signatures.service.ts: SignedDocument → prismaCreateNoUpdatedAt()
+- Fixed billing-settings.service.ts: BillingEvent → prismaCreateNoUpdatedAt()
+- Fixed roles-permissions.service.ts: UserRole → removed prismaCreateDefaults() (composite key, no id)
+- Fixed education-structure.service.ts: Added prismaCreateDefaults() to EducationLevel, EducationSeries, EducationCycle creates; added prismaUpdateDefaults() to all updates
+- Fixed communication-settings.service.ts: Added prismaCreateDefaults() to fallback create
+- Fixed roles-permissions-bootstrap.service.ts: Added prismaCreateNoUpdatedAt() to Permission upsert create
+- Fixed academic-period-settings.service.ts: Added prismaUpdateDefaults() to ensureSingleActivePeriod, update, close
+- Fixed administrative-seals.service.ts: Added prismaUpdateDefaults() to updateSeal
+
+Stage Summary:
+- 2 commits pushed: 8a127be2, 5c7d2c89
+- 12 files modified total
+- Fixed critical bug causing ALL Settings tab saves to fail
+- Fixed version mismatch (v5 vs v7) in Identity tab
+- Fixed Structure tab initialization on fresh tenants
+- Fixed RBAC bootstrap on fresh tenants
+- All Settings module tabs should now be functional
+---
+Task ID: inline-loading-redesign
+Agent: main
+Task: Redesign all inline loading components to be personalized, professional, captivating, and mobile-compatible
+
+Work Log:
+- Read all 7 existing inline loading components: InlineSpinner, Skeleton, SkeletonMobile, LoadingState, OrionLoadingIndicator, ModuleLoading, LoadingSkeleton
+- Added 10 new CSS keyframe animations to globals.css: academiaWave, academiaOrbit, academiaOrbitReverse, academiaPulse, academiaGlow, academiaWaveDot, academiaSlideUp, academiaShimmerWave, academiaFlow, academiaFloat, academiaRingDash
+- Redesigned InlineSpinner.tsx: Added branded gradient trail effect, glowing core dot, mobile detection (lighter CSS-only on mobile), new OrbitalSpinner component with double SVG ring animation
+- Redesigned Skeleton.tsx: Enhanced shimmer with branded wave gradient (Navy→Blue→Gold), added CornerAccent component for cards, slide-up animations for skeleton blocks, new InlineContentSkeleton and JobCardSkeleton components
+- Redesigned SkeletonMobile.tsx: Added MobileCornerAccent, slide-up animations, branded shimmer on job cards, new JobCardSkeletonMobile component
+- Redesigned LoadingState.tsx: Added mobile detection, OrbitalSpinner on desktop ORION variant, wave dots on mobile SARA variant, new 'wave' variant with branded gradient bar, RotatingMessage component for contextual loading messages
+- Redesigned OrionLoadingIndicator.tsx: Added OrbitalSpinner on desktop, mobile-responsive sizing, mobile gold ring + pulse core, phase-colored badges
+- Updated CareersContent.tsx: Replaced inline skeleton HTML with JobCardSkeleton (desktop) + JobCardSkeletonMobile (mobile) components
+- Updated LoadingSkeleton.tsx: Added mobile detection with CardSkeletonMobile fallback
+- Updated ModuleLoading.tsx: Added mobile detection with DashboardSkeletonMobile fallback
+- Validated all imports/exports consistency across all components
+
+Stage Summary:
+- All 7 inline loading components redesigned with premium branded effects
+- Mobile compatibility added to all components via isMobile detection
+- New reusable components: OrbitalSpinner, JobCardSkeleton, JobCardSkeletonMobile, InlineContentSkeleton, CornerAccent, MobileCornerAccent, RotatingMessage
+- 10 new CSS keyframe animations for branded loading effects
+- Build validation limited by disk space (node_modules partially broken), but import/export validation passed 100%
+---
+Task ID: portal-auth-refactor
+Agent: Main Agent
+Task: Refonte complète du système d'authentification et d'accréditation des portails Academia Helm
+
+Work Log:
+- Relu le document academia-helm-portails.md en intégralité (1994 lignes)
+- Identifié 6 non-conformités majeures entre le document et l'implémentation
+- Phase 1: Refonte page portail (page.tsx) — grille compacte 3+2, palette Helm exacte (#0b2f73, #1d4fa5, #f5b335), descriptions conformes (7/45/11/9/5 rôles), BeninMap intacte
+- Phase 2: Flux sélection école — modal overlay au lieu de remplacement complet de page, tenant visible dans le modal
+- Phase 3: LoginPage — palette Helm unifiée (Navy/Blue/Gold uniquement, suppression slate/emerald/violet/amber par portail)
+- Phase 4: Formulaires auth conformes au document — PLATFORM (email+pw+tenant), SCHOOL (email+pw), TEACHER (matricule+pw+forgot pw), PARENT (phone+OTP+resend), forgot password pour tous
+- Phase 5: Portail Public — formulaire pré-inscription avec 4 types (Maternelle M1-M2, Primaire CI-CM2, Secondaire 6e-Tle, Parent Prospect), API endpoint /api/public/pre-enrollment
+- Phase 6: Multi-tenant strict — tenant affiché dans login header, portal_type persisté dans session localStorage, X-Portal-Type header dans middleware
+
+Files Modified:
+- apps/web-app/src/app/portal/page.tsx — refonte complète grille compacte + modal recherche
+- apps/web-app/src/components/auth/LoginPage.tsx — palette unifiée + pré-inscription publique + portal_type
+- apps/web-app/src/middleware.ts — X-Portal-Type header + /public/pre-enrollment route + portalType session
+- apps/web-app/src/lib/auth/client-access-token.ts — portalType dans PersistClientSessionInput + localStorage
+
+Files Created:
+- apps/web-app/src/app/api/public/pre-enrollment/route.ts — API pré-inscription (aucune auth requise)
+- apps/web-app/src/app/public/pre-enrollment/page.tsx — page redirect vers login?portal=public
+
+Stage Summary:
+- Conformité rigoureuse au document academia-helm-portails.md
+- Palette Helm exclusive : Navy #0b2f73, Blue #1d4fa5, Gold #f5b335
+- 5 portails conformes : PLATFORM (7 rôles), SCHOOL (45 rôles), TEACHER (11 rôles), PARENT (9 rôles), PUBLIC (5 rôles)
+- Multi-tenant strict : login jamais sans tenant (sauf Public)
+- Pré-inscription publique conforme : CANDIDAT_MAT, CANDIDAT_PRI, CANDIDAT_SEC, PARENT_PROSPECT
+- portal_type persisté dans session + forwardé via X-Portal-Type header pour validation RBAC
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)

@@ -18,6 +18,8 @@ function getUserFromSessionCookie(request: NextRequest): {
   tenantId?: string;
   isPlatformOwner?: boolean;
   tenantSlug?: string;
+  portalType?: string;
+  role?: string;
 } | null {
   const sessionCookie = request.cookies.get(SESSION_COOKIE)?.value;
   if (!sessionCookie) return null;
@@ -28,22 +30,27 @@ function getUserFromSessionCookie(request: NextRequest): {
         tenantId?: string;
         isPlatformOwner?: boolean;
         role?: string;
+        portalType?: string;
       }; 
       tenant?: { 
         id?: string;
         slug?: string;
         subdomain?: string;
       };
+      portalType?: string;
       expiresAt?: string 
     };
     if (session.expiresAt && new Date(session.expiresAt) < new Date()) return null;
     if (session?.user?.id) {
       const isPlatformOwner = session.user.isPlatformOwner || session.user.role === 'PLATFORM_OWNER';
+      const portalType = session.portalType || session.user.portalType;
       return { 
         id: session.user.id,
         tenantId: session.user.tenantId || session.tenant?.id,
         isPlatformOwner,
         tenantSlug: session.tenant?.slug || session.tenant?.subdomain,
+        portalType,
+        role: session.user.role,
       };
     }
     return null;
@@ -149,6 +156,8 @@ const publicRoutes = [
   '/onboarding',
   '/testimonials', // Route publique pour les témoignages
   '/avis', // Formulaire public pour laisser un avis
+  '/public/pre-enrollment', // Portail Public : pré-inscription (aucune auth requise)
+  '/portal', // Page de sélection des portails
 ];
 
 /**
@@ -327,6 +336,13 @@ export async function middleware(request: NextRequest) {
       if (user) {
         cachedResponse.headers.set('X-User-ID', user.id);
       }
+      // Forward portal_type header for RBAC validation (conforme document)
+      const portalParam = request.nextUrl.searchParams.get('portal');
+      if (portalParam) {
+        cachedResponse.headers.set('X-Portal-Type', portalParam.toUpperCase());
+      } else if (user?.portalType) {
+        cachedResponse.headers.set('X-Portal-Type', user.portalType);
+      }
       return cachedResponse;
     }
 
@@ -353,6 +369,14 @@ export async function middleware(request: NextRequest) {
       }
       if (user) {
         tenantResponse.headers.set('X-User-ID', user.id);
+      }
+
+      // Forward portal_type header for RBAC validation (conforme document)
+      const portalParam = request.nextUrl.searchParams.get('portal');
+      if (portalParam) {
+        tenantResponse.headers.set('X-Portal-Type', portalParam.toUpperCase());
+      } else if (user?.portalType) {
+        tenantResponse.headers.set('X-Portal-Type', user.portalType);
       }
 
       // Cache the resolved tenant info in cookies for future requests (30 minutes)

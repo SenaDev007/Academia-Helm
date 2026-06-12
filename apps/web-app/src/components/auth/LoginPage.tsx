@@ -1,14 +1,43 @@
 /**
- * Login Page Component - Multi-Portal Support
+ * ============================================================================
+<<<<<<< HEAD
+ * LOGIN PAGE — Multi-Portal Support
+ * ============================================================================
  *
- * Portails : École (email + mot de passe), Enseignant (matricule + mot de passe),
- * Parents & Élèves (téléphone + OTP). Refonte visuelle & Framer Motion alignée
- * sur la page portail (navy / or, budget mouvement, AnimatePresence).
+ * Page de connexion unifiée pour tous les portails Academia Helm.
+ * Palette unifiée : Navy (#0b2f73) / Blue (#1d4fa5) / Gold (#f5b335)
+ *
+ * Portails :
+ * - École : email + mot de passe
+ * - Enseignant : matricule + mot de passe
+ * - Parent / Élève : téléphone + OTP (2 étapes)
+ * - Plateforme : email + mot de passe + sélection tenant
+ * - Public : accès invité ou pré-inscription
+=======
+ * LOGIN PAGE — MULTI-PORTAL CONFORME AU DOCUMENT ACADEMIA-HELM-PORTAILS.MD
+ * ============================================================================
+ *
+ * Conforme au modèle RBAC 7 dimensions :
+ *   portal → role → function → accreditations → levelScopes → classScopes → permissions
+ *
+ * Portails et méthodes d'authentification :
+ *   - PLATFORM : email + mot de passe (7 rôles, tenant obligatoire)
+ *   - SCHOOL   : email + mot de passe (45 rôles, accreditations par niveau)
+ *   - TEACHER  : matricule + mot de passe (11 rôles, levelScopes)
+ *   - PARENT   : téléphone + OTP (9 rôles, childScope)
+ *   - PUBLIC   : PRÉ-INSCRIPTION uniquement (5 rôles, aucune auth requise)
+ *
+ * Palette Academia Helm exclusive :
+ *   Navy  #0b2f73  |  Blue  #1d4fa5  |  Gold  #f5b335
+ *   Aucune autre couleur par portail — palette unifiée professionnelle.
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
+ *
+ * ============================================================================
  */
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -26,6 +55,18 @@ import {
   ArrowLeft,
   Home,
   Shield,
+  Globe,
+<<<<<<< HEAD
+  Eye,
+  EyeOff,
+  CheckCircle2,
+  XCircle,
+=======
+  BookOpen,
+  Baby,
+  GraduationCap as GradCap,
+  FileText,
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BRAND } from '@/lib/brand';
@@ -37,6 +78,14 @@ import { getTenantRedirectUrl } from '@/lib/utils/tenant-redirect';
 import { getAppBaseUrl } from '@/lib/utils/urls';
 
 type PortalType = 'platform' | 'school' | 'teacher' | 'parent' | 'public' | null;
+
+/** ── Palette Academia Helm — Conforme charte ── */
+const NAVY = '#0b2f73';
+const BLUE = '#1d4fa5';
+const GOLD = '#f5b335';
+
+/** Types de candidats pour le portail Public — conforme au document */
+type PublicCandidateType = 'MATERNELLE' | 'PRIMARY' | 'SECONDARY' | 'PROSPECT_PARENT';
 
 interface SchoolCredentials {
   email: string;
@@ -53,14 +102,139 @@ interface ParentCredentials {
   otp?: string;
 }
 
+<<<<<<< HEAD
+interface SchoolInfo {
+  name: string;
+  logoUrl: string | null;
+  city: string | null;
+  schoolType: string | null;
+}
+
+/** Palette Academia Helm — unifiée pour tous les portails */
 const NAVY = '#0b2f73';
+const BLUE = '#1d4fa5';
 const GOLD = '#f5b335';
+=======
+interface PreEnrollmentData {
+  candidateType: PublicCandidateType;
+  parentFirstName: string;
+  parentLastName: string;
+  parentPhone: string;
+  parentEmail: string;
+  childFirstName: string;
+  childLastName: string;
+  targetLevel: string;
+  message?: string;
+}
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
 
 function normalizePortal(raw: string | null | undefined): PortalType {
   const x = raw?.toLowerCase();
   if (x === 'platform' || x === 'school' || x === 'teacher' || x === 'parent' || x === 'public') return x as PortalType;
   return null;
 }
+
+<<<<<<< HEAD
+/** Validation helpers */
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function isValidBeninPhone(phone: string): boolean {
+  // Accepte +229XXXXXXXX ou 9XXXXXXXX ou 0XXXXXXXXX
+  const cleaned = phone.replace(/[\s\-()]/g, '');
+  return /^(\+229|0)?\d{8,9}$/.test(cleaned);
+}
+
+function getPasswordStrength(password: string): { score: number; label: string; color: string } {
+  if (!password) return { score: 0, label: '', color: '' };
+  let score = 0;
+  if (password.length >= 8) score++;
+  if (password.length >= 12) score++;
+  if (/[A-Z]/.test(password)) score++;
+  if (/[0-9]/.test(password)) score++;
+  if (/[^A-Za-z0-9]/.test(password)) score++;
+
+  if (score <= 1) return { score: 1, label: 'Faible', color: '#ef4444' };
+  if (score <= 2) return { score: 2, label: 'Moyen', color: '#f59e0b' };
+  if (score <= 3) return { score: 3, label: 'Bon', color: BLUE };
+  return { score: 4, label: 'Fort', color: '#16a34a' };
+}
+
+/** Portal metadata — icône et titre uniquement (palette unifiée) */
+const PORTAL_META: Record<string, { title: string; subtitle: string; Icon: typeof Building2 }> = {
+  platform: {
+    title: 'Portail Plateforme',
+    subtitle: 'Administration SaaS · Supervision Globale',
+    Icon: Shield,
+  },
+  school: {
+    title: 'Portail École',
+    subtitle: 'Direction · Administration · Finances · Scolarité',
+    Icon: Building2,
+  },
+  teacher: {
+    title: 'Portail Enseignant',
+    subtitle: 'Pédagogie · Suivi · Notes · Cahier de texte',
+    Icon: GraduationCap,
+  },
+  parent: {
+    title: 'Portail Parent / Élève',
+    subtitle: 'Suivi scolaire · Paiements · Communication',
+    Icon: Users,
+  },
+  public: {
+    title: 'Portail Public',
+    subtitle: 'Pré-inscription · Admissions · Informations',
+    Icon: Globe,
+=======
+/**
+ * Définition des portails pour la page login — conforme au document
+ */
+const PORTAL_LOGIN_DEFS: Record<string, {
+  title: string;
+  subtitle: string;
+  roleCount: number;
+  Icon: React.ComponentType<{ className?: string }>;
+  authMethod: string;
+}> = {
+  platform: {
+    title: 'Portail Plateforme',
+    subtitle: 'Administration SaaS globale',
+    roleCount: 7,
+    Icon: Shield,
+    authMethod: 'Email & mot de passe',
+  },
+  school: {
+    title: 'Portail École',
+    subtitle: 'Gestion de l\'établissement',
+    roleCount: 45,
+    Icon: Building2,
+    authMethod: 'Email & mot de passe',
+  },
+  teacher: {
+    title: 'Portail Enseignant',
+    subtitle: 'Pédagogie & suivi',
+    roleCount: 11,
+    Icon: GraduationCap,
+    authMethod: 'Matricule & mot de passe',
+  },
+  parent: {
+    title: 'Portail Parent / Élève',
+    subtitle: 'Suivi & communication',
+    roleCount: 9,
+    Icon: Users,
+    authMethod: 'Téléphone & OTP',
+  },
+  public: {
+    title: 'Portail Public',
+    subtitle: 'Pré-inscription & acquisition',
+    roleCount: 5,
+    Icon: Globe,
+    authMethod: 'Aucune authentification requise',
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
+  },
+};
 
 export default function LoginPage() {
   const searchParams = useSearchParams();
@@ -69,19 +243,17 @@ export default function LoginPage() {
   const portalParam = searchParams?.get('portal');
   let tenantSlug = searchParams?.get('tenant');
   let tenantIdFromUrl = searchParams?.get('tenant_id');
+  const schoolSlugFromUrl = searchParams?.get('school');
+  const schoolNameFromUrl = searchParams?.get('school_name');
 
   // Détection professionnelle du tenant via le sous-domaine
   if (typeof window !== 'undefined' && !tenantSlug) {
     const host = window.location.host;
     const parts = host.split('.');
-    
-    // Liste des sous-domaines à ignorer
     const ignoredSubdomains = ['www', 'dev', 'test', 'staging', 'preview', 'admin', 'api', 'portal', 'localhost'];
-    
     if (parts.length >= 3 && !ignoredSubdomains.includes(parts[0])) {
       tenantSlug = parts[0];
     } else if (parts.length === 2 && parts[1] === 'localhost' && !ignoredSubdomains.includes(parts[0])) {
-      // Support school.localhost en développement
       tenantSlug = parts[0];
     }
   }
@@ -89,25 +261,35 @@ export default function LoginPage() {
   const tenantIdForApi = tenantIdFromUrl || tenantSlug;
   const redirectPath = searchParams?.get('redirect') || '/app';
 
-  const [portalType, setPortalType] = useState<PortalType>(() =>
-    normalizePortal(portalParam),
-  );
+  const [portalType, setPortalType] = useState<PortalType>(() => normalizePortal(portalParam));
 
   useEffect(() => {
     setPortalType(normalizePortal(portalParam));
   }, [portalParam]);
 
+  // ── School info from sessionStorage ──────────────────────────────────
+  const [schoolInfo, setSchoolInfo] = useState<SchoolInfo | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('academia_portal_school');
+      if (raw) {
+        const info = JSON.parse(raw) as SchoolInfo;
+        setSchoolInfo(info);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  // ── Credentials state ────────────────────────────────────────────────
   const [schoolCredentials, setSchoolCredentials] = useState<SchoolCredentials>({
     email: '',
     password: '',
   });
 
-  const [teacherCredentials, setTeacherCredentials] = useState<TeacherCredentials>(
-    {
-      teacherIdentifier: '',
-      password: '',
-    },
-  );
+  const [teacherCredentials, setTeacherCredentials] = useState<TeacherCredentials>({
+    teacherIdentifier: '',
+    password: '',
+  });
 
   const [parentCredentials, setParentCredentials] = useState<ParentCredentials>({
     phone: '',
@@ -117,18 +299,50 @@ export default function LoginPage() {
   const [parentOtpSent, setParentOtpSent] = useState(false);
   const [parentOtpCode, setParentOtpCode] = useState<string>('');
 
+  // ── Public portal: pre-enrollment state ──
+  const [preEnrollment, setPreEnrollment] = useState<PreEnrollmentData>({
+    candidateType: 'PROSPECT_PARENT',
+    parentFirstName: '',
+    parentLastName: '',
+    parentPhone: '',
+    parentEmail: '',
+    childFirstName: '',
+    childLastName: '',
+    targetLevel: '',
+    message: '',
+  });
+  const [preEnrollmentSubmitted, setPreEnrollmentSubmitted] = useState(false);
+
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
-  // Message de déconnexion pour inactivité / expiration
+  // ── Client-side validation state ─────────────────────────────────────
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [phoneTouched, setPhoneTouched] = useState(false);
+  const [passwordTouched, setPasswordTouched] = useState(false);
+
+  const emailError = emailTouched && schoolCredentials.email && !isValidEmail(schoolCredentials.email)
+    ? 'Format d\'email invalide'
+    : null;
+
+  const phoneError = phoneTouched && parentCredentials.phone && !isValidBeninPhone(parentCredentials.phone)
+    ? 'Numéro de téléphone invalide (format Bénin attendu)'
+    : null;
+
+  const passwordStrength = getPasswordStrength(
+    portalType === 'teacher' ? teacherCredentials.password : schoolCredentials.password,
+  );
+
+  // ── Session expiry message ───────────────────────────────────────────
   const reasonParam = searchParams?.get('reason');
   const idleLogoutMessage = reasonParam === 'session_expired'
     ? 'Votre session a expiré après une période d\'inactivité prolongée. Veuillez vous reconnecter.'
     : reasonParam === 'session_locked'
-    ? 'Vous avez été déconnecté(e) depuis l\'écran de verrouillage.'
-    : reasonParam === 'idle_timeout'
-    ? 'Vous avez été déconnecté(e) automatiquement après une période d\'inactivité.'
-    : null;
+      ? 'Vous avez été déconnecté(e) depuis l\'écran de verrouillage.'
+      : reasonParam === 'idle_timeout'
+        ? 'Vous avez été déconnecté(e) automatiquement après une période d\'inactivité.'
+        : null;
 
   const tenantStorageKey = tenantIdFromUrl || tenantSlug || 'platform';
 
@@ -177,6 +391,7 @@ export default function LoginPage() {
     [shouldReduceMotion],
   );
 
+  // ── Pre-fill saved email ─────────────────────────────────────────────
   useEffect(() => {
     const lastEmail = getSavedEmailForTenant(tenantStorageKey);
     if (lastEmail && !schoolCredentials.email) {
@@ -186,6 +401,37 @@ export default function LoginPage() {
 
   const isStandardLogin = !portalType;
 
+<<<<<<< HEAD
+  // ── Unified theme ────────────────────────────────────────────────────
+  const meta = portalType ? PORTAL_META[portalType] : null;
+  const PortalIcon = meta?.Icon ?? null;
+
+  // ── Form validation ──────────────────────────────────────────────────
+  const canSubmit = useCallback((): boolean => {
+    if (isLoading) return false;
+    if (portalType === 'school' || portalType === 'platform' || isStandardLogin) {
+      if (!schoolCredentials.email || !schoolCredentials.password) return false;
+      if (emailError) return false;
+    }
+    if (portalType === 'teacher') {
+      if (!teacherCredentials.teacherIdentifier || !teacherCredentials.password) return false;
+    }
+    if (portalType === 'parent') {
+      if (!parentCredentials.phone) return false;
+      if (phoneError) return false;
+      if (parentOtpSent && !parentCredentials.otp) return false;
+    }
+    return true;
+  }, [isLoading, portalType, isStandardLogin, schoolCredentials, teacherCredentials, parentCredentials, emailError, phoneError, parentOtpSent]);
+
+  // ── Submit handler ───────────────────────────────────────────────────
+=======
+  // ── Portal definition for current portal ──
+  const portalDef = portalType ? PORTAL_LOGIN_DEFS[portalType] : null;
+  const PortalIcon = portalDef?.Icon || null;
+
+  // ── Form submit handlers ──
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -202,10 +448,11 @@ export default function LoginPage() {
         await handleTeacherLogin();
       } else if (portalType === 'parent') {
         await handleParentLogin();
+      } else if (portalType === 'public') {
+        await handlePreEnrollmentSubmit();
       }
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : 'Erreur lors de la connexion';
+      const message = err instanceof Error ? err.message : 'Erreur lors de la connexion';
       setError(message);
     } finally {
       setIsLoading(false);
@@ -213,33 +460,24 @@ export default function LoginPage() {
   };
 
   const handlePlatformLogin = async () => {
-    // Le login plateforme doit TOUJOURS se faire dans le contexte d'une école (tenant)
-    // Le PLATFORM_OWNER sélectionne d'abord une école, puis se connecte sur le sous-domaine de cette école
-    // Il n'y a plus de route /app/platform sans tenant — tout passe par un sous-domaine professionnel
-
     if (!tenantSlug && !tenantIdFromUrl) {
-      // Pas de tenant/sous-domaine → rediriger vers le portail pour sélectionner une école
       const mainDomain = getAppBaseUrl();
       window.location.href = `${mainDomain}/portal`;
       return;
     }
-
-    // Un tenant est disponible → se connecter comme un utilisateur standard avec ce tenant
-    // Le PLATFORM_OWNER aura accès à toutes les fonctionnalités (y compris admin plateforme) sur le sous-domaine de l'école
     await handleStandardLogin();
   };
 
   const handleStandardLogin = async () => {
     const response = await fetch('/api/auth/login', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         email: schoolCredentials.email,
         password: schoolCredentials.password,
         tenantSubdomain: tenantSlug,
         tenant_id: tenantIdFromUrl || undefined,
+        portal_type: portalType?.toUpperCase() || undefined,
       }),
     });
 
@@ -255,6 +493,7 @@ export default function LoginPage() {
       serverSessionId: data.serverSessionId,
       user: data.user,
       tenant: data.tenant,
+      portalType: portalType?.toUpperCase() || null,
       expiresAt: data.expiresAt,
     });
 
@@ -265,33 +504,23 @@ export default function LoginPage() {
       data.user?.role === 'PLATFORM_OWNER' ||
       (data.user as { isPlatformOwner?: boolean })?.isPlatformOwner;
     const hasNoTenant = !data.tenant?.id;
-    
-    // Le PLATFORM_OWNER doit TOUJOURS être redirigé vers le sous-domaine d'une école
-    // Il n'y a plus de route /app/platform sans tenant — tout est professionnel
+
     if (isPlatformOwner && hasNoTenant) {
-      // Pas de tenant → rediriger vers le portail pour sélectionner une école d'abord
       const mainDomain = getAppBaseUrl();
       window.location.href = `${mainDomain}/portal`;
       return;
     }
 
-    if (portalType === 'platform') {
-      // Même chose : le portail plateforme doit toujours avoir un tenant
-      if (hasNoTenant) {
-        const mainDomain = getAppBaseUrl();
-        window.location.href = `${mainDomain}/portal`;
-        return;
-      }
-      // Si on a un tenant, rediriger vers le sous-domaine de l'école normalement
-      // Le PLATFORM_OWNER verra les modules plateforme en plus des modules école
+    if (portalType === 'platform' && hasNoTenant) {
+      const mainDomain = getAppBaseUrl();
+      window.location.href = `${mainDomain}/portal`;
+      return;
     }
 
-    // Compute the best tenant slug for redirect (prefer API response over URL)
     const resolvedSlug = tenantSlug || data.tenant?.slug || data.tenant?.subdomain;
     const resolvedTenantId = tenantIdFromUrl || data.tenant?.id;
 
     if (!resolvedSlug && !resolvedTenantId) {
-      // No tenant info at all — redirect to main domain /app
       const mainDomain = getAppBaseUrl();
       window.location.href = `${mainDomain}${redirectPath}`;
       return;
@@ -302,26 +531,15 @@ export default function LoginPage() {
         tenantSlug: resolvedSlug || resolvedTenantId || 'unknown',
         tenantId: resolvedTenantId,
         path: redirectPath,
+        portalType: portalType?.toUpperCase() || undefined,
       });
-      
-      // IMPORTANT: Toujours utiliser window.location.href (rechargement complet)
-      // après la connexion, même si la redirection reste sur le même sous-domaine.
-      //
-      // Le Set-Cookie de /api/auth/login (academia_session) doit être traité par
-      // le navigateur AVANT que la page /app soit chargée. Avec router.push(),
-      // la requête RSC est envoyée immédiatement, avant que le navigateur n'ait
-      // traité le Set-Cookie → getServerSession() retourne null → page blanche.
-      //
-      // Le rechargement complet (window.location.href) garantit que le navigateur
-      // traite d'abord le Set-Cookie, puis charge la nouvelle page avec les cookies
-      // à jour.
       window.location.href = redirectUrl;
     } catch {
-      // Fallback: redirect with query params
       const baseUrl = window.location.origin;
       const url = new URL(redirectPath, baseUrl);
       if (resolvedSlug) url.searchParams.set('tenant', resolvedSlug);
       if (resolvedTenantId) url.searchParams.set('tenant_id', resolvedTenantId);
+      if (portalType) url.searchParams.set('portal', portalType);
       window.location.href = url.toString();
     }
   };
@@ -333,13 +551,12 @@ export default function LoginPage() {
 
     const response = await fetch('/api/portal/auth/school', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         tenantId: tenantIdForApi,
         email: schoolCredentials.email,
         password: schoolCredentials.password,
+        portal_type: 'SCHOOL',
       }),
     });
 
@@ -354,6 +571,7 @@ export default function LoginPage() {
       portalSessionId: data.portalSessionId,
       user: data.user,
       tenant: data.tenant,
+      portalType: 'SCHOOL',
       expiresAt: data.expiresAt,
     });
 
@@ -364,6 +582,7 @@ export default function LoginPage() {
       tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,
       tenantId: tenantIdForApi,
       path: redirectPath,
+      portalType: 'SCHOOL',
     });
     window.location.href = redirectUrl;
   };
@@ -375,13 +594,12 @@ export default function LoginPage() {
 
     const response = await fetch('/api/portal/auth/teacher', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         tenantId: tenantIdForApi,
         teacherIdentifier: teacherCredentials.teacherIdentifier,
         password: teacherCredentials.password,
+        portal_type: 'TEACHER',
       }),
     });
 
@@ -396,6 +614,7 @@ export default function LoginPage() {
       portalSessionId: data.portalSessionId,
       user: data.user,
       tenant: data.tenant,
+      portalType: 'TEACHER',
       expiresAt: data.expiresAt,
     });
 
@@ -403,6 +622,7 @@ export default function LoginPage() {
       tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,
       tenantId: tenantIdForApi,
       path: redirectPath,
+      portalType: 'TEACHER',
     });
     window.location.href = redirectUrl;
   };
@@ -415,21 +635,18 @@ export default function LoginPage() {
     if (!parentOtpSent) {
       const response = await fetch('/api/portal/auth/parent', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tenantId: tenantIdForApi,
           phone: parentCredentials.phone,
+          portal_type: 'PARENT',
         }),
       });
 
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        throw new Error(
-          data.message || data.error || "Erreur lors de l'envoi du code OTP",
-        );
+        throw new Error(data.message || data.error || "Erreur lors de l'envoi du code OTP");
       }
 
       if (data.otp) {
@@ -442,13 +659,12 @@ export default function LoginPage() {
 
     const response = await fetch('/api/portal/auth/parent', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         tenantId: tenantIdForApi,
         phone: parentCredentials.phone,
         otp: parentCredentials.otp,
+        portal_type: 'PARENT',
       }),
     });
 
@@ -463,6 +679,7 @@ export default function LoginPage() {
       portalSessionId: data.portalSessionId,
       user: data.user,
       tenant: data.tenant,
+      portalType: 'PARENT',
       expiresAt: data.expiresAt,
     });
 
@@ -470,130 +687,110 @@ export default function LoginPage() {
       tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,
       tenantId: tenantIdForApi,
       path: redirectPath,
+      portalType: 'PARENT',
     });
     window.location.href = redirectUrl;
   };
 
-  const theme = useMemo(() => {
-    switch (portalType) {
-      case 'platform':
-        return {
-          title: 'Portail Plateforme',
-          subtitle: 'Administration SaaS & Supervision Globale',
-          Icon: Shield,
-          accent: 'slate' as const,
-          iconBg: 'from-slate-700/20 to-slate-800/10',
-          iconClass: 'text-slate-800',
-          ring: 'ring-slate-500/25',
-          focus: 'focus:ring-slate-800 focus:border-slate-800',
-          btnFrom: '#1e293b',
-          btnTo: '#0f172a',
-        };
-      case 'school':
-        return {
-          title: 'Portail École',
-          subtitle: 'Direction • Administration • Finances • Scolarité',
-          Icon: Building2,
-          accent: 'blue' as const,
-          iconBg: 'from-blue-500/20 to-blue-600/10',
-          iconClass: 'text-blue-600',
-          ring: 'ring-blue-500/25',
-          focus: 'focus:ring-blue-600 focus:border-blue-600',
-          btnFrom: '#2563eb',
-          btnTo: '#1d4ed8',
-        };
-      case 'teacher':
-        return {
-          title: 'Portail Enseignant',
-          subtitle: 'Pédagogie • Suivi • Notes • Cahier de texte',
-          Icon: GraduationCap,
-          accent: 'emerald' as const,
-          iconBg: 'from-emerald-500/20 to-emerald-600/10',
-          iconClass: 'text-emerald-600',
-          ring: 'ring-emerald-500/25',
-          focus: 'focus:ring-emerald-600 focus:border-emerald-600',
-          btnFrom: '#059669',
-          btnTo: '#047857',
-        };
-      case 'parent':
-        return {
-          title: 'Portail Parent / Élève',
-          subtitle: 'Suivi scolaire • Paiements • Communication',
-          Icon: Users,
-          accent: 'violet' as const,
-          iconBg: 'from-violet-500/20 to-violet-600/10',
-          iconClass: 'text-violet-600',
-          ring: 'ring-violet-500/25',
-          focus: 'focus:ring-violet-600 focus:border-violet-600',
-          btnFrom: '#7c3aed',
-          btnTo: '#6d28d9',
-        };
-      case 'public':
-        return {
-          title: 'Portail Public',
-          subtitle: 'Pré-inscription • Admissions • Informations',
-          Icon: Home,
-          accent: 'amber' as const,
-          iconBg: 'from-amber-500/20 to-amber-600/10',
-          iconClass: 'text-amber-600',
-          ring: 'ring-amber-500/25',
-          focus: 'focus:ring-amber-600 focus:border-amber-600',
-          btnFrom: '#f59e0b',
-          btnTo: '#d97706',
-        };
-      default:
-        return {
-          title: BRAND.name,
-          subtitle: BRAND.subtitle,
-          Icon: null as null,
-          accent: 'navy' as const,
-          iconBg: 'from-[#0b2f73]/15 to-blue-600/10',
-          iconClass: 'text-[#0b2f73]',
-          ring: 'ring-[#0b2f73]/20',
-          focus: 'focus:ring-[#0b2f73] focus:border-[#0b2f73]',
-          btnFrom: NAVY,
-          btnTo: '#144798',
-        };
-    }
-  }, [portalType]);
+<<<<<<< HEAD
+  const formBlockKey = portalType || 'standard';
 
-  const PortalIcon = theme.Icon;
+  // ──────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ──────────────────────────────────────────────────────────────────────
+  return (
+    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-gradient-to-br from-slate-50 via-white to-blue-50/90 px-4 py-16 sm:px-6 lg:px-8">
+      {/* ── Animated background (Navy/Blue/Gold only) ── */}
+=======
+  // ── Public portal: pre-enrollment (aucune authentification requise) ──
+  const handlePreEnrollmentSubmit = async () => {
+    const schoolId = tenantIdForApi || schoolSlugFromUrl;
+    if (!schoolId) {
+      throw new Error('Veuillez sélectionner un établissement pour la pré-inscription');
+    }
+
+    const response = await fetch('/api/public/pre-enrollment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...preEnrollment,
+        schoolSlug: schoolSlugFromUrl || tenantSlug,
+        tenantId: tenantIdForApi,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || data.error || 'Erreur lors de la pré-inscription');
+    }
+
+    setPreEnrollmentSubmitted(true);
+  };
 
   const formBlockKey = portalType || 'standard';
 
+  // ── Niveaux disponibles selon le type de candidat (conforme au document) ──
+  const getLevelsForCandidateType = (type: PublicCandidateType): string[] => {
+    switch (type) {
+      case 'MATERNELLE':
+        return ['Maternelle 1 (M1)', 'Maternelle 2 (M2)'];
+      case 'PRIMARY':
+        return ['CI', 'CP', 'CE1', 'CE2', 'CM1', 'CM2'];
+      case 'SECONDARY':
+        return ['6ème', '5ème', '4ème', '3ème', '2nde', '1ère', 'Terminale'];
+      default:
+        return [];
+    }
+  };
+
   return (
     <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-gradient-to-br from-slate-50 via-white to-blue-50/90 px-4 py-16 sm:px-6 lg:px-8">
+      {/* ── Background blobs — palette Helm ── */}
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
       <div className="pointer-events-none absolute inset-0 opacity-40" aria-hidden>
         {!shouldReduceMotion ? (
           <>
             <motion.div
-              className="absolute -left-20 top-24 h-72 w-72 rounded-full bg-blue-400/30 blur-3xl"
+              className="absolute -left-20 top-24 h-72 w-72 rounded-full blur-3xl"
+<<<<<<< HEAD
+              style={{ background: `${NAVY}25` }}
+=======
+              style={{ backgroundColor: `${NAVY}25` }}
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
               animate={{ x: [0, 20, 0], y: [0, -10, 0] }}
-              transition={{
-                duration: 14,
-                repeat: Infinity,
-                ease: 'easeInOut',
-              }}
+              transition={{ duration: 14, repeat: Infinity, ease: 'easeInOut' }}
             />
             <motion.div
-              className="absolute -right-16 bottom-24 h-80 w-80 rounded-full bg-amber-300/25 blur-3xl"
+              className="absolute -right-16 bottom-24 h-80 w-80 rounded-full blur-3xl"
+<<<<<<< HEAD
+              style={{ background: `${BLUE}20` }}
+=======
+              style={{ backgroundColor: `${GOLD}20` }}
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
               animate={{ x: [0, -16, 0], y: [0, 14, 0] }}
-              transition={{
-                duration: 17,
-                repeat: Infinity,
-                ease: 'easeInOut',
-              }}
+              transition={{ duration: 17, repeat: Infinity, ease: 'easeInOut' }}
             />
             <motion.div
               className="absolute left-1/2 top-1/3 h-56 w-56 -translate-x-1/2 rounded-full blur-3xl"
-              style={{ background: `${NAVY}18` }}
+<<<<<<< HEAD
+              style={{ background: `${GOLD}12` }}
+              animate={{ scale: [1, 1.06, 1], opacity: [0.2, 0.32, 0.2] }}
+=======
+              style={{ background: `${BLUE}18` }}
               animate={{ scale: [1, 1.06, 1], opacity: [0.25, 0.38, 0.25] }}
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
               transition={{ duration: 11, repeat: Infinity, ease: 'easeInOut' }}
             />
           </>
         ) : null}
       </div>
 
+<<<<<<< HEAD
+      {/* ── Top navigation ── */}
+=======
+      {/* ── Navigation ── */}
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
       <motion.nav
         initial={shouldReduceMotion ? false : { opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
@@ -602,96 +799,209 @@ export default function LoginPage() {
       >
         <Link
           href="/"
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200/90 bg-white/80 px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm backdrop-blur-sm transition-colors hover:border-amber-300/60 hover:text-slate-900"
+<<<<<<< HEAD
+          className="inline-flex items-center gap-2 rounded-full border border-slate-200/90 bg-white/80 px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm backdrop-blur-sm transition-colors hover:border-slate-300 hover:text-slate-900"
+=======
+          className="inline-flex items-center gap-2 rounded-full border bg-white/80 px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm backdrop-blur-sm transition-colors hover:text-slate-900"
+          style={{ borderColor: `${NAVY}18` }}
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
         >
           <Home className="h-4 w-4" style={{ color: NAVY }} />
           Accueil
         </Link>
         <Link
           href="/portal"
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200/90 bg-white/80 px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm backdrop-blur-sm transition-colors hover:border-amber-300/60 hover:text-slate-900"
+<<<<<<< HEAD
+          className="inline-flex items-center gap-2 rounded-full border border-slate-200/90 bg-white/80 px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm backdrop-blur-sm transition-colors hover:border-slate-300 hover:text-slate-900"
+=======
+          className="inline-flex items-center gap-2 rounded-full border bg-white/80 px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm backdrop-blur-sm transition-colors hover:text-slate-900"
+          style={{ borderColor: `${NAVY}18` }}
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
         >
           <ArrowLeft className="h-4 w-4" />
           Portails
         </Link>
       </motion.nav>
 
+<<<<<<< HEAD
+      {/* ── Login card ── */}
+=======
+      {/* ── Main login card ── */}
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
       <div className="relative z-10 w-full max-w-md">
         <motion.div
-          initial={
-            shouldReduceMotion ? false : { opacity: 0, y: 20, scale: 0.99 }
-          }
+          initial={shouldReduceMotion ? false : { opacity: 0, y: 20, scale: 0.99 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: dur, ease: 'easeOut' }}
-          className={`rounded-2xl border border-slate-200/80 bg-white/95 p-8 shadow-2xl ring-1 backdrop-blur-md md:p-10 ${theme.ring}`}
-          style={{ boxShadow: `0 24px 48px -12px rgba(11,47,115,0.12), 0 0 0 1px ${GOLD}14` }}
+<<<<<<< HEAD
+          className="rounded-2xl border border-slate-200/80 bg-white/95 p-8 shadow-2xl backdrop-blur-md md:p-10"
+          style={{
+            boxShadow: `0 24px 48px -12px rgba(11,47,115,0.12), 0 0 0 1px ${GOLD}14, inset 0 0 0 1px ${NAVY}10`,
+          }}
         >
+          {/* ── Card header ── */}
+=======
+          className="rounded-2xl border bg-white/95 p-8 shadow-2xl backdrop-blur-md md:p-10"
+          style={{
+            borderColor: `${NAVY}18`,
+            boxShadow: `0 24px 48px -12px ${NAVY}14, 0 0 0 1px ${GOLD}12`,
+          }}
+        >
+          {/* ── Header ── */}
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
           <motion.div
-            className="mb-8 text-center"
+            className="mb-6 text-center"
             variants={heroVariants}
             initial="hidden"
             animate="show"
           >
+            {/* Logo */}
             <motion.div
               variants={heroItem}
-              className="mb-6 inline-flex items-center justify-center"
-              animate={
-                shouldReduceMotion
-                  ? undefined
-                  : { y: [0, -4, 0] }
-              }
-              transition={{
-                duration: 3.2,
-                repeat: Infinity,
-                ease: 'easeInOut',
-              }}
+<<<<<<< HEAD
+              className="mb-4 inline-flex items-center justify-center"
+=======
+              className="mb-5 inline-flex items-center justify-center"
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
+              animate={shouldReduceMotion ? undefined : { y: [0, -4, 0] }}
+              transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
             >
               <Image
                 src="/images/logo-Academia Hub.png"
                 alt={BRAND.name}
+<<<<<<< HEAD
+                width={100}
+                height={100}
+=======
                 width={120}
                 height={120}
-                className="h-24 w-24 object-contain drop-shadow-lg md:h-28 md:w-28"
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
+                className="h-20 w-20 object-contain drop-shadow-lg md:h-24 md:w-24"
                 priority
               />
             </motion.div>
 
+            {/* Portal icon + title */}
             <motion.div
               variants={heroItem}
-              className="mb-3 flex flex-col items-center justify-center gap-3 sm:flex-row"
+              className="mb-2 flex flex-col items-center justify-center gap-2"
             >
-              {PortalIcon ? (
+              {PortalIcon && (
+<<<<<<< HEAD
+                <div
+                  className="flex h-12 w-12 items-center justify-center rounded-xl ring-1 ring-white/70"
+                  style={{ background: `${NAVY}10` }}
+                >
+                  <PortalIcon className="h-6 w-6" style={{ color: NAVY }} />
+                </div>
+=======
                 <motion.div
-                  className={`flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br ${theme.iconBg} ring-1 ring-white/70`}
-                  whileHover={
-                    shouldReduceMotion ? undefined : { scale: 1.05, rotate: -2 }
-                  }
+                  className="flex h-12 w-12 items-center justify-center rounded-2xl ring-1 ring-white/70"
+                  style={{
+                    background: `linear-gradient(135deg, ${NAVY}18, ${BLUE}12)`,
+                  }}
+                  whileHover={shouldReduceMotion ? undefined : { scale: 1.05, rotate: -2 }}
                   transition={springSoft}
                 >
-                  <PortalIcon className={`h-7 w-7 ${theme.iconClass}`} />
+                  <PortalIcon className="h-6 w-6" style={{ color: NAVY }} />
                 </motion.div>
-              ) : null}
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
+              )}
               <h1
-                className="text-3xl font-extrabold tracking-tight md:text-4xl"
+                className="text-2xl font-extrabold tracking-tight md:text-3xl"
                 style={{ color: NAVY }}
               >
-                {theme.title}
+<<<<<<< HEAD
+                {meta?.title ?? BRAND.name}
+=======
+                {portalDef?.title || BRAND.name}
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
               </h1>
             </motion.div>
 
             <motion.p variants={heroItem} className="text-sm text-slate-600">
-              {theme.subtitle}
+<<<<<<< HEAD
+              {meta?.subtitle ?? BRAND.subtitle}
             </motion.p>
-            {portalType === null && (
-              <motion.p
+
+            {/* School info badge */}
+            {schoolInfo && (
+              <motion.div
                 variants={heroItem}
-                className="mt-1 text-xs font-medium text-slate-500"
+                className="mt-3 inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs"
+                style={{
+                  borderColor: `${NAVY}20`,
+                  background: `linear-gradient(135deg, ${NAVY}06, ${BLUE}08)`,
+                }}
               >
+                {schoolInfo.logoUrl ? (
+                  <Image
+                    src={schoolInfo.logoUrl}
+                    alt={schoolInfo.name}
+                    width={20}
+                    height={20}
+                    className="h-5 w-5 rounded object-cover"
+                  />
+                ) : (
+                  <Building2 className="h-4 w-4" style={{ color: NAVY }} />
+                )}
+                <span className="font-medium" style={{ color: NAVY }}>
+                  {schoolInfo.name}
+                </span>
+                {schoolInfo.city && (
+                  <span className="text-slate-500">· {schoolInfo.city}</span>
+                )}
+              </motion.div>
+            )}
+          </motion.div>
+
+          {/* ── Error message ── */}
+=======
+              {portalDef?.subtitle || BRAND.subtitle}
+            </motion.p>
+
+            {/* Role count badge — conforme au document */}
+            {portalDef && (
+              <motion.div variants={heroItem} className="mt-2">
+                <span
+                  className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                  style={{
+                    color: NAVY,
+                    background: `${GOLD}20`,
+                    border: `1px solid ${GOLD}35`,
+                  }}
+                >
+                  {portalDef.roleCount} rôles — {portalDef.authMethod}
+                </span>
+              </motion.div>
+            )}
+
+            {/* Tenant display — multi-tenant strict */}
+            {(tenantSlug || schoolNameFromUrl) && portalType !== 'public' && (
+              <motion.div variants={heroItem} className="mt-3">
+                <div
+                  className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium"
+                  style={{
+                    color: NAVY,
+                    borderColor: `${NAVY}20`,
+                    background: `${NAVY}06`,
+                  }}
+                >
+                  <Building2 className="h-3.5 w-3.5" />
+                  <span>{schoolNameFromUrl || tenantSlug}</span>
+                </div>
+              </motion.div>
+            )}
+
+            {portalType === null && (
+              <motion.p variants={heroItem} className="mt-1 text-xs font-medium text-slate-500">
                 {BRAND.slogan}
               </motion.p>
             )}
           </motion.div>
 
+          {/* ── Error display ── */}
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
           <AnimatePresence>
             {error ? (
               <motion.div
@@ -700,17 +1010,24 @@ export default function LoginPage() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={shouldReduceMotion ? undefined : { opacity: 0, y: -4 }}
                 transition={{ duration: dur * 0.85 }}
-                className="mb-6"
+                className="mb-5"
               >
                 <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50/95 p-4 shadow-sm">
                   <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
-                  <p className="text-sm text-red-800">{error}</p>
+                  <div>
+                    <p className="text-sm text-red-800">{error}</p>
+                    {error.toLowerCase().includes('identifiant') && (
+                      <p className="mt-1 text-xs text-red-600">
+                        Vérifiez vos identifiants et assurez-vous d&apos;être sur le bon portail.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </motion.div>
             ) : null}
           </AnimatePresence>
 
-          {/* Message de déconnexion automatique pour inactivité */}
+          {/* ── Idle logout message ── */}
           <AnimatePresence>
             {idleLogoutMessage && !error ? (
               <motion.div
@@ -719,55 +1036,106 @@ export default function LoginPage() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={shouldReduceMotion ? undefined : { opacity: 0, y: -4 }}
                 transition={{ duration: dur * 0.85 }}
-                className="mb-6"
+                className="mb-5"
               >
-                <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/95 p-4 shadow-sm">
-                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-                  <p className="text-sm text-amber-800">{idleLogoutMessage}</p>
+                <div className="flex items-start gap-3 rounded-xl border bg-amber-50/95 p-4 shadow-sm" style={{ borderColor: `${GOLD}50` }}>
+                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" style={{ color: GOLD }} />
+                  <p className="text-sm" style={{ color: NAVY }}>{idleLogoutMessage}</p>
                 </div>
               </motion.div>
             ) : null}
           </AnimatePresence>
 
+          {/* ── Dev OTP display ── */}
           <AnimatePresence>
-            {parentOtpSent &&
-            parentOtpCode &&
-            process.env.NODE_ENV === 'development' ? (
+            {parentOtpSent && parentOtpCode && process.env.NODE_ENV === 'development' ? (
               <motion.div
                 key="dev-otp"
                 initial={shouldReduceMotion ? false : { opacity: 0, y: -6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
-                className="mb-6 rounded-xl border border-amber-300/80 bg-amber-50/95 p-4"
+<<<<<<< HEAD
+                className="mb-5 rounded-xl border border-amber-300/80 bg-amber-50/95 p-4"
               >
-                <p className="mb-1 text-sm font-semibold text-amber-900">
+                <p className="mb-1 text-sm font-semibold text-amber-900">Code OTP (DEV)</p>
+                <p className="text-center text-2xl font-bold tracking-widest text-amber-950">
+=======
+                className="mb-6 rounded-xl border bg-amber-50/95 p-4"
+                style={{ borderColor: `${GOLD}50` }}
+              >
+                <p className="mb-1 text-sm font-semibold" style={{ color: NAVY }}>
                   Code OTP (DEV)
                 </p>
-                <p className="text-center text-2xl font-bold tracking-widest text-amber-950">
+                <p className="text-center text-2xl font-bold tracking-widest" style={{ color: NAVY }}>
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
                   {parentOtpCode}
                 </p>
               </motion.div>
             ) : null}
           </AnimatePresence>
 
+<<<<<<< HEAD
+          {/* ── Form ── */}
+          <form onSubmit={handleSubmit} className="space-y-5" noValidate>
+=======
+          {/* ── Pre-enrollment success message (PUBLIC portal) ── */}
+          <AnimatePresence>
+            {preEnrollmentSubmitted && portalType === 'public' ? (
+              <motion.div
+                key="pre-enrollment-success"
+                initial={shouldReduceMotion ? false : { opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: dur }}
+                className="mb-6"
+              >
+                <div className="flex flex-col items-center gap-4 rounded-xl border bg-green-50/95 p-6 text-center" style={{ borderColor: '#22c55e50' }}>
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
+                    <FileText className="h-6 w-6 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-green-800">Pré-inscription envoyée</p>
+                    <p className="mt-1 text-sm text-green-700">
+                      Votre demande de pré-inscription a été enregistrée avec succès.
+                      Vous recevrez une confirmation par SMS et email.
+                    </p>
+                  </div>
+                  <Link
+                    href="/portal"
+                    className="mt-2 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white"
+                    style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Retour aux portails
+                  </Link>
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+
+          {/* ════════════════════════════════════════════════════════════════
+              FORMULAIRES D'AUTHENTIFICATION PAR PORTAIL
+              Conformes au document academia-helm-portails.md
+              ════════════════════════════════════════════════════════════════ */}
+
           <form onSubmit={handleSubmit} className="space-y-6">
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
             <AnimatePresence mode="wait">
               <motion.div
                 key={formBlockKey}
-                initial={
-                  shouldReduceMotion ? false : { opacity: 0, x: 16 }
-                }
+                initial={shouldReduceMotion ? false : { opacity: 0, x: 16 }}
                 animate={{ opacity: 1, x: 0 }}
-                exit={
-                  shouldReduceMotion
-                    ? undefined
-                    : { opacity: 0, x: -12 }
-                }
+                exit={shouldReduceMotion ? undefined : { opacity: 0, x: -12 }}
                 transition={{ duration: dur, ease: 'easeOut' }}
-                className="space-y-6"
+                className="space-y-5"
               >
+<<<<<<< HEAD
+                {/* ── Email + Password (School / Platform / Standard) ── */}
+=======
+                {/* ── PLATFORM + SCHOOL : Email + Mot de passe ── */}
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
                 {(isStandardLogin || portalType === 'school' || portalType === 'platform') && (
                   <>
+                    {/* Email field */}
                     <div>
                       <label
                         htmlFor={`email-${tenantStorageKey}`}
@@ -792,50 +1160,134 @@ export default function LoginPage() {
                               email: e.target.value,
                             })
                           }
-                          className={`w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 ${theme.focus}`}
+<<<<<<< HEAD
+                          onBlur={() => setEmailTouched(true)}
+                          className={`w-full rounded-xl border-2 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2 focus:ring-offset-1 focus:ring-[#0b2f73] focus:border-[#0b2f73] ${
+                            emailError ? 'border-red-300 bg-red-50/30' : 'border-slate-200'
+                          }`}
                           placeholder="votre.email@etablissement.com"
+=======
+                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2"
+                          style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                          placeholder={
+                            portalType === 'platform'
+                              ? 'admin@academiahelm.com'
+                              : 'votre.email@etablissement.com'
+                          }
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
                         />
+                        {emailTouched && schoolCredentials.email && (
+                          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+                            {emailError ? (
+                              <XCircle className="h-4 w-4 text-red-500" />
+                            ) : (
+                              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                            )}
+                          </div>
+                        )}
                       </div>
-                      {getSavedEmailForTenant(tenantStorageKey) ? (
+<<<<<<< HEAD
+                      {emailError && (
+                        <p className="mt-1 text-xs text-red-600">{emailError}</p>
+                      )}
+                      {getSavedEmailForTenant(tenantStorageKey) && !emailError && (
+=======
+                      {getSavedEmailForTenant(tenantStorageKey) && (
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
                         <p className="mt-1 text-xs text-slate-500">
-                          Dernière connexion pour cet établissement (ce poste
-                          uniquement).
+                          Dernière connexion pour cet établissement (ce poste uniquement).
                         </p>
-                      ) : null}
+                      )}
                     </div>
 
+                    {/* Password field */}
                     <div>
-                      <label
-                        htmlFor={`password-${tenantStorageKey}`}
-                        className="mb-2 block text-sm font-semibold text-slate-900"
-                      >
-                        Mot de passe
-                      </label>
+                      <div className="mb-2 flex items-center justify-between">
+                        <label
+                          htmlFor={`password-${tenantStorageKey}`}
+                          className="text-sm font-semibold text-slate-900"
+                        >
+                          Mot de passe
+                        </label>
+                        <Link
+                          href="/forgot-password"
+                          className="text-xs font-medium transition-colors hover:underline"
+                          style={{ color: BLUE }}
+                        >
+                          Mot de passe oublié ?
+                        </Link>
+                      </div>
                       <div className="relative">
                         <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                           <Lock className="h-5 w-5 text-slate-400" />
                         </div>
                         <input
-                          type="password"
+                          type={showPassword ? 'text' : 'password'}
                           id={`password-${tenantStorageKey}`}
                           name={`password_${tenantStorageKey}`}
                           autoComplete="current-password"
                           required
                           value={schoolCredentials.password}
-                          onChange={(e) =>
+                          onChange={(e) => {
                             setSchoolCredentials({
                               ...schoolCredentials,
                               password: e.target.value,
+<<<<<<< HEAD
+                            });
+                            setPasswordTouched(true);
+                          }}
+                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-10 transition-all placeholder:text-slate-400 focus:ring-2 focus:ring-offset-1 focus:ring-[#0b2f73] focus:border-[#0b2f73]"
+=======
                             })
                           }
-                          className={`w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 ${theme.focus}`}
+                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2"
+                          style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
                           placeholder="••••••••"
                         />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-700 transition-colors"
+                          aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                        >
+                          {showPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </button>
                       </div>
+                      {/* Password strength indicator */}
+                      {passwordTouched && schoolCredentials.password && (
+                        <div className="mt-2">
+                          <div className="flex gap-1">
+                            {[1, 2, 3, 4].map((level) => (
+                              <div
+                                key={level}
+                                className="h-1 flex-1 rounded-full transition-all duration-300"
+                                style={{
+                                  backgroundColor: passwordStrength.score >= level
+                                    ? passwordStrength.color
+                                    : '#e2e8f0',
+                                }}
+                              />
+                            ))}
+                          </div>
+                          <p className="mt-1 text-[10px] text-slate-500">
+                            Force : <span style={{ color: passwordStrength.color }}>{passwordStrength.label}</span>
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </>
                 )}
 
+<<<<<<< HEAD
+                {/* ── Teacher login fields ── */}
+=======
+                {/* ── TEACHER : Matricule + Mot de passe ── */}
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
                 {portalType === 'teacher' && (
                   <>
                     <div>
@@ -860,42 +1312,106 @@ export default function LoginPage() {
                               teacherIdentifier: e.target.value,
                             })
                           }
-                          className={`w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 ${theme.focus}`}
+<<<<<<< HEAD
+                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2 focus:ring-offset-1 focus:ring-[#0b2f73] focus:border-[#0b2f73]"
                           placeholder="EMP001"
                         />
                       </div>
+                      <p className="mt-1 text-[10px] text-slate-500">
+                        Votre identifiant unique fourni par l&apos;établissement
+=======
+                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2"
+                          style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                          placeholder="EMP001"
+                        />
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Votre matricule vous a été communiqué par l&apos;établissement.
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
+                      </p>
                     </div>
 
                     <div>
-                      <label
-                        htmlFor="teacherPassword"
-                        className="mb-2 block text-sm font-semibold text-slate-900"
-                      >
-                        Mot de passe
-                      </label>
+                      <div className="mb-2 flex items-center justify-between">
+                        <label
+                          htmlFor="teacherPassword"
+                          className="text-sm font-semibold text-slate-900"
+                        >
+                          Mot de passe
+                        </label>
+                        <Link
+                          href="/forgot-password"
+                          className="text-xs font-medium transition-colors hover:underline"
+                          style={{ color: BLUE }}
+                        >
+                          Mot de passe oublié ?
+                        </Link>
+                      </div>
                       <div className="relative">
                         <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                           <Lock className="h-5 w-5 text-slate-400" />
                         </div>
                         <input
-                          type="password"
+                          type={showPassword ? 'text' : 'password'}
                           id="teacherPassword"
                           required
                           value={teacherCredentials.password}
-                          onChange={(e) =>
+                          onChange={(e) => {
                             setTeacherCredentials({
                               ...teacherCredentials,
                               password: e.target.value,
+<<<<<<< HEAD
+                            });
+                            setPasswordTouched(true);
+                          }}
+                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-10 transition-all placeholder:text-slate-400 focus:ring-2 focus:ring-offset-1 focus:ring-[#0b2f73] focus:border-[#0b2f73]"
+=======
                             })
                           }
-                          className={`w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 ${theme.focus}`}
+                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2"
+                          style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
                           placeholder="••••••••"
                         />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-700 transition-colors"
+                          aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                        >
+                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
                       </div>
+                      {/* Password strength */}
+                      {passwordTouched && teacherCredentials.password && (
+                        <div className="mt-2">
+                          <div className="flex gap-1">
+                            {[1, 2, 3, 4].map((level) => (
+                              <div
+                                key={level}
+                                className="h-1 flex-1 rounded-full transition-all duration-300"
+                                style={{
+                                  backgroundColor: passwordStrength.score >= level
+                                    ? passwordStrength.color
+                                    : '#e2e8f0',
+                                }}
+                              />
+                            ))}
+                          </div>
+                          <p className="mt-1 text-[10px] text-slate-500">
+                            Force : <span style={{ color: passwordStrength.color }}>{passwordStrength.label}</span>
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </>
                 )}
 
+<<<<<<< HEAD
+                {/* ── Parent login fields ── */}
+=======
+                {/* ── PARENT : Téléphone + OTP ── */}
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
                 {portalType === 'parent' && (
                   <>
                     <div>
@@ -921,23 +1437,50 @@ export default function LoginPage() {
                               phone: e.target.value,
                             })
                           }
-                          className={`w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 disabled:bg-slate-100 ${theme.focus}`}
-                          placeholder="+22912345678"
+<<<<<<< HEAD
+                          onBlur={() => setPhoneTouched(true)}
+                          className={`w-full rounded-xl border-2 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 disabled:bg-slate-100 focus:ring-2 focus:ring-offset-1 focus:ring-[#0b2f73] focus:border-[#0b2f73] ${
+                            phoneError ? 'border-red-300 bg-red-50/30' : 'border-slate-200'
+                          }`}
+=======
+                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2 disabled:bg-slate-100"
+                          style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
+                          placeholder="+229 90 00 00 00"
                         />
+                        {phoneTouched && parentCredentials.phone && !parentOtpSent && (
+                          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+                            {phoneError ? (
+                              <XCircle className="h-4 w-4 text-red-500" />
+                            ) : (
+                              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                            )}
+                          </div>
+                        )}
                       </div>
+<<<<<<< HEAD
+                      {phoneError && (
+                        <p className="mt-1 text-xs text-red-600">{phoneError}</p>
+                      )}
+                      {!phoneError && (
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          Format attendu : +229 XX XX XX XX ou 9X XX XX XX
+                        </p>
+                      )}
+=======
+                      <p className="mt-1 text-xs text-slate-500">
+                        Numéro utilisé lors de l&apos;inscription de votre enfant.
+                      </p>
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
                     </div>
 
                     <AnimatePresence>
                       {parentOtpSent ? (
                         <motion.div
                           key="otp-field"
-                          initial={
-                            shouldReduceMotion ? false : { opacity: 0, y: 10 }
-                          }
+                          initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
-                          exit={
-                            shouldReduceMotion ? undefined : { opacity: 0, y: 6 }
-                          }
+                          exit={shouldReduceMotion ? undefined : { opacity: 0, y: 6 }}
                           transition={{ duration: dur, ease: 'easeOut' }}
                         >
                           <label
@@ -961,25 +1504,223 @@ export default function LoginPage() {
                                   otp: e.target.value,
                                 })
                               }
-                              className={`w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 ${theme.focus}`}
+<<<<<<< HEAD
+                              className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2 focus:ring-offset-1 focus:ring-[#0b2f73] focus:border-[#0b2f73]"
+=======
+                              className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 transition-all placeholder:text-slate-400 focus:ring-2"
+                              style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
                               placeholder="123456"
                               maxLength={6}
+                              inputMode="numeric"
+                              autoComplete="one-time-code"
                             />
                           </div>
                           <p className="mt-2 text-sm text-slate-600">
                             Un code OTP a été envoyé à votre numéro de téléphone.
                           </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setParentOtpSent(false);
+                              setParentOtpCode('');
+                              setParentCredentials((prev) => ({ ...prev, otp: '' }));
+                            }}
+                            className="mt-1 text-xs font-medium transition-colors hover:underline"
+                            style={{ color: BLUE }}
+                          >
+                            Renvoyer le code
+                          </button>
                         </motion.div>
                       ) : null}
                     </AnimatePresence>
                   </>
                 )}
+
+                {/* ── PUBLIC : Pré-inscription (aucune authentification requise) ── */}
+                {portalType === 'public' && !preEnrollmentSubmitted && (
+                  <>
+                    {/* Type de candidat */}
+                    <div>
+                      <label className="mb-2 block text-sm font-semibold text-slate-900">
+                        Vous souhaitez inscrire un enfant en
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {([
+                          { type: 'MATERNELLE' as const, label: 'Maternelle', Icon: Baby, desc: 'M1 – M2' },
+                          { type: 'PRIMARY' as const, label: 'Primaire', Icon: BookOpen, desc: 'CI – CM2' },
+                          { type: 'SECONDARY' as const, label: 'Secondaire', Icon: GradCap, desc: '6ème – Tle' },
+                          { type: 'PROSPECT_PARENT' as const, label: 'Juste info', Icon: Users, desc: 'Parent prospect' },
+                        ]).map((opt) => (
+                          <button
+                            key={opt.type}
+                            type="button"
+                            onClick={() => setPreEnrollment((prev) => ({ ...prev, candidateType: opt.type, targetLevel: '' }))}
+                            className="flex flex-col items-center gap-1 rounded-xl border-2 p-3 text-center transition-all"
+                            style={{
+                              borderColor: preEnrollment.candidateType === opt.type ? GOLD : `${NAVY}18`,
+                              background: preEnrollment.candidateType === opt.type ? `${GOLD}12` : `${NAVY}04`,
+                            }}
+                          >
+                            <opt.Icon className="h-5 w-5" style={{ color: NAVY }} />
+                            <span className="text-xs font-bold" style={{ color: NAVY }}>{opt.label}</span>
+                            <span className="text-[10px] text-slate-500">{opt.desc}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Parent info */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold text-slate-900">
+                          Prénom (parent)
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={preEnrollment.parentFirstName}
+                          onChange={(e) => setPreEnrollment((prev) => ({ ...prev, parentFirstName: e.target.value }))}
+                          className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                          style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                          placeholder="Prénom"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold text-slate-900">
+                          Nom (parent)
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={preEnrollment.parentLastName}
+                          onChange={(e) => setPreEnrollment((prev) => ({ ...prev, parentLastName: e.target.value }))}
+                          className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                          style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                          placeholder="Nom"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold text-slate-900">
+                          Téléphone
+                        </label>
+                        <div className="relative">
+                          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                            <Phone className="h-4 w-4 text-slate-400" />
+                          </div>
+                          <input
+                            type="tel"
+                            required
+                            value={preEnrollment.parentPhone}
+                            onChange={(e) => setPreEnrollment((prev) => ({ ...prev, parentPhone: e.target.value }))}
+                            className="w-full rounded-xl border-2 border-slate-200 py-2.5 pl-9 pr-3 text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                            style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                            placeholder="+229 90 00 00 00"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold text-slate-900">
+                          Email
+                        </label>
+                        <div className="relative">
+                          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                            <Mail className="h-4 w-4 text-slate-400" />
+                          </div>
+                          <input
+                            type="email"
+                            value={preEnrollment.parentEmail}
+                            onChange={(e) => setPreEnrollment((prev) => ({ ...prev, parentEmail: e.target.value }))}
+                            className="w-full rounded-xl border-2 border-slate-200 py-2.5 pl-9 pr-3 text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                            style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                            placeholder="email@exemple.com"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Child info (not for PROSPECT_PARENT) */}
+                    {preEnrollment.candidateType !== 'PROSPECT_PARENT' && (
+                      <>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold text-slate-900">
+                              Prénom de l&apos;enfant
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              value={preEnrollment.childFirstName}
+                              onChange={(e) => setPreEnrollment((prev) => ({ ...prev, childFirstName: e.target.value }))}
+                              className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                              style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                              placeholder="Prénom"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold text-slate-900">
+                              Nom de l&apos;enfant
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              value={preEnrollment.childLastName}
+                              onChange={(e) => setPreEnrollment((prev) => ({ ...prev, childLastName: e.target.value }))}
+                              className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                              style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                              placeholder="Nom"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Target level selection */}
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold text-slate-900">
+                            Niveau souhaité
+                          </label>
+                          <select
+                            required
+                            value={preEnrollment.targetLevel}
+                            onChange={(e) => setPreEnrollment((prev) => ({ ...prev, targetLevel: e.target.value }))}
+                            className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 text-sm transition-all focus:ring-2"
+                            style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                          >
+                            <option value="">— Sélectionner —</option>
+                            {getLevelsForCandidateType(preEnrollment.candidateType).map((level) => (
+                              <option key={level} value={level}>{level}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Message */}
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-900">
+                        Message (optionnel)
+                      </label>
+                      <textarea
+                        value={preEnrollment.message}
+                        onChange={(e) => setPreEnrollment((prev) => ({ ...prev, message: e.target.value }))}
+                        rows={2}
+                        className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 text-sm transition-all placeholder:text-slate-400 focus:ring-2 resize-none"
+                        style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                        placeholder="Précisez votre demande..."
+                      />
+                    </div>
+                  </>
+                )}
               </motion.div>
             </AnimatePresence>
 
+<<<<<<< HEAD
+            {/* ── Submit button ── */}
             <motion.button
               type="submit"
-              disabled={isLoading}
+              disabled={!canSubmit()}
               whileHover={
                 shouldReduceMotion
                   ? undefined
@@ -987,9 +1728,9 @@ export default function LoginPage() {
               }
               whileTap={shouldReduceMotion ? undefined : { scale: 0.99 }}
               transition={springSoft}
-              className="flex w-full items-center justify-center rounded-xl px-6 py-3.5 font-semibold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex w-full items-center justify-center rounded-xl px-6 py-3.5 font-semibold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-50 transition-all"
               style={{
-                background: `linear-gradient(135deg, ${theme.btnFrom}, ${theme.btnTo})`,
+                background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
               }}
             >
               {isLoading ? (
@@ -1007,13 +1748,99 @@ export default function LoginPage() {
             </motion.button>
           </form>
 
+          {/* ── Security badge ── */}
+          <div className="mt-5 flex items-center justify-center gap-1.5 text-[10px] text-slate-400">
+            <Shield className="h-3 w-3" style={{ color: NAVY }} />
+            <span>Connexion chiffrée TLS · Portail sécurisé {BRAND.name}</span>
+          </div>
+
+          {/* ── Links ── */}
+=======
+            {/* ── Submit button — palette Helm unifiée ── */}
+            {!(portalType === 'public' && preEnrollmentSubmitted) && (
+              <motion.button
+                type="submit"
+                disabled={isLoading}
+                whileHover={
+                  shouldReduceMotion
+                    ? undefined
+                    : { scale: 1.01, boxShadow: `0 14px 32px ${NAVY}22` }
+                }
+                whileTap={shouldReduceMotion ? undefined : { scale: 0.99 }}
+                transition={springSoft}
+                className="flex w-full items-center justify-center rounded-xl px-6 py-3.5 font-semibold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
+                style={{
+                  background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+                }}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader className="mr-2 h-5 w-5 animate-spin" />
+                    {parentOtpSent && portalType === 'parent'
+                      ? 'Vérification...'
+                      : portalType === 'public'
+                      ? 'Envoi en cours...'
+                      : 'Connexion en cours...'}
+                  </>
+                ) : parentOtpSent && portalType === 'parent' ? (
+                  'Vérifier le code OTP'
+                ) : portalType === 'public' ? (
+                  'Soumettre la pré-inscription'
+                ) : (
+                  'Se connecter'
+                )}
+              </motion.button>
+            )}
+          </form>
+
+          {/* ── Footer links ── */}
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
           <motion.div
             initial={shouldReduceMotion ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: shouldReduceMotion ? 0 : 0.12, duration: dur }}
-            className="mt-8 space-y-3 text-center"
+            className="mt-6 space-y-3 text-center"
           >
-            {!isStandardLogin ? (
+<<<<<<< HEAD
+            {/* "Mot de passe oublié" pour tous les portails authentifiés */}
+            {(isStandardLogin || portalType === 'school' || portalType === 'platform' || portalType === 'teacher') && (
+              <div>
+                <Link
+                  href="/forgot-password"
+                  className="text-sm font-medium transition-colors hover:underline"
+                  style={{ color: NAVY }}
+                >
+                  Mot de passe oublié ?
+                </Link>
+              </div>
+            )}
+
+            {/* Retour à la sélection du portail */}
+            {!isStandardLogin && (
+              <div>
+                <Link
+                  href="/portal"
+                  className="inline-flex items-center gap-1 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  Retour à la sélection du portail
+                </Link>
+              </div>
+            )}
+
+            {/* Signup */}
+            {isStandardLogin && (
+              <p className="text-sm text-slate-600">
+                Pas encore de compte ?{' '}
+                <Link
+                  href="/signup"
+                  className="font-semibold transition-colors hover:underline"
+                  style={{ color: NAVY }}
+                >
+                  Activer Academia Helm
+                </Link>
+=======
+            {!isStandardLogin && portalType !== 'public' ? (
               <Link
                 href="/portal"
                 className="inline-flex items-center justify-center text-sm font-medium text-slate-600 transition-colors hover:text-slate-900"
@@ -1027,7 +1854,7 @@ export default function LoginPage() {
                   <Link
                     href="/forgot-password"
                     className="text-sm font-medium transition-colors hover:underline"
-                    style={{ color: NAVY }}
+                    style={{ color: BLUE }}
                   >
                     Mot de passe oublié ?
                   </Link>
@@ -1044,6 +1871,13 @@ export default function LoginPage() {
                 </p>
               </>
             ) : null}
+            {portalType === 'public' && (
+              <p className="text-xs text-slate-500">
+                Conforme au document : aucune authentification requise pour le portail public.
+                Vos données sont traitées conformément à notre politique de confidentialité.
+>>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
+              </p>
+            )}
           </motion.div>
         </motion.div>
       </div>

@@ -11,6 +11,8 @@ export type PersistClientSessionInput = {
   serverSessionId?: string | null;
   /** Ligne `portal_sessions` (portail école / enseignant / parent) */
   portalSessionId?: string | null;
+  /** Portail d'accès — conforme au document RBAC 7 dimensions */
+  portalType?: string | null;
   user?: {
     id: string;
     email?: string;
@@ -71,6 +73,7 @@ export function persistClientSession(data: PersistClientSessionInput): void {
         tenant: data.tenant ?? null,
         serverSessionId: sid ?? null,
         portalSessionId: pid ?? null,
+        portalType: data.portalType ?? null,
         expiresAt: data.expiresAt ?? null,
         syncedAt: new Date().toISOString(),
       }),

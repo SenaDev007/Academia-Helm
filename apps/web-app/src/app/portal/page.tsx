@@ -30,6 +30,7 @@ import {
   Code2,
   X,
   Search,
+  Loader2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import PremiumHeader from '@/components/layout/PremiumHeader';
@@ -123,6 +124,7 @@ export default function PortalPage() {
   const [devEmail, setDevEmail] = useState('');
   const [devPassword, setDevPassword] = useState('');
   const [isDevLoggingIn, setIsDevLoggingIn] = useState(false);
+  const [isContinuing, setIsContinuing] = useState(false);
   const { redirectToTenant } = useTenantRedirect();
   const { shouldReduceMotion } = useMotionBudget();
 
@@ -190,48 +192,44 @@ export default function PortalPage() {
   };
 
   const handleContinue = async () => {
-    if (selectedPortal === 'PLATFORM') {
-      await redirectToTenant({
-        tenantSlug: selectedSchool?.slug || 'platform',
-        tenantId: selectedSchool?.id || 'platform',
-        path: '/login',
-        portalType: 'PLATFORM',
-        queryParams: { portal: 'platform' },
-      });
-      return;
-    }
-
     if (!selectedPortal || !selectedSchool) return;
 
-    // Store school info for login page display
-    if (typeof window !== 'undefined') {
-      try {
-        sessionStorage.setItem(
-          'academia_portal_school',
-          JSON.stringify({
-            name: selectedSchool.name,
-            logoUrl: selectedSchool.logoUrl || null,
-            city: selectedSchool.city || null,
-            schoolType: selectedSchool.schoolType || null,
-          }),
-        );
-      } catch { /* ignore */ }
-    }
+    setIsContinuing(true);
 
-    if (selectedPortal === 'PUBLIC') {
-      // Conforme au document : pré-inscription & acquisition, aucune auth requise
-      // Redirige vers la page publique de l'école pour pré-inscription
-      window.location.href = `/public/pre-enrollment?school=${selectedSchool.slug}`;
-      return;
-    }
+    try {
+      // Store school info for login page display
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem(
+            'academia_portal_school',
+            JSON.stringify({
+              name: selectedSchool.name,
+              logoUrl: selectedSchool.logoUrl || null,
+              city: selectedSchool.city || null,
+              schoolType: selectedSchool.schoolType || null,
+            }),
+          );
+        } catch { /* ignore */ }
+      }
 
-    await redirectToTenant({
-      tenantSlug: selectedSchool.slug,
-      tenantId: selectedSchool.id,
-      path: '/login',
-      portalType: selectedPortal,
-      queryParams: { portal: selectedPortal.toLowerCase() },
-    });
+      if (selectedPortal === 'PUBLIC') {
+        // Conforme au document : pré-inscription & acquisition, aucune auth requise
+        // Redirige vers la page publique de l'école pour pré-inscription
+        window.location.href = `/public/pre-enrollment?school=${selectedSchool.slug}`;
+        return;
+      }
+
+      await redirectToTenant({
+        tenantSlug: selectedSchool.slug,
+        tenantId: selectedSchool.id,
+        path: '/login',
+        portalType: selectedPortal,
+        queryParams: { portal: selectedPortal.toLowerCase() },
+      });
+    } catch (error) {
+      console.error('[Portal] Erreur lors de la redirection:', error);
+      setIsContinuing(false);
+    }
   };
 
   const handleCloseSchoolSearch = () => {
@@ -721,23 +719,33 @@ export default function PortalPage() {
                     <motion.button
                       type="button"
                       onClick={() => void handleContinue()}
+                      disabled={isContinuing}
                       whileHover={
-                        shouldReduceMotion
+                        isContinuing || shouldReduceMotion
                           ? undefined
                           : { scale: 1.01, boxShadow: `0 12px 28px ${NAVY}25` }
                       }
-                      whileTap={shouldReduceMotion ? undefined : { scale: 0.99 }}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 font-semibold text-white shadow-md"
+                      whileTap={isContinuing || shouldReduceMotion ? undefined : { scale: 0.99 }}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 font-semibold text-white shadow-md transition-all disabled:cursor-not-allowed disabled:opacity-80"
                       style={{
                         background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
                       }}
                     >
-                      <span>
-                        {selectedPortal === 'PUBLIC'
-                          ? 'Accéder à la pré-inscription'
-                          : 'Continuer vers la connexion'}
-                      </span>
-                      <ArrowRight className="h-5 w-5" />
+                      {isContinuing ? (
+                        <>
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                          <span>Redirection en cours…</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>
+                            {selectedPortal === 'PUBLIC'
+                              ? 'Accéder à la pré-inscription'
+                              : 'Continuer vers la connexion'}
+                          </span>
+                          <ArrowRight className="h-5 w-5" />
+                        </>
+                      )}
                     </motion.button>
                   </motion.div>
                 ) : null}

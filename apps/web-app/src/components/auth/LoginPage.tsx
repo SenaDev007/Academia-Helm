@@ -376,8 +376,19 @@ export default function LoginPage() {
         await handlePreEnrollmentSubmit();
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erreur lors de la connexion';
-      setError(message);
+      const rawMessage = err instanceof Error ? err.message : 'Erreur lors de la connexion';
+      // Amélioration des messages d'erreur (même logique que le flux DEV)
+      let userMessage = rawMessage;
+      if (rawMessage.includes('timeout') || rawMessage.includes('ne répond pas') || rawMessage.includes('30 secondes')) {
+        userMessage = 'Le serveur est en cours de démarrage. Veuillez réessayer dans quelques secondes.';
+      } else if (rawMessage.includes('Internal server error') || rawMessage.includes('500')) {
+        userMessage = 'Erreur serveur temporaire. Veuillez réessayer dans quelques instants.';
+      } else if (rawMessage.includes('Unauthorized') || rawMessage.includes('401')) {
+        userMessage = 'Email ou mot de passe incorrect. Vérifiez vos identifiants.';
+      } else if (rawMessage.includes('403') || rawMessage.includes('Forbidden')) {
+        userMessage = 'Accès refusé. Vérifiez vos identifiants et le portail sélectionné.';
+      }
+      setError(userMessage);
     } finally {
       setIsLoading(false);
     }
@@ -389,7 +400,105 @@ export default function LoginPage() {
       window.location.href = `${mainDomain}/portal`;
       return;
     }
-    await handleStandardLogin();
+
+    // ── Même pattern que le bouton DEV : /api/auth/login avec portal_type ──
+    const attemptLogin = async (portalTypeAttempt: 'PLATFORM' | 'SCHOOL') => {
+      return fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: schoolCredentials.email.trim(),
+          password: schoolCredentials.password,
+          tenant_id: tenantIdFromUrl || undefined,
+          tenantSubdomain: tenantSlug || undefined,
+          portal_type: portalTypeAttempt,
+        }),
+      });
+    };
+
+    let response = await attemptLogin('PLATFORM');
+    let data = await response.json();
+
+    // ── Si PLATFORM_OWNER détecté avec tenant_id → sélectionner le tenant ──
+    const isPlatformOwner =
+      data.user?.role === 'PLATFORM_OWNER' ||
+      (data.user as { isPlatformOwner?: boolean })?.isPlatformOwner;
+    const hasNoTenant = !data.tenant?.id;
+
+    if (isPlatformOwner && hasNoTenant && (tenantIdFromUrl || tenantSlug)) {
+      // Le PLATFORM_OWNER a sélectionné une école → sélectionner le tenant
+      const selectResp = await fetch('/api/auth/select-tenant', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${data.accessToken}`,
+        },
+        body: JSON.stringify({ tenant_id: tenantIdFromUrl || tenantSlug }),
+      });
+      const selectData = await selectResp.json();
+      if (!selectResp.ok || !selectData.success) {
+        throw new Error(selectData.message || selectData.error || 'Sélection tenant impossible');
+      }
+      persistClientSession({
+        accessToken: selectData.accessToken,
+        refreshToken: selectData.refreshToken,
+        serverSessionId: selectData.serverSessionId,
+        user: selectData.user,
+        tenant: selectData.tenant,
+        portalType: 'PLATFORM',
+        expiresAt: selectData.expiresAt,
+      });
+      saveEmailForTenant(schoolCredentials.email.trim(), selectData.tenant?.id || tenantIdFromUrl || 'platform');
+      const redirectUrl = getTenantRedirectUrl({
+        tenantSlug: tenantSlug || selectData.tenant?.slug || selectData.tenant?.id,
+        tenantId: tenantIdFromUrl || selectData.tenant?.id,
+        path: redirectPath,
+        portalType: 'PLATFORM',
+      });
+      window.location.href = redirectUrl;
+      return;
+    }
+
+    // ── Si PLATFORM_OWNER sans tenant et sans sélection → retour au portail ──
+    if (isPlatformOwner && hasNoTenant) {
+      const mainDomain = getAppBaseUrl();
+      window.location.href = `${mainDomain}/portal`;
+      return;
+    }
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Erreur lors de la connexion');
+    }
+
+    persistClientSession({
+      accessToken: data.accessToken,
+      refreshToken: data.refreshToken,
+      serverSessionId: data.serverSessionId,
+      user: data.user,
+      tenant: data.tenant,
+      portalType: 'PLATFORM',
+      expiresAt: data.expiresAt,
+    });
+
+    const tenantKey = data.tenant?.id || tenantIdFromUrl || tenantSlug || 'platform';
+    saveEmailForTenant(schoolCredentials.email.trim(), tenantKey);
+
+    const resolvedSlug = tenantSlug || data.tenant?.slug || data.tenant?.subdomain;
+    const resolvedTenantId = tenantIdFromUrl || data.tenant?.id;
+
+    if (!resolvedSlug && !resolvedTenantId) {
+      const mainDomain = getAppBaseUrl();
+      window.location.href = `${mainDomain}${redirectPath}`;
+      return;
+    }
+
+    const redirectUrl = getTenantRedirectUrl({
+      tenantSlug: resolvedSlug || resolvedTenantId || 'unknown',
+      tenantId: resolvedTenantId,
+      path: redirectPath,
+      portalType: 'PLATFORM',
+    });
+    window.location.href = redirectUrl;
   };
 
   const handleStandardLogin = async () => {
@@ -473,26 +582,77 @@ export default function LoginPage() {
       throw new Error("Identifiant de l'établissement manquant");
     }
 
-    const response = await fetch('/api/portal/auth/school', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    // ── Même pattern que le bouton DEV : /api/auth/login avec portal_type ──
+    const attemptLogin = async (portalTypeAttempt: 'SCHOOL' | 'PLATFORM') => {
+      return fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: schoolCredentials.email.trim(),
+          password: schoolCredentials.password,
+          tenant_id: tenantIdForApi,
+          tenantSubdomain: tenantSlug || undefined,
+          portal_type: portalTypeAttempt,
+        }),
+      });
+    };
+
+    let response = await attemptLogin('SCHOOL');
+    let data = await response.json();
+
+    // ── Retry automatique si PLATFORM_OWNER détecté (même logique que DEV) ──
+    const message = typeof data?.message === 'string' ? data.message : '';
+    if (
+      response.status === 403 &&
+      message.toLowerCase().includes('platform_owner') &&
+      message.toLowerCase().includes('platform')
+    ) {
+      response = await attemptLogin('PLATFORM');
+      data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Connexion impossible');
+      }
+      // PLATFORM_OWNER : sélectionner le tenant demandé
+      const selectResp = await fetch('/api/auth/select-tenant', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${data.accessToken}`,
+        },
+        body: JSON.stringify({ tenant_id: tenantIdForApi }),
+      });
+      const selectData = await selectResp.json();
+      if (!selectResp.ok || !selectData.success) {
+        throw new Error(selectData.message || selectData.error || 'Sélection tenant impossible');
+      }
+      persistClientSession({
+        accessToken: selectData.accessToken,
+        refreshToken: selectData.refreshToken,
+        serverSessionId: selectData.serverSessionId,
+        user: selectData.user,
+        tenant: selectData.tenant,
+        portalType: 'PLATFORM',
+        expiresAt: selectData.expiresAt,
+      });
+      saveEmailForTenant(schoolCredentials.email.trim(), tenantIdForApi);
+      const redirectUrl = getTenantRedirectUrl({
+        tenantSlug: tenantSlug || selectData.tenant?.slug || tenantIdForApi,
         tenantId: tenantIdForApi,
-        email: schoolCredentials.email,
-        password: schoolCredentials.password,
-        portal_type: 'SCHOOL',
-      }),
-    });
+        path: redirectPath,
+        portalType: 'PLATFORM',
+      });
+      window.location.href = redirectUrl;
+      return;
+    }
 
-    const data = await response.json();
-
-    if (!response.ok || !data.success) {
-      throw new Error(data.message || data.error || 'Erreur lors de la connexion');
+    if (!response.ok) {
+      throw new Error(data.message || 'Erreur lors de la connexion');
     }
 
     persistClientSession({
       accessToken: data.accessToken,
-      portalSessionId: data.portalSessionId,
+      refreshToken: data.refreshToken,
+      serverSessionId: data.serverSessionId,
       user: data.user,
       tenant: data.tenant,
       portalType: 'SCHOOL',
@@ -500,11 +660,14 @@ export default function LoginPage() {
     });
 
     const tenantKey = data.tenant?.id || tenantIdForApi || 'platform';
-    saveEmailForTenant(schoolCredentials.email, tenantKey);
+    saveEmailForTenant(schoolCredentials.email.trim(), tenantKey);
+
+    const resolvedSlug = tenantSlug || data.tenant?.slug || data.tenant?.subdomain || data.tenant?.id;
+    const resolvedTenantId = tenantIdForApi || data.tenant?.id;
 
     const redirectUrl = getTenantRedirectUrl({
-      tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,
-      tenantId: tenantIdForApi,
+      tenantSlug: resolvedSlug,
+      tenantId: resolvedTenantId,
       path: redirectPath,
       portalType: 'SCHOOL',
     });

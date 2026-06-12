@@ -325,6 +325,16 @@ export default function LoginPage() {
 
   const tenantStorageKey = tenantIdFromUrl || tenantSlug || 'platform';
 
+  // ── Forgot password URL with portal/tenant context ──
+  const forgotPasswordHref = useMemo(() => {
+    const params = new URLSearchParams();
+    if (portalType) params.set('portal', portalType);
+    if (tenantSlug) params.set('tenant', tenantSlug);
+    else if (tenantIdFromUrl) params.set('tenant', tenantIdFromUrl);
+    const qs = params.toString();
+    return qs ? `/forgot-password?${qs}` : '/forgot-password';
+  }, [portalType, tenantSlug, tenantIdFromUrl]);
+
   const dur = useMemo(
     () => getMotionDuration(shouldReduceMotion, 'normal'),
     [shouldReduceMotion],
@@ -1234,7 +1244,7 @@ export default function LoginPage() {
                           Mot de passe
                         </label>
                         <Link
-                          href="/forgot-password"
+                          href={forgotPasswordHref}
                           className="text-xs font-medium transition-colors hover:underline min-h-[44px] inline-flex items-center"
                           style={{ color: BLUE }}
                         >
@@ -1344,7 +1354,7 @@ export default function LoginPage() {
                           Mot de passe
                         </label>
                         <Link
-                          href="/forgot-password"
+                          href={forgotPasswordHref}
                           className="text-xs font-medium transition-colors hover:underline min-h-[44px] inline-flex items-center"
                           style={{ color: BLUE }}
                         >
@@ -1743,7 +1753,7 @@ export default function LoginPage() {
               <>
                 <div>
                   <Link
-                    href="/forgot-password"
+                    href={forgotPasswordHref}
                     className="text-sm font-medium transition-colors hover:underline inline-flex items-center min-h-[44px]"
                     style={{ color: BLUE }}
                   >

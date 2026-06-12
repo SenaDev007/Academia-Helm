@@ -5,36 +5,22 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    const apiBaseUrl = getApiBaseUrlForRoutes();
-    const endpoint = apiBaseUrl.endsWith('/api')
-      ? `${apiBaseUrl}/auth/reset-password`
-      : `${apiBaseUrl}/api/auth/reset-password`;
-
-    // Supporte les deux formats :
-    // 1. Nouveau format OTP : { email, code, newPassword }
-    // 2. Ancien format JWT : { token, newPassword }
-    const payload: Record<string, string> = {
-      newPassword: body.newPassword,
-    };
-
-    if (body.email && body.code) {
-      // Nouveau format OTP
-      payload.email = body.email;
-      payload.code = body.code;
-    } else if (body.token) {
-      // Ancien format JWT (rétro-compatibilité)
-      payload.token = body.token;
-    } else {
+    if (!body.email || !body.code) {
       return NextResponse.json(
-        { success: false, message: 'Paramètres de réinitialisation manquants.' },
+        { success: false, message: 'Email et code sont requis.' },
         { status: 400 },
       );
     }
 
+    const apiBaseUrl = getApiBaseUrlForRoutes();
+    const endpoint = apiBaseUrl.endsWith('/api')
+      ? `${apiBaseUrl}/auth/verify-reset-otp`
+      : `${apiBaseUrl}/api/auth/verify-reset-otp`;
+
     const backendResponse = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ email: body.email, code: body.code }),
     });
 
     if (!backendResponse.ok) {
@@ -42,7 +28,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          message: errorData?.message || 'Erreur lors de la réinitialisation du mot de passe',
+          message: errorData?.message || 'Code invalide ou expiré',
         },
         { status: backendResponse.status },
       );
@@ -55,7 +41,7 @@ export async function POST(request: NextRequest) {
       message: data.message,
     });
   } catch (error: any) {
-    console.error('[Reset Password API] Error:', error);
+    console.error('[Verify Reset OTP API] Error:', error);
     return NextResponse.json(
       {
         success: false,

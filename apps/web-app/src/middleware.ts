@@ -152,6 +152,7 @@ const publicRoutes = [
   '/login',
   '/admin-login', // Route publique pour le login Super Admin
   '/forgot-password',
+  '/reset-password',
   '/onboarding-error',
   '/onboarding',
   '/testimonials', // Route publique pour les témoignages
@@ -167,6 +168,8 @@ const publicRoutes = [
  */
 const schoolSubdomainPublicRoutes = [
   '/login',
+  '/forgot-password',
+  '/reset-password',
   '/school-portal',
   '/public/pre-enrollment',
 ];

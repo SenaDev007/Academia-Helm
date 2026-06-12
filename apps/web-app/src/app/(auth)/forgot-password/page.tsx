@@ -1,10 +1,12 @@
 /**
- * Page Forgot Password (route publique)
+ * Page Forgot Password (route auth — layout cohérent avec login)
  */
 
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 import ForgotPasswordPage from '@/components/auth/ForgotPasswordPage';
 import { generateSEOMetadata } from '@/lib/seo';
+import { Loader } from 'lucide-react';
 
 export const metadata: Metadata = generateSEOMetadata({
   title: 'Mot de passe oublié',
@@ -13,6 +15,13 @@ export const metadata: Metadata = generateSEOMetadata({
 });
 
 export default function Page() {
-  return <ForgotPasswordPage />;
+  return (
+    <Suspense fallback={
+      <div className="flex h-screen items-center justify-center">
+        <Loader className="h-8 w-8 animate-spin" style={{ color: '#1d4fa5' }} />
+      </div>
+    }>
+      <ForgotPasswordPage />
+    </Suspense>
+  );
 }
-

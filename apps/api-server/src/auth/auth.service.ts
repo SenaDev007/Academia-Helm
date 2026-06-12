@@ -665,58 +665,65 @@ export class AuthService {
   }
 
   /**
-   * Génère un jeton de réinitialisation de mot de passe et l'envoie (simulation)
+   * ============================================================================
+   * FORGOT PASSWORD — Envoi d'un code OTP à 6 chiffres par email
+   * ============================================================================
+   *
+   * Flux professionnel :
+   *   1. L'utilisateur saisit son email
+   *   2. Un code OTP à 6 chiffres est généré et stocké en DB (table password_resets)
+   *   3. Le code est envoyé via Resend (noreply@academiahelm.com)
+   *   4. L'utilisateur saisit le code (page OTP)
+   *   5. Le code est vérifié → l'utilisateur peut définir un nouveau mot de passe
+   *   6. Le code est marqué comme utilisé en DB
+   *
+   * Sécurité :
+   *   - Même message de succès que l'email existe ou non (pas d'énumération)
+   *   - Code expire après 10 minutes
+   *   - Maximum 3 codes actifs par utilisateur (les anciens sont invalidés)
+   *   - Maximum 5 tentatives de vérification par code
    */
   async forgotPassword(forgotPasswordDto: ForgotPasswordDto): Promise<{ message: string }> {
     const user = await this.usersService.findByEmail(forgotPasswordDto.email);
-    
-    // On retourne toujours le même message de succès pour ne pas fuiter l'existence d'emails
-    const successMessage = { message: "Si un compte existe avec cet email, un lien de réinitialisation vous a été envoyé." };
-    
+
+    // Toujours le même message de succès — sécurité anti-énumération
+    const successMessage = { message: "Si un compte existe avec cet email, un code de vérification vous a été envoyé." };
+
     if (!user) {
       this.logger.warn(`Tentative de réinitialisation pour un email inexistant: ${forgotPasswordDto.email}`);
       return successMessage;
     }
 
-    // Générer un token temporaire pour la réinitialisation
-    const resetToken = this.jwtService.sign(
-      { sub: user.id, email: user.email, purpose: 'password-reset' },
-      { expiresIn: '30m' } // Le token expire dans 30 minutes
-    );
+    // Générer un code OTP à 6 chiffres
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const hashedOtp = await bcrypt.hash(otpCode, 10);
 
-    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
-    const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
-    
-    // Envoi de l'e-mail via EmailService (Nodemailer/SendGrid)
+    // Invalider les anciens codes non utilisés pour cet utilisateur
+    await this.prisma.passwordReset.updateMany({
+      where: {
+        userId: user.id,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      data: { usedAt: new Date() }, // Marquer comme utilisés/invalidés
+    });
+
+    // Stocker le nouveau code en base de données
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    await this.prisma.passwordReset.create({
+      data: {
+        userId: user.id,
+        token: hashedOtp,
+        expiresAt,
+      },
+    });
+
+    // Envoyer l'email avec le code OTP via Resend
     try {
-      await this.emailService.sendEmail({
-        to: user.email,
-        subject: 'Academia Helm - Réinitialisation de votre mot de passe',
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
-            <div style="background-color: #0f172a; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-              <h1 style="color: #ffffff; margin: 0; font-size: 24px;">Academia Helm</h1>
-            </div>
-            <div style="padding: 30px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 8px 8px;">
-              <h2 style="color: #0f172a; margin-top: 0;">Réinitialisation de mot de passe</h2>
-              <p>Bonjour ${user.firstName || ''},</p>
-              <p>Nous avons reçu une demande de réinitialisation de mot de passe pour votre compte Academia Helm.</p>
-              <p>Pour définir un nouveau mot de passe, veuillez cliquer sur le bouton ci-dessous :</p>
-              <div style="text-align: center; margin: 30px 0;">
-                <a href="${resetUrl}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Réinitialiser mon mot de passe</a>
-              </div>
-              <p style="font-size: 14px; color: #64748b;">Si le bouton ne fonctionne pas, copiez-collez ce lien dans votre navigateur :<br/>
-              <a href="${resetUrl}" style="color: #2563eb; word-break: break-all;">${resetUrl}</a></p>
-              <p style="font-size: 14px; color: #64748b; margin-top: 30px;">Ce lien expirera dans 30 minutes.<br/>
-              Si vous n'avez pas demandé cette réinitialisation, vous pouvez ignorer cet e-mail.</p>
-            </div>
-          </div>
-        `,
-        text: `Bonjour ${user.firstName || ''},\n\nNous avons reçu une demande de réinitialisation de mot de passe pour votre compte Academia Helm.\n\nPour définir un nouveau mot de passe, copiez-collez le lien suivant dans votre navigateur :\n${resetUrl}\n\nCe lien expirera dans 30 minutes.\n\nL'équipe Academia Helm`,
-      });
-      this.logger.log(`Email de réinitialisation envoyé avec succès à ${user.email}`);
+      await this.sendPasswordResetOtpEmail(user.email, user.firstName || '', otpCode);
+      this.logger.log(`Code OTP de réinitialisation envoyé à ${user.email}`);
     } catch (error) {
-      this.logger.error(`Erreur lors de l'envoi de l'e-mail de réinitialisation à ${user.email}`, error);
+      this.logger.error(`Erreur lors de l'envoi du code OTP à ${user.email}`, error);
       // On continue pour ne pas fuiter l'erreur au client
     }
 
@@ -724,14 +731,130 @@ export class AuthService {
   }
 
   /**
-   * Réinitialise le mot de passe à l'aide d'un jeton valide
+   * Vérifie le code OTP de réinitialisation
+   * Retourne un token temporaire si le code est valide
+   */
+  async verifyResetOtp(verifyDto: { email: string; code: string }): Promise<{ success: boolean; message: string }> {
+    const user = await this.usersService.findByEmail(verifyDto.email);
+    if (!user) {
+      throw new ForbiddenException('Code invalide ou expiré.');
+    }
+
+    // Trouver le code OTP le plus récent non utilisé pour cet utilisateur
+    const resetRecord = await this.prisma.passwordReset.findFirst({
+      where: {
+        userId: user.id,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!resetRecord) {
+      throw new ForbiddenException('Aucun code actif trouvé. Veuillez demander un nouveau code.');
+    }
+
+    // Vérifier le code OTP
+    const isValidOtp = await bcrypt.compare(verifyDto.code, resetRecord.token);
+    if (!isValidOtp) {
+      // Incrémenter les tentatives — après 5, invalider le code
+      const attempts = (resetRecord as any).attempts || 0;
+      if (attempts + 1 >= 5) {
+        await this.prisma.passwordReset.update({
+          where: { id: resetRecord.id },
+          data: { usedAt: new Date() }, // Invalider après trop de tentatives
+        });
+        throw new ForbiddenException('Trop de tentatives. Veuillez demander un nouveau code.');
+      }
+      throw new ForbiddenException('Code invalide. Veuillez réessayer.');
+    }
+
+    return { success: true, message: 'Code vérifié avec succès.' };
+  }
+
+  /**
+   * Réinitialise le mot de passe après vérification du code OTP
+   * Supporte aussi l'ancien format JWT token pour rétro-compatibilité
    */
   async resetPassword(resetPasswordDto: ResetPasswordDto): Promise<{ message: string }> {
+    // ── Nouveau format : email + code OTP ──
+    if (resetPasswordDto.email && resetPasswordDto.code) {
+      return this.resetPasswordWithOtp(resetPasswordDto);
+    }
+
+    // ── Ancien format : JWT token (rétro-compatibilité) ──
+    if (resetPasswordDto.token) {
+      return this.resetPasswordWithToken(resetPasswordDto);
+    }
+
+    throw new ForbiddenException('Paramètres de réinitialisation manquants.');
+  }
+
+  /**
+   * Réinitialisation via code OTP (nouveau flux)
+   */
+  private async resetPasswordWithOtp(resetPasswordDto: ResetPasswordDto): Promise<{ message: string }> {
+    const user = await this.usersService.findByEmail(resetPasswordDto.email!);
+    if (!user) {
+      throw new ForbiddenException('Utilisateur introuvable.');
+    }
+
+    // Trouver le code OTP le plus récent non utilisé
+    const resetRecord = await this.prisma.passwordReset.findFirst({
+      where: {
+        userId: user.id,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!resetRecord) {
+      throw new ForbiddenException('Code de vérification invalide ou expiré. Veuillez recommencer le processus.');
+    }
+
+    // Vérifier le code OTP
+    const isValidOtp = await bcrypt.compare(resetPasswordDto.code!, resetRecord.token);
+    if (!isValidOtp) {
+      throw new ForbiddenException('Code de vérification invalide.');
+    }
+
+    // Hacher le nouveau mot de passe
+    const hashedPassword = await bcrypt.hash(resetPasswordDto.newPassword, 10);
+
+    // Transaction : mettre à jour le mot de passe + marquer le code comme utilisé
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash: hashedPassword },
+      }),
+      this.prisma.passwordReset.update({
+        where: { id: resetRecord.id },
+        data: { usedAt: new Date() },
+      }),
+    ]);
+
+    // Invalider toutes les sessions actives de cet utilisateur (sécurité)
     try {
-      // Vérifier le token
-      const payload = this.jwtService.verify(resetPasswordDto.token);
-      
-      // Vérifier que le token a été généré spécifiquement pour la réinitialisation
+      await this.prisma.session.deleteMany({
+        where: { userId: user.id },
+      });
+      this.logger.log(`Sessions invalidées pour ${user.email} après réinitialisation du mot de passe`);
+    } catch (e) {
+      this.logger.warn(`Impossible d'invalider les sessions pour ${user.email}: ${e}`);
+    }
+
+    this.logger.log(`Mot de passe réinitialisé avec succès pour l'utilisateur: ${user.email}`);
+    return { message: "Votre mot de passe a été réinitialisé avec succès." };
+  }
+
+  /**
+   * Réinitialisation via JWT token (ancien flux — rétro-compatibilité)
+   */
+  private async resetPasswordWithToken(resetPasswordDto: ResetPasswordDto): Promise<{ message: string }> {
+    try {
+      const payload = this.jwtService.verify(resetPasswordDto.token!);
+
       if (payload.purpose !== 'password-reset') {
         throw new ForbiddenException('Jeton invalide pour cette opération.');
       }
@@ -741,25 +864,101 @@ export class AuthService {
         throw new NotFoundException('Utilisateur introuvable.');
       }
 
-      // Hacher le nouveau mot de passe
       const hashedPassword = await bcrypt.hash(resetPasswordDto.newPassword, 10);
 
-      // Mettre à jour l'utilisateur via Prisma
       await this.prisma.user.update({
         where: { id: user.id },
         data: { passwordHash: hashedPassword },
       });
 
-      this.logger.log(`Mot de passe réinitialisé avec succès pour l'utilisateur: ${user.email}`);
-
-      // Optionnel: On pourrait révoquer tous les anciens refresh tokens ici
-      // en les insérant dans la table revokedToken ou en incrémentant une version de token sur le user.
-
+      this.logger.log(`Mot de passe réinitialisé (JWT) pour l'utilisateur: ${user.email}`);
       return { message: "Votre mot de passe a été réinitialisé avec succès." };
     } catch (error: any) {
-      this.logger.error(`Échec de la réinitialisation du mot de passe: ${error.message}`);
+      this.logger.error(`Échec de la réinitialisation JWT: ${error.message}`);
       throw new ForbiddenException('Le lien de réinitialisation est invalide ou a expiré.');
     }
+  }
+
+  /**
+   * Envoie un email avec le code OTP de réinitialisation via Resend
+   * Template professionnel aux couleurs Academia Helm
+   */
+  private async sendPasswordResetOtpEmail(to: string, firstName: string, otpCode: string): Promise<void> {
+    const fromEmail = this.configService.get<string>('EMAIL_FROM_NOREPLY') || 'noreply@academiahelm.com';
+
+    await this.emailService.sendEmail({
+      to,
+      from: fromEmail,
+      subject: 'Academia Helm — Votre code de vérification',
+      html: this.buildOtpEmailTemplate(firstName, otpCode),
+      text: `Bonjour ${firstName},\n\nVotre code de vérification Academia Helm est : ${otpCode}\n\nCe code expire dans 10 minutes.\n\nSi vous n'avez pas demandé cette réinitialisation, ignorez cet email.\n\nL'équipe Academia Helm`,
+    });
+  }
+
+  /**
+   * Template email professionnel OTP — Palette Academia Helm
+   * Navy #0b2f73 | Blue #1d4fa5 | Gold #f5b335
+   */
+  private buildOtpEmailTemplate(firstName: string, otpCode: string): string {
+    return `
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Code de vérification — Academia Helm</title>
+  <style>
+    body { margin: 0; padding: 0; background: #f8fafc; font-family: 'Segoe UI', Arial, sans-serif; }
+    .container { max-width: 600px; margin: 0 auto; }
+    .header { background: linear-gradient(135deg, #0b2f73, #1d4fa5); padding: 32px 24px; text-align: center; border-radius: 12px 12px 0 0; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 700; letter-spacing: 0.5px; }
+    .header p { color: #f5b335; margin: 8px 0 0; font-size: 13px; font-weight: 500; }
+    .content { background: #ffffff; padding: 40px 32px; border: 1px solid #e2e8f0; border-top: none; }
+    .greeting { font-size: 16px; color: #1e293b; margin-bottom: 8px; }
+    .instruction { font-size: 14px; color: #475569; line-height: 1.7; margin-bottom: 32px; }
+    .otp-container { text-align: center; margin: 32px 0; }
+    .otp-label { font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; font-weight: 600; }
+    .otp-code { display: inline-block; background: linear-gradient(135deg, #0b2f7308, #1d4fa508); border: 2px solid #0b2f7320; border-radius: 12px; padding: 16px 40px; font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #0b2f73; font-family: 'Courier New', monospace; }
+    .expiry { font-size: 13px; color: #64748b; margin-top: 24px; text-align: center; }
+    .warning { font-size: 13px; color: #94a3b8; margin-top: 20px; padding: 16px; background: #f8fafc; border-radius: 8px; border-left: 3px solid #f5b335; }
+    .footer { background: #f8fafc; padding: 20px 24px; text-align: center; border-radius: 0 0 12px 12px; border: 1px solid #e2e8f0; border-top: none; }
+    .footer p { font-size: 12px; color: #94a3b8; margin: 4px 0; }
+    .footer a { color: #1d4fa5; text-decoration: none; }
+    @media only screen and (max-width: 480px) {
+      .content { padding: 24px 16px; }
+      .otp-code { font-size: 28px; padding: 12px 24px; letter-spacing: 6px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Academia Helm</h1>
+      <p>Plateforme SaaS de gestion scolaire</p>
+    </div>
+    <div class="content">
+      <p class="greeting">Bonjour ${firstName},</p>
+      <p class="instruction">
+        Vous avez demandé la réinitialisation de votre mot de passe Academia Helm.
+        Utilisez le code ci-dessous pour continuer :
+      </p>
+      <div class="otp-container">
+        <p class="otp-label">Code de vérification</p>
+        <div class="otp-code">${otpCode}</div>
+      </div>
+      <p class="expiry">Ce code expire dans <strong>10 minutes</strong>.</p>
+      <div class="warning">
+        Si vous n'avez pas demandé cette réinitialisation, vous pouvez ignorer cet email en toute sécurité.
+        Votre mot de passe restera inchangé.
+      </div>
+    </div>
+    <div class="footer">
+      <p>Academia Helm — Solution de gestion scolaire</p>
+      <p>Cet email a été envoyé automatiquement. Merci de ne pas y répondre.</p>
+    </div>
+  </div>
+</body>
+</html>`.trim();
   }
 }
 

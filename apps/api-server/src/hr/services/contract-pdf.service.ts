@@ -10,10 +10,11 @@
  * ============================================================================
  */
 
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.service';
 import { StorageService } from '../../common/services/storage.service';
+import { StaffCredentialService } from './staff-credential.service';
 import * as Handlebars from 'handlebars';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -56,6 +57,8 @@ export class ContractPdfService {
     private readonly prisma: PrismaService,
     private readonly puppeteerPool: PuppeteerPoolService,
     private readonly storageService: StorageService,
+    @Inject(forwardRef(() => StaffCredentialService))
+    private readonly credentialService: StaffCredentialService,
   ) {
     this.loadDependencies();
   }
@@ -713,6 +716,18 @@ export class ContractPdfService {
             data: { status: 'ACTIVE' },
           });
           this.logger.log(`Staff ${staffId} status updated: PENDING_SIGNATURE → ACTIVE (contract signed)`);
+
+          // ── Création automatique des credentials ──
+          try {
+            const credResult = await this.credentialService.createCredentialsForStaff(staffId, tenantId);
+            if (credResult?.created) {
+              this.logger.log(`Credentials created for staff ${staffId}: user=${credResult.userId}, role=${credResult.role}, emailSent=${credResult.emailSent}`);
+            } else if (credResult?.error) {
+              this.logger.warn(`Credential creation skipped for staff ${staffId}: ${credResult.error}`);
+            }
+          } catch (credErr: any) {
+            this.logger.error(`Credential creation failed for staff ${staffId} (non-blocking): ${credErr?.message}`);
+          }
         }
       } catch (staffErr: any) {
         this.logger.warn(`Failed to update staff status after contract signing: ${staffErr?.message}`);
@@ -788,13 +803,30 @@ export class ContractPdfService {
       pdfUrl: terms.pdfUrl || null,
     };
 
-    // Envoi email optionnel
+    // Envoi email optionnel et création des credentials
     if (options.sendEmail && staff.email) {
       try {
-        // TODO: Integrate with EmailService for contract copy email
-        this.logger.log(`Email notification would be sent to ${staff.email} (email service integration pending)`);
+        // Créer les credentials (inclut l'envoi d'email)
+        const credResult = await this.credentialService.createCredentialsForStaff(staffId, tenantId);
+        if (credResult?.created) {
+          this.logger.log(`Credentials created during onboarding completion for staff ${staffId}`);
+          (result as any).credentials = { userId: credResult.userId, username: credResult.username, role: credResult.role, emailSent: credResult.emailSent };
+        } else if (credResult?.error) {
+          this.logger.warn(`Credential creation during onboarding for staff ${staffId}: ${credResult.error}`);
+        }
       } catch (err: any) {
-        this.logger.warn(`Failed to send onboarding email (non-blocking): ${err?.message}`);
+        this.logger.warn(`Failed to create credentials during onboarding (non-blocking): ${err?.message}`);
+      }
+    } else if (!options.sendEmail) {
+      // Même si sendEmail est false, créer les credentials sans envoyer d'email
+      try {
+        const credResult = await this.credentialService.createCredentialsForStaff(staffId, tenantId);
+        if (credResult?.created) {
+          this.logger.log(`Credentials created (without email) during onboarding for staff ${staffId}`);
+          (result as any).credentials = { userId: credResult.userId, username: credResult.username, role: credResult.role };
+        }
+      } catch (err: any) {
+        this.logger.warn(`Credential creation during onboarding failed (non-blocking): ${err?.message}`);
       }
     }
 

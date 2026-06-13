@@ -6,17 +6,16 @@
  * Utilisé par les pages publiques (LoginPage, PremiumHeader, etc.)
  * pour afficher le branding de l'école au lieu du branding Academia Helm générique.
  *
- * Priorité de résolution :
- *   1. serverBranding (prop du server component)
+ * Flux de résolution :
+ *   1. serverBranding (prop du server component — via BFF)
  *   2. sessionStorage "academia_portal_school" (posé par le portail de sélection)
- *   3. API fetch via le sous-domaine courant
+ *   3. API fetch via la route BFF /api/public/schools/by-subdomain/:slug
  */
 
 'use client';
 
 import { useState, useEffect } from 'react';
 import { extractTenantSlug } from '@/lib/tenant/constants';
-import { getApiBaseUrl } from '@/lib/utils/urls';
 
 export interface SchoolBrandingData {
   name: string;
@@ -53,7 +52,7 @@ function readFromSessionStorage(): Partial<SchoolBrandingData> | null {
  * Résout le branding de l'école depuis le sous-domaine courant,
  * le sessionStorage, ou un fallback serveur.
  *
- * @param serverBranding - Branding résolu côté serveur (optionnel)
+ * @param serverBranding - Branding résolu côté serveur (via BFF)
  * @returns Les données de branding ou null si aucune école détectée
  */
 export function useSchoolBranding(serverBranding?: SchoolBrandingData | null): SchoolBrandingData | null {
@@ -89,7 +88,7 @@ export function useSchoolBranding(serverBranding?: SchoolBrandingData | null): S
       return;
     }
 
-    // PRIORITÉ 2 : Détecter le sous-domaine et fetch les données
+    // PRIORITÉ 2 : Détecter le sous-domaine et fetch via la route BFF
     const host = window.location.host;
     const slug = extractTenantSlug(host);
 
@@ -100,29 +99,26 @@ export function useSchoolBranding(serverBranding?: SchoolBrandingData | null): S
 
     const fetchBranding = async () => {
       try {
-        const apiUrl = getApiBaseUrl();
-        const response = await fetch(`${apiUrl}/tenants/by-subdomain/${slug}`, {
+        // Appeler la route BFF qui proxy vers le backend et extrait le branding
+        const response = await fetch(`/api/public/schools/by-subdomain/${slug}`, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
           cache: 'no-store',
         });
         if (response.ok) {
           const data = await response.json();
-          const identity = data.identityProfiles?.[0];
-          const settings = data.schoolSettings;
-          const school = data.schools;
-
+          // La BFF retourne déjà les données de branding extraites (flat object)
           setBranding({
-            name: identity?.schoolName || settings?.schoolName || school?.name || data.name || slug,
+            name: data.name || slug,
             slug: data.slug || slug,
-            logoUrl: identity?.logoUrl || settings?.logoUrl || school?.logo || null,
-            city: identity?.city || settings?.city || school?.city || null,
-            phone: identity?.phonePrimary || settings?.phone || school?.primaryPhone || null,
-            address: identity?.address || settings?.address || school?.address || null,
-            primaryColor: settings?.primaryColor || school?.primaryColor || null,
-            secondaryColor: settings?.secondaryColor || school?.secondaryColor || null,
-            slogan: identity?.slogan || settings?.slogan || school?.slogan || school?.motto || null,
-            motto: school?.motto || null,
+            logoUrl: data.logoUrl || null,
+            city: data.city || null,
+            phone: data.phone || null,
+            address: data.address || null,
+            primaryColor: data.primaryColor || null,
+            secondaryColor: data.secondaryColor || null,
+            slogan: data.slogan || null,
+            motto: data.motto || null,
           });
         }
       } catch (error) {

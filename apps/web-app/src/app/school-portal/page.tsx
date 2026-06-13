@@ -3,14 +3,14 @@
  *
  * Affichée lorsqu'un utilisateur accède directement à un sous-domaine d'école.
  * Présente les 4 portails disponibles dans le contexte de cette école.
- * Résout le branding de l'école (logo, nom, couleurs, slogan) côté serveur.
+ * Résout le branding de l'école (logo, nom, couleurs, slogan) côté serveur
+ * via la route BFF /api/public/schools/by-subdomain/:slug.
  */
 
 import { headers } from 'next/headers';
 import SchoolPortalSelector from '@/components/portal/SchoolPortalSelector';
 import { BRAND } from '@/lib/brand';
 import { isReservedSubdomain } from '@/lib/tenant/constants';
-import { getApiBaseUrl } from '@/lib/utils/urls';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -31,43 +31,19 @@ export default async function SchoolPortalPage() {
     if (parts.length >= 3 && !isReservedSubdomain(parts[0])) {
       subdomain = parts[0];
 
-      // Tenter de résoudre le tenant depuis l'API
-      // ⚠️ Utiliser getApiBaseUrl() qui ajoute automatiquement le préfixe /api
-      // (NestJS exige /api sur toutes les routes — setGlobalPrefix('api'))
-      const apiUrl = getApiBaseUrl();
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
-
+      // Appeler la route BFF qui proxy vers le backend NestJS
+      // La BFF normalise l'URL (ajoute /api) et extrait les données de branding
       try {
-        const response = await fetch(`${apiUrl}/tenants/by-subdomain/${subdomain}`, {
-          signal: controller.signal,
-          cache: 'no-store',
-        });
-        clearTimeout(timeoutId);
+        const response = await fetch(
+          `http://127.0.0.1:${process.env.PORT || 3001}/api/public/schools/by-subdomain/${subdomain}`,
+          { cache: 'no-store' },
+        );
 
         if (response.ok) {
-          const data = await response.json();
-          // Résolution des données scolaires (identité > settings > école)
-          const identity = data.identityProfiles?.[0];
-          const settings = data.schoolSettings;
-          const school = data.schools;
-
-          schoolInfo = {
-            name: identity?.schoolName || settings?.schoolName || school?.name || data.name || subdomain,
-            slug: data.slug || subdomain,
-            logoUrl: identity?.logoUrl || settings?.logoUrl || school?.logo || null,
-            city: identity?.city || settings?.city || school?.city || null,
-            phone: identity?.phonePrimary || settings?.phone || school?.primaryPhone || null,
-            address: identity?.address || settings?.address || school?.address || null,
-            primaryColor: settings?.primaryColor || school?.primaryColor || null,
-            secondaryColor: settings?.secondaryColor || school?.secondaryColor || null,
-            slogan: identity?.slogan || settings?.slogan || school?.slogan || school?.motto || null,
-            motto: school?.motto || null,
-          };
+          schoolInfo = await response.json();
         }
       } catch {
-        clearTimeout(timeoutId);
-        // L'API n'est pas disponible — le composant client tentera aussi
+        // La BFF n'est pas disponible — le composant client tentera aussi
       }
     }
   } catch {

@@ -43,7 +43,6 @@ import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getMotionDuration } from '@/lib/motion/presets';
 import { extractTenantSlug } from '@/lib/tenant/constants';
 import { getAvailablePortals, detectAccessContext, type PortalType } from '@/lib/auth/role-portal-map';
-import { getApiBaseUrl } from '@/lib/utils/urls';
 
 const NAVY = '#0b2f73';
 const BLUE = '#1d4fa5';
@@ -161,28 +160,26 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
 
   const fetchSchoolData = async (slug: string) => {
     try {
-      const apiUrl = getApiBaseUrl();
-      const response = await fetch(`${apiUrl}/tenants/by-subdomain/${slug}`, {
+      // Appeler la route BFF qui proxy vers le backend et extrait le branding
+      const response = await fetch(`/api/public/schools/by-subdomain/${slug}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-store',
       });
       if (response.ok) {
         const data = await response.json();
-        const identity = data.identityProfiles?.[0];
-        const settings = data.schoolSettings;
-        const school = data.schools;
+        // La BFF retourne déjà les données de branding extraites (flat object)
         setSchoolData({
-          name: identity?.schoolName || settings?.schoolName || school?.name || data.name || slug,
+          name: data.name || slug,
           slug: data.slug || slug,
-          logoUrl: identity?.logoUrl || settings?.logoUrl || school?.logo || null,
-          city: identity?.city || settings?.city || school?.city || null,
-          phone: identity?.phonePrimary || settings?.phone || school?.primaryPhone || null,
-          address: identity?.address || settings?.address || school?.address || null,
-          primaryColor: settings?.primaryColor || school?.primaryColor || null,
-          secondaryColor: settings?.secondaryColor || school?.secondaryColor || null,
-          slogan: identity?.slogan || settings?.slogan || school?.slogan || school?.motto || null,
-          motto: school?.motto || null,
+          logoUrl: data.logoUrl || null,
+          city: data.city || null,
+          phone: data.phone || null,
+          address: data.address || null,
+          primaryColor: data.primaryColor || null,
+          secondaryColor: data.secondaryColor || null,
+          slogan: data.slogan || null,
+          motto: data.motto || null,
         });
       }
     } catch (error) {

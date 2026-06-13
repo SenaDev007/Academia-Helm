@@ -27,10 +27,11 @@
 import {
   Controller, Get, Post, Put, Delete, Body, Param, Query,
   UseGuards, UseInterceptors, UploadedFile, UploadedFiles,
-  BadRequestException, Res,
+  BadRequestException, Res, Req,
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { StaffPrismaService } from './staff-prisma.service';
+import { TerminationPdfService } from './services/termination-pdf.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
@@ -38,12 +39,15 @@ import {
   CreateStaffDto, UpdateStaffDto, AddStaffDocumentDto,
   UploadStaffDocumentDto, ValidateDocumentDto,
 } from './dto/index';
-import type { Response } from 'express';
+import type { Response, Request } from 'express';
 
 @Controller('hr/staff')
 @UseGuards(JwtAuthGuard, TenantGuard)
 export class StaffPrismaController {
-  constructor(private readonly staffService: StaffPrismaService) {}
+  constructor(
+    private readonly staffService: StaffPrismaService,
+    private readonly terminationPdfService: TerminationPdfService,
+  ) {}
 
   // ─── CRUD ──────────────────────────────────────────────────────────────────
 
@@ -123,6 +127,108 @@ export class StaffPrismaController {
       throw new BadRequestException('Tenant ID requis pour cette opération');
     }
     return this.staffService.reactivateStaff(id, tid);
+  }
+
+  // ─── TERMINATION DOCUMENTS ────────────────────────────────────────────────
+
+  /**
+   * GET /api/hr/staff/:id/termination/preview?type=letter|certificate|settlement|attestation
+   * Returns HTML preview of a termination document.
+   */
+  @Get(':id/termination/preview')
+  async previewTerminationDocument(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('type') docType: 'letter' | 'certificate' | 'settlement' | 'attestation',
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    if (!docType) throw new BadRequestException('Type de document requis (letter, certificate, settlement, attestation)');
+    const html = await this.terminationPdfService.previewTerminationDocument(id, tid, docType);
+    return { html };
+  }
+
+  /**
+   * POST /api/hr/staff/:id/termination/generate-pdf?type=letter|certificate|settlement|attestation
+   * Generates and returns the URL of the termination document PDF.
+   */
+  @Post(':id/termination/generate-pdf')
+  async generateTerminationPdf(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('type') docType: 'letter' | 'certificate' | 'settlement' | 'attestation',
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    if (!docType) throw new BadRequestException('Type de document requis');
+
+    let pdfUrl: string;
+    switch (docType) {
+      case 'letter':
+        pdfUrl = await this.terminationPdfService.generateTerminationLetterPdf(id, tid);
+        break;
+      case 'certificate':
+        pdfUrl = await this.terminationPdfService.generateEmploymentCertificatePdf(id, tid);
+        break;
+      case 'settlement':
+        pdfUrl = await this.terminationPdfService.generateSettlementReceiptPdf(id, tid);
+        break;
+      case 'attestation':
+        pdfUrl = await this.terminationPdfService.generateEmployerAttestationPdf(id, tid);
+        break;
+      default:
+        throw new BadRequestException(`Type de document inconnu: ${docType}`);
+    }
+
+    // Store pdfUrl in terminationDetails
+    const staff = await this.staffService.findStaffById(id, tid);
+    const details = (staff as any)?.terminationDetails || {};
+    const pdfUrls = details.pdfUrls || {};
+    pdfUrls[docType] = pdfUrl;
+    await this.staffService.updateStaffTerminationDetails(id, tid, { ...details, pdfUrls });
+
+    return { pdfUrl, docType };
+  }
+
+  /**
+   * POST /api/hr/staff/:id/termination/sign-document
+   * Signs a termination document (employer or employee signature).
+   */
+  @Post(':id/termination/sign-document')
+  async signTerminationDocument(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Body() body: { signatureData: string; signerName: string; signerRole: 'EMPLOYEUR' | 'EMPLOYE'; documentType: string },
+    @Req() req: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+
+    const staff = await this.staffService.findStaffById(id, tid);
+    const details = (staff as any)?.terminationDetails || {};
+    const ipAddress = req?.ip || req?.socket?.remoteAddress;
+
+    const signerRole = (body.signerRole || 'EMPLOYEUR').toUpperCase();
+
+    if (signerRole === 'EMPLOYEUR') {
+      details.employerSignatureData = body.signatureData;
+      details.employerSignerName = body.signerName;
+      details.employerSignedAt = new Date().toISOString();
+      details.employerIpAddress = ipAddress;
+      details.employerSignatureMethod = 'ELECTRONIC_CANVAS';
+    } else {
+      details.employeeSignatureData = body.signatureData;
+      details.employeeSignerName = body.signerName;
+      details.employeeSignedAt = new Date().toISOString();
+      details.employeeIpAddress = ipAddress;
+      details.employeeSignatureMethod = 'ELECTRONIC_CANVAS';
+    }
+
+    await this.staffService.updateStaffTerminationDetails(id, tid, details);
+    return { success: true, signerRole };
   }
 
   // ─── CRUD ──────────────────────────────────────────────────────────────────

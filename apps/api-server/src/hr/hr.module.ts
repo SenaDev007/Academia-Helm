@@ -22,6 +22,7 @@ import { PayrollTaxService } from './services/payroll-tax.service';
 import { PayrollPdfService } from './services/payroll-pdf.service';
 import { HROrionService } from './services/hr-orion.service';
 import { ContractPdfService } from './services/contract-pdf.service';
+import { TerminationPdfService } from './services/termination-pdf.service';
 import { HrKpiService } from './hr-kpi.service';
 import { StaffPrismaController } from './staff-prisma.controller';
 import { ContractsPrismaController } from './contracts-prisma.controller';
@@ -61,6 +62,7 @@ import { OrionModule } from '../orion/orion.module';
     PayrollPdfService,
     HROrionService,
     ContractPdfService,
+    TerminationPdfService,
     HrKpiService,
     RecruitmentPrismaService,
     SchedulesPrismaService,
@@ -98,6 +100,7 @@ import { OrionModule } from '../orion/orion.module';
     PayrollPdfService,
     HROrionService,
     ContractPdfService,
+    TerminationPdfService,
     HrKpiService,
     RecruitmentPrismaService,
     SchedulesPrismaService,

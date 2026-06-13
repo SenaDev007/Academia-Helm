@@ -405,6 +405,17 @@ export class StaffPrismaService {
   }
 
   /**
+   * Met à jour uniquement le champ terminationDetails d'un staff.
+   * Utilisé pour stocker les signatures et URLs de documents de débauche.
+   */
+  async updateStaffTerminationDetails(id: string, tenantId: string, terminationDetails: any) {
+    return this.prisma.staff.update({
+      where: { id },
+      data: { terminationDetails },
+    });
+  }
+
+  /**
    * Réactive un membre du personnel (réintégration)
    */
   async reactivateStaff(id: string, tenantId: string) {

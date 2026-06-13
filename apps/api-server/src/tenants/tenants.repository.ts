@@ -40,7 +40,6 @@ export class TenantsRepository {
             secondaryColor: true,
             motto: true,
             slogan: true,
-            schoolType: true,
           },
         },
         schoolSettings: {

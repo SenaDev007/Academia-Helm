@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ phone, method: method || 'sms' }),
-        signal: AbortSignal.timeout(30000), // 30 secondes
+        signal: AbortSignal.timeout(8000), // 8 secondes
       });
     } catch (fetchError: any) {
       console.error('❌ [OTP Generate] Fetch error:', fetchError);

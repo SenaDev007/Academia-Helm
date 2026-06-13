@@ -41,7 +41,7 @@ export async function POST(
         headers: {
           'Content-Type': 'application/json',
         },
-        signal: AbortSignal.timeout(30000), // 30 secondes
+        signal: AbortSignal.timeout(8000), // 8 secondes
       });
     } catch (fetchError: any) {
       console.error('❌ [Payment Verify] Fetch error:', fetchError);

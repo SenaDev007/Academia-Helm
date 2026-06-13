@@ -204,7 +204,7 @@ export async function POST(request: NextRequest) {
           max_tokens: 500,
           temperature: 0.6,
         }),
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(15000),
       });
 
       const data = await response.json();
@@ -246,7 +246,7 @@ export async function POST(request: NextRequest) {
           temperature: 0.6,
           messages: anthropicMessages,
         }),
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(15000),
       });
 
       const data = await response.json();

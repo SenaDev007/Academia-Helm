@@ -21,7 +21,7 @@ export async function GET(_request: NextRequest) {
       headers: {
         'Content-Type': 'application/json',
       },
-      signal: AbortSignal.timeout(30000), // 30 secondes
+      signal: AbortSignal.timeout(8000), // 8 secondes
     });
 
     const data = await response.json();

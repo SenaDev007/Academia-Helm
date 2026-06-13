@@ -59,6 +59,7 @@ import { getMotionDuration } from '@/lib/motion/presets';
 import { getTenantRedirectUrl } from '@/lib/utils/tenant-redirect';
 import { getAppBaseUrl } from '@/lib/utils/urls';
 import { detectAccessContext, getAvailablePortals, getPortalForRole, canRoleUsePortal } from '@/lib/auth/role-portal-map';
+import { useFetchWithTimeout } from '@/lib/hooks/use-fetch-with-timeout';
 
 type PortalType = 'platform' | 'school' | 'teacher' | 'parent' | 'public' | null;
 
@@ -193,6 +194,7 @@ const PORTAL_LOGIN_DEFS: Record<string, {
 export default function LoginPage() {
   const searchParams = useSearchParams();
   const { shouldReduceMotion } = useMotionBudget();
+  const { fetchWithTimeout } = useFetchWithTimeout();
 
   const portalParam = searchParams?.get('portal');
   let tenantSlug = searchParams?.get('tenant');
@@ -477,7 +479,7 @@ export default function LoginPage() {
 
     if (isPlatformOwner && hasNoTenant && (tenantIdFromUrl || tenantSlug)) {
       // Le PLATFORM_OWNER a sélectionné une école → sélectionner le tenant
-      const selectResp = await fetch('/api/auth/select-tenant', {
+      const selectResp = await fetchWithTimeout('/api/auth/select-tenant', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -555,7 +557,7 @@ export default function LoginPage() {
   };
 
   const handleStandardLogin = async () => {
-    const response = await fetch('/api/auth/login', {
+    const response = await fetchWithTimeout('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -669,7 +671,7 @@ export default function LoginPage() {
         throw new Error(data.message || 'Connexion impossible');
       }
       // PLATFORM_OWNER : sélectionner le tenant demandé
-      const selectResp = await fetch('/api/auth/select-tenant', {
+      const selectResp = await fetchWithTimeout('/api/auth/select-tenant', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -737,7 +739,7 @@ export default function LoginPage() {
       throw new Error("Identifiant de l'établissement manquant");
     }
 
-    const response = await fetch('/api/portal/auth/teacher', {
+    const response = await fetchWithTimeout('/api/portal/auth/teacher', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -779,7 +781,7 @@ export default function LoginPage() {
     }
 
     if (!parentOtpSent) {
-      const response = await fetch('/api/portal/auth/parent', {
+      const response = await fetchWithTimeout('/api/portal/auth/parent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -803,7 +805,7 @@ export default function LoginPage() {
       return;
     }
 
-    const response = await fetch('/api/portal/auth/parent', {
+    const response = await fetchWithTimeout('/api/portal/auth/parent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -846,7 +848,7 @@ export default function LoginPage() {
       throw new Error('Veuillez sélectionner un établissement pour la pré-inscription');
     }
 
-    const response = await fetch('/api/public/pre-enrollment', {
+    const response = await fetchWithTimeout('/api/public/pre-enrollment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

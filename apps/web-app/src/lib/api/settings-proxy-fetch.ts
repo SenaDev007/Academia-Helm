@@ -4,6 +4,7 @@
 import { NextRequest } from 'next/server';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
+import { fetchWithTimeout, DEFAULT_FETCH_TIMEOUT } from '@/lib/api/fetch-with-timeout';
 
 /**
  * @param pathSuffix ex. `settings/billing` (sans slash initial) — API_BASE_URL contient déjà `/api`.
@@ -18,9 +19,9 @@ export async function fetchSettingsBackend(
   const search = request.nextUrl.search;
   const url = normalizeApiUrl(`${base}/${path}${search}`);
   const headers = await getProxyAuthHeaders(request);
-  return fetch(url, {
+  return fetchWithTimeout(url, {
     ...init,
     headers: { ...headers, ...init?.headers },
     cache: 'no-store',
-  });
+  }, DEFAULT_FETCH_TIMEOUT);
 }

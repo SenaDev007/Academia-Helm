@@ -210,7 +210,7 @@ export async function POST(request: NextRequest) {
               temperature: 0.6,
               stream: true,
             }),
-            signal: AbortSignal.timeout(30000),
+            signal: AbortSignal.timeout(15000),
           });
 
           if (!response.ok || !response.body) {
@@ -295,7 +295,7 @@ export async function POST(request: NextRequest) {
               stream: true,
               messages: anthropicMessages,
             }),
-            signal: AbortSignal.timeout(30000),
+            signal: AbortSignal.timeout(15000),
           });
 
           if (!response.ok || !response.body) {

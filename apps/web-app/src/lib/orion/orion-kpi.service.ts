@@ -17,7 +17,7 @@ import type {
 } from '@/types';
 
 import { getApiBaseUrl } from '@/lib/utils/urls';
-const API_URL = getApiBaseUrl();
+import { fetchWithTimeout, DEFAULT_FETCH_TIMEOUT } from '@/lib/api/fetch-with-timeout';
 
 /**
  * Charge les KPI financiers mensuels depuis kpi_financial_monthly
@@ -26,14 +26,13 @@ export async function loadFinancialKpi(
   tenantId: string,
   period?: string
 ): Promise<KpiFinancialMonthly | null> {
-  const params = period ? { period } : {};
-  
-  const response = await fetch(`${API_URL}/orion/kpi/financial?tenantId=${tenantId}${period ? `&period=${period}` : ''}`, {
+  const API_URL = getApiBaseUrl();
+  const response = await fetchWithTimeout(`${API_URL}/orion/kpi/financial?tenantId=${tenantId}${period ? `&period=${period}` : ''}`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
     },
-  });
+  }, DEFAULT_FETCH_TIMEOUT);
 
   if (!response.ok) {
     if (response.status === 404) return null;
@@ -50,12 +49,13 @@ export async function loadHrKpi(
   tenantId: string,
   period?: string
 ): Promise<KpiHrMonthly | null> {
-  const response = await fetch(`${API_URL}/orion/kpi/hr?tenantId=${tenantId}${period ? `&period=${period}` : ''}`, {
+  const API_URL = getApiBaseUrl();
+  const response = await fetchWithTimeout(`${API_URL}/orion/kpi/hr?tenantId=${tenantId}${period ? `&period=${period}` : ''}`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
     },
-  });
+  }, DEFAULT_FETCH_TIMEOUT);
 
   if (!response.ok) {
     if (response.status === 404) return null;
@@ -72,12 +72,13 @@ export async function loadPedagogyKpi(
   tenantId: string,
   term?: string
 ): Promise<KpiPedagogyTerm[]> {
-  const response = await fetch(`${API_URL}/orion/kpi/pedagogy?tenantId=${tenantId}${term ? `&term=${term}` : ''}`, {
+  const API_URL = getApiBaseUrl();
+  const response = await fetchWithTimeout(`${API_URL}/orion/kpi/pedagogy?tenantId=${tenantId}${term ? `&term=${term}` : ''}`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
     },
-  });
+  }, DEFAULT_FETCH_TIMEOUT);
 
   if (!response.ok) {
     throw new Error(`Failed to load pedagogy KPI: ${response.statusText}`);
@@ -93,12 +94,13 @@ export async function loadSystemHealthKpi(
   tenantId: string,
   period?: string
 ): Promise<KpiSystemHealth | null> {
-  const response = await fetch(`${API_URL}/orion/kpi/system-health?tenantId=${tenantId}${period ? `&period=${period}` : ''}`, {
+  const API_URL = getApiBaseUrl();
+  const response = await fetchWithTimeout(`${API_URL}/orion/kpi/system-health?tenantId=${tenantId}${period ? `&period=${period}` : ''}`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
     },
-  });
+  }, DEFAULT_FETCH_TIMEOUT);
 
   if (!response.ok) {
     if (response.status === 404) return null;
@@ -155,4 +157,3 @@ export async function loadPreviousPeriodKpi(
     return null; // Période précédente non disponible
   }
 }
-

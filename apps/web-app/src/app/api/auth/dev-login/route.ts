@@ -47,7 +47,7 @@ export async function POST(_request: NextRequest) {
     
     // Créer un AbortController pour gérer le timeout
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s pour cold starts Vercel/Railway
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout
     
     let backendResponse;
     try {

@@ -43,6 +43,7 @@ import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-ema
 import { persistClientSession, markFreshLogin } from '@/lib/auth/client-access-token';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getModalMotion, getMotionDuration } from '@/lib/motion/presets';
+import { useFetchWithTimeout } from '@/lib/hooks/use-fetch-with-timeout';
 
 type PortalType = 'PLATFORM' | 'SCHOOL' | 'TEACHER' | 'PARENT' | 'PUBLIC' | null;
 
@@ -127,6 +128,7 @@ export default function PortalPage() {
   const [isContinuing, setIsContinuing] = useState(false);
   const { redirectToTenant } = useTenantRedirect();
   const { shouldReduceMotion } = useMotionBudget();
+  const { fetchWithTimeout } = useFetchWithTimeout();
 
   const dur = useMemo(
     () => getMotionDuration(shouldReduceMotion, 'normal'),
@@ -148,7 +150,7 @@ export default function PortalPage() {
   useEffect(() => {
     if (devPanelOpen && devTenants.length === 0) {
       setDevTenantsLoading(true);
-      fetch('/api/auth/dev-available-tenants')
+      fetchWithTimeout('/api/auth/dev-available-tenants')
         .then(async (res) => {
           const data = await res.json().catch(() => null);
           if (!res.ok) {
@@ -268,7 +270,7 @@ export default function PortalPage() {
       const tenantId = selectedDevTenant.tenantId || selectedDevTenant.id;
 
       const attemptLogin = async (portalType: 'SCHOOL' | 'PLATFORM') => {
-        return fetch('/api/auth/login', {
+        return fetchWithTimeout('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -294,7 +296,7 @@ export default function PortalPage() {
         if (!response.ok || !data.success) {
           throw new Error(data.message || 'Connexion impossible');
         }
-        const selectResp = await fetch('/api/auth/select-tenant', {
+        const selectResp = await fetchWithTimeout('/api/auth/select-tenant', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

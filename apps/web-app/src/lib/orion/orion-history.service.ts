@@ -12,7 +12,7 @@
 import type { OrionAnalysisHistory, OrionResponse, OrionMonthlySummary } from '@/types';
 
 import { getApiBaseUrl } from '@/lib/utils/urls';
-const API_URL = getApiBaseUrl();
+import { fetchWithTimeout, LOG_FETCH_TIMEOUT } from '@/lib/api/fetch-with-timeout';
 
 /**
  * Journalise une requête ORION
@@ -23,6 +23,7 @@ export async function logOrionQuery(
   query: string,
   response: OrionResponse
 ): Promise<void> {
+  const API_URL = getApiBaseUrl();
   const historyEntry: Omit<OrionAnalysisHistory, 'id' | 'createdAt'> = {
     tenantId,
     userId,
@@ -37,13 +38,13 @@ export async function logOrionQuery(
   };
 
   try {
-    await fetch(`${API_URL}/orion/history`, {
+    await fetchWithTimeout(`${API_URL}/orion/history`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(historyEntry),
-    });
+    }, LOG_FETCH_TIMEOUT);
   } catch (error) {
     console.error('Erreur journalisation requête ORION:', error);
     // Ne pas faire échouer la requête si la journalisation échoue
@@ -57,6 +58,7 @@ export async function logOrionSummary(
   tenantId: string,
   summary: OrionMonthlySummary
 ): Promise<void> {
+  const API_URL = getApiBaseUrl();
   const historyEntry: Omit<OrionAnalysisHistory, 'id' | 'createdAt'> = {
     tenantId,
     userId: 'system', // Généré automatiquement
@@ -82,13 +84,13 @@ export async function logOrionSummary(
   };
 
   try {
-    await fetch(`${API_URL}/orion/history`, {
+    await fetchWithTimeout(`${API_URL}/orion/history`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(historyEntry),
-    });
+    }, LOG_FETCH_TIMEOUT);
   } catch (error) {
     console.error('Erreur journalisation résumé ORION:', error);
   }
@@ -101,6 +103,7 @@ export async function logOrionAlert(
   tenantId: string,
   alert: { id: string; title: string; level: string }
 ): Promise<void> {
+  const API_URL = getApiBaseUrl();
   const historyEntry: Omit<OrionAnalysisHistory, 'id' | 'createdAt'> = {
     tenantId,
     userId: 'system',
@@ -114,15 +117,14 @@ export async function logOrionAlert(
   };
 
   try {
-    await fetch(`${API_URL}/orion/history`, {
+    await fetchWithTimeout(`${API_URL}/orion/history`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(historyEntry),
-    });
+    }, LOG_FETCH_TIMEOUT);
   } catch (error) {
     console.error('Erreur journalisation alerte ORION:', error);
   }
 }
-

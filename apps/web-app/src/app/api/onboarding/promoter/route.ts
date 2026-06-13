@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
         },
         body: JSON.stringify(backendBody),
         // Ajouter un timeout pour éviter les attentes infinies
-        signal: AbortSignal.timeout(30000), // 30 secondes
+        signal: AbortSignal.timeout(8000), // 8 secondes
       });
     } catch (fetchError: any) {
       console.error('❌ [Onboarding Promoter] Fetch error:', fetchError);

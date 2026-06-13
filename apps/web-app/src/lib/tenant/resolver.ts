@@ -9,6 +9,7 @@ import { headers } from 'next/headers';
 import type { Tenant } from '@/types';
 
 import { getApiBaseUrl } from '@/lib/utils/urls';
+import { fetchWithTimeout, DEFAULT_FETCH_TIMEOUT } from '@/lib/api/fetch-with-timeout';
 const API_URL = getApiBaseUrl();
 
 /**
@@ -45,13 +46,14 @@ export async function resolveTenant(subdomain: string | null): Promise<Tenant | 
   if (!subdomain) return null;
 
   try {
-    const response = await fetch(`${API_URL}/tenants/by-subdomain/${subdomain}`, {
+    const API_URL = getApiBaseUrl();
+    const response = await fetchWithTimeout(`${API_URL}/tenants/by-subdomain/${subdomain}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
       },
       cache: 'no-store', // Important: ne pas cacher les données tenant
-    });
+    }, DEFAULT_FETCH_TIMEOUT);
 
     if (!response.ok) {
       return null;

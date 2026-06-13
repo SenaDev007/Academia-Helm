@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     console.log('[Login API] Calling backend at:', loginUrl);
     
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s pour cold starts Vercel/Railway
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout
     
     let backendResponse;
     try {
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
       }
       
       if (fetchError.name === 'AbortError') {
-        throw new Error('Le serveur backend ne répond pas dans les 30 secondes. Veuillez réessayer dans quelques instants.');
+        throw new Error('Le serveur backend ne répond pas dans les 8 secondes. Veuillez réessayer dans quelques instants.');
       }
       
       throw fetchError;

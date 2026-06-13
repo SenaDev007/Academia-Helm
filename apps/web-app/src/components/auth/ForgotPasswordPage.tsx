@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BRAND } from '@/lib/brand';
+import { useFetchWithTimeout } from '@/lib/hooks/use-fetch-with-timeout';
 
 /** ── Palette Academia Helm ── */
 const NAVY = '#0b2f73';
@@ -62,6 +63,7 @@ function getPasswordStrength(password: string): { score: number; label: string; 
 
 export default function ForgotPasswordPage() {
   const searchParams = useSearchParams();
+  const { fetchWithTimeout } = useFetchWithTimeout();
   const portalParam = searchParams?.get('portal');
   const tenantParam = searchParams?.get('tenant');
 
@@ -110,7 +112,7 @@ export default function ForgotPasswordPage() {
     setError(null);
 
     try {
-      const response = await fetch('/api/auth/forgot-password', {
+      const response = await fetchWithTimeout('/api/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim().toLowerCase() }),
@@ -138,7 +140,7 @@ export default function ForgotPasswordPage() {
     setError(null);
 
     try {
-      const response = await fetch('/api/auth/forgot-password', {
+      const response = await fetchWithTimeout('/api/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim().toLowerCase() }),
@@ -172,7 +174,7 @@ export default function ForgotPasswordPage() {
     setError(null);
 
     try {
-      const response = await fetch('/api/auth/verify-reset-otp', {
+      const response = await fetchWithTimeout('/api/auth/verify-reset-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim().toLowerCase(), code }),
@@ -204,7 +206,7 @@ export default function ForgotPasswordPage() {
 
     try {
       const code = otpCode.join('');
-      const response = await fetch('/api/auth/reset-password', {
+      const response = await fetchWithTimeout('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -258,7 +260,7 @@ export default function ForgotPasswordPage() {
     setError(null);
 
     try {
-      const response = await fetch('/api/auth/verify-reset-otp', {
+      const response = await fetchWithTimeout('/api/auth/verify-reset-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim().toLowerCase(), code }),

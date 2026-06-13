@@ -10,6 +10,7 @@
  */
 
 import { getApiBaseUrlForRoutes } from './api-urls';
+import { fetchWithTimeout, DEFAULT_FETCH_TIMEOUT } from '@/lib/api/fetch-with-timeout';
 import type { Tenant } from '@/types';
 
 /** ⚠️ Ne PAS utiliser de constante au niveau du module — getApiBaseUrlForRoutes() 
@@ -45,10 +46,10 @@ export async function loadTenantFromApi(
     };
 
     const API_BASE_URL = getApiBaseUrlForRoutes();
-    const response = await fetch(`${API_BASE_URL}/tenants/${tenantId}`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/tenants/${tenantId}`, {
       method: 'GET',
       headers,
-    });
+    }, DEFAULT_FETCH_TIMEOUT);
 
     if (!response.ok) {
       // Si 404, le tenant n'existe pas

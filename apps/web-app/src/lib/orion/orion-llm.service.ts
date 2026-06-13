@@ -19,6 +19,7 @@ import type {
 } from '@/types';
 import { buildOrionQueryPrompt, buildOrionSummaryPrompt } from './orion-prompt-builder';
 import { validateOrionResponse } from './orion-response-validator';
+import { fetchWithTimeout, LLM_FETCH_TIMEOUT } from '@/lib/api/fetch-with-timeout';
 
 /**
  * Configuration LLM
@@ -65,7 +66,7 @@ async function callOpenRouter(prompt: string): Promise<LLMResponse> {
     throw new Error('OPENROUTER_API_KEY non configurée');
   }
 
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  const response = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -88,7 +89,7 @@ async function callOpenRouter(prompt: string): Promise<LLMResponse> {
       temperature: LLM_CONFIG.temperature,
       max_tokens: LLM_CONFIG.maxTokens,
     }),
-  });
+  }, LLM_FETCH_TIMEOUT);
 
   if (!response.ok) {
     throw new Error(`OpenRouter API error: ${response.statusText}`);
@@ -113,7 +114,7 @@ async function callOpenAI(prompt: string): Promise<LLMResponse> {
     throw new Error('OPENAI_API_KEY non configurée');
   }
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const response = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -134,7 +135,7 @@ async function callOpenAI(prompt: string): Promise<LLMResponse> {
       temperature: LLM_CONFIG.temperature,
       max_tokens: LLM_CONFIG.maxTokens,
     }),
-  });
+  }, LLM_FETCH_TIMEOUT);
 
   if (!response.ok) {
     throw new Error(`OpenAI API error: ${response.statusText}`);
@@ -156,7 +157,7 @@ async function callAnthropic(prompt: string): Promise<LLMResponse> {
     throw new Error('ANTHROPIC_API_KEY non configurée');
   }
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  const response = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -174,7 +175,7 @@ async function callAnthropic(prompt: string): Promise<LLMResponse> {
         },
       ],
     }),
-  });
+  }, LLM_FETCH_TIMEOUT);
 
   if (!response.ok) {
     throw new Error(`Anthropic API error: ${response.statusText}`);

@@ -633,9 +633,14 @@ export default function ForgotPasswordPage({ schoolBranding }: ForgotPasswordPag
                         />
                       ))}
                     </div>
-                    <p className="mt-3 text-center text-xs text-slate-500">
-                      Vérifiez votre boîte de réception et vos spams
-                    </p>
+                    <div className="mt-3 space-y-1">
+                      <p className="text-center text-xs text-slate-500">
+                        Vérifiez votre boîte de réception et vos spams.
+                      </p>
+                      <p className="text-center text-xs text-slate-400">
+                        Si vous ne recevez aucun code, vérifiez que cette adresse email est bien associée à un compte Academia Helm.
+                      </p>
+                    </div>
                   </div>
 
                   {/* Bouton vérifier */}

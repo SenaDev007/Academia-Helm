@@ -31,9 +31,10 @@ export class AuthService {
     // Hash password
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
 
-    // Create user
+    // Create user — exclude `password` from DTO spread (Prisma expects `passwordHash`, not `password`)
+    const { password: _password, ...userData } = registerDto;
     const user = await this.usersService.create({
-      ...registerDto,
+      ...userData,
       passwordHash: hashedPassword,
     });
 
@@ -683,15 +684,16 @@ export class AuthService {
    *   - Maximum 3 codes actifs par utilisateur (les anciens sont invalidés)
    *   - Maximum 5 tentatives de vérification par code
    */
-  async forgotPassword(forgotPasswordDto: ForgotPasswordDto): Promise<{ message: string }> {
+  async forgotPassword(forgotPasswordDto: ForgotPasswordDto): Promise<{ message: string; emailSent?: boolean; emailError?: string }> {
     const user = await this.usersService.findByEmail(forgotPasswordDto.email);
 
     // Toujours le même message de succès — sécurité anti-énumération
-    const successMessage = { message: "Si un compte existe avec cet email, un code de vérification vous a été envoyé." };
+    const successMessage = { message: "Si un compte existe avec cet email, un code de vérification vous a été envoyé.", emailSent: false as boolean | undefined };
 
     if (!user) {
       this.logger.warn(`Tentative de réinitialisation pour un email inexistant: ${forgotPasswordDto.email}`);
-      return successMessage;
+      // emailSent=false ne sera pas transmis au client final (le BFF filtre)
+      return { ...successMessage, emailSent: false };
     }
 
     // Générer un code OTP à 6 chiffres
@@ -722,14 +724,15 @@ export class AuthService {
     try {
       const result = await this.sendPasswordResetOtpEmail(user.email, user.firstName || '', otpCode);
       this.logger.log(`Code OTP de réinitialisation envoyé à ${user.email} (provider: ${this.configService.get<string>('EMAIL_PROVIDER', 'mock')}, success: ${result?.success}, messageId: ${result?.messageId || 'N/A'})`);
+      return { ...successMessage, emailSent: true };
     } catch (error: any) {
       const provider = this.configService.get<string>('EMAIL_PROVIDER', 'mock');
       const resendKey = this.configService.get<string>('RESEND_API_KEY');
       this.logger.error(`❌ ÉCHEC ENVOI OTP à ${user.email} | provider=${provider} | RESEND_API_KEY=${resendKey ? 'configuré (' + resendKey.substring(0, 6) + '...)' : 'MANQUANT'} | EMAIL_FROM_NOREPLY=${this.configService.get<string>('EMAIL_FROM_NOREPLY', '(non défini)')} | erreur: ${error?.message || error}`);
       // On continue pour ne pas fuiter l'erreur au client (anti-énumération)
+      // emailError sera utilisé par le BFF pour le logging uniquement
+      return { ...successMessage, emailSent: false, emailError: error?.message };
     }
-
-    return successMessage;
   }
 
   /**

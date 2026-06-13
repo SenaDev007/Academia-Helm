@@ -5,22 +5,33 @@ import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    
+    const email = body.email?.trim()?.toLowerCase();
+
+    if (!email) {
+      return NextResponse.json(
+        { success: false, message: 'Adresse email requise.' },
+        { status: 400 },
+      );
+    }
+
     const apiBaseUrl = getApiBaseUrlForRoutes();
-    const endpoint = apiBaseUrl.endsWith('/api') 
+    const endpoint = apiBaseUrl.endsWith('/api')
       ? `${apiBaseUrl}/auth/forgot-password`
       : `${apiBaseUrl}/api/auth/forgot-password`;
-    
+
+    console.log(`[Forgot Password BFF] Forwarding OTP request for ${email} to ${endpoint}`);
+
     const backendResponse = await fetchWithTimeout(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ email: body.email }),
+      body: JSON.stringify({ email }),
     });
 
     if (!backendResponse.ok) {
       const errorData = await backendResponse.json().catch(() => ({}));
+      console.error(`[Forgot Password BFF] Backend error (${backendResponse.status}):`, errorData);
       return NextResponse.json(
         {
           success: false,
@@ -31,17 +42,20 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await backendResponse.json();
-    
+    console.log(`[Forgot Password BFF] Backend responded: ${data.message}, emailSent=${data.emailSent}${data.emailError ? `, emailError=${data.emailError}` : ''}`);
+
+    // Only pass safe fields to the client — never expose emailSent or emailError
+    // to preserve anti-enumeration security (same response whether user exists or not)
     return NextResponse.json({
       success: true,
       message: data.message,
     });
   } catch (error: any) {
-    console.error('[Forgot Password API] Error:', error);
+    console.error('[Forgot Password BFF] Error:', error?.message || error);
     return NextResponse.json(
       {
         success: false,
-        message: 'Erreur de connexion au serveur',
+        message: 'Erreur de connexion au serveur. Veuillez réessayer dans quelques instants.',
       },
       { status: 500 },
     );

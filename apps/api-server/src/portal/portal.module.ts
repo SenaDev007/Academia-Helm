@@ -20,6 +20,7 @@ import { PortalController } from './controllers/portal.controller';
 import { PortalLogController } from './controllers/portal-log.controller';
 import { PortalAuthController } from './controllers/portal-auth.controller';
 import { OrionModule } from '../orion/orion.module';
+import { CommunicationModule } from '../communication/communication.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { OrionModule } from '../orion/orion.module';
       inject: [ConfigService],
     }),
     OrionModule,
+    CommunicationModule,
   ],
   providers: [
     PrismaService,

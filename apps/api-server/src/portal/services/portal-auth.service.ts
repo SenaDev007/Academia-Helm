@@ -18,6 +18,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../database/prisma.service';
 import { PortalSessionService } from './portal-session.service';
+import { SmsService } from '../../communication/services/sms.service';
 import {
   SchoolPortalLoginDto,
   TeacherPortalLoginDto,
@@ -36,6 +37,7 @@ export class PortalAuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly portalSessionService: PortalSessionService,
+    private readonly smsService: SmsService,
   ) {}
 
   /**
@@ -301,8 +303,16 @@ export class PortalAuthService {
     if (!dto.otp) {
       const otp = this.generateOTP();
       await this.storeParentOtp(tenantId, dto.phone, otp);
-      // TODO: Envoyer OTP via SMS/WhatsApp en production
-      this.logger.log(`OTP generated for parent ${guardian.id}: ${otp}`);
+
+      // Envoyer OTP via SMS
+      try {
+        const smsMessage = `Academia Helm - Votre code de connexion est : ${otp}. Valable 5 minutes.`;
+        await this.smsService.sendSMS(dto.phone, smsMessage);
+        this.logger.log(`OTP envoyé par SMS au parent ${guardian.id} (${dto.phone})`);
+      } catch (smsError: any) {
+        this.logger.error(`ÉCHEC ENVOI SMS OTP au parent ${guardian.id} (${dto.phone}): ${smsError?.message || smsError}`);
+        // On continue même si l'envoi SMS échoue — le code OTP reste disponible en dev
+      }
 
       return {
         message: 'Code OTP envoyé',

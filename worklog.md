@@ -456,3 +456,29 @@ Stage Summary:
 - New batch-assign-level endpoint allows bulk assignment of school levels to staff
 - New teachers-by-level endpoint retrieves teachers filtered by school level
 - StaffAssignment records are automatically created/updated during batch assignment
+
+---
+Task ID: cloudflare-wildcard-domain-management
+Agent: Main Agent
+Task: Configure Cloudflare wildcard DNS proxy for school subdomains + automated domain management via API
+
+Work Log:
+- Analyzed user's Vercel domain configuration screenshots: *.academiahelm.com shows "Invalid Configuration"
+- Root cause: Vercel wildcard requires Vercel DNS nameservers, but Cloudflare is the DNS provider — incompatible
+- Alternative approach: Individual subdomains per school, created automatically via Cloudflare API + Vercel API
+- Created DomainManagementService (apps/api-server/src/common/services/domain-management.service.ts)
+- Added DomainManagementService to CommonModule providers/exports
+- Integrated into OnboardingService.activateTenantAfterPayment() with async fire-and-forget pattern
+- Added env vars to .env.example: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ZONE_ID, VERCEL_API_TOKEN, VERCEL_PROJECT_ID, APP_BASE_DOMAIN
+- Created seed script: apps/api-server/scripts/seed-existing-subdomains.ts (--dry-run, --slug= support)
+- Created status check script: apps/api-server/scripts/check-subdomain-status.ts
+- Also completed pending UI tasks: reduced school name font size on all pages (text-base→text-sm), reduced slogan and invite text sizes
+
+Stage Summary:
+- Wildcard DNS approach abandoned (incompatible with Cloudflare proxy)
+- New automated approach: each school subdomain created individually via API
+- DomainManagementService handles: Cloudflare CNAME (proxied) + Vercel domain + SSL + DB tracking
+- Onboarding flow automatically creates subdomains when new schools register
+- Seed script handles existing schools
+- Font size reduced: school-portal (text-sm sm:text-base), login (text-sm sm:text-base), forgot-password (text-sm sm:text-base)
+- User needs to: get Vercel API token + Project ID, configure .env, delete wildcard from Vercel, run seed script

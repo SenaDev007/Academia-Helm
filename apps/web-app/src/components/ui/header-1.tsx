@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { createPortal } from 'react-dom';
@@ -7,32 +7,18 @@ import { cn } from '@/lib/utils';
 import { BRAND } from '@/lib/brand';
 import { MenuToggleIcon } from '@/components/ui/menu-toggle-icon';
 import { useScroll } from '@/components/ui/use-scroll';
-import { LimelightNav, type NavItem } from '@/components/ui/limelight-nav';
-import {
-  Home,
-  LayoutGrid,
-  BookOpen,
-  CreditCard,
-  Briefcase,
-  GraduationCap,
-  Mail,
-} from 'lucide-react';
 
 /**
- * Header Premium Academia Helm avec effet Limelight
+ * Header Premium Academia Helm avec effet Limelight sur les libellés texte
  * 
- * Structure :
- * - Header sticky avec backdrop-blur au scroll
- * - Logo Academia Helm + wordmark
- * - Navigation desktop : LimelightNav (icônes + effet projecteur doré)
- * - CTA doré : "Accéder à un portail" / "Retourner à l'application"
- * - Menu mobile : portal overlay avec animation zoom-in
+ * Navigation desktop : libellés texte avec projecteur doré au survol/actif
+ * CTA doré : "Accéder à un portail" / "Retourner à l'application"
+ * Menu mobile : portal overlay avec animation
  */
 
 // --- Vérification auth (cookie non-httpOnly) ---
 function useIsAuthenticated(): boolean {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-
   useEffect(() => {
     try {
       const hasToken = document.cookie
@@ -43,116 +29,110 @@ function useIsAuthenticated(): boolean {
       // Cookie indisponible (SSR, etc.)
     }
   }, []);
-
   return isAuthenticated;
 }
 
-// --- Icône Wordmark Academia Helm ---
-const AcademiaHelmWordmark = (props: React.ComponentProps<'svg'>) => (
-  <svg viewBox="0 0 200 32" fill="currentColor" {...props}>
-    {/* Academia */}
-    <text
-      x="0"
-      y="22"
-      fontFamily="system-ui, sans-serif"
-      fontWeight="800"
-      fontSize="22"
-      fill="white"
-    >
-      Academia
-    </text>
-    {/* Helm */}
-    <text
-      x="120"
-      y="22"
-      fontFamily="system-ui, sans-serif"
-      fontWeight="800"
-      fontSize="22"
-      fill="#f5b335"
-    >
-      Helm
-    </text>
-  </svg>
-);
-
-// --- Éléments de navigation avec icônes Lucide ---
-const desktopNavItems: NavItem[] = [
-  {
-    id: 'accueil',
-    icon: <Home />,
-    label: 'Accueil',
-    onClick: () => {
-      window.location.href = '/';
-    },
-  },
-  {
-    id: 'modules',
-    icon: <LayoutGrid />,
-    label: 'Modules',
-    onClick: () => {
-      window.location.href = '/modules';
-    },
-  },
-  {
-    id: 'blog',
-    icon: <BookOpen />,
-    label: 'Blog',
-    onClick: () => {
-      window.location.href = '/blog';
-    },
-  },
-  {
-    id: 'tarification',
-    icon: <CreditCard />,
-    label: 'Tarification',
-    onClick: () => {
-      window.location.href = '/#tarification';
-    },
-  },
-  {
-    id: 'recrutement',
-    icon: <Briefcase />,
-    label: 'Recrutement',
-    onClick: () => {
-      window.location.href = '/jobs';
-    },
-  },
-  {
-    id: 'federis',
-    icon: <GraduationCap />,
-    label: 'Academia Federis',
-    onClick: () => {
-      window.location.href = '/federis';
-    },
-  },
-  {
-    id: 'contact',
-    icon: <Mail />,
-    label: 'Contact',
-    onClick: () => {
-      window.location.href = '/contact';
-    },
-  },
-];
-
-// --- Liens mobile (labels textuels) ---
-const mobileLinks = [
-  { label: 'Accueil', href: '/' },
-  { label: 'Modules', href: '/modules' },
-  { label: 'Blog', href: '/blog' },
-  { label: 'Tarification', href: '/#tarification' },
-  { label: 'Recrutement', href: '/jobs' },
+// --- Items de navigation avec libellés texte ---
+const navItems = [
+  { label: 'Accueil', href: '/', isInstitutional: false },
+  { label: 'Modules', href: '/modules', isInstitutional: false },
+  { label: 'Blog', href: '/blog', isInstitutional: false },
+  { label: 'Tarification', href: '/#tarification', isInstitutional: false },
+  { label: 'Recrutement', href: '/jobs', isInstitutional: false },
   { label: 'Academia Federis', href: '/federis', isInstitutional: true },
-  { label: 'Contact', href: '/contact' },
+  { label: 'Contact', href: '/contact', isInstitutional: false },
 ];
+
+// --- Composant Limelight pour libellés texte ---
+function LimelightTextNav({ items }: { items: typeof navItems }) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [isReady, setIsReady] = useState(false);
+  const itemRefs = useRef<(HTMLAnchorElement | null)[]>([]);
+  const limelightRef = useRef<HTMLDivElement | null>(null);
+
+  // Déterminer l'index actif selon la route
+  useEffect(() => {
+    const path = window.location.pathname;
+    const idx = items.findIndex((item) => {
+      if (item.href.includes('#')) return false;
+      if (item.href === '/') return path === '/';
+      return path.startsWith(item.href);
+    });
+    if (idx >= 0) setActiveIndex(idx);
+  }, [items]);
+
+  // Positionner le limelight sur l'item actif ou survolé
+  useLayoutEffect(() => {
+    const targetIndex = hoveredIndex !== null ? hoveredIndex : activeIndex;
+    const limelight = limelightRef.current;
+    const targetItem = itemRefs.current[targetIndex];
+
+    if (limelight && targetItem) {
+      const newLeft = targetItem.offsetLeft + targetItem.offsetWidth / 2 - limelight.offsetWidth / 2;
+      limelight.style.left = `${newLeft}px`;
+
+      if (!isReady) {
+        setTimeout(() => setIsReady(true), 50);
+      }
+    }
+  }, [activeIndex, hoveredIndex, isReady, items]);
+
+  return (
+    <nav className="relative inline-flex items-center h-14">
+      {items.map((item, index) => (
+        <Link
+          key={item.label}
+          ref={(el) => { itemRefs.current[index] = el; }}
+          href={item.href}
+          prefetch={true}
+          onMouseEnter={() => setHoveredIndex(index)}
+          onMouseLeave={() => setHoveredIndex(null)}
+          onClick={() => setActiveIndex(index)}
+          className={cn(
+            'relative z-20 flex h-full items-center justify-center px-3 py-2 text-sm font-medium transition-all duration-200 whitespace-nowrap',
+            item.isInstitutional
+              ? 'text-amber-300 font-semibold border border-amber-300/40 hover:border-amber-300/70 hover:bg-white/10 rounded-md mx-1'
+              : (activeIndex === index || hoveredIndex === index)
+                ? 'text-white'
+                : 'text-blue-200/70 hover:text-white hover:bg-white/5',
+          )}
+        >
+          {item.label}
+        </Link>
+      ))}
+
+      {/* Limelight — trait lumineux doré + cône de lumière */}
+      <div
+        ref={limelightRef}
+        className={cn(
+          'absolute top-0 z-10 w-11 h-[5px] rounded-full',
+          'bg-[#f5b335]',
+          'shadow-[0_50px_15px_rgba(245,179,53,0.35)]',
+          isReady ? 'transition-[left] duration-400 ease-in-out' : '',
+        )}
+        style={{ left: '-999px' }}
+      >
+        {/* Cône de lumière descendant */}
+        <div
+          className="absolute left-[-30%] top-[5px] w-[160%] h-14 pointer-events-none"
+          style={{
+            clipPath: 'polygon(5% 100%, 25% 0, 75% 0, 95% 100%)',
+            background: 'linear-gradient(to bottom, rgba(245, 179, 53, 0.2), transparent)',
+          }}
+        />
+      </div>
+    </nav>
+  );
+}
 
 export function Header() {
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = useState(false);
   const scrolled = useScroll(10);
   const isAuthenticated = useIsAuthenticated();
 
   // Bloquer le scroll quand le menu mobile est ouvert
-  React.useEffect(() => {
+  useEffect(() => {
     if (open) {
       document.body.style.overflow = 'hidden';
     } else {
@@ -162,20 +142,6 @@ export function Header() {
       document.body.style.overflow = '';
     };
   }, [open]);
-
-  // Déterminer l'index actif pour le limelight
-  const getActiveIndex = () => {
-    if (typeof window === 'undefined') return 0;
-    const path = window.location.pathname;
-    if (path === '/') return 0;
-    if (path.startsWith('/modules')) return 1;
-    if (path.startsWith('/blog')) return 2;
-    if (path.includes('tarification') || path === '/') return 3;
-    if (path.startsWith('/jobs')) return 4;
-    if (path.startsWith('/federis')) return 5;
-    if (path.startsWith('/contact')) return 6;
-    return 0;
-  };
 
   return (
     <header
@@ -210,15 +176,10 @@ export function Header() {
           </div>
         </Link>
 
-        {/* Desktop Navigation — LimelightNav + CTA */}
-        <div className="hidden md:flex items-center gap-4">
-          <LimelightNav
-            items={desktopNavItems}
-            defaultActiveIndex={getActiveIndex()}
-            className="bg-transparent border-0"
-            limelightClassName="shadow-[0_50px_15px_rgba(245,179,53,0.35)]"
-          />
-          
+        {/* Desktop Navigation — Libellés texte avec Limelight + CTA */}
+        <div className="hidden lg:flex items-center gap-4">
+          <LimelightTextNav items={navItems} />
+
           {/* CTA Bouton doré */}
           <div className="ml-4 pl-4 border-l border-white/20 flex-shrink-0">
             {isAuthenticated ? (
@@ -259,7 +220,7 @@ export function Header() {
             'text-white',
             'hover:bg-white/10 transition-colors duration-200',
             'focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-2 focus:ring-offset-[#0b2f73]',
-            'md:hidden',
+            'lg:hidden',
           )}
           aria-expanded={open}
           aria-controls="mobile-menu"
@@ -272,19 +233,19 @@ export function Header() {
       {/* Mobile Menu — Portal */}
       <MobileMenu open={open}>
         <div className="grid gap-y-1">
-          {mobileLinks.map((link) => (
+          {navItems.map((item) => (
             <Link
-              key={link.label}
-              href={link.href}
+              key={item.label}
+              href={item.href}
               onClick={() => setOpen(false)}
               className={cn(
                 'px-4 py-3 rounded-lg text-base font-medium transition-all duration-200',
-                link.isInstitutional
+                item.isInstitutional
                   ? 'text-amber-300 font-semibold border border-amber-300/40 bg-white/10 hover:bg-white/20'
                   : 'text-blue-100 hover:text-white hover:bg-white/10',
               )}
             >
-              {link.label}
+              {item.label}
             </Link>
           ))}
         </div>
@@ -335,7 +296,7 @@ function MobileMenu({ open, children, className, ...props }: MobileMenuProps) {
       id="mobile-menu"
       className={cn(
         'bg-[#0b2f73]/95 supports-[backdrop-filter]:bg-[#0b2f73]/80 backdrop-blur-lg',
-        'fixed top-14 right-0 bottom-0 left-0 z-40 flex flex-col overflow-hidden border-y md:hidden',
+        'fixed top-14 right-0 bottom-0 left-0 z-40 flex flex-col overflow-hidden border-y lg:hidden',
       )}
     >
       <div

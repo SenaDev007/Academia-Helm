@@ -7,27 +7,20 @@ import {
   Mail,
   Phone,
   MapPin,
-  Facebook,
-  Instagram,
-  Linkedin,
-  Twitter,
 } from "lucide-react";
-import { buttonVariants } from "@/components/ui/button";
-import { PlayStoreButton } from "@/components/ui/play-store-button";
 import { AppStoreButton } from "@/components/ui/app-store-button";
+import { PlayStoreButton } from "@/components/ui/play-store-button";
 import { TextHoverEffect, FooterBackgroundGradient } from "@/components/ui/hover-footer";
 import { cn } from "@/lib/utils";
 
 /**
  * Footer Premium Academia Helm
  * 
- * Fusion de footer-2 (structure grille, social, app stores) et hover-footer
- * (section contact, effet TextHoverEffect lumineux, fond gradient).
- * 
  * Palette : Navy #0b2f73, Blue #1d4fa5, Gold #f5b335
+ * Icônes sociales avec couleurs officielles des marques
  */
 
-// --- Liens du footer personnalisés pour Academia Helm ---
+// --- Liens du footer ---
 const footerLinks = [
   {
     title: "Produit",
@@ -72,15 +65,68 @@ const footerLinks = [
   },
 ];
 
-// --- Réseaux sociaux ---
+// --- Icônes SVG sociales avec couleurs officielles ---
+function FacebookIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="#1877F2">
+      <path d="M24 12.073C24 5.404 18.627 0 12 0S0 5.404 0 12.073c0 6.025 4.388 11.02 10.125 11.927V15.56H7.078v-3.487h3.047V9.414c0-3.007 1.792-4.669 4.533-4.669 1.313 0 2.686.236 2.686.236v2.953h-1.514c-1.491 0-1.956.93-1.956 1.885v2.254h3.328l-.532 3.487h-2.796V24C19.612 23.093 24 18.098 24 12.073z" />
+    </svg>
+  );
+}
+
+function LinkedInIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="#0A66C2">
+      <path d="M20.447 20.452H16.89v-5.569c0-1.328-.025-3.037-1.851-3.037-1.854 0-2.136 1.446-2.136 2.939v5.667H9.346V9h3.415v1.561h.049c.476-.9 1.637-1.85 3.37-1.85 3.603 0 4.268 2.372 4.268 5.455v6.286zM5.337 7.433a2.063 2.063 0 1 1 0-4.126 2.063 2.063 0 0 1 0 4.126zM7.119 20.452H3.553V9H7.12v11.452z" />
+    </svg>
+  );
+}
+
+function XIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor">
+      <path d="M18.244 2H21l-6.56 7.496L22.15 22H16.11l-4.73-6.186L5.97 22H3.21l7.014-8.013L1.85 2h6.194l4.274 5.648L18.244 2zm-.967 18.35h1.53L7.206 3.565H5.564L17.277 20.35z" />
+    </svg>
+  );
+}
+
+function YouTubeIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="#FF0000">
+      <path d="M23.498 6.186a2.997 2.997 0 0 0-2.11-2.12C19.503 3.5 12 3.5 12 3.5s-7.504 0-9.388.565a2.997 2.997 0 0 0-2.11 2.12A31.21 31.21 0 0 0 0 12a31.21 31.21 0 0 0 .502 5.814 2.997 2.997 0 0 0 2.11 2.12C4.496 20.5 12 20.5 12 20.5s7.503 0 9.388-.565a2.997 2.997 0 0 0 2.11-2.12A31.21 31.21 0 0 0 24 12a31.21 31.21 0 0 0-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+    </svg>
+  );
+}
+
+// --- Réseaux sociaux avec couleurs officielles ---
 const socialLinks = [
-  { icon: Facebook, href: "https://facebook.com/academiahub", label: "Facebook" },
-  { icon: Instagram, href: "https://instagram.com/academiahub", label: "Instagram" },
-  { icon: Linkedin, href: "https://linkedin.com/company/academiahub", label: "LinkedIn" },
-  { icon: Twitter, href: "https://twitter.com/academiahub", label: "X (Twitter)" },
+  {
+    icon: FacebookIcon,
+    href: "https://facebook.com/academiahub",
+    label: "Facebook",
+    bgColor: "#1877F2",
+  },
+  {
+    icon: LinkedInIcon,
+    href: "https://linkedin.com/company/academiahub",
+    label: "LinkedIn",
+    bgColor: "#0A66C2",
+  },
+  {
+    icon: XIcon,
+    href: "https://twitter.com/academiahub",
+    label: "X (Twitter)",
+    bgColor: "#000000",
+  },
+  {
+    icon: YouTubeIcon,
+    href: "https://youtube.com/@academiahub",
+    label: "YouTube",
+    bgColor: "#FF0000",
+  },
 ];
 
-// --- Informations de contact (du prompt 2, personnalisées) ---
+// --- Informations de contact ---
 const contactInfo = [
   {
     icon: <Mail size={18} className="text-[#f5b335]" />,
@@ -107,7 +153,7 @@ export function Footer2() {
       <FooterBackgroundGradient />
 
       <div className="max-w-6xl mx-auto px-4 lg:px-6 relative z-10">
-        {/* Section Contact — inspirée du prompt 2 */}
+        {/* Section Contact */}
         <div className="pt-8 pb-4">
           <div className="flex flex-col md:flex-row items-start md:items-center gap-6 p-5 rounded-xl bg-white/5 border border-white/10 backdrop-blur-sm">
             <div className="flex-shrink-0">
@@ -136,7 +182,7 @@ export function Footer2() {
           </div>
         </div>
 
-        {/* Grille de liens — structure du prompt 1 */}
+        {/* Grille de liens */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8 py-8">
           {footerLinks.map((item, i) => (
             <div key={i}>
@@ -165,24 +211,29 @@ export function Footer2() {
 
         {/* Section Social + App Stores */}
         <div className="py-5 flex flex-wrap items-center justify-between gap-4">
+          {/* Icônes sociales avec couleurs officielles */}
           <div className="flex gap-2 items-center">
-            {socialLinks.map(({ icon: Icon, href, label }, i) => (
+            {socialLinks.map(({ icon: Icon, href, label, bgColor }, i) => (
               <a
                 href={href}
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label={label}
-                className={cn(
-                  buttonVariants({ variant: "outline", size: "icon" }),
-                  "border-white/20 hover:border-[#f5b335]/50 hover:bg-[#f5b335]/10 text-white/60 hover:text-[#f5b335]",
-                )}
                 key={i}
+                className={cn(
+                  "w-9 h-9 rounded-lg flex items-center justify-center",
+                  "transition-all duration-200 hover:scale-110 hover:shadow-lg",
+                  "group relative overflow-hidden",
+                )}
+                style={{ backgroundColor: bgColor }}
               >
-                <Icon className="size-5" />
+                <span className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.3),transparent_55%)]" />
+                <Icon className="size-4 text-white" />
               </a>
             ))}
           </div>
 
+          {/* Boutons App Store & Play Store */}
           <div className="flex gap-3">
             <a href="#" aria-label="Télécharger sur l'App Store">
               <AppStoreButton />
@@ -229,8 +280,8 @@ export function Footer2() {
         </div>
       </div>
 
-      {/* Effet TextHoverEffect — filigrane lumineux "ACADEMIA HELM" */}
-      <div className="hidden lg:block h-[20rem] -mt-40 -mb-24 relative">
+      {/* TextHoverEffect — filigrane lumineux "ACADEMIA HELM" */}
+      <div className="hidden lg:block h-[18rem] -mt-36 -mb-20 relative">
         <TextHoverEffect text="ACADEMIA HELM" className="z-50 opacity-30" />
       </div>
     </footer>

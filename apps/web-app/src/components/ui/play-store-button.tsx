@@ -1,46 +1,45 @@
 "use client";
 
 import React from "react";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-type PlayStoreButtonProps = React.ComponentProps<typeof Button>;
-
 /**
- * Bouton "Get it on Google Play" pour le footer.
- * Style Academia Helm : bordure dorée sur fond Navy.
+ * Bouton "Get it on Google Play" — style officiel Google
+ * Fond noir, texte blanc, logo Play coloré
  */
 export function PlayStoreButton({
   className,
   ...props
-}: Omit<PlayStoreButtonProps, "children">) {
+}: Omit<React.ComponentProps<"a">, "children">) {
   return (
-    <Button
-      variant="outline"
+    <a
       className={cn(
-        "h-11 gap-2 border-[#f5b335]/40 hover:border-[#f5b335]/70 hover:bg-white/5 text-white",
+        "inline-flex h-11 items-center gap-2 rounded-lg bg-black px-4",
+        "hover:bg-gray-900 transition-colors duration-200",
+        "border border-white/10",
         className,
       )}
       {...props}
     >
       <PlayStoreIcon className="size-5" />
       <div className="text-left flex flex-col items-start justify-center pr-2">
-        <span className="text-[10px] leading-none font-light tracking-tighter opacity-70">
+        <span className="text-[10px] leading-none font-light tracking-tight text-white/70">
           DISPONIBLE SUR
         </span>
-        <p className="text-sm font-bold leading-none">Google Play</p>
+        <p className="text-sm font-semibold leading-none text-white">Google Play</p>
       </div>
-    </Button>
+    </a>
   );
 }
 
-function PlayStoreIcon({
-  fill = "currentColor",
-  ...props
-}: React.ComponentProps<"svg">) {
+function PlayStoreIcon({ ...props }: React.ComponentProps<"svg">) {
   return (
-    <svg viewBox="0 0 24 24" fill={fill} {...props}>
-      <path d="m21.762,9.942L4.67.378c-.721-.466-1.635-.504-2.393-.099-.768.411-1.246,1.208-1.246,2.08v19.282c0,.872.477,1.668,1.246,2.079.755.404,1.668.37,2.393-.098l17.092-9.564c.756-.423,1.207-1.192,1.207-2.058s-.451-1.635-1.207-2.058Zm-5.746-1.413l-2.36,2.36L5.302,2.534l10.714,5.995ZM2.604,21.906V2.094l9.941,9.906L2.604,21.906Zm2.698-.439l8.355-8.355,2.36,2.36-10.714,5.995Zm15.692-8.78l-3.552,1.987-2.674-2.674,2.674-2.674,3.552,1.987c.363.203.402.548.402.686s-.039.483-.402.686Z" />
+    <svg viewBox="0 0 24 24" {...props}>
+      {/* Logo Google Play avec les couleurs officielles */}
+      <path d="m3.609 1.814 13.126 7.39-2.647 2.647L3.609 1.814z" fill="#4285F4" />
+      <path d="m20.391 12-3.656-2.796-2.933 2.933 2.933 2.933L20.391 12z" fill="#FBBC04" />
+      <path d="M3.609 22.186l9.879-9.879-2.647-2.647-7.232 12.526z" fill="#EA4335" />
+      <path d="m3.609 22.186 7.232-12.526L3.609 1.814v20.372z" fill="#34A853" />
     </svg>
   );
 }

@@ -7,13 +7,15 @@ import { cn } from "@/lib/utils";
  * Effet de survol lumineux sur un texte SVG.
  * 
  * Au survol :
- * - Le texte apparaît en contour avec un dégradé qui suit le curseur
- * - Un stroke animé dessine le texte en continu
- * - Les couleurs sont personnalisées pour Academia Helm (or, navy, bleu)
+ * - Un stroke doré animé dessine le texte en continu
+ * - Un masque radial qui suit le curseur révèle un dégradé Helm (or→navy→bleu)
+ * - Le texte de fond apparaît en contour fin blanc
  * 
  * Palette Helm :
  * - Stroke principal : or #f5b335
  * - Gradient de survol : or → navy → bleu Helm
+ * 
+ * FIX : viewBox élargi à 500x100 pour "ACADEMIA HELM" sans troncature
  */
 export const TextHoverEffect = ({
   text,
@@ -42,12 +44,16 @@ export const TextHoverEffect = ({
     }
   }, [cursor]);
 
+  // Calculer la largeur du viewBox en fonction du texte
+  const charCount = text.length;
+  const viewBoxWidth = Math.max(300, charCount * 32);
+
   return (
     <svg
       ref={svgRef}
       width="100%"
       height="100%"
-      viewBox="0 0 300 100"
+      viewBox={`0 0 ${viewBoxWidth} 100`}
       xmlns="http://www.w3.org/2000/svg"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -59,9 +65,10 @@ export const TextHoverEffect = ({
         <linearGradient
           id="textGradient"
           gradientUnits="userSpaceOnUse"
-          cx="50%"
-          cy="50%"
-          r="25%"
+          x1="0"
+          y1="0"
+          x2={viewBoxWidth}
+          y2="100"
         >
           {hovered && (
             <>
@@ -78,7 +85,7 @@ export const TextHoverEffect = ({
         <motion.radialGradient
           id="revealMask"
           gradientUnits="userSpaceOnUse"
-          r="20%"
+          r="30%"
           initial={{ cx: "50%", cy: "50%" }}
           animate={maskPosition}
           transition={{ duration: duration ?? 0, ease: "easeOut" }}
@@ -104,8 +111,8 @@ export const TextHoverEffect = ({
         textAnchor="middle"
         dominantBaseline="middle"
         strokeWidth="0.3"
-        className="fill-transparent stroke-white/10 font-[system-ui] text-7xl font-bold"
-        style={{ opacity: hovered ? 0.7 : 0 }}
+        className="fill-transparent stroke-white/10 font-[system-ui,_sans-serif] font-bold"
+        style={{ fontSize: '70px', opacity: hovered ? 0.7 : 0 }}
       >
         {text}
       </text>
@@ -117,7 +124,8 @@ export const TextHoverEffect = ({
         textAnchor="middle"
         dominantBaseline="middle"
         strokeWidth="0.3"
-        className="fill-transparent stroke-[#f5b335] font-[system-ui] text-7xl font-bold"
+        className="fill-transparent stroke-[#f5b335] font-[system-ui,_sans-serif] font-bold"
+        style={{ fontSize: '70px' }}
         initial={{ strokeDashoffset: 1000, strokeDasharray: 1000 }}
         animate={{
           strokeDashoffset: 0,
@@ -126,6 +134,8 @@ export const TextHoverEffect = ({
         transition={{
           duration: 4,
           ease: "easeInOut",
+          repeat: Infinity,
+          repeatType: "loop",
         }}
       >
         {text}
@@ -137,10 +147,10 @@ export const TextHoverEffect = ({
         y="50%"
         textAnchor="middle"
         dominantBaseline="middle"
-        stroke="url(#textGradient)"
         strokeWidth="0.3"
         mask="url(#textMask)"
-        className="fill-transparent font-[system-ui] text-7xl font-bold"
+        className="fill-transparent font-[system-ui,_sans-serif] font-bold"
+        style={{ fontSize: '70px' }}
       >
         {text}
       </text>

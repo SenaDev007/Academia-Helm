@@ -23,7 +23,7 @@ import {
   Megaphone,
 } from 'lucide-react';
 import { Header } from '@/components/ui/header-1';
-import InstitutionalFooter from './InstitutionalFooter';
+import { Footer2 } from '@/components/ui/footer-2';
 import { LoadingScreen } from '@/components/loading/LoadingScreen';
 import { LoadingScreenMobile } from '@/components/loading/LoadingScreenMobile';
 import { BLOG_POSTS } from '@/content/blog/posts';
@@ -946,9 +946,7 @@ export default function PremiumLandingPage() {
         </motion.div>
       </div>
 
-      <div className="bg-[#08255a] border-t border-amber-400/20">
-        <InstitutionalFooter />
-        </div>
+      <Footer2 />
 
       <SaraWidget />
     </div>

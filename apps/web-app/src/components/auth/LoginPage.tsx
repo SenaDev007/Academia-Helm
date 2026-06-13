@@ -61,6 +61,7 @@ import { getAppBaseUrl } from '@/lib/utils/urls';
 import { isReservedSubdomain, extractTenantSlug } from '@/lib/tenant/constants';
 import { detectAccessContext, getAvailablePortals, getPortalForRole, canRoleUsePortal } from '@/lib/auth/role-portal-map';
 import { useFetchWithTimeout } from '@/lib/hooks/use-fetch-with-timeout';
+import { useSchoolBranding } from '@/hooks/useSchoolBranding';
 
 type PortalType = 'platform' | 'school' | 'teacher' | 'parent' | 'public' | null;
 
@@ -207,6 +208,11 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   const searchParams = useSearchParams();
   const { shouldReduceMotion } = useMotionBudget();
   const { fetchWithTimeout } = useFetchWithTimeout();
+
+  // ── Client-side school branding fallback ──
+  // Si le server component n'a pas pu résoudre le branding (API indisponible),
+  // on tente de le récupérer côté client via useSchoolBranding.
+  const clientBranding = useSchoolBranding(schoolBranding);
 
   const portalParam = searchParams?.get('portal');
   let tenantSlug = searchParams?.get('tenant');
@@ -983,10 +989,10 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               animate={shouldReduceMotion ? undefined : { y: [0, -4, 0] }}
               transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
             >
-              {schoolBranding?.logoUrl ? (
+              {clientBranding?.logoUrl ? (
                 <Image
-                  src={schoolBranding.logoUrl}
-                  alt={schoolBranding.name}
+                  src={clientBranding.logoUrl}
+                  alt={clientBranding.name}
                   width={120}
                   height={120}
                   className="h-16 w-16 object-contain drop-shadow-lg sm:h-20 sm:w-20 md:h-24 md:w-24 rounded-xl"
@@ -1025,12 +1031,12 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 className="text-xl font-extrabold tracking-tight sm:text-2xl md:text-3xl"
                 style={{ color: NAVY }}
               >
-                {portalDef?.title || schoolBranding?.name || BRAND.name}
+                {portalDef?.title || clientBranding?.name || BRAND.name}
               </h1>
             </motion.div>
 
             <motion.p variants={heroItem} className="text-sm text-slate-600">
-              {portalDef?.subtitle || schoolBranding?.slogan || BRAND.subtitle}
+              {portalDef?.subtitle || clientBranding?.slogan || BRAND.subtitle}
             </motion.p>
 
             {/* Role count badge — conforme au document */}
@@ -1050,7 +1056,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             )}
 
             {/* Tenant display — multi-tenant strict */}
-            {(schoolBranding?.name || tenantSlug || schoolNameFromUrl) && portalType !== 'public' && (
+            {(clientBranding?.name || tenantSlug || schoolNameFromUrl) && portalType !== 'public' && (
               <motion.div variants={heroItem} className="mt-3">
                 <div
                   className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium"
@@ -1061,9 +1067,9 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                   }}
                 >
                   <Building2 className="h-3.5 w-3.5" />
-                  <span>{schoolBranding?.name || schoolNameFromUrl || tenantSlug}</span>
-                  {schoolBranding?.city && (
-                    <span className="text-slate-400">— {schoolBranding.city}</span>
+                  <span>{clientBranding?.name || schoolNameFromUrl || tenantSlug}</span>
+                  {clientBranding?.city && (
+                    <span className="text-slate-400">— {clientBranding.city}</span>
                   )}
                 </div>
               </motion.div>
@@ -1071,12 +1077,12 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
 
             {portalType === null && (
               <motion.p variants={heroItem} className="mt-1 text-xs font-medium text-slate-500">
-                {schoolBranding?.slogan || schoolBranding?.motto || BRAND.slogan}
+                {clientBranding?.slogan || clientBranding?.motto || BRAND.slogan}
               </motion.p>
             )}
 
             {/* Propulsé par — sur sous-domaine école */}
-            {schoolBranding && (
+            {clientBranding && (
               <motion.p variants={heroItem} className="mt-1 text-[10px] text-slate-400">
                 Propulsé par <span className="font-medium" style={{ color: NAVY }}>{BRAND.name}</span>
               </motion.p>

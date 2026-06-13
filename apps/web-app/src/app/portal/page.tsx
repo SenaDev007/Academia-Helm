@@ -647,7 +647,7 @@ export default function PortalPage() {
           >
             <motion.div
               key="school-search-modal"
-              className="relative w-full max-w-xl sm:max-w-2xl rounded-2xl border bg-white/95 p-4 shadow-2xl backdrop-blur-md sm:p-6 md:p-8 max-h-[92vh] sm:max-h-[85vh] overflow-y-auto"
+              className="relative w-full max-w-lg sm:max-w-2xl lg:max-w-3xl rounded-2xl border bg-white/95 p-4 shadow-2xl backdrop-blur-md sm:p-6 md:p-8 max-h-[95vh] sm:max-h-[90vh] flex flex-col"
               style={{
                 borderColor: `${NAVY}18`,
                 boxShadow: `0 24px 48px -12px ${NAVY}20, 0 0 0 1px ${GOLD}14`,
@@ -655,8 +655,8 @@ export default function PortalPage() {
               {...modalMotion}
               onClick={(e) => e.stopPropagation()}
             >
-              {/* Header */}
-              <div className="mb-4 sm:mb-5 flex items-start justify-between">
+              {/* Header — fixed */}
+              <div className="mb-4 sm:mb-5 flex items-start justify-between shrink-0">
                 <div className="flex items-center gap-2 sm:gap-3">
                   <div
                     className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl"
@@ -690,68 +690,73 @@ export default function PortalPage() {
                 </motion.button>
               </div>
 
-              {/* School Search */}
-              <SchoolSearch
-                onSchoolSelect={handleSchoolSelect}
-                selectedSchool={selectedSchool}
-                portalType={selectedPortal}
-              />
+              {/* School Search — scrollable area */}
+              <div className="flex-1 min-h-0 overflow-y-auto">
+                <SchoolSearch
+                  onSchoolSelect={handleSchoolSelect}
+                  selectedSchool={selectedSchool}
+                  portalType={selectedPortal}
+                />
+              </div>
 
-              {/* Continue button */}
-              <AnimatePresence>
-                {selectedSchool ? (
-                  <motion.div
-                    key="continue-btn"
-                    initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={shouldReduceMotion ? undefined : { opacity: 0, y: 6 }}
-                    transition={{ duration: dur, ease: 'easeOut' }}
-                    className="mt-5"
-                  >
-                    <motion.button
-                      type="button"
-                      onClick={() => void handleContinue()}
-                      disabled={isContinuing}
-                      whileHover={
-                        isContinuing || shouldReduceMotion
-                          ? undefined
-                          : { scale: 1.01, boxShadow: `0 12px 28px ${NAVY}25` }
-                      }
-                      whileTap={isContinuing || shouldReduceMotion ? undefined : { scale: 0.99 }}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl px-4 sm:px-6 py-3.5 font-semibold text-white shadow-md transition-all disabled:cursor-not-allowed disabled:opacity-80 min-h-[44px]"
-                      style={{
-                        background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
-                      }}
+              {/* Footer — fixed */}
+              <div className="shrink-0">
+                {/* Continue button */}
+                <AnimatePresence>
+                  {selectedSchool ? (
+                    <motion.div
+                      key="continue-btn"
+                      initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={shouldReduceMotion ? undefined : { opacity: 0, y: 6 }}
+                      transition={{ duration: dur, ease: 'easeOut' }}
+                      className="mt-4 sm:mt-5"
                     >
-                      {isContinuing ? (
-                        <>
-                          <Loader2 className="h-5 w-5 animate-spin" />
-                          <span>Redirection en cours…</span>
-                        </>
-                      ) : (
-                        <>
-                          <span>
-                            {selectedPortal === 'PUBLIC'
-                              ? 'Accéder à la pré-inscription'
-                              : 'Continuer vers la connexion'}
-                          </span>
-                          <ArrowRight className="h-5 w-5" />
-                        </>
-                      )}
-                    </motion.button>
-                  </motion.div>
-                ) : null}
-              </AnimatePresence>
+                      <motion.button
+                        type="button"
+                        onClick={() => void handleContinue()}
+                        disabled={isContinuing}
+                        whileHover={
+                          isContinuing || shouldReduceMotion
+                            ? undefined
+                            : { scale: 1.01, boxShadow: `0 12px 28px ${NAVY}25` }
+                        }
+                        whileTap={isContinuing || shouldReduceMotion ? undefined : { scale: 0.99 }}
+                        className="flex w-full items-center justify-center gap-2 rounded-xl px-4 sm:px-6 py-3.5 font-semibold text-white shadow-md transition-all disabled:cursor-not-allowed disabled:opacity-80 min-h-[44px]"
+                        style={{
+                          background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+                        }}
+                      >
+                        {isContinuing ? (
+                          <>
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                            <span>Redirection en cours…</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>
+                              {selectedPortal === 'PUBLIC'
+                                ? 'Accéder à la pré-inscription'
+                                : 'Continuer vers la connexion'}
+                            </span>
+                            <ArrowRight className="h-5 w-5" />
+                          </>
+                        )}
+                      </motion.button>
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
 
-              {/* Back link */}
-              <button
-                type="button"
-                onClick={handleCloseSchoolSearch}
-                className="mt-3 sm:mt-4 flex w-full items-center justify-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-slate-700 min-h-[44px]"
-              >
-                <ArrowRight className="h-3.5 w-3.5 rotate-180" />
-                <span>Retour à la sélection du portail</span>
-              </button>
+                {/* Back link */}
+                <button
+                  type="button"
+                  onClick={handleCloseSchoolSearch}
+                  className="mt-3 sm:mt-4 flex w-full items-center justify-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-slate-700 min-h-[44px]"
+                >
+                  <ArrowRight className="h-3.5 w-3.5 rotate-180" />
+                  <span>Retour à la sélection du portail</span>
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         ) : null}

@@ -15,12 +15,15 @@ import { getApiBaseUrl } from '@/lib/utils/urls';
 
 export interface SchoolBrandingData {
   name: string;
+  slug: string;
   logoUrl: string | null;
+  city: string | null;
+  phone: string | null;
+  address: string | null;
   primaryColor: string | null;
   secondaryColor: string | null;
   slogan: string | null;
-  city: string | null;
-  phone: string | null;
+  motto: string | null;
 }
 
 /**
@@ -71,12 +74,15 @@ export function useSchoolBranding(serverBranding?: SchoolBrandingData | null): S
 
           setBranding({
             name: identity?.schoolName || settings?.schoolName || school?.name || data.name || slug,
+            slug: data.slug || slug,
             logoUrl: identity?.logoUrl || settings?.logoUrl || school?.logo || null,
+            city: identity?.city || settings?.city || school?.city || null,
+            phone: identity?.phonePrimary || settings?.phone || school?.primaryPhone || null,
+            address: identity?.address || settings?.address || school?.address || null,
             primaryColor: settings?.primaryColor || school?.primaryColor || null,
             secondaryColor: settings?.secondaryColor || school?.secondaryColor || null,
             slogan: identity?.slogan || settings?.slogan || school?.slogan || school?.motto || null,
-            city: identity?.city || settings?.city || school?.city || null,
-            phone: identity?.phonePrimary || settings?.phone || school?.primaryPhone || null,
+            motto: school?.motto || null,
           });
         }
       } catch (error) {

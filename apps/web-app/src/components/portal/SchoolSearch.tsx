@@ -233,7 +233,7 @@ export default function SchoolSearch({
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={reduceMotion ? undefined : { opacity: 0, y: -6, scale: 0.99 }}
                 transition={{ duration: reduceMotion ? 0 : 0.2, ease: 'easeOut' }}
-                className="absolute z-[200] mt-2 flex max-h-96 w-full flex-col overflow-hidden rounded-xl border-2 bg-white shadow-xl"
+                className="absolute z-[200] mt-2 flex max-h-[50vh] sm:max-h-96 w-full flex-col overflow-hidden rounded-xl border-2 bg-white shadow-xl"
                 style={{ borderColor: `${NAVY}15` }}
               >
                 {/* Header avec compteur */}
@@ -258,7 +258,7 @@ export default function SchoolSearch({
                 </div>
 
                 {/* Liste des résultats */}
-                <div className="overflow-y-auto max-h-80">
+                <div className="overflow-y-auto max-h-[42vh] sm:max-h-80">
                   {filteredSchools.length > 0 ? (
                     filteredSchools.map((school) => (
                       <button

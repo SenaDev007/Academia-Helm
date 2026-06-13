@@ -69,7 +69,6 @@ const SCHOOL_PORTAL_DEFS = [
     type: 'SCHOOL' as PortalType,
     title: 'Portail École',
     subtitle: 'Gestion de l\'établissement',
-    roleCount: 45,
     authMethod: 'Email & mot de passe',
     description: 'Direction, administration, scolarité, finances, RH, paramètres',
     Icon: Building2,
@@ -79,7 +78,6 @@ const SCHOOL_PORTAL_DEFS = [
     type: 'TEACHER' as PortalType,
     title: 'Portail Enseignant',
     subtitle: 'Pédagogie & suivi',
-    roleCount: 11,
     authMethod: 'Matricule & mot de passe',
     description: 'Cours, notes, présences, cahier de texte, ressources',
     Icon: GraduationCap,
@@ -89,7 +87,6 @@ const SCHOOL_PORTAL_DEFS = [
     type: 'PARENT' as PortalType,
     title: 'Portail Parent / Élève',
     subtitle: 'Suivi & communication',
-    roleCount: 9,
     authMethod: 'Téléphone & OTP',
     description: 'Bulletins, paiements, absences, messages, documents',
     Icon: Users,
@@ -99,7 +96,6 @@ const SCHOOL_PORTAL_DEFS = [
     type: 'PUBLIC' as PortalType,
     title: 'Portail Public',
     subtitle: 'Pré-inscription & acquisition',
-    roleCount: 5,
     authMethod: 'Aucune authentification',
     description: 'Pré-inscription, informations, contact',
     Icon: Globe,
@@ -350,18 +346,8 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
                   {portal.description}
                 </p>
 
-                {/* Footer — role count + auth method */}
-                <div className="mt-3 flex w-full items-center justify-between sm:mt-4">
-                  <span
-                    className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                    style={{
-                      color: GOLD,
-                      background: `${GOLD}15`,
-                      border: `1px solid ${GOLD}25`,
-                    }}
-                  >
-                    {portal.roleCount} rôles
-                  </span>
+                {/* Footer — auth method */}
+                <div className="mt-3 flex w-full items-center justify-end sm:mt-4">
                   <span className="text-[10px] text-blue-200/40 uppercase tracking-wide">
                     {portal.authMethod}
                   </span>

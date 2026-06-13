@@ -151,42 +151,36 @@ function getPasswordStrength(password: string): { score: number; label: string; 
 const PORTAL_LOGIN_DEFS: Record<string, {
   title: string;
   subtitle: string;
-  roleCount: number;
   Icon: React.ComponentType<{ className?: string }>;
   authMethod: string;
 }> = {
   platform: {
     title: 'Portail Plateforme',
     subtitle: 'Administration SaaS globale',
-    roleCount: 7,
     Icon: Shield,
     authMethod: 'Email & mot de passe',
   },
   school: {
     title: 'Portail École',
     subtitle: 'Gestion de l\'établissement',
-    roleCount: 45,
     Icon: Building2,
     authMethod: 'Email & mot de passe',
   },
   teacher: {
     title: 'Portail Enseignant',
     subtitle: 'Pédagogie & suivi',
-    roleCount: 11,
     Icon: GraduationCap,
     authMethod: 'Matricule & mot de passe',
   },
   parent: {
     title: 'Portail Parent / Élève',
     subtitle: 'Suivi & communication',
-    roleCount: 9,
     Icon: Users,
     authMethod: 'Téléphone & OTP',
   },
   public: {
     title: 'Portail Public',
     subtitle: 'Pré-inscription & acquisition',
-    roleCount: 5,
     Icon: Globe,
     authMethod: 'Aucune authentification requise',
   },
@@ -1050,7 +1044,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                     border: `1px solid ${GOLD}35`,
                   }}
                 >
-                  {portalDef.roleCount} rôles — {portalDef.authMethod}
+                  {portalDef.authMethod}
                 </span>
               </motion.div>
             )}

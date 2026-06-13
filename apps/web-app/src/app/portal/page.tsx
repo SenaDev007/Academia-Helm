@@ -78,35 +78,30 @@ const PORTAL_DEFINITIONS = [
   {
     type: 'PLATFORM' as const,
     title: 'Plateforme',
-    roleCount: 7,
     description: 'Administration SaaS globale',
     Icon: Shield,
   },
   {
     type: 'SCHOOL' as const,
     title: 'École',
-    roleCount: 45,
     description: 'Gestion de l\'établissement',
     Icon: Building2,
   },
   {
     type: 'TEACHER' as const,
     title: 'Enseignant',
-    roleCount: 11,
     description: 'Pédagogie & suivi',
     Icon: GraduationCap,
   },
   {
     type: 'PARENT' as const,
     title: 'Parent / Élève',
-    roleCount: 9,
     description: 'Suivi & communication',
     Icon: Users,
   },
   {
     type: 'PUBLIC' as const,
     title: 'Public',
-    roleCount: 5,
     description: 'Pré-inscription & acquisition',
     Icon: Globe,
   },
@@ -537,16 +532,6 @@ export default function PortalPage() {
                           >
                             {portal.title}
                           </h3>
-                          <span
-                            className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] sm:text-[9px] font-semibold uppercase tracking-wide"
-                            style={{
-                              color: NAVY,
-                              background: `${GOLD}20`,
-                              border: `1px solid ${GOLD}35`,
-                            }}
-                          >
-                            {portal.roleCount} rôles
-                          </span>
                         </div>
                         <p className="mt-0.5 text-xs sm:text-[11px] leading-snug text-slate-500">
                           {portal.description}
@@ -653,7 +638,7 @@ export default function PortalPage() {
           <motion.div
             key="school-search-overlay"
             role="presentation"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-[3px]"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 sm:p-4 backdrop-blur-[3px]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -662,7 +647,7 @@ export default function PortalPage() {
           >
             <motion.div
               key="school-search-modal"
-              className="relative w-full max-w-lg rounded-2xl border bg-white/95 p-4 shadow-2xl backdrop-blur-md sm:p-6 md:p-8 max-h-[90vh] overflow-y-auto"
+              className="relative w-full max-w-xl sm:max-w-2xl rounded-2xl border bg-white/95 p-4 shadow-2xl backdrop-blur-md sm:p-6 md:p-8 max-h-[92vh] sm:max-h-[85vh] overflow-y-auto"
               style={{
                 borderColor: `${NAVY}18`,
                 boxShadow: `0 24px 48px -12px ${NAVY}20, 0 0 0 1px ${GOLD}14`,

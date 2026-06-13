@@ -192,19 +192,62 @@ const adminRoutes = [
   '/admin',
 ];
 
+/** Nombre maximal de redirections internes avant de considérer une boucle. */
+const MAX_REDIRECT_DEPTH = 5;
+
+/**
+ * Effectue une redirection en incrémentant le compteur de profondeur.
+ * Si la profondeur dépasse MAX_REDIRECT_DEPTH, on renvoie une page d'erreur
+ * au lieu de rediriger (protection anti-boucle).
+ */
+function safeRedirect(url: URL | string, request: NextRequest, currentDepth: number): NextResponse {
+  const nextDepth = currentDepth + 1;
+  if (nextDepth > MAX_REDIRECT_DEPTH) {
+    const errorResponse = withAntiCacheHeaders(
+      NextResponse.rewrite(new URL('/error/too-many-redirects', request.nextUrl.origin))
+    );
+    errorResponse.cookies.delete('x-redirect-depth');
+    return errorResponse;
+  }
+  const redirectResponse = NextResponse.redirect(url);
+  redirectResponse.cookies.set('x-redirect-depth', String(nextDepth), {
+    path: '/',
+    maxAge: 30, // 30 secondes — expire rapidement si pas de boucle
+    sameSite: 'lax',
+  });
+  return redirectResponse;
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // ── Protection contre les boucles de redirection ──────────────────────
+  // On utilise un cookie court-lived pour compter les redirections successives.
+  // Si on dépasse MAX_REDIRECT_DEPTH, on renvoie une page d'erreur au lieu de rediriger.
+  const redirectDepth = parseInt(request.cookies.get('x-redirect-depth')?.value || '0', 10);
+  if (redirectDepth >= MAX_REDIRECT_DEPTH) {
+    // Nettoyer le cookie et afficher une page d'erreur
+    const errorResponse = withAntiCacheHeaders(NextResponse.rewrite(new URL('/error/too-many-redirects', request.nextUrl.origin)));
+    errorResponse.cookies.delete('x-redirect-depth');
+    return errorResponse;
+  }
+
   const subdomain = extractSubdomainFromRequest(request);
 
   // ── Redirect reserved subdomains to main domain ──────────────────────
   // If user is on app.academiahelm.com, redirect to academiahelm.com
+  // EXCEPTION: 'www' is NOT redirected because it's a common alias for the
+  // main domain. Many hosting providers (Vercel, Cloudflare) redirect the
+  // bare domain to www (or vice versa), so redirecting www → bare domain
+  // creates an infinite loop. Instead, we treat www as equivalent to the
+  // main domain by simply passing the request through.
   const host = request.headers.get('host') || '';
   const hostParts = host.split(':')[0].split('.');
-  if (hostParts.length >= 3 && isReservedSubdomain(hostParts[0])) {
+  if (hostParts.length >= 3 && isReservedSubdomain(hostParts[0]) && hostParts[0] !== 'www') {
     const mainDomain = hostParts.slice(1).join('.');
     const protocol = request.headers.get('x-forwarded-proto') || 'https';
     const redirectUrl = new URL(pathname + request.nextUrl.search, `${protocol}://${mainDomain}`);
-    return NextResponse.redirect(redirectUrl);
+    return safeRedirect(redirectUrl, request, redirectDepth);
   }
 
   // Routes Patronat (Academia Federis) : utiliser le middleware dédié
@@ -261,13 +304,16 @@ export async function middleware(request: NextRequest) {
 
   // ── Route racine `/` avec sous-domaine d'école ──
   // Si l'utilisateur accède à school.academiahelm.com/ sans session,
-  // rediriger vers /school-portal pour afficher les options de connexion
-  // spécifiques à cette école (au lieu du landing page générique).
+  // on REWRITE (pas redirect) vers /school-portal pour afficher les options
+  // de connexion spécifiques à cette école.
+  // Utiliser rewrite au lieu de redirect évite les boucles de redirection
+  // si le client redirige vers / après une erreur de login.
   if (pathname === '/') {
     if (subdomain && !user?.id) {
       // Sur un sous-domaine sans session → school portal selector
-      const schoolPortalUrl = new URL('/school-portal', request.nextUrl.origin);
-      return NextResponse.redirect(schoolPortalUrl);
+      // Utiliser rewrite pour éviter les boucles de redirection
+      const rewriteUrl = new URL('/school-portal', request.nextUrl.origin);
+      return NextResponse.rewrite(rewriteUrl);
     }
     return response;
   }
@@ -295,7 +341,7 @@ export async function middleware(request: NextRequest) {
       const mainDomain = getAppBaseUrl();
       const targetUrl = new URL(pathname, mainDomain);
       if (request.nextUrl.origin !== targetUrl.origin) {
-        return NextResponse.redirect(targetUrl);
+        return safeRedirect(targetUrl, request, redirectDepth);
       }
     }
   }
@@ -320,18 +366,18 @@ export async function middleware(request: NextRequest) {
         if (user.tenantSlug && user.tenantId) {
           url.searchParams.set('tenant_id', user.tenantId);
         }
-        return NextResponse.redirect(url);
+        return safeRedirect(url, request, redirectDepth);
       }
       
       // PLATFORM_OWNER sans tenantId → rediriger vers le portail pour sélectionner une école
       // Même le PLATFORM_OWNER doit toujours être dans le contexte d'un tenant (sous-domaine professionnel)
       if (user?.id && user.isPlatformOwner) {
         const mainDomain = getAppBaseUrl();
-        return NextResponse.redirect(new URL('/portal', mainDomain));
+        return safeRedirect(new URL('/portal', mainDomain), request, redirectDepth);
       }
       
       const mainDomain = getAppBaseUrl();
-      return NextResponse.redirect(new URL('/portal', mainDomain));
+      return safeRedirect(new URL('/portal', mainDomain), request, redirectDepth);
     }
 
     // En local/sans sous-domaine, après login réussi, prioriser le tenant de session.
@@ -358,7 +404,7 @@ export async function middleware(request: NextRequest) {
     
     if (!tenantIdentifier) {
       const mainDomain = getAppBaseUrl();
-      return NextResponse.redirect(new URL('/portal', mainDomain));
+      return safeRedirect(new URL('/portal', mainDomain), request, redirectDepth);
     }
 
     // Check if tenant is already cached in cookies — skip API call
@@ -389,13 +435,13 @@ export async function middleware(request: NextRequest) {
 
       if (!tenant) {
         const mainDomain = getAppBaseUrl();
-        return NextResponse.redirect(new URL('/tenant-not-found', mainDomain));
+        return safeRedirect(new URL('/tenant-not-found', mainDomain), request, redirectDepth);
       }
 
       // Vérifier que le tenant est actif
       if (tenant.subscriptionStatus === 'PENDING' || tenant.subscriptionStatus === 'TERMINATED') {
         const mainDomain = getAppBaseUrl();
-        return NextResponse.redirect(new URL('/tenant-not-found', mainDomain));
+        return safeRedirect(new URL('/tenant-not-found', mainDomain), request, redirectDepth);
       }
 
       // Créer une nouvelle réponse pour ajouter les headers
@@ -427,10 +473,15 @@ export async function middleware(request: NextRequest) {
     } catch (error) {
       console.error('Error resolving tenant in middleware:', error);
       const mainDomain = getAppBaseUrl();
-      return NextResponse.redirect(new URL('/tenant-not-found', mainDomain));
+      return safeRedirect(new URL('/tenant-not-found', mainDomain), request, redirectDepth);
     }
   }
 
+  // Réinitialiser le compteur de redirection pour les réponses normales
+  // (pas de redirection → pas de boucle possible)
+  if (redirectDepth > 0) {
+    response.cookies.delete('x-redirect-depth');
+  }
   return response;
 }
 

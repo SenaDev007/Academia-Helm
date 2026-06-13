@@ -1,8 +1,11 @@
+'use client';
+
 /**
  * Page d'erreur : Boucle de redirection détectée
  *
  * Affichée quand le middleware détecte que le navigateur a été redirigé
  * trop de fois (plus de 5 redirections consécutives).
+ * Client Component nécessaire pour le onClick (suppression cookies).
  */
 import Link from 'next/link';
 

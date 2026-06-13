@@ -38,17 +38,33 @@ export class EmailService {
   private transporter: Transporter | null = null;
 
   constructor(private readonly configService: ConfigService) {
-    const envProvider = (this.configService.get<string>('EMAIL_PROVIDER') || '').toLowerCase();
+    const envProvider = (this.configService.get<string>('EMAIL_PROVIDER') || '').toLowerCase().trim();
     const resendKey = this.configService.get<string>('RESEND_API_KEY');
-    if (envProvider === 'resend' && resendKey) {
-      this.provider = 'resend';
-      this.logger.log('✅ Email provider: Resend');
-    } else {
-      this.provider = (this.configService.get<string>('EMAIL_PROVIDER', 'mock') as EmailProvider) || 'mock';
-    }
 
-    if (this.provider === 'nodemailer') {
+    if (envProvider === 'resend') {
+      if (resendKey) {
+        this.provider = 'resend';
+        this.logger.log('✅ Email provider: Resend');
+      } else {
+        this.provider = 'mock';
+        this.logger.error('❌ EMAIL_PROVIDER=resend mais RESEND_API_KEY est MANQUANT ! L\'email ne sera PAS envoyé. Veuillez configurer RESEND_API_KEY dans les variables d\'environnement.');
+      }
+    } else if (envProvider === 'nodemailer') {
+      this.provider = 'nodemailer';
       this.initializeNodemailer();
+    } else if (envProvider === 'sendgrid') {
+      this.provider = 'sendgrid';
+      this.logger.log('✅ Email provider: SendGrid');
+    } else if (envProvider === 'aws-ses') {
+      this.provider = 'aws-ses';
+      this.logger.warn('⚠️  AWS SES non implémenté — utilise mock');
+    } else if (envProvider === 'mock') {
+      this.provider = 'mock';
+      this.logger.warn('⚠️  Email provider: MOCK — aucun email ne sera réellement envoyé');
+    } else {
+      // Aucun EMAIL_PROVIDER défini → mock
+      this.provider = 'mock';
+      this.logger.warn(`⚠️  EMAIL_PROVIDER non configuré (valeur: "${envProvider || '(vide)'}") — mode MOCK par défaut. Configurez EMAIL_PROVIDER=resend + RESEND_API_KEY pour envoyer des emails réels.`);
     }
   }
 
@@ -78,6 +94,13 @@ export class EmailService {
     });
 
     this.logger.log('✅ Nodemailer initialized');
+  }
+
+  /**
+   * Retourne le provider email actif (pour diagnostic)
+   */
+  getProvider(): EmailProvider {
+    return this.provider;
   }
 
   /**

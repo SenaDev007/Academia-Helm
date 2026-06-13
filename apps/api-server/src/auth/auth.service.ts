@@ -721,10 +721,11 @@ export class AuthService {
     // Envoyer l'email avec le code OTP
     try {
       const result = await this.sendPasswordResetOtpEmail(user.email, user.firstName || '', otpCode);
-      this.logger.log(`Code OTP de réinitialisation envoyé à ${user.email} (provider: ${result?.success ? 'OK' : 'ECHEC'})`);
+      this.logger.log(`Code OTP de réinitialisation envoyé à ${user.email} (provider: ${this.configService.get<string>('EMAIL_PROVIDER', 'mock')}, success: ${result?.success}, messageId: ${result?.messageId || 'N/A'})`);
     } catch (error: any) {
-      this.logger.error(`Erreur CRITIQUE lors de l'envoi du code OTP à ${user.email}: ${error?.message || error}`);
-      this.logger.error(`Vérifiez la configuration EMAIL_PROVIDER et les clés API (RESEND_API_KEY, SMTP_*, etc.)`);
+      const provider = this.configService.get<string>('EMAIL_PROVIDER', 'mock');
+      const resendKey = this.configService.get<string>('RESEND_API_KEY');
+      this.logger.error(`❌ ÉCHEC ENVOI OTP à ${user.email} | provider=${provider} | RESEND_API_KEY=${resendKey ? 'configuré (' + resendKey.substring(0, 6) + '...)' : 'MANQUANT'} | EMAIL_FROM_NOREPLY=${this.configService.get<string>('EMAIL_FROM_NOREPLY', '(non défini)')} | erreur: ${error?.message || error}`);
       // On continue pour ne pas fuiter l'erreur au client (anti-énumération)
     }
 
@@ -877,6 +878,52 @@ export class AuthService {
     } catch (error: any) {
       this.logger.error(`Échec de la réinitialisation JWT: ${error.message}`);
       throw new ForbiddenException('Le lien de réinitialisation est invalide ou a expiré.');
+    }
+  }
+
+  /**
+   * Envoie un email de test pour diagnostiquer les problèmes de configuration.
+   * Retourne les détails du provider et le résultat de l'envoi.
+   */
+  async sendTestEmail(to: string): Promise<{ success: boolean; provider: string; messageId?: string; error?: string }> {
+    const fromEmail = this.configService.get<string>('EMAIL_FROM_NOREPLY') || 'noreply@academiahelm.com';
+
+    try {
+      const result = await this.emailService.sendEmail({
+        to,
+        from: fromEmail,
+        fromName: 'Academia Helm — Test',
+        subject: 'Academia Helm — Test de configuration email',
+        html: `
+<!DOCTYPE html>
+<html lang="fr">
+<head><meta charset="utf-8"></head>
+<body style="font-family:Arial,sans-serif;padding:24px;background:#f0f4f8;">
+  <div style="max-width:580px;margin:0 auto;background:#fff;border-radius:12px;padding:32px;">
+    <h2 style="color:#0b2f73;margin:0 0 12px;">Test email — Academia Helm</h2>
+    <p style="color:#475569;font-size:14px;line-height:1.7;">
+      Si vous recevez cet email, la configuration email fonctionne correctement.
+    </p>
+    <p style="color:#64748b;font-size:12px;">
+      Envoyé le ${new Date().toISOString()} depuis ${fromEmail}
+    </p>
+  </div>
+</body>
+</html>`,
+        text: `Test email — Academia Helm\n\nSi vous recevez cet email, la configuration email fonctionne correctement.\n\nEnvoyé le ${new Date().toISOString()} depuis ${fromEmail}`,
+      });
+
+      return {
+        success: result.success,
+        provider: this.configService.get<string>('EMAIL_PROVIDER', 'mock'),
+        messageId: result.messageId,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        provider: this.configService.get<string>('EMAIL_PROVIDER', 'mock'),
+        error: error?.message || String(error),
+      };
     }
   }
 

@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, UseGuards, HttpCode, HttpStatus, ForbiddenException, Req } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards, HttpCode, HttpStatus, ForbiddenException, Req, Logger } from '@nestjs/common';
 import { Request } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
@@ -13,6 +13,8 @@ import { Public } from './decorators/public.decorator';
 
 @Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
@@ -164,6 +166,49 @@ export class AuthController {
    * - Informations du tenant
    * - Année académique active
    */
+  /**
+   * Route de diagnostic : vérifie la configuration email et tente un envoi de test.
+   * ⚠️ UNIQUEMENT EN DÉVELOPPEMENT — expose des infos sensibles (clés partielles)
+   */
+  @Public()
+  @Post('test-email-config')
+  @HttpCode(HttpStatus.OK)
+  async testEmailConfig(@Body('email') testEmail?: string) {
+    const appEnv = this.configService.get<string>('APP_ENV', 'production');
+    const nodeEnv = process.env.NODE_ENV || 'production';
+    const isDev = appEnv === 'development' || nodeEnv === 'development';
+
+    const emailProvider = this.configService.get<string>('EMAIL_PROVIDER', '(non défini)');
+    const resendKey = this.configService.get<string>('RESEND_API_KEY');
+    const emailFromNoreply = this.configService.get<string>('EMAIL_FROM_NOREPLY', '(non défini)');
+    const smtpHost = this.configService.get<string>('SMTP_HOST', '(non défini)');
+
+    const config = {
+      EMAIL_PROVIDER: emailProvider,
+      RESEND_API_KEY: resendKey ? `${resendKey.substring(0, 6)}...${resendKey.slice(-4)}` : '(non défini)',
+      EMAIL_FROM_NOREPLY: emailFromNoreply,
+      SMTP_HOST: smtpHost,
+      NODE_ENV: nodeEnv,
+      APP_ENV: appEnv,
+    };
+
+    // Tenter un envoi réel si un email de test est fourni
+    let sendResult = null;
+    if (testEmail) {
+      try {
+        sendResult = await this.authService.sendTestEmail(testEmail);
+      } catch (error: any) {
+        sendResult = { success: false, error: error?.message || String(error) };
+      }
+    }
+
+    return {
+      config: isDev ? config : { EMAIL_PROVIDER: emailProvider, EMAIL_FROM_NOREPLY: emailFromNoreply },
+      testEmail: testEmail || null,
+      sendResult,
+    };
+  }
+
   @UseGuards(JwtAuthGuard)
   @Post('select-tenant')
   @HttpCode(HttpStatus.OK)

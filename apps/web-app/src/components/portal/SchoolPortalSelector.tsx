@@ -302,16 +302,22 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
               </div>
             ) : (
               <div
-                className="flex h-[80px] w-[80px] items-center justify-center rounded-2xl"
+                className="rounded-2xl p-1"
                 style={{
-                  background: `linear-gradient(135deg, ${GOLD}25, ${GOLD}08)`,
-                  border: `1.5px solid ${GOLD}30`,
+                  background: `linear-gradient(135deg, ${GOLD}30, ${GOLD}08)`,
+                  border: `1.5px solid ${GOLD}25`,
                   boxShadow: `0 8px 32px rgba(0,0,0,0.3)`,
                 }}
               >
-                <span className="text-3xl font-bold" style={{ color: GOLD }}>
-                  {displayName.charAt(0).toUpperCase()}
-                </span>
+                <Image
+                  src="/images/logo-Academia Hub.png"
+                  alt={BRAND.name}
+                  width={72}
+                  height={72}
+                  className="rounded-xl object-contain"
+                  style={{ boxShadow: `0 2px 8px rgba(0,0,0,0.2)` }}
+                  priority
+                />
               </div>
             )}
           </div>

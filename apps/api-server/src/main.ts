@@ -24,10 +24,18 @@ async function bootstrap() {
   app.use(urlencoded({ extended: true, limit: BODY_LIMIT }));
 
   // ✅ Helmet.js — headers HTTP de sécurité (CDC §16.4.3)
+  // ⚠️ crossOriginResourcePolicy et crossOriginEmbedderPolicy désactivés pour les API routes
+  // car ils provoquent des erreurs 403 sur les requêtes cross-origin (BFF Next.js → NestJS)
+  // et les réponses API JSON n'ont pas besoin de ces politiques de sécurité navigateur.
   app.use(helmet({
     contentSecurityPolicy: {
       directives: { defaultSrc: ["'self'"] },
     },
+    // ❌ Désactivé : provoque 403 sur les réponses API cross-origin
+    // Les API JSON n'ont pas de politique de ressources cross-origin
+    crossOriginResourcePolicy: false,
+    // ❌ Désactivé : pas nécessaire pour une API JSON
+    crossOriginEmbedderPolicy: false,
     hsts: {
       maxAge: 31536000,
       includeSubDomains: true,
@@ -36,17 +44,30 @@ async function bootstrap() {
   }));
 
   // ✅ CORS avec wildcard sous-domaines (CDC §16.4.1)
+  // ⚠️ Le callback CORS ne doit JAMAIS appeler callback(new Error(...)) car cela
+  // provoque un 403 Forbidden dans le middleware cors. On utilise callback(null, false)
+  // pour les origines non autorisées (retourne 200 sans header Access-Control-Allow-Origin).
   const isDev = process.env.NODE_ENV !== 'production';
+  const allowedOrigins = [
+    /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/,          // Dev local
+    /^https:\/\/(.+\.)?academiahelm\.com$/,                   // Production principale
+    /^https:\/\/(.+\.)?academia-hub\.pro$/,                   // Domaine alternatif
+    /^https?:\/\/(\d{1,3}\.){3}\d{1,3}(:\d+)?$/,             // IPs directes (VPS, tests)
+    /^https:\/\/[a-z0-9-]+\.vercel\.app$/,                    // Vercel preview deployments
+  ];
+
   app.enableCors({
     origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-      // Sans origin (appels serveur-serveur, curl, Postman)
+      // Sans origin (appels serveur-serveur du BFF Next.js, curl, Postman)
       if (!origin) return callback(null, true);
-      const allowed =
-        /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
-        /^https:\/\/(.+\.)?academiahelm\.com$/.test(origin) ||
-        /^https:\/\/(.+\.)?academia-hub\.pro$/.test(origin);
-      if (allowed || isDev) return callback(null, true);
-      return callback(new Error(`CORS: origin ${origin} not allowed`));
+
+      const isAllowed = allowedOrigins.some(regex => regex.test(origin));
+      if (isAllowed || isDev) return callback(null, true);
+
+      // ⚠️ Ne PAS utiliser callback(new Error(...)) → provoque 403
+      // Utiliser callback(null, false) → le navigateur bloquera silencieusement
+      logger.warn(`CORS: origin ${origin} not allowed (returning false, not error)`);
+      return callback(null, false);
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,

@@ -55,6 +55,7 @@ export default function SchoolSearch({
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Liste des établissements : route App Router → BFF qui appelle Nest
+  // Fallback : si /list échoue (403/5xx), essayer /search?q= pour obtenir au moins des résultats
   const loadAllSchools = async () => {
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => abortController.abort(), 15000);
@@ -77,9 +78,21 @@ export default function SchoolSearch({
           setAllSchools([]);
         }
       } else {
-        const errorMsg = `Erreur ${response.status}: impossible de charger les établissements`;
-        console.error('[SchoolSearch] Failed to load schools list:', response.status);
-        setFetchError(errorMsg);
+        // Tenter le fallback via /search si /list échoue
+        const errorBody = await response.json().catch(() => null);
+        console.error('[SchoolSearch] /list failed:', response.status, errorBody);
+
+        if (response.status === 403 || response.status >= 500) {
+          console.log('[SchoolSearch] Trying /search fallback...');
+          const fallbackOk = await trySearchFallback();
+          if (fallbackOk) return; // Succès du fallback
+        }
+
+        const hint = errorBody?._debug?.hint || '';
+        const errorMsg = response.status === 403
+          ? 'Accès refusé par le serveur. Réessayez dans quelques instants.'
+          : `Erreur ${response.status}: impossible de charger les établissements`;
+        setFetchError(hint ? `${errorMsg} ${hint}` : errorMsg);
       }
     } catch (error: any) {
       clearTimeout(timeoutId);
@@ -88,10 +101,38 @@ export default function SchoolSearch({
         setFetchError('Le serveur met trop de temps à répondre. Réessayez.');
       } else {
         console.error('[SchoolSearch] Error loading schools list:', error);
-        setFetchError('Erreur de connexion au serveur.');
+        // Dernier recours : essayer le search fallback
+        const fallbackOk = await trySearchFallback().catch(() => false);
+        if (!fallbackOk) {
+          setFetchError('Erreur de connexion au serveur.');
+        }
       }
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  /** Fallback : charger quelques écoles via le endpoint /search */
+  const trySearchFallback = async (): Promise<boolean> => {
+    try {
+      const fallbackController = new AbortController();
+      const fallbackTimeout = setTimeout(() => fallbackController.abort(), 10000);
+      // Recherche large pour obtenir un maximum de résultats
+      const response = await fetch('/api/public/schools/search?q=a', {
+        signal: fallbackController.signal,
+      });
+      clearTimeout(fallbackTimeout);
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data) && data.length > 0) {
+          console.log(`[SchoolSearch] Fallback /search loaded ${data.length} schools`);
+          setAllSchools(data);
+          return true;
+        }
+      }
+      return false;
+    } catch {
+      return false;
     }
   };
 

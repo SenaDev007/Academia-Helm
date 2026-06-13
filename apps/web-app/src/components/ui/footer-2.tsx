@@ -68,7 +68,7 @@ const footerLinks = [
 // --- Icônes SVG sociales avec couleurs officielles ---
 function FacebookIcon({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" className={className} fill="#1877F2">
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor">
       <path d="M24 12.073C24 5.404 18.627 0 12 0S0 5.404 0 12.073c0 6.025 4.388 11.02 10.125 11.927V15.56H7.078v-3.487h3.047V9.414c0-3.007 1.792-4.669 4.533-4.669 1.313 0 2.686.236 2.686.236v2.953h-1.514c-1.491 0-1.956.93-1.956 1.885v2.254h3.328l-.532 3.487h-2.796V24C19.612 23.093 24 18.098 24 12.073z" />
     </svg>
   );
@@ -76,7 +76,7 @@ function FacebookIcon({ className }: { className?: string }) {
 
 function LinkedInIcon({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" className={className} fill="#0A66C2">
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor">
       <path d="M20.447 20.452H16.89v-5.569c0-1.328-.025-3.037-1.851-3.037-1.854 0-2.136 1.446-2.136 2.939v5.667H9.346V9h3.415v1.561h.049c.476-.9 1.637-1.85 3.37-1.85 3.603 0 4.268 2.372 4.268 5.455v6.286zM5.337 7.433a2.063 2.063 0 1 1 0-4.126 2.063 2.063 0 0 1 0 4.126zM7.119 20.452H3.553V9H7.12v11.452z" />
     </svg>
   );
@@ -92,7 +92,7 @@ function XIcon({ className }: { className?: string }) {
 
 function YouTubeIcon({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" className={className} fill="#FF0000">
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor">
       <path d="M23.498 6.186a2.997 2.997 0 0 0-2.11-2.12C19.503 3.5 12 3.5 12 3.5s-7.504 0-9.388.565a2.997 2.997 0 0 0-2.11 2.12A31.21 31.21 0 0 0 0 12a31.21 31.21 0 0 0 .502 5.814 2.997 2.997 0 0 0 2.11 2.12C4.496 20.5 12 20.5 12 20.5s7.503 0 9.388-.565a2.997 2.997 0 0 0 2.11-2.12A31.21 31.21 0 0 0 24 12a31.21 31.21 0 0 0-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
     </svg>
   );
@@ -135,12 +135,12 @@ const contactInfo = [
   },
   {
     icon: <Phone size={18} className="text-[#f5b335]" />,
-    text: "+229 97 00 00 00",
-    href: "tel:+22997000000",
+    text: "+229 01 41 36 08 03",
+    href: "tel:+2290141360803",
   },
   {
     icon: <MapPin size={18} className="text-[#f5b335]" />,
-    text: "Cotonou, Bénin — Afrique de l'Ouest",
+    text: "Parakou, Bénin — Afrique de l'Ouest",
   },
 ];
 
@@ -233,13 +233,13 @@ export function Footer2() {
             ))}
           </div>
 
-          {/* Boutons App Store & Play Store */}
+          {/* Boutons Google Play & App Store */}
           <div className="flex gap-3">
-            <a href="#" aria-label="Télécharger sur l'App Store">
-              <AppStoreButton />
-            </a>
             <a href="#" aria-label="Disponible sur Google Play">
               <PlayStoreButton />
+            </a>
+            <a href="#" aria-label="Télécharger sur l'App Store">
+              <AppStoreButton />
             </a>
           </div>
         </div>

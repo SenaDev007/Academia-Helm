@@ -718,13 +718,14 @@ export class AuthService {
       },
     });
 
-    // Envoyer l'email avec le code OTP via Resend
+    // Envoyer l'email avec le code OTP
     try {
-      await this.sendPasswordResetOtpEmail(user.email, user.firstName || '', otpCode);
-      this.logger.log(`Code OTP de réinitialisation envoyé à ${user.email}`);
-    } catch (error) {
-      this.logger.error(`Erreur lors de l'envoi du code OTP à ${user.email}`, error);
-      // On continue pour ne pas fuiter l'erreur au client
+      const result = await this.sendPasswordResetOtpEmail(user.email, user.firstName || '', otpCode);
+      this.logger.log(`Code OTP de réinitialisation envoyé à ${user.email} (provider: ${result?.success ? 'OK' : 'ECHEC'})`);
+    } catch (error: any) {
+      this.logger.error(`Erreur CRITIQUE lors de l'envoi du code OTP à ${user.email}: ${error?.message || error}`);
+      this.logger.error(`Vérifiez la configuration EMAIL_PROVIDER et les clés API (RESEND_API_KEY, SMTP_*, etc.)`);
+      // On continue pour ne pas fuiter l'erreur au client (anti-énumération)
     }
 
     return successMessage;
@@ -880,26 +881,32 @@ export class AuthService {
   }
 
   /**
-   * Envoie un email avec le code OTP de réinitialisation via Resend
-   * Template professionnel aux couleurs Academia Helm
+   * Envoie un email avec le code OTP de réinitialisation
+   * Template professionnel aux couleurs Academia Helm avec logo
    */
-  private async sendPasswordResetOtpEmail(to: string, firstName: string, otpCode: string): Promise<void> {
+  private async sendPasswordResetOtpEmail(to: string, firstName: string, otpCode: string): Promise<{ success: boolean; messageId?: string }> {
     const fromEmail = this.configService.get<string>('EMAIL_FROM_NOREPLY') || 'noreply@academiahelm.com';
 
-    await this.emailService.sendEmail({
+    return await this.emailService.sendEmail({
       to,
       from: fromEmail,
+      fromName: 'Academia Helm',
       subject: 'Academia Helm — Votre code de vérification',
       html: this.buildOtpEmailTemplate(firstName, otpCode),
-      text: `Bonjour ${firstName},\n\nVotre code de vérification Academia Helm est : ${otpCode}\n\nCe code expire dans 10 minutes.\n\nSi vous n'avez pas demandé cette réinitialisation, ignorez cet email.\n\nL'équipe Academia Helm`,
+      text: `Bonjour ${firstName},\n\nVotre code de vérification Academia Helm est : ${otpCode}\n\nCe code expire dans 10 minutes.\n\nSi vous n'avez pas demandé cette réinitialisation, ignorez cet email.\n\nCordialement,\nL'équipe Academia Helm\nhttps://academiahelm.com`,
     });
   }
 
   /**
    * Template email professionnel OTP — Palette Academia Helm
    * Navy #0b2f73 | Blue #1d4fa5 | Gold #f5b335
+   * Avec logo, signature complète et design responsive
    */
   private buildOtpEmailTemplate(firstName: string, otpCode: string): string {
+    const logoUrl = this.configService.get<string>('APP_PUBLIC_URL', 'https://academiahelm.com') + '/images/logo-academia-helm-email.png';
+    const signatureLogoUrl = this.configService.get<string>('APP_PUBLIC_URL', 'https://academiahelm.com') + '/images/logo-academia-helm-signature.png';
+    const currentYear = new Date().getFullYear();
+
     return `
 <!DOCTYPE html>
 <html lang="fr">
@@ -908,53 +915,129 @@ export class AuthService {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Code de vérification — Academia Helm</title>
   <style>
-    body { margin: 0; padding: 0; background: #f8fafc; font-family: 'Segoe UI', Arial, sans-serif; }
-    .container { max-width: 600px; margin: 0 auto; }
-    .header { background: linear-gradient(135deg, #0b2f73, #1d4fa5); padding: 32px 24px; text-align: center; border-radius: 12px 12px 0 0; }
+    /* Reset */
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+    img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
+    body { margin: 0; padding: 0; width: 100% !important; height: 100% !important; background-color: #f0f4f8; font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif; }
+
+    /* Container */
+    .email-wrapper { width: 100%; background-color: #f0f4f8; padding: 32px 16px; }
+    .email-container { max-width: 580px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(11, 47, 115, 0.08); }
+
+    /* Header */
+    .header { background: linear-gradient(135deg, #0b2f73 0%, #1d4fa5 100%); padding: 36px 32px 28px; text-align: center; position: relative; }
+    .header::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 4px; background: linear-gradient(90deg, #f5b335, #e09915, #f5b335); }
+    .header-logo { max-width: 56px; margin-bottom: 12px; border-radius: 12px; }
     .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 700; letter-spacing: 0.5px; }
-    .header p { color: #f5b335; margin: 8px 0 0; font-size: 13px; font-weight: 500; }
-    .content { background: #ffffff; padding: 40px 32px; border: 1px solid #e2e8f0; border-top: none; }
-    .greeting { font-size: 16px; color: #1e293b; margin-bottom: 8px; }
-    .instruction { font-size: 14px; color: #475569; line-height: 1.7; margin-bottom: 32px; }
-    .otp-container { text-align: center; margin: 32px 0; }
-    .otp-label { font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; font-weight: 600; }
-    .otp-code { display: inline-block; background: linear-gradient(135deg, #0b2f7308, #1d4fa508); border: 2px solid #0b2f7320; border-radius: 12px; padding: 16px 40px; font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #0b2f73; font-family: 'Courier New', monospace; }
-    .expiry { font-size: 13px; color: #64748b; margin-top: 24px; text-align: center; }
-    .warning { font-size: 13px; color: #94a3b8; margin-top: 20px; padding: 16px; background: #f8fafc; border-radius: 8px; border-left: 3px solid #f5b335; }
-    .footer { background: #f8fafc; padding: 20px 24px; text-align: center; border-radius: 0 0 12px 12px; border: 1px solid #e2e8f0; border-top: none; }
-    .footer p { font-size: 12px; color: #94a3b8; margin: 4px 0; }
-    .footer a { color: #1d4fa5; text-decoration: none; }
+    .header .tagline { color: #f5b335; margin: 6px 0 0; font-size: 12px; font-weight: 500; letter-spacing: 0.3px; text-transform: uppercase; }
+
+    /* Content */
+    .content { padding: 40px 36px; }
+    .greeting { font-size: 17px; color: #1e293b; margin: 0 0 6px; font-weight: 600; }
+    .instruction { font-size: 14px; color: #475569; line-height: 1.8; margin: 0 0 28px; }
+
+    /* OTP Box */
+    .otp-section { text-align: center; margin: 28px 0; }
+    .otp-label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 2px; margin: 0 0 14px; font-weight: 700; }
+    .otp-box { display: inline-block; background: linear-gradient(135deg, #0b2f7306, #1d4fa506); border: 2px dashed #1d4fa530; border-radius: 14px; padding: 20px 48px; }
+    .otp-code { font-size: 38px; font-weight: 800; letter-spacing: 10px; color: #0b2f73; font-family: 'Courier New', 'Consolas', monospace; margin: 0; }
+
+    /* Expiry */
+    .expiry-notice { text-align: center; margin: 20px 0 0; }
+    .expiry-notice p { font-size: 13px; color: #64748b; margin: 0; display: inline-block; background: #fef3c7; padding: 6px 16px; border-radius: 20px; font-weight: 500; }
+    .expiry-notice strong { color: #92400e; }
+
+    /* Divider */
+    .divider { border: none; border-top: 1px solid #e2e8f0; margin: 28px 0; }
+
+    /* Warning */
+    .warning-box { font-size: 13px; color: #64748b; padding: 16px 20px; background: #f8fafc; border-radius: 10px; border-left: 4px solid #f5b335; line-height: 1.6; margin: 0; }
+
+    /* Signature */
+    .signature { margin-top: 28px; padding-top: 20px; border-top: 1px solid #e2e8f0; }
+    .signature-row { display: flex; align-items: center; gap: 12px; }
+    .signature-logo { width: 36px; height: 36px; border-radius: 8px; }
+    .signature-text p { margin: 0; font-size: 13px; color: #475569; line-height: 1.5; }
+    .signature-text .team-name { font-weight: 600; color: #0b2f73; }
+    .signature-text .website { color: #1d4fa5; text-decoration: none; font-weight: 500; }
+
+    /* Footer */
+    .footer { background: #0b2f73; padding: 20px 32px; text-align: center; }
+    .footer p { font-size: 11px; color: #94a3b8; margin: 4px 0; line-height: 1.5; }
+    .footer a { color: #f5b335; text-decoration: none; font-weight: 500; }
+    .footer .brand { color: #f5b335; font-weight: 600; font-size: 12px; }
+
+    /* Responsive */
     @media only screen and (max-width: 480px) {
-      .content { padding: 24px 16px; }
-      .otp-code { font-size: 28px; padding: 12px 24px; letter-spacing: 6px; }
+      .email-wrapper { padding: 16px 8px; }
+      .content { padding: 28px 20px; }
+      .otp-box { padding: 16px 28px; }
+      .otp-code { font-size: 28px; letter-spacing: 6px; }
+      .header { padding: 28px 20px 22px; }
+      .signature-row { flex-direction: column; text-align: center; }
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <h1>Academia Helm</h1>
-      <p>Plateforme SaaS de gestion scolaire</p>
-    </div>
-    <div class="content">
-      <p class="greeting">Bonjour ${firstName},</p>
-      <p class="instruction">
-        Vous avez demandé la réinitialisation de votre mot de passe Academia Helm.
-        Utilisez le code ci-dessous pour continuer :
-      </p>
-      <div class="otp-container">
-        <p class="otp-label">Code de vérification</p>
-        <div class="otp-code">${otpCode}</div>
+  <div class="email-wrapper">
+    <div class="email-container">
+      <!-- Header -->
+      <div class="header">
+        <img src="${logoUrl}" alt="Academia Helm" class="header-logo" />
+        <h1>Academia Helm</h1>
+        <p class="tagline">Plateforme SaaS de gestion scolaire</p>
       </div>
-      <p class="expiry">Ce code expire dans <strong>10 minutes</strong>.</p>
-      <div class="warning">
-        Si vous n'avez pas demandé cette réinitialisation, vous pouvez ignorer cet email en toute sécurité.
-        Votre mot de passe restera inchangé.
+
+      <!-- Content -->
+      <div class="content">
+        <p class="greeting">Bonjour ${firstName},</p>
+        <p class="instruction">
+          Vous avez demandé la réinitialisation de votre mot de passe sur <strong>Academia Helm</strong>.
+          Veuillez utiliser le code de vérification ci-dessous pour poursuivre la démarche :
+        </p>
+
+        <!-- OTP Code -->
+        <div class="otp-section">
+          <p class="otp-label">Code de vérification</p>
+          <div class="otp-box">
+            <p class="otp-code">${otpCode}</p>
+          </div>
+        </div>
+
+        <!-- Expiry Notice -->
+        <div class="expiry-notice">
+          <p>Ce code expire dans <strong>10 minutes</strong></p>
+        </div>
+
+        <hr class="divider" />
+
+        <!-- Security Warning -->
+        <div class="warning-box">
+          Si vous n'avez pas demandé cette réinitialisation, vous pouvez ignorer cet email en toute sécurité.
+          Votre mot de passe restera inchangé et aucune action ne sera effectuée sur votre compte.
+        </div>
+
+        <!-- Signature -->
+        <div class="signature">
+          <div class="signature-row">
+            <img src="${signatureLogoUrl}" alt="" class="signature-logo" />
+            <div class="signature-text">
+              <p>Cordialement,</p>
+              <p class="team-name">L'équipe Academia Helm</p>
+              <p><a href="https://academiahelm.com" class="website">academiahelm.com</a></p>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
-    <div class="footer">
-      <p>Academia Helm — Solution de gestion scolaire</p>
-      <p>Cet email a été envoyé automatiquement. Merci de ne pas y répondre.</p>
+
+      <!-- Footer -->
+      <div class="footer">
+        <p class="brand">Academia Helm</p>
+        <p>Solution de gestion scolaire nouvelle génération</p>
+        <p>Cet email a été envoyé automatiquement. Merci de ne pas y répondre.</p>
+        <p>&copy; ${currentYear} Academia Helm. Tous droits réservés.</p>
+      </div>
     </div>
   </div>
 </body>

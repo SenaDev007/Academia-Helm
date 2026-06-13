@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 
 export async function POST(request: NextRequest) {
   try {
@@ -31,7 +32,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const backendResponse = await fetch(endpoint, {
+    const backendResponse = await fetchWithTimeout(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

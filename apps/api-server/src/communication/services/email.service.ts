@@ -19,6 +19,7 @@ export interface EmailRequest {
   html?: string;
   text?: string;
   from?: string;
+  fromName?: string;
   cc?: string | string[];
   bcc?: string | string[];
   attachments?: Array<{
@@ -111,10 +112,11 @@ export class EmailService {
       throw new Error('Nodemailer transporter not initialized');
     }
 
-    const fromEmail = request.from || this.configService.get<string>('SMTP_FROM') || 'noreply@academia-hub.com';
+    const fromEmail = request.from || this.configService.get<string>('SMTP_FROM') || 'noreply@academiahelm.com';
+    const fromName = request.fromName || 'Academia Helm';
 
     const mailOptions = {
-      from: fromEmail,
+      from: `"${fromName}" <${fromEmail}>`,
       to: Array.isArray(request.to) ? request.to.join(', ') : request.to,
       subject: request.subject,
       text: request.text,
@@ -151,6 +153,9 @@ export class EmailService {
       throw new Error('Expéditeur manquant : renseignez request.from ou EMAIL_FROM_NOREPLY');
     }
 
+    const fromName = request.fromName || 'Academia Helm';
+    const fromField = `"${fromName}" <${fromEmail}>`;
+
     const toList = Array.isArray(request.to) ? request.to : [request.to];
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -159,7 +164,7 @@ export class EmailService {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: fromEmail,
+        from: fromField,
         to: toList,
         subject: request.subject,
         html: request.html ?? request.text,
@@ -187,8 +192,8 @@ export class EmailService {
    */
   private async sendViaSendGrid(request: EmailRequest): Promise<{ success: boolean; messageId?: string }> {
     const sendGridApiKey = this.configService.get<string>('SENDGRID_API_KEY');
-    const fromEmail = request.from || this.configService.get<string>('SENDGRID_FROM_EMAIL') || 'noreply@academia-hub.com';
-    const fromName = this.configService.get<string>('SENDGRID_FROM_NAME') || 'Academia Helm';
+    const fromEmail = request.from || this.configService.get<string>('SENDGRID_FROM_EMAIL') || 'noreply@academiahelm.com';
+    const fromName = request.fromName || this.configService.get<string>('SENDGRID_FROM_NAME') || 'Academia Helm';
 
     if (!sendGridApiKey) {
       throw new Error('SENDGRID_API_KEY not configured');
@@ -273,36 +278,48 @@ export class EmailService {
 
     const subject = `${urgency ? `[${urgency}] ` : ''}Rappel - ${data.schoolName} - Expiration dans ${data.daysRemaining} jour${data.daysRemaining > 1 ? 's' : ''}`;
 
+    const logoUrl = this.configService.get<string>('APP_PUBLIC_URL', 'https://academiahelm.com') + '/images/logo-academia-helm-email.png';
+
     const html = `
 <!DOCTYPE html>
-<html>
+<html lang="fr">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-    .header { background: #4F46E5; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-    .content { background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }
-    .button { display: inline-block; background: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin-top: 20px; }
-    .footer { text-align: center; margin-top: 30px; color: #6b7280; font-size: 12px; }
+    body { margin: 0; padding: 0; background: #f8fafc; font-family: 'Segoe UI', Arial, sans-serif; }
+    .container { max-width: 600px; margin: 0 auto; }
+    .header { background: linear-gradient(135deg, #0b2f73, #1d4fa5); padding: 28px 24px; text-align: center; border-radius: 12px 12px 0 0; }
+    .header img { max-width: 48px; margin-bottom: 8px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 700; }
+    .header p { color: #f5b335; margin: 4px 0 0; font-size: 12px; font-weight: 500; }
+    .content { background: #ffffff; padding: 36px 32px; border: 1px solid #e2e8f0; border-top: none; }
+    .content h2 { font-size: 18px; color: #0b2f73; margin: 0 0 16px; }
+    .content p { font-size: 14px; color: #475569; line-height: 1.7; margin: 0 0 12px; }
+    .button { display: inline-block; background: linear-gradient(135deg, #0b2f73, #1d4fa5); color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 8px; margin-top: 16px; font-weight: 600; font-size: 14px; }
+    .footer { background: #f8fafc; padding: 20px 24px; text-align: center; border-radius: 0 0 12px 12px; border: 1px solid #e2e8f0; border-top: none; }
+    .footer p { font-size: 12px; color: #94a3b8; margin: 4px 0; }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header">
-      <h1>Academia Hub</h1>
+      <img src="${logoUrl}" alt="Academia Helm" />
+      <h1>Academia Helm</h1>
+      <p>Plateforme SaaS de gestion scolaire</p>
     </div>
     <div class="content">
       <h2>Rappel d'expiration</h2>
       <p>Bonjour,</p>
       <p>Votre ${statusText} pour <strong>${data.schoolName}</strong> expire dans <strong>${data.daysRemaining} jour${data.daysRemaining > 1 ? 's' : ''}</strong>.</p>
       <p><strong>Plan actuel :</strong> ${data.planName}</p>
-      <p>Pour continuer à bénéficier de tous les services Academia Hub, veuillez renouveler votre abonnement dès maintenant.</p>
+      <p>Pour continuer à bénéficier de tous les services Academia Helm, veuillez renouveler votre abonnement dès maintenant.</p>
       <a href="${data.renewalUrl}" class="button">Renouveler maintenant</a>
-      <p style="margin-top: 30px;">Si vous avez des questions, n'hésitez pas à nous contacter.</p>
-      <p>Cordialement,<br>L'équipe Academia Hub</p>
+      <p style="margin-top: 24px;">Si vous avez des questions, n'hésitez pas à nous contacter.</p>
+      <p>Cordialement,<br>L'équipe Academia Helm</p>
     </div>
     <div class="footer">
+      <p>Academia Helm — Solution de gestion scolaire</p>
       <p>Cet email a été envoyé automatiquement. Merci de ne pas y répondre.</p>
     </div>
   </div>
@@ -311,7 +328,7 @@ export class EmailService {
     `.trim();
 
     const text = `
-Academia Hub - Rappel d'expiration
+Academia Helm - Rappel d'expiration
 
 Bonjour,
 
@@ -319,11 +336,11 @@ Votre ${statusText} pour ${data.schoolName} expire dans ${data.daysRemaining} jo
 
 Plan actuel : ${data.planName}
 
-Pour continuer à bénéficier de tous les services Academia Hub, veuillez renouveler votre abonnement :
+Pour continuer à bénéficier de tous les services Academia Helm, veuillez renouveler votre abonnement :
 ${data.renewalUrl}
 
 Cordialement,
-L'équipe Academia Hub
+L'équipe Academia Helm
     `.trim();
 
     return { subject, html, text };

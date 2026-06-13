@@ -23,6 +23,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { SubdomainService } from '../../common/services/subdomain.service';
+import { DomainManagementService } from '../../common/services/domain-management.service';
 import { OrionAlertsService } from '../../orion/services/orion-alerts.service';
 import { PricingService } from '../../billing/services/pricing.service';
 import { OtpService } from './otp.service';
@@ -37,6 +38,7 @@ export class OnboardingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly subdomainService: SubdomainService,
+    private readonly domainManagementService: DomainManagementService,
     private readonly pricingService: PricingService,
     private readonly otpService: OtpService,
     @Inject(forwardRef(() => {
@@ -764,7 +766,8 @@ export class OnboardingService {
         this.logger.warn(`⚠️  Failed to emit ORION events: ${error.message}`);
       }
 
-      return {
+      // 🔗 Retourner les données AVANT les appels API (la transaction est complète)
+      const activationResult = {
         tenants: tenants.map(tenant => ({
           id: tenant.id,
           name: tenant.name,
@@ -782,10 +785,63 @@ export class OnboardingService {
           role: promoter.role,
         },
       };
+
+      // 🔗 DOMAIN MANAGEMENT - Créer les sous-domaines Cloudflare + Vercel (hors transaction)
+      // Important : Les appels API Cloudflare/Vercel sont lents et ne doivent PAS
+      // bloquer la transaction DB. On les exécute en arrière-plan.
+      this.createSubdomainsAsync(tenants);
+
+      return activationResult;
     });
   }
 
   // Note: generateSlug supprimé - utilise SubdomainService.generateAndValidate()
+
+  /**
+   * Crée les sous-domaines Cloudflare + Vercel de façon asynchrone (fire-and-forget).
+   * Ne bloque PAS la transaction DB — les appels API réseau sont lents.
+   * Si ça échoue, le tenant reste actif mais sans sous-domaine DNS configuré.
+   */
+  private createSubdomainsAsync(tenants: { id: string; subdomain: string | null; name: string }[]): void {
+    if (!this.domainManagementService.isConfigured()) {
+      this.logger.warn('⚠️  Domain management not configured — skipping subdomain creation. Configure CLOUDFLARE_API_TOKEN, CLOUDFLARE_ZONE_ID, VERCEL_API_TOKEN, VERCEL_PROJECT_ID');
+      return;
+    }
+
+    // Fire-and-forget : ne pas await, ne pas bloquer la réponse
+    Promise.all(
+      tenants.map(async (tenant) => {
+        if (!tenant.subdomain) {
+          this.logger.warn(`⚠️  No subdomain for tenant ${tenant.id} — skipping domain creation`);
+          return;
+        }
+
+        try {
+          const result = await this.domainManagementService.createSchoolSubdomain(
+            tenant.subdomain,
+            tenant.id,
+          );
+
+          if (result.success) {
+            this.logger.log(
+              `✅ Subdomain ${result.domain} created for tenant ${tenant.id} (CF: ${result.cloudflareCreated}, Vercel: ${result.vercelAdded}, Verified: ${result.vercelVerified})`,
+            );
+          } else {
+            this.logger.warn(
+              `⚠️  Subdomain creation partial/failed for ${result.domain}: ${result.error}`,
+            );
+          }
+        } catch (error) {
+          this.logger.error(
+            `❌ Unexpected error creating subdomain for tenant ${tenant.id}: ${error.message}`,
+          );
+        }
+      }),
+    ).catch((error) => {
+      // Catch-all de sécurité (ne devrait jamais arriver)
+      this.logger.error(`❌ Subdomain creation batch failed: ${error.message}`);
+    });
+  }
 
   /**
    * Génère un sous-domaine unique pour une annexe

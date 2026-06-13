@@ -296,10 +296,10 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
           </div>
 
           {/* Nom de l'école */}
-          <h1 className="text-base font-bold tracking-tight text-white sm:text-lg">
+          <h1 className="text-sm font-semibold tracking-tight text-white sm:text-base">
             {isLoading ? (
               <span className="inline-flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin text-[#f5b335]" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-[#f5b335]" />
                 <span className="text-white/70">Chargement...</span>
               </span>
             ) : (
@@ -309,7 +309,7 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
 
           {/* Slogan */}
           {displaySlogan && (
-            <p className="mt-1 text-xs italic text-white/40 sm:text-sm">
+            <p className="mt-1 text-[11px] italic text-white/40 sm:text-xs">
               {displaySlogan}
             </p>
           )}
@@ -339,7 +339,7 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
           )}
 
           {/* Invite */}
-          <p className="mt-4 text-sm font-medium text-white/50">
+          <p className="mt-3 text-xs font-medium text-white/50">
             Choisissez votre portail pour vous connecter
           </p>
         </motion.div>

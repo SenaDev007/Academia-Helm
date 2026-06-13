@@ -12,6 +12,7 @@ import { StrictPermissionsService } from './services/strict-permissions.service'
 import { AccessDeniedLogService } from './services/access-denied-log.service';
 import { SubdomainService } from './services/subdomain.service';
 import { PuppeteerPoolService } from './services/puppeteer-pool.service';
+import { DomainManagementService } from './services/domain-management.service';
 import { PermissionsController } from './controllers/permissions.controller';
 import { DashboardController } from './controllers/dashboard.controller';
 import { OpenRouterModule } from './services/openrouter.module';
@@ -34,6 +35,7 @@ import { SecurityModule } from '../security/security.module';
     AccessDeniedLogService,
     SubdomainService,
     PuppeteerPoolService,
+    DomainManagementService,
   ],
   exports: [
     CacheService,
@@ -43,6 +45,7 @@ import { SecurityModule } from '../security/security.module';
     AccessDeniedLogService,
     SubdomainService,
     PuppeteerPoolService,
+    DomainManagementService,
     OpenRouterModule,
   ],
 })

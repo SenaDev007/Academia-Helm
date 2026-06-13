@@ -496,7 +496,7 @@ export default function ForgotPasswordPage({ schoolBranding }: ForgotPasswordPag
               <StepIcon className="h-7 w-7" />
             </motion.div>
 
-            <h1 className="text-base font-bold tracking-tight sm:text-lg" style={{ color: NAVY }}>
+            <h1 className="text-sm font-semibold tracking-tight sm:text-base" style={{ color: NAVY }}>
               {currentStep.title}
             </h1>
             <p className="mt-2 text-sm text-slate-600">{currentStep.subtitle}</p>

@@ -1028,7 +1028,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 </motion.div>
               )}
               <h1
-                className="text-base font-bold tracking-tight sm:text-lg"
+                className="text-sm font-semibold tracking-tight sm:text-base"
                 style={{ color: NAVY }}
               >
                 {portalDef?.title || clientBranding?.name || BRAND.name}

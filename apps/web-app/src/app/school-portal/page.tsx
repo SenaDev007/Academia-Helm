@@ -3,6 +3,7 @@
  *
  * Affichée lorsqu'un utilisateur accède directement à un sous-domaine d'école.
  * Présente les 4 portails disponibles dans le contexte de cette école.
+ * Résout le branding de l'école (logo, nom, couleurs, slogan) côté serveur.
  */
 
 import { headers } from 'next/headers';
@@ -43,13 +44,22 @@ export default async function SchoolPortalPage() {
 
         if (response.ok) {
           const data = await response.json();
+          // Résolution des données scolaires (identité > settings > école)
+          const identity = data.identityProfiles?.[0];
+          const settings = data.schoolSettings;
+          const school = data.schools;
+
           schoolInfo = {
-            name: data.schoolName || data.name || subdomain,
+            name: identity?.schoolName || settings?.schoolName || school?.name || data.name || subdomain,
             slug: data.slug || subdomain,
-            logoUrl: data.schoolSettings?.logoUrl || data.schools?.logo || null,
-            city: data.schoolSettings?.city || null,
-            phone: data.schoolSettings?.phone || data.schools?.primaryPhone || null,
-            address: data.schoolSettings?.address || data.schools?.address || null,
+            logoUrl: identity?.logoUrl || settings?.logoUrl || school?.logo || null,
+            city: identity?.city || settings?.city || school?.city || null,
+            phone: identity?.phonePrimary || settings?.phone || school?.primaryPhone || null,
+            address: identity?.address || settings?.address || school?.address || null,
+            primaryColor: settings?.primaryColor || school?.primaryColor || null,
+            secondaryColor: settings?.secondaryColor || school?.secondaryColor || null,
+            slogan: identity?.slogan || settings?.slogan || school?.slogan || school?.motto || null,
+            motto: school?.motto || null,
           };
         }
       } catch {
@@ -58,7 +68,7 @@ export default async function SchoolPortalPage() {
       }
     }
   } catch {
-    // headers() peut échouter dans certains contextes
+    // headers() peut échouer dans certains contextes
   }
 
   return <SchoolPortalSelector schoolInfo={schoolInfo} subdomain={subdomain} />;

@@ -42,6 +42,7 @@ import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getMotionDuration } from '@/lib/motion/presets';
 import { extractTenantSlug } from '@/lib/tenant/constants';
 import { getAvailablePortals, detectAccessContext, type PortalType } from '@/lib/auth/role-portal-map';
+import { getApiBaseUrl } from '@/lib/utils/urls';
 
 const NAVY = '#0b2f73';
 const BLUE = '#1d4fa5';
@@ -54,6 +55,10 @@ interface SchoolPortalInfo {
   city: string | null;
   phone: string | null;
   address: string | null;
+  primaryColor: string | null;
+  secondaryColor: string | null;
+  slogan: string | null;
+  motto: string | null;
 }
 
 /**
@@ -146,16 +151,29 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
 
   const fetchSchoolData = async (slug: string) => {
     try {
-      const response = await fetch(`/api/tenants/by-subdomain/${slug}`);
+      const apiUrl = getApiBaseUrl();
+      const response = await fetch(`${apiUrl}/tenants/by-subdomain/${slug}`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+      });
       if (response.ok) {
         const data = await response.json();
+        // Résolution des données scolaires (identité > settings > école)
+        const identity = data.identityProfiles?.[0];
+        const settings = data.schoolSettings;
+        const school = data.schools;
         setSchoolData({
-          name: data.schoolName || data.name || slug,
+          name: identity?.schoolName || settings?.schoolName || school?.name || data.name || slug,
           slug: data.slug || slug,
-          logoUrl: data.schoolSettings?.logoUrl || data.schools?.logo || null,
-          city: data.schoolSettings?.city || null,
-          phone: data.schoolSettings?.phone || data.schools?.primaryPhone || null,
-          address: data.schoolSettings?.address || data.schools?.address || null,
+          logoUrl: identity?.logoUrl || settings?.logoUrl || school?.logo || null,
+          city: identity?.city || settings?.city || school?.city || null,
+          phone: identity?.phonePrimary || settings?.phone || school?.primaryPhone || null,
+          address: identity?.address || settings?.address || school?.address || null,
+          primaryColor: settings?.primaryColor || school?.primaryColor || null,
+          secondaryColor: settings?.secondaryColor || school?.secondaryColor || null,
+          slogan: identity?.slogan || settings?.slogan || school?.slogan || school?.motto || null,
+          motto: school?.motto || null,
         });
       }
     } catch (error) {
@@ -203,16 +221,21 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
     [shouldReduceMotion, dur],
   );
 
+  // Couleurs dynamiques : utiliser les couleurs de l'école si disponibles
+  const bgColor1 = schoolData?.primaryColor || NAVY;
+  const bgColor2 = schoolData?.secondaryColor || BLUE;
+  const accentColor = GOLD;
+
   return (
     <div className="relative flex min-h-screen w-full flex-col items-center justify-center overflow-hidden px-4 py-8 sm:px-6 lg:px-8"
-      style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 50%, #0d3a8f 100%)` }}
+      style={{ background: `linear-gradient(135deg, ${bgColor1} 0%, ${bgColor2} 50%, ${bgColor1}cc 100%)` }}
     >
       {/* Background decorative elements */}
       <div className="pointer-events-none absolute inset-0" aria-hidden>
         <div className="absolute -top-40 -left-20 w-96 h-96 rounded-full opacity-10"
-          style={{ background: `radial-gradient(circle, ${GOLD}, transparent)` }} />
+          style={{ background: `radial-gradient(circle, ${accentColor}, transparent)` }} />
         <div className="absolute -bottom-40 -right-20 w-[500px] h-[500px] rounded-full opacity-8"
-          style={{ background: `radial-gradient(circle, ${NAVY}, transparent)` }} />
+          style={{ background: `radial-gradient(circle, ${bgColor1}, transparent)` }} />
       </div>
 
       {/* Main content */}
@@ -237,14 +260,9 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center rounded-full border-2 border-white/30 bg-white/10 backdrop-blur-sm">
-                  <Image
-                    src={BRAND.logoPath}
-                    alt={BRAND.name}
-                    width={40}
-                    height={40}
-                    className="rounded-full sm:h-12 sm:w-12"
-                    priority
-                  />
+                  <span className="text-2xl font-bold text-white sm:text-3xl">
+                    {(schoolData?.name || BRAND.name).charAt(0).toUpperCase()}
+                  </span>
                 </div>
               )}
             </div>
@@ -261,6 +279,13 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
               schoolData?.name || BRAND.name
             )}
           </h1>
+
+          {/* School slogan/motto */}
+          {(schoolData?.slogan || schoolData?.motto) && (
+            <p className="mt-1 text-sm text-white/60 italic sm:text-base">
+              {schoolData.slogan || schoolData.motto}
+            </p>
+          )}
 
           {/* School details */}
           {schoolData && (

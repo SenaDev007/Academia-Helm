@@ -281,7 +281,7 @@ export default function SchoolSearch({
             <button
               key={school.id}
               onClick={() => handleSchoolClick(school)}
-              className="w-full px-3 py-2.5 hover:bg-slate-50 flex items-center gap-3 text-left rounded-lg transition-colors group"
+              className="school-item w-full px-3 py-2.5 flex items-center gap-3 text-left rounded-lg transition-all duration-150 border-2 border-transparent"
             >
               {school.logoUrl ? (
                 <Image
@@ -293,7 +293,7 @@ export default function SchoolSearch({
                 />
               ) : (
                 <div
-                  className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                  className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-105"
                   style={{
                     background: `linear-gradient(135deg, ${NAVY}10, ${BLUE}15)`,
                   }}
@@ -302,7 +302,7 @@ export default function SchoolSearch({
                 </div>
               )}
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-sm text-slate-900 truncate group-hover:text-slate-700 transition-colors">
+                <p className="font-semibold text-sm truncate transition-colors" style={{ color: NAVY }}>
                   {school.name}
                 </p>
                 <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500">

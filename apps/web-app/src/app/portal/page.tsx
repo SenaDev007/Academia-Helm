@@ -647,7 +647,7 @@ export default function PortalPage() {
           >
             <motion.div
               key="school-search-modal"
-              className="relative w-full max-w-lg sm:max-w-2xl lg:max-w-3xl rounded-2xl border bg-white/95 p-4 shadow-2xl backdrop-blur-md sm:p-6 md:p-8 max-h-[95vh] sm:max-h-[90vh] flex flex-col"
+              className="relative w-full max-w-md sm:max-w-md rounded-2xl border bg-white/95 p-4 shadow-2xl backdrop-blur-md sm:p-5 max-h-[92vh] flex flex-col"
               style={{
                 borderColor: `${NAVY}18`,
                 boxShadow: `0 24px 48px -12px ${NAVY}20, 0 0 0 1px ${GOLD}14`,

@@ -62,3 +62,4 @@ apps/web-app/public/workbox-*.js
 # Agent context files
 agent-ctx/
 tool-results/
+upload/

@@ -5,20 +5,17 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { nestControllerUrl } from '@/lib/utils/api-urls';
 
 export async function GET(_request: NextRequest) {
   try {
-    const API_BASE_URL = getApiBaseUrlForRoutes();
-    const apiUrl = API_BASE_URL.endsWith('/api') 
-      ? `${API_BASE_URL}/public/schools/list`
-      : `${API_BASE_URL}/public/schools/list`;
+    const apiUrl = nestControllerUrl('public/schools/list');
     
     console.log('[School List API] Calling backend at:', apiUrl);
     
-    // Timeout de 8s pour éviter les cold starts interminables
+    // Timeout de 15s pour éviter les cold starts interminables
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
     
     let response;
     try {
@@ -33,7 +30,7 @@ export async function GET(_request: NextRequest) {
     } catch (fetchError: any) {
       clearTimeout(timeoutId);
       if (fetchError.name === 'AbortError') {
-        console.error('[School List API] Request timed out after 8s');
+        console.error('[School List API] Request timed out after 15s');
         return NextResponse.json(
           { 
             error: 'Backend timeout',

@@ -12,7 +12,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Search, Building2, MapPin, GraduationCap, Loader, CheckCircle, ChevronDown, X } from 'lucide-react';
+import { Search, Building2, MapPin, GraduationCap, Loader, CheckCircle, ChevronDown, X, RefreshCw, AlertCircle } from 'lucide-react';
 import Image from 'next/image';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 
@@ -48,6 +48,7 @@ export default function SchoolSearch({
   const [allSchools, setAllSchools] = useState<School[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -55,41 +56,48 @@ export default function SchoolSearch({
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Liste des établissements : route App Router → BFF qui appelle Nest
-  useEffect(() => {
+  const loadAllSchools = async (retryCount = 0) => {
     const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort(), 10000); // 10s timeout client-side
-    
-    const loadAllSchools = async () => {
-      setIsLoading(true);
-      try {
-        const response = await fetch('/api/public/schools/list', {
-          signal: abortController.signal,
-        });
-        clearTimeout(timeoutId);
-        if (response.ok) {
-          const data = await response.json();
-          setAllSchools(data);
-        } else {
-          console.error('Failed to load schools list');
-        }
-      } catch (error: any) {
-        clearTimeout(timeoutId);
-        if (error.name === 'AbortError') {
-          console.warn('Schools list fetch timed out');
-        } else {
-          console.error('Error loading schools list:', error);
-        }
-      } finally {
-        setIsLoading(false);
-      }
-    };
+    const timeoutId = setTimeout(() => abortController.abort(), 15000); // 15s timeout client-side
 
-    loadAllSchools();
-    
-    return () => {
+    setIsLoading(true);
+    setFetchError(null);
+    try {
+      const response = await fetch('/api/public/schools/list', {
+        signal: abortController.signal,
+      });
       clearTimeout(timeoutId);
-      abortController.abort();
-    };
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          setAllSchools(data);
+        } else if (data && Array.isArray(data.schools)) {
+          setAllSchools(data.schools);
+        } else {
+          console.warn('[SchoolSearch] Unexpected response format:', data);
+          setAllSchools([]);
+        }
+      } else {
+        const errorMsg = `Erreur ${response.status}: impossible de charger les établissements`;
+        console.error('[SchoolSearch] Failed to load schools list:', response.status);
+        setFetchError(errorMsg);
+      }
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        console.warn('[SchoolSearch] Schools list fetch timed out');
+        setFetchError('Le serveur met trop de temps à répondre. Réessayez.');
+      } else {
+        console.error('[SchoolSearch] Error loading schools list:', error);
+        setFetchError('Erreur de connexion au serveur.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAllSchools();
   }, []);
 
   // Recherche intelligente avec debounce
@@ -233,7 +241,7 @@ export default function SchoolSearch({
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={reduceMotion ? undefined : { opacity: 0, y: -6, scale: 0.99 }}
                 transition={{ duration: reduceMotion ? 0 : 0.2, ease: 'easeOut' }}
-                className="absolute z-[200] mt-2 flex max-h-[60vh] sm:max-h-[450px] w-full flex-col overflow-hidden rounded-xl border-2 bg-white shadow-xl"
+                className="absolute z-[200] mt-2 flex max-h-[65vh] w-full flex-col overflow-hidden rounded-xl border-2 bg-white shadow-xl"
                 style={{ borderColor: `${NAVY}15` }}
               >
                 {/* Header avec compteur */}
@@ -258,8 +266,23 @@ export default function SchoolSearch({
                 </div>
 
                 {/* Liste des résultats */}
-                <div className="overflow-y-auto max-h-[52vh] sm:max-h-[380px]">
-                  {filteredSchools.length > 0 ? (
+                <div className="overflow-y-auto max-h-[58vh]">
+                  {fetchError && allSchools.length === 0 ? (
+                    /* Erreur de chargement avec retry */
+                    <div className="px-4 py-8 text-center">
+                      <AlertCircle className="w-8 h-8 mx-auto mb-3 text-amber-500" />
+                      <p className="text-sm font-medium text-slate-700 mb-1">Impossible de charger les établissements</p>
+                      <p className="text-xs text-slate-500 mb-4">{fetchError}</p>
+                      <button
+                        onClick={() => loadAllSchools()}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors"
+                        style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Réessayer
+                      </button>
+                    </div>
+                  ) : filteredSchools.length > 0 ? (
                     filteredSchools.map((school) => (
                       <button
                         key={school.id}

@@ -107,6 +107,58 @@ $$ LANGUAGE plpgsql`,
     this.logger.debug('Finance triggers applied');
   }
 
+  /**
+   * Corrige les statuts Staff/Contract incohérents en base de données.
+   * - Contrats non signés mais marqués ACTIVE → PENDING
+   * - Staff sans contrat signé mais marqué ACTIVE → PENDING_SIGNATURE
+   * - Staff avec contrat signé mais marqué PENDING_SIGNATURE → ACTIVE
+   * Idempotent : peut être relancé sans effet secondaire.
+   */
+  async runHrStatusDataFix(): Promise<void> {
+    this.logger.log('Running HR status data fix...');
+
+    try {
+      // 1. Unsigned contracts marked as ACTIVE → PENDING
+      const contractsFixed = await this.prisma.$executeRawUnsafe(`
+        UPDATE employment_contracts
+        SET status = 'PENDING', "updatedAt" = NOW()
+        WHERE status = 'ACTIVE'
+          AND "signedAt" IS NULL
+      `);
+      this.logger.log(`HR data fix: ${contractsFixed} unsigned contracts changed from ACTIVE → PENDING`);
+
+      // 2. Staff without signed contract but marked ACTIVE → PENDING_SIGNATURE
+      const staffDemoted = await this.prisma.$executeRawUnsafe(`
+        UPDATE staff s
+        SET status = 'PENDING_SIGNATURE', "updatedAt" = NOW()
+        WHERE s.status = 'ACTIVE'
+          AND NOT EXISTS (
+            SELECT 1 FROM employment_contracts c
+            WHERE c."staffId" = s.id
+              AND c.status = 'ACTIVE'
+              AND c."signedAt" IS NOT NULL
+          )
+      `);
+      this.logger.log(`HR data fix: ${staffDemoted} staff changed from ACTIVE → PENDING_SIGNATURE (no signed contract)`);
+
+      // 3. Staff with signed contract but marked PENDING_SIGNATURE → ACTIVE
+      const staffPromoted = await this.prisma.$executeRawUnsafe(`
+        UPDATE staff s
+        SET status = 'ACTIVE', "updatedAt" = NOW()
+        WHERE s.status = 'PENDING_SIGNATURE'
+          AND EXISTS (
+            SELECT 1 FROM employment_contracts c
+            WHERE c."staffId" = s.id
+              AND c.status = 'ACTIVE'
+              AND c."signedAt" IS NOT NULL
+          )
+      `);
+      this.logger.log(`HR data fix: ${staffPromoted} staff changed from PENDING_SIGNATURE → ACTIVE (has signed contract)`);
+    } catch (e) {
+      this.logger.warn('HR status data fix failed (non-blocking):', (e as Error)?.message);
+    }
+  }
+
   private getFinanceTriggerStatements(): string[] {
     return [
       // 1. Interdiction de suppression physique des transactions

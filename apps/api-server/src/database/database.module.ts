@@ -30,5 +30,7 @@ export class DatabaseModule implements OnApplicationBootstrap {
     // Exécuter les triggers critiques au démarrage
     await this.bootstrap.runModule1Triggers();
     await this.bootstrap.runFinanceTriggers();
+    // Corriger les statuts Staff/Contract incohérents (idempotent)
+    await this.bootstrap.runHrStatusDataFix();
   }
 }

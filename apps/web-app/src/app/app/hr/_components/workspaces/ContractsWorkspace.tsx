@@ -74,8 +74,8 @@ export function ContractsWorkspace() {
   // Fetch staff list when modal opens
   useEffect(() => {
     if (modalOpen && tenant?.id) {
-      hrFetch<any[]>(hrUrl('staff', { tenantId: tenant.id, status: 'ACTIVE' }))
-        .then(setStaffList)
+      hrFetch<any[]>(hrUrl('staff', { tenantId: tenant.id }))
+        .then((list) => setStaffList(list.filter((s: any) => s.status === 'ACTIVE' || s.status === 'PENDING_SIGNATURE')))
         .catch(() => {});
     }
   }, [modalOpen, tenant?.id]);
@@ -201,7 +201,7 @@ export function ContractsWorkspace() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: 'Contrats actifs', value: contracts.filter((c) => c.status === 'ACTIVE').length },
-          { label: 'En attente de signature', value: contracts.filter((c) => c.status === 'DRAFT').length },
+          { label: 'En attente de signature', value: contracts.filter((c) => c.status === 'DRAFT' || c.status === 'PENDING').length },
           { label: 'Actifs non signés', value: contracts.filter((c) => c.status === 'ACTIVE' && !c.signedAt).length },
           { label: 'Échéances J-30', value: expiringSoon.length },
         ].map((k, i) => (

@@ -4898,7 +4898,7 @@ model Staff {
   roleType                  String                     @default("TEACHER")
   hireDate                  DateTime?
   contractType              String?
-  status                    String                     @default("ACTIVE")
+  status                    String                     @default("PENDING_SIGNATURE")
   salary                    Decimal?                   @db.Decimal(10, 2)
   bankDetails               Json?
   emergencyContact          Json?
@@ -5087,7 +5087,7 @@ model Contract {
   endDate           DateTime?           @db.Date
   baseSalary        Decimal             @db.Decimal(10, 2)
   paymentMode       String              @default("BANK")
-  status            String              @default("ACTIVE")
+  status            String              @default("PENDING")
   terms             Json?
   signedAt          DateTime?
   signedBy          String?

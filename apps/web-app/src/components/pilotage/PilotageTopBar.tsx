@@ -6,6 +6,11 @@
  * Top Bar qui rappelle TOUJOURS où on se trouve.
  * Aucune action sans contexte.
  * 
+ * Design V2 : Palette officielle Academia Helm
+ *   - Base : white / cloud (#F7F9FC)
+ *   - Accent : blue-900 (#0A2A5E) / gold-500 (#F2C94C)
+ *   - Séparateur doré subtil en bas
+ * 
  * Philosophie : Montrer avant de demander
  * ============================================================================
  */
@@ -14,7 +19,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Image from 'next/image';
-import { Bell, RefreshCw, User as UserIcon, LogOut, Wifi, WifiOff, AlertCircle, ChevronDown, Settings, HelpCircle, School, Globe } from 'lucide-react';
+import { Bell, RefreshCw, User as UserIcon, LogOut, Wifi, WifiOff, ChevronDown, Settings, HelpCircle, School, Globe, Compass } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { clearClientSessionSync } from '@/lib/auth/client-access-token';
 import AcademicYearSelector from './AcademicYearSelector';
@@ -107,7 +112,6 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
     }
   }, []);
 
-  // Charger l'identité de l'école + écouter les mises à jour depuis le module Paramètres
   useEffect(() => {
     loadSchoolIdentity();
     const onIdentityUpdated = () => {
@@ -119,7 +123,6 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
     };
   }, [loadSchoolIdentity]);
 
-  // Charger les alertes ORION
   useEffect(() => {
     const loadOrionAlerts = async () => {
       try {
@@ -134,7 +137,7 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
     };
 
     loadOrionAlerts();
-    const interval = setInterval(loadOrionAlerts, 60000); // Toutes les minutes
+    const interval = setInterval(loadOrionAlerts, 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -142,7 +145,6 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
       clearClientSessionSync();
-      // Redirection complète pour nettoyer tout l'état React
       window.location.href = '/';
     } catch (error) {
       console.error('Error logging out:', error);
@@ -151,7 +153,6 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
     }
   };
 
-  // Fermer le dropdown si on clique en dehors
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -169,17 +170,20 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
   }, [profileDropdownOpen]);
 
   return (
-    <header className="bg-white border-b border-gray-200 fixed top-0 left-0 right-0 z-50 shadow-sm backdrop-blur-sm bg-white/95">
-      <div className="px-4 py-3 sm:px-6">
+    <header className="bg-white fixed top-0 left-0 right-0 z-50">
+      {/* Gold accent line at very top */}
+      <div className="h-[2px] bg-gradient-to-r from-blue-900 via-gold-500 to-blue-900" />
+      
+      <div className="px-4 py-2.5 sm:px-6">
         <div className="flex items-center justify-between gap-2">
           {/* Gauche : Hamburger mobile + Logo École + Contexte */}
           <div className="flex items-center gap-2 sm:gap-4 md:gap-6 min-w-0 flex-1">
-            {/* Hamburger / Close — visible mobile/tablette uniquement */}
+            {/* Hamburger / Close */}
             {onMenuClick && (
               <button
                 type="button"
                 onClick={onMenuClick}
-                className="md:hidden p-2 rounded-lg hover:bg-gray-100 min-h-[44px] min-w-[44px] flex items-center justify-center flex-shrink-0 text-gray-600 transition-colors"
+                className="md:hidden p-2 rounded-lg hover:bg-gray-50 min-h-[44px] min-w-[44px] flex items-center justify-center flex-shrink-0 text-gray-600 transition-colors"
                 aria-label={mobileDrawerOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
               >
                 {mobileDrawerOpen ? (
@@ -194,32 +198,35 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
               </button>
             )}
             {/* Logo et Nom de l'École */}
-            <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
+            <div className="flex items-center space-x-2.5 sm:space-x-3 min-w-0">
               <div className="relative">
                 {schoolIdentity?.logoUrl ? (
                   <Image
                     src={schoolIdentity.logoUrl}
                     alt={schoolIdentity.schoolName || 'École'}
-                    width={40}
-                    height={40}
-                    className="rounded-full shadow-sm object-cover"
+                    width={38}
+                    height={38}
+                    className="rounded-xl shadow-sm object-cover ring-1 ring-gray-100"
                   />
                 ) : (
-                  <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-blue-700 rounded-full flex items-center justify-center shadow-sm">
-                    <School className="w-5 h-5 text-white" />
+                  <div className="w-[38px] h-[38px] bg-gradient-to-br from-blue-800 to-blue-900 rounded-xl flex items-center justify-center shadow-sm">
+                    <School className="w-[18px] h-[18px] text-gold-400" />
                   </div>
                 )}
-                <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+                <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white shadow-sm" />
               </div>
-              <span className="text-xs font-semibold bg-gradient-to-r from-blue-900 to-blue-700 bg-clip-text text-transparent hidden sm:block max-w-[240px] leading-tight break-words whitespace-normal line-clamp-2" title={schoolIdentity?.schoolName || tenant.name}>
-                {schoolIdentity?.schoolAcronym || schoolIdentity?.schoolName || tenant.name || 'Mon École'}
-              </span>
+              <div className="hidden sm:block min-w-0">
+                <span className="text-[13px] font-bold text-blue-900 block max-w-[240px] leading-tight break-words whitespace-normal line-clamp-1" title={schoolIdentity?.schoolName || tenant.name}>
+                  {schoolIdentity?.schoolAcronym || schoolIdentity?.schoolName || tenant.name || 'Mon École'}
+                </span>
+                <span className="text-[10px] text-gray-400 font-medium tracking-wide">Academia <span className="text-gold-600">Helm</span></span>
+              </div>
             </div>
 
             {/* Séparateur */}
-            <div className="h-8 w-px bg-gradient-to-b from-transparent via-gray-300 to-transparent" />
+            <div className="h-7 w-px bg-gradient-to-b from-transparent via-gray-200 to-transparent hidden sm:block" />
 
-            {/* Sélecteurs de Contexte — masqués sur très petit écran, visibles sm+ */}
+            {/* Sélecteurs de Contexte */}
             <div className="hidden sm:flex items-center space-x-2 md:space-x-3">
               <AcademicYearSelector />
               <SchoolLevelSelector />
@@ -228,31 +235,31 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
           </div>
 
           {/* Droite : Actions & Profil */}
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2 sm:space-x-3">
             {/* Indicateur Offline/Online */}
             <div className="flex items-center space-x-2">
               {isOnline ? (
-                <div className="flex items-center space-x-2 text-sm">
+                <div className="flex items-center space-x-1.5 text-xs">
                   {isSyncing ? (
-                    <div className="flex items-center space-x-2 px-3 py-1.5 bg-blue-50 rounded-lg border border-blue-200">
-                      <RefreshCw className="w-4 h-4 animate-spin text-blue-600" />
+                    <div className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-blue-50 rounded-lg border border-blue-100">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" />
                       <span className="hidden sm:inline text-blue-700 font-medium">Sync...</span>
                     </div>
                   ) : pendingCount > 0 ? (
-                    <div className="flex items-center space-x-2 px-3 py-1.5 bg-yellow-50 rounded-lg border border-yellow-200">
-                      <Wifi className="w-4 h-4 text-yellow-600" />
-                      <span className="hidden sm:inline text-yellow-700 font-medium">{pendingCount} en attente</span>
+                    <div className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-amber-50 rounded-lg border border-amber-100">
+                      <Wifi className="w-3.5 h-3.5 text-amber-600" />
+                      <span className="hidden sm:inline text-amber-700 font-medium">{pendingCount} en attente</span>
                     </div>
                   ) : (
-                    <div className="flex items-center space-x-2 px-3 py-1.5 bg-green-50 rounded-lg border border-green-200">
-                      <Wifi className="w-4 h-4 text-green-600" />
-                      <span className="hidden sm:inline text-green-700 font-medium">En ligne</span>
+                    <div className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-emerald-50 rounded-lg border border-emerald-100">
+                      <Wifi className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="hidden sm:inline text-emerald-700 font-medium">En ligne</span>
                     </div>
                   )}
                 </div>
               ) : (
-                <div className="flex items-center space-x-2 px-3 py-1.5 bg-orange-50 rounded-lg border border-orange-200">
-                  <WifiOff className="w-4 h-4 text-orange-600" />
+                <div className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-orange-50 rounded-lg border border-orange-100">
+                  <WifiOff className="w-3.5 h-3.5 text-orange-600" />
                   <span className="hidden sm:inline text-orange-700 font-medium">Hors ligne</span>
                 </div>
               )}
@@ -262,15 +269,13 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
             {orionAlertsCount > 0 && (
               <button
                 onClick={() => router.push('/app/orion')}
-                className="relative p-2 rounded-lg hover:bg-gray-100 transition-all duration-200 hover:scale-105 active:scale-95 group"
+                className="relative p-2 rounded-lg hover:bg-gray-50 transition-all duration-200 hover:scale-105 active:scale-95 group"
                 title="Alertes ORION"
               >
-                <Bell className="w-5 h-5 text-gray-600 group-hover:text-blue-600 transition-colors" />
-                {orionAlertsCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-gradient-to-r from-red-500 to-red-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-semibold shadow-md animate-pulse">
-                    {orionAlertsCount > 9 ? '9+' : orionAlertsCount}
-                  </span>
-                )}
+                <Bell className="w-[18px] h-[18px] text-gray-500 group-hover:text-blue-900 transition-colors" />
+                <span className="absolute -top-0.5 -right-0.5 bg-gradient-to-r from-red-500 to-red-600 text-white text-[10px] rounded-full w-4.5 h-4.5 flex items-center justify-center font-bold shadow-sm animate-pulse leading-none" style={{ minWidth: '18px', height: '18px' }}>
+                  {orionAlertsCount > 9 ? '9+' : orionAlertsCount}
+                </span>
               </button>
             )}
 
@@ -278,32 +283,36 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
             <div className="relative" ref={dropdownRef}>
               <button
                 onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
-                className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-100 transition-all duration-200 group"
+                className="flex items-center space-x-2.5 pl-2 pr-1.5 py-1.5 rounded-xl hover:bg-gray-50 transition-all duration-200 group"
               >
                 <div className="text-right hidden sm:block">
-                  <p className="text-sm font-semibold text-gray-900">
+                  <p className="text-[13px] font-semibold text-gray-900 leading-tight">
                     {user.firstName} {user.lastName}
                   </p>
-                  <p className="text-xs text-gray-500">{formatRoleLabel(user.role)}</p>
+                  <p className="text-[11px] text-gray-400 font-medium">{formatRoleLabel(user.role)}</p>
                 </div>
                 <div className="relative">
-                  <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-blue-700 rounded-full flex items-center justify-center shadow-md group-hover:shadow-lg transition-shadow">
-                    <UserIcon className="w-5 h-5 text-white" />
+                  <div className="w-9 h-9 bg-gradient-to-br from-blue-800 to-blue-900 rounded-xl flex items-center justify-center shadow-sm group-hover:shadow-md transition-shadow ring-1 ring-blue-700/20">
+                    <UserIcon className="w-4 h-4 text-white" />
                   </div>
-                  <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white"></div>
+                  <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white shadow-sm" />
                 </div>
-                <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${profileDropdownOpen ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform duration-200 ${profileDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
 
               {/* Dropdown Menu */}
               {profileDropdownOpen && (
-                <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-50 animate-[fadeIn_0.2s_ease-out]">
-                  <div className="px-4 py-3 border-b border-gray-100">
-                    <p className="text-sm font-semibold text-gray-900">
+                <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-100 py-1 z-50 animate-[fadeIn_0.15s_ease-out] overflow-hidden">
+                  {/* Profile header with gradient */}
+                  <div className="px-4 py-3 bg-gradient-to-r from-blue-900 to-blue-800">
+                    <p className="text-sm font-semibold text-white">
                       {user.firstName} {user.lastName}
                     </p>
-                    <p className="text-xs text-gray-500 mt-0.5">{user.email}</p>
-                    <p className="text-xs text-blue-600 font-medium mt-1">{formatRoleLabel(user.role)}</p>
+                    <p className="text-xs text-blue-200/70 mt-0.5">{user.email}</p>
+                    <div className="mt-2 inline-flex items-center space-x-1.5 px-2 py-0.5 bg-white/10 rounded-md">
+                      <Compass className="w-3 h-3 text-gold-400" />
+                      <span className="text-[11px] text-gold-400 font-medium">{formatRoleLabel(user.role)}</span>
+                    </div>
                   </div>
                   
                   <div className="py-1">
@@ -314,7 +323,7 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
                       }}
                       className="w-full flex items-center space-x-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                     >
-                      <Settings className="w-4 h-4 text-gray-500" />
+                      <Settings className="w-4 h-4 text-gray-400" />
                       <span>Paramètres</span>
                     </button>
                     <a
@@ -324,17 +333,16 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
                       onClick={() => setProfileDropdownOpen(false)}
                       className="w-full flex items-center space-x-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                     >
-                      <Globe className="w-4 h-4 text-gray-500" />
+                      <Globe className="w-4 h-4 text-gray-400" />
                       <span>Visiter le site</span>
                     </a>
                     <button
                       onClick={() => {
-                        // TODO: Ajouter page d'aide
                         setProfileDropdownOpen(false);
                       }}
                       className="w-full flex items-center space-x-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                     >
-                      <HelpCircle className="w-4 h-4 text-gray-500" />
+                      <HelpCircle className="w-4 h-4 text-gray-400" />
                       <span>Aide & Support</span>
                     </button>
                   </div>
@@ -354,7 +362,9 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
           </div>
         </div>
       </div>
+
+      {/* Bottom border with subtle gold accent */}
+      <div className="h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent" />
     </header>
   );
 }
-

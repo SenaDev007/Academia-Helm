@@ -5,11 +5,15 @@
  * 
  * Layout principal de l'interface de pilotage
  * 
+ * Design V2 : Palette officielle Academia Helm
+ *   - Footer : cloud (#F7F9FC) bg, gold accent line
+ *   - Branding : blue-900 / gold-500
+ * 
  * Structure :
  * - Top Bar (Contexte & Commandes globales)
  * - Navigation Latérale (Modules)
  * - Zone de Pilotage Principale (Dashboard / Module actif)
- * - Footer minimal (statut, sync, version)
+ * - Footer (version, sync, branding)
  * ============================================================================
  */
 
@@ -44,16 +48,25 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
   const { shouldReduceMotion } = useMotionBudget();
   const pageMotion = getPageSlideMotion(shouldReduceMotion);
 
-  // Stabilized callbacks — prevent useEffect from firing on every render
-  // (inline arrow functions create new references, causing the mobile drawer to close immediately)
+  // Stabilized callbacks
   const handleToggleMobileDrawer = useCallback(() => setMobileDrawerOpen(prev => !prev), []);
   const handleCloseMobileDrawer = useCallback(() => setMobileDrawerOpen(false), []);
   const handleToggleSidebar = useCallback(() => setSidebarOpen(prev => !prev), []);
 
+  // Level label for footer
+  const getLevelLabel = (code?: string) => {
+    if (!code) return null;
+    if (code === 'ALL' || code === 'TOUS_LES_NIVEAUX') return 'Tous niveaux';
+    if (code === 'MATERNELLE') return 'Maternelle';
+    if (code === 'PRIMAIRE') return 'Primaire';
+    if (code === 'SECONDAIRE') return 'Secondaire';
+    return code;
+  };
+
   return (
     <OfflineGuard>
-      <div className="min-h-screen bg-gray-50 flex flex-col">
-        {/* Top Bar - Fixe en haut, toujours visible — hamburger mobile */}
+      <div className="min-h-screen bg-[#F7F9FC] flex flex-col">
+        {/* Top Bar - Fixe en haut */}
         <PilotageTopBar
           user={user}
           tenant={tenant}
@@ -61,12 +74,12 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
           mobileDrawerOpen={mobileDrawerOpen}
         />
 
-        {/* Spacer pour éviter que le contenu passe sous la barre fixe (hauteur ~ barre) */}
-        <div className="h-14 shrink-0" aria-hidden />
+        {/* Spacer pour la barre fixe (56px header + 2px gold line) */}
+        <div className="h-[58px] shrink-0" aria-hidden />
 
-        {/* Zone principale + footer : flex-1 pour occuper l'espace et garder le footer en bas */}
+        {/* Zone principale + footer */}
         <div className="flex flex-1 min-h-0">
-          {/* Mobile: backdrop drawer — z-[55] pour couvrir la TopBar (z-50) mais rester sous le drawer (z-[60]) */}
+          {/* Mobile: backdrop drawer */}
           {mobileDrawerOpen && (
             <>
               <div
@@ -76,7 +89,7 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
               />
             </>
           )}
-          {/* Sidebar — 3 états: drawer mobile / icônes tablette / complète PC */}
+          {/* Sidebar */}
           <PilotageSidebar
             isOpen={sidebarOpen}
             onToggle={handleToggleSidebar}
@@ -85,7 +98,7 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
             onCloseMobileDrawer={handleCloseMobileDrawer}
           />
 
-          {/* Main Content — décalé selon breakpoint: 0 mobile, ml-16 tablette, ml-16/lg:ml-64 PC */}
+          {/* Main Content */}
           <main
             className={`flex-1 min-h-0 transition-all duration-300 overflow-y-auto md:ml-16 ${
               sidebarOpen ? 'lg:ml-64' : 'lg:ml-16'
@@ -106,18 +119,44 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
           </main>
         </div>
 
-        {/* Footer — décalé comme main (responsive) */}
-        <footer className={`shrink-0 bg-white border-t border-gray-200 px-4 py-3 sm:px-6 md:px-8 lg:px-10 xl:px-12 flex items-center transition-all duration-300 md:ml-16 ${
+        {/* Footer — Professionnel et aligné sur la palette */}
+        <footer className={`shrink-0 bg-white transition-all duration-300 md:ml-16 ${
           sidebarOpen ? 'lg:ml-64' : 'lg:ml-16'
         }`}>
-          <div className="flex items-center justify-between text-xs text-gray-600 w-full">
-            <div className="flex items-center space-x-4">
-              <span>Academia Helm v1.0.0</span>
-              <span>•</span>
-              <span>© 2021-2026 YEHI OR Tech</span>
+          {/* Gold accent line at top */}
+          <div className="h-px bg-gradient-to-r from-transparent via-gold-400/40 to-transparent" />
+          
+          <div className="px-4 py-2.5 sm:px-6 md:px-8 lg:px-10">
+            <div className="flex items-center justify-between w-full">
+              {/* Left: Branding */}
+              <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-1.5">
+                  <span className="text-[11px] font-semibold text-blue-900">Academia</span>
+                  <span className="text-[11px] font-bold text-gold-600">Helm</span>
+                </div>
+                <span className="text-gray-300">|</span>
+                <span className="text-[10px] text-gray-400 font-medium">v1.0.0</span>
+                <span className="text-gray-300 hidden sm:inline">|</span>
+                <span className="text-[10px] text-gray-400 hidden sm:inline">&copy; 2021-2026 YEHI OR Tech</span>
+              </div>
+
+              {/* Right: Status indicators */}
+              <div className="flex items-center space-x-3">
+                {/* Active level badge */}
+                {currentLevel && getLevelLabel(currentLevel.code) && (
+                  <div className="hidden sm:flex items-center space-x-1.5 px-2 py-0.5 bg-blue-50 rounded-md border border-blue-100">
+                    <div className={`w-1.5 h-1.5 rounded-full ${
+                      currentLevel.code === 'MATERNELLE' ? 'bg-pink-400' :
+                      currentLevel.code === 'PRIMAIRE' ? 'bg-emerald-400' :
+                      currentLevel.code === 'SECONDAIRE' ? 'bg-violet-400' :
+                      'bg-gold-400'
+                    }`} />
+                    <span className="text-[10px] font-medium text-blue-800">{getLevelLabel(currentLevel.code)}</span>
+                  </div>
+                )}
+                <OfflineIndicator />
+              </div>
             </div>
-            {/* Indicateur de Synchronisation & Offline */}
-            <OfflineIndicator />
           </div>
         </footer>
       </div>

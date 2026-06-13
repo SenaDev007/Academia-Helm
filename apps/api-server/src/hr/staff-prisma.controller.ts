@@ -37,7 +37,7 @@ import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 import {
   CreateStaffDto, UpdateStaffDto, AddStaffDocumentDto,
-  UploadStaffDocumentDto, ValidateDocumentDto,
+  UploadStaffDocumentDto, ValidateDocumentDto, BatchAssignLevelDto,
 } from './dto/index';
 import type { Response, Request } from 'express';
 
@@ -83,6 +83,17 @@ export class StaffPrismaController {
       status,
       levelAssigned,
     });
+  }
+
+  @Put('batch-assign-level')
+  async batchAssignLevel(@Body() body: BatchAssignLevelDto, @Req() req: any) {
+    // Validate that the user has permission (tenant guard already applied)
+    return this.staffService.batchAssignLevel(body);
+  }
+
+  @Get('teachers-by-level')
+  async getTeachersByLevel(@Query('schoolLevelId') schoolLevelId: string, @Query('academicYearId') academicYearId?: string, @Req() req?: any) {
+    return this.staffService.findTeachersByLevel(schoolLevelId, academicYearId);
   }
 
   // ─── ADMIN ──────────────────────────────────────────────────────────────────

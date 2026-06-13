@@ -21,6 +21,7 @@ import {
   IsIn,
   IsEnum,
   IsArray,
+  IsNotEmpty,
   ValidateNested,
   Min,
   Max,
@@ -818,4 +819,20 @@ export class TerminateContractDto {
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString()
   tenantId?: string;
+}
+
+// ─── Batch Assign Level DTOs ─────────────────────────────────────────────────
+
+export class BatchAssignLevelDto {
+  @IsArray()
+  @IsUUID('4', { each: true })
+  staffIds: string[];
+
+  @IsUUID('4')
+  @IsNotEmpty()
+  schoolLevelId: string;
+
+  @IsOptional()
+  @IsString()
+  academicYearId?: string;
 }

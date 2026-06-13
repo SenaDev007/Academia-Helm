@@ -18,6 +18,7 @@ import { PrismaService } from '../database/prisma.service';
 import { StaffMatriculeService } from './staff-matricule.service';
 import { StorageService } from '../common/services/storage.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
+import { BatchAssignLevelDto } from './dto/index';
 
 // Mapping catégorie UI → roleType Prisma
 const CATEGORY_TO_ROLE: Record<string, string> = {
@@ -136,6 +137,7 @@ export class StaffPrismaService {
         ...prismaCreateDefaults(),
         tenantId:       data.tenantId,
         academicYearId: data.academicYearId || null,
+        schoolLevelId:  data.schoolLevelId || null,
         employeeNumber: finalEmployeeNumber,
         globalMatricule,
         tenantMatricule,
@@ -181,6 +183,9 @@ export class StaffPrismaService {
       const role = CATEGORY_TO_ROLE[filters.category];
       if (role) where.roleType = role;
     }
+    if (filters?.levelAssigned) {
+      where.schoolLevelId = filters.levelAssigned;
+    }
 
     const staff = await this.prisma.staff.findMany({
       where,
@@ -194,6 +199,7 @@ export class StaffPrismaService {
           orderBy: { createdAt: 'desc' },
         },
         photo: true,
+        schoolLevel: { select: { id: true, name: true, code: true } },
       },
       orderBy: { lastName: 'asc' },
     });
@@ -223,6 +229,7 @@ export class StaffPrismaService {
         evaluations: { take: 10, orderBy: { createdAt: 'desc' } },
         trainings: { orderBy: { createdAt: 'desc' } },
         photo: true,
+        schoolLevel: { select: { id: true, name: true, code: true } },
       },
     });
 
@@ -928,5 +935,102 @@ export class StaffPrismaService {
         tenantMatricule: matricules.tenantMatricule,
       },
     });
+  }
+
+  /**
+   * Affecte un niveau scolaire à plusieurs membres du personnel en une seule opération
+   */
+  async batchAssignLevel(dto: BatchAssignLevelDto) {
+    const { staffIds, schoolLevelId, academicYearId } = dto;
+
+    // Validate that the school level exists
+    const schoolLevel = await this.prisma.schoolLevel.findUnique({
+      where: { id: schoolLevelId },
+    });
+    if (!schoolLevel) {
+      throw new NotFoundException(`Niveau scolaire introuvable`);
+    }
+
+    // Update all staff members
+    const result = await this.prisma.staff.updateMany({
+      where: { id: { in: staffIds } },
+      data: { schoolLevelId },
+    });
+
+    // Also create/update StaffAssignment records for each teacher
+    const assignments = [];
+    for (const staffId of staffIds) {
+      // Check if an active assignment already exists
+      const existing = await this.prisma.staffAssignment.findFirst({
+        where: {
+          staffId,
+          academicYearId: academicYearId || undefined,
+          status: 'ACTIVE',
+        },
+      });
+
+      if (existing) {
+        // Update existing assignment
+        const updated = await this.prisma.staffAssignment.update({
+          where: { id: existing.id },
+          data: { schoolLevelId, role: 'TEACHER' },
+        });
+        assignments.push(updated);
+      } else {
+        // Create new assignment
+        const staff = await this.prisma.staff.findUnique({
+          where: { id: staffId },
+          select: { tenantId: true },
+        });
+        if (staff) {
+          const created = await this.prisma.staffAssignment.create({
+            data: {
+              staffId,
+              schoolLevelId,
+              tenantId: staff.tenantId,
+              academicYearId: academicYearId || undefined,
+              role: 'TEACHER',
+              startDate: new Date(),
+              status: 'ACTIVE',
+            },
+          });
+          assignments.push(created);
+        }
+      }
+    }
+
+    return {
+      updated: result.count,
+      assignments: assignments.length,
+      message: `${result.count} personnel(s) affecté(s) au niveau ${schoolLevel.name}`,
+    };
+  }
+
+  /**
+   * Récupère les enseignants filtrés par niveau scolaire
+   */
+  async findTeachersByLevel(schoolLevelId?: string, academicYearId?: string) {
+    const where: any = {
+      roleType: 'TEACHER',
+    };
+
+    if (schoolLevelId) {
+      where.schoolLevelId = schoolLevelId;
+    }
+
+    const teachers = await this.prisma.staff.findMany({
+      where,
+      include: {
+        schoolLevel: { select: { id: true, name: true, code: true } },
+        photo: true,
+      },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+    });
+
+    return teachers.map(t => ({
+      ...t,
+      category: 'PEDAGOGICAL',
+      staffCode: t.employeeNumber || t.globalMatricule,
+    }));
   }
 }

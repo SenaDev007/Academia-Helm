@@ -424,3 +424,35 @@ Stage Summary:
 - Secondary cause: Register was broken → couldn't create account to test
 - Service email (Resend) works correctly in production
 - All changes committed and pushed to main (431e2bd1)
+
+---
+Task ID: 5
+Agent: Main Agent
+Task: Backend changes to support teacher categorization by school level in HR module
+
+Work Log:
+- Fixed `findAllStaff` in staff-prisma.service.ts: added `schoolLevelId: levelAssigned` to the Prisma `where` clause when `levelAssigned` filter is provided (was accepted but never used)
+- Fixed `findAllStaff`: added `schoolLevel: { select: { id: true, name: true, code: true } }` to the `include` object so school level data is returned with each staff member
+- Fixed `doCreateStaff`: added `schoolLevelId: data.schoolLevelId || null` to the Prisma `create` data object (was accepted in DTO but never passed to Prisma)
+- Fixed `findStaffById`: added `schoolLevel: { select: { id: true, name: true, code: true } }` to the `include` object
+- Added `BatchAssignLevelDto` to dto/index.ts with `@IsArray`, `@IsUUID('4', { each: true })` for staffIds, `@IsUUID('4')` + `@IsNotEmpty()` for schoolLevelId, and optional `@IsString()` academicYearId
+- Added `IsNotEmpty` to class-validator imports in dto/index.ts
+- Added `batchAssignLevel` method to staff-prisma.service.ts: validates school level exists, updates all staff members with `updateMany`, creates/updates StaffAssignment records for each teacher (checks for existing ACTIVE assignment first)
+- Added `findTeachersByLevel` method to staff-prisma.service.ts: filters by roleType TEACHER and optional schoolLevelId, includes schoolLevel and photo, returns with category='PEDAGOGICAL' and staffCode alias
+- Added `PUT batch-assign-level` endpoint to staff-prisma.controller.ts
+- Added `GET teachers-by-level` endpoint to staff-prisma.controller.ts
+- Added `BatchAssignLevelDto` import to controller and service
+- Imported `BatchAssignLevelDto` from `./dto/index` in staff-prisma.service.ts
+
+Files Modified:
+- apps/api-server/src/hr/staff-prisma.service.ts — 4 fixes + 2 new methods + 1 new import
+- apps/api-server/src/hr/staff-prisma.controller.ts — 2 new endpoints + 1 new import
+- apps/api-server/src/hr/dto/index.ts — 1 new DTO class + 1 new import (IsNotEmpty)
+
+Stage Summary:
+- findAllStaff now properly filters by levelAssigned and includes schoolLevel data
+- doCreateStaff now persists schoolLevelId when creating staff
+- findStaffById now includes schoolLevel in the response
+- New batch-assign-level endpoint allows bulk assignment of school levels to staff
+- New teachers-by-level endpoint retrieves teachers filtered by school level
+- StaffAssignment records are automatically created/updated during batch assignment

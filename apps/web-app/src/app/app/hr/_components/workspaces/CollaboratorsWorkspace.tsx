@@ -24,11 +24,12 @@ import { cn, formatCurrency } from '@/lib/utils';
 import { toast } from '@/components/ui/toast';
 import { StaffWorkspace } from './StaffWorkspace';
 import { ContractsWorkspace } from './ContractsWorkspace';
+import { TeacherLevelAssignment } from './TeacherLevelAssignment';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import Link from 'next/link';
 
-const PRIMARY = '#1A2BA6';
+const PRIMARY = '#0A2A5E';
 
 const CATEGORY_STYLES: Record<string, { bg: string; text: string; border: string; label: string }> = {
   PEDAGOGICAL: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', label: 'Enseignant' },
@@ -58,7 +59,7 @@ export function CollaboratorsWorkspace() {
 
   useEffect(() => {
     if (!tenant?.id) return;
-    if (activeTab === 'assignments' || activeTab === 'org_chart' || activeTab === 'history') {
+    if (activeTab === 'org_chart' || activeTab === 'history') {
       setLoading(true);
       setError(null);
       hrFetch<any[]>(hrUrl('staff', { tenantId: tenant.id }))
@@ -103,21 +104,8 @@ export function CollaboratorsWorkspace() {
     { id: 'org_chart', label: 'Organigramme', icon: Network },
   ] as const;
 
-  // Build assignments from staff data
-  const assignments = staffList
-    .filter((s) => s.position || s.department)
-    .map((s) => ({
-      id: s.id,
-      name: `${s.firstName} ${s.lastName}`,
-      role: s.position || 'Non défini',
-      department: s.department || 'Non assigné',
-      date: s.contracts?.[0]?.startDate ? `Depuis le ${new Date(s.contracts[0].startDate).toLocaleDateString('fr-FR')}` : '',
-      category: s.category,
-    }));
-
   // Build combined history entries from contracts, evaluations, and trainings
   const historyEntries: HistoryEntry[] = [
-    // Contract entries
     ...contractsList
       .filter((c) => c.staff)
       .sort((a, b) => new Date(b.createdAt || b.startDate).getTime() - new Date(a.createdAt || a.startDate).getTime())
@@ -130,7 +118,6 @@ export function CollaboratorsWorkspace() {
         date: new Date(c.startDate).toLocaleDateString('fr-FR'),
         details: c.baseSalary ? `Salaire : ${formatCurrency(c.baseSalary)}` : undefined,
       })),
-    // Evaluation entries
     ...evaluationsList
       .filter((e) => e.staff)
       .sort((a, b) => new Date(b.createdAt || b.evalDate || b.date).getTime() - new Date(a.createdAt || a.evalDate || a.date).getTime())
@@ -143,7 +130,6 @@ export function CollaboratorsWorkspace() {
         date: new Date(e.evalDate || e.date || e.createdAt).toLocaleDateString('fr-FR'),
         details: e.score ? `Score : ${e.score}/20` : e.comment ? e.comment?.substring(0, 60) : undefined,
       })),
-    // Training entries
     ...trainingsList
       .filter((t) => t.staff)
       .sort((a, b) => new Date(b.createdAt || b.startDate || b.date).getTime() - new Date(a.createdAt || a.startDate || a.date).getTime())
@@ -157,7 +143,6 @@ export function CollaboratorsWorkspace() {
         details: t.status ? `Statut : ${t.status === 'COMPLETED' ? 'Terminée' : t.status === 'IN_PROGRESS' ? 'En cours' : t.status}` : undefined,
       })),
   ].sort((a, b) => {
-    // Sort by date descending (most recent first)
     return b.date.localeCompare(a.date);
   }).slice(0, 50);
 
@@ -193,11 +178,19 @@ export function CollaboratorsWorkspace() {
               onClick={() => setActiveTab(tab.id as any)}
               className={cn(
                 'flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200',
-                isActive ? 'bg-[#1A2BA6] text-white shadow-md' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                isActive ? 'bg-[#0A2A5E] text-white shadow-md' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               )}
             >
               <Icon className="h-4 w-4" />
               {tab.label}
+              {tab.id === 'assignments' && (
+                <span className={cn(
+                  'text-[10px] px-1.5 py-0.5 rounded-md font-bold',
+                  isActive ? 'bg-white/20 text-white' : 'bg-blue-50 text-blue-700'
+                )}>
+                  Niveaux
+                </span>
+              )}
             </button>
           );
         })}
@@ -217,43 +210,8 @@ export function CollaboratorsWorkspace() {
         )}
 
         {activeTab === 'assignments' && (
-          <motion.div key="assignments" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h3 className="text-base font-bold text-slate-900">Affectations des collaborateurs</h3>
-              <span className="text-xs text-slate-500">{assignments.length} affectation(s)</span>
-            </div>
-            {loading ? (
-              <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>
-            ) : assignments.length === 0 ? (
-              <div className="text-center py-12 bg-slate-50 rounded-xl border border-slate-200 text-sm text-slate-400">Aucune affectation trouvée.</div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {assignments.map((ass) => (
-                  <div key={ass.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold shrink-0" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
-                        {ass.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-slate-900 text-sm">{ass.name}</h4>
-                        <p className="text-xs text-[#1A2BA6] font-semibold mt-0.5">{ass.role}</p>
-                      </div>
-                    </div>
-                    <p className="text-xs text-slate-500">Département : {ass.department}</p>
-                    {ass.category && (
-                      <span className={cn(
-                        'text-[10px] mt-2 inline-block px-2 py-0.5 rounded-full font-semibold uppercase',
-                        CATEGORY_STYLES[ass.category]?.bg || 'bg-slate-100',
-                        CATEGORY_STYLES[ass.category]?.text || 'text-slate-600',
-                      )} style={{ border: `1px solid ${CATEGORY_STYLES[ass.category]?.border?.replace('border-', '') || 'slate-200'}` }}>
-                        {CATEGORY_STYLES[ass.category]?.label || ass.category}
-                      </span>
-                    )}
-                    {ass.date && <p className="text-[10px] text-slate-400 mt-3">{ass.date}</p>}
-                  </div>
-                ))}
-              </div>
-            )}
+          <motion.div key="assignments" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <TeacherLevelAssignment />
           </motion.div>
         )}
 
@@ -338,7 +296,7 @@ export function CollaboratorsWorkspace() {
                       })
                       .finally(() => setLoading(false));
                   }}
-                  className="mt-4 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-[#1A2BA6] hover:opacity-90 transition"
+                  className="mt-4 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-[#0A2A5E] hover:opacity-90 transition"
                 >
                   Réessayer
                 </button>
@@ -348,25 +306,22 @@ export function CollaboratorsWorkspace() {
             ) : (
               <div className="bg-white border border-slate-200 rounded-xl p-8 flex flex-col items-center">
                 <div className="w-full space-y-8">
-                  {/* Director at top */}
                   {directorStaff && (
                     <div className="flex flex-col items-center">
                       <div className="relative">
                         <div className="flex flex-col items-center p-4 rounded-2xl border-2 border-amber-300 bg-gradient-to-b from-amber-50 to-white shadow-lg min-w-[180px]">
-                          <div className="w-12 h-12 rounded-xl flex items-center justify-center text-base font-bold mb-2" style={{ backgroundColor: '#1A2BA615', color: PRIMARY }}>
+                          <div className="w-12 h-12 rounded-xl flex items-center justify-center text-base font-bold mb-2" style={{ backgroundColor: '#0A2A5E15', color: PRIMARY }}>
                             {directorStaff.firstName?.[0]}{directorStaff.lastName?.[0]}
                           </div>
                           <p className="font-bold text-slate-900 text-sm text-center">{directorStaff.firstName} {directorStaff.lastName}</p>
-                          <p className="text-[10px] text-[#1A2BA6] font-semibold mt-0.5">{directorStaff.position || 'Directeur'}</p>
+                          <p className="text-[10px] text-[#0A2A5E] font-semibold mt-0.5">{directorStaff.position || 'Directeur'}</p>
                           <Crown className="absolute -top-2 -right-2 h-5 w-5 text-amber-500" />
                         </div>
                       </div>
-                      {/* Connector line */}
                       <div className="w-px h-8 bg-slate-300" />
                     </div>
                   )}
 
-                  {/* Category groups as tree branches */}
                   {categoryGroups.length > 0 ? (
                     <div className="space-y-6">
                       {categoryGroups.map((cat) => {
@@ -374,7 +329,6 @@ export function CollaboratorsWorkspace() {
                         const depts = departmentByCategory[cat] || [];
                         return (
                           <div key={cat} className="space-y-3">
-                            {/* Category header with connector */}
                             <div className="flex items-center gap-3">
                               <div className="flex-1 h-px bg-slate-200" />
                               <div className={cn('flex items-center gap-2 px-4 py-2 rounded-xl border', catStyle.bg, catStyle.text)} style={{ borderColor: 'transparent' }}>
@@ -385,7 +339,6 @@ export function CollaboratorsWorkspace() {
                               <div className="flex-1 h-px bg-slate-200" />
                             </div>
 
-                            {/* Departments under this category */}
                             <div className="pl-4 border-l-2 border-slate-100 ml-[50%] space-y-4">
                               {depts.map(({ dept, members }) => (
                                 <div key={dept} className="space-y-2">
@@ -416,7 +369,6 @@ export function CollaboratorsWorkspace() {
                       })}
                     </div>
                   ) : (
-                    /* Fallback: no categories, just flat list grouped by department */
                     <div className="space-y-4">
                       {Array.from(new Set(staffList.map((s) => s.department || s.position || 'Non classé').filter(Boolean))).map((dept) => {
                         const members = staffList.filter((s) => (s.department || s.position || 'Non classé') === dept);
@@ -461,7 +413,7 @@ export function CollaboratorsWorkspace() {
         </div>
         <Link
           href="/app/hr/cnss"
-          className="text-[#1A2BA6] font-bold hover:underline shrink-0 bg-white border border-amber-200 px-3 py-1.5 rounded-lg"
+          className="text-[#0A2A5E] font-bold hover:underline shrink-0 bg-white border border-amber-200 px-3 py-1.5 rounded-lg"
         >
           Déclarer à la CNSS →
         </Link>

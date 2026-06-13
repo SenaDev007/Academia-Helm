@@ -3,18 +3,16 @@
  * SCHOOL BY SUBDOMAIN API PROXY — BRANDING DE L'ÉCOLE
  * ============================================================================
  *
- * Route BFF qui proxy la requête vers le backend NestJS
- * GET /api/tenants/by-subdomain/:slug
+ * Route BFF qui résout le branding d'une école depuis son slug/sous-domaine.
+ *
+ * STRATÉGIE DE RÉSOLUTION (avec fallback) :
+ *   1. PRIMAIRE : GET /api/tenants/by-subdomain/:slug
+ *      → Retourne les données brutes du tenant, extraction du branding côté BFF
+ *   2. FALLBACK : GET /api/public/schools/with-jobs
+ *      → Recherche l'école par slug dans la liste publique (même source que /jobs)
  *
  * Utilisée par les pages school-portal, login et forgot-password
- * pour résoudre le branding (logo, nom, slogan, couleurs) de l'école
- * depuis son sous-domaine.
- *
- * Avantages du proxy BFF :
- *   - Normalisation automatique de l'URL backend (ajout du /api)
- *   - Évite les problèmes CORS en production
- *   - Centralise la logique d'extraction des données scolaires
- *   - Compatible SSR et client-side
+ * pour résoudre le branding (logo, nom, slogan, couleurs) de l'école.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -22,6 +20,56 @@ import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 
 /** ISR : revalidate toutes les 30 secondes — les données d'identité changent rarement. */
 export const revalidate = 30;
+
+/**
+ * Extraction du branding depuis la réponse brute du tenant
+ * Résolution : TenantIdentityProfile (active) → SchoolSettings → School (legacy) → Tenant
+ */
+function extractBrandingFromTenant(data: any, slug: string) {
+  const identity = data.identityProfiles?.[0] ?? null;
+  const settings = data.schoolSettings ?? null;
+  const school = data.schools ?? null;
+
+  return {
+    name: identity?.schoolName || settings?.schoolName || school?.name || data.name || slug,
+    slug: data.slug || slug,
+    logoUrl: identity?.logoUrl || settings?.logoUrl || school?.logo || null,
+    city: identity?.city || settings?.city || school?.city || null,
+    phone: identity?.phonePrimary || settings?.phone || school?.primaryPhone || null,
+    address: identity?.address || settings?.address || school?.address || null,
+    primaryColor: settings?.primaryColor || school?.primaryColor || null,
+    secondaryColor: settings?.secondaryColor || school?.secondaryColor || null,
+    slogan: identity?.slogan || settings?.slogan || school?.slogan || school?.motto || null,
+    motto: school?.motto || null,
+    schoolAcronym: identity?.schoolAcronym || school?.abbreviation || null,
+    schoolType: identity?.schoolType || null,
+    website: identity?.website || settings?.website || school?.website || null,
+    email: identity?.email || settings?.email || school?.primaryEmail || null,
+  };
+}
+
+/**
+ * Extraction du branding depuis la réponse de /public/schools/with-jobs
+ * Les données sont déjà pré-résolues par le backend (objet plat)
+ */
+function extractBrandingFromSchoolList(school: any) {
+  return {
+    name: school.schoolName || school.name || null,
+    slug: school.slug || null,
+    logoUrl: school.logoUrl || null,
+    city: school.city || null,
+    phone: school.phonePrimary || null,
+    address: school.address || null,
+    primaryColor: school.primaryColor || null,
+    secondaryColor: school.secondaryColor || null,
+    slogan: school.slogan || null,
+    motto: school.motto || null,
+    schoolAcronym: school.schoolAcronym || null,
+    schoolType: school.schoolType || null,
+    website: school.website || null,
+    email: school.primaryEmail || null,
+  };
+}
 
 export async function GET(
   _request: NextRequest,
@@ -38,15 +86,17 @@ export async function GET(
     }
 
     const API_BASE_URL = getApiBaseUrlForRoutes();
-    const apiUrl = API_BASE_URL.endsWith('/api')
+
+    // ── STRATÉGIE 1 : /tenants/by-subdomain/:slug (données les plus complètes) ──
+    const tenantApiUrl = API_BASE_URL.endsWith('/api')
       ? `${API_BASE_URL}/tenants/by-subdomain/${encodeURIComponent(slug)}`
       : `${API_BASE_URL}/api/tenants/by-subdomain/${encodeURIComponent(slug)}`;
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
 
     try {
-      const response = await fetch(normalizeApiUrl(apiUrl), {
+      const response = await fetch(normalizeApiUrl(tenantApiUrl), {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
@@ -54,56 +104,50 @@ export async function GET(
       });
       clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          return NextResponse.json(
-            { error: 'Tenant introuvable', message: `Aucun tenant trouvé pour le slug "${slug}"` },
-            { status: 404 },
-          );
-        }
-        const errorData = await response.json().catch(() => ({
-          message: `Erreur HTTP ${response.status}: ${response.statusText}`,
-        }));
-        console.error('[School By Subdomain API] Backend error:', errorData);
-        return NextResponse.json(errorData, { status: response.status });
+      if (response.ok) {
+        const data = await response.json();
+        const branding = extractBrandingFromTenant(data, slug);
+        return NextResponse.json(branding);
       }
 
-      const data = await response.json();
-
-      // Extraire les données de branding (même logique que le frontend utilisait)
-      // Résolution : TenantIdentityProfile (active) → SchoolSettings → School (legacy) → Tenant
-      const identity = data.identityProfiles?.[0] ?? null;
-      const settings = data.schoolSettings ?? null;
-      const school = data.schools ?? null;
-
-      const branding = {
-        name: identity?.schoolName || settings?.schoolName || school?.name || data.name || slug,
-        slug: data.slug || slug,
-        logoUrl: identity?.logoUrl || settings?.logoUrl || school?.logo || null,
-        city: identity?.city || settings?.city || school?.city || null,
-        phone: identity?.phonePrimary || settings?.phone || school?.primaryPhone || null,
-        address: identity?.address || settings?.address || school?.address || null,
-        primaryColor: settings?.primaryColor || school?.primaryColor || null,
-        secondaryColor: settings?.secondaryColor || school?.secondaryColor || null,
-        slogan: identity?.slogan || settings?.slogan || school?.slogan || school?.motto || null,
-        motto: school?.motto || null,
-        schoolAcronym: identity?.schoolAcronym || school?.abbreviation || null,
-        schoolType: identity?.schoolType || school?.schoolType || null,
-        website: identity?.website || settings?.website || school?.website || null,
-        email: identity?.email || settings?.email || school?.primaryEmail || null,
-      };
-
-      return NextResponse.json(branding);
+      // Si 404, on passe au fallback
+      console.warn(`[School By Subdomain] Primary endpoint returned ${response.status} for slug "${slug}", trying fallback...`);
     } catch (fetchError: any) {
       clearTimeout(timeoutId);
-      if (fetchError?.name === 'AbortError') {
-        return NextResponse.json(
-          { error: 'Timeout', message: 'Délai d\'attente dépassé pour la résolution du tenant' },
-          { status: 504 },
-        );
-      }
-      throw fetchError;
+      console.warn(`[School By Subdomain] Primary endpoint failed for slug "${slug}":`, fetchError?.message || fetchError);
     }
+
+    // ── STRATÉGIE 2 : /public/schools/with-jobs (fallback — même source que /jobs) ──
+    const schoolsApiUrl = API_BASE_URL.endsWith('/api')
+      ? `${API_BASE_URL}/public/schools/with-jobs`
+      : `${API_BASE_URL}/api/public/schools/with-jobs`;
+
+    try {
+      const schoolsResponse = await fetch(normalizeApiUrl(schoolsApiUrl), {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        next: { revalidate: 60 },
+      });
+
+      if (schoolsResponse.ok) {
+        const schools = await schoolsResponse.json();
+        if (Array.isArray(schools)) {
+          const school = schools.find((s: any) => s.slug === slug);
+          if (school) {
+            const branding = extractBrandingFromSchoolList(school);
+            return NextResponse.json(branding);
+          }
+        }
+      }
+    } catch (fallbackError: any) {
+      console.warn(`[School By Subdomain] Fallback also failed for slug "${slug}":`, fallbackError?.message || fallbackError);
+    }
+
+    // ── Aucune source n'a fonctionné ──
+    return NextResponse.json(
+      { error: 'Tenant introuvable', message: `Aucun établissement trouvé pour le slug "${slug}"` },
+      { status: 404 },
+    );
   } catch (error: any) {
     console.error('[School By Subdomain API] Error:', error);
     return NextResponse.json(

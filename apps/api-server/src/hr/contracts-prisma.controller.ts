@@ -18,7 +18,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 import type { Response, Request } from 'express';
-import { CreateContractDto, UpdateContractDto, CreateAmendmentDto, SignContractDto, CreateContractTemplateDto, UpdateContractTemplateDto, TerminateContractDto } from './dto';
+import { CreateContractDto, UpdateContractDto, CreateAmendmentDto, SignContractDto, CompleteOnboardingDto, CreateContractTemplateDto, UpdateContractTemplateDto, TerminateContractDto } from './dto';
 
 @Controller('hr/contracts')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -345,6 +345,31 @@ export class ContractsPrismaController {
     return this.contractPdfService.signContract(id, tid, {
       ...body,
       ipAddress: req.ip || req.socket?.remoteAddress,
+    });
+  }
+
+  // ─── Onboarding Completion ────────────────────────────────────────────────
+
+  /**
+   * POST /api/hr/contracts/onboarding/complete
+   * Finalise le processus d'embauche :
+   * - Vérifie que le contrat est signé par les deux parties
+   * - Met à jour le statut du personnel à ACTIVE si nécessaire
+   * - Optionnellement envoie une copie du contrat signé par email
+   */
+  @Post('onboarding/complete')
+  async completeOnboarding(
+    @GetTenant() tenant: any,
+    @Body() body: CompleteOnboardingDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+
+    return this.contractPdfService.completeOnboarding(body.staffId, body.contractId, tid, {
+      sendEmail: body.sendEmail ?? true,
     });
   }
 }

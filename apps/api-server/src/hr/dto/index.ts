@@ -418,7 +418,14 @@ export class ValidateDocumentDto {
 export class SignContractDto {
   @IsString() signatureData: string; // base64 PNG
   @IsString() signerName: string;
-  @IsOptional() @IsString() signerRole?: string;
+  /** EMPLOYEUR = employer representative signs first; EMPLOYE = employee signs second */
+  @IsOptional() @IsIn(['EMPLOYEUR', 'EMPLOYE', 'Employeur', 'Employé', 'Employe']) signerRole?: string;
+}
+
+export class CompleteOnboardingDto {
+  @IsUUID() staffId: string;
+  @IsUUID() contractId: string;
+  @IsOptional() @IsBoolean() sendEmail?: boolean;
 }
 
 // ─── Schedule DTOs ────────────────────────────────────────────────────────────

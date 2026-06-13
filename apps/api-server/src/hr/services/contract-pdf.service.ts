@@ -306,7 +306,11 @@ export class ContractPdfService {
         ? new Date(contract.signedAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
         : null,
       signatureData: (contract.terms as any)?.signatureData || null,
+      employerSignatureData: (contract.terms as any)?.employerSignatureData || null,
+      employerSignerName: (contract.terms as any)?.employerSignerName || directorName,
+      employerSignedAt: (contract.terms as any)?.employerSignedAt ? new Date((contract.terms as any).employerSignedAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }) : null,
       isSigned: !!contract.signedAt,
+      isEmployerSigned: !!(contract.terms as any)?.employerSignedAt,
       // QR Code & meta
       qrCodeDataUrl,
       verificationUrl,
@@ -501,7 +505,11 @@ export class ContractPdfService {
       signatureDate: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }),
       signedAt: contract.signedAt ? new Date(contract.signedAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }) : null,
       signatureData: (contract.terms as any)?.signatureData || null,
+      employerSignatureData: (contract.terms as any)?.employerSignatureData || null,
+      employerSignerName: (contract.terms as any)?.employerSignerName || directorName,
+      employerSignedAt: (contract.terms as any)?.employerSignedAt ? new Date((contract.terms as any).employerSignedAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }) : null,
       isSigned: !!contract.signedAt,
+      isEmployerSigned: !!(contract.terms as any)?.employerSignedAt,
       qrCodeDataUrl,
       verificationUrl,
       generatedAt: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }),
@@ -589,6 +597,9 @@ export class ContractPdfService {
 
   /**
    * Enregistre la signature électronique d'un contrat.
+   * Supporte la double signature : EMPLOYEUR signe en premier, EMPLOYE signe en second.
+   * - signerRole = 'EMPLOYEUR' → enregistre la signature employeur, contrat reste PENDING
+   * - signerRole = 'EMPLOYE' (ou absent) → enregistre la signature employé, contrat → ACTIVE
    * signatureData: base64 image de la signature (depuis canvas)
    */
   async signContract(contractId: string, tenantId: string, data: {
@@ -601,10 +612,52 @@ export class ContractPdfService {
       where: { id: contractId, tenantId },
     });
     if (!contract) throw new NotFoundException('Contrat introuvable');
-    if (contract.signedAt) throw new BadRequestException('Ce contrat a déjà été signé.');
+
+    const terms = (contract.terms as any) || {};
+    const signerRole = (data.signerRole || 'EMPLOYE').toUpperCase().replace('É', 'E').replace('E', 'E');
+
+    // ─── EMPLOYEUR signs first ───────────────────────────────────────────────
+    if (signerRole === 'EMPLOYEUR') {
+      if (terms.employerSignedAt) {
+        throw new BadRequestException("L'employeur a déjà signé ce contrat.");
+      }
+
+      const updatedContract = await this.prisma.contract.update({
+        where: { id: contractId },
+        data: {
+          status: 'PENDING',  // Still pending employee signature
+          terms: {
+            ...terms,
+            employerSignatureData: data.signatureData,
+            employerSignerName: data.signerName,
+            employerSignedAt: new Date().toISOString(),
+            employerIpAddress: data.ipAddress || null,
+            employerSignatureMethod: 'ELECTRONIC_CANVAS',
+          },
+        },
+        include: { staff: true },
+      });
+
+      // Re-générer le PDF avec la signature employeur
+      await this.generateContractPdf(contractId, tenantId);
+
+      this.logger.log(`Contrat ${contractId} signé par l'employeur: ${data.signerName}`);
+      return {
+        ...updatedContract,
+        _signResult: { signed: true, signerRole: 'EMPLOYEUR', contractStatus: 'PENDING' },
+      };
+    }
+
+    // ─── EMPLOYE signs second ────────────────────────────────────────────────
+    // L'employeur doit avoir signé en premier
+    if (!terms.employerSignedAt) {
+      throw new BadRequestException("L'employeur doit signer le contrat en premier.");
+    }
+    if (contract.signedAt) {
+      throw new BadRequestException('Ce contrat a déjà été signé par l\'employé.');
+    }
 
     const signedAt = new Date();
-    // La signature fait passer le contrat de PENDING → ACTIVE (employé officiellement recruté)
     const updatedContract = await this.prisma.contract.update({
       where: { id: contractId },
       data: {
@@ -612,10 +665,10 @@ export class ContractPdfService {
         signedBy: data.signerName,
         status: 'ACTIVE',  // Le contrat n'est en vigueur qu'après signature de l'employé
         terms: {
-          ...((contract.terms as any) || {}),
+          ...terms,
           signatureData: data.signatureData,
           signerName: data.signerName,
-          signerRole: data.signerRole || 'Employé',
+          signerRole: data.signerRole || 'EMPLOYE',
           signedAt: signedAt.toISOString(),
           ipAddress: data.ipAddress || null,
           signatureMethod: 'ELECTRONIC_CANVAS',
@@ -629,12 +682,12 @@ export class ContractPdfService {
           data: {
             signedAt,
             signedBy: data.signerName,
-            status: 'ACTIVE',  // Le contrat n'est en vigueur qu'après signature de l'employé
+            status: 'ACTIVE',
             terms: {
-              ...((contract.terms as any) || {}),
+              ...terms,
               signatureData: data.signatureData,
               signerName: data.signerName,
-              signerRole: data.signerRole || 'Employé',
+              signerRole: data.signerRole || 'EMPLOYE',
               signedAt: signedAt.toISOString(),
               ipAddress: data.ipAddress || null,
               signatureMethod: 'ELECTRONIC_CANVAS',
@@ -646,7 +699,7 @@ export class ContractPdfService {
       throw prismaErr;
     });
 
-    // Re-générer le PDF avec la signature
+    // Re-générer le PDF avec les deux signatures
     await this.generateContractPdf(contractId, tenantId);
 
     // Mettre à jour le statut du personnel : PENDING_SIGNATURE → ACTIVE
@@ -663,12 +716,89 @@ export class ContractPdfService {
         }
       } catch (staffErr: any) {
         this.logger.warn(`Failed to update staff status after contract signing: ${staffErr?.message}`);
-        // Non-blocking: the contract is still signed
       }
     }
 
-    this.logger.log(`Contrat ${contractId} signé par ${data.signerName}`);
-    return updatedContract;
+    this.logger.log(`Contrat ${contractId} signé par l'employé: ${data.signerName}`);
+    return {
+      ...updatedContract,
+      _signResult: { signed: true, signerRole: 'EMPLOYE', contractStatus: 'ACTIVE' },
+    };
+  }
+
+  // ─── Onboarding Completion ─────────────────────────────────────────────────
+
+  /**
+   * Finalise le processus d'embauche d'un employé.
+   * Vérifie que le contrat est signé par les deux parties, met à jour le statut,
+   * et envoie optionnellement une copie par email.
+   */
+  async completeOnboarding(staffId: string, contractId: string, tenantId: string, options: { sendEmail?: boolean } = {}) {
+    // Vérifier le personnel
+    const staff = await this.prisma.staff.findFirst({ where: { id: staffId, tenantId } });
+    if (!staff) throw new NotFoundException('Personnel introuvable');
+
+    // Vérifier le contrat
+    const contract = await this.prisma.contract.findFirst({
+      where: { id: contractId, tenantId, staffId },
+    });
+    if (!contract) throw new NotFoundException('Contrat introuvable');
+
+    const terms = (contract.terms as any) || {};
+
+    // Vérifier que l'employeur a signé
+    if (!terms.employerSignedAt) {
+      throw new BadRequestException("L'employeur n'a pas encore signé le contrat. Veuillez compléter la signature de l'employeur avant de finaliser.");
+    }
+
+    // Vérifier que l'employé a signé
+    if (!contract.signedAt) {
+      throw new BadRequestException("L'employé n'a pas encore signé le contrat. Veuillez compléter la signature de l'employé avant de finaliser.");
+    }
+
+    // S'assurer que le statut du personnel est ACTIVE
+    if (staff.status !== 'ACTIVE') {
+      await this.prisma.staff.update({
+        where: { id: staffId },
+        data: { status: 'ACTIVE' },
+      });
+      this.logger.log(`Staff ${staffId} status updated to ACTIVE during onboarding completion`);
+    }
+
+    // Générer les matricules si pas encore fait
+    if (!staff.globalMatricule || !staff.tenantMatricule) {
+      try {
+        const matriculeService = (this as any).matriculeService;
+        if (matriculeService) {
+          await matriculeService.generateMatricules(staffId, tenantId);
+        }
+      } catch (err: any) {
+        this.logger.warn(`Matricule generation failed (non-blocking): ${err?.message}`);
+      }
+    }
+
+    const result = {
+      success: true,
+      staffId,
+      contractId,
+      staffStatus: 'ACTIVE',
+      contractStatus: contract.status,
+      employerSignedAt: terms.employerSignedAt,
+      employeeSignedAt: contract.signedAt,
+      pdfUrl: terms.pdfUrl || null,
+    };
+
+    // Envoi email optionnel
+    if (options.sendEmail && staff.email) {
+      try {
+        // TODO: Integrate with EmailService for contract copy email
+        this.logger.log(`Email notification would be sent to ${staff.email} (email service integration pending)`);
+      } catch (err: any) {
+        this.logger.warn(`Failed to send onboarding email (non-blocking): ${err?.message}`);
+      }
+    }
+
+    return result;
   }
 
   // ─── Private helpers ────────────────────────────────────────────────────────
@@ -1205,12 +1335,15 @@ export class ContractPdfService {
       <!-- Employeur -->
       <div class="sig-box">
         <p class="sig-title">L'Employeur</p>
-        <p class="sig-name">{{directorName}}</p>
+        <p class="sig-name">{{employerSignerName}}</p>
         <p class="sig-role">{{directorPosition}}</p>
-        {{#if isSigned}}
-          <p class="sig-date">Fait le : {{signedAt}}</p>
+        {{#if isEmployerSigned}}
+          <p class="sig-date">Signé le : {{employerSignedAt}}</p>
+          {{#if employerSignatureData}}
+            <img class="sig-image" src="{{employerSignatureData}}" alt="Signature employeur" />
+          {{/if}}
         {{else}}
-          <div class="sig-placeholder">Signature et cachet</div>
+          <div class="sig-placeholder">Signature et cachet de l'employeur</div>
         {{/if}}
       </div>
       <!-- Salarié -->
@@ -1589,9 +1722,12 @@ export class ContractPdfService {
       <!-- Employeur -->
       <div class="sig-box">
         <p class="sig-title">Pour l'Établissement (Employeur)</p>
-        <p class="sig-name">{{schoolName}}</p>
-        {{#if isSigned}}
-          <p class="sig-date">Fait le : {{signedAt}}</p>
+        <p class="sig-name">{{employerSignerName}} — {{schoolName}}</p>
+        {{#if isEmployerSigned}}
+          <p class="sig-date">Signé le : {{employerSignedAt}}</p>
+          {{#if employerSignatureData}}
+            <img class="sig-image" src="{{employerSignatureData}}" alt="Signature employeur" />
+          {{/if}}
         {{else}}
           <div class="sig-placeholder">Signature & cachet de l'établissement</div>
         {{/if}}

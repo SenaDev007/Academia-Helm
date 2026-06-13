@@ -993,18 +993,18 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 <Image
                   src={clientBranding.logoUrl}
                   alt={clientBranding.name}
-                  width={120}
-                  height={120}
-                  className="h-16 w-16 object-contain drop-shadow-lg sm:h-20 sm:w-20 md:h-24 md:w-24 rounded-xl"
+                  width={80}
+                  height={80}
+                  className="h-12 w-12 object-contain drop-shadow-lg sm:h-14 sm:w-14 rounded-xl"
                   priority
                 />
               ) : (
                 <Image
                   src="/images/logo-Academia Hub.png"
                   alt={BRAND.name}
-                  width={120}
-                  height={120}
-                  className="h-16 w-16 object-contain drop-shadow-lg sm:h-20 sm:w-20 md:h-24 md:w-24"
+                  width={80}
+                  height={80}
+                  className="h-12 w-12 object-contain drop-shadow-lg sm:h-14 sm:w-14"
                   priority
                 />
               )}
@@ -1028,7 +1028,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 </motion.div>
               )}
               <h1
-                className="text-xl font-extrabold tracking-tight sm:text-2xl md:text-3xl"
+                className="text-base font-bold tracking-tight sm:text-lg"
                 style={{ color: NAVY }}
               >
                 {portalDef?.title || clientBranding?.name || BRAND.name}

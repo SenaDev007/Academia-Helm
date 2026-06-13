@@ -466,18 +466,18 @@ export default function ForgotPasswordPage({ schoolBranding }: ForgotPasswordPag
                 <Image
                   src={clientBranding.logoUrl}
                   alt={clientBranding.name || BRAND.name}
-                  width={80}
-                  height={80}
-                  className="h-12 w-12 object-contain drop-shadow-lg sm:h-16 sm:w-16 rounded-xl"
+                  width={64}
+                  height={64}
+                  className="h-10 w-10 object-contain drop-shadow-lg sm:h-12 sm:w-12 rounded-xl"
                   priority
                 />
               ) : (
                 <Image
                   src="/images/logo-Academia Hub.png"
                   alt={BRAND.name}
-                  width={80}
-                  height={80}
-                  className="h-12 w-12 object-contain drop-shadow-lg sm:h-16 sm:w-16"
+                  width={64}
+                  height={64}
+                  className="h-10 w-10 object-contain drop-shadow-lg sm:h-12 sm:w-12"
                   priority
                 />
               )}
@@ -496,7 +496,7 @@ export default function ForgotPasswordPage({ schoolBranding }: ForgotPasswordPag
               <StepIcon className="h-7 w-7" />
             </motion.div>
 
-            <h1 className="text-xl font-extrabold tracking-tight sm:text-2xl" style={{ color: NAVY }}>
+            <h1 className="text-base font-bold tracking-tight sm:text-lg" style={{ color: NAVY }}>
               {currentStep.title}
             </h1>
             <p className="mt-2 text-sm text-slate-600">{currentStep.subtitle}</p>

@@ -7,12 +7,12 @@
  * un sous-domaine d'école (ex: cspeb-eveildafriqueeducation.academiahelm.com).
  *
  * Présente les 4 portails disponibles dans le contexte d'une école :
- *   - ÉCOLE (45 rôles) : Gestion de l'établissement
- *   - ENSEIGNANT (11 rôles) : Pédagogie & suivi
- *   - PARENT / ÉLÈVE (9 rôles) : Suivi & communication
- *   - PUBLIC (5 rôles) : Pré-inscription & acquisition
+ *   - ÉCOLE : Gestion de l'établissement
+ *   - ENSEIGNANT : Pédagogie & suivi
+ *   - PARENT / ÉLÈVE : Suivi & communication
+ *   - PUBLIC : Pré-inscription & acquisition
  *
- * Design V3 : Fond navy, cartes glassmorphism, palette Academia Helm
+ * Design V4 : Fond navy, cartes épurées sans icônes, palette Academia Helm
  *   Navy  #0b2f73  |  Blue  #1d4fa5  |  Gold  #f5b335
  * ============================================================================
  */
@@ -21,28 +21,20 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import {
-  Building2,
-  GraduationCap,
-  Users,
-  Globe,
-  ArrowRight,
   Loader2,
   MapPin,
   Phone,
   ChevronRight,
-  Shield,
-  BookOpen,
-  UserCheck,
   Compass,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import Image from 'next/image';
 import Link from 'next/link';
 import { BRAND } from '@/lib/brand';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getMotionDuration } from '@/lib/motion/presets';
 import { extractTenantSlug } from '@/lib/tenant/constants';
-import { getAvailablePortals, detectAccessContext, type PortalType } from '@/lib/auth/role-portal-map';
+import { type PortalType } from '@/lib/auth/role-portal-map';
 
 const NAVY = '#0b2f73';
 const BLUE = '#1d4fa5';
@@ -64,50 +56,34 @@ interface SchoolPortalInfo {
 }
 
 /**
- * Définition des 4 portails
+ * Définition des 4 portails — sans icônes, design épuré
  */
 const SCHOOL_PORTAL_DEFS = [
   {
     type: 'SCHOOL' as PortalType,
-    title: 'École',
+    title: 'Portail École',
     subtitle: 'Direction & administration',
-    authMethod: 'Email & mot de passe',
-    authIcon: Shield,
-    description: 'Scolarité, finances, RH, paramètres',
-    Icon: Building2,
     accentFrom: '#f5b335',
     accentTo: '#e09e1f',
   },
   {
     type: 'TEACHER' as PortalType,
-    title: 'Enseignant',
+    title: 'Portail Enseignant',
     subtitle: 'Pédagogie & suivi',
-    authMethod: 'Matricule & mot de passe',
-    authIcon: BookOpen,
-    description: 'Cours, notes, présences, ressources',
-    Icon: GraduationCap,
     accentFrom: '#34d399',
     accentTo: '#059669',
   },
   {
     type: 'PARENT' as PortalType,
-    title: 'Parent / Élève',
+    title: 'Portail Parent / Élève',
     subtitle: 'Suivi & communication',
-    authMethod: 'Téléphone & OTP',
-    authIcon: UserCheck,
-    description: 'Bulletins, paiements, absences',
-    Icon: Users,
     accentFrom: '#60a5fa',
     accentTo: '#2563eb',
   },
   {
     type: 'PUBLIC' as PortalType,
-    title: 'Public',
+    title: 'Portail Public',
     subtitle: 'Pré-inscription & infos',
-    authMethod: 'Aucune authentification',
-    authIcon: Globe,
-    description: 'Pré-inscription, informations, contact',
-    Icon: Globe,
     accentFrom: '#c084fc',
     accentTo: '#7c3aed',
   },
@@ -320,7 +296,7 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
           </div>
 
           {/* Nom de l'école */}
-          <h1 className="text-xl font-extrabold tracking-tight text-white sm:text-2xl">
+          <h1 className="text-base font-bold tracking-tight text-white sm:text-lg">
             {isLoading ? (
               <span className="inline-flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin text-[#f5b335]" />
@@ -375,8 +351,6 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
         >
           {SCHOOL_PORTAL_DEFS.map((portal) => {
             const isHovered = hoveredPortal === portal.type;
-            const Icon = portal.Icon;
-            const AuthIcon = portal.authIcon;
 
             return (
               <motion.button
@@ -406,66 +380,27 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
                   className="h-1 w-full transition-all duration-300"
                   style={{
                     background: `linear-gradient(90deg, ${portal.accentFrom}, ${portal.accentTo})`,
-                    opacity: 1,
                   }}
                 />
 
                 <div className="p-4 sm:p-5">
-                  {/* Ligne supérieure : icône + titre */}
-                  <div className="flex items-start gap-3">
-                    {/* Icône du portail */}
-                    <div
-                      className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl transition-all duration-300"
-                      style={{
-                        background: `${portal.accentFrom}22`,
-                        border: `1px solid ${portal.accentFrom}35`,
-                        boxShadow: `0 0 12px ${portal.accentFrom}15`,
-                      }}
+                  {/* Titre + sous-titre */}
+                  <div>
+                    <h3 className="text-sm font-bold text-white sm:text-base">
+                      {portal.title}
+                    </h3>
+                    <p
+                      className="mt-0.5 text-[11px] font-medium sm:text-xs"
+                      style={{ color: `${portal.accentFrom}cc` }}
                     >
-                      <Icon
-                        className="h-5 w-5"
-                        style={{ color: portal.accentFrom }}
-                      />
-                    </div>
-
-                    {/* Titre + sous-titre */}
-                    <div className="min-w-0 flex-1">
-                      <h3 className="text-sm font-bold text-white sm:text-base">
-                        {portal.title}
-                      </h3>
-                      <p
-                        className="mt-0.5 text-[11px] font-medium sm:text-xs"
-                        style={{ color: `${portal.accentFrom}cc` }}
-                      >
-                        {portal.subtitle}
-                      </p>
-                    </div>
+                      {portal.subtitle}
+                    </p>
                   </div>
 
-                  {/* Description */}
-                  <p className="mt-3 text-[11px] leading-relaxed text-white/55 sm:text-xs">
-                    {portal.description}
-                  </p>
-
-                  {/* Séparateur */}
-                  <div
-                    className="my-3 h-px"
-                    style={{ background: `${portal.accentFrom}18` }}
-                  />
-
-                  {/* Pied de carte — méthode d'auth + bouton Accéder */}
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <AuthIcon
-                        className="h-3 w-3 flex-shrink-0"
-                        style={{ color: portal.accentFrom }}
-                      />
-                      <span className="text-[10px] font-medium uppercase tracking-wider text-white/50 truncate">
-                        {portal.authMethod}
-                      </span>
-                    </div>
+                  {/* Bouton Accéder */}
+                  <div className="mt-4 flex items-center justify-end">
                     <div
-                      className="flex flex-shrink-0 items-center gap-0.5 text-[11px] font-semibold uppercase tracking-wide transition-all duration-200"
+                      className="flex items-center gap-0.5 text-[11px] font-semibold uppercase tracking-wide transition-all duration-200"
                       style={{ color: portal.accentFrom }}
                     >
                       Accéder

@@ -7,11 +7,17 @@
  * dans Cloudflare (DNS) et Vercel (hébergement) via API.
  *
  * Architecture :
- * - Cloudflare : Gère le DNS (CNAME) + Proxy de sécurité
+ * - Cloudflare : Gère le DNS (CNAME wildcard ou individuel) + Proxy de sécurité
  * - Vercel : Héberge l'application Next.js + SSL
  * - TenantDomain : Modèle Prisma pour tracker les domaines en DB
  *
- * Flux de création :
+ * Flux de création (mode optimisé avec wildcard) :
+ * 1. Vercel API → Ajouter le domaine au projet
+ * 2. Vercel vérifie le domaine → SSL émis automatiquement
+ * 3. TenantDomain en DB → Tracker le domaine
+ * Note: Si *.baseDomain existe dans Cloudflare, pas besoin de CNAME individuel
+ *
+ * Flux de création (mode complet sans wildcard) :
  * 1. Cloudflare API → Ajouter CNAME slug.academiahelm.com → cname.vercel-dns.com
  * 2. Vercel API → Ajouter le domaine au projet
  * 3. Vercel vérifie le domaine → SSL émis automatiquement
@@ -28,6 +34,7 @@ export interface DomainOperationResult {
   success: boolean;
   domain: string;
   cloudflareCreated?: boolean;
+  cloudflareSkipped?: boolean; // True when wildcard CNAME handles DNS (no individual CNAME needed)
   vercelAdded?: boolean;
   vercelVerified?: boolean;
   dbTracked?: boolean;
@@ -45,6 +52,9 @@ export class DomainManagementService {
   private readonly vercelProjectId: string | undefined;
   private readonly baseDomain: string;
 
+  // Cache pour le wildcard CNAME — évite un appel API Cloudflare à chaque création
+  private wildcardDetected: boolean | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
@@ -57,7 +67,7 @@ export class DomainManagementService {
     this.baseDomain = this.configService.get('APP_BASE_DOMAIN') || 'academiahelm.com';
 
     if (!this.cfToken || !this.cfZoneId) {
-      this.logger.warn('⚠️  Cloudflare API credentials not configured — subdomain DNS creation will be skipped');
+      this.logger.warn('⚠️  Cloudflare API credentials not configured — individual CNAME creation will be skipped (wildcard CNAME may still work)');
     }
     if (!this.vercelToken || !this.vercelProjectId) {
       this.logger.warn('⚠️  Vercel API credentials not configured — domain addition to Vercel will be skipped');
@@ -65,17 +75,67 @@ export class DomainManagementService {
   }
 
   /**
-   * Vérifie si le service est configuré pour la gestion automatique des domaines
+   * Vérifie si le service est configuré pour la gestion automatique des domaines.
+   * Avec le wildcard CNAME, seuls les credentials Vercel sont strictement nécessaires.
    */
   isConfigured(): boolean {
-    return !!(this.cfToken && this.cfZoneId && this.vercelToken && this.vercelProjectId);
+    const vercelConfigured = !!(this.vercelToken && this.vercelProjectId);
+    const cloudflareConfigured = !!(this.cfToken && this.cfZoneId);
+    // Vercel est indispensable, Cloudflare est optionnel si le wildcard existe
+    return vercelConfigured;
+  }
+
+  /**
+   * Vérifie si un CNAME wildcard (*.baseDomain) existe dans Cloudflare.
+   * Si oui, les sous-domaines individuels n'ont pas besoin de CNAME dédié.
+   * Le résultat est mis en cache pour éviter des appels API répétés.
+   */
+  async hasWildcardCname(): Promise<boolean> {
+    // Retourner le cache si déjà vérifié
+    if (this.wildcardDetected !== null) {
+      return this.wildcardDetected;
+    }
+
+    if (!this.cfToken || !this.cfZoneId) {
+      this.wildcardDetected = false;
+      return false;
+    }
+
+    try {
+      const wildcardDomain = `*.${this.baseDomain}`;
+      const response = await fetch(
+        `https://api.cloudflare.com/client/v4/zones/${this.cfZoneId}/dns_records?name=${wildcardDomain}`,
+        {
+          headers: { Authorization: `Bearer ${this.cfToken}` },
+        },
+      );
+
+      const data = (await response.json()) as any;
+      const hasWildcard =
+        data.success &&
+        data.result?.some(
+          (r: any) => r.type === 'CNAME' && r.name === wildcardDomain && r.proxied === true,
+        );
+
+      this.wildcardDetected = hasWildcard;
+
+      if (hasWildcard) {
+        this.logger.log(`🌐 Wildcard CNAME ${wildcardDomain} detected — individual CNAME records not needed`);
+      } else {
+        this.logger.log(`📋 No wildcard CNAME found — individual CNAME records will be created for each subdomain`);
+      }
+
+      return hasWildcard;
+    } catch {
+      this.wildcardDetected = false;
+      return false;
+    }
   }
 
   /**
    * Crée un sous-domaine complet pour une école :
-   * 1. CNAME Cloudflare (proxied)
-   * 2. Domaine Vercel (+ vérification)
-   * 3. TenantDomain en DB
+   * - Si wildcard CNAME existe : uniquement Vercel + DB (mode optimisé)
+   * - Sinon : Cloudflare CNAME + Vercel + DB (mode complet)
    */
   async createSchoolSubdomain(
     slug: string,
@@ -89,8 +149,16 @@ export class DomainManagementService {
 
     this.logger.log(`🔗 Creating subdomain: ${subdomain} for tenant ${tenantId}`);
 
-    // Étape 1 : Ajouter le CNAME dans Cloudflare
-    if (this.cfToken && this.cfZoneId) {
+    // Étape 1 : Vérifier si le wildcard CNAME existe → skip Cloudflare si oui
+    const wildcardExists = await this.hasWildcardCname();
+
+    if (wildcardExists) {
+      // Mode optimisé : le wildcard CNAME gère déjà le DNS pour tous les sous-domaines
+      this.logger.log(`🌐 Wildcard CNAME detected — skipping individual Cloudflare CNAME for ${subdomain}`);
+      result.cloudflareSkipped = true;
+      result.cloudflareCreated = true; // Considéré comme OK car le wildcard gère le DNS
+    } else if (this.cfToken && this.cfZoneId) {
+      // Mode complet : créer un CNAME individuel
       const cfResult = await this.addCloudflareCname(slug);
       result.cloudflareCreated = cfResult.success;
       if (!cfResult.success) {
@@ -99,11 +167,11 @@ export class DomainManagementService {
         // On continue même si Cloudflare échoue — on essaie Vercel quand même
       }
     } else {
-      this.logger.warn('⚠️  Skipping Cloudflare CNAME — credentials not configured');
+      this.logger.warn('⚠️  Skipping Cloudflare CNAME — credentials not configured and no wildcard detected');
       result.cloudflareCreated = false;
     }
 
-    // Étape 2 : Ajouter le domaine dans Vercel
+    // Étape 2 : Ajouter le domaine dans Vercel (indispensable — Vercel ne sert que les domaines explicitement ajoutés)
     if (this.vercelToken && this.vercelProjectId) {
       const vercelAddResult = await this.addVercelDomain(subdomain);
       result.vercelAdded = vercelAddResult.success;
@@ -168,11 +236,12 @@ export class DomainManagementService {
       result.dbTracked = false;
     }
 
-    // Succès global si au moins Cloudflare OU Vercel a fonctionné
-    result.success = !!(result.cloudflareCreated || result.vercelAdded);
+    // Succès global si au moins Cloudflare (ou wildcard) OU Vercel a fonctionné
+    result.success = !!(result.cloudflareCreated || result.cloudflareSkipped || result.vercelAdded);
 
     if (result.success) {
-      this.logger.log(`✅ Subdomain ${subdomain} created successfully (CF: ${result.cloudflareCreated}, Vercel: ${result.vercelAdded}, DB: ${result.dbTracked})`);
+      const cfStatus = result.cloudflareSkipped ? 'wildcard' : result.cloudflareCreated ? 'created' : 'skipped';
+      this.logger.log(`✅ Subdomain ${subdomain} created successfully (CF: ${cfStatus}, Vercel: ${result.vercelAdded}, DB: ${result.dbTracked})`);
     }
 
     return result;
@@ -180,6 +249,8 @@ export class DomainManagementService {
 
   /**
    * Supprime un sous-domaine (quand une école est supprimée ou désactivée)
+   * - Si wildcard CNAME existe : on ne supprime pas le CNAME Cloudflare (il n'y en a pas d'individuel)
+   * - Sinon : on supprime le CNAME individuel
    */
   async deleteSchoolSubdomain(slug: string, tenantId: string): Promise<DomainOperationResult> {
     const subdomain = `${slug}.${this.baseDomain}`;
@@ -190,8 +261,15 @@ export class DomainManagementService {
 
     this.logger.log(`🔗 Deleting subdomain: ${subdomain} for tenant ${tenantId}`);
 
-    // Supprimer de Cloudflare
-    if (this.cfToken && this.cfZoneId) {
+    // Vérifier si le wildcard existe
+    const wildcardExists = await this.hasWildcardCname();
+
+    if (wildcardExists) {
+      // Pas de CNAME individuel à supprimer — le wildcard reste
+      this.logger.log(`🌐 Wildcard CNAME detected — no individual Cloudflare CNAME to delete for ${subdomain}`);
+      result.cloudflareSkipped = true;
+    } else if (this.cfToken && this.cfZoneId) {
+      // Mode complet : supprimer le CNAME individuel
       const cfResult = await this.deleteCloudflareCname(slug);
       result.cloudflareCreated = !cfResult.success; // false = supprimé
     }

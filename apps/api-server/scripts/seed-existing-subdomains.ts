@@ -1,11 +1,14 @@
 /**
  * ============================================================================
- * SEED EXISTING SUBDOMAINS — Création Cloudflare + Vercel pour les tenants existants
+ * SEED EXISTING SUBDOMAINS — Création Vercel (+ Cloudflare si nécessaire) pour les tenants existants
  * ============================================================================
  *
  * Ce script parcourt tous les tenants actifs ayant un sous-domaine et crée
- * automatiquement les entrées DNS (CNAME Cloudflare) et les domaines Vercel
- * pour chaque école.
+ * automatiquement les domaines Vercel pour chaque école.
+ *
+ * Si un CNAME wildcard (*.baseDomain) existe dans Cloudflare, les CNAME individuels
+ * ne sont pas nécessaires — le script ne crée que les entrées Vercel.
+ * Sinon, il crée aussi les CNAME Cloudflare individuels.
  *
  * Utilisation :
  *   npx ts-node scripts/seed-existing-subdomains.ts
@@ -14,10 +17,10 @@
  *
  * Prérequis (.env) :
  *   DATABASE_URL=postgresql://...
- *   CLOUDFLARE_API_TOKEN=...
- *   CLOUDFLARE_ZONE_ID=...
- *   VERCEL_API_TOKEN=...
- *   VERCEL_PROJECT_ID=...
+ *   VERCEL_API_TOKEN=...       (requis)
+ *   VERCEL_PROJECT_ID=...      (requis)
+ *   CLOUDFLARE_API_TOKEN=...   (optionnel si wildcard CNAME existe)
+ *   CLOUDFLARE_ZONE_ID=...     (optionnel si wildcard CNAME existe)
  *   APP_BASE_DOMAIN=academiahelm.com
  *
  * ============================================================================
@@ -54,11 +57,44 @@ interface SubdomainResult {
   tenantName: string;
   subdomain: string;
   fullDomain: string;
-  cloudflare: 'created' | 'exists' | 'skipped' | 'failed';
+  cloudflare: 'created' | 'exists' | 'skipped' | 'failed' | 'wildcard';
   vercel: 'added' | 'exists' | 'skipped' | 'failed';
   vercelVerified: boolean;
   dbTracked: 'created' | 'exists' | 'skipped' | 'failed';
   error?: string;
+}
+
+// ── Détection du wildcard CNAME ──
+
+let wildcardDetected: boolean | null = null;
+
+async function detectWildcardCname(): Promise<boolean> {
+  if (wildcardDetected !== null) return wildcardDetected;
+  if (!CF_TOKEN || !CF_ZONE_ID) {
+    wildcardDetected = false;
+    return false;
+  }
+
+  try {
+    const wildcardDomain = `*.${BASE_DOMAIN}`;
+    const response = await fetch(
+      `https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/dns_records?name=${wildcardDomain}`,
+      { headers: { Authorization: `Bearer ${CF_TOKEN}` } },
+    );
+
+    const data = await response.json() as any;
+    const hasWildcard =
+      data.success &&
+      data.result?.some(
+        (r: any) => r.type === 'CNAME' && r.name === wildcardDomain && r.proxied === true,
+      );
+
+    wildcardDetected = hasWildcard;
+    return hasWildcard;
+  } catch {
+    wildcardDetected = false;
+    return false;
+  }
 }
 
 // ── Helpers Cloudflare ──
@@ -266,6 +302,23 @@ async function seedExistingSubdomains() {
     process.exit(1);
   }
 
+  if (!VERCEL_TOKEN || !VERCEL_PROJECT_ID) {
+    console.error('❌ VERCEL_API_TOKEN et VERCEL_PROJECT_ID sont requis. Arrêt.');
+    process.exit(1);
+  }
+
+  // Détecter le wildcard CNAME
+  console.log('🔍 Détection du CNAME wildcard dans Cloudflare...');
+  const hasWildcard = await detectWildcardCname();
+  if (hasWildcard) {
+    console.log(`   🌐 CNAME wildcard *.${BASE_DOMAIN} détecté — les CNAME individuels ne seront pas créés`);
+  } else if (CF_TOKEN && CF_ZONE_ID) {
+    console.log(`   📋 Pas de wildcard — les CNAME individuels seront créés dans Cloudflare`);
+  } else {
+    console.log(`   ⚠️  Pas de wildcard et pas de credentials Cloudflare — seuls les domaines Vercel seront créés`);
+  }
+  console.log('');
+
   if (DRY_RUN) {
     console.log('🏃 MODE DRY-RUN — Aucune modification ne sera effectuée');
     console.log('');
@@ -339,11 +392,15 @@ async function seedExistingSubdomains() {
         continue;
       }
 
-      // Étape 1 : Cloudflare CNAME
-      result.cloudflare = await addCloudflareCname(tenant.subdomain!);
-
-      // Petite pause entre les appels API pour éviter le rate limiting
-      await sleep(500);
+      // Étape 1 : Cloudflare CNAME (uniquement si pas de wildcard)
+      if (hasWildcard) {
+        result.cloudflare = 'wildcard';
+        console.log(`   🌐 Cloudflare: CNAME wildcard *.${BASE_DOMAIN} gère le DNS — pas de CNAME individuel nécessaire`);
+      } else {
+        result.cloudflare = await addCloudflareCname(tenant.subdomain!);
+        // Petite pause entre les appels API pour éviter le rate limiting
+        await sleep(500);
+      }
 
       // Étape 2 : Vercel Domain
       result.vercel = await addVercelDomain(fullDomain);
@@ -370,6 +427,7 @@ async function seedExistingSubdomains() {
 
       // Résumé pour ce tenant
       const isSuccess = result.cloudflare !== 'failed' && result.vercel !== 'failed';
+      // Note: cloudflare='wildcard' est considéré comme succès
       if (isSuccess) {
         successCount++;
         console.log(`   🎉 Succès pour ${fullDomain}`);
@@ -396,6 +454,21 @@ async function seedExistingSubdomains() {
     console.log(`   ✅ Succès     : ${successCount}`);
     console.log(`   💥 Échecs     : ${failCount}`);
     console.log(`   🏃 Ignorés    : ${skipCount}`);
+    console.log('');
+
+    // Statistiques Cloudflare
+    const wildcardCount = results.filter(r => r.cloudflare === 'wildcard').length;
+    const cfCreated = results.filter(r => r.cloudflare === 'created').length;
+    const cfExists = results.filter(r => r.cloudflare === 'exists').length;
+    if (wildcardCount > 0) {
+      console.log(`   🌐 CNAME wildcard : ${wildcardCount} (pas de CNAME individuel nécessaire)`);
+    }
+    if (cfCreated > 0) {
+      console.log(`   ☁️  Cloudflare créés : ${cfCreated}`);
+    }
+    if (cfExists > 0) {
+      console.log(`   ☁️  Cloudflare existants : ${cfExists}`);
+    }
     console.log('');
 
     // Détail par statut

@@ -4,6 +4,9 @@
  * ============================================================================
  *
  * Composant sélecteur avec recherche intelligente et liste complète.
+ * La liste des écoles est intégrée directement dans le modal (pas de dropdown)
+ * pour une visibilité maximale en format portrait.
+ *
  * Palette Academia Helm : Navy (#0b2f73) / Blue (#1d4fa5) / Gold (#f5b335)
  *
  * ============================================================================
@@ -12,7 +15,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Search, Building2, MapPin, GraduationCap, Loader, CheckCircle, ChevronDown, X, RefreshCw, AlertCircle } from 'lucide-react';
+import { Search, Building2, MapPin, GraduationCap, Loader, CheckCircle, X, RefreshCw, AlertCircle } from 'lucide-react';
 import Image from 'next/image';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 
@@ -49,16 +52,12 @@ export default function SchoolSearch({
   const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [isOpen, setIsOpen] = useState(false);
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Liste des établissements : route App Router → BFF qui appelle Nest
-  const loadAllSchools = async (retryCount = 0) => {
+  const loadAllSchools = async () => {
     const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort(), 15000); // 15s timeout client-side
+    const timeoutId = setTimeout(() => abortController.abort(), 15000);
 
     setIsLoading(true);
     setFetchError(null);
@@ -102,22 +101,13 @@ export default function SchoolSearch({
 
   // Recherche intelligente avec debounce
   useEffect(() => {
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-
     if (searchQuery.length > 0) {
       setIsSearching(true);
-      searchTimeoutRef.current = setTimeout(() => {
-        setIsSearching(false);
-      }, 300);
+      const timeout = setTimeout(() => setIsSearching(false), 300);
+      return () => clearTimeout(timeout);
+    } else {
+      setIsSearching(false);
     }
-
-    return () => {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current);
-      }
-    };
   }, [searchQuery]);
 
   // Filtrer les écoles selon la recherche
@@ -138,45 +128,15 @@ export default function SchoolSearch({
     });
   }, [allSchools, searchQuery]);
 
-  // Fermer le dropdown en cliquant à l'extérieur
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setShowDropdown(false);
-        setIsOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  // Ouvrir/fermer le dropdown
-  const handleToggleDropdown = () => {
-    if (selectedSchool && !isOpen) {
-      setSearchQuery('');
-      onSchoolSelect(null);
-    }
-    setIsOpen(!isOpen);
-    setShowDropdown(!showDropdown);
-    if (!isOpen && inputRef.current) {
-      inputRef.current.focus();
-    }
-  };
-
   const handleSchoolClick = (school: School) => {
     onSchoolSelect(school);
-    setShowDropdown(false);
-    setIsOpen(false);
     setSearchQuery('');
   };
 
-  const handleClearSelection = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleClearSelection = () => {
     onSchoolSelect(null);
     setSearchQuery('');
-    setIsOpen(false);
-    setShowDropdown(false);
+    setTimeout(() => inputRef.current?.focus(), 100);
   };
 
   const getSchoolTypeLabel = (type?: string) => {
@@ -192,224 +152,191 @@ export default function SchoolSearch({
     }
   };
 
-  return (
-    <div className="relative" ref={dropdownRef}>
-      {/* Sélecteur avec recherche */}
-      {!selectedSchool ? (
-        <div className="relative">
-          <div
-            onClick={handleToggleDropdown}
-            className="w-full px-4 py-3 rounded-xl cursor-pointer hover:border-slate-400 transition-colors flex items-center justify-between bg-white"
-            style={{ border: `2px solid ${NAVY}25` }}
-          >
-            <div className="flex items-center space-x-3 flex-1 min-w-0">
-              <Search className="w-5 h-5 flex-shrink-0" style={{ color: NAVY }} />
-              <input
-                ref={inputRef}
-                type="text"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setShowDropdown(true);
-                  setIsOpen(true);
-                }}
-                onFocus={() => {
-                  setShowDropdown(true);
-                  setIsOpen(true);
-                }}
-                placeholder="Rechercher ou sélectionner un établissement..."
-                className="flex-1 outline-none bg-transparent text-slate-700 placeholder-slate-400"
-                autoComplete="off"
+  // ── École sélectionnée : affichage compact ──
+  if (selectedSchool) {
+    return (
+      <motion.div
+        initial={reduceMotion ? false : { opacity: 0, scale: 0.98 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: reduceMotion ? 0 : 0.22, ease: 'easeOut' }}
+        className="rounded-xl border-2 p-4"
+        style={{
+          borderColor: `${NAVY}25`,
+          background: `linear-gradient(135deg, ${NAVY}06, ${BLUE}08)`,
+        }}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3 flex-1 min-w-0">
+            {selectedSchool.logoUrl ? (
+              <Image
+                src={selectedSchool.logoUrl}
+                alt={selectedSchool.name}
+                width={48}
+                height={48}
+                className="rounded-lg flex-shrink-0 object-cover"
               />
-            </div>
-            {isLoading ? (
-              <Loader className="w-5 h-5 animate-spin flex-shrink-0 text-slate-400" />
             ) : (
-              <ChevronDown
-                className={`w-5 h-5 flex-shrink-0 transition-transform ${isOpen ? 'transform rotate-180' : ''}`}
-                style={{ color: NAVY }}
-              />
-            )}
-          </div>
-
-          {/* Dropdown avec résultats */}
-          <AnimatePresence>
-            {showDropdown && (
-              <motion.div
-                key="school-dropdown"
-                initial={reduceMotion ? false : { opacity: 0, y: -8, scale: 0.98 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={reduceMotion ? undefined : { opacity: 0, y: -6, scale: 0.99 }}
-                transition={{ duration: reduceMotion ? 0 : 0.2, ease: 'easeOut' }}
-                className="absolute z-[200] mt-2 flex max-h-[65vh] w-full flex-col overflow-hidden rounded-xl border-2 bg-white shadow-xl"
-                style={{ borderColor: `${NAVY}15` }}
+              <div
+                className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{
+                  background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+                }}
               >
-                {/* Header avec compteur */}
-                <div
-                  className="px-4 py-2 border-b flex items-center justify-between"
-                  style={{ background: `${NAVY}06`, borderColor: `${NAVY}12` }}
-                >
-                  <span className="text-sm font-medium" style={{ color: NAVY }}>
-                    {searchQuery ? (
-                      <>
-                        {filteredSchools.length} résultat{filteredSchools.length > 1 ? 's' : ''} trouvé{filteredSchools.length > 1 ? 's' : ''}
-                      </>
-                    ) : (
-                      <>
-                        {allSchools.length} établissement{allSchools.length > 1 ? 's' : ''} disponible{allSchools.length > 1 ? 's' : ''}
-                      </>
-                    )}
-                  </span>
-                  {isSearching && (
-                    <Loader className="w-4 h-4 animate-spin text-slate-400" />
-                  )}
-                </div>
-
-                {/* Liste des résultats */}
-                <div className="overflow-y-auto max-h-[58vh]">
-                  {fetchError && allSchools.length === 0 ? (
-                    /* Erreur de chargement avec retry */
-                    <div className="px-4 py-8 text-center">
-                      <AlertCircle className="w-8 h-8 mx-auto mb-3 text-amber-500" />
-                      <p className="text-sm font-medium text-slate-700 mb-1">Impossible de charger les établissements</p>
-                      <p className="text-xs text-slate-500 mb-4">{fetchError}</p>
-                      <button
-                        onClick={() => loadAllSchools()}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors"
-                        style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
-                      >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        Réessayer
-                      </button>
-                    </div>
-                  ) : filteredSchools.length > 0 ? (
-                    filteredSchools.map((school) => (
-                      <button
-                        key={school.id}
-                        onClick={() => handleSchoolClick(school)}
-                        className="w-full px-4 py-3 hover:bg-slate-50 flex items-center space-x-3 text-left border-b border-slate-100 last:border-b-0 transition-colors group"
-                      >
-                        {school.logoUrl ? (
-                          <Image
-                            src={school.logoUrl}
-                            alt={school.name}
-                            width={48}
-                            height={48}
-                            className="rounded-lg flex-shrink-0 object-cover"
-                          />
-                        ) : (
-                          <div
-                            className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors"
-                            style={{
-                              background: `linear-gradient(135deg, ${NAVY}10, ${BLUE}15)`,
-                            }}
-                          >
-                            <Building2 className="w-6 h-6" style={{ color: NAVY }} />
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-slate-900 truncate group-hover:text-slate-700 transition-colors">
-                            {school.name}
-                          </p>
-                          <div className="flex items-center space-x-3 mt-1 text-sm text-slate-500">
-                            {school.city && (
-                              <span className="flex items-center space-x-1">
-                                <MapPin className="w-3 h-3" />
-                                <span>{school.city}</span>
-                              </span>
-                            )}
-                            {school.schoolType && (
-                              <span className="flex items-center space-x-1">
-                                <GraduationCap className="w-3 h-3" />
-                                <span>{getSchoolTypeLabel(school.schoolType)}</span>
-                              </span>
-                            )}
-                            {school.country && (
-                              <span className="text-slate-400">· {school.country}</span>
-                            )}
-                          </div>
-                        </div>
-                      </button>
-                    ))
-                  ) : (
-                    <div className="px-4 py-8 text-center">
-                      <p className="text-sm text-slate-500">
-                        {searchQuery ? (
-                          <>Aucun établissement trouvé pour &quot;{searchQuery}&quot;</>
-                        ) : (
-                          <>Aucun établissement disponible</>
-                        )}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </motion.div>
+                <Building2 className="w-6 h-6 text-white" />
+              </div>
             )}
-          </AnimatePresence>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center space-x-2">
+                <p className="font-bold text-slate-900 truncate">{selectedSchool.name}</p>
+                <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+              </div>
+              <div className="flex items-center space-x-4 mt-1 text-sm text-slate-600">
+                {selectedSchool.city && (
+                  <div className="flex items-center space-x-1">
+                    <MapPin className="w-3.5 h-3.5" />
+                    <span>{selectedSchool.city}</span>
+                  </div>
+                )}
+                {selectedSchool.schoolType && (
+                  <div className="flex items-center space-x-1">
+                    <GraduationCap className="w-3.5 h-3.5" />
+                    <span>{getSchoolTypeLabel(selectedSchool.schoolType)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={handleClearSelection}
+            className="ml-3 p-2 hover:bg-slate-100 rounded-lg transition-colors flex-shrink-0"
+            title="Changer d'établissement"
+          >
+            <X className="w-5 h-5 text-slate-500 hover:text-slate-800" />
+          </button>
         </div>
-      ) : (
-        /* École sélectionnée */
-        <motion.div
-          initial={reduceMotion ? false : { opacity: 0, scale: 0.98 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: reduceMotion ? 0 : 0.22, ease: 'easeOut' }}
-          className="rounded-xl border-2 p-4"
-          style={{
-            borderColor: `${NAVY}25`,
-            background: `linear-gradient(135deg, ${NAVY}06, ${BLUE}08)`,
-          }}
+      </motion.div>
+    );
+  }
+
+  // ── Liste intégrée : recherche + résultats directement dans le flux ──
+  return (
+    <div className="flex flex-col min-h-0 flex-1">
+      {/* Barre de recherche */}
+      <div className="shrink-0 px-4 pt-4 pb-2">
+        <div
+          className="w-full px-3 py-2.5 rounded-xl flex items-center gap-2 bg-white"
+          style={{ border: `2px solid ${NAVY}25` }}
         >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3 flex-1 min-w-0">
-              {selectedSchool.logoUrl ? (
+          <Search className="w-4 h-4 flex-shrink-0" style={{ color: NAVY }} />
+          <input
+            ref={inputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Rechercher un établissement..."
+            className="flex-1 outline-none bg-transparent text-sm text-slate-700 placeholder-slate-400"
+            autoComplete="off"
+          />
+          {isLoading ? (
+            <Loader className="w-4 h-4 animate-spin flex-shrink-0 text-slate-400" />
+          ) : isSearching ? (
+            <Loader className="w-4 h-4 animate-spin flex-shrink-0 text-slate-400" />
+          ) : null}
+        </div>
+      </div>
+
+      {/* Compteur de résultats */}
+      <div
+        className="shrink-0 px-4 py-1.5 flex items-center justify-between text-xs"
+        style={{ color: NAVY }}
+      >
+        <span className="font-medium">
+          {searchQuery ? (
+            <>{filteredSchools.length} résultat{filteredSchools.length > 1 ? 's' : ''}</>
+          ) : (
+            <>{allSchools.length} établissement{allSchools.length > 1 ? 's' : ''}</>
+          )}
+        </span>
+      </div>
+
+      {/* Liste des écoles — scrollable, occupe tout l'espace restant */}
+      <div className="flex-1 overflow-y-auto min-h-0 px-2 pb-2">
+        {fetchError && allSchools.length === 0 ? (
+          /* Erreur de chargement avec retry */
+          <div className="px-4 py-8 text-center">
+            <AlertCircle className="w-8 h-8 mx-auto mb-3 text-amber-500" />
+            <p className="text-sm font-medium text-slate-700 mb-1">Impossible de charger les établissements</p>
+            <p className="text-xs text-slate-500 mb-4">{fetchError}</p>
+            <button
+              onClick={() => loadAllSchools()}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors"
+              style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Réessayer
+            </button>
+          </div>
+        ) : filteredSchools.length > 0 ? (
+          filteredSchools.map((school) => (
+            <button
+              key={school.id}
+              onClick={() => handleSchoolClick(school)}
+              className="w-full px-3 py-2.5 hover:bg-slate-50 flex items-center gap-3 text-left rounded-lg transition-colors group"
+            >
+              {school.logoUrl ? (
                 <Image
-                  src={selectedSchool.logoUrl}
-                  alt={selectedSchool.name}
-                  width={56}
-                  height={56}
+                  src={school.logoUrl}
+                  alt={school.name}
+                  width={40}
+                  height={40}
                   className="rounded-lg flex-shrink-0 object-cover"
                 />
               ) : (
                 <div
-                  className="w-14 h-14 rounded-lg flex items-center justify-center flex-shrink-0"
+                  className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
                   style={{
-                    background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+                    background: `linear-gradient(135deg, ${NAVY}10, ${BLUE}15)`,
                   }}
                 >
-                  <Building2 className="w-7 h-7 text-white" />
+                  <Building2 className="w-5 h-5" style={{ color: NAVY }} />
                 </div>
               )}
               <div className="flex-1 min-w-0">
-                <div className="flex items-center space-x-2">
-                  <p className="font-bold text-slate-900 truncate">{selectedSchool.name}</p>
-                  <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-                </div>
-                <div className="flex items-center space-x-4 mt-1 text-sm text-slate-600">
-                  {selectedSchool.city && (
-                    <div className="flex items-center space-x-1">
-                      <MapPin className="w-4 h-4" />
-                      <span>{selectedSchool.city}</span>
-                    </div>
+                <p className="font-semibold text-sm text-slate-900 truncate group-hover:text-slate-700 transition-colors">
+                  {school.name}
+                </p>
+                <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500">
+                  {school.city && (
+                    <span className="flex items-center gap-0.5">
+                      <MapPin className="w-3 h-3" />
+                      {school.city}
+                    </span>
                   )}
-                  {selectedSchool.schoolType && (
-                    <div className="flex items-center space-x-1">
-                      <GraduationCap className="w-4 h-4" />
-                      <span>{getSchoolTypeLabel(selectedSchool.schoolType)}</span>
-                    </div>
+                  {school.schoolType && (
+                    <span className="flex items-center gap-0.5">
+                      <GraduationCap className="w-3 h-3" />
+                      {getSchoolTypeLabel(school.schoolType)}
+                    </span>
+                  )}
+                  {school.country && (
+                    <span className="text-slate-400">{school.country}</span>
                   )}
                 </div>
               </div>
-            </div>
-            <button
-              onClick={handleClearSelection}
-              className="ml-4 p-2 hover:bg-slate-100 rounded-lg transition-colors flex-shrink-0"
-              title="Changer d'établissement"
-            >
-              <X className="w-5 h-5 text-slate-500 hover:text-slate-800" />
             </button>
+          ))
+        ) : (
+          <div className="px-4 py-8 text-center">
+            <p className="text-sm text-slate-500">
+              {searchQuery ? (
+                <>Aucun établissement trouvé pour &quot;{searchQuery}&quot;</>
+              ) : (
+                <>Aucun établissement disponible</>
+              )}
+            </p>
           </div>
-        </motion.div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

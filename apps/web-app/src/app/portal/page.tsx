@@ -647,7 +647,7 @@ export default function PortalPage() {
           >
             <motion.div
               key="school-search-modal"
-              className="relative w-full max-w-md sm:max-w-md rounded-2xl border bg-white/95 p-4 shadow-2xl backdrop-blur-md sm:p-5 max-h-[92vh] flex flex-col"
+              className="relative w-full max-w-md rounded-2xl border bg-white/95 shadow-2xl backdrop-blur-md max-h-[88vh] flex flex-col"
               style={{
                 borderColor: `${NAVY}18`,
                 boxShadow: `0 24px 48px -12px ${NAVY}20, 0 0 0 1px ${GOLD}14`,
@@ -656,10 +656,10 @@ export default function PortalPage() {
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header — fixed */}
-              <div className="mb-4 sm:mb-5 flex items-start justify-between shrink-0">
-                <div className="flex items-center gap-2 sm:gap-3">
+              <div className="px-4 pt-4 pb-2 flex items-start justify-between shrink-0">
+                <div className="flex items-center gap-2.5">
                   <div
-                    className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl"
+                    className="flex h-9 w-9 items-center justify-center rounded-xl"
                     style={{
                       background: `linear-gradient(135deg, ${NAVY}18, ${BLUE}12)`,
                     }}
@@ -669,7 +669,7 @@ export default function PortalPage() {
                     )}
                   </div>
                   <div>
-                    <h2 className="text-base sm:text-lg font-bold" style={{ color: NAVY }}>
+                    <h2 className="text-base font-bold" style={{ color: NAVY }}>
                       {activePortalDef?.title || 'Portail'}
                     </h2>
                     <p className="text-xs text-slate-500">
@@ -683,15 +683,15 @@ export default function PortalPage() {
                   type="button"
                   whileTap={{ scale: 0.92 }}
                   onClick={handleCloseSchoolSearch}
-                  className="rounded-lg p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                  className="rounded-lg p-1.5 min-w-[36px] min-h-[36px] flex items-center justify-center text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
                   aria-label="Fermer"
                 >
                   <X className="h-5 w-5" />
                 </motion.button>
               </div>
 
-              {/* School Search — scrollable area */}
-              <div className="flex-1 min-h-0 overflow-y-auto">
+              {/* School Search — gère son propre scroll interne */}
+              <div className="flex-1 min-h-0 flex flex-col">
                 <SchoolSearch
                   onSchoolSelect={handleSchoolSelect}
                   selectedSchool={selectedSchool}
@@ -700,7 +700,7 @@ export default function PortalPage() {
               </div>
 
               {/* Footer — fixed */}
-              <div className="shrink-0">
+              <div className="shrink-0 px-4 pb-4 pt-2">
                 {/* Continue button */}
                 <AnimatePresence>
                   {selectedSchool ? (

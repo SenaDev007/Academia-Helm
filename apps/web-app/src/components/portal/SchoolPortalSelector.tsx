@@ -384,14 +384,14 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
                 className="group relative flex flex-col overflow-hidden rounded-2xl text-left transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-transparent"
                 style={{
                   background: isHovered
-                    ? 'rgba(255,255,255,0.10)'
-                    : 'rgba(255,255,255,0.05)',
+                    ? `linear-gradient(135deg, ${portal.accentFrom}18, rgba(255,255,255,0.12))`
+                    : `linear-gradient(135deg, ${portal.accentFrom}12, rgba(255,255,255,0.08))`,
                   border: isHovered
-                    ? `1.5px solid rgba(255,255,255,0.18)`
-                    : `1.5px solid rgba(255,255,255,0.08)`,
+                    ? `1.5px solid ${portal.accentFrom}50`
+                    : `1.5px solid ${portal.accentFrom}30`,
                   boxShadow: isHovered
-                    ? `0 8px 32px rgba(0,0,0,0.3), 0 0 24px ${portal.accentFrom}15`
-                    : `0 4px 16px rgba(0,0,0,0.2)`,
+                    ? `0 12px 40px rgba(0,0,0,0.4), 0 0 30px ${portal.accentFrom}20`
+                    : `0 4px 20px ${portal.accentFrom}10, 0 2px 8px rgba(0,0,0,0.2)`,
                   backdropFilter: 'blur(12px)',
                 }}
                 whileHover={shouldReduceMotion ? undefined : { y: -3, scale: 1.01 }}
@@ -403,7 +403,7 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
                   className="h-1 w-full transition-all duration-300"
                   style={{
                     background: `linear-gradient(90deg, ${portal.accentFrom}, ${portal.accentTo})`,
-                    opacity: isHovered ? 1 : 0.5,
+                    opacity: 1,
                   }}
                 />
 
@@ -414,17 +414,14 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
                     <div
                       className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl transition-all duration-300"
                       style={{
-                        background: isHovered
-                          ? `${portal.accentFrom}25`
-                          : `${portal.accentFrom}10`,
-                        border: isHovered
-                          ? `1px solid ${portal.accentFrom}40`
-                          : `1px solid ${portal.accentFrom}15`,
+                        background: `${portal.accentFrom}22`,
+                        border: `1px solid ${portal.accentFrom}35`,
+                        boxShadow: `0 0 12px ${portal.accentFrom}15`,
                       }}
                     >
                       <Icon
                         className="h-5 w-5"
-                        style={{ color: isHovered ? portal.accentFrom : `${portal.accentFrom}cc` }}
+                        style={{ color: portal.accentFrom }}
                       />
                     </div>
 
@@ -443,14 +440,14 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
                   </div>
 
                   {/* Description */}
-                  <p className="mt-3 text-[11px] leading-relaxed text-white/40 sm:text-xs">
+                  <p className="mt-3 text-[11px] leading-relaxed text-white/55 sm:text-xs">
                     {portal.description}
                   </p>
 
                   {/* Séparateur */}
                   <div
                     className="my-3 h-px"
-                    style={{ background: 'rgba(255,255,255,0.06)' }}
+                    style={{ background: `${portal.accentFrom}18` }}
                   />
 
                   {/* Pied de carte — méthode d'auth + bouton Accéder */}
@@ -458,15 +455,15 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
                     <div className="flex items-center gap-1.5 min-w-0">
                       <AuthIcon
                         className="h-3 w-3 flex-shrink-0"
-                        style={{ color: `${portal.accentFrom}80` }}
+                        style={{ color: portal.accentFrom }}
                       />
-                      <span className="text-[10px] font-medium uppercase tracking-wider text-white/35 truncate">
+                      <span className="text-[10px] font-medium uppercase tracking-wider text-white/50 truncate">
                         {portal.authMethod}
                       </span>
                     </div>
                     <div
                       className="flex flex-shrink-0 items-center gap-0.5 text-[11px] font-semibold uppercase tracking-wide transition-all duration-200"
-                      style={{ color: isHovered ? portal.accentFrom : 'rgba(255,255,255,0.35)' }}
+                      style={{ color: portal.accentFrom }}
                     >
                       Accéder
                       <ChevronRight

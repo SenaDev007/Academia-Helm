@@ -261,3 +261,26 @@ Stage Summary:
 - Pré-inscription publique conforme : CANDIDAT_MAT, CANDIDAT_PRI, CANDIDAT_SEC, PARENT_PROSPECT
 - portal_type persisté dans session + forwardé via X-Portal-Type header pour validation RBAC
 >>>>>>> a633e1f0 (52218ec6-f87f-425f-a6d6-8e4710cb1fbb)
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix OTP email not sending for forgot password + create professional Academia Helm branded email template
+
+Work Log:
+- Investigated the complete forgot password OTP flow (frontend → BFF → NestJS backend → EmailService)
+- Identified root cause: EmailService defaults to MOCK mode when EMAIL_PROVIDER/RESEND_API_KEY not configured
+- Found additional issues: missing fromName in EmailRequest, wrong default email domain (academia-hub.com → academiahelm.com), Resend API from field missing sender name
+- Generated professional Academia Helm logo images for email header and signature
+- Redesigned the OTP email template with full Academia Helm branding (navy/blue/gold palette, logo, signature)
+- Updated billing reminder template to use Academia Helm branding consistently
+- Added fetchWithTimeout to all 3 forgot-password BFF API routes
+- Improved error logging in forgotPassword() method with configuration hints
+- Added APP_PUBLIC_URL env var for logo URL resolution
+- Committed and pushed all changes to GitHub
+
+Stage Summary:
+- Files modified: email.service.ts, auth.service.ts, .env.example, forgot-password/route.ts, verify-reset-otp/route.ts, reset-password/route.ts
+- Files created: logo-academia-helm-email.png, logo-academia-helm-signature.png
+- Commit: 32d69559 pushed to origin/main
+- IMPORTANT: The user needs to verify on Railway that EMAIL_PROVIDER=resend and RESEND_API_KEY are properly set, and that the domain noreply@academiahelm.com is verified in Resend

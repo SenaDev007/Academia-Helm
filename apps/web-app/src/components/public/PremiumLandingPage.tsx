@@ -22,7 +22,7 @@ import {
   BookOpen,
   Megaphone,
 } from 'lucide-react';
-import PremiumHeader from '../layout/PremiumHeader';
+import { Header } from '@/components/ui/header-1';
 import InstitutionalFooter from './InstitutionalFooter';
 import { LoadingScreen } from '@/components/loading/LoadingScreen';
 import { LoadingScreenMobile } from '@/components/loading/LoadingScreenMobile';
@@ -448,7 +448,7 @@ export default function PremiumLandingPage() {
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-white text-slate-900 [word-break:normal] [overflow-wrap:normal] hyphens-none">
-      <PremiumHeader />
+      <Header />
 
       {/* Espace pour la navbar fixe + petit espacement avant la bande */}
       <div className="h-16 md:h-18" aria-hidden />

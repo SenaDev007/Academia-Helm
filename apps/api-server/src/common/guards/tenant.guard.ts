@@ -7,6 +7,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { IS_PUBLIC_KEY } from '../../auth/decorators/public.decorator';
+import { RESERVED_SUBDOMAINS, isReservedSubdomain } from '../constants/reserved-subdomains';
 
 /**
  * Guard to extract and validate tenant_id from request
@@ -20,11 +21,11 @@ import { IS_PUBLIC_KEY } from '../../auth/decorators/public.decorator';
  */
 @Injectable()
 export class TenantGuard implements CanActivate {
-  /** Sous-domaines réservés qui ne sont PAS des slugs de tenant */
-  private static readonly RESERVED_SUBDOMAINS = new Set([
-    'api', 'www', 'app', 'admin', 'mail', 'smtp', 'ftp', 'cdn',
-    'staging', 'dev', 'test', 'localhost', 'portal', 'docs',
-  ]);
+  /**
+   * Sous-domaines réservés importés depuis la source centralisée.
+   * @see apps/api-server/src/common/constants/reserved-subdomains.ts
+   */
+  private static readonly RESERVED_SUBDOMAINS = RESERVED_SUBDOMAINS;
 
   constructor(private reflector: Reflector) {}
 
@@ -95,8 +96,7 @@ export class TenantGuard implements CanActivate {
       const parts = host.split('.');
       if (
         parts.length > 2 &&
-        parts[0] !== 'www' &&
-        !TenantGuard.RESERVED_SUBDOMAINS.has(parts[0].toLowerCase())
+        !isReservedSubdomain(parts[0].toLowerCase())
       ) {
         // First part is the tenant slug/id
         // TODO: Resolve slug to tenant_id via database lookup

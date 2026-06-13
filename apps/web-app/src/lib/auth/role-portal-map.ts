@@ -22,6 +22,8 @@
  * ============================================================================
  */
 
+import { RESERVED_SUBDOMAINS } from '@/lib/tenant/constants';
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type PortalType = 'PLATFORM' | 'SCHOOL' | 'TEACHER' | 'PARENT' | 'PUBLIC';
@@ -304,16 +306,15 @@ export function detectAccessContext(): 'main-domain' | 'school-subdomain' {
 
   const host = window.location.host;
   const parts = host.split('.');
-  const ignoredSubdomains = ['www', 'dev', 'test', 'staging', 'preview', 'admin', 'api', 'portal', 'app', 'localhost'];
 
   if (host.includes('localhost') || host.includes('127.0.0.1')) {
-    if (parts.length >= 2 && !ignoredSubdomains.includes(parts[0]) && parts[0] !== 'localhost') {
+    if (parts.length >= 2 && !RESERVED_SUBDOMAINS.includes(parts[0] as any) && parts[0] !== 'localhost') {
       return 'school-subdomain';
     }
     return 'main-domain';
   }
 
-  if (parts.length >= 3 && !ignoredSubdomains.includes(parts[0])) {
+  if (parts.length >= 3 && !RESERVED_SUBDOMAINS.includes(parts[0] as any)) {
     return 'school-subdomain';
   }
 

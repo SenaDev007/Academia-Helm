@@ -16,6 +16,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { isReservedSubdomain, RESERVED_SUBDOMAINS } from '../constants/reserved-subdomains';
 
 @Injectable()
 export class SubdomainService {
@@ -131,6 +132,12 @@ export class SubdomainService {
     // Ne doit pas contenir de tirets consécutifs
     if (subdomain.includes('--')) {
       return { valid: false, error: 'Subdomain cannot contain consecutive dashes' };
+    }
+
+    // Sous-domaines réservés (sécurité critique)
+    // Empêche la création de tenants avec des slugs comme 'www', 'api', 'admin', etc.
+    if (isReservedSubdomain(subdomain)) {
+      return { valid: false, error: `Le sous-domaine "${subdomain}" est réservé et ne peut pas être utilisé` };
     }
 
     return { valid: true };

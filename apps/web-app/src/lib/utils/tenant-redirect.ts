@@ -17,6 +17,7 @@
 
 import { getAppEnvironment, getAppBaseUrl, type AppEnvironment } from './app-base-url';
 import { API_URL } from '@/lib/api-config';
+import { isReservedSubdomain } from '@/lib/tenant/constants';
 
 /**
  * Configuration de redirection tenant
@@ -320,7 +321,12 @@ export function extractTenantSlugFromUrl(url: string): string | null {
     }
     
     // Le sous-domaine est la première partie
-    return parts[0];
+    const subdomain = parts[0];
+    // Ne pas retourner les sous-domaines réservés (www, api, admin, etc.)
+    if (isReservedSubdomain(subdomain)) {
+      return null;
+    }
+    return subdomain;
   } catch {
     return null;
   }

@@ -1,21 +1,38 @@
 /**
  * Reserved subdomains that should NOT be treated as school/tenant slugs.
  * These are system-level subdomains for the Academia Helm platform.
- * 
+ *
  * IMPORTANT: This is the SINGLE SOURCE OF TRUTH. All files that check
  * subdomains MUST import from here instead of maintaining their own lists.
+ * The api-server has its own copy at src/common/constants/reserved-subdomains.ts
+ * which MUST be kept in sync with this list.
+ *
+ * Categories:
+ * - Web routing : www, app, portal
+ * - Infrastructure : api, cdn, mail, smtp, ftp, docs
+ * - Environments : dev, test, staging, preview, localhost
+ * - Admin : admin
  */
 export const RESERVED_SUBDOMAINS = [
+  // Web routing
   'www',
+  'app',
+  'portal',
+  // Infrastructure
+  'api',
+  'cdn',
+  'mail',
+  'smtp',
+  'ftp',
+  'docs',
+  // Environments
   'dev',
   'test',
   'staging',
   'preview',
-  'admin',
-  'api',
-  'portal',
-  'app',
   'localhost',
+  // Admin
+  'admin',
 ] as const;
 
 /**

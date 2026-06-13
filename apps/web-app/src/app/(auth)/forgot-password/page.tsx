@@ -12,6 +12,7 @@ import ForgotPasswordPage from '@/components/auth/ForgotPasswordPage';
 import { generateSEOMetadata } from '@/lib/seo';
 import { BRAND } from '@/lib/brand';
 import { Loader } from 'lucide-react';
+import { isReservedSubdomain } from '@/lib/tenant/constants';
 
 export const metadata: Metadata = generateSEOMetadata({
   title: 'Mot de passe oublié',
@@ -35,9 +36,8 @@ export default async function Page() {
     const headersList = await headers();
     const host = headersList.get('host') || headersList.get('x-forwarded-host') || '';
     const parts = host.split('.');
-    const ignoredSubdomains = ['www', 'dev', 'test', 'staging', 'preview', 'admin', 'api', 'portal', 'app'];
 
-    if (parts.length >= 3 && !ignoredSubdomains.includes(parts[0])) {
+    if (parts.length >= 3 && !isReservedSubdomain(parts[0])) {
       const subdomain = parts[0];
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
       const controller = new AbortController();

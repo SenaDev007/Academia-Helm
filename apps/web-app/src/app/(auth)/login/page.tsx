@@ -9,6 +9,7 @@ import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import LoginPage from '@/components/auth/LoginPage';
 import { BRAND } from '@/lib/brand';
+import { isReservedSubdomain } from '@/lib/tenant/constants';
 
 export const metadata: Metadata = {
   title: `Connexion - ${BRAND.name}`,
@@ -35,9 +36,8 @@ export default async function Page() {
     const headersList = await headers();
     const host = headersList.get('host') || headersList.get('x-forwarded-host') || '';
     const parts = host.split('.');
-    const ignoredSubdomains = ['www', 'dev', 'test', 'staging', 'preview', 'admin', 'api', 'portal', 'app'];
 
-    if (parts.length >= 3 && !ignoredSubdomains.includes(parts[0])) {
+    if (parts.length >= 3 && !isReservedSubdomain(parts[0])) {
       const subdomain = parts[0];
 
       // Résoudre le tenant depuis l'API backend

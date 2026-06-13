@@ -4,6 +4,8 @@
  * Utilitaires pour la génération et validation de sous-domaines
  */
 
+import { RESERVED_SUBDOMAINS } from '@/lib/tenant/constants';
+
 /**
  * Génère un sous-domaine à partir du nom de l'établissement
  * 
@@ -89,10 +91,9 @@ export function validateSubdomain(subdomain: string): { valid: boolean; error?: 
     return { valid: false, error: 'Le sous-domaine ne peut pas commencer ou finir par un tiret' };
   }
 
-  // Mots réservés
-  const reserved = ['www', 'api', 'admin', 'app', 'mail', 'ftp', 'localhost', 'test', 'staging', 'dev'];
-  if (reserved.includes(subdomain)) {
-    return { valid: false, error: 'Ce sous-domaine est réservé' };
+  // Mots réservés (source unique de vérité : lib/tenant/constants.ts)
+  if (RESERVED_SUBDOMAINS.includes(subdomain as any)) {
+    return { valid: false, error: 'Ce sous-domaine est réservé et ne peut pas être utilisé' };
   }
 
   return { valid: true };

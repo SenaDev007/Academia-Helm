@@ -12,6 +12,7 @@ import { redirect } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { headers } from 'next/headers';
 import { getServerSession } from '@/lib/auth/session';
+import { isReservedSubdomain } from '@/lib/tenant/constants';
 import { ModalProvider } from '@/components/modules/blueprint/modals/ModalProvider';
 import AppLayoutClient from './layout-client';
 import type { User, Tenant } from '@/types';
@@ -38,7 +39,7 @@ export default async function AppLayout({
     const headersList = await headers();
     const host = headersList.get('host') || headersList.get('x-forwarded-host') || '';
     const parts = host.split('.');
-    const hasSubdomain = parts.length >= 3 && !['www', 'dev', 'test', 'staging', 'preview', 'admin', 'api', 'portal', 'app'].includes(parts[0]);
+    const hasSubdomain = parts.length >= 3 && !isReservedSubdomain(parts[0]);
     
     if (hasSubdomain) {
       // Construire l'URL de login sur le même sous-domaine

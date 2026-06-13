@@ -372,3 +372,25 @@ Stage Summary:
 - 17 files changed, 2194 insertions, 496 deletions
 - Dual signature flow: EMPLOYEUR → PENDING → EMPLOYE → ACTIVE
 - Contract PDF templates updated with both signature images
+
+---
+Task ID: school-branding-login-fix
+Agent: Main Agent
+Task: Fix school name/logo/info not displaying on subdomain login page + modal sizing
+
+Work Log:
+- Analyzed 2 user screenshots showing login page on school subdomain displays generic "Academia Helm" branding instead of school-specific branding
+- Root cause: Server component (login/page.tsx) fetches school branding with 3s timeout, but API often times out → schoolBranding=null → client shows generic branding
+- Enhanced useSchoolBranding hook with all SchoolBranding fields (slug, address, motto)
+- Added client-side fallback in LoginPage.tsx using useSchoolBranding(schoolBranding) — if server fails, client fetches branding
+- Replaced all schoolBranding references in LoginPage with clientBranding from useSchoolBranding
+- Fixed school selection modal: wider on desktop (lg:max-w-3xl), taller max-height (95vh/90vh)
+- Restructured modal with flexbox: fixed header/footer, scrollable SchoolSearch area
+- Fixed SchoolSearch dropdown: taller on mobile (60vh) and desktop (450px), list area increased (52vh/380px)
+- Role counts not present in current code (only in comments) — no changes needed
+
+Stage Summary:
+- 4 files modified: useSchoolBranding.ts, LoginPage.tsx, portal/page.tsx, SchoolSearch.tsx
+- Commit: f4f98b30 pushed to origin/main
+- School branding now displays correctly on subdomain login pages even when server-side fetch fails
+- School selection modal properly sized on both desktop and mobile

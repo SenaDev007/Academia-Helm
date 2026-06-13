@@ -316,3 +316,59 @@ Stage Summary:
 - School branding now shows on login/forgot-password when on tenant subdomain
 - Staff status now correctly shows PENDING_SIGNATURE until contract is signed
 - All API provider names and env var references removed from user-facing messages
+
+---
+Task ID: 1
+Agent: main
+Task: Commit and push all recent modifications
+
+Work Log:
+- Verified git status: 1 commit ahead of origin (worklog update)
+- Pushed to origin/main successfully
+
+Stage Summary:
+- Commit 03e5e7e4 pushed to origin/main
+
+---
+Task ID: 2
+Agent: main
+Task: Fix RH contract status in database for existing data
+
+Work Log:
+- Updated Prisma schema: Staff.status default ACTIVE → PENDING_SIGNATURE
+- Updated Prisma schema: Contract.status default ACTIVE → PENDING
+- Added runHrStatusDataFix() method in DatabaseTriggersBootstrapService (idempotent)
+- Added HR data fix to DatabaseModule.onApplicationBootstrap()
+- Created SQL migration file for manual execution
+- Fixed ContractsWorkspace: staff dropdown now includes PENDING_SIGNATURE staff
+- Fixed ContractsWorkspace: KPI card counts both DRAFT and PENDING contracts
+
+Stage Summary:
+- Commit e94b6457: HR status data fix with auto-migration at server startup
+- Bootstrap auto-fix: unsigned contracts → PENDING, staff without signed contract → PENDING_SIGNATURE
+- Staff with signed contract incorrectly PENDING_SIGNATURE → ACTIVE
+
+---
+Task ID: 3
+Agent: main
+Task: Implement professional employee onboarding workflow with documents and signatures
+
+Work Log:
+- Backend: Modified signContract() for dual signature support (EMPLOYEUR first, EMPLOYE second)
+- Backend: Added CompleteOnboardingDto and POST /hr/contracts/onboarding/complete endpoint
+- Backend: Updated contract HTML templates with dual signature block and employer variables
+- Frontend: Created 7-step professional onboarding wizard
+- Frontend: StepIdentity (comprehensive personal info), StepEmployment (job classification)
+- Frontend: StepDocuments (required vs optional checklist with progress), StepContract (params + bank details)
+- Frontend: StepPreview (article editing + HTML preview + PDF generation)
+- Frontend: StepSignatures (dual canvas-based signature, employer signs first)
+- Frontend: StepSummary (recap + finalization + optional email notification)
+- Frontend: SignatureCanvas, DocumentUploadCard, StepIndicator reusable components
+- Frontend: OnboardingWizardModal updated as thin wrapper for backward compatibility
+- Progressive API persistence: each step saves to backend before advancing
+
+Stage Summary:
+- Commit f43237d7: Professional 7-step employee onboarding workflow
+- 17 files changed, 2194 insertions, 496 deletions
+- Dual signature flow: EMPLOYEUR → PENDING → EMPLOYE → ACTIVE
+- Contract PDF templates updated with both signature images

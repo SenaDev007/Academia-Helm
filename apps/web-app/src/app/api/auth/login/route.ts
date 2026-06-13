@@ -6,7 +6,7 @@ import type { Tenant } from '@/types';
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, bffHeaders } from '@/lib/utils/api-urls';
 import { setServerSession } from '@/lib/auth/session';
 import { loadTenantFromApi } from '@/lib/utils/load-tenant';
 
@@ -57,9 +57,7 @@ export async function POST(request: NextRequest) {
     try {
       backendResponse = await fetch(loginUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: bffHeaders(),
         body: JSON.stringify({
           email: body.email,
           password: body.password,

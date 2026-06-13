@@ -9,7 +9,7 @@
  * ============================================================================
  */
 
-import { getApiBaseUrlForRoutes } from './api-urls';
+import { getApiBaseUrlForRoutes, bffHeaders } from './api-urls';
 import { fetchWithTimeout, DEFAULT_FETCH_TIMEOUT } from '@/lib/api/fetch-with-timeout';
 import type { Tenant } from '@/types';
 
@@ -40,10 +40,9 @@ export async function loadTenantFromApi(
   }
 
   try {
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json',
+    const headers: HeadersInit = bffHeaders({
       'Authorization': `Bearer ${token}`,
-    };
+    });
 
     const API_BASE_URL = getApiBaseUrlForRoutes();
     const response = await fetchWithTimeout(`${API_BASE_URL}/tenants/${tenantId}`, {

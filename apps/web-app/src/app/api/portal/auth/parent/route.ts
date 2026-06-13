@@ -6,7 +6,7 @@ import type { Tenant } from '@/types';
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, bffHeaders } from '@/lib/utils/api-urls';
 import { setServerSession } from '@/lib/auth/session';
 import { loadTenantFromApi } from '@/lib/utils/load-tenant';
 
@@ -39,9 +39,7 @@ export async function POST(request: NextRequest) {
 
     const response = await fetch(`${API_BASE_URL}/portal/auth/parent`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: bffHeaders(),
       body: JSON.stringify(body),
     });
 

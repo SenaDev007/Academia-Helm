@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl, bffHeaders } from '@/lib/utils/api-urls';
 
 export async function POST(request: NextRequest) {
   const API_BASE_URL = getApiBaseUrlForRoutes();
@@ -12,10 +12,7 @@ export async function POST(request: NextRequest) {
     const body = await request.text();
     const response = await fetch(apiUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type':
-          request.headers.get('Content-Type') || 'application/json',
-      },
+      headers: bffHeaders(),
       body,
     });
     const resBody = await response.text();

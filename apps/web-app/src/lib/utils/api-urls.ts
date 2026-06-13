@@ -69,3 +69,23 @@ export function normalizeApiUrl(url: string): string {
   // Remplacer localhost par 127.0.0.1 pour éviter les problèmes DNS/IPv6/EACCES
   return url.replace(/http:\/\/localhost:/g, 'http://127.0.0.1:');
 }
+
+/**
+ * Headers HTTP à envoyer dans les appels BFF (serveur-à-serveur).
+ *
+ * Cloudflare Managed Challenge bloque les requêtes sans User-Agent
+ * (renvoie 403 + page HTML "Just a moment..."). L'ajout d'un User-Agent
+ * explicite et de Accept: application/json permet à Cloudflare de
+ * classer la requête comme légitime et de la laisser passer.
+ *
+ * @param extraHeaders - Headers additionnels à fusionner (ex: Authorization)
+ * @returns Headers prêts pour fetch()
+ */
+export function bffHeaders(extraHeaders?: Record<string, string>): Record<string, string> {
+  return {
+    'User-Agent': 'AcademiaHelm-BFF/1.0 (Next.js server-side)',
+    'Accept': 'application/json',
+    'Content-Type': 'application/json',
+    ...extraHeaders,
+  };
+}

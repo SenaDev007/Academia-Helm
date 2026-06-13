@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl, bffHeaders } from '@/lib/utils/api-urls';
 
 export async function GET(request: NextRequest) {
   const API_BASE_URL = getApiBaseUrlForRoutes();
@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
   try {
     const response = await fetch(apiUrl, {
       method: 'GET',
-      headers: { Accept: 'application/json' },
+      headers: bffHeaders(),
       next: { revalidate: 60 },
     });
     const body = await response.text();

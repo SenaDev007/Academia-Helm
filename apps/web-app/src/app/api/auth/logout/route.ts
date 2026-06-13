@@ -14,7 +14,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { clearServerSession } from '@/lib/auth/session';
-import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl, bffHeaders } from '@/lib/utils/api-urls';
 
 export async function POST() {
   // ── 1. Révoquer le token côté NestJS (best-effort) ──────────────────
@@ -31,10 +31,7 @@ export async function POST() {
       // Appel au backend pour ajouter le token à la table revoked_tokens
       await fetch(url, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${tokenCookie.value}`,
-          'Content-Type': 'application/json',
-        },
+        headers: bffHeaders({ Authorization: `Bearer ${tokenCookie.value}` }),
       }).catch(() => {
         // Non-critique : le token expirera naturellement
       });

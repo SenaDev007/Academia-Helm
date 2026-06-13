@@ -15,7 +15,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { nestControllerUrl } from '@/lib/utils/api-urls';
+import { nestControllerUrl, bffHeaders } from '@/lib/utils/api-urls';
 
 /** Nombre max de tentatives en cas d'erreur transitoire. */
 const MAX_RETRIES = 1;
@@ -42,9 +42,7 @@ export async function GET(_request: NextRequest) {
     try {
       response = await fetch(apiUrl, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: bffHeaders(),
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -80,6 +78,19 @@ export async function GET(_request: NextRequest) {
         continue;
       }
       break;
+    }
+
+    // Détecter la page de challenge Cloudflare (HTML au lieu de JSON)
+    const contentType = response.headers.get('content-type') || '';
+    if (response.status === 403 && contentType.includes('text/html')) {
+      console.error('[School List API] Cloudflare challenge detected (403 + HTML). API URL:', apiUrl);
+      return NextResponse.json(
+        {
+          error: 'Cloudflare challenge',
+          message: 'Accès bloqué par Cloudflare. Vérifiez la configuration DNS/WAF du sous-domaine api.',
+        },
+        { status: 502 }
+      );
     }
 
     if (!response.ok) {

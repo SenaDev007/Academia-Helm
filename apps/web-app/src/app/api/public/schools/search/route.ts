@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, bffHeaders } from '@/lib/utils/api-urls';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
@@ -25,9 +25,7 @@ export async function GET(request: NextRequest) {
       `${API_BASE_URL}/public/schools/search?q=${encodeURIComponent(searchTerm)}`,
       {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: bffHeaders(),
       }
     );
 

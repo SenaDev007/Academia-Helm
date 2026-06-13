@@ -9,7 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl, bffHeaders } from '@/lib/utils/api-urls';
 
 /** ISR: revalidate every 60 seconds — school data changes rarely. */
 export const revalidate = 60;
@@ -23,9 +23,7 @@ export async function GET(_request: NextRequest) {
 
     const response = await fetch(normalizeApiUrl(apiUrl), {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: bffHeaders(),
       next: { revalidate: 60 },
     });
 

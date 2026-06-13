@@ -13,7 +13,7 @@ import type { Tenant } from '@/types';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerToken, setServerSession } from '@/lib/auth/session';
-import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl, bffHeaders } from '@/lib/utils/api-urls';
 
 export async function POST(request: NextRequest) {
   try {
@@ -40,10 +40,7 @@ export async function POST(request: NextRequest) {
     const url = `${baseUrl.replace(/\/$/, '')}/auth/select-tenant`;
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
+      headers: bffHeaders({ Authorization: `Bearer ${token}` }),
       body: JSON.stringify({ tenant_id }),
     });
 

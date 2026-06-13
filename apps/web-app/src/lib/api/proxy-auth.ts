@@ -136,6 +136,8 @@ export async function getProxyAuthHeaders(request: NextRequest): Promise<ProxyAu
 
   const headers: ProxyAuthHeaders = {
     'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'User-Agent': 'AcademiaHelm-BFF/1.0 (Next.js server-side)',
   };
   if (token) {
     headers['Authorization'] = token;

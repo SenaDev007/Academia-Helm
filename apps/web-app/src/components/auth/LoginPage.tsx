@@ -337,6 +337,19 @@ export default function LoginPage() {
     return qs ? `/forgot-password?${qs}` : '/forgot-password';
   }, [portalType, tenantSlug, tenantIdFromUrl]);
 
+  // ── Back to portal selection URL (school-portal on subdomain, portal on main) ──
+  const backToPortalHref = useMemo(() => {
+    if (typeof window !== 'undefined') {
+      const host = window.location.host;
+      const parts = host.split('.');
+      const ignoredSubdomains = ['www', 'dev', 'test', 'staging', 'preview', 'admin', 'api', 'portal', 'app'];
+      if (parts.length >= 3 && !ignoredSubdomains.includes(parts[0])) {
+        return '/school-portal';
+      }
+    }
+    return '/portal';
+  }, []);
+
   const dur = useMemo(
     () => getMotionDuration(shouldReduceMotion, 'normal'),
     [shouldReduceMotion],
@@ -927,7 +940,7 @@ export default function LoginPage() {
           Accueil
         </Link>
         <Link
-          href="/portal"
+          href={backToPortalHref}
           className="inline-flex items-center gap-2 rounded-full border bg-white/80 px-3 py-2 min-h-[44px] text-sm font-medium text-slate-700 shadow-sm backdrop-blur-sm transition-colors hover:text-slate-900"
           style={{ borderColor: `${NAVY}18` }}
         >
@@ -1156,7 +1169,7 @@ export default function LoginPage() {
                     </p>
                   </div>
                   <Link
-                    href="/portal"
+                    href={backToPortalHref}
                     className="mt-2 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white"
                     style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
                   >
@@ -1745,7 +1758,7 @@ export default function LoginPage() {
           >
             {!isStandardLogin && portalType !== 'public' ? (
               <Link
-                href="/portal"
+                href={backToPortalHref}
                 className="inline-flex items-center justify-center text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 min-h-[44px]"
               >
                 ← Retour à la sélection du portail

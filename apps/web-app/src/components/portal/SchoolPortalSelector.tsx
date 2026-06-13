@@ -368,6 +368,8 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
           </Link>
           <Link
             href="/portal"
+            target="_blank"
+            rel="noopener noreferrer"
             className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 backdrop-blur-sm transition-colors hover:bg-white/10 hover:text-white sm:text-sm"
           >
             Tous les portails

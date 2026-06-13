@@ -61,7 +61,18 @@ function getPasswordStrength(password: string): { score: number; label: string; 
   return { score: 4, label: 'Fort', color: '#16a34a' };
 }
 
-export default function ForgotPasswordPage() {
+interface ForgotPasswordPageProps {
+  schoolBranding?: {
+    name: string;
+    slug: string;
+    logoUrl: string | null;
+    city: string | null;
+    slogan: string | null;
+    motto: string | null;
+  } | null;
+}
+
+export default function ForgotPasswordPage({ schoolBranding }: ForgotPasswordPageProps = {}) {
   const searchParams = useSearchParams();
   const { fetchWithTimeout } = useFetchWithTimeout();
   const portalParam = searchParams?.get('portal');
@@ -451,14 +462,25 @@ export default function ForgotPasswordPage() {
           >
             {/* Logo */}
             <div className="mb-4 inline-flex items-center justify-center">
-              <Image
-                src="/images/logo-Academia Hub.png"
-                alt={BRAND.name}
-                width={80}
-                height={80}
-                className="h-12 w-12 object-contain drop-shadow-lg sm:h-16 sm:w-16"
-                priority
-              />
+              {schoolBranding?.logoUrl ? (
+                <Image
+                  src={schoolBranding.logoUrl}
+                  alt={schoolBranding.name}
+                  width={80}
+                  height={80}
+                  className="h-12 w-12 object-contain drop-shadow-lg sm:h-16 sm:w-16 rounded-xl"
+                  priority
+                />
+              ) : (
+                <Image
+                  src="/images/logo-Academia Hub.png"
+                  alt={BRAND.name}
+                  width={80}
+                  height={80}
+                  className="h-12 w-12 object-contain drop-shadow-lg sm:h-16 sm:w-16"
+                  priority
+                />
+              )}
             </div>
 
             {/* Step icon */}

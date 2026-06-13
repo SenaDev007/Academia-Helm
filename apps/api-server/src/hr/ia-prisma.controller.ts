@@ -154,7 +154,7 @@ export class IaPrismaController {
 
     return {
       configured: isConfigured,
-      provider: isConfigured ? 'OpenRouter (z-ai/glm-4.5-air)' : null,
+      provider: isConfigured ? 'IA' : null,
       engine: 'HDIE v2.0',
       features: {
         cvParsing: {

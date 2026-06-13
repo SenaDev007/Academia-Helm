@@ -1,8 +1,12 @@
 /**
- * Page Login - Academia Helm
+ * Page Login — Academia Helm
+ *
+ * Server component qui résout les informations de l'école depuis le sous-domaine
+ * et les passe au composant client LoginPage pour un branding conditionnel.
  */
 
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import LoginPage from '@/components/auth/LoginPage';
 import { BRAND } from '@/lib/brand';
 
@@ -11,7 +15,72 @@ export const metadata: Metadata = {
   description: `${BRAND.description}. ${BRAND.slogan}`,
 };
 
-export default function Page() {
-  return <LoginPage />;
+export interface SchoolBranding {
+  name: string;
+  slug: string;
+  logoUrl: string | null;
+  city: string | null;
+  phone: string | null;
+  address: string | null;
+  primaryColor: string | null;
+  secondaryColor: string | null;
+  slogan: string | null;
+  motto: string | null;
 }
 
+export default async function Page() {
+  let schoolBranding: SchoolBranding | null = null;
+
+  try {
+    const headersList = await headers();
+    const host = headersList.get('host') || headersList.get('x-forwarded-host') || '';
+    const parts = host.split('.');
+    const ignoredSubdomains = ['www', 'dev', 'test', 'staging', 'preview', 'admin', 'api', 'portal', 'app'];
+
+    if (parts.length >= 3 && !ignoredSubdomains.includes(parts[0])) {
+      const subdomain = parts[0];
+
+      // Résoudre le tenant depuis l'API backend
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+      try {
+        const response = await fetch(`${apiUrl}/tenants/by-subdomain/${subdomain}`, {
+          signal: controller.signal,
+          cache: 'no-store',
+        });
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          const data = await response.json();
+
+          // Résolution des données scolaires (identité > settings > école)
+          const identity = data.identityProfiles?.[0];
+          const settings = data.schoolSettings;
+          const school = data.schools;
+
+          schoolBranding = {
+            name: identity?.schoolName || settings?.schoolName || school?.name || data.name || subdomain,
+            slug: data.slug || subdomain,
+            logoUrl: identity?.logoUrl || settings?.logoUrl || school?.logo || null,
+            city: identity?.city || settings?.city || school?.city || null,
+            phone: identity?.phonePrimary || settings?.phone || school?.primaryPhone || null,
+            address: identity?.address || settings?.address || school?.address || null,
+            primaryColor: settings?.primaryColor || school?.primaryColor || null,
+            secondaryColor: settings?.secondaryColor || school?.secondaryColor || null,
+            slogan: identity?.slogan || settings?.slogan || school?.slogan || school?.motto || null,
+            motto: school?.motto || null,
+          };
+        }
+      } catch {
+        clearTimeout(timeoutId);
+        // L'API n'est pas disponible — le client tentera aussi
+      }
+    }
+  } catch {
+    // headers() peut échouer dans certains contextes
+  }
+
+  return <LoginPage schoolBranding={schoolBranding} />;
+}

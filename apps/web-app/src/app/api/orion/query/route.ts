@@ -113,8 +113,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(orionResponse, { status: 200 });
   } catch (error: any) {
     console.error('ORION query error:', error);
+    // Ne pas exposer les détails techniques de l'erreur à l'utilisateur
+    const userMessage = error?.message?.includes('API') || error?.message?.includes('api') || error?.message?.includes('key') || error?.message?.includes('Key')
+      ? 'Le service d\'analyse IA n\'est pas disponible pour le moment. Veuillez réessayer ultérieurement.'
+      : 'Erreur lors du traitement de votre requête. Veuillez réessayer.';
     return NextResponse.json(
-      { error: error.message || 'Erreur lors du traitement de la requête ORION' },
+      { error: userMessage },
       { status: 500 }
     );
   }

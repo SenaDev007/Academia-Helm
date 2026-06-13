@@ -390,7 +390,7 @@ export class OpenRouterService {
 
     switch (persona) {
       case 'ORION':
-        return "Les données sont disponibles mais l'IA ORION nécessite une clé API OpenRouter pour l'analyse. Contactez l'administrateur pour activer l'intelligence artificielle.";
+        return "Les données sont disponibles mais l'intelligence artificielle n'est pas encore activée. Contactez votre administrateur pour activer cette fonctionnalité.";
 
       case 'ATLAS':
         return "Bonjour ! Je suis ATLAS, votre assistant Academia Helm. L'intégration IA est en cours de configuration. Je pourrai bientôt répondre à vos questions sur la gestion de votre établissement.";
@@ -399,13 +399,13 @@ export class OpenRouterService {
         return "Bonjour ! Je suis SARA, l'assistante Academia Helm. Notre solution permet de gérer votre école de manière moderne et sécurisée. Souhaitez-vous une démonstration ?";
 
       case 'HDIE':
-        return "Le moteur HDIE (Helm Document Intelligence Engine) est prêt à être activé. Configurez la clé API OpenRouter pour bénéficier de l'analyse sémantique de CV et du matching IA.";
+        return "Le moteur d'analyse documentaire est en cours de configuration. L'analyse sémantique de CV et le matching IA seront disponibles prochainement.";
 
       case 'SCE':
-        return "Le moteur SCE (Sara Compose Engine) est prêt. Configurez la clé API OpenRouter pour générer des épreuves et documents pédagogiques avec l'IA.";
+        return "Le moteur de génération de documents est en cours de configuration. La création d'épreuves et documents pédagogiques par IA sera disponible prochainement.";
 
       default:
-        return `L'intelligence artificielle n'est pas encore configurée. Votre message : "${lastUserMsg.substring(0, 50)}..." a bien été reçu. Activez OPENROUTER_API_KEY pour les réponses IA.`;
+        return `L'intelligence artificielle n'est pas encore activée. Votre message : "${lastUserMsg.substring(0, 50)}..." a bien été reçu. Contactez votre administrateur pour activer cette fonctionnalité.`;
     }
   }
 }

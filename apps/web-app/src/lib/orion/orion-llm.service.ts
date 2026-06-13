@@ -63,7 +63,7 @@ async function callExternalLLM(prompt: string): Promise<LLMResponse> {
 async function callOpenRouter(prompt: string): Promise<LLMResponse> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
-    throw new Error('OPENROUTER_API_KEY non configurée');
+    throw new Error('Le service IA n\'est pas encore activé. Veuillez contacter votre administrateur.');
   }
 
   const response = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
@@ -92,7 +92,7 @@ async function callOpenRouter(prompt: string): Promise<LLMResponse> {
   }, LLM_FETCH_TIMEOUT);
 
   if (!response.ok) {
-    throw new Error(`OpenRouter API error: ${response.statusText}`);
+    throw new Error(`Erreur lors de la communication avec le service IA. Veuillez réessayer.`);
   }
 
   const data = await response.json();
@@ -111,7 +111,7 @@ async function callOpenRouter(prompt: string): Promise<LLMResponse> {
 async function callOpenAI(prompt: string): Promise<LLMResponse> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    throw new Error('OPENAI_API_KEY non configurée');
+    throw new Error('Le service IA n\'est pas encore activé. Veuillez contacter votre administrateur.');
   }
 
   const response = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
@@ -138,7 +138,7 @@ async function callOpenAI(prompt: string): Promise<LLMResponse> {
   }, LLM_FETCH_TIMEOUT);
 
   if (!response.ok) {
-    throw new Error(`OpenAI API error: ${response.statusText}`);
+    throw new Error(`Erreur lors de la communication avec le service IA. Veuillez réessayer.`);
   }
 
   const data = await response.json();
@@ -154,7 +154,7 @@ async function callOpenAI(prompt: string): Promise<LLMResponse> {
 async function callAnthropic(prompt: string): Promise<LLMResponse> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    throw new Error('ANTHROPIC_API_KEY non configurée');
+    throw new Error('Le service IA n\'est pas encore activé. Veuillez contacter votre administrateur.');
   }
 
   const response = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
@@ -178,7 +178,7 @@ async function callAnthropic(prompt: string): Promise<LLMResponse> {
   }, LLM_FETCH_TIMEOUT);
 
   if (!response.ok) {
-    throw new Error(`Anthropic API error: ${response.statusText}`);
+    throw new Error(`Erreur lors de la communication avec le service IA. Veuillez réessayer.`);
   }
 
   const data = await response.json();

@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
 
     if (!apiKey) {
       return NextResponse.json(
-        { error: 'OPENROUTER_API_KEY ou ANTHROPIC_API_KEY non configurée' },
+        { error: 'Le service IA n\'est pas encore activé. Veuillez réessayer ultérieurement.' },
         { status: 500 },
       );
     }
@@ -211,7 +211,7 @@ export async function POST(request: NextRequest) {
 
       if (!response.ok) {
         return NextResponse.json(
-          { error: 'OpenRouter API error', details: data },
+          { error: 'Erreur lors du traitement de la requête. Veuillez réessayer.' },
           { status: response.status },
         );
       }
@@ -253,7 +253,7 @@ export async function POST(request: NextRequest) {
 
       if (!response.ok) {
         return NextResponse.json(
-          { error: 'Anthropic API error', details: data },
+          { error: 'Erreur lors du traitement de la requête. Veuillez réessayer.' },
           { status: response.status },
         );
       }

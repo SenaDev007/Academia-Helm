@@ -150,7 +150,7 @@ export class StaffPrismaService {
         department:     data.department || null,
         roleType,
         hireDate:       data.hireDate ? new Date(data.hireDate) : new Date(),
-        status:         data.status || 'ACTIVE',
+        status:         data.status || 'PENDING_SIGNATURE',
         qualifications: data.qualifications || null,
         notes:          data.notes || null,
       },
@@ -414,10 +414,16 @@ export class StaffPrismaService {
       throw new BadRequestException('Seul un membre inactif peut être réactivé');
     }
 
+    // Vérifier si le personnel a un contrat signé pour déterminer le statut
+    const hasSignedContract = await this.prisma.contract.findFirst({
+      where: { staffId: id, tenantId, status: 'ACTIVE', signedAt: { not: null } },
+    });
+    const newStatus = hasSignedContract ? 'ACTIVE' : 'PENDING_SIGNATURE';
+
     const updated = await this.prisma.staff.update({
       where: { id },
       data: {
-        status: 'ACTIVE',
+        status: newStatus,
         terminationType: null,
         terminationDetails: null,
         terminatedAt: null,

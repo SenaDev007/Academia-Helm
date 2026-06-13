@@ -191,7 +191,24 @@ const PORTAL_LOGIN_DEFS: Record<string, {
   },
 };
 
-export default function LoginPage() {
+interface SchoolBranding {
+  name: string;
+  slug: string;
+  logoUrl: string | null;
+  city: string | null;
+  phone: string | null;
+  address: string | null;
+  primaryColor: string | null;
+  secondaryColor: string | null;
+  slogan: string | null;
+  motto: string | null;
+}
+
+interface LoginPageProps {
+  schoolBranding?: SchoolBranding | null;
+}
+
+export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   const searchParams = useSearchParams();
   const { shouldReduceMotion } = useMotionBudget();
   const { fetchWithTimeout } = useFetchWithTimeout();
@@ -975,14 +992,25 @@ export default function LoginPage() {
               animate={shouldReduceMotion ? undefined : { y: [0, -4, 0] }}
               transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
             >
-              <Image
-                src="/images/logo-Academia Hub.png"
-                alt={BRAND.name}
-                width={120}
-                height={120}
-                className="h-16 w-16 object-contain drop-shadow-lg sm:h-20 sm:w-20 md:h-24 md:w-24"
-                priority
-              />
+              {schoolBranding?.logoUrl ? (
+                <Image
+                  src={schoolBranding.logoUrl}
+                  alt={schoolBranding.name}
+                  width={120}
+                  height={120}
+                  className="h-16 w-16 object-contain drop-shadow-lg sm:h-20 sm:w-20 md:h-24 md:w-24 rounded-xl"
+                  priority
+                />
+              ) : (
+                <Image
+                  src="/images/logo-Academia Hub.png"
+                  alt={BRAND.name}
+                  width={120}
+                  height={120}
+                  className="h-16 w-16 object-contain drop-shadow-lg sm:h-20 sm:w-20 md:h-24 md:w-24"
+                  priority
+                />
+              )}
             </motion.div>
 
             {/* Portal icon + title */}
@@ -1006,12 +1034,12 @@ export default function LoginPage() {
                 className="text-xl font-extrabold tracking-tight sm:text-2xl md:text-3xl"
                 style={{ color: NAVY }}
               >
-                {portalDef?.title || BRAND.name}
+                {portalDef?.title || schoolBranding?.name || BRAND.name}
               </h1>
             </motion.div>
 
             <motion.p variants={heroItem} className="text-sm text-slate-600">
-              {portalDef?.subtitle || BRAND.subtitle}
+              {portalDef?.subtitle || schoolBranding?.slogan || BRAND.subtitle}
             </motion.p>
 
             {/* Role count badge — conforme au document */}
@@ -1031,7 +1059,7 @@ export default function LoginPage() {
             )}
 
             {/* Tenant display — multi-tenant strict */}
-            {(tenantSlug || schoolNameFromUrl) && portalType !== 'public' && (
+            {(schoolBranding?.name || tenantSlug || schoolNameFromUrl) && portalType !== 'public' && (
               <motion.div variants={heroItem} className="mt-3">
                 <div
                   className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium"
@@ -1042,14 +1070,24 @@ export default function LoginPage() {
                   }}
                 >
                   <Building2 className="h-3.5 w-3.5" />
-                  <span>{schoolNameFromUrl || tenantSlug}</span>
+                  <span>{schoolBranding?.name || schoolNameFromUrl || tenantSlug}</span>
+                  {schoolBranding?.city && (
+                    <span className="text-slate-400">— {schoolBranding.city}</span>
+                  )}
                 </div>
               </motion.div>
             )}
 
             {portalType === null && (
               <motion.p variants={heroItem} className="mt-1 text-xs font-medium text-slate-500">
-                {BRAND.slogan}
+                {schoolBranding?.slogan || schoolBranding?.motto || BRAND.slogan}
+              </motion.p>
+            )}
+
+            {/* Propulsé par — sur sous-domaine école */}
+            {schoolBranding && (
+              <motion.p variants={heroItem} className="mt-1 text-[10px] text-slate-400">
+                Propulsé par <span className="font-medium" style={{ color: NAVY }}>{BRAND.name}</span>
               </motion.p>
             )}
 

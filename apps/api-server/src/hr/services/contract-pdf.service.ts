@@ -649,6 +649,24 @@ export class ContractPdfService {
     // Re-générer le PDF avec la signature
     await this.generateContractPdf(contractId, tenantId);
 
+    // Mettre à jour le statut du personnel : PENDING_SIGNATURE → ACTIVE
+    const staffId = updatedContract.staffId;
+    if (staffId) {
+      try {
+        const currentStaff = await this.prisma.staff.findFirst({ where: { id: staffId } });
+        if (currentStaff && currentStaff.status === 'PENDING_SIGNATURE') {
+          await this.prisma.staff.update({
+            where: { id: staffId },
+            data: { status: 'ACTIVE' },
+          });
+          this.logger.log(`Staff ${staffId} status updated: PENDING_SIGNATURE → ACTIVE (contract signed)`);
+        }
+      } catch (staffErr: any) {
+        this.logger.warn(`Failed to update staff status after contract signing: ${staffErr?.message}`);
+        // Non-blocking: the contract is still signed
+      }
+    }
+
     this.logger.log(`Contrat ${contractId} signé par ${data.signerName}`);
     return updatedContract;
   }

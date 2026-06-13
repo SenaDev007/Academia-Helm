@@ -351,7 +351,7 @@ function NewDocumentWizard() {
               <AlertCircle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
               <div>
                 <p className="text-xs font-bold text-amber-700">Mode Template</p>
-                <p className="text-xs text-amber-600 mt-1">IA non configurée. Les documents sont générés à partir de templates. Configurez une clé API pour activer la génération IA avancée.</p>
+                <p className="text-xs text-amber-600 mt-1">Les documents sont générés à partir de templates. La génération IA avancée sera disponible prochainément.</p>
               </div>
             </div>
           )}
@@ -498,7 +498,7 @@ function GeneratedDocumentPreview({ doc }: { doc: GeneratedDocument }) {
       {doc.metadata?.isPlaceholder && (
         <div className="mt-8 p-3 bg-amber-50 rounded-lg border border-amber-100">
           <p className="text-[10px] text-amber-600 font-bold">
-            Document généré en mode template (IA non configurée). Configurez une clé API Claude ou OpenAI pour activer la génération IA avancée.
+            Document généré en mode template. La génération IA avancée sera disponible prochainément.
           </p>
         </div>
       )}

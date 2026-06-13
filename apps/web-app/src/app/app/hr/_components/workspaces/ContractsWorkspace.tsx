@@ -17,6 +17,7 @@ const PRIMARY = '#1A2BA6';
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   ACTIVE:     { label: 'En vigueur',                className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
+  PENDING:    { label: 'En attente de signature',   className: 'bg-amber-50 text-amber-600 border border-amber-200' },
   DRAFT:      { label: 'En attente de signature',   className: 'bg-amber-50 text-amber-600 border border-amber-200' },
   EXPIRED:    { label: 'Expiré',                    className: 'bg-slate-100 text-slate-500 border border-slate-200' },
   TERMINATED: { label: 'Résilié',                   className: 'bg-rose-50 text-rose-600 border border-rose-200' },
@@ -92,7 +93,7 @@ export function ContractsWorkspace() {
           endDate: modalForm.endDate ? new Date(modalForm.endDate).toISOString() : null,
           baseSalary: parseFloat(modalForm.baseSalary),
           paymentMode: modalForm.paymentMode,
-          status: 'ACTIVE',
+          status: 'PENDING',
         },
       });
       toast({ variant: 'success', title: 'Contrat créé avec succès' });

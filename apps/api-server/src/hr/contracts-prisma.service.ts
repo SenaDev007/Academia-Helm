@@ -43,7 +43,8 @@ export class ContractsPrismaService {
       });
 
       // Créer le nouveau contrat — PENDING par défaut tant que l'employé n'a pas signé
-      return tx.contract.create({
+      const contractStatus = data.status ?? 'PENDING';
+      const newContract = await tx.contract.create({
         data: {
           ...prismaCreateDefaults(),
           tenantId: data.tenantId,
@@ -53,7 +54,7 @@ export class ContractsPrismaService {
           endDate: data.endDate ? new Date(data.endDate) : null,
           baseSalary: new Prisma.Decimal(data.baseSalary ?? 0),
           paymentMode: data.paymentMode ?? 'BANK',
-          status: data.status ?? 'PENDING',
+          status: contractStatus,
           terms: data.terms ?? null,
           templateId: data.templateId ?? null,
           academicYearId: data.academicYearId ?? null,
@@ -61,6 +62,16 @@ export class ContractsPrismaService {
         },
         include: { staff: true },
       });
+
+      // Si le contrat est créé en PENDING (non signé), mettre le personnel en PENDING_SIGNATURE
+      if (contractStatus === 'PENDING' || contractStatus === 'DRAFT') {
+        await tx.staff.updateMany({
+          where: { id: data.staffId, status: 'ACTIVE' },
+          data: { status: 'PENDING_SIGNATURE' },
+        });
+      }
+
+      return newContract;
     });
   }
 

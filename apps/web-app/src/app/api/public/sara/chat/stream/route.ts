@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
   const { provider, apiKey, model } = getAIProvider();
 
   if (!apiKey) {
-    return new Response(sse({ type: 'error', message: 'OPENROUTER_API_KEY ou ANTHROPIC_API_KEY non configurée' }), {
+    return new Response(sse({ type: 'error', message: 'Le service IA n\'est pas encore activé. Veuillez réessayer ultérieurement.' }), {
       status: 500,
       headers: {
         'Content-Type': 'text/event-stream; charset=utf-8',
@@ -215,7 +215,7 @@ export async function POST(request: NextRequest) {
 
           if (!response.ok || !response.body) {
             const details = await response.json().catch(() => null);
-            send({ type: 'error', message: 'OpenRouter API error', details });
+            send({ type: 'error', message: 'Erreur lors du traitement. Veuillez réessayer.' });
             controller.close();
             return;
           }
@@ -300,7 +300,7 @@ export async function POST(request: NextRequest) {
 
           if (!response.ok || !response.body) {
             const details = await response.json().catch(() => null);
-            send({ type: 'error', message: 'Anthropic API error', details });
+            send({ type: 'error', message: 'Erreur lors du traitement. Veuillez réessayer.' });;
             controller.close();
             return;
           }

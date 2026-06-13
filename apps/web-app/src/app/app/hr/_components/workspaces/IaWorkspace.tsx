@@ -133,10 +133,10 @@ export function IaWorkspace() {
       setParsedData({
         name: '— (IA non configurée)',
         skills: ['Analyse sémantique non disponible'],
-        experience: 'L\'intégration IA nécessite la configuration d\'une clé API OpenRouter.',
-        education: 'Connectez votre clé API pour activer l\'analyse de CV automatisée.',
-        strengths: 'Le module HDIE est prêt à être activé avec une clé API',
-        weaknesses: 'Clé API OpenRouter requise pour l\'analyse sémantique avancée',
+        experience: 'L\'analyse IA n\'est pas encore activée. Contactez votre administrateur.',
+        education: 'L\'analyse automatique de CV sera disponible prochainement.',
+        strengths: 'Le module d\'analyse IA est en cours de configuration',
+        weaknesses: 'L\'analyse sémantique avancée sera disponible une fois le service activé',
         isPlaceholder: true,
       });
     } finally {
@@ -171,9 +171,9 @@ export function IaWorkspace() {
           setParsedData({
             name: '— (Erreur d\'analyse)',
             skills: ['Impossible d\'analyser le document'],
-            experience: 'L\'analyse IA n\'a pas pu être effectuée. Vérifiez la configuration OpenRouter.',
+            experience: 'L\'analyse IA n\'a pas pu être effectuée. Veuillez réessayer ultérieurement.',
             education: 'Le fichier a été reçu mais le parsing a échoué.',
-            strengths: 'Réessayez après avoir vérifié OPENROUTER_API_KEY',
+            strengths: 'Veuillez réessayer ou contacter votre administrateur si le problème persiste',
             weaknesses: 'Erreur lors de l\'analyse du document',
             isPlaceholder: true,
           });
@@ -230,7 +230,7 @@ export function IaWorkspace() {
           ? `Le meilleur candidat est **${best[0].firstName} ${best[0].lastName}** avec un score de **${best[0].applications?.[0]?.score || 0}%**.`
           : "Aucun candidat dans la base.";
       } else {
-        reply = "Je traite votre demande. *Pour des réponses IA enrichies, une clé API OpenRouter est requise.*\n\nEn attendant, je peux vous fournir les données brutes du système RH.";
+        reply = "Je traite votre demande. *L'analyse IA enrichie n'est pas encore disponible.*\n\nEn attendant, je peux vous fournir les données brutes du système RH.";
       }
       setMessages((prev) => [...prev, { sender: 'bot', text: reply }]);
     } finally {
@@ -434,7 +434,7 @@ export function IaWorkspace() {
             <span className="ml-2 opacity-80">
               {iaStatus.configured
                 ? `• Moteur HDIE v${iaStatus.engine?.replace('HDIE v', '') || '1.0'} actif`
-                : '• Configurez la clé API OPENROUTER_API_KEY pour activer l\'analyse sémantique'}
+                : '• L\'analyse sémantique sera disponible prochainement'}
             </span>
           </div>
         </div>
@@ -475,7 +475,7 @@ export function IaWorkspace() {
                 <Info className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
                 <div>
                   <p className="font-bold text-amber-900">Intégration IA requise</p>
-                  <p className="text-amber-700 mt-0.5">L&apos;analyse sémantique de CV par intelligence artificielle nécessite la configuration de la clé API OpenRouter (OPENROUTER_API_KEY). Le moteur HDIE est prêt à être activé dès que la clé sera fournie.</p>
+                  <p className="text-amber-700 mt-0.5">L&apos;analyse sémantique de CV par intelligence artificielle n&apos;est pas encore activée. Veuillez contacter votre administrateur pour activer cette fonctionnalité.</p>
                 </div>
               </div>
             )}

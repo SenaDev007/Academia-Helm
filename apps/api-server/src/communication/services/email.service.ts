@@ -165,6 +165,7 @@ export class EmailService {
   private async sendViaResend(request: EmailRequest): Promise<{ success: boolean; messageId?: string }> {
     const apiKey = this.configService.get<string>('RESEND_API_KEY');
     if (!apiKey) {
+      this.logger.error('❌ RESEND_API_KEY est MANQUANT — impossible d\'envoyer l\'email via Resend');
       throw new Error('RESEND_API_KEY not configured');
     }
 
@@ -173,6 +174,7 @@ export class EmailService {
       this.configService.get<string>('EMAIL_FROM_NOREPLY') ||
       this.configService.get<string>('SMTP_FROM');
     if (!fromEmail) {
+      this.logger.error('❌ Aucun expéditeur configuré — renseignez request.from ou EMAIL_FROM_NOREPLY');
       throw new Error('Expéditeur manquant : renseignez request.from ou EMAIL_FROM_NOREPLY');
     }
 
@@ -180,6 +182,9 @@ export class EmailService {
     const fromField = `"${fromName}" <${fromEmail}>`;
 
     const toList = Array.isArray(request.to) ? request.to : [request.to];
+
+    this.logger.log(`📧 Envoi email via Resend: from=${fromField}, to=${toList.join(', ')}, subject="${request.subject}"`);
+
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -195,14 +200,24 @@ export class EmailService {
       }),
     });
 
-    const body = (await res.json().catch(() => ({}))) as { id?: string; message?: string };
+    const body = (await res.json().catch(() => ({}))) as { id?: string; message?: string; name?: string; statusCode?: number };
 
     if (!res.ok) {
-      this.logger.error('Resend API error:', body);
+      this.logger.error(`❌ Resend API error (HTTP ${res.status}): ${JSON.stringify(body)}`);
+      
+      // Diagnostic spécifique pour les erreurs courantes
+      if (body.name === 'validation_error' && body.message?.includes('not verified')) {
+        this.logger.error(`🔴 DOMAINE NON VÉRIFIÉ: Le domaine de l'expéditeur "${fromEmail}" n'est pas vérifié dans Resend. Allez dans le dashboard Resend → Domaines → Vérifiez les enregistrements DNS (SPF, DKIM, DMARC).`);
+      } else if (res.status === 403) {
+        this.logger.error(`🔴 CLÉ API INVALIDE: La clé RESEND_API_KEY est invalide ou a expiré. Vérifiez dans le dashboard Resend.`);
+      } else if (res.status === 429) {
+        this.logger.error(`🔴 RATE LIMIT: Trop d'emails envoyés. Attendez avant de réessayer.`);
+      }
+      
       throw new Error(body.message || `Resend error HTTP ${res.status}`);
     }
 
-    this.logger.log(`Email sent via Resend to ${toList.join(', ')}: ${body.id}`);
+    this.logger.log(`✅ Email envoyé avec succès via Resend à ${toList.join(', ')} — messageId: ${body.id}`);
 
     return {
       success: true,

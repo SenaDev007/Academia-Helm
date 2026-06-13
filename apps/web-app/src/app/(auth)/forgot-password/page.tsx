@@ -13,6 +13,7 @@ import { generateSEOMetadata } from '@/lib/seo';
 import { BRAND } from '@/lib/brand';
 import { Loader } from 'lucide-react';
 import { isReservedSubdomain } from '@/lib/tenant/constants';
+import { getApiBaseUrl } from '@/lib/utils/urls';
 
 export const metadata: Metadata = generateSEOMetadata({
   title: 'Mot de passe oublié',
@@ -39,7 +40,9 @@ export default async function Page() {
 
     if (parts.length >= 3 && !isReservedSubdomain(parts[0])) {
       const subdomain = parts[0];
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+      // ⚠️ Utiliser getApiBaseUrl() qui ajoute automatiquement le préfixe /api
+      // (NestJS exige /api sur toutes les routes — setGlobalPrefix('api'))
+      const apiUrl = getApiBaseUrl();
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3000);
 

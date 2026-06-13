@@ -10,6 +10,7 @@ import { headers } from 'next/headers';
 import SchoolPortalSelector from '@/components/portal/SchoolPortalSelector';
 import { BRAND } from '@/lib/brand';
 import { isReservedSubdomain } from '@/lib/tenant/constants';
+import { getApiBaseUrl } from '@/lib/utils/urls';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -31,7 +32,9 @@ export default async function SchoolPortalPage() {
       subdomain = parts[0];
 
       // Tenter de résoudre le tenant depuis l'API
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+      // ⚠️ Utiliser getApiBaseUrl() qui ajoute automatiquement le préfixe /api
+      // (NestJS exige /api sur toutes les routes — setGlobalPrefix('api'))
+      const apiUrl = getApiBaseUrl();
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3000);
 

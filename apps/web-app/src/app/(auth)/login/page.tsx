@@ -10,6 +10,7 @@ import { headers } from 'next/headers';
 import LoginPage from '@/components/auth/LoginPage';
 import { BRAND } from '@/lib/brand';
 import { isReservedSubdomain } from '@/lib/tenant/constants';
+import { getApiBaseUrl } from '@/lib/utils/urls';
 
 export const metadata: Metadata = {
   title: `Connexion - ${BRAND.name}`,
@@ -41,7 +42,9 @@ export default async function Page() {
       const subdomain = parts[0];
 
       // Résoudre le tenant depuis l'API backend
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+      // ⚠️ Utiliser getApiBaseUrl() qui ajoute automatiquement le préfixe /api
+      // (NestJS exige /api sur toutes les routes — setGlobalPrefix('api'))
+      const apiUrl = getApiBaseUrl();
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3000);
 

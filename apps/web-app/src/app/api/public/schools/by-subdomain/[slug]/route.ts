@@ -17,36 +17,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { extractBrandingFromTenant } from '@/lib/tenant/branding';
 
 /** ISR : revalidate toutes les 30 secondes — les données d'identité changent rarement. */
 export const revalidate = 30;
-
-/**
- * Extraction du branding depuis la réponse brute du tenant
- * Résolution : TenantIdentityProfile (active) → SchoolSettings → School (legacy) → Tenant
- */
-function extractBrandingFromTenant(data: any, slug: string) {
-  const identity = data.identityProfiles?.[0] ?? null;
-  const settings = data.schoolSettings ?? null;
-  const school = data.schools ?? null;
-
-  return {
-    name: identity?.schoolName || settings?.schoolName || school?.name || data.name || slug,
-    slug: data.slug || slug,
-    logoUrl: identity?.logoUrl || settings?.logoUrl || school?.logo || null,
-    city: identity?.city || settings?.city || school?.city || null,
-    phone: identity?.phonePrimary || settings?.phone || school?.primaryPhone || null,
-    address: identity?.address || settings?.address || school?.address || null,
-    primaryColor: settings?.primaryColor || school?.primaryColor || null,
-    secondaryColor: settings?.secondaryColor || school?.secondaryColor || null,
-    slogan: identity?.slogan || settings?.slogan || school?.slogan || school?.motto || null,
-    motto: school?.motto || null,
-    schoolAcronym: identity?.schoolAcronym || school?.abbreviation || null,
-    schoolType: identity?.schoolType || null,
-    website: identity?.website || settings?.website || school?.website || null,
-    email: identity?.email || settings?.email || school?.primaryEmail || null,
-  };
-}
 
 /**
  * Extraction du branding depuis la réponse de /public/schools/with-jobs

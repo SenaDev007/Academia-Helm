@@ -2,8 +2,13 @@
  * Page Forgot Password (route auth — layout cohérent avec login)
  *
  * Server component qui résout les informations de l'école depuis le sous-domaine
- * via la route BFF /api/public/schools/by-subdomain/:slug
  * et les passe au composant client ForgotPasswordPage pour un branding conditionnel.
+ *
+ * STRATÉGIE DE RÉSOLUTION CÔTÉ SERVEUR :
+ *   1. En local : BFF via 127.0.0.1 (self-request local = OK)
+ *   2. En production : Appel direct au backend NestJS (évite le self-request Vercel
+ *      qui provoque des cold starts et des timeouts ERR_TIMED_OUT)
+ *   3. Fallback client : Si le serveur échoue, useSchoolBranding tente via la BFF
  */
 
 import type { Metadata } from 'next';
@@ -14,6 +19,8 @@ import { generateSEOMetadata } from '@/lib/seo';
 import { BRAND } from '@/lib/brand';
 import { Loader } from 'lucide-react';
 import { isReservedSubdomain } from '@/lib/tenant/constants';
+import { extractBrandingFromTenant, type SchoolBrandingData } from '@/lib/tenant/branding';
+import { getApiBaseUrl, getAppBaseUrl } from '@/lib/utils/urls';
 
 export const metadata: Metadata = generateSEOMetadata({
   title: 'Mot de passe oublié',
@@ -21,14 +28,7 @@ export const metadata: Metadata = generateSEOMetadata({
   path: '/forgot-password',
 });
 
-export interface SchoolBranding {
-  name: string;
-  slug: string;
-  logoUrl: string | null;
-  city: string | null;
-  slogan: string | null;
-  motto: string | null;
-}
+export interface SchoolBranding extends SchoolBrandingData {}
 
 export default async function Page() {
   let schoolBranding: SchoolBranding | null = null;
@@ -41,19 +41,42 @@ export default async function Page() {
     if (parts.length >= 3 && !isReservedSubdomain(parts[0])) {
       const subdomain = parts[0];
 
-      // Appeler la route BFF qui proxy vers le backend NestJS
-      // La BFF normalise l'URL (ajoute /api) et extrait les données de branding
       try {
-        const response = await fetch(
-          `http://127.0.0.1:${process.env.PORT || 3001}/api/public/schools/by-subdomain/${subdomain}`,
-          { cache: 'no-store' },
-        );
+        const appBaseUrl = getAppBaseUrl();
+        const isLocal = appBaseUrl.includes('localhost') || appBaseUrl.includes('127.0.0.1');
 
-        if (response.ok) {
-          schoolBranding = await response.json();
+        if (isLocal) {
+          // En local : BFF via 127.0.0.1 (self-request local = rapide)
+          const response = await fetch(
+            `http://127.0.0.1:${process.env.PORT || 3001}/api/public/schools/by-subdomain/${subdomain}`,
+            { cache: 'no-store' },
+          );
+          if (response.ok) schoolBranding = await response.json();
+        } else {
+          // En production : Appel direct au backend NestJS
+          // (évite le self-request Vercel qui provoque des cold starts)
+          const apiBaseUrl = getApiBaseUrl();
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+          const response = await fetch(
+            `${apiBaseUrl}/tenants/by-subdomain/${encodeURIComponent(subdomain)}`,
+            {
+              method: 'GET',
+              headers: { 'Content-Type': 'application/json' },
+              cache: 'no-store',
+              signal: controller.signal,
+            },
+          );
+          clearTimeout(timeoutId);
+
+          if (response.ok) {
+            const data = await response.json();
+            schoolBranding = extractBrandingFromTenant(data, subdomain);
+          }
         }
       } catch {
-        // La BFF n'est pas disponible — le client tentera aussi
+        // API indisponible — le client tentera aussi via useSchoolBranding
       }
     }
   } catch {

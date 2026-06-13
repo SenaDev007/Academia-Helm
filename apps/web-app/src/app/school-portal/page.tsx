@@ -3,14 +3,21 @@
  *
  * Affichée lorsqu'un utilisateur accède directement à un sous-domaine d'école.
  * Présente les 4 portails disponibles dans le contexte de cette école.
- * Résout le branding de l'école (logo, nom, couleurs, slogan) côté serveur
- * via la route BFF /api/public/schools/by-subdomain/:slug.
+ * Résout le branding de l'école (logo, nom, couleurs, slogan) côté serveur.
+ *
+ * STRATÉGIE DE RÉSOLUTION CÔTÉ SERVEUR :
+ *   1. En local : BFF via 127.0.0.1 (self-request local = OK)
+ *   2. En production : Appel direct au backend NestJS (évite le self-request Vercel
+ *      qui provoque des cold starts et des timeouts ERR_TIMED_OUT)
+ *   3. Fallback client : Si le serveur échoue, le composant client tente via la BFF
  */
 
 import { headers } from 'next/headers';
 import SchoolPortalSelector from '@/components/portal/SchoolPortalSelector';
 import { BRAND } from '@/lib/brand';
 import { isReservedSubdomain } from '@/lib/tenant/constants';
+import { extractBrandingFromTenant } from '@/lib/tenant/branding';
+import { getApiBaseUrl, getAppBaseUrl } from '@/lib/utils/urls';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -31,19 +38,42 @@ export default async function SchoolPortalPage() {
     if (parts.length >= 3 && !isReservedSubdomain(parts[0])) {
       subdomain = parts[0];
 
-      // Appeler la route BFF qui proxy vers le backend NestJS
-      // La BFF normalise l'URL (ajoute /api) et extrait les données de branding
       try {
-        const response = await fetch(
-          `http://127.0.0.1:${process.env.PORT || 3001}/api/public/schools/by-subdomain/${subdomain}`,
-          { cache: 'no-store' },
-        );
+        const appBaseUrl = getAppBaseUrl();
+        const isLocal = appBaseUrl.includes('localhost') || appBaseUrl.includes('127.0.0.1');
 
-        if (response.ok) {
-          schoolInfo = await response.json();
+        if (isLocal) {
+          // En local : BFF via 127.0.0.1 (self-request local = rapide)
+          const response = await fetch(
+            `http://127.0.0.1:${process.env.PORT || 3001}/api/public/schools/by-subdomain/${subdomain}`,
+            { cache: 'no-store' },
+          );
+          if (response.ok) schoolInfo = await response.json();
+        } else {
+          // En production : Appel direct au backend NestJS
+          // (évite le self-request Vercel qui provoque des cold starts)
+          const apiBaseUrl = getApiBaseUrl(); // ex: https://api.academiahelm.com/api
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+          const response = await fetch(
+            `${apiBaseUrl}/tenants/by-subdomain/${encodeURIComponent(subdomain)}`,
+            {
+              method: 'GET',
+              headers: { 'Content-Type': 'application/json' },
+              cache: 'no-store',
+              signal: controller.signal,
+            },
+          );
+          clearTimeout(timeoutId);
+
+          if (response.ok) {
+            const data = await response.json();
+            schoolInfo = extractBrandingFromTenant(data, subdomain);
+          }
         }
       } catch {
-        // La BFF n'est pas disponible — le composant client tentera aussi
+        // API indisponible — le composant client tentera aussi via la BFF
       }
     }
   } catch {

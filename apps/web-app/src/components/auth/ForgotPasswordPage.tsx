@@ -36,6 +36,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { BRAND } from '@/lib/brand';
 import { useFetchWithTimeout } from '@/lib/hooks/use-fetch-with-timeout';
+import { useSchoolBranding, type SchoolBrandingData } from '@/hooks/useSchoolBranding';
 
 /** ── Palette Academia Helm ── */
 const NAVY = '#0b2f73';
@@ -62,19 +63,18 @@ function getPasswordStrength(password: string): { score: number; label: string; 
 }
 
 interface ForgotPasswordPageProps {
-  schoolBranding?: {
-    name: string;
-    slug: string;
-    logoUrl: string | null;
-    city: string | null;
-    slogan: string | null;
-    motto: string | null;
-  } | null;
+  schoolBranding?: SchoolBrandingData | null;
 }
 
 export default function ForgotPasswordPage({ schoolBranding }: ForgotPasswordPageProps = {}) {
   const searchParams = useSearchParams();
   const { fetchWithTimeout } = useFetchWithTimeout();
+
+  // ── Client-side school branding fallback ──
+  // Si le server component n'a pas pu résoudre le branding (API indisponible),
+  // on tente de le récupérer côté client via useSchoolBranding.
+  const clientBranding = useSchoolBranding(schoolBranding);
+
   const portalParam = searchParams?.get('portal');
   const tenantParam = searchParams?.get('tenant');
 
@@ -462,10 +462,10 @@ export default function ForgotPasswordPage({ schoolBranding }: ForgotPasswordPag
           >
             {/* Logo */}
             <div className="mb-4 inline-flex items-center justify-center">
-              {schoolBranding?.logoUrl ? (
+              {clientBranding?.logoUrl ? (
                 <Image
-                  src={schoolBranding.logoUrl}
-                  alt={schoolBranding.name}
+                  src={clientBranding.logoUrl}
+                  alt={clientBranding.name || BRAND.name}
                   width={80}
                   height={80}
                   className="h-12 w-12 object-contain drop-shadow-lg sm:h-16 sm:w-16 rounded-xl"

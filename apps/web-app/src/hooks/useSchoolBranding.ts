@@ -2,9 +2,14 @@
  * useSchoolBranding Hook
  *
  * Résout le branding de l'école (logo, nom, couleurs, slogan)
- * depuis le sous-domaine courant. Utilisé par les pages publiques
- * (PremiumHeader, etc.) pour afficher le branding de l'école
- * au lieu du branding Academia Helm générique.
+ * depuis le sous-domaine courant ou le sessionStorage.
+ * Utilisé par les pages publiques (LoginPage, PremiumHeader, etc.)
+ * pour afficher le branding de l'école au lieu du branding Academia Helm générique.
+ *
+ * Priorité de résolution :
+ *   1. serverBranding (prop du server component)
+ *   2. sessionStorage "academia_portal_school" (posé par le portail de sélection)
+ *   3. API fetch via le sous-domaine courant
  */
 
 'use client';
@@ -26,13 +31,30 @@ export interface SchoolBrandingData {
   motto: string | null;
 }
 
+/** Clé sessionStorage utilisée par le portail de sélection d'école */
+const SESSION_STORAGE_KEY = 'academia_portal_school';
+
 /**
- * Résout le branding de l'école depuis le sous-domaine courant.
- * Côté serveur : passez schoolBranding en prop (depuis le server component).
- * Côté client : ce hook détecte le sous-domaine et fetch les données.
- * 
+ * Tente de lire les données d'école depuis sessionStorage.
+ * Posé par le portail de sélection (portal/page.tsx) avant redirection.
+ */
+function readFromSessionStorage(): Partial<SchoolBrandingData> | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Résout le branding de l'école depuis le sous-domaine courant,
+ * le sessionStorage, ou un fallback serveur.
+ *
  * @param serverBranding - Branding résolu côté serveur (optionnel)
- * @returns Les données de branding ou null si pas sur un sous-domaine d'école
+ * @returns Les données de branding ou null si aucune école détectée
  */
 export function useSchoolBranding(serverBranding?: SchoolBrandingData | null): SchoolBrandingData | null {
   const [branding, setBranding] = useState<SchoolBrandingData | null>(serverBranding || null);
@@ -46,9 +68,28 @@ export function useSchoolBranding(serverBranding?: SchoolBrandingData | null): S
       return;
     }
 
-    // Détecter le sous-domaine
     if (typeof window === 'undefined') return;
 
+    // PRIORITÉ 1 : Vérifier le sessionStorage (école sélectionnée depuis le portail)
+    const sessionData = readFromSessionStorage();
+    if (sessionData && sessionData.name) {
+      setBranding({
+        name: sessionData.name,
+        slug: sessionData.slug || '',
+        logoUrl: sessionData.logoUrl || null,
+        city: sessionData.city || null,
+        phone: sessionData.phone || null,
+        address: sessionData.address || null,
+        primaryColor: sessionData.primaryColor || null,
+        secondaryColor: sessionData.secondaryColor || null,
+        slogan: sessionData.slogan || null,
+        motto: sessionData.motto || null,
+      });
+      setResolved(true);
+      return;
+    }
+
+    // PRIORITÉ 2 : Détecter le sous-domaine et fetch les données
     const host = window.location.host;
     const slug = extractTenantSlug(host);
 
@@ -57,7 +98,6 @@ export function useSchoolBranding(serverBranding?: SchoolBrandingData | null): S
       return;
     }
 
-    // Fetch les données du tenant via l'API NestJS
     const fetchBranding = async () => {
       try {
         const apiUrl = getApiBaseUrl();

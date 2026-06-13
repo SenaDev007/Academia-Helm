@@ -201,6 +201,7 @@ export default function PortalPage() {
             'academia_portal_school',
             JSON.stringify({
               name: selectedSchool.name,
+              slug: selectedSchool.slug || null,
               logoUrl: selectedSchool.logoUrl || null,
               city: selectedSchool.city || null,
               schoolType: selectedSchool.schoolType || null,

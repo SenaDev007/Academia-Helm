@@ -23,7 +23,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { EmailService } from '../../communication/services/email.service';
 import { UserRole, ROLE_PORTAL_MAP, Portal } from '../../common/enums/user-role.enum';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 
 // ── Mapping Staff roleType → UserRole ──

@@ -284,3 +284,35 @@ Stage Summary:
 - Files created: logo-academia-helm-email.png, logo-academia-helm-signature.png
 - Commit: 32d69559 pushed to origin/main
 - IMPORTANT: The user needs to verify on Railway that EMAIL_PROVIDER=resend and RESEND_API_KEY are properly set, and that the domain noreply@academiahelm.com is verified in Resend
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Fix 3 issues: school subdomain branding, HR contract status, AI API exposure
+
+Work Log:
+- Investigated school subdomain branding flow (tenant resolver, LoginPage, SchoolPortalSelector)
+- Fixed backend: tenants.repository.ts now includes schools, schoolSettings, identityProfiles in by-subdomain query
+- Converted login/page.tsx and forgot-password/page.tsx to server components that resolve school branding
+- Updated LoginPage.tsx to conditionally show school logo, name, city, slogan when on subdomain
+- Updated ForgotPasswordPage.tsx with same school branding logic
+- Fixed HR: recruitment.service.ts default staff status ACTIVE→PENDING_SIGNATURE
+- Fixed HR: staff-prisma.service.ts default status ACTIVE→PENDING_SIGNATURE
+- Fixed HR: contract-pdf.service.ts adds staff status PENDING_SIGNATURE→ACTIVE on contract sign
+- Fixed HR: contracts-prisma.service.ts sets staff PENDING_SIGNATURE when creating PENDING contract
+- Fixed HR: reactivateStaff checks for signed contracts before setting ACTIVE
+- Fixed HR: ContractsWorkspace default contract status ACTIVE→PENDING, added PENDING to STATUS_CONFIG
+- Removed all API provider names and env var names from IaWorkspace.tsx
+- Removed API details from openrouter.service.ts placeholder messages
+- Removed API details from ia-prisma.service.ts and ia-prisma.controller.ts
+- Removed API details from SARA chat routes (both regular and streaming)
+- Removed API details from SaraComposeWorkspace.tsx
+- Fixed ORION query route error propagation to not leak API details
+- Fixed orion-llm.service.ts to use generic user-friendly error messages
+
+Stage Summary:
+- 19 files modified across both api-server and web-app
+- Commit: c64e1ba2 pushed to origin/main
+- School branding now shows on login/forgot-password when on tenant subdomain
+- Staff status now correctly shows PENDING_SIGNATURE until contract is signed
+- All API provider names and env var references removed from user-facing messages

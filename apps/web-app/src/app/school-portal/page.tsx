@@ -8,6 +8,7 @@
 import { headers } from 'next/headers';
 import SchoolPortalSelector from '@/components/portal/SchoolPortalSelector';
 import { BRAND } from '@/lib/brand';
+import { isReservedSubdomain } from '@/lib/tenant/constants';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -23,10 +24,9 @@ export default async function SchoolPortalPage() {
   try {
     const headersList = await headers();
     const host = headersList.get('host') || headersList.get('x-forwarded-host') || '';
-    const parts = host.split('.');
-    const ignoredSubdomains = ['www', 'dev', 'test', 'staging', 'preview', 'admin', 'api', 'portal', 'app'];
+    const parts = host.split(':').length > 1 ? host.split(':')[0].split('.') : host.split('.');
 
-    if (parts.length >= 3 && !ignoredSubdomains.includes(parts[0])) {
+    if (parts.length >= 3 && !isReservedSubdomain(parts[0])) {
       subdomain = parts[0];
 
       // Tenter de résoudre le tenant depuis l'API

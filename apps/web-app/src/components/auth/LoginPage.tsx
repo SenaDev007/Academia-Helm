@@ -58,6 +58,7 @@ import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getMotionDuration } from '@/lib/motion/presets';
 import { getTenantRedirectUrl } from '@/lib/utils/tenant-redirect';
 import { getAppBaseUrl } from '@/lib/utils/urls';
+import { isReservedSubdomain, extractTenantSlug } from '@/lib/tenant/constants';
 import { detectAccessContext, getAvailablePortals, getPortalForRole, canRoleUsePortal } from '@/lib/auth/role-portal-map';
 import { useFetchWithTimeout } from '@/lib/hooks/use-fetch-with-timeout';
 
@@ -222,12 +223,9 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   // Détection professionnelle du tenant via le sous-domaine
   if (typeof window !== 'undefined' && !tenantSlug) {
     const host = window.location.host;
-    const parts = host.split('.');
-    const ignoredSubdomains = ['www', 'dev', 'test', 'staging', 'preview', 'admin', 'api', 'portal', 'localhost'];
-    if (parts.length >= 3 && !ignoredSubdomains.includes(parts[0])) {
-      tenantSlug = parts[0];
-    } else if (parts.length === 2 && parts[1] === 'localhost' && !ignoredSubdomains.includes(parts[0])) {
-      tenantSlug = parts[0];
+    const slug = extractTenantSlug(host);
+    if (slug) {
+      tenantSlug = slug;
     }
   }
 
@@ -358,9 +356,8 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   const backToPortalHref = useMemo(() => {
     if (typeof window !== 'undefined') {
       const host = window.location.host;
-      const parts = host.split('.');
-      const ignoredSubdomains = ['www', 'dev', 'test', 'staging', 'preview', 'admin', 'api', 'portal', 'app'];
-      if (parts.length >= 3 && !ignoredSubdomains.includes(parts[0])) {
+      const slug = extractTenantSlug(host);
+      if (slug) {
         return '/school-portal';
       }
     }

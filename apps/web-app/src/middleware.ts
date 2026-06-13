@@ -8,6 +8,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import type { SubscriptionStatus } from './types';
+import { RESERVED_SUBDOMAINS, isReservedSubdomain, extractTenantSlug } from './lib/tenant/constants';
 import { getApiBaseUrl, getAppBaseUrl } from '@/lib/utils/urls';
 
 const SESSION_COOKIE = 'academia_session';
@@ -73,12 +74,12 @@ function extractSubdomainFromRequest(request: NextRequest): string | null {
   const parts = host.split('.');
   
   // Liste des sous-domaines à ignorer (qui ne sont pas des tenants)
-  const ignoredSubdomains = ['www', 'dev', 'test', 'staging', 'preview', 'admin', 'api', 'portal', 'app'];
+  // Importée depuis la source centrale : lib/tenant/constants.ts
 
   // Cas spécial pour localhost (développement avec sous-domaines type school.localhost)
   if (host.includes('localhost') || host.includes('127.0.0.1')) {
     // Si parts.length >= 2 (ex: school.localhost:3001)
-    if (parts.length >= 2 && !ignoredSubdomains.includes(parts[0]) && parts[0] !== 'localhost') {
+    if (parts.length >= 2 && !isReservedSubdomain(parts[0]) && parts[0] !== 'localhost') {
       return parts[0];
     }
     return null;
@@ -88,7 +89,7 @@ function extractSubdomainFromRequest(request: NextRequest): string | null {
   // Si parts.length >= 3, on prend la première partie
   if (parts.length >= 3) {
     const subdomain = parts[0];
-    if (!ignoredSubdomains.includes(subdomain)) {
+    if (!isReservedSubdomain(subdomain)) {
       return subdomain;
     }
     
@@ -96,7 +97,7 @@ function extractSubdomainFromRequest(request: NextRequest): string | null {
     if (parts.length >= 4) {
       // Si la deuxième partie est un domaine ignoré (ex: dev, test), 
       // alors la première est quand même le tenant
-      if (ignoredSubdomains.includes(parts[1])) {
+      if (RESERVED_SUBDOMAINS.includes(parts[1] as any)) {
         return parts[0];
       }
     }
@@ -194,6 +195,17 @@ const adminRoutes = [
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const subdomain = extractSubdomainFromRequest(request);
+
+  // ── Redirect reserved subdomains to main domain ──────────────────────
+  // If user is on app.academiahelm.com, redirect to academiahelm.com
+  const host = request.headers.get('host') || '';
+  const hostParts = host.split(':')[0].split('.');
+  if (hostParts.length >= 3 && isReservedSubdomain(hostParts[0])) {
+    const mainDomain = hostParts.slice(1).join('.');
+    const protocol = request.headers.get('x-forwarded-proto') || 'https';
+    const redirectUrl = new URL(pathname + request.nextUrl.search, `${protocol}://${mainDomain}`);
+    return NextResponse.redirect(redirectUrl);
+  }
 
   // Routes Patronat (Academia Federis) : utiliser le middleware dédié
   if (pathname.startsWith('/patronat') || pathname.startsWith('/federis')) {

@@ -40,6 +40,7 @@ import Link from 'next/link';
 import { BRAND } from '@/lib/brand';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getMotionDuration } from '@/lib/motion/presets';
+import { extractTenantSlug } from '@/lib/tenant/constants';
 import { getAvailablePortals, detectAccessContext, type PortalType } from '@/lib/auth/role-portal-map';
 
 const NAVY = '#0b2f73';
@@ -130,10 +131,9 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
     if (!subdomain && typeof window !== 'undefined') {
       // Essayer de détecter le sous-domaine depuis l'URL
       const host = window.location.host;
-      const parts = host.split('.');
-      const ignoredSubdomains = ['www', 'dev', 'test', 'staging', 'preview', 'admin', 'api', 'portal', 'app', 'localhost'];
-      if (parts.length >= 3 && !ignoredSubdomains.includes(parts[0])) {
-        fetchSchoolData(parts[0]);
+      const slug = extractTenantSlug(host);
+      if (slug) {
+        fetchSchoolData(slug);
       } else {
         setIsLoading(false);
       }

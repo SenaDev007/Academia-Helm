@@ -22,6 +22,7 @@ import { getTenantBySubdomain } from '@/services/tenant.service';
 import { getOrionAlerts } from '@/services/orion.service';
 import { networkDetectionService } from '@/lib/offline/network-detection.service';
 import { performanceAuditService } from '@/lib/performance/performance-audit.service';
+import { isReservedSubdomain, extractTenantSlug } from '@/lib/tenant/constants';
 
 export interface PostLoginFlowResult {
   success: boolean;
@@ -112,12 +113,11 @@ export async function executePostLoginFlow(
 
     if (!tenant) {
       const host = typeof window !== 'undefined' ? window.location.host : '';
-      const parts = host.split('.');
-      const subdomain = parts.length > 2 ? parts[0] : null;
+      const slug = extractTenantSlug(host);
 
-      if (subdomain && subdomain !== 'localhost' && subdomain !== 'www') {
+      if (slug) {
         try {
-          tenant = await getTenantBySubdomain(subdomain);
+          tenant = await getTenantBySubdomain(slug);
         } catch (error) {
           console.error('Failed to load tenant:', error);
         }

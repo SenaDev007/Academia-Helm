@@ -10,6 +10,7 @@ import type { Tenant } from '@/types';
 
 import { getApiBaseUrl } from '@/lib/utils/urls';
 import { fetchWithTimeout, DEFAULT_FETCH_TIMEOUT } from '@/lib/api/fetch-with-timeout';
+import { isReservedSubdomain } from './constants';
 const API_URL = getApiBaseUrl();
 
 /**
@@ -28,12 +29,15 @@ export async function extractSubdomain(): Promise<string | null> {
   }
 
   // Production: extraire depuis le host
-  // Format: subdomain.academiahub.com
-  const parts = host.split('.');
+  // Format: subdomain.academiahelm.com
+  const parts = host.split(':')[0].split('.'); // Remove port, split by dot
   
   // Si on a au moins 3 parties (subdomain.domain.tld)
-  if (parts.length >= 3 && parts[0] !== 'www' && parts[0] !== 'localhost') {
-    return parts[0];
+  if (parts.length >= 3) {
+    const subdomain = parts[0];
+    if (!isReservedSubdomain(subdomain)) {
+      return subdomain;
+    }
   }
 
   return null;

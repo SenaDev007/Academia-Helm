@@ -10,19 +10,40 @@ import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 export async function GET(_request: NextRequest) {
   try {
     const API_BASE_URL = getApiBaseUrlForRoutes();
-    // Construire l'URL correctement (évalué à chaque requête : env Vercel / cold start)
     const apiUrl = API_BASE_URL.endsWith('/api') 
       ? `${API_BASE_URL}/public/schools/list`
       : `${API_BASE_URL}/public/schools/list`;
     
     console.log('[School List API] Calling backend at:', apiUrl);
     
-    const response = await fetch(apiUrl, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+    // Timeout de 8s pour éviter les cold starts interminables
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    
+    let response;
+    try {
+      response = await fetch(apiUrl, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+      if (fetchError.name === 'AbortError') {
+        console.error('[School List API] Request timed out after 8s');
+        return NextResponse.json(
+          { 
+            error: 'Backend timeout',
+            message: 'Le serveur met trop de temps à répondre. Veuillez réessayer dans quelques instants.'
+          },
+          { status: 504 }
+        );
+      }
+      throw fetchError;
+    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({

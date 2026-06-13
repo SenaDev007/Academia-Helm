@@ -180,9 +180,12 @@ export function getTenantRedirectUrl(config: TenantRedirectConfig): string {
 export async function redirectToTenant(config: TenantRedirectConfig): Promise<void> {
   const url = getTenantRedirectUrl(config);
   
-  // Logger la redirection (sauf si skipLogging est true)
+  // Logger la redirection en arrière-plan (fire-and-forget)
+  // ⚠️ On n'attend PAS le logging pour ne pas bloquer la redirection.
+  // Le logging est un best-effort : si le backend est en cold start,
+  // on ne veut pas que l'utilisateur attende 30+ secondes.
   if (!config.skipLogging) {
-    await logTenantRedirect({
+    logTenantRedirect({
       tenantId: config.tenantId,
       tenantSlug: config.tenantSlug,
       fromUrl: typeof window !== 'undefined' ? window.location.href : '',
@@ -191,10 +194,12 @@ export async function redirectToTenant(config: TenantRedirectConfig): Promise<vo
       environment: getAppEnvironment(),
       timestamp: new Date().toISOString(),
       userAgent: typeof window !== 'undefined' ? window.navigator.userAgent : undefined,
+    }).catch(() => {
+      // Silently ignore logging errors
     });
   }
   
-  // Effectuer la redirection
+  // Effectuer la redirection immédiatement
   if (typeof window !== 'undefined') {
     window.location.href = url;
   } else {
@@ -213,16 +218,22 @@ async function logTenantRedirect(log: RedirectLog): Promise<void> {
   try {
     // En production, envoyer au backend pour stockage
     if (getAppEnvironment() !== 'local') {
+      // ⚠️ Timeout de 5s maximum pour éviter de bloquer quoi que ce soit
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
       await fetch(`${API_URL}/portal/redirect-log`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(log),
-        // Ne pas attendre la réponse pour ne pas bloquer la redirection
         keepalive: true,
+        signal: controller.signal,
       }).catch(() => {
         // Ignorer les erreurs de logging
+      }).finally(() => {
+        clearTimeout(timeoutId);
       });
     } else {
       // En local, juste logger dans la console

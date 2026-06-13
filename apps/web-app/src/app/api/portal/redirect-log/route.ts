@@ -29,27 +29,40 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Envoyer au backend pour stockage
+    // Envoyer au backend pour stockage avec timeout de 5s
     const apiBaseUrl = getApiBaseUrlForRoutes();
-    const response = await fetch(`${apiBaseUrl}/portal/redirect-log`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': request.headers.get('Authorization') || '',
-      },
-      body: JSON.stringify({
-        ...body,
-        timestamp: body.timestamp || new Date().toISOString(),
-      }),
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    
+    try {
+      const response = await fetch(`${apiBaseUrl}/portal/redirect-log`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': request.headers.get('Authorization') || '',
+        },
+        body: JSON.stringify({
+          ...body,
+          timestamp: body.timestamp || new Date().toISOString(),
+        }),
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      console.error('Failed to log redirect to backend:', await response.text());
-      // Ne pas échouer la requête si le logging échoue
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        console.error('Failed to log redirect to backend:', await response.text());
+        // Ne pas échouer la requête si le logging échoue
+        return NextResponse.json({ success: true, logged: false });
+      }
+
+      return NextResponse.json({ success: true, logged: true });
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+      // Timeout ou erreur réseau — ne pas bloquer
+      console.warn('Redirect log backend unavailable:', fetchError.name);
       return NextResponse.json({ success: true, logged: false });
     }
-
-    return NextResponse.json({ success: true, logged: true });
   } catch (error) {
     console.error('Error logging redirect:', error);
     // Ne pas échouer la requête si le logging échoue

@@ -56,24 +56,40 @@ export default function SchoolSearch({
 
   // Liste des établissements : route App Router → BFF qui appelle Nest
   useEffect(() => {
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), 10000); // 10s timeout client-side
+    
     const loadAllSchools = async () => {
       setIsLoading(true);
       try {
-        const response = await fetch('/api/public/schools/list');
+        const response = await fetch('/api/public/schools/list', {
+          signal: abortController.signal,
+        });
+        clearTimeout(timeoutId);
         if (response.ok) {
           const data = await response.json();
           setAllSchools(data);
         } else {
           console.error('Failed to load schools list');
         }
-      } catch (error) {
-        console.error('Error loading schools list:', error);
+      } catch (error: any) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+          console.warn('Schools list fetch timed out');
+        } else {
+          console.error('Error loading schools list:', error);
+        }
       } finally {
         setIsLoading(false);
       }
     };
 
     loadAllSchools();
+    
+    return () => {
+      clearTimeout(timeoutId);
+      abortController.abort();
+    };
   }, []);
 
   // Recherche intelligente avec debounce

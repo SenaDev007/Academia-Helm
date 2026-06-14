@@ -19,7 +19,7 @@
 
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   MapPin,
@@ -35,6 +35,9 @@ import {
   RefreshCw,
   Wifi,
   WifiOff,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
 } from 'lucide-react';
 import {
   BENIN_DEPARTMENTS,
@@ -142,6 +145,150 @@ export default function BeninMap({
   const [educationLevel, setEducationLevel] = useState<EducationLevel>('primaire');
   const [primaireCycle, setPrimaireCycle] = useState<PrimaireCycle>('all');
   const [circumscriptionOpen, setCircumscriptionOpen] = useState(false);
+
+  /* ── Zoom / Pan state (Google Maps style) ─────────────────────────────── */
+  const SVG_VB_W = 360;
+  const SVG_VB_H = 400;
+  const MIN_ZOOM = 1;
+  const MAX_ZOOM = 8;
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const panStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+
+  // Computed viewBox from zoom + pan
+  const viewBox = useMemo(() => {
+    const w = SVG_VB_W / zoom;
+    const h = SVG_VB_H / zoom;
+    const cx = SVG_VB_W / 2 + pan.x;
+    const cy = SVG_VB_H / 2 + pan.y;
+    return `${cx - w / 2} ${cy - h / 2} ${w} ${h}`;
+  }, [zoom, pan]);
+
+  const resetView = useCallback(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, []);
+
+  const zoomIn = useCallback(() => {
+    setZoom((z) => Math.min(z * 1.4, MAX_ZOOM));
+  }, []);
+
+  const zoomOut = useCallback(() => {
+    setZoom((z) => {
+      const newZ = Math.max(z / 1.4, MIN_ZOOM);
+      if (newZ <= MIN_ZOOM) setPan({ x: 0, y: 0 });
+      return newZ;
+    });
+  }, []);
+
+  // Mouse wheel zoom (centered on cursor)
+  const handleWheel = useCallback(
+    (e: React.WheelEvent) => {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      setZoom((z) => {
+        const newZ = Math.min(Math.max(z * factor, MIN_ZOOM), MAX_ZOOM);
+        if (newZ <= MIN_ZOOM) setPan({ x: 0, y: 0 });
+        return newZ;
+      });
+    },
+    [],
+  );
+
+  // Pan: mouse drag
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      // Only pan when zoomed in, or middle-button
+      if (zoom > MIN_ZOOM || e.button === 1) {
+        setIsPanning(true);
+        panStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
+      }
+    },
+    [zoom, pan],
+  );
+
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (!isPanning) return;
+      const svgEl = mapContainerRef.current?.querySelector('svg');
+      if (!svgEl) return;
+      const rect = svgEl.getBoundingClientRect();
+      // Convert pixel delta to SVG units
+      const scaleX = SVG_VB_W / (rect.width * zoom);
+      const scaleY = SVG_VB_H / (rect.height * zoom);
+      const dx = (e.clientX - panStart.current.x) * scaleX;
+      const dy = (e.clientY - panStart.current.y) * scaleY;
+      setPan({
+        x: panStart.current.panX - dx,
+        y: panStart.current.panY - dy,
+      });
+    },
+    [isPanning, zoom],
+  );
+
+  const handleMouseUp = useCallback(() => {
+    setIsPanning(false);
+  }, []);
+
+  // Touch support for pinch-zoom and drag on mobile
+  const touchState = useRef<{ dist: number; x: number; y: number; panX: number; panY: number } | null>(null);
+
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        touchState.current = {
+          dist: Math.sqrt(dx * dx + dy * dy),
+          x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+          y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+          panX: pan.x,
+          panY: pan.y,
+        };
+      } else if (e.touches.length === 1 && zoom > MIN_ZOOM) {
+        panStart.current = {
+          x: e.touches[0].clientX,
+          y: e.touches[0].clientY,
+          panX: pan.x,
+          panY: pan.y,
+        };
+      }
+    },
+    [zoom, pan],
+  );
+
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent) => {
+      if (e.touches.length === 2 && touchState.current) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const scale = dist / touchState.current.dist;
+        setZoom((z) => Math.min(Math.max(z * scale, MIN_ZOOM), MAX_ZOOM));
+        touchState.current.dist = dist;
+      } else if (e.touches.length === 1 && zoom > MIN_ZOOM && panStart.current) {
+        const svgEl = mapContainerRef.current?.querySelector('svg');
+        if (!svgEl) return;
+        const rect = svgEl.getBoundingClientRect();
+        const scaleX = SVG_VB_W / (rect.width * zoom);
+        const scaleY = SVG_VB_H / (rect.height * zoom);
+        const dx = (e.touches[0].clientX - panStart.current.x) * scaleX;
+        const dy = (e.touches[0].clientY - panStart.current.y) * scaleY;
+        setPan({
+          x: panStart.current.panX - dx,
+          y: panStart.current.panY - dy,
+        });
+      }
+    },
+    [zoom],
+  );
+
+  // Reset pan when zoom returns to 1
+  useEffect(() => {
+    if (zoom <= MIN_ZOOM) setPan({ x: 0, y: 0 });
+  }, [zoom]);
 
   /* ── Données gouvernementales en temps réel ─────────────────────────── */
   const govData = useGovData();
@@ -372,13 +519,61 @@ export default function BeninMap({
       <div className="flex flex-col lg:flex-row gap-4">
         {/* ── LEFT: SVG Map + Legend ──────────────────────────────── */}
         <div className="flex-1 min-w-0">
-          <div className="relative">
+          <div className="relative" ref={mapContainerRef}>
+            {/* ── Zoom Controls (floating, Google Maps style) ─────── */}
+            <div className="absolute top-2 right-2 z-10 flex flex-col gap-1">
+              <button
+                onClick={zoomIn}
+                className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/90 border border-slate-200 shadow-sm hover:bg-white hover:shadow-md transition-all text-slate-600 hover:text-slate-900"
+                aria-label="Zoom avant"
+                title="Zoom avant"
+              >
+                <ZoomIn className="h-4 w-4" />
+              </button>
+              <button
+                onClick={zoomOut}
+                className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/90 border border-slate-200 shadow-sm hover:bg-white hover:shadow-md transition-all text-slate-600 hover:text-slate-900"
+                aria-label="Zoom arrière"
+                title="Zoom arrière"
+              >
+                <ZoomOut className="h-4 w-4" />
+              </button>
+              {zoom > MIN_ZOOM && (
+                <button
+                  onClick={resetView}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/90 border border-slate-200 shadow-sm hover:bg-white hover:shadow-md transition-all text-slate-600 hover:text-slate-900"
+                  aria-label="Réinitialiser la vue"
+                  title="Réinitialiser la vue"
+                >
+                  <Maximize2 className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+
+            {/* ── Zoom level indicator ──────────────────────────────── */}
+            {zoom > MIN_ZOOM && (
+              <div className="absolute top-2 left-2 z-10 px-2 py-1 rounded-md bg-white/90 border border-slate-200 shadow-sm text-[10px] text-slate-500 font-medium">
+                {Math.round(zoom * 100)}%
+              </div>
+            )}
+
             <svg
-              viewBox="0 0 360 400"
-              className="w-full max-w-2xl mx-auto"
+              viewBox={viewBox}
+              className={`w-full mx-auto ${isPanning ? 'cursor-grabbing' : zoom > MIN_ZOOM ? 'cursor-grab' : 'cursor-default'}`}
               role="img"
               aria-label="Carte interactive du Bénin par département"
-              onMouseLeave={() => setHoveredDept(null)}
+              onMouseLeave={() => {
+                setHoveredDept(null);
+                setIsPanning(false);
+              }}
+              onWheel={handleWheel}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={() => { touchState.current = null; setIsPanning(false); }}
+              style={{ touchAction: 'none' }}
             >
               {/* Départements */}
               {departments.map((dept) => {

@@ -796,7 +796,7 @@ export default function BeninMap({
 
           {/* ── ACADEMIA HELM PANEL (under map, left of gov panel) ── */}
           {schoolPins.length > 0 && (
-            <div className="mt-3 rounded-2xl border border-slate-200/80 bg-white shadow-lg overflow-hidden max-h-[320px] sm:max-h-[380px] lg:max-h-[420px] flex flex-col">
+            <div className="mt-3 rounded-2xl border border-slate-200/80 bg-white shadow-lg overflow-hidden max-h-[360px] sm:max-h-[380px] lg:max-h-[420px] flex flex-col">
               <AnimatePresence mode="wait">
                 {ahSelectedSchool ? (
                   /* ── SCHOOL DETAIL VIEW ── */
@@ -811,7 +811,7 @@ export default function BeninMap({
                   >
                     {/* En-tête école — navy gradient (cohérent avec les autres en-têtes AH) */}
                     <div
-                      className="px-3 sm:px-4 py-2.5 sm:py-3.5 relative overflow-hidden"
+                      className="px-3 sm:px-4 py-2.5 sm:py-3.5 relative shrink-0"
                       style={{
                         background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
                       }}
@@ -974,7 +974,7 @@ export default function BeninMap({
                   >
                     {/* En-tête département AH */}
                     <div
-                      className="px-3 sm:px-4 py-2.5 sm:py-3.5 relative overflow-hidden"
+                      className="px-3 sm:px-4 py-2.5 sm:py-3.5 relative shrink-0"
                       style={{
                         background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
                       }}
@@ -1139,7 +1139,7 @@ export default function BeninMap({
                   >
                     {/* En-tête national AH */}
                     <div
-                      className="px-3 sm:px-4 py-2.5 sm:py-3.5 relative overflow-hidden"
+                      className="px-3 sm:px-4 py-2.5 sm:py-3.5 relative shrink-0"
                       style={{
                         background: `linear-gradient(135deg, ${NAVY_DARK}, ${NAVY})`,
                       }}
@@ -1246,7 +1246,7 @@ export default function BeninMap({
                 >
                   {/* En-tête département — dark navy gradient */}
                   <div
-                    className="px-4 py-3.5 relative overflow-hidden"
+                    className="px-4 py-3.5 relative shrink-0"
                     style={{
                       background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
                     }}
@@ -1565,7 +1565,7 @@ export default function BeninMap({
                 >
                   {/* En-tête national — dark navy gradient */}
                   <div
-                    className="px-4 py-3.5 relative overflow-hidden"
+                    className="px-4 py-3.5 relative shrink-0"
                     style={{
                       background: `linear-gradient(135deg, ${NAVY_DARK}, ${NAVY})`,
                     }}

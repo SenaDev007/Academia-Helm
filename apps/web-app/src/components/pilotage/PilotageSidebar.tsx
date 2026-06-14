@@ -92,11 +92,18 @@ function getLandingPageUrl(): string {
 /**
  * URL de la landing page avec marqueur ?from_app=true
  * pour que le header public affiche "Retourner à l'application".
+ * Inclut aussi l'URL de retour pour que le bouton puisse renvoyer vers l'app.
  */
 function getLandingPageUrlFromApp(): string {
   const base = getLandingPageUrl();
   const sep = base.includes('?') ? '&' : '?';
-  return `${base}${sep}from_app=true`;
+  // Construire l'URL de retour vers l'application courante
+  let returnUrl = '';
+  if (typeof window !== 'undefined') {
+    returnUrl = `${window.location.origin}/app`;
+  }
+  const returnParam = returnUrl ? `&return_url=${encodeURIComponent(returnUrl)}` : '';
+  return `${base}${sep}from_app=true${returnParam}`;
 }
 
 /**

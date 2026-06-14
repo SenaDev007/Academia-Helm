@@ -19,30 +19,49 @@ import { DoorOpen, ArrowRight } from 'lucide-react';
 // --- Vérification si l'utilisateur vient de l'application ---
 // On détecte le paramètre ?from_app=true dans l'URL (ajouté par le bouton
 // "Visiter le site" dans l'app) et on le persiste en sessionStorage.
+// On sauvegarde aussi l'URL d'origine de l'application pour pouvoir
+// y retourner via le bouton "Retourner à l'application".
 // Ainsi, l'icône DoorOpen est affichée par défaut, et ArrowRight ne s'affiche
 // QUE lorsque l'utilisateur navigue depuis l'application vers le site public.
-function useCameFromApp(): boolean {
+function useCameFromApp(): { cameFromApp: boolean; appReturnUrl: string } {
   const [cameFromApp, setCameFromApp] = useState(false);
+  const [appReturnUrl, setAppReturnUrl] = useState('/app');
   useEffect(() => {
     try {
       // 1. Vérifier le paramètre URL ?from_app=true
       const params = new URLSearchParams(window.location.search);
       if (params.get('from_app') === 'true') {
         sessionStorage.setItem('academia_from_app', 'true');
+        // Sauvegarder l'URL de retour si fournie
+        const returnUrl = params.get('return_url');
+        if (returnUrl) {
+          sessionStorage.setItem('academia_app_return_url', returnUrl);
+          setAppReturnUrl(returnUrl);
+        } else {
+          // Construire l'URL de retour à partir du referer ou du sous-domaine actuel
+          const savedUrl = sessionStorage.getItem('academia_app_return_url') || '/app';
+          setAppReturnUrl(savedUrl);
+        }
         // Nettoyer l'URL sans recharger la page
         params.delete('from_app');
+        params.delete('return_url');
         const cleanUrl = params.toString()
           ? `${window.location.pathname}?${params.toString()}`
           : window.location.pathname;
         window.history.replaceState({}, '', cleanUrl);
       }
       // 2. Vérifier le flag en sessionStorage
-      setCameFromApp(sessionStorage.getItem('academia_from_app') === 'true');
+      const isFromApp = sessionStorage.getItem('academia_from_app') === 'true';
+      setCameFromApp(isFromApp);
+      if (isFromApp) {
+        const savedUrl = sessionStorage.getItem('academia_app_return_url') || '/app';
+        setAppReturnUrl(savedUrl);
+      }
     } catch {
       // sessionStorage indisponible (SSR, etc.)
     }
   }, []);
-  return cameFromApp;
+  return { cameFromApp, appReturnUrl };
 }
 
 // --- Items de navigation avec libellés texte ---
@@ -142,7 +161,7 @@ function LimelightTextNav({ items }: { items: typeof navItems }) {
 export function Header() {
   const [open, setOpen] = useState(false);
   const scrolled = useScroll(10);
-  const cameFromApp = useCameFromApp();
+  const { cameFromApp, appReturnUrl } = useCameFromApp();
 
   // Bloquer le scroll quand le menu mobile est ouvert
   useEffect(() => {
@@ -186,7 +205,7 @@ export function Header() {
           <div className="ml-4 pl-4 border-l border-white/20 flex-shrink-0">
             {cameFromApp ? (
               <Link
-                href="/portal"
+                href={appReturnUrl}
                 prefetch={true}
                 aria-label="Retourner à l'application"
                 className={cn(
@@ -256,7 +275,7 @@ export function Header() {
         <div className="flex flex-col gap-2 pt-4 mt-4 border-t border-white/20">
           {cameFromApp ? (
             <Link
-              href="/portal"
+              href={appReturnUrl}
               onClick={() => setOpen(false)}
               aria-label="Retourner à l'application"
               className={cn(

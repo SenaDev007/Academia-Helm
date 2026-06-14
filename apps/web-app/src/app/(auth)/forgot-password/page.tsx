@@ -22,11 +22,17 @@ import { isReservedSubdomain } from '@/lib/tenant/constants';
 import { extractBrandingFromTenant, type SchoolBrandingData } from '@/lib/tenant/branding';
 import { getApiBaseUrl, getAppBaseUrl } from '@/lib/utils/urls';
 
-export const metadata: Metadata = generateSEOMetadata({
-  title: 'Mot de passe oublié',
-  description: 'Réinitialisez le mot de passe de votre compte Academia Helm.',
-  path: '/forgot-password',
-});
+export async function generateMetadata(): Promise<Metadata> {
+  const { detectRequestHostname } = await import('@/lib/seo');
+  const hostname = await detectRequestHostname();
+  return generateSEOMetadata({
+    title: 'Mot de passe oublié',
+    description: 'Réinitialisez le mot de passe de votre compte Academia Helm.',
+    path: '/forgot-password',
+    hostname,
+    noIndex: true,
+  });
+}
 
 export interface SchoolBranding extends SchoolBrandingData {}
 

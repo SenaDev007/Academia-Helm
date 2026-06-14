@@ -1,9 +1,9 @@
 import type { Article } from '@/types/article';
 import { BRAND } from '@/lib/brand';
-import { DEFAULT_OG_IMAGE_PATH } from '@/lib/seo';
+import { OG_IMAGE_MAIN } from '@/lib/seo';
 
 /** Assets réels sous `public/images/` (évite les 404 en dev si les JPG dédiés n’existent pas). */
-export const DEFAULT_ARTICLE_COVER = DEFAULT_OG_IMAGE_PATH;
+export const DEFAULT_ARTICLE_COVER = OG_IMAGE_MAIN;
 export const DEFAULT_ARTICLE_AUTHOR_AVATAR = BRAND.logoPath;
 export const BLOG_DEFAULT_COVER = '/images/articles/blog.svg';
 

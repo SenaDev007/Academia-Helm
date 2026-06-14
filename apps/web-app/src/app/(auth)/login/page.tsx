@@ -18,11 +18,20 @@ import { BRAND } from '@/lib/brand';
 import { isReservedSubdomain } from '@/lib/tenant/constants';
 import { extractBrandingFromTenant, type SchoolBrandingData } from '@/lib/tenant/branding';
 import { getApiBaseUrl, getAppBaseUrl } from '@/lib/utils/urls';
+import { generateSEOMetadata, detectRequestHostname } from '@/lib/seo';
 
-export const metadata: Metadata = {
-  title: `Connexion - ${BRAND.name}`,
-  description: `${BRAND.description}. ${BRAND.slogan}`,
-};
+/**
+ * generateMetadata — utilise l'image OG tenant pour les sous-domaines d'écoles.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const hostname = await detectRequestHostname();
+  return generateSEOMetadata({
+    title: `Connexion - ${BRAND.name}`,
+    description: `${BRAND.description}. ${BRAND.slogan}`,
+    hostname,
+    noIndex: true, // Page de connexion non indexée
+  });
+}
 
 export interface SchoolBranding extends SchoolBrandingData {}
 

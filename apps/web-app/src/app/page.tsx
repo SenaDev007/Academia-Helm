@@ -8,9 +8,10 @@
 import { Metadata } from 'next';
 import PremiumLandingPage from '@/components/public/PremiumLandingPage';
 import StructuredData from '@/components/public/StructuredData';
-import { getPublicSiteUrl, DEFAULT_OG_IMAGE_PATH } from '@/lib/seo';
+import { getPublicSiteUrl, OG_IMAGE_MAIN, buildAbsoluteOGImageUrl } from '@/lib/seo';
 import { buildHreflangLanguages } from '@/lib/seo/locales';
 const siteUrl = getPublicSiteUrl();
+const ogImageAbsolute = `${siteUrl}${OG_IMAGE_MAIN}`;
 
 export const metadata: Metadata = {
   title: 'Academia Helm - Plateforme de pilotage éducatif',
@@ -29,11 +30,11 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'Academia Helm - Plateforme de pilotage éducatif',
     description: 'La plateforme de pilotage éducatif nouvelle génération. Prenez le gouvernail de votre institution.',
-    url: '/',
+    url: siteUrl,
     siteName: 'Academia Helm',
     images: [
       {
-        url: DEFAULT_OG_IMAGE_PATH,
+        url: ogImageAbsolute,
         width: 1200,
         height: 630,
         alt: 'Academia Helm - Plateforme de pilotage éducatif',
@@ -46,7 +47,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'Academia Helm - Plateforme de pilotage éducatif',
     description: 'La plateforme de pilotage éducatif nouvelle génération.',
-    images: [DEFAULT_OG_IMAGE_PATH],
+    images: [ogImageAbsolute],
   },
   alternates: {
     canonical: siteUrl,

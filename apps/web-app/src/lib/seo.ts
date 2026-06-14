@@ -3,10 +3,16 @@
  *
  * URL canonique, métadonnées, JSON-LD.
  * Définir NEXT_PUBLIC_APP_URL en production (sans slash final).
+ *
+ * Open Graph multi-tenant :
+ *   - Domaine principal (academiahelm.com, www.academiahelm.com) → OpenGraph-AcademiaHelm.png
+ *   - Sous-domaines tenant (*.academiahelm.com)               → OpenGraph-AcademiaHelmTenants.png
  */
 
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import { BRAND } from './brand';
+import { isReservedSubdomain } from './tenant/constants';
 import { buildHreflangLanguages } from './seo/locales';
 
 /**
@@ -25,10 +31,109 @@ export function buildSiteVerification(): Metadata['verification'] | undefined {
   };
 }
 
-/** Image Open Graph dédiée (1200×630 recommandé) — version WebP optimisée */
-export const DEFAULT_OG_IMAGE_PATH = '/images/og-academia-helm.webp';
+/* ── Open Graph image paths (1200×630) ─────────────────────────────────── */
 
-const defaultImage = DEFAULT_OG_IMAGE_PATH;
+/** Image OG pour le domaine principal Academia Helm */
+export const OG_IMAGE_MAIN = '/images/OpenGraph-AcademiaHelm.png';
+
+/** Image OG pour les sous-domaines des écoles (tenants) */
+export const OG_IMAGE_TENANT = '/images/OpenGraph-AcademiaHelmTenants.png';
+
+/**
+ * @deprecated Use OG_IMAGE_MAIN instead. Kept for backward compatibility.
+ * Legacy WebP path — will be removed once all pages use the new PNG.
+ */
+export const DEFAULT_OG_IMAGE_PATH = OG_IMAGE_MAIN;
+
+/**
+ * Détermine si le hostname donné correspond au domaine principal Academia Helm.
+ *
+ * Domaine principal :
+ *   - academiahelm.com
+ *   - www.academiahelm.com
+ *
+ * Sous-domaine tenant :
+ *   - cspeb-eveildafriqueeducation.academiahelm.com
+ *   - mon-ecole.academiahelm.com
+ *   - www.cspeb-eveildafriqueeducation.academiahelm.com
+ *
+ * @returns true si domaine principal, false si sous-domaine tenant
+ */
+export function isMainDomain(hostname: string): boolean {
+  const base = hostname.split(':')[0]; // strip port
+  const parts = base.split('.');
+
+  // Cas : academiahelm.com (2 parties) → domaine principal
+  if (parts.length <= 2) return true;
+
+  // Cas : www.academiahelm.com (3 parties, subdomain = www)
+  if (parts.length === 3) {
+    const subdomain = parts[0];
+    // www ou autre sous-domaine réservé → domaine principal
+    if (isReservedSubdomain(subdomain)) return true;
+    // Sous-domaine non réservé → tenant
+    return false;
+  }
+
+  // Cas : www.cspeb-eveil.academiahelm.com (4+ parties)
+  // Le premier segment est soit www soit le subdomain tenant
+  const firstPart = parts[0];
+  if (firstPart === 'www') {
+    // www.cspeb-eveil.academiahelm.com → le subdomain réel est parts[1]
+    // Mais ce format n'est pas standard, on considère comme tenant
+    return isReservedSubdomain(parts[1]);
+  }
+  // cspeb-eveil.academiahelm.com → tenant
+  return isReservedSubdomain(firstPart);
+}
+
+/**
+ * Extrait le sous-domaine tenant du hostname.
+ * Retourne null si c'est le domaine principal.
+ */
+export function extractTenantSubdomainFromHost(hostname: string): string | null {
+  if (isMainDomain(hostname)) return null;
+  const base = hostname.split(':')[0];
+  const parts = base.split('.');
+  if (parts[0] === 'www') return parts[1] || null;
+  return parts[0];
+}
+
+/**
+ * Retourne le chemin relatif de l'image OG à utiliser selon le hostname.
+ */
+export function getOGImagePath(hostname?: string): string {
+  if (!hostname) return OG_IMAGE_MAIN;
+  return isMainDomain(hostname) ? OG_IMAGE_MAIN : OG_IMAGE_TENANT;
+}
+
+/**
+ * Construit l'URL absolue de l'image OG à partir du domaine courant.
+ * Les crawlers (Facebook, WhatsApp, Twitter, etc.) nécessitent des URLs absolues.
+ */
+export function buildAbsoluteOGImageUrl(hostname?: string): string {
+  const base = hostname
+    ? `https://${hostname.split(':')[0]}`
+    : getPublicSiteUrl();
+  const path = getOGImagePath(hostname);
+  return `${base}${path}`;
+}
+
+/**
+ * Détecte le hostname de la requête courante (côté serveur uniquement).
+ * Utilise next/headers — doit être appelé dans un Server Component ou generateMetadata.
+ */
+export async function detectRequestHostname(): Promise<string> {
+  try {
+    const headersList = await headers();
+    return headersList.get('host') || headersList.get('x-forwarded-host') || 'academiahelm.com';
+  } catch {
+    // Fallback si appelé hors du contexte de requête (build time)
+    return 'academiahelm.com';
+  }
+}
+
+const defaultImage = OG_IMAGE_MAIN;
 
 /**
  * URL publique absolue du site (build & runtime serveur).
@@ -55,12 +160,21 @@ export interface SEOConfig {
   description: string;
   keywords?: string[];
   path?: string;
+  /** Image OG — chemin relatif (ex: /images/...) ou URL absolue. Auto-détecté si omis. */
   image?: string;
+  /** Hostname courant — si fourni, détermine automatiquement l'image OG (principal vs tenant) */
+  hostname?: string;
   noIndex?: boolean;
 }
 
 /**
- * Génère les métadonnées SEO complètes pour une page
+ * Génère les métadonnées SEO complètes pour une page.
+ *
+ * Si `hostname` est fourni, l'image OG est sélectionnée automatiquement :
+ *   - Domaine principal → OpenGraph-AcademiaHelm.png
+ *   - Sous-domaine tenant → OpenGraph-AcademiaHelmTenants.png
+ *
+ * Les URLs d'images OG sont toujours absolues (requis par Facebook, WhatsApp, etc.).
  */
 export function generateSEOMetadata(config: SEOConfig): Metadata {
   const {
@@ -68,14 +182,22 @@ export function generateSEOMetadata(config: SEOConfig): Metadata {
     description,
     keywords = [],
     path = '',
-    image = defaultImage,
+    image,
+    hostname,
     noIndex = false,
   } = config;
 
+  // Résolution de l'image OG : explicite > auto-détection > défaut
+  const ogImageRelative = image || getOGImagePath(hostname);
+  const ogImageAbsolute = buildAbsoluteOGImageUrl(hostname);
+
+  // URL de la page
   const siteUrl = getPublicSiteUrl();
   const pathSegment = path === '' || path.startsWith('/') ? path : `/${path}`;
   const fullTitle = title.includes(BRAND.name) ? title : `${title} | ${BRAND.name}`;
-  const url = `${siteUrl}${pathSegment}`;
+  const url = hostname
+    ? `https://${hostname.split(':')[0]}${pathSegment}`
+    : `${siteUrl}${pathSegment}`;
 
   return {
     title: fullTitle,
@@ -94,7 +216,7 @@ export function generateSEOMetadata(config: SEOConfig): Metadata {
       siteName: BRAND.name,
       images: [
         {
-          url: image,
+          url: ogImageAbsolute,
           width: 1200,
           height: 630,
           alt: title,
@@ -107,7 +229,7 @@ export function generateSEOMetadata(config: SEOConfig): Metadata {
       card: 'summary_large_image',
       title: fullTitle,
       description,
-      images: [image],
+      images: [ogImageAbsolute],
     },
     robots: noIndex
       ? {

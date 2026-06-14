@@ -10,13 +10,18 @@
 
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
-import { generateSEOMetadata } from '@/lib/seo';
+import { generateSEOMetadata, detectRequestHostname } from '@/lib/seo';
 
-export const metadata: Metadata = generateSEOMetadata({
-  title: 'Réinitialisation du mot de passe',
-  description: 'Saisissez votre nouveau mot de passe pour Academia Helm.',
-  path: '/reset-password',
-});
+export async function generateMetadata(): Promise<Metadata> {
+  const hostname = await detectRequestHostname();
+  return generateSEOMetadata({
+    title: 'Réinitialisation du mot de passe',
+    description: 'Saisissez votre nouveau mot de passe pour Academia Helm.',
+    path: '/reset-password',
+    hostname,
+    noIndex: true,
+  });
+}
 
 export default function Page() {
   // Rediriger vers le nouveau flux professionnel de récupération

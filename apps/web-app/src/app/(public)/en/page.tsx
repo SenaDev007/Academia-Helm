@@ -6,10 +6,11 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Header } from '@/components/ui/header-1';
 import { Footer2 } from '@/components/ui/footer-2';
-import { getPublicSiteUrl, DEFAULT_OG_IMAGE_PATH } from '@/lib/seo';
+import { getPublicSiteUrl, OG_IMAGE_MAIN } from '@/lib/seo';
 import { buildHreflangLanguages } from '@/lib/seo/locales';
 
 const siteUrl = getPublicSiteUrl();
+const ogImageAbsolute = `${siteUrl}${OG_IMAGE_MAIN}`;
 
 export const metadata: Metadata = {
   title: 'Academia Helm — School operations platform',
@@ -22,7 +23,13 @@ export const metadata: Metadata = {
     siteName: 'Academia Helm',
     locale: 'en_US',
     type: 'website',
-    images: [{ url: DEFAULT_OG_IMAGE_PATH, width: 1200, height: 630, alt: 'Academia Helm' }],
+    images: [{ url: ogImageAbsolute, width: 1200, height: 630, alt: 'Academia Helm' }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Academia Helm — School operations platform',
+    description: 'Unified school management for modern institutions.',
+    images: [ogImageAbsolute],
   },
   alternates: {
     canonical: `${siteUrl}/en`,

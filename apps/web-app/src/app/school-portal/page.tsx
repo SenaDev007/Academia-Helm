@@ -19,11 +19,20 @@ import { isReservedSubdomain } from '@/lib/tenant/constants';
 import { extractBrandingFromTenant } from '@/lib/tenant/branding';
 import { getApiBaseUrl, getAppBaseUrl } from '@/lib/utils/urls';
 import type { Metadata } from 'next';
+import { generateSEOMetadata, detectRequestHostname } from '@/lib/seo';
 
-export const metadata: Metadata = {
-  title: `Connexion — ${BRAND.name}`,
-  description: `Choisissez votre portail pour vous connecter à votre établissement sur ${BRAND.name}`,
-};
+/**
+ * generateMetadata — utilise l'image OG tenant pour les sous-domaines d'écoles.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const hostname = await detectRequestHostname();
+  return generateSEOMetadata({
+    title: `Connexion — ${BRAND.name}`,
+    description: `Choisissez votre portail pour vous connecter à votre établissement sur ${BRAND.name}`,
+    hostname,
+    noIndex: false,
+  });
+}
 
 export default async function SchoolPortalPage() {
   // Tenter de résoudre les informations de l'école côté serveur

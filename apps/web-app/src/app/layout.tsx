@@ -13,7 +13,15 @@ import Script from 'next/script';
 import './globals.css';
 import { ServiceWorkerCleanup } from '@/components/pwa/ServiceWorkerCleanup';
 import { BRAND } from '@/lib/brand';
-import { buildSiteVerification, getPublicSiteUrl, DEFAULT_OG_IMAGE_PATH } from '@/lib/seo';
+import {
+  buildSiteVerification,
+  getPublicSiteUrl,
+  OG_IMAGE_MAIN,
+  OG_IMAGE_TENANT,
+  buildAbsoluteOGImageUrl,
+  detectRequestHostname,
+  isMainDomain,
+} from '@/lib/seo';
 import { buildHreflangLanguages } from '@/lib/seo/locales';
 import { cn } from "@/lib/utils";
 import { ToastContainer } from '@/components/ui/toast';
@@ -60,7 +68,7 @@ const inter = localFont({
   preload: true, // ✅ Précharger les polices locales (rapide, pas de timeout)
 });
 
-// Titre / description SEO (landing publique)
+// Titre / description SEO (landing publique — domaine principal)
 const defaultTitle = 'Academia Helm — Logiciel de gestion scolaire en Afrique';
 const defaultDescription =
   'Pilotez votre école privée avec Academia Helm : gestion des élèves, finances, examens, RH et IA de direction ORION.';
@@ -68,72 +76,106 @@ const defaultDescription =
 const siteUrl = getPublicSiteUrl();
 const verification = buildSiteVerification();
 
-// eslint-disable-next-line @next/next/no-head-element
-export const metadata: Metadata = {
-  metadataBase: new URL('https://academiahelm.com'),
-  title: defaultTitle,
-  description: defaultDescription,
-  keywords: [
-    'pilotage éducatif',
-    'plateforme éducation',
-    'gestion établissement scolaire',
-    'logiciel école',
-    'ORION IA',
-    BRAND.name,
-    'Bénin',
-    'Afrique de l’Ouest',
-  ],
-  authors: [{ name: BRAND.name, url: siteUrl }],
-  creator: 'YEHI OR Tech',
-  publisher: BRAND.name,
-  category: 'technology',
-  ...(verification ? { verification } : {}),
-  appleWebApp: {
-    title: 'Academia Helm',
-  },
-  icons: {
-    icon: [
-      { url: '/favicon.ico', sizes: 'any' },
-      { url: '/icon.png', type: 'image/png' },
+/**
+ * generateMetadata — détection dynamique du domaine pour l'image Open Graph.
+ *
+ * - Domaine principal (academiahelm.com, www.academiahelm.com)
+ *   → /images/OpenGraph-AcademiaHelm.png
+ *
+ * - Sous-domaine tenant (*.academiahelm.com)
+ *   → /images/OpenGraph-AcademiaHelmTenants.png
+ *
+ * Les URLs des images OG sont absolues (requis par les crawlers :
+ * Facebook, WhatsApp, Twitter/X, LinkedIn, Telegram, etc.).
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const hostname = await detectRequestHostname();
+  const mainDomain = isMainDomain(hostname);
+  const ogImageAbsolute = buildAbsoluteOGImageUrl(hostname);
+
+  // Ajuster titre/description pour les sous-domaines tenant
+  const tenantSubdomain = mainDomain
+    ? null
+    : hostname.split(':')[0].split('.')[0];
+
+  const title = mainDomain
+    ? defaultTitle
+    : `${tenantSubdomain} — Portail Academia Helm`;
+
+  const description = mainDomain
+    ? defaultDescription
+    : `Accédez au portail de votre établissement sur Academia Helm. Gestion scolaire, notes, emplois du temps et plus.`;
+
+  const url = mainDomain
+    ? siteUrl
+    : `https://${hostname.split(':')[0]}`;
+
+  return {
+    metadataBase: new URL('https://academiahelm.com'),
+    title,
+    description,
+    keywords: [
+      'pilotage éducatif',
+      'plateforme éducation',
+      'gestion établissement scolaire',
+      'logiciel école',
+      'ORION IA',
+      BRAND.name,
+      'Bénin',
+      "Afrique de l'Ouest",
     ],
-    apple: [{ url: '/apple-icon.png' }],
-    shortcut: '/favicon.ico',
-  },
-  manifest: '/manifest.json',
-  openGraph: {
-    type: 'website',
-    locale: 'fr_FR',
-    url: siteUrl,
-    siteName: BRAND.name,
-    title: defaultTitle,
-    description: defaultDescription,
-    images: [
-      {
-        url: DEFAULT_OG_IMAGE_PATH,
-        width: 1200,
-        height: 630,
-        alt: defaultTitle,
-      },
-    ],
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: defaultTitle,
-    description: BRAND.description,
-    images: [DEFAULT_OG_IMAGE_PATH],
-  },
-  robots: {
-    index: true,
-    follow: true,
-    googleBot: {
+    authors: [{ name: BRAND.name, url: siteUrl }],
+    creator: 'YEHI OR Tech',
+    publisher: BRAND.name,
+    category: 'technology',
+    ...(verification ? { verification } : {}),
+    appleWebApp: {
+      title: mainDomain ? 'Academia Helm' : `${tenantSubdomain} — Academia Helm`,
+    },
+    icons: {
+      icon: [
+        { url: '/favicon.ico', sizes: 'any' },
+        { url: '/icon.png', type: 'image/png' },
+      ],
+      apple: [{ url: '/apple-icon.png' }],
+      shortcut: '/favicon.ico',
+    },
+    manifest: '/manifest.json',
+    openGraph: {
+      type: 'website',
+      locale: 'fr_FR',
+      url,
+      siteName: BRAND.name,
+      title,
+      description,
+      images: [
+        {
+          url: ogImageAbsolute,
+          width: 1200,
+          height: 630,
+          alt: title,
+        },
+      ],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+      images: [ogImageAbsolute],
+    },
+    robots: {
       index: true,
       follow: true,
-      'max-video-preview': -1,
-      'max-image-preview': 'large',
-      'max-snippet': -1,
+      googleBot: {
+        index: true,
+        follow: true,
+        'max-video-preview': -1,
+        'max-image-preview': 'large',
+        'max-snippet': -1,
+      },
     },
-  },
-};
+  };
+}
 
 export const viewport: Viewport = {
   width: 'device-width',

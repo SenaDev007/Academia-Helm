@@ -142,6 +142,7 @@ export default function BeninMap({
 }: BeninMapProps) {
   const [hoveredDept, setHoveredDept] = useState<string | null>(null);
   const [hoveredPin, setHoveredPin] = useState<SchoolPin | null>(null);
+  const [selectedPin, setSelectedPin] = useState<SchoolPin | null>(null);
   const [educationLevel, setEducationLevel] = useState<EducationLevel>('primaire');
   const [primaireCycle, setPrimaireCycle] = useState<PrimaireCycle>('all');
   const [circumscriptionOpen, setCircumscriptionOpen] = useState(false);
@@ -694,6 +695,7 @@ export default function BeninMap({
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
+                      setSelectedPin(selectedPin?.id === pin.id ? null : pin);
                     }}
                   >
                     {/* Pulse ring animation */}
@@ -773,126 +775,214 @@ export default function BeninMap({
               {/* ── Hologram tooltip for hovered school pin ──────────────── */}
               {hoveredPin && (() => {
                 const pin = hoveredPin;
-                const tipW = 140;
-                const tipH = 62;
-                // Position tooltip above or below the pin depending on space
-                const tipAbove = pin.y > tipH + 15;
+                const CYAN = '#00e5ff';
+                const CYAN_DIM = '#006978';
+                const CYAN_GLOW = 'rgba(0,229,255,0.15)';
+                const CYAN_BG = 'rgba(0,30,50,0.92)';
+                const tipW = 150;
+                const tipH = 80;
+                const tipAbove = pin.y > tipH + 20;
                 const tipX = Math.max(5, Math.min(pin.x - tipW / 2, 360 - tipW - 5));
-                const tipY = tipAbove ? pin.y - tipH - 14 : pin.y + 18;
+                const tipY = tipAbove ? pin.y - tipH - 16 : pin.y + 16;
 
                 return (
                   <g className="pointer-events-none">
-                    {/* Backdrop glow */}
+                    {/* ── Holographic outer glow ── */}
                     <rect
-                      x={tipX - 2}
-                      y={tipY - 2}
-                      width={tipW + 4}
-                      height={tipH + 4}
-                      rx={8}
-                      fill="rgba(245,179,53,0.08)"
-                    />
-                    {/* Main card */}
+                      x={tipX - 4}
+                      y={tipY - 4}
+                      width={tipW + 8}
+                      height={tipH + 8}
+                      rx={10}
+                      fill="none"
+                      stroke={CYAN}
+                      strokeWidth={0.4}
+                      opacity={0.3}
+                    >
+                      <animate attributeName="opacity" values="0.3;0.6;0.3" dur="2s" repeatCount="indefinite" />
+                    </rect>
+
+                    {/* ── Holographic scanlines backdrop ── */}
                     <rect
                       x={tipX}
                       y={tipY}
                       width={tipW}
                       height={tipH}
                       rx={6}
-                      fill="rgba(7,29,74,0.95)"
-                      stroke={GOLD}
+                      fill={CYAN_BG}
+                      stroke={CYAN}
                       strokeWidth={0.8}
                     />
-                    {/* Gold top accent line */}
-                    <rect
-                      x={tipX + 6}
-                      y={tipY + 1}
-                      width={tipW - 12}
-                      height={1.2}
-                      rx={0.6}
-                      fill={GOLD}
-                      opacity={0.7}
-                    />
 
-                    {/* School name */}
+                    {/* ── Top cyan energy line ── */}
+                    <rect
+                      x={tipX + 4}
+                      y={tipY + 1.5}
+                      width={tipW - 8}
+                      height={1.5}
+                      rx={0.5}
+                      fill={CYAN}
+                      opacity={0.8}
+                    >
+                      <animate attributeName="opacity" values="0.8;0.4;0.8" dur="1.8s" repeatCount="indefinite" />
+                    </rect>
+
+                    {/* ── Scanline effect (horizontal moving line) ── */}
+                    <rect
+                      x={tipX + 1}
+                      y={tipY + 3}
+                      width={tipW - 2}
+                      height={0.4}
+                      fill={CYAN}
+                      opacity={0.15}
+                    >
+                      <animate attributeName="y" from={tipY + 3} to={tipY + tipH - 3} dur="3s" repeatCount="indefinite" />
+                      <animate attributeName="opacity" values="0.15;0.05;0.15" dur="3s" repeatCount="indefinite" />
+                    </rect>
+
+                    {/* ── Corner brackets (holographic frame) ── */}
+                    {/* Top-left */}
+                    <path d={`M${tipX + 2},${tipY + 8} L${tipX + 2},${tipY + 2} L${tipX + 8},${tipY + 2}`} fill="none" stroke={CYAN} strokeWidth={0.6} opacity={0.6} />
+                    {/* Top-right */}
+                    <path d={`M${tipX + tipW - 8},${tipY + 2} L${tipX + tipW - 2},${tipY + 2} L${tipX + tipW - 2},${tipY + 8}`} fill="none" stroke={CYAN} strokeWidth={0.6} opacity={0.6} />
+                    {/* Bottom-left */}
+                    <path d={`M${tipX + 2},${tipY + tipH - 8} L${tipX + 2},${tipY + tipH - 2} L${tipX + 8},${tipY + tipH - 2}`} fill="none" stroke={CYAN} strokeWidth={0.6} opacity={0.6} />
+                    {/* Bottom-right */}
+                    <path d={`M${tipX + tipW - 8},${tipY + tipH - 2} L${tipX + tipW - 2},${tipY + tipH - 2} L${tipX + tipW - 2},${tipY + tipH - 8}`} fill="none" stroke={CYAN} strokeWidth={0.6} opacity={0.6} />
+
+                    {/* ── School name ── */}
                     <text
                       x={tipX + tipW / 2}
-                      y={tipY + 14}
+                      y={tipY + 13}
                       textAnchor="middle"
-                      fill="white"
+                      fill={CYAN}
                       fontSize="7"
                       fontWeight="700"
+                      style={{ textShadow: `0 0 6px ${CYAN}` }}
                     >
-                      {pin.name.length > 22 ? pin.name.slice(0, 21) + '…' : pin.name}
+                      {pin.schoolAcronym ? `${pin.schoolAcronym} — ` : ''}
+                      {pin.name.length > 20 ? pin.name.slice(0, 19) + '…' : pin.name}
                     </text>
 
-                    {/* City */}
+                    {/* ── City / Location ── */}
                     <text
                       x={tipX + tipW / 2}
-                      y={tipY + 24}
+                      y={tipY + 22}
                       textAnchor="middle"
-                      fill={GOLD}
-                      fontSize="5.5"
+                      fill="rgba(0,229,255,0.7)"
+                      fontSize="5"
                       fontWeight="500"
                     >
-                      {pin.city || 'Bénin'}
+                      {pin.city || 'Bénin'}{pin.department ? ` · ${pin.department}` : ''}
                     </text>
 
-                    {/* Separator */}
+                    {/* ── Separator line (cyan) ── */}
                     <line
                       x1={tipX + 10}
-                      y1={tipY + 29}
+                      y1={tipY + 26}
                       x2={tipX + tipW - 10}
-                      y2={tipY + 29}
-                      stroke="rgba(255,255,255,0.15)"
-                      strokeWidth={0.5}
+                      y2={tipY + 26}
+                      stroke={CYAN}
+                      strokeWidth={0.3}
+                      opacity={0.4}
                     />
 
-                    {/* School type badge */}
+                    {/* ── School type badge ── */}
                     <rect
-                      x={tipX + 12}
-                      y={tipY + 34}
-                      width={tipW - 24}
-                      height={11}
-                      rx={3}
-                      fill={BLUE}
-                      opacity={0.7}
+                      x={tipX + 10}
+                      y={tipY + 30}
+                      width={tipW - 20}
+                      height={10}
+                      rx={2}
+                      fill="rgba(0,229,255,0.12)"
+                      stroke={CYAN}
+                      strokeWidth={0.3}
                     />
                     <text
                       x={tipX + tipW / 2}
-                      y={tipY + 42}
+                      y={tipY + 37.5}
                       textAnchor="middle"
-                      fill="white"
-                      fontSize="5.5"
+                      fill={CYAN}
+                      fontSize="5"
                       fontWeight="600"
                     >
                       {pin.schoolType || 'École partenaire'}
                     </text>
 
-                    {/* "Sur Academia Helm" label */}
+                    {/* ── Contact info ── */}
+                    {pin.phone && (
+                      <text
+                        x={tipX + 10}
+                        y={tipY + 49}
+                        fill="rgba(0,229,255,0.65)"
+                        fontSize="4.2"
+                        fontWeight="400"
+                      >
+                        {pin.phone}
+                      </text>
+                    )}
+                    {pin.email && (
+                      <text
+                        x={tipX + 10}
+                        y={tipY + 56}
+                        fill="rgba(0,229,255,0.55)"
+                        fontSize="4.2"
+                        fontWeight="400"
+                      >
+                        {pin.email.length > 30 ? pin.email.slice(0, 29) + '…' : pin.email}
+                      </text>
+                    )}
+                    {pin.address && !pin.email && (
+                      <text
+                        x={tipX + 10}
+                        y={tipY + 56}
+                        fill="rgba(0,229,255,0.55)"
+                        fontSize="4.2"
+                        fontWeight="400"
+                      >
+                        {pin.address.length > 30 ? pin.address.slice(0, 29) + '…' : pin.address}
+                      </text>
+                    )}
+
+                    {/* ── "Sur Academia Helm" label ── */}
                     <text
                       x={tipX + tipW / 2}
-                      y={tipY + 55}
+                      y={tipY + tipH - 5}
                       textAnchor="middle"
-                      fill="rgba(255,255,255,0.5)"
-                      fontSize="4.5"
+                      fill="rgba(0,229,255,0.35)"
+                      fontSize="3.8"
                       fontWeight="400"
+                      style={{ letterSpacing: '0.5px' }}
                     >
-                      Sur Academia Helm
+                      SUR ACADEMIA HELM
                     </text>
 
-                    {/* Arrow pointing to pin */}
+                    {/* ── Bottom energy line ── */}
+                    <rect
+                      x={tipX + 4}
+                      y={tipY + tipH - 2.5}
+                      width={tipW - 8}
+                      height={1}
+                      rx={0.5}
+                      fill={CYAN}
+                      opacity={0.4}
+                    >
+                      <animate attributeName="opacity" values="0.4;0.15;0.4" dur="2.2s" repeatCount="indefinite" />
+                    </rect>
+
+                    {/* ── Arrow pointing to pin ── */}
                     {tipAbove ? (
                       <polygon
-                        points={`${pin.x - 4},${tipY + tipH} ${pin.x},${tipY + tipH + 6} ${pin.x + 4},${tipY + tipH}`}
-                        fill="rgba(7,29,74,0.95)"
-                        stroke={GOLD}
+                        points={`${pin.x - 4},${tipY + tipH} ${pin.x},${tipY + tipH + 7} ${pin.x + 4},${tipY + tipH}`}
+                        fill={CYAN_BG}
+                        stroke={CYAN}
                         strokeWidth={0.5}
                       />
                     ) : (
                       <polygon
-                        points={`${pin.x - 4},${tipY} ${pin.x},${tipY - 6} ${pin.x + 4},${tipY}`}
-                        fill="rgba(7,29,74,0.95)"
-                        stroke={GOLD}
+                        points={`${pin.x - 4},${tipY} ${pin.x},${tipY - 7} ${pin.x + 4},${tipY}`}
+                        fill={CYAN_BG}
+                        stroke={CYAN}
                         strokeWidth={0.5}
                       />
                     )}
@@ -926,7 +1016,168 @@ export default function BeninMap({
         <div className="w-full lg:w-[290px] lg:flex-shrink-0">
           <div className="rounded-2xl border border-slate-200/80 bg-white shadow-lg overflow-hidden">
             <AnimatePresence mode="wait">
-              {panelDept ? (
+              {selectedPin ? (
+                /* ── SCHOOL PIN SELECTED: Show school info (holographic style) ─── */
+                <motion.div
+                  key={`school-${selectedPin.id}`}
+                  variants={panelVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  transition={panelTransition}
+                >
+                  {/* En-tête école — holographic cyan gradient */}
+                  <div
+                    className="px-4 py-3.5 relative overflow-hidden"
+                    style={{
+                      background: 'linear-gradient(135deg, #001e32, #003a52)',
+                    }}
+                  >
+                    {/* Animated scan line */}
+                    <div
+                      className="absolute left-0 right-0 h-[1px] opacity-40"
+                      style={{
+                        background: 'linear-gradient(90deg, transparent, #00e5ff, transparent)',
+                        animation: 'hologram-scan 3s ease-in-out infinite',
+                      }}
+                    />
+                    <div className="relative flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <p
+                          className="text-[10px] font-medium uppercase tracking-wider"
+                          style={{ color: '#00e5ff' }}
+                        >
+                          École inscrite
+                        </p>
+                        <h3 className="mt-0.5 text-sm font-bold text-white leading-tight truncate">
+                          {selectedPin.schoolAcronym
+                            ? `${selectedPin.schoolAcronym} — ${selectedPin.name}`
+                            : selectedPin.name}
+                        </h3>
+                        {selectedPin.slogan && (
+                          <p className="mt-0.5 text-[10px] italic" style={{ color: 'rgba(0,229,255,0.6)' }}>
+                            {selectedPin.slogan}
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => setSelectedPin(null)}
+                        className="rounded-lg p-1 text-white/70 hover:text-white hover:bg-white/10 transition-colors ml-2"
+                        aria-label="Fermer"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* School details */}
+                  <div className="p-3 space-y-3">
+                    {/* Logo + Type */}
+                    <div className="flex items-center gap-3">
+                      {selectedPin.logoUrl ? (
+                        <img
+                          src={selectedPin.logoUrl}
+                          alt={selectedPin.name}
+                          className="w-12 h-12 rounded-lg object-contain border"
+                          style={{ borderColor: 'rgba(0,229,255,0.3)' }}
+                        />
+                      ) : (
+                        <div
+                          className="w-12 h-12 rounded-lg flex items-center justify-center"
+                          style={{ background: 'linear-gradient(135deg, #001e32, #003a52)' }}
+                        >
+                          <School className="h-6 w-6" style={{ color: '#00e5ff' }} />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <span
+                          className="inline-block px-2 py-0.5 text-[10px] font-semibold rounded-full"
+                          style={{
+                            background: 'rgba(0,229,255,0.12)',
+                            color: '#00e5ff',
+                            border: '1px solid rgba(0,229,255,0.3)',
+                          }}
+                        >
+                          {selectedPin.schoolType || 'École partenaire'}
+                        </span>
+                        <p className="mt-1 text-[11px] text-slate-500 flex items-center gap-1">
+                          <MapPin className="h-3 w-3" style={{ color: '#00e5ff' }} />
+                          {selectedPin.city || 'Bénin'}{selectedPin.department ? ` · ${selectedPin.department}` : ''}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Contact info cards */}
+                    <div className="space-y-2">
+                      {selectedPin.phone && (
+                        <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
+                          <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(0,229,255,0.1)' }}>
+                            <span className="text-xs" style={{ color: '#00e5ff' }}>📞</span>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[9px] text-slate-400 uppercase tracking-wide">Téléphone</p>
+                            <p className="text-[11px] font-medium text-slate-700 truncate">{selectedPin.phone}</p>
+                          </div>
+                        </div>
+                      )}
+                      {selectedPin.email && (
+                        <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
+                          <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(0,229,255,0.1)' }}>
+                            <span className="text-xs" style={{ color: '#00e5ff' }}>✉️</span>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[9px] text-slate-400 uppercase tracking-wide">Email</p>
+                            <p className="text-[11px] font-medium text-slate-700 truncate">{selectedPin.email}</p>
+                          </div>
+                        </div>
+                      )}
+                      {selectedPin.address && (
+                        <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
+                          <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(0,229,255,0.1)' }}>
+                            <MapPin className="h-3 w-3" style={{ color: '#00e5ff' }} />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[9px] text-slate-400 uppercase tracking-wide">Adresse</p>
+                            <p className="text-[11px] font-medium text-slate-700 truncate">{selectedPin.address}</p>
+                          </div>
+                        </div>
+                      )}
+                      {selectedPin.website && (
+                        <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
+                          <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(0,229,255,0.1)' }}>
+                            <span className="text-xs" style={{ color: '#00e5ff' }}>🌐</span>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[9px] text-slate-400 uppercase tracking-wide">Site web</p>
+                            <p className="text-[11px] font-medium truncate" style={{ color: '#00e5ff' }}>{selectedPin.website}</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Subdomain link */}
+                    {selectedPin.subdomain && (
+                      <a
+                        href={`https://${selectedPin.subdomain}.academiahelm.com`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block w-full text-center px-3 py-2 rounded-lg text-[11px] font-semibold text-white transition-all hover:opacity-90"
+                        style={{
+                          background: 'linear-gradient(135deg, #001e32, #003a52)',
+                          border: '1px solid rgba(0,229,255,0.4)',
+                        }}
+                      >
+                        Visiter le portail → {selectedPin.subdomain}.academiahelm.com
+                      </a>
+                    )}
+
+                    {/* AH label */}
+                    <p className="text-center text-[9px] tracking-wider" style={{ color: 'rgba(0,229,255,0.4)' }}>
+                      SUR ACADEMIA HELM
+                    </p>
+                  </div>
+                </motion.div>
+              ) : panelDept ? (
                 /* ── DEPARTMENT SELECTED: Show department stats ───── */
                 <motion.div
                   key={panelDept.code}

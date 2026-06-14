@@ -33,6 +33,20 @@ export interface SchoolPin {
   logoUrl: string | null;
   /** Sous-domaine */
   subdomain: string | null;
+  /** Téléphone principal */
+  phone: string | null;
+  /** Email principal */
+  email: string | null;
+  /** Adresse physique */
+  address: string | null;
+  /** Slogan / devise */
+  slogan: string | null;
+  /** Acronyme de l'école */
+  schoolAcronym: string | null;
+  /** Site web */
+  website: string | null;
+  /** Département */
+  department: string | null;
   /** Coordonnées SVG sur la carte */
   x: number;
   y: number;
@@ -56,13 +70,20 @@ export function useSchoolsMap() {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-        const res = await fetch('/api/public/schools/list', {
+        // Essayer d'abord l'endpoint with-jobs (plus riche en données)
+        let res = await fetch('/api/public/schools/with-jobs', {
           signal: controller.signal,
         });
-        clearTimeout(timeoutId);
 
         if (!res.ok) {
-          // Fallback : essayer search?q=aa
+          // Fallback vers l'endpoint list
+          res = await fetch('/api/public/schools/list', {
+            signal: controller.signal,
+          });
+        }
+
+        if (!res.ok) {
+          // Dernier fallback : search
           const fallbackRes = await fetch('/api/public/schools/search?q=aa', {
             signal: AbortSignal.timeout(10000),
           });
@@ -77,6 +98,7 @@ export function useSchoolsMap() {
           throw new Error(`HTTP ${res.status}`);
         }
 
+        clearTimeout(timeoutId);
         const data = await res.json();
         if (!cancelled) {
           const list = Array.isArray(data) ? data : data.schools || [];
@@ -117,20 +139,27 @@ export function useSchoolsMap() {
       let offsetX = 0;
       let offsetY = 0;
       if (overlapIdx > 0) {
-        const angle = (overlapIdx * 2.4) % (2 * Math.PI); // répartition en spirale
-        const dist = 8 + overlapIdx * 3; // distance croissante
+        const angle = (overlapIdx * 2.4) % (2 * Math.PI);
+        const dist = 8 + overlapIdx * 3;
         offsetX = Math.round(Math.cos(angle) * dist * 10) / 10;
         offsetY = Math.round(Math.sin(angle) * dist * 10) / 10;
       }
 
       result.push({
         id: school.id,
-        name: school.name,
+        name: school.schoolName || school.name,
         slug: school.slug || school.subdomain || '',
         city: school.city || null,
         schoolType: school.schoolType || null,
         logoUrl: school.logoUrl || null,
         subdomain: school.subdomain || null,
+        phone: school.phonePrimary || school.primaryPhone || null,
+        email: school.primaryEmail || school.email || null,
+        address: school.address || null,
+        slogan: school.slogan || null,
+        schoolAcronym: school.schoolAcronym || school.abbreviation || null,
+        website: school.website || null,
+        department: school.department || null,
         x: coord.x + offsetX,
         y: coord.y + offsetY,
         deptCode: coord.dept,

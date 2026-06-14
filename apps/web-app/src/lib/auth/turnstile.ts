@@ -33,11 +33,13 @@ export async function verifyTurnstile(
     return { success: true };
   }
 
+  // Token de dev interne — toujours accepter (généré par le widget en mode dev sans clé)
+  if (token === 'skip-development') {
+    return { success: true };
+  }
+
   // Si pas de token → refuser
-  if (!token || token === 'skip-development') {
-    if (process.env.NODE_ENV === 'development' && token === 'skip-development') {
-      return { success: true };
-    }
+  if (!token) {
     return { success: false, error: 'Vérification de sécurité requise.' };
   }
 

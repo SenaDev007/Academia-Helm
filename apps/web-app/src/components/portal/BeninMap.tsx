@@ -63,7 +63,6 @@ const GOLD_LIGHT = '#f7c76e';
 /* ── Types ────────────────────────────────────────────────────────────── */
 type FilterType = 'all' | 'public' | 'private';
 type EducationLevel = 'primaire' | 'secondaire';
-type PrimaireCycle = 'all' | 'maternelle' | 'ci_cp' | 'ce' | 'cm';
 
 interface BeninMapProps {
   onDepartmentSelect?: (dept: DepartmentData | null) => void;
@@ -149,7 +148,6 @@ export default function BeninMap({
   const [hoveredPin, setHoveredPin] = useState<SchoolPin | null>(null);
   const [ahSelectedSchool, setAhSelectedSchool] = useState<SchoolPin | null>(null);
   const [educationLevel, setEducationLevel] = useState<EducationLevel>('primaire');
-  const [primaireCycle, setPrimaireCycle] = useState<PrimaireCycle>('all');
   const [circumscriptionOpen, setCircumscriptionOpen] = useState(false);
 
   /* ── Zoom / Pan state (Google Maps style) ─────────────────────────────── */
@@ -467,10 +465,6 @@ export default function BeninMap({
           50% { opacity: 0.25; }
           100% { top: 100%; opacity: 0.7; }
         }
-        @keyframes hologram-scan {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(40px); }
-        }
         @keyframes holo-halo-pulse {
           0%, 100% { opacity: 0.7; transform: scale(1); }
           50% { opacity: 0.3; transform: scale(1.02); }
@@ -496,7 +490,6 @@ export default function BeninMap({
             key={key}
             onClick={() => {
               setEducationLevel(key);
-              setPrimaireCycle('all');
             }}
             className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-md transition-all ${
               educationLevel === key
@@ -516,35 +509,7 @@ export default function BeninMap({
         ))}
       </div>
 
-      {/* ── Primaire cycle sub-tabs (when primaire is active) ──── */}
-      {educationLevel === 'primaire' && (
-        <div className="flex items-center gap-1 mb-3">
-          {([
-            { key: 'all' as const, label: 'Tous' },
-            { key: 'maternelle' as const, label: 'Maternelle' },
-            { key: 'ci_cp' as const, label: 'CI-CP' },
-            { key: 'ce' as const, label: 'CE' },
-            { key: 'cm' as const, label: 'CM' },
-          ] as const).map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => setPrimaireCycle(key)}
-              className={`px-2.5 py-1 text-[11px] font-medium rounded-full transition-all ${
-                primaireCycle === key
-                  ? 'text-white'
-                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
-              }`}
-              style={
-                primaireCycle === key
-                  ? { backgroundColor: BLUE }
-                  : undefined
-              }
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
+
 
       {/* ── Main layout: Map + Detail Panel side by side ────────── */}
       <div className="flex flex-col lg:flex-row gap-4">
@@ -843,26 +808,22 @@ export default function BeninMap({
                     exit="exit"
                     transition={panelTransition}
                   >
-                    {/* En-tête école — holographic cyan gradient */}
+                    {/* En-tête école — navy gradient (cohérent avec les autres en-têtes AH) */}
                     <div
                       className="px-4 py-3.5 relative overflow-hidden"
                       style={{
-                        background: 'linear-gradient(135deg, #001e32, #003a52)',
+                        background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
                       }}
                     >
-                      {/* Animated scan line */}
                       <div
-                        className="absolute left-0 right-0 h-[1.5px] opacity-50"
-                        style={{
-                          background: 'linear-gradient(90deg, transparent, #00e5ff, transparent)',
-                          animation: 'hologram-scan 3s ease-in-out infinite',
-                        }}
+                        className="absolute -right-6 -top-6 h-20 w-20 rounded-full opacity-10"
+                        style={{ backgroundColor: GOLD }}
                       />
                       <div className="relative flex items-start justify-between">
                         <div className="flex-1 min-w-0">
                           <p
                             className="text-[10px] font-medium uppercase tracking-wider"
-                            style={{ color: '#00e5ff' }}
+                            style={{ color: GOLD_LIGHT }}
                           >
                             ÉCOLE INSCRITE
                           </p>
@@ -872,7 +833,7 @@ export default function BeninMap({
                               : ahSelectedSchool.name}
                           </h3>
                           {ahSelectedSchool.slogan && (
-                            <p className="mt-0.5 text-[10px] italic" style={{ color: 'rgba(0,229,255,0.6)' }}>
+                            <p className="mt-0.5 text-[11px] text-blue-200 italic">
                               {ahSelectedSchool.slogan}
                             </p>
                           )}

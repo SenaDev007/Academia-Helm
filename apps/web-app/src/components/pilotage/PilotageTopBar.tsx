@@ -45,10 +45,18 @@ const SCHOOL_IDENTITY_UPDATED_EVENT = 'settings-school-identity-updated';
 
 /**
  * Construit l'URL de la landing page (domaine principal sans sous-domaine).
+ * Priorité : NEXT_PUBLIC_LANDING_URL > déduction automatique.
  */
 function getLandingPageUrl(): string {
   if (typeof window === 'undefined') return '/';
   try {
+    // Priorité 1 : Variable d'environnement explicite (URL du site public)
+    const landingUrl = process.env.NEXT_PUBLIC_LANDING_URL;
+    if (landingUrl) {
+      const clean = landingUrl.replace(/\/+$/, '');
+      return clean;
+    }
+    // Priorité 2 : Déduction automatique
     const { hostname, protocol, port } = window.location;
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
       return port ? `${protocol}//${hostname}:${port}` : `${protocol}//${hostname}`;

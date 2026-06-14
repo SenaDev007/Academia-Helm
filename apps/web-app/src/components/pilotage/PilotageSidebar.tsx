@@ -61,23 +61,27 @@ import { getPortalForRole, getVisibleModulesForRole } from '@/lib/auth/role-port
 
 /**
  * Construit l'URL de la landing page (domaine principal sans sous-domaine).
- * En local : même origine. En prod : retire le sous-domaine du host.
+ * Priorité : NEXT_PUBLIC_LANDING_URL > déduction automatique.
  */
 function getLandingPageUrl(): string {
   if (typeof window === 'undefined') return '/';
   try {
+    // Priorité 1 : Variable d'environnement explicite (URL du site public)
+    const landingUrl = process.env.NEXT_PUBLIC_LANDING_URL;
+    if (landingUrl) {
+      const clean = landingUrl.replace(/\/+$/, '');
+      return clean;
+    }
+    // Priorité 2 : Déduction automatique
     const { hostname, protocol, port } = window.location;
-    // Local
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
       return port ? `${protocol}//${hostname}:${port}` : `${protocol}//${hostname}`;
     }
-    // Production / Preview : extraire le domaine principal
     const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN;
     if (baseDomain) {
       const clean = baseDomain.replace(/^https?:\/\//, '').replace(/\/$/, '');
       return `https://${clean}`;
     }
-    // Fallback : retirer la première partie si >= 3 segments
     const parts = hostname.split('.');
     if (parts.length >= 3) {
       const main = parts.slice(1).join('.');

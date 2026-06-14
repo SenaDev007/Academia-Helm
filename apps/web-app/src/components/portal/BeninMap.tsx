@@ -1298,6 +1298,58 @@ export default function BeninMap({
                       </div>
                     </div>
 
+                    {/* Écoles Academia Helm dans ce département */}
+                    {(() => {
+                      const deptPins = schoolPins.filter(
+                        (p) => p.department === panelDept.name || p.deptCode === panelDept.code
+                      );
+                      if (deptPins.length === 0) return null;
+                      return (
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5 flex items-center gap-1.5">
+                            <School className="h-3 w-3" style={{ color: GOLD }} />
+                            Écoles Academia Helm ({deptPins.length})
+                          </p>
+                          <div className="space-y-1 max-h-52 overflow-y-auto pr-0.5">
+                            {deptPins.map((pin) => (
+                              <button
+                                key={pin.id}
+                                onClick={() => setSelectedPin(pin)}
+                                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-slate-50 transition-colors group"
+                              >
+                                {pin.logoUrl ? (
+                                  <img
+                                    src={pin.logoUrl}
+                                    alt={pin.name}
+                                    className="w-5 h-5 rounded object-contain flex-shrink-0 border border-slate-100"
+                                  />
+                                ) : (
+                                  <div
+                                    className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0"
+                                    style={{ background: `${NAVY}10` }}
+                                  >
+                                    <School className="h-3 w-3" style={{ color: NAVY }} />
+                                  </div>
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-[10px] font-medium text-slate-700 group-hover:text-slate-900 truncate">
+                                    {pin.schoolAcronym || pin.name}
+                                  </p>
+                                  <p className="text-[9px] text-slate-400 truncate">
+                                    {pin.city || ''}{pin.schoolType ? ` · ${pin.schoolType}` : ''}
+                                  </p>
+                                </div>
+                                {pin.phone && (
+                                  <Phone className="h-2.5 w-2.5 text-slate-300 group-hover:text-slate-500 flex-shrink-0" />
+                                )}
+                                <ChevronRight className="h-3 w-3 text-slate-300 group-hover:text-slate-500 flex-shrink-0" />
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     {/* Source */}
                     <p className="text-[9px] text-slate-400 text-center pt-1">
                       Source :{' '}
@@ -1530,68 +1582,24 @@ export default function BeninMap({
                       </div>
                     </div>
 
-                    {/* Écoles Academia Helm — registered schools legend */}
+                    {/* Écoles Academia Helm — simple counter at national level */}
                     {schoolPins.length > 0 && (
-                      <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5 flex items-center gap-1.5">
-                          <School className="h-3 w-3" style={{ color: GOLD }} />
-                          Écoles Academia Helm ({schoolPins.length})
-                        </p>
-                        <div className="space-y-1 max-h-72 overflow-y-auto pr-0.5">
-                          {(() => {
-                            // Group schools by department
-                            const grouped = schoolPins.reduce<Record<string, SchoolPin[]>>((acc, pin) => {
-                              const dept = pin.department || 'Autre';
-                              if (!acc[dept]) acc[dept] = [];
-                              acc[dept].push(pin);
-                              return acc;
-                            }, {});
-                            return Object.entries(grouped).map(([dept, pins]) => (
-                              <div key={dept}>
-                                <p className="text-[9px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: NAVY }}>
-                                  {dept}
-                                </p>
-                                {pins.map((pin) => (
-                                  <button
-                                    key={pin.id}
-                                    onClick={() => {
-                                      setSelectedPin(pin);
-                                      onDepartmentSelect?.(null);
-                                    }}
-                                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-slate-50 transition-colors group"
-                                  >
-                                    {pin.logoUrl ? (
-                                      <img
-                                        src={pin.logoUrl}
-                                        alt={pin.name}
-                                        className="w-5 h-5 rounded object-contain flex-shrink-0 border border-slate-100"
-                                      />
-                                    ) : (
-                                      <div
-                                        className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0"
-                                        style={{ background: `${NAVY}10` }}
-                                      >
-                                        <School className="h-3 w-3" style={{ color: NAVY }} />
-                                      </div>
-                                    )}
-                                    <div className="flex-1 min-w-0">
-                                      <p className="text-[10px] font-medium text-slate-700 group-hover:text-slate-900 truncate">
-                                        {pin.schoolAcronym || pin.name}
-                                      </p>
-                                      <p className="text-[9px] text-slate-400 truncate">
-                                        {pin.city || ''}{pin.schoolType ? ` · ${pin.schoolType}` : ''}
-                                      </p>
-                                    </div>
-                                    {pin.phone && (
-                                      <Phone className="h-2.5 w-2.5 text-slate-300 group-hover:text-slate-500 flex-shrink-0" />
-                                    )}
-                                    <ChevronRight className="h-3 w-3 text-slate-300 group-hover:text-slate-500 flex-shrink-0" />
-                                  </button>
-                                ))}
-                              </div>
-                            ));
-                          })()}
+                      <div
+                        className="rounded-lg p-2.5 border border-slate-100"
+                        style={{
+                          background: `linear-gradient(135deg, ${GOLD}08, ${GOLD}03)`,
+                        }}
+                      >
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <School className="h-3.5 w-3.5" style={{ color: GOLD }} />
+                          <span className="text-[10px] text-slate-500">Écoles Academia Helm</span>
                         </div>
+                        <p className="text-sm font-bold" style={{ color: GOLD }}>
+                          {schoolPins.length}
+                        </p>
+                        <p className="text-[9px] text-slate-400 mt-0.5">
+                          Cliquez sur un département pour voir les écoles inscrites
+                        </p>
                       </div>
                     )}
 

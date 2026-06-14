@@ -2,7 +2,6 @@
 
 import React from "react";
 import Link from "next/link";
-import Image from "next/image";
 import {
   Mail,
   Phone,
@@ -11,6 +10,7 @@ import {
 import { AppStoreButton } from "@/components/ui/app-store-button";
 import { PlayStoreButton } from "@/components/ui/play-store-button";
 import { TextHoverEffect, FooterBackgroundGradient } from "@/components/ui/hover-footer";
+import LogoCircle from "@/components/ui/LogoCircle";
 import { cn } from "@/lib/utils";
 
 /**
@@ -249,18 +249,10 @@ export function Footer2() {
 
         {/* Copyright + badges */}
         <div className="py-4 flex flex-col md:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-4">
-            <Image
-              src="/images/logo-Academia Hub.png"
-              alt="Academia Helm"
-              width={28}
-              height={28}
-              className="h-7 w-auto"
-              loading="lazy"
-              sizes="28px"
-            />
+          <div className="flex items-center gap-3">
+            <LogoCircle size={28} animated={false} />
             <p className="text-xs text-white/50">
-              © {currentYear} Academia Helm. Tous droits réservés.
+              © {currentYear} Academia<span className="text-amber-300">Helm</span>. Tous droits réservés.
             </p>
           </div>
 

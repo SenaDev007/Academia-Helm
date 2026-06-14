@@ -1,13 +1,12 @@
 'use client';
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
-import { BRAND } from '@/lib/brand';
 import { MenuToggleIcon } from '@/components/ui/menu-toggle-icon';
 import { useScroll } from '@/components/ui/use-scroll';
-import { Globe, ArrowLeft } from 'lucide-react';
+import LogoCircle from '@/components/ui/LogoCircle';
+import { DoorOpen, ArrowLeft } from 'lucide-react';
 
 /**
  * Header Premium Academia Helm avec effet Limelight sur les libellés texte
@@ -158,23 +157,12 @@ export function Header() {
         <Link
           href="/"
           prefetch={true}
-          className="flex items-center space-x-1 group transition-transform duration-200 hover:scale-105 flex-shrink-0"
+          className="flex items-center space-x-2 group transition-transform duration-200 hover:scale-105 flex-shrink-0"
         >
-          <div className="relative">
-            <Image
-              src="/images/logo-Academia Hub.png"
-              alt={`${BRAND.name} - ${BRAND.subtitle}`}
-              width={40}
-              height={40}
-              className="h-10 md:h-11 w-auto transition-opacity duration-200 group-hover:opacity-90"
-              priority
-              sizes="(max-width: 768px) 32px, 40px"
-            />
-          </div>
-          <div className="font-bold leading-none">
-            <span className="text-base sm:text-lg md:text-xl block text-white">Academia</span>
-            <span className="text-[10px] sm:text-xs md:text-sm block -mt-1.5 text-amber-300">Helm</span>
-          </div>
+          <LogoCircle size={38} animated={false} />
+          <span className="font-bold text-base sm:text-lg md:text-xl text-white whitespace-nowrap">
+            Academia<span className="text-amber-300 ml-1">Helm</span>
+          </span>
         </Link>
 
         {/* Desktop Navigation — Libellés texte avec Limelight + CTA */}
@@ -209,7 +197,7 @@ export function Header() {
                   'inline-flex items-center justify-center',
                 )}
               >
-                <Globe className="w-5 h-5" />
+                <DoorOpen className="w-5 h-5" />
               </Link>
             )}
           </div>
@@ -280,7 +268,7 @@ export function Header() {
                 'inline-flex items-center justify-center space-x-2',
               )}
             >
-              <Globe className="w-5 h-5" />
+              <DoorOpen className="w-5 h-5" />
               <span>Accéder au portail</span>
             </Link>
           )}

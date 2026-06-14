@@ -18,7 +18,7 @@ import {
   GraduationCap,
   Users,
   ArrowRight,
-  Globe,
+  DoorOpen,
   BookOpen,
   Megaphone,
 } from 'lucide-react';
@@ -563,7 +563,7 @@ export default function PremiumLandingPage() {
                     className="inline-flex w-full sm:w-auto items-center justify-center rounded-xl border border-white/40 bg-white/10 px-7 py-3.5 font-semibold text-white hover:bg-white/20 transition-colors min-h-[48px]"
                   >
                     Accéder au portail
-                    <Globe className="ml-2 w-4 h-4" />
+                    <DoorOpen className="ml-2 w-4 h-4" />
                   </Link>
                 </motion.div>
               </motion.div>

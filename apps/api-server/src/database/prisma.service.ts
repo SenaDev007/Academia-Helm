@@ -7,16 +7,20 @@ import { PrismaPg } from '@prisma/adapter-pg';
 /**
  * PrismaService avec optimisations de performance V2
  *
- * - Connection pooling via Neon pooler (DATABASE_URL auto-detect)
- * - Pool size adapté au mode (pooler vs direct)
+ * - Connection pooling : utilise DATABASE_URL tel quel (si pooler configuré, ça passe par le pooler)
+ * - Pool size adapté au mode (auto-detect pooler vs direct)
  * - Logging des requêtes lentes (> 500ms) via Prisma Client Extension
  * - Fire-and-forget warmup pour éviter de bloquer le bootstrap
+ *
+ * ⚠️ Pour utiliser le Neon pooler, configurez DATABASE_URL directement
+ *     vers l'URL du pooler (ex: ep-xxx-pooler.region.aws.neon.tech).
+ *     N'ajoutez PAS pgbouncer=true — Prisma avec @prisma/adapter-pg
+ *     utilise des connexions directes, pas le mode transaction PgBouncer.
  */
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
   private readonly skipDbCheck = process.env.SKIP_DB_CHECK === 'true';
-  private pool: Pool | null = null;
 
   constructor(private configService?: ConfigService) {
     const databaseUrl = configService?.get<string>('DATABASE_URL') || process.env.DATABASE_URL;
@@ -25,44 +29,26 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       throw new Error('DATABASE_URL is required');
     }
 
-    // ── Auto-détection du Neon pooler ──
-    // Si DATABASE_URL est une URL Neon directe (ep-xxx.neon.tech),
-    // on peut utiliser le pooler en remplaçant par -pooler.neon.tech
-    const isNeonDirect =
-      databaseUrl.includes('.neon.tech') && !databaseUrl.includes('-pooler.neon.tech');
-    const isNeonPooler = databaseUrl.includes('-pooler.neon.tech');
-
-    // Construire l'URL de connexion — utiliser le pooler si disponible
-    let connectionUrl = databaseUrl;
-    if (isNeonDirect) {
-      // Auto-convertir vers le pooler Neon (Supavisor)
-      // ep-xxx.us-east-2.aws.neon.tech → ep-xxx-pooler.us-east-2.aws.neon.tech
-      connectionUrl = databaseUrl.replace(/\.neon\.tech/, '-pooler.neon.tech');
-      // Ajouter le pgbouncer mode si pas déjà présent
-      if (!connectionUrl.includes('pgbouncer=true')) {
-        const separator = connectionUrl.includes('?') ? '&' : '?';
-        connectionUrl = `${connectionUrl}${separator}pgbouncer=true`;
-      }
-    }
-
-    if (isNeonDirect) {
-      // Neon pooler — on peut utiliser plus de connexions car le pooler les multiplexe
-    }
+    // ── Détection du mode Neon (pooler vs direct) pour le pool size ──
+    // On NE MODIFIE PAS l'URL — l'utilisateur la configure comme il veut.
+    // On détecte juste si c'est un pooler pour ajuster le pool size.
+    const isNeonPooler = /-pooler[.-]/.test(databaseUrl);
+    const isNeon = databaseUrl.includes('.neon.tech');
 
     // ── Configuration du pool PostgreSQL ──
     const needsSsl =
-      connectionUrl.includes('sslmode=') ||
+      databaseUrl.includes('sslmode=') ||
       process.env.NODE_ENV === 'production' ||
-      connectionUrl.includes('.neon.tech');
+      isNeon;
 
     // Taille du pool adaptée au mode
     // - Neon pooler : 20 connexions (le pooler multiplexe vers Neon)
-    // - Connexion directe : 10 connexions (Neon free tier = limité)
+    // - Neon direct : 10 connexions (Neon free tier = limité)
     // - Local dev : 5 connexions
-    const poolMax = isNeonPooler ? 20 : isNeonDirect ? 10 : 5;
+    const poolMax = isNeonPooler ? 20 : isNeon ? 10 : 5;
 
     const poolConfig: any = {
-      connectionString: connectionUrl,
+      connectionString: databaseUrl,
       max: poolMax,
       idleTimeoutMillis: 30000,       // Close idle connections after 30s
       connectionTimeoutMillis: 10000,  // Fail fast if DB unreachable (10s)
@@ -74,8 +60,6 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     const pool = new Pool(poolConfig);
     const adapter = new PrismaPg(pool);
 
-    // Stocker le pool pour le fermer proprement
-    // On le fait via une propriété car PrismaClient ne l'expose pas
     const prismaOptions: any = {
       adapter: adapter,
       log: process.env.NODE_ENV === 'development' && process.env.PRISMA_LOG === 'true'
@@ -87,17 +71,19 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     super(prismaOptions);
 
     // Stocker le pool pour onModuleDestroy
-    // On utilise un trick car PrismaClient ne garde pas de ref au pool
     (this as any).__pool = pool;
 
+    this.logger.log(
+      `Database config: ${isNeonPooler ? 'Neon POOLER' : isNeon ? 'Neon DIRECT' : 'Local/Other'}, pool max: ${poolMax}, SSL: ${needsSsl}`,
+    );
+
     // ── Slow query logging via Client Extension ──
-    // Log toutes les requêtes qui prennent plus de SLOW_QUERY_THRESHOLD ms
     const SLOW_QUERY_THRESHOLD = parseInt(process.env.SLOW_QUERY_THRESHOLD || '500', 10);
 
     if (SLOW_QUERY_THRESHOLD > 0) {
       try {
         const startTimeMap = new Map<string, number>();
-        const ext = this.$extends({
+        this.$extends({
           query: {
             async $allOperations({ operation, model, args, query }) {
               const key = `${model}:${operation}:${Date.now()}:${Math.random()}`;
@@ -107,7 +93,6 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
                 const elapsed = Date.now() - (startTimeMap.get(key) || Date.now());
                 startTimeMap.delete(key);
                 if (elapsed > SLOW_QUERY_THRESHOLD) {
-                  // Lazy logger pour éviter l'import circulaire
                   console.warn(
                     `[SLOW QUERY] ${model}.${operation} took ${elapsed}ms (threshold: ${SLOW_QUERY_THRESHOLD}ms)`,
                   );
@@ -120,9 +105,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
             },
           },
         });
-        // L'extension est appliquée — les requêtes lentes seront loggées
       } catch (extError) {
-        // Si l'extension échoue (ex: Prisma version), on continue sans slow query logging
         console.warn('Prisma Client Extension for slow query logging failed:', (extError as any).message);
       }
     }
@@ -146,7 +129,6 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   }
 
   async onModuleDestroy() {
-    // Fermer le pool pg en premier
     try {
       const pool = (this as any).__pool as Pool | undefined;
       if (pool) {

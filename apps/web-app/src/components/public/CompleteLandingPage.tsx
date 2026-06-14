@@ -13,8 +13,8 @@ import { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import Image from 'next/image';
-import PremiumHeader from '../layout/PremiumHeader';
-import InstitutionalFooter from './InstitutionalFooter';
+import { Header } from '@/components/ui/header-1';
+import { Footer2 } from '@/components/ui/footer-2';
 import TestimonialsSection from './TestimonialsSection';
 import EducationalParticles from './EducationalParticles';
 import AnimatedTestimonials from './AnimatedTestimonials';
@@ -375,7 +375,7 @@ export default function CompleteLandingPage() {
 
   return (
     <div className="min-h-screen bg-white">
-      <PremiumHeader />
+      <Header />
       <div className="h-14 md:h-16" aria-hidden />
 
       {/* 1️⃣ HERO SECTION — responsive spec: flex-col lg:flex-row si deux blocs, conteneur max-w-7xl */}
@@ -1064,7 +1064,7 @@ export default function CompleteLandingPage() {
 
       {/* 🔟 FOOTER INSTITUTIONNEL */}
       <div className="bg-blue-900 border-t-2 border-gold-500/20">
-        <InstitutionalFooter />
+        <Footer2 />
       </div>
 
       {/* Video Player Modal */}

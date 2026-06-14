@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import PremiumHeader from '@/components/layout/PremiumHeader';
-import InstitutionalFooter from '@/components/public/InstitutionalFooter';
+import { Header } from '@/components/ui/header-1';
+import { Footer2 } from '@/components/ui/footer-2';
 import Breadcrumbs from '@/components/seo/Breadcrumbs';
 import { generateSEOMetadata } from '@/lib/seo';
 import { BLOG_POSTS } from '@/content/blog/posts';
@@ -42,7 +42,7 @@ export default async function BlogIndexPage() {
 
   return (
     <>
-      <PremiumHeader />
+      <Header />
       <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
       <Breadcrumbs items={[{ label: 'Accueil', href: '/' }, { label: 'Blog' }]} />
       <header className="mb-8">
@@ -87,7 +87,7 @@ export default async function BlogIndexPage() {
       </section>
     </main>
       <div className="bg-[#08255a] border-t border-amber-400/20">
-        <InstitutionalFooter />
+        <Footer2 />
       </div>
     </>
   );

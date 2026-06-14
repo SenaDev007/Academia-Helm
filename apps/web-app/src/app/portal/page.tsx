@@ -33,7 +33,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import PremiumHeader from '@/components/layout/PremiumHeader';
+import { Header } from '@/components/ui/header-1';
 import SchoolSearch from '@/components/portal/SchoolSearch';
 import BeninMap from '@/components/portal/BeninMap';
 import { type DepartmentData } from '@/data/benin-departments';
@@ -402,7 +402,7 @@ export default function PortalPage() {
         )}
       </div>
 
-      <PremiumHeader />
+      <Header />
 
       <main className="relative z-[1] pb-6 pt-16 sm:pt-20 md:pt-22">
         <div className="mx-auto max-w-7xl px-3 sm:px-4 lg:px-6">

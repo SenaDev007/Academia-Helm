@@ -9,7 +9,7 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import PremiumHeader from '@/components/layout/PremiumHeader';
+import { Header } from '@/components/ui/header-1';
 import { CheckCircle, LogIn, ExternalLink } from 'lucide-react';
 import { getTenantRedirectUrl } from '@/lib/utils/tenant-redirect';
 
@@ -25,7 +25,7 @@ export default function OnboardingCallbackPage() {
   if (status !== 'success') {
     return (
       <div className="min-h-screen bg-white">
-        <PremiumHeader />
+        <Header />
         <div className="h-20" />
         <section className="py-16 px-4 sm:px-6 lg:px-8">
           <div className="max-w-2xl mx-auto text-center">
@@ -47,7 +47,7 @@ export default function OnboardingCallbackPage() {
 
   return (
     <div className="min-h-screen bg-white">
-      <PremiumHeader />
+      <Header />
       <div className="h-20" />
 
       <section className="py-16 px-4 sm:px-6 lg:px-8">

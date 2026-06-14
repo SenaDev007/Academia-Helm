@@ -5,8 +5,8 @@
  */
 
 import type { Metadata } from 'next';
-import PremiumHeader from '@/components/layout/PremiumHeader';
-import InstitutionalFooter from '@/components/public/InstitutionalFooter';
+import { Header } from '@/components/ui/header-1';
+import { Footer2 } from '@/components/ui/footer-2';
 import { bgColor, textColor, typo } from '@/lib/design-tokens';
 import { generateSEOMetadata } from '@/lib/seo';
 
@@ -24,7 +24,7 @@ export const dynamic = 'force-dynamic';
 export default function LegalNoticesPage() {
   return (
     <>
-      <PremiumHeader />
+      <Header />
       <main className={`min-h-screen ${bgColor('app')} ${textColor('primary')}`}>
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
           <h1 className={`${typo('h1')} ${textColor('primary')} mb-8`}>
@@ -96,7 +96,7 @@ export default function LegalNoticesPage() {
           </div>
         </div>
       </main>
-      <InstitutionalFooter />
+      <Footer2 />
     </>
   );
 }

@@ -10,7 +10,7 @@
 import { useEffect, useState } from 'react';
 import type { Testimonial } from '@/types';
 import { getPublishedTestimonials } from '@/services/testimonial.service';
-import PremiumHeader from '../layout/PremiumHeader';
+import { Header } from '@/components/ui/header-1';
 import { Star, Quote, Loader, AlertCircle } from 'lucide-react';
 
 export default function TestimonialsPage() {
@@ -34,7 +34,7 @@ export default function TestimonialsPage() {
 
   return (
     <div className="min-h-screen bg-white">
-      <PremiumHeader />
+      <Header />
       <div className="h-20" />
 
       <section className="py-16 px-4 sm:px-6 lg:px-8">

@@ -34,7 +34,7 @@ import {
   DollarSign,
   Bookmark,
 } from 'lucide-react';
-import PremiumHeader from '@/components/layout/PremiumHeader';
+import { Header } from '@/components/ui/header-1';
 import { JobCardSkeleton } from '@/components/loading/Skeleton';
 import { JobCardSkeletonMobile } from '@/components/loading/SkeletonMobile';
 
@@ -730,7 +730,7 @@ export function CareersContent({
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50 text-slate-900 flex flex-col">
-      <PremiumHeader />
+      <Header />
 
       {/* ═══════════════════════════════════════════════════════
           HERO — Premium navy gradient with golden accents

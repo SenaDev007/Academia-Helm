@@ -12,7 +12,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import FederisHeader from '../federis/FederisHeader';
-import InstitutionalFooter from './InstitutionalFooter';
+import { Footer2 } from '@/components/ui/footer-2';
 import AppIcon from '@/components/ui/AppIcon';
 import { bgColor, textColor, typo, radius, shadow } from '@/lib/design-tokens';
 import { cn } from '@/lib/utils';
@@ -339,7 +339,7 @@ export default function PatronatExamensLanding() {
 
       {/* FOOTER INSTITUTIONNEL */}
       <div className="bg-blue-900 border-t-2 border-gold-500/20">
-        <InstitutionalFooter />
+        <Footer2 />
       </div>
     </div>
   );

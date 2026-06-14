@@ -4,9 +4,9 @@
  * ============================================================================
  *
  * Composant réutilisable qui affiche un logo dans un cercle parfait
- * avec un effet lumineux identique à la page de loading :
- *   - Halo doré pulsant (academiaPulse)
- *   - Anneau rotatif doré (academiaOrbit)
+ * avec un effet lumineux appliqué directement sur le cercle du logo :
+ *   - Halo doré pulsant sur le cercle du logo
+ *   - Bordure dorée pulsante sur le cercle du logo
  *   - Logo pulsant à l'intérieur
  *
  * Utilisé sur les pages de login, forgot-password, school-portal, etc.
@@ -48,23 +48,15 @@ export default function LogoCircle({
   const logoSize = Math.round(size * 0.65);
 
   return (
-    <div className={`relative flex justify-center ${className}`}>
-      {/* Halo doré pulsant */}
+    <div className={`relative inline-flex ${className}`}>
+      {/* Halo doré pulsant — directement sur le cercle du logo */}
       {animated && (
         <div
-          className="absolute inset-0 -m-6 rounded-full blur-xl"
+          className="absolute inset-0 rounded-full"
           style={{
-            background: `radial-gradient(circle, ${GOLD}12, transparent 70%)`,
+            boxShadow: `0 0 12px 2px ${GOLD}40, 0 0 24px 4px ${GOLD}18`,
             animation: 'academiaPulse 3s ease-in-out infinite',
           }}
-        />
-      )}
-
-      {/* Anneau rotatif doré */}
-      {animated && (
-        <div
-          className="absolute inset-0 -m-3 rounded-full border-2 border-white/10 border-t-[#f5b335]"
-          style={{ animation: 'academiaOrbit 1.2s linear infinite' }}
         />
       )}
 
@@ -77,7 +69,7 @@ export default function LogoCircle({
           background: hasLogo ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.10)',
           border: `2px solid ${hasLogo ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.25)'}`,
           backdropFilter: 'blur(4px)',
-          boxShadow: `0 8px 32px rgba(0,0,0,0.3)${hasLogo ? `, 0 0 0 1px ${GOLD}20` : ''}`,
+          boxShadow: `0 4px 16px rgba(0,0,0,0.3)`,
         }}
       >
         {hasLogo ? (

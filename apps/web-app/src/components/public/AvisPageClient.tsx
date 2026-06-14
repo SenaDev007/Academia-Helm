@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import PremiumHeader from '@/components/layout/PremiumHeader';
+import { Header } from '@/components/ui/header-1';
 import {
   HELM_GOLD,
   HELM_NAVY,
@@ -21,7 +21,7 @@ export default function AvisPageClient() {
 
   return (
     <div className="min-h-screen" style={{ background: HELM_SECTION_BG }}>
-      <PremiumHeader />
+      <Header />
       <div className="h-20" />
 
       <main className="mx-auto max-w-2xl px-4 pb-20 pt-6 sm:px-6 lg:px-8">

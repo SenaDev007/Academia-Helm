@@ -7,8 +7,8 @@
 
 'use client';
 
-import PremiumHeader from '../layout/PremiumHeader';
-import InstitutionalFooter from './InstitutionalFooter';
+import { Header } from '@/components/ui/header-1';
+import { Footer2 } from '@/components/ui/footer-2';
 import AppIcon from '@/components/ui/AppIcon';
 import Link from 'next/link';
 import { bgColor, textColor, typo, radius, shadow } from '@/lib/design-tokens';
@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 export default function ModulesPage() {
   return (
     <div className="min-h-screen bg-white">
-      <PremiumHeader />
+      <Header />
       <div className="h-20" />
       
       {/* Hero Section */}
@@ -302,7 +302,7 @@ export default function ModulesPage() {
 
       {/* Footer */}
       <div className="bg-blue-900 border-t-2 border-gold-500/20">
-        <InstitutionalFooter />
+        <Footer2 />
         </div>
     </div>
   );

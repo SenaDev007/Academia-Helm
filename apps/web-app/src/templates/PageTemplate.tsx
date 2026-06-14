@@ -7,8 +7,8 @@
 
 import { Metadata } from 'next';
 import { generateSEOMetadata } from '@/lib/seo';
-import PremiumHeader from '@/components/layout/PremiumHeader';
-import InstitutionalFooter from '@/components/public/InstitutionalFooter';
+import { Header } from '@/components/ui/header-1';
+import { Footer2 } from '@/components/ui/footer-2';
 
 interface PageTemplateProps {
   title: string;
@@ -46,11 +46,11 @@ export default function PageTemplate({
 }: PageTemplateProps) {
   return (
     <>
-      {showHeader && <PremiumHeader />}
+      {showHeader && <Header />}
       <main className="min-h-screen bg-white">
         {children}
       </main>
-      {showFooter && <InstitutionalFooter />}
+      {showFooter && <Footer2 />}
     </>
   );
 }

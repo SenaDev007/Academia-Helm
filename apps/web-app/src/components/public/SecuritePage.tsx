@@ -2,14 +2,14 @@
  * Sécurité Page Component
  */
 
-import PremiumHeader from '../layout/PremiumHeader';
+import { Header } from '@/components/ui/header-1';
 import Link from 'next/link';
 import { Shield, Lock, Database, CheckCircle, ArrowRight } from 'lucide-react';
 
 export default function SecuritePage() {
   return (
     <div className="min-h-screen bg-white">
-      <PremiumHeader />
+      <Header />
       <div className="h-20" />
       
       <section className="py-24 md:py-32 bg-white px-4 sm:px-6 lg:px-8">

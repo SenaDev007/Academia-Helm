@@ -6,7 +6,7 @@
 
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import PremiumHeader from '@/components/layout/PremiumHeader';
+import { Header } from '@/components/ui/header-1';
 import { generateSEOMetadata } from '@/lib/seo';
 
 export const metadata: Metadata = generateSEOMetadata({
@@ -20,7 +20,7 @@ export const metadata: Metadata = generateSEOMetadata({
 export default function CGVPage() {
   return (
     <div className="min-h-screen bg-white">
-      <PremiumHeader />
+      <Header />
       <div className="h-20" />
       
       <section className="py-16 px-4 sm:px-6 lg:px-8">

@@ -5,8 +5,8 @@
  */
 
 import { Metadata } from 'next';
-import PremiumHeader from '@/components/layout/PremiumHeader';
-import InstitutionalFooter from '@/components/public/InstitutionalFooter';
+import { Header } from '@/components/ui/header-1';
+import { Footer2 } from '@/components/ui/footer-2';
 import { bgColor, textColor, typo } from '@/lib/design-tokens';
 import AppIcon from '@/components/ui/AppIcon';
 import Link from 'next/link';
@@ -23,7 +23,7 @@ export const metadata: Metadata = generateSEOMetadata({
 export default function OrionPage() {
   return (
     <>
-      <PremiumHeader />
+      <Header />
       <main className={`min-h-screen ${bgColor('app')} ${textColor('primary')}`}>
         {/* Hero Section */}
         <section className={`${bgColor('sidebar')} ${textColor('inverse')} py-20 px-4 sm:px-6 lg:px-8`}>
@@ -111,7 +111,7 @@ export default function OrionPage() {
           </div>
         </section>
       </main>
-      <InstitutionalFooter />
+      <Footer2 />
     </>
   );
 }

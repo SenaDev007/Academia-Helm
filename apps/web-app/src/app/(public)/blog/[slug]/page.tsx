@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
-import PremiumHeader from '@/components/layout/PremiumHeader';
-import InstitutionalFooter from '@/components/public/InstitutionalFooter';
+import { Header } from '@/components/ui/header-1';
+import { Footer2 } from '@/components/ui/footer-2';
 import Breadcrumbs from '@/components/seo/Breadcrumbs';
 import CTA from '@/components/seo/CTA';
 import JsonLd from '@/components/seo/JsonLd';
@@ -144,7 +144,7 @@ export default async function BlogPostPage({
 
   return (
     <>
-      <PremiumHeader />
+      <Header />
       <JsonLd data={faqJsonLd} />
       <ArticleLayout article={article}>
         <Breadcrumbs items={[{ label: 'Accueil', href: '/' }, { label: 'Blog', href: '/blog' }, { label: title }]} />
@@ -225,7 +225,7 @@ export default async function BlogPostPage({
         </section>
       </ArticleLayout>
       <div className="bg-[#08255a] border-t border-amber-400/20">
-        <InstitutionalFooter />
+        <Footer2 />
       </div>
     </>
   );

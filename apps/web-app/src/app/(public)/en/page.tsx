@@ -4,8 +4,8 @@
 
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import PremiumHeader from '@/components/layout/PremiumHeader';
-import InstitutionalFooter from '@/components/public/InstitutionalFooter';
+import { Header } from '@/components/ui/header-1';
+import { Footer2 } from '@/components/ui/footer-2';
 import { getPublicSiteUrl, DEFAULT_OG_IMAGE_PATH } from '@/lib/seo';
 import { buildHreflangLanguages } from '@/lib/seo/locales';
 
@@ -33,7 +33,7 @@ export const metadata: Metadata = {
 export default function EnglishLandingEntryPage() {
   return (
     <div className="min-h-screen bg-white flex flex-col">
-      <PremiumHeader />
+      <Header />
       <main className="flex-1 max-w-3xl mx-auto px-4 sm:px-6 py-16 md:py-24 text-center">
         <p className="text-sm font-semibold text-[#0b2f73] uppercase tracking-wide mb-3">English</p>
         <h1 className="text-3xl md:text-4xl font-extrabold text-[#0b2f73] mb-6">
@@ -58,7 +58,7 @@ export default function EnglishLandingEntryPage() {
           </Link>
         </div>
       </main>
-      <InstitutionalFooter />
+      <Footer2 />
     </div>
   );
 }

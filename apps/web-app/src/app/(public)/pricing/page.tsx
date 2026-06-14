@@ -4,7 +4,7 @@
  */
 
 import type { Metadata } from 'next';
-import PremiumHeader from '@/components/layout/PremiumHeader';
+import { Header } from '@/components/ui/header-1';
 import { generateSEOMetadata } from '@/lib/seo';
 
 export const metadata: Metadata = generateSEOMetadata({
@@ -21,7 +21,7 @@ import HelmAddonsSection from '@/components/pricing/HelmAddonsSection';
 export default function Page() {
   return (
     <div className="min-h-screen bg-white">
-      <PremiumHeader />
+      <Header />
       <div className="h-20" />
 
       <main className="px-4 sm:px-6 lg:px-8 py-12 md:py-16 lg:py-20">

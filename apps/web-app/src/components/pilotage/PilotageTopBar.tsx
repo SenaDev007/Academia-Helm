@@ -19,7 +19,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Image from 'next/image';
-import { Bell, RefreshCw, User as UserIcon, LogOut, Wifi, WifiOff, ChevronDown, Settings, HelpCircle, School, Globe, Compass } from 'lucide-react';
+import { Bell, RefreshCw, User as UserIcon, LogOut, Wifi, WifiOff, ChevronDown, Settings, HelpCircle, School, Globe } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { clearClientSessionSync } from '@/lib/auth/client-access-token';
 import AcademicYearSelector from './AcademicYearSelector';
@@ -241,10 +241,9 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
                 <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white shadow-sm" />
               </div>
               <div className="hidden sm:block min-w-0">
-                <span className="text-[13px] font-bold text-blue-900 block max-w-[240px] leading-tight break-words whitespace-normal line-clamp-1" title={schoolIdentity?.schoolName || tenant.name}>
+                <span className="text-[13px] font-bold text-blue-900 block max-w-[240px] leading-tight break-words whitespace-normal line-clamp-1" title={schoolIdentity?.schoolAcronym || schoolIdentity?.schoolName || tenant.name}>
                   {schoolIdentity?.schoolAcronym || schoolIdentity?.schoolName || tenant.name || 'Mon École'}
                 </span>
-                <span className="text-[10px] text-gray-400 font-medium tracking-wide">Academia <span className="text-gold-600">Helm</span></span>
               </div>
             </div>
 
@@ -335,7 +334,6 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
                     </p>
                     <p className="text-xs text-blue-200/70 mt-0.5">{user.email}</p>
                     <div className="mt-2 inline-flex items-center space-x-1.5 px-2 py-0.5 bg-white/10 rounded-md">
-                      <Compass className="w-3 h-3 text-gold-400" />
                       <span className="text-[11px] text-gold-400 font-medium">{formatRoleLabel(user.role)}</span>
                     </div>
                   </div>

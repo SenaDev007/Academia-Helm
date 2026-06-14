@@ -17,8 +17,9 @@
 
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname, useSearchParams } from 'next/navigation';
 import {
   LayoutDashboard,
@@ -52,12 +53,20 @@ import {
   Lock,
   PieChart,
   BarChart3,
-  Compass,
+  School,
 } from 'lucide-react';
 import type { User } from '@/types';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { useEnabledFeatureCodes } from '@/hooks/useEnabledFeatureCodes';
 import { getPortalForRole, getVisibleModulesForRole } from '@/lib/auth/role-portal-map';
+
+interface SidebarSchoolIdentity {
+  schoolName: string;
+  schoolAcronym?: string;
+  logoUrl?: string;
+}
+
+const SCHOOL_IDENTITY_UPDATED_EVENT = 'settings-school-identity-updated';
 
 /**
  * Construit l'URL de la landing page (domaine principal sans sous-domaine).
@@ -203,6 +212,37 @@ export default function PilotageSidebar({
   const tenantParam = searchParams.get('tenant');
   const { currentLevel } = useSchoolLevel();
   const { enabledSet, loading } = useEnabledFeatureCodes();
+
+  // ── School identity (logo + acronym) ──
+  const [schoolIdentity, setSchoolIdentity] = useState<SidebarSchoolIdentity | null>(null);
+  const loadSchoolIdentity = useCallback(async () => {
+    try {
+      const response = await fetch('/api/settings/identity', {
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data) {
+          setSchoolIdentity({
+            schoolName: data.schoolName,
+            schoolAcronym: data.schoolAcronym,
+            logoUrl: data.logoUrl,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load school identity:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSchoolIdentity();
+    const onIdentityUpdated = () => { void loadSchoolIdentity(); };
+    window.addEventListener(SCHOOL_IDENTITY_UPDATED_EVENT, onIdentityUpdated);
+    return () => { window.removeEventListener(SCHOOL_IDENTITY_UPDATED_EVENT, onIdentityUpdated); };
+  }, [loadSchoolIdentity]);
+
   const isSuperDirector =
     user?.role === 'SUPER_DIRECTOR' || 
     user?.role === 'PLATFORM_OWNER' || 
@@ -369,18 +409,27 @@ export default function PilotageSidebar({
 
   const sidebarContent = (
     <div className="flex flex-col h-full">
-      {/* ── Branding Header ── */}
+      {/* ── School Identity Header ── */}
       <div className="px-4 py-4 border-b border-white/[0.08]">
         {effectiveOpen ? (
           <div className="flex items-center space-x-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-gold-400 to-gold-600 flex items-center justify-center shadow-lg shadow-gold-500/20 flex-shrink-0">
-              <Compass className="w-5 h-5 text-blue-900" />
-            </div>
+            {schoolIdentity?.logoUrl ? (
+              <Image
+                src={schoolIdentity.logoUrl}
+                alt={schoolIdentity.schoolName || 'École'}
+                width={36}
+                height={36}
+                className="rounded-lg object-cover ring-1 ring-white/10 flex-shrink-0"
+              />
+            ) : (
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-gold-400 to-gold-600 flex items-center justify-center shadow-lg shadow-gold-500/20 flex-shrink-0">
+                <School className="w-5 h-5 text-blue-900" />
+              </div>
+            )}
             <div className="min-w-0">
-              <h1 className="text-[15px] font-bold text-white tracking-tight leading-none">
-                Academia <span className="text-gold-400">Helm</span>
+              <h1 className="text-[13px] font-bold text-white tracking-tight leading-none truncate">
+                {schoolIdentity?.schoolAcronym || schoolIdentity?.schoolName || 'Mon École'}
               </h1>
-              <p className="text-[10px] text-blue-300/50 font-medium tracking-wider uppercase mt-0.5">Pilotage</p>
             </div>
             {/* Toggle button on desktop */}
             <button
@@ -393,9 +442,19 @@ export default function PilotageSidebar({
           </div>
         ) : (
           <div className="flex flex-col items-center">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-gold-400 to-gold-600 flex items-center justify-center shadow-lg shadow-gold-500/20">
-              <Compass className="w-5 h-5 text-blue-900" />
-            </div>
+            {schoolIdentity?.logoUrl ? (
+              <Image
+                src={schoolIdentity.logoUrl}
+                alt={schoolIdentity.schoolName || 'École'}
+                width={36}
+                height={36}
+                className="rounded-lg object-cover ring-1 ring-white/10"
+              />
+            ) : (
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-gold-400 to-gold-600 flex items-center justify-center shadow-lg shadow-gold-500/20">
+                <School className="w-5 h-5 text-blue-900" />
+              </div>
+            )}
             <button
               onClick={onToggle}
               className="hidden lg:flex mt-3 p-1.5 rounded-lg hover:bg-white/[0.08] transition-all duration-200 text-blue-300/60 hover:text-white min-h-[36px] min-w-[36px] items-center justify-center"

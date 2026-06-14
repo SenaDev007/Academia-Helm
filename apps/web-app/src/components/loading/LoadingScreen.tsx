@@ -66,9 +66,9 @@ export function LoadingScreen({
         {/* Logo circulaire avec bordure */}
         <motion.div
           className="mb-8 flex justify-center"
-          initial={{ opacity: 0, scale: 0.8 }}
+          initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.5, ease: 'easeOut' }}
+          transition={{ duration: 0.3, ease: 'easeOut' }}
         >
           <div className="relative">
             {/* Halo doré pulsant */}
@@ -98,9 +98,9 @@ export function LoadingScreen({
 
         {/* Texte unifié : Bienvenue sur + Academia Helm + sous-titre */}
         <motion.div
-          initial={{ opacity: 0, y: 12 }}
+          initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.15 }}
+          transition={{ duration: 0.35, delay: 0.08 }}
         >
           <p className="text-sm text-blue-200/60 font-medium mb-1">
             {message?.title || 'Chargement…'}
@@ -117,9 +117,9 @@ export function LoadingScreen({
         {/* Barre de progression épaisse */}
         {showProgress && (
           <motion.div
-            initial={{ opacity: 0, scaleX: 0.8 }}
+            initial={{ opacity: 0, scaleX: 0.9 }}
             animate={{ opacity: 1, scaleX: 1 }}
-            transition={{ duration: 0.5, delay: 0.5 }}
+            transition={{ duration: 0.3, delay: 0.2 }}
             className="mt-7"
           >
             {/* Piste de progression */}
@@ -164,7 +164,7 @@ export function LoadingScreen({
  */
 export function MinimalLoadingScreen({
   message,
-  minDuration = 6000,
+  minDuration = 2500,
   children,
 }: {
   message?: string;

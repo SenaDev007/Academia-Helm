@@ -17,8 +17,8 @@ import { getMessageText } from '@/lib/messages/system-messages';
 import Image from 'next/image';
 import { BRAND } from '@/lib/brand';
 
-/** Durée minimale par défaut (ms) — réduit à 6s */
-const DEFAULT_MIN_DURATION_MS = 6000;
+/** Durée minimale par défaut (ms) — réduit à 2.5s pour un chargement plus rapide */
+const DEFAULT_MIN_DURATION_MS = 2500;
 
 export interface LoadingScreenMobileProps {
   message?: LoadingMessage;

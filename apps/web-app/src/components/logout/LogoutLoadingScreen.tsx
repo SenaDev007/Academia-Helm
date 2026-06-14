@@ -13,8 +13,8 @@ import Image from 'next/image';
 import { BRAND } from '@/lib/brand';
 import type { LogoutFlowProgress } from '@/lib/logout/secure-logout-flow.service';
 
-/** Durée minimale d'affichage du loading de logout (ms) — réduit à 6s */
-const MIN_LOGOUT_LOADING_MS = 6000;
+/** Durée minimale d'affichage du loading de logout (ms) — réduit à 2s */
+const MIN_LOGOUT_LOADING_MS = 2000;
 
 export interface LogoutLoadingScreenProps {
   progress: LogoutFlowProgress | null;

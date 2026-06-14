@@ -23,8 +23,8 @@ import { useState, useEffect } from 'react';
 import { LoadingScreen } from './LoadingScreen';
 import { LoadingScreenMobile } from './LoadingScreenMobile';
 
-/** Durée minimale par défaut (ms) — réduit à 6s */
-const DEFAULT_MIN_DURATION_MS = 6000;
+/** Durée minimale par défaut (ms) — réduit à 2.5s pour un chargement plus rapide */
+const DEFAULT_MIN_DURATION_MS = 2500;
 
 export interface MinDurationScreenProps {
   /** Si true, le contenu est prêt à être affiché */

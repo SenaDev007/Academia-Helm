@@ -241,9 +241,23 @@ export async function middleware(request: NextRequest) {
   // bare domain to www (or vice versa), so redirecting www → bare domain
   // creates an infinite loop. Instead, we treat www as equivalent to the
   // main domain by simply passing the request through.
+  // EXCEPTION: 'academiafederis' is a satellite app — rewrite to /federis
+  // instead of redirecting, so the subdomain stays visible in the URL bar.
   const host = request.headers.get('host') || '';
   const hostParts = host.split(':')[0].split('.');
   if (hostParts.length >= 3 && isReservedSubdomain(hostParts[0]) && hostParts[0] !== 'www') {
+    // ── Academia Federis satellite app ──
+    if (hostParts[0] === 'academiafederis') {
+      // Rewrite academiafederis.academiahelm.com/* → /federis/*
+      // Root path → /federis, sub-paths → /federis/<path>
+      const federisPath = pathname === '/' ? '/federis' : `/federis${pathname}`;
+      const rewriteUrl = new URL(federisPath + request.nextUrl.search, request.nextUrl.origin);
+      const federisResponse = withAntiCacheHeaders(NextResponse.rewrite(rewriteUrl));
+      // Set header so downstream knows this came from the satellite subdomain
+      federisResponse.headers.set('x-federis-subdomain', 'true');
+      return federisResponse;
+    }
+
     const mainDomain = hostParts.slice(1).join('.');
     const protocol = request.headers.get('x-forwarded-proto') || 'https';
     const redirectUrl = new URL(pathname + request.nextUrl.search, `${protocol}://${mainDomain}`);

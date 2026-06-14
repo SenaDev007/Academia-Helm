@@ -18,7 +18,7 @@ import {
   GraduationCap,
   Users,
   ArrowRight,
-  Sparkles,
+  Globe,
   BookOpen,
   Megaphone,
 } from 'lucide-react';
@@ -559,11 +559,11 @@ export default function PremiumLandingPage() {
 
                 <motion.div whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }}>
                   <Link
-                    href="/modules"
+                    href="/portal"
                     className="inline-flex w-full sm:w-auto items-center justify-center rounded-xl border border-white/40 bg-white/10 px-7 py-3.5 font-semibold text-white hover:bg-white/20 transition-colors min-h-[48px]"
                   >
-                    Explorer les modules
-                    <Sparkles className="ml-2 w-4 h-4" />
+                    Accéder au portail
+                    <Globe className="ml-2 w-4 h-4" />
                   </Link>
                 </motion.div>
               </motion.div>

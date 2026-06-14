@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { BRAND } from '@/lib/brand';
 import { MenuToggleIcon } from '@/components/ui/menu-toggle-icon';
 import { useScroll } from '@/components/ui/use-scroll';
+import { Globe, ArrowLeft } from 'lucide-react';
 
 /**
  * Header Premium Academia Helm avec effet Limelight sur les libellés texte
@@ -180,33 +181,35 @@ export function Header() {
         <div className="hidden lg:flex items-center gap-4">
           <LimelightTextNav items={navItems} />
 
-          {/* CTA Bouton doré */}
+          {/* CTA Icône dorée */}
           <div className="ml-4 pl-4 border-l border-white/20 flex-shrink-0">
             {isAuthenticated ? (
               <Link
                 href="/app"
                 prefetch={true}
+                aria-label="Retourner à l'application"
                 className={cn(
-                  'bg-[#f5b335] text-[#0b2f73] px-5 py-2 rounded-md min-h-[40px]',
-                  'font-semibold hover:bg-[#f7c359] transition-all duration-200',
+                  'bg-[#f5b335] text-[#0b2f73] p-2.5 rounded-md min-h-[40px] min-w-[40px]',
+                  'hover:bg-[#f7c359] transition-all duration-200',
                   'shadow-sm hover:shadow-md transform hover:-translate-y-0.5',
-                  'inline-flex items-center space-x-2 text-sm',
+                  'inline-flex items-center justify-center',
                 )}
               >
-                <span>Retourner à l&apos;application</span>
+                <ArrowLeft className="w-5 h-5" />
               </Link>
             ) : (
               <Link
                 href="/portal"
                 prefetch={true}
+                aria-label="Accéder au portail"
                 className={cn(
-                  'bg-[#f5b335] text-[#0b2f73] px-5 py-2 rounded-md min-h-[40px]',
-                  'font-semibold hover:bg-[#f7c359] transition-all duration-200',
+                  'bg-[#f5b335] text-[#0b2f73] p-2.5 rounded-md min-h-[40px] min-w-[40px]',
+                  'hover:bg-[#f7c359] transition-all duration-200',
                   'shadow-sm hover:shadow-md transform hover:-translate-y-0.5',
-                  'inline-flex items-center space-x-2 text-sm',
+                  'inline-flex items-center justify-center',
                 )}
               >
-                <span>Accéder à un portail</span>
+                <Globe className="w-5 h-5" />
               </Link>
             )}
           </div>
@@ -254,6 +257,7 @@ export function Header() {
             <Link
               href="/app"
               onClick={() => setOpen(false)}
+              aria-label="Retourner à l'application"
               className={cn(
                 'bg-[#f5b335] text-[#0b2f73] w-full py-3 rounded-md min-h-[44px]',
                 'font-semibold hover:bg-[#f7c359] transition-all duration-200',
@@ -261,12 +265,14 @@ export function Header() {
                 'inline-flex items-center justify-center space-x-2',
               )}
             >
+              <ArrowLeft className="w-5 h-5" />
               <span>Retourner à l&apos;application</span>
             </Link>
           ) : (
             <Link
               href="/portal"
               onClick={() => setOpen(false)}
+              aria-label="Accéder au portail"
               className={cn(
                 'bg-[#f5b335] text-[#0b2f73] w-full py-3 rounded-md min-h-[44px]',
                 'font-semibold hover:bg-[#f7c359] transition-all duration-200',
@@ -274,7 +280,8 @@ export function Header() {
                 'inline-flex items-center justify-center space-x-2',
               )}
             >
-              <span>Accéder à un portail</span>
+              <Globe className="w-5 h-5" />
+              <span>Accéder au portail</span>
             </Link>
           )}
         </div>

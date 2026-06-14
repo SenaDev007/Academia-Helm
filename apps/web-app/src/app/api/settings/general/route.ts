@@ -7,9 +7,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchSettingsBackend } from '@/lib/api/settings-proxy-fetch';
 
+export const revalidate = 300;
+
 export async function GET(request: NextRequest) {
   try {
-    const response = await fetchSettingsBackend(request, 'settings/general');
+    const response = await fetchSettingsBackend(request, 'settings/general', { revalidate: 300 });
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (error) {

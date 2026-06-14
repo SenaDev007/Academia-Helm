@@ -8,48 +8,36 @@
  * SOURCE DE VÉRITÉ : TenantIdentityProfile (versionnée, active)
  * Rétrocompatibilité : School (table legacy, fallback si pas de profil actif)
  *
- * OPTIMISATIONS V3 :
+ * OPTIMISATIONS V4 :
  *   - Raw SQL avec LEFT JOIN pour listAllSchools et listSchoolsWithJobs
  *     (une seule requête au lieu des N+1 de Prisma include/select)
- *   - Cache en mémoire avec TTL (60s)
+ *   - Cache distribué Redis via CacheService (partagé entre instances)
+ *   - TTL configurable (60s par défaut, data change rarement)
  *   - Recherche Prisma (searchSchools) inchangée — take:20 la rend rapide
  * ============================================================================
  */
 
 import { Injectable, Logger, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { CacheService } from '../../common/services/cache.service';
 
-/** Durée de vie du cache en mémoire (ms) — 60 secondes */
+/** Durée de vie du cache (ms) — 60 secondes */
 const CACHE_TTL_MS = 60_000;
 
-/** Structure du cache en mémoire */
-interface CacheEntry<T> {
-  data: T;
-  timestamp: number;
-}
+/** Clés de cache Redis */
+const CACHE_KEY_ALL_SCHOOLS = 'schools:list:all';
+const CACHE_KEY_SCHOOLS_WITH_JOBS = 'schools:list:with-jobs';
 
 @Injectable()
 export class SchoolSearchService {
   private readonly logger = new Logger(SchoolSearchService.name);
 
-  /** Cache en mémoire pour les listes complètes */
-  private listAllSchoolsCache: CacheEntry<any[]> | null = null;
-  private listSchoolsWithJobsCache: CacheEntry<any[]> | null = null;
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly cacheService: CacheService,
   ) {}
-
-  /**
-   * Vérifie si une entrée de cache est encore valide.
-   */
-  private isCacheValid<T>(cache: CacheEntry<T> | null): cache is CacheEntry<T> {
-    if (!cache) return false;
-    return Date.now() - cache.timestamp < CACHE_TTL_MS;
-  }
 
   /**
    * Détermine si on doit filtrer par status = 'active' en production.
@@ -69,16 +57,16 @@ export class SchoolSearchService {
    * Liste tous les établissements actifs (pour sélecteur portail).
    *
    * Utilise du raw SQL avec LEFT JOIN pour récupérer toutes les données
-   * en une seule requête, au lieu des N+1 requêtes générées par Prisma
-   * findMany + include/select de relations imbriquées.
+   * en une seule requête, au lieu des N+1 requêtes générées par Prisma.
    *
-   * Performance : ~200ms au lieu de 30s+ avec Prisma.
+   * Cache distribué Redis — 60s TTL, partagé entre instances.
    */
   async listAllSchools(): Promise<any[]> {
-    // ── Vérifier le cache ──
-    if (this.isCacheValid(this.listAllSchoolsCache)) {
-      this.logger.log('listAllSchools: returning cached data');
-      return this.listAllSchoolsCache.data;
+    // ── Vérifier le cache Redis ──
+    const cached = await this.cacheService.get<any[]>(CACHE_KEY_ALL_SCHOOLS);
+    if (cached) {
+      this.logger.log('listAllSchools: returning Redis cached data');
+      return cached;
     }
 
     this.logger.log('Listing all active schools (cache miss, raw SQL)');
@@ -88,7 +76,6 @@ export class SchoolSearchService {
         ? `AND t.status = 'active'`
         : '';
 
-      // Single query avec LEFT JOINs — 10-100x plus rapide que Prisma findMany + include
       const rows: any[] = await this.prisma.$queryRawUnsafe(`
         SELECT
           t.id,
@@ -112,8 +99,6 @@ export class SchoolSearchService {
           c.name AS "countryName",
           ip.version AS "identityVersion"
         FROM "Tenant" t
-        LEFT JOIN "TenantIdentityProfile" ip
-          ON ip."tenantId" = t.id AND ip."isActive" = true
         LEFT JOIN LATERAL (
           SELECT ip2.* FROM "TenantIdentityProfile" ip2
           WHERE ip2."tenantId" = t.id AND ip2."isActive" = true
@@ -127,7 +112,6 @@ export class SchoolSearchService {
       `);
 
       const results = rows.map((row) => {
-        // Convertir educationLevels en schoolType si nécessaire
         let schoolType = row.schoolType;
         if (Array.isArray(schoolType)) {
           schoolType = this.getSchoolTypeFromLevels(schoolType);
@@ -148,9 +132,9 @@ export class SchoolSearchService {
         };
       });
 
-      // ── Mettre en cache ──
-      this.listAllSchoolsCache = { data: results, timestamp: Date.now() };
-      this.logger.log(`listAllSchools: cached ${results.length} schools`);
+      // ── Mettre en cache Redis ──
+      await this.cacheService.set(CACHE_KEY_ALL_SCHOOLS, results, CACHE_TTL_MS);
+      this.logger.log(`listAllSchools: cached ${results.length} schools in Redis`);
 
       return results;
     } catch (error: any) {
@@ -168,13 +152,14 @@ export class SchoolSearchService {
    * Liste tous les établissements actifs avec le nombre d'offres d'emploi publiées.
    *
    * Raw SQL avec LEFT JOIN + sous-requête pour le count des jobs.
-   * Tout en une seule requête — ultra rapide.
+   * Cache distribué Redis — 60s TTL.
    */
   async listSchoolsWithJobs(): Promise<any[]> {
-    // ── Vérifier le cache ──
-    if (this.isCacheValid(this.listSchoolsWithJobsCache)) {
-      this.logger.log('listSchoolsWithJobs: returning cached data');
-      return this.listSchoolsWithJobsCache.data;
+    // ── Vérifier le cache Redis ──
+    const cached = await this.cacheService.get<any[]>(CACHE_KEY_SCHOOLS_WITH_JOBS);
+    if (cached) {
+      this.logger.log('listSchoolsWithJobs: returning Redis cached data');
+      return cached;
     }
 
     this.logger.log('Listing all schools with active job counts (cache miss, raw SQL)');
@@ -184,7 +169,6 @@ export class SchoolSearchService {
         ? `AND t.status = 'active'`
         : '';
 
-      // Single query : tenant + identity profile + school + country + job count
       const rows: any[] = await this.prisma.$queryRawUnsafe(`
         SELECT
           t.id,
@@ -258,9 +242,9 @@ export class SchoolSearchService {
         };
       });
 
-      // ── Mettre en cache ──
-      this.listSchoolsWithJobsCache = { data: results, timestamp: Date.now() };
-      this.logger.log(`listSchoolsWithJobs: cached ${results.length} schools with job counts`);
+      // ── Mettre en cache Redis ──
+      await this.cacheService.set(CACHE_KEY_SCHOOLS_WITH_JOBS, results, CACHE_TTL_MS);
+      this.logger.log(`listSchoolsWithJobs: cached ${results.length} schools with job counts in Redis`);
 
       return results;
     } catch (error: any) {

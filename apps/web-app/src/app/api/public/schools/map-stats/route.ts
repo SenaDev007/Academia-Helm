@@ -12,6 +12,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes, bffHeaders } from '@/lib/utils/api-urls';
 
+export const revalidate = 60;
+
 export async function GET(_request: NextRequest) {
   try {
     const API_BASE_URL = getApiBaseUrlForRoutes();

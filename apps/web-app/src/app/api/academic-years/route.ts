@@ -6,6 +6,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
+export const revalidate = 120;
+
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function GET(request: NextRequest) {
@@ -14,7 +16,7 @@ export async function GET(request: NextRequest) {
     const url = new URL(`${API_BASE_URL}/settings/academic-years`);
     const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
     if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
-    const response = await fetch(url.toString(), { headers, cache: 'no-store' });
+    const response = await fetch(url.toString(), { headers });
     const contentType = response.headers.get('content-type') || '';
     const data = contentType.includes('application/json')
       ? await response.json().catch(() => [])
@@ -27,14 +29,9 @@ export async function GET(request: NextRequest) {
       endDate: y.endDate ?? '',
       isCurrent: Boolean(y.isActive),
     }));
-    return NextResponse.json(mapped, {
-      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
-    });
+    return NextResponse.json(mapped);
   } catch (error) {
     console.error('Error fetching academic years:', error);
-    return NextResponse.json([], {
-      status: 200,
-      headers: { 'Cache-Control': 'no-store' },
-    });
+    return NextResponse.json([], { status: 200 });
   }
 }

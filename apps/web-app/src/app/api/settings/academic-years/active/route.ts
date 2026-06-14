@@ -7,6 +7,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import { getServerToken, getServerSession } from '@/lib/auth/session';
 
+export const revalidate = 120;
+
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
 async function getAuthHeaders(request: NextRequest) {
@@ -30,16 +32,13 @@ export async function GET(request: NextRequest) {
     const headers = await getAuthHeaders(request);
     const response = await fetch(`${API_BASE_URL}/settings/academic-years/active`, {
       headers,
-      cache: 'no-store',
+      next: { revalidate: 120 },
     });
     const contentType = response.headers.get('content-type') || '';
     const data = contentType.includes('application/json')
       ? await response.json().catch(() => ({ error: 'Invalid response' }))
       : { error: await response.text() || 'Erreur serveur' };
-    return NextResponse.json(data, {
-      status: response.status,
-      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
-    });
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error fetching active academic year:', error);
     return NextResponse.json({ error: 'Failed to fetch active academic year' }, { status: 500 });

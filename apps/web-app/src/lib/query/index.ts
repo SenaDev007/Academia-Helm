@@ -10,3 +10,4 @@ export {
 } from './academic-years-fetch';
 export { fetchSettingsBootstrap, type SettingsBootstrapPayload } from './fetch-settings-bootstrap';
 export { TANSTACK_QUERY_HELM_VERSION } from './tanstack-query-conventions';
+export { queryKeys } from './query-keys';

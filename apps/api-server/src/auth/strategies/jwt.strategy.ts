@@ -40,7 +40,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (token) {
       // Check revoked token with short-lived cache (1 min) to avoid DB hit on every request
       const cacheKey = `revoked:${token.slice(-16)}`;
-      const cachedRevoked = this.cacheService.get<boolean>(cacheKey);
+      const cachedRevoked = await this.cacheService.get<boolean>(cacheKey);
       if (cachedRevoked === true) {
         throw new UnauthorizedException('Token has been revoked');
       }
@@ -48,21 +48,21 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         // Not in cache — check DB
         const isRevoked = await this.prisma.revokedToken.findUnique({ where: { token } });
         if (isRevoked) {
-          this.cacheService.set(cacheKey, true, 60 * 1000); // cache revoked for 1 min
+          await this.cacheService.set(cacheKey, true, 60 * 1000); // cache revoked for 1 min
           throw new UnauthorizedException('Token has been revoked');
         }
         // Cache non-revoked status briefly to reduce DB load
-        this.cacheService.set(cacheKey, false, 60 * 1000);
+        await this.cacheService.set(cacheKey, false, 60 * 1000);
       }
     }
 
     // Cache user+roles+permissions for 2 minutes to eliminate repeated heavy queries
     const userCacheKey = `user:roles:${payload.sub}`;
-    let user = this.cacheService.get<any>(userCacheKey);
+    let user = await this.cacheService.get<any>(userCacheKey);
     if (!user) {
       user = await this.usersService.findOneWithRoles(payload.sub);
       if (user) {
-        this.cacheService.set(userCacheKey, user, 2 * 60 * 1000); // 2 min TTL
+        await this.cacheService.set(userCacheKey, user, 2 * 60 * 1000); // 2 min TTL
       }
     }
 
@@ -91,9 +91,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   private extractPermissions(roles: any[]): string[] {
     const permissions = new Set<string>();
     for (const role of roles) {
-      // Support des deux formats :
-      // 1. role.rolePermissions[].permission.name (via UserRole → Role → RolePermission → Permission)
-      // 2. role.permissions[].name (format direct, si utilisé ailleurs)
       if (role.rolePermissions) {
         for (const rp of role.rolePermissions) {
           if (rp.permission?.name) {

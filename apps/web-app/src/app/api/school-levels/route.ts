@@ -6,6 +6,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
+export const revalidate = 120;
+
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
 const LEVEL_LABELS: Record<string, string> = {
@@ -20,7 +22,7 @@ export async function GET(request: NextRequest) {
     const url = new URL(`${API_BASE_URL}/settings/education/structure`);
     const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
     if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
-    const response = await fetch(url.toString(), { headers, cache: 'no-store' });
+    const response = await fetch(url.toString(), { headers });
     const data = await response.json().catch(() => ({}));
     const levels = (data?.levels ?? []) as { id: string; name: string; isEnabled?: boolean }[];
     const enabledLevels = levels.filter((l) => l.isEnabled !== false);
@@ -30,14 +32,9 @@ export async function GET(request: NextRequest) {
       label: LEVEL_LABELS[l.name] || l.name,
       isActive: true,
     }));
-    return NextResponse.json(result, {
-      headers: { 'Cache-Control': 'no-store, no-cache' },
-    });
+    return NextResponse.json(result);
   } catch (error) {
     console.error('Error fetching school levels from structure:', error);
-    return NextResponse.json([], {
-      status: 200,
-      headers: { 'Cache-Control': 'no-store' },
-    });
+    return NextResponse.json([], { status: 200 });
   }
 }

@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import Image from 'next/image';
+import LogoCircle from '@/components/ui/LogoCircle';
 import { BRAND } from '@/lib/brand';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getMotionDuration } from '@/lib/motion/presets';
@@ -266,63 +267,12 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
         {/* ── En-tête — Branding de l'école ── */}
         <motion.div variants={itemVariants} className="mb-8 flex flex-col items-center text-center sm:mb-10">
           {/* Logo de l'école — cercle parfait + jeu lumineux */}
-          <div className="relative mb-4 flex justify-center">
-            {/* Halo doré pulsant */}
-            <div
-              className="absolute inset-0 -m-6 rounded-full blur-xl"
-              style={{
-                background: `radial-gradient(circle, ${GOLD}12, transparent 70%)`,
-                animation: 'academiaPulse 3s ease-in-out infinite',
-              }}
+          <div className="mb-4">
+            <LogoCircle
+              logoUrl={hasValidLogo ? schoolData!.logoUrl : null}
+              alt={displayName}
+              size={80}
             />
-            {/* Anneau rotatif doré */}
-            <div
-              className="absolute inset-0 -m-3 rounded-full border-2 border-white/10 border-t-[#f5b335]"
-              style={{ animation: 'academiaOrbit 1.2s linear infinite' }}
-            />
-            {/* Conteneur circulaire pour le logo */}
-            {hasValidLogo ? (
-              <div
-                className="relative z-10 w-20 h-20 rounded-full overflow-hidden flex items-center justify-center"
-                style={{
-                  background: 'rgba(255,255,255,0.12)',
-                  border: `2px solid rgba(255,255,255,0.3)`,
-                  backdropFilter: 'blur(4px)',
-                  boxShadow: `0 8px 32px rgba(0,0,0,0.3), 0 0 0 1px ${GOLD}20`,
-                }}
-              >
-                <Image
-                  src={schoolData!.logoUrl!}
-                  alt={displayName}
-                  width={52}
-                  height={52}
-                  className="rounded-full object-cover"
-                  style={{ animation: 'academiaPulse 3s ease-in-out infinite' }}
-                  priority
-                  onError={() => setImgError(true)}
-                />
-              </div>
-            ) : (
-              <div
-                className="relative z-10 w-20 h-20 rounded-full overflow-hidden flex items-center justify-center"
-                style={{
-                  background: 'rgba(255,255,255,0.10)',
-                  border: `2px solid rgba(255,255,255,0.25)`,
-                  backdropFilter: 'blur(4px)',
-                  boxShadow: `0 8px 32px rgba(0,0,0,0.3)`,
-                }}
-              >
-                <Image
-                  src={BRAND.logoPath}
-                  alt={BRAND.name}
-                  width={48}
-                  height={48}
-                  className="rounded-full object-contain"
-                  style={{ animation: 'academiaPulse 3s ease-in-out infinite' }}
-                  priority
-                />
-              </div>
-            )}
           </div>
 
           {/* Nom de l'école */}

@@ -52,6 +52,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import TurnstileWidget from '@/components/auth/TurnstileWidget';
+import LogoCircle from '@/components/ui/LogoCircle';
 import { BRAND } from '@/lib/brand';
 import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-email';
 import { persistClientSession, markFreshLogin } from '@/lib/auth/client-access-token';
@@ -1018,32 +1019,16 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             initial="hidden"
             animate="show"
           >
-            {/* Logo */}
+            {/* Logo — cercle parfait + jeu lumineux */}
             <motion.div
               variants={heroItem}
-              className="mb-3 inline-flex items-center justify-center"
-              animate={shouldReduceMotion ? undefined : { y: [0, -4, 0] }}
-              transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
+              className="mb-3 flex justify-center"
             >
-              {clientBranding?.logoUrl ? (
-                <Image
-                  src={clientBranding.logoUrl}
-                  alt={clientBranding.name}
-                  width={80}
-                  height={80}
-                  className="h-12 w-12 object-contain drop-shadow-lg sm:h-14 sm:w-14 rounded-xl"
-                  priority
-                />
-              ) : (
-                <Image
-                  src="/images/logo-Academia Hub.png"
-                  alt={BRAND.name}
-                  width={80}
-                  height={80}
-                  className="h-12 w-12 object-contain drop-shadow-lg sm:h-14 sm:w-14"
-                  priority
-                />
-              )}
+              <LogoCircle
+                logoUrl={clientBranding?.logoUrl}
+                alt={clientBranding?.name || BRAND.name}
+                size={72}
+              />
             </motion.div>
 
             {/* Title */}

@@ -18,16 +18,37 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   
-  // ✅ Optimisation des images
+  // ✅ Optimisation des images — PageSpeed-optimized
   images: {
     formats: ['image/avif', 'image/webp'],
-    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
-    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
-    minimumCacheTTL: 86400, // 1 jour — permet de rafraîchir les logos modifiés sans attendre 1 an
+    // Tailles optimisées pour réduire le poids sans sacrifier la qualité
+    deviceSizes: [640, 828, 1080, 1200, 1920],
+    imageSizes: [16, 32, 48, 64, 96, 128, 256],
+    minimumCacheTTL: 60 * 60 * 24 * 365, // 1 an — les images optimisées sont immuables
     // ✅ Sécurité SVG
     dangerouslyAllowSVG: true,
     contentDispositionType: 'attachment',
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
+    // ✅ remotePatterns : permet à Next/Image d'optimiser les images distantes
+    // (logos uploadés, photos élèves, etc.) au lieu de les servir en unoptimized
+    remotePatterns: [
+      { protocol: 'https', hostname: '**.supabase.co' },
+      { protocol: 'https', hostname: '**.amazonaws.com' },
+      { protocol: 'https', hostname: '**.cloudinary.com' },
+      { protocol: 'https', hostname: '**.imgur.com' },
+      { protocol: 'https', hostname: '**.googleusercontent.com' },
+      { protocol: 'https', hostname: 'res.cloudinary.com' },
+      { protocol: 'https', hostname: 'lh3.googleusercontent.com' },
+      // Domaine API backend (logos uploadés, tampons, etc.)
+      { protocol: 'https', hostname: 'api.academiahelm.com' },
+      { protocol: 'https', hostname: 'www.academiahelm.com' },
+      { protocol: 'https', hostname: 'academiahelm.com' },
+      // Vercel blob storage
+      { protocol: 'https', hostname: '**.public.blob.vercel-storage.com' },
+      // Développement local
+      { protocol: 'http', hostname: 'localhost' },
+      { protocol: 'https', hostname: 'localhost' },
+    ],
   },
 
   // ✅ Compression et optimisation
@@ -64,6 +85,38 @@ const nextConfig = {
   // Multi-tenant: Support des sous-domaines
   async headers() {
     return [
+      // ✅ Cache agressif pour les images statiques (1 an) — PageSpeed optimization
+      {
+        source: '/images/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+        ],
+      },
+      // ✅ Cache pour les images uploadées (logos, photos, etc.)
+      {
+        source: '/uploads/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+        ],
+      },
+      // ✅ Cache pour les polices (1 an)
+      {
+        source: '/fonts/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+        ],
+      },
+      // ✅ Cache pour les assets statiques Next.js (_next/static)
+      {
+        source: '/_next/static/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+        ],
+      },
+      // Headers de sécurité globaux
       {
         source: '/:path*',
         headers: [

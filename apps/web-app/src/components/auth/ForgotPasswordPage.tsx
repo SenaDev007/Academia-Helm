@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import TurnstileWidget from '@/components/auth/TurnstileWidget';
+import LogoCircle from '@/components/ui/LogoCircle';
 import { BRAND } from '@/lib/brand';
 import { useFetchWithTimeout } from '@/lib/hooks/use-fetch-with-timeout';
 import { useSchoolBranding, type SchoolBrandingData } from '@/hooks/useSchoolBranding';
@@ -474,27 +475,13 @@ export default function ForgotPasswordPage({ schoolBranding }: ForgotPasswordPag
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3 }}
           >
-            {/* Logo */}
-            <div className="mb-4 inline-flex items-center justify-center">
-              {clientBranding?.logoUrl ? (
-                <Image
-                  src={clientBranding.logoUrl}
-                  alt={clientBranding.name || BRAND.name}
-                  width={64}
-                  height={64}
-                  className="h-10 w-10 object-contain drop-shadow-lg sm:h-12 sm:w-12 rounded-xl"
-                  priority
-                />
-              ) : (
-                <Image
-                  src="/images/logo-Academia Hub.png"
-                  alt={BRAND.name}
-                  width={64}
-                  height={64}
-                  className="h-10 w-10 object-contain drop-shadow-lg sm:h-12 sm:w-12"
-                  priority
-                />
-              )}
+            {/* Logo — cercle parfait + jeu lumineux */}
+            <div className="mb-4 flex justify-center">
+              <LogoCircle
+                logoUrl={clientBranding?.logoUrl}
+                alt={clientBranding?.name || BRAND.name}
+                size={64}
+              />
             </div>
 
             {/* Step icon */}

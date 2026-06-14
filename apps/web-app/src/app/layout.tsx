@@ -107,11 +107,11 @@ export async function generateMetadata(): Promise<Metadata> {
     : `Accédez au portail de votre établissement sur Academia Helm. Gestion scolaire, notes, emplois du temps et plus.`;
 
   const url = mainDomain
-    ? siteUrl
+    ? 'https://www.academiahelm.com'
     : `https://${hostname.split(':')[0]}`;
 
   return {
-    metadataBase: new URL('https://academiahelm.com'),
+    metadataBase: new URL('https://www.academiahelm.com'),
     title,
     description,
     keywords: [

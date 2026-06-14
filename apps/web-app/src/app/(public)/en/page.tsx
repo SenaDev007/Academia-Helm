@@ -6,36 +6,43 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Header } from '@/components/ui/header-1';
 import { Footer2 } from '@/components/ui/footer-2';
-import { getPublicSiteUrl, OG_IMAGE_MAIN } from '@/lib/seo';
+import { buildAbsoluteOGImageUrl, detectRequestHostname } from '@/lib/seo';
 import { buildHreflangLanguages } from '@/lib/seo/locales';
 
-const siteUrl = getPublicSiteUrl();
-const ogImageAbsolute = `${siteUrl}${OG_IMAGE_MAIN}`;
+/**
+ * generateMetadata — utilise la détection dynamique du hostname
+ * pour construire des URLs OG accessibles aux crawlers sociaux.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const hostname = await detectRequestHostname();
+  const ogImageAbsolute = buildAbsoluteOGImageUrl(hostname);
+  const canonicalUrl = 'https://www.academiahelm.com/en';
 
-export const metadata: Metadata = {
-  title: 'Academia Helm — School operations platform',
-  description:
-    'Unified school management: students, finance, pedagogy, ORION AI insights. Built for demanding institutions in West Africa and beyond.',
-  openGraph: {
+  return {
     title: 'Academia Helm — School operations platform',
-    description: 'Unified school management for modern institutions.',
-    url: `${siteUrl}/en`,
-    siteName: 'Academia Helm',
-    locale: 'en_US',
-    type: 'website',
-    images: [{ url: ogImageAbsolute, width: 1200, height: 630, alt: 'Academia Helm' }],
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'Academia Helm — School operations platform',
-    description: 'Unified school management for modern institutions.',
-    images: [ogImageAbsolute],
-  },
-  alternates: {
-    canonical: `${siteUrl}/en`,
-    languages: buildHreflangLanguages(siteUrl, '/en'),
-  },
-};
+    description:
+      'Unified school management: students, finance, pedagogy, ORION AI insights. Built for demanding institutions in West Africa and beyond.',
+    openGraph: {
+      title: 'Academia Helm — School operations platform',
+      description: 'Unified school management for modern institutions.',
+      url: canonicalUrl,
+      siteName: 'Academia Helm',
+      locale: 'en_US',
+      type: 'website',
+      images: [{ url: ogImageAbsolute, width: 1200, height: 630, alt: 'Academia Helm' }],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: 'Academia Helm — School operations platform',
+      description: 'Unified school management for modern institutions.',
+      images: [ogImageAbsolute],
+    },
+    alternates: {
+      canonical: canonicalUrl,
+      languages: buildHreflangLanguages('https://www.academiahelm.com', '/en'),
+    },
+  };
+}
 
 export default function EnglishLandingEntryPage() {
   return (
@@ -50,7 +57,7 @@ export default function EnglishLandingEntryPage() {
           We are rolling out a full English experience. In the meantime, explore the French product site or get in
           touch — our team answers in French and English.
         </p>
-        <div className="flex flex-col sm:flex-row gap-4 justify-center">
+        <div className="flex flex-col sm:flex-col gap-4 justify-center">
           <Link
             href="/"
             className="inline-flex items-center justify-center rounded-xl bg-[#0b2f73] px-8 py-3.5 font-semibold text-white hover:bg-[#144798] transition-colors"

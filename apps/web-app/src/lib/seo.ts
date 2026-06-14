@@ -108,15 +108,43 @@ export function getOGImagePath(hostname?: string): string {
 }
 
 /**
+ * Normalise le hostname pour construire des URLs publiques accessibles aux crawlers.
+ *
+ * Problème : sur Vercel, le header `host` peut être `app.academiahelm.com`
+ * (domaine interne), ce qui produit des URLs OG inaccessibles depuis l'extérieur.
+ *
+ * Règle :
+ *   - Domaine principal (avec ou sans sous-domaine réservé comme www, app, portal)
+ *     → `www.academiahelm.com` (domaine public canonique)
+ *   - Sous-domaine tenant (ex: mon-ecole.academiahelm.com)
+ *     → conservé tel quel (accessible publiquement via le middleware)
+ */
+function normalizeHostnameForOG(hostname: string): string {
+  const base = hostname.split(':')[0]; // strip port
+
+  if (isMainDomain(base)) {
+    // Domaine principal → toujours utiliser www.academiahelm.com
+    // (academiahelm.com redirige 307 vers www, les crawleurs ne suivent pas toujours)
+    return 'www.academiahelm.com';
+  }
+
+  // Sous-domaine tenant → utiliser le hostname tel quel
+  // ex: mon-ecole.academiahelm.com
+  return base;
+}
+
+/**
  * Construit l'URL absolue de l'image OG à partir du domaine courant.
  * Les crawlers (Facebook, WhatsApp, Twitter, etc.) nécessitent des URLs absolues.
+ *
+ * IMPORTANT : l'URL utilise toujours un domaine public accessible (pas app.academiahelm.com).
  */
 export function buildAbsoluteOGImageUrl(hostname?: string): string {
-  const base = hostname
-    ? `https://${hostname.split(':')[0]}`
-    : getPublicSiteUrl();
+  const normalizedBase = hostname
+    ? normalizeHostnameForOG(hostname)
+    : 'www.academiahelm.com';
   const path = getOGImagePath(hostname);
-  return `${base}${path}`;
+  return `https://${normalizedBase}${path}`;
 }
 
 /**
@@ -191,13 +219,19 @@ export function generateSEOMetadata(config: SEOConfig): Metadata {
   const ogImageRelative = image || getOGImagePath(hostname);
   const ogImageAbsolute = buildAbsoluteOGImageUrl(hostname);
 
-  // URL de la page
-  const siteUrl = getPublicSiteUrl();
+  // URL de la page — normalisée pour les crawlers (pas app.academiahelm.com)
   const pathSegment = path === '' || path.startsWith('/') ? path : `/${path}`;
   const fullTitle = title.includes(BRAND.name) ? title : `${title} | ${BRAND.name}`;
-  const url = hostname
-    ? `https://${hostname.split(':')[0]}${pathSegment}`
-    : `${siteUrl}${pathSegment}`;
+  let url: string;
+  if (hostname) {
+    // Normaliser le hostname pour l'URL publique
+    const normalizedBase = isMainDomain(hostname)
+      ? 'www.academiahelm.com'
+      : hostname.split(':')[0];
+    url = `https://${normalizedBase}${pathSegment}`;
+  } else {
+    url = `https://www.academiahelm.com${pathSegment}`;
+  }
 
   return {
     title: fullTitle,
@@ -249,7 +283,7 @@ export function generateSEOMetadata(config: SEOConfig): Metadata {
         },
     alternates: {
       canonical: url,
-      languages: buildHreflangLanguages(siteUrl, pathSegment),
+      languages: buildHreflangLanguages('https://www.academiahelm.com', pathSegment),
     },
   };
 }

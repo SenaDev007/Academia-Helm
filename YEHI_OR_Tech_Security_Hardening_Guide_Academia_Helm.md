@@ -10,7 +10,7 @@
 | *HYPER HIGH LEVEL*                                                    |
 |                                                                       |
 | Stack : Next.js \-- NestJS \-- PostgreSQL \-- Prisma ORM \-- Vercel   |
-| \-- Fly.io \-- Cloudflare R2                                          |
+| \-- Railway \-- Cloudflare R2                                          |
 |                                                                       |
 | Referentiel : OWASP Top 10 2025 \-- NIST CSF \-- ISO 27001            |
 |                                                                       |
@@ -178,7 +178,7 @@ etre fatale a la reputation et a la viabilite legale de l\'entreprise.
   Payload JWT              Jamais de donnees sensibles dans le payload
 
   Cle secrete              Minimum 256 bits \-- stockee dans les secrets
-                           Vercel/Fly.io
+                           Vercel/Railway
   ------------------------ ----------------------------------------------
 
 +-----------------------------------------------------------------------+
@@ -679,9 +679,9 @@ obligation legale et ethique, pas un choix.
 |                                                                       |
 | \*.key                                                                |
 |                                                                       |
-| \# Fly.io \-- injection des secrets en production                     |
+| \# Railway \-- injection des secrets en production                    |
 |                                                                       |
-| fly secrets set DATABASE_URL=postgres://\... JWT_SECRET=\...          |
+| railway variables set DATABASE_URL=postgres://\... JWT_SECRET=\...     |
 | ENCRYPTION_KEY=\...                                                   |
 |                                                                       |
 | \# Vercel \-- variables d\'environnement chiffrees via dashboard      |
@@ -696,8 +696,8 @@ obligation legale et ethique, pas un choix.
   detecter les leaks historiques      dashboard \-- jamais en dur dans le
                                       code
 
-  **+** Fly.io : fly secrets set \--  **+** Separation stricte des
-  jamais dans fly.toml                environnements : dev / staging /
+  **+** Railway : railway variables \--  **+** Separation stricte des
+  jamais dans le code                environnements : dev / staging /
                                       production
   ----------------------------------- -----------------------------------
 
@@ -712,7 +712,7 @@ obligation legale et ethique, pas un choix.
   ----------------------------------- -----------------------------------
   **+** TLS 1.3 minimum \--           **+** Certificats Let\'s Encrypt
   desactiver TLS 1.0 et 1.1 sur       auto-renouveles \-- alertes 30
-  Fly.io et Vercel                    jours avant expiration
+  Railway et Vercel                    jours avant expiration
 
   **+** HSTS preload active sur tous  **+** Certificate Transparency
   les domaines YEHI OR Tech           monitoring pour detecter les
@@ -808,46 +808,42 @@ SaaS.
 +-----------------------------------------------------------------------+
 
 +-----+----------------------------------------------------------------+
-| **0 | **SECURITE INFRASTRUCTURE \-- VERCEL, FLY.IO & POSTGRESQL**    |
+| **0 | **SECURITE INFRASTRUCTURE \-- VERCEL, RAILWAY & POSTGRESQL**   |
 | 8** |                                                                |
 |     | *La securite du code est inutile si l\'infrastructure est      |
 |     | vulnerable*                                                    |
 +-----+----------------------------------------------------------------+
 
-**8.1 Fly.io \-- NestJS Backend**
+**8.1 Railway \-- NestJS Backend**
 
   ----------- -------------------------------------------------------------
-  **ELEVE**   Configuration Fly.io securisee requise avant tout deploiement
+  **ELEVE**   Configuration Railway securisee requise avant tout deploiement
               en production.
 
   ----------- -------------------------------------------------------------
 
 +-----------------------------------------------------------------------+
-| \# fly.toml \-- Configuration securisee                               |
+| \# Railway \-- Configuration securisee (via Dashboard ou CLI)          |
 |                                                                       |
-| \[http_service\]                                                      |
+| PORT = 3000                                                           |
 |                                                                       |
-| internal_port = 3001                                                  |
+| RAILWAY_RUNTIME = node                                                |
 |                                                                       |
-| force_https = true                                                    |
+| Healthcheck: /api/health                                              |
 |                                                                       |
-| auto_stop_machines = true                                             |
+| Region: europe-west4                                                  |
 |                                                                       |
-| \[\[vm\]\]                                                            |
-|                                                                       |
-| memory = \'512mb\'                                                    |
-|                                                                       |
-| cpu_kind = \'shared\'                                                 |
+| Plan: Hobby (512MB RAM, shared CPU)                                   |
 +-----------------------------------------------------------------------+
 
   ----------------------------------- -----------------------------------
-  **+** Fly.io Firewall Rules \--     **+** Endpoint /health dedie et
-  whitelist IP Vercel uniquement \--  sans informations sensibles pour
-  bloquer tout acces direct           les health checks
+  **+** Railway Private Networking \--  **+** Endpoint /health dedie et
+  restreindre l'acces via API         sans informations sensibles pour
+  interne uniquement (BFF)            les health checks
 
-  **+** Secrets chiffres : fly        **+** Deploiements zero-downtime
-  secrets set DATABASE_URL=\...       avec rolling updates \-- jamais de
-  JWT_SECRET=\... ENCRYPTION_KEY=\... downtime en production
+  **+** Secrets chiffres : Railway    **+** Deploiements zero-downtime
+  Variables (chiffrees au repos)      avec rolling deploys \-- jamais de
+  DATABASE_URL, JWT_SECRET, etc.      downtime en production
   ----------------------------------- -----------------------------------
 
 **8.2 Vercel \-- Next.js Frontend**
@@ -1225,7 +1221,7 @@ contre les prompt injections.
 
   **04**   ValidationPipe global avec whitelist: true active    **CRITIQUE**
 
-  **05**   Variables d\'environnement dans Vercel/Fly secrets   **CRITIQUE**
+  **05**   Variables d\'environnement dans Vercel/Railway vars   **CRITIQUE**
            \-- jamais en dur                                    
 
   **06**   HTTPS force partout \-- TLS 1.3 minimum sur tous les **CRITIQUE**
@@ -1306,7 +1302,7 @@ contre les prompt injections.
                      malveillant via fichier      bytes + scan AV + R2
                      televerse                    hors web root
 
-  Secrets Leak       Cles API, JWT, DB exposees   Fly secrets + Vercel
+  Secrets Leak       Cles API, JWT, DB exposees   Railway vars + Vercel
                      dans le code ou les logs     env + TruffleHog CI/CD
 
   Supply Chain       Package npm compromis        npm audit CI +

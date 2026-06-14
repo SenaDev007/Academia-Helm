@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Production: only allow HTTPS to API -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">academiahelm.com</domain>
+        <domain includeSubdomains="true">api.academiahelm.com</domain>
+    </domain-config>
+
+    <!-- Debug: allow local HTTP for development -->
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+        <domain-config cleartextTrafficPermitted="true">
+            <domain includeSubdomains="true">10.0.2.2</domain>
+            <domain includeSubdomains="true">localhost</domain>
+            <domain includeSubdomains="true">192.168.1.1</domain>
+        </domain-config>
+    </debug-overrides>
+</network-security-config>

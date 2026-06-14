@@ -1,0 +1,59 @@
+{
+  "@@locale": "fr",
+  "appName": "Academia Helm",
+  "@appName": {
+    "description": "The application name"
+  },
+  "loginTitle": "Se connecter",
+  "@loginTitle": {
+    "description": "Login screen title"
+  },
+  "loginButton": "Se connecter",
+  "@loginButton": {
+    "description": "Login button text"
+  },
+  "emailLabel": "Adresse email",
+  "@emailLabel": {
+    "description": "Email field label"
+  },
+  "passwordLabel": "Mot de passe",
+  "@passwordLabel": {
+    "description": "Password field label"
+  },
+  "forgotPassword": "Mot de passe oublié ?",
+  "@forgotPassword": {
+    "description": "Forgot password link text"
+  },
+  "selectTenant": "Choisir votre établissement",
+  "@selectTenant": {
+    "description": "Tenant selection screen title"
+  },
+  "dashboard": "Tableau de bord",
+  "@dashboard": {
+    "description": "Dashboard tab label"
+  },
+  "students": "Élèves",
+  "@students": {
+    "description": "Students tab label"
+  },
+  "messages": "Messages",
+  "@messages": {
+    "description": "Messages tab label"
+  },
+  "profile": "Profil",
+  "@profile": {
+    "description": "Profile tab label"
+  },
+  "logout": "Se déconnecter",
+  "@logout": {
+    "description": "Logout button text"
+  },
+  "settings": "Paramètres",
+  "@settings": {
+    "description": "Settings label"
+  },
+  "notifications": "Notifications",
+  "@notifications": {
+    "description": "Notifications label"
+  }
+}

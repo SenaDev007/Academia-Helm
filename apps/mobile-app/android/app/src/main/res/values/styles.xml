@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Academia Helm Brand Colors -->
+    <color name="ah_navy">#0B2F73</color>
+    <color name="ah_navy_dark">#071D4A</color>
+    <color name="ah_blue">#1D4FA5</color>
+    <color name="ah_gold">#F5B335</color>
+    <color name="ah_gold_light">#FCD779</color>
+    <color name="ah_white">#FFFFFF</color>
+
+    <!-- Launch Theme -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:windowFullscreen">false</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:statusBarColor">@color/ah_navy</item>
+        <item name="android:navigationBarColor">@color/ah_navy</item>
+    </style>
+
+    <!-- Normal Theme -->
+    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">?android:colorBackground</item>
+    </style>
+</resources>

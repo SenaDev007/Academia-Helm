@@ -1,146 +1,115 @@
-# 📱 Application Mobile Academia Hub
+# Academia Helm Mobile — Application Flutter Enterprise
 
-## Vue d'ensemble
+Application mobile multi-tenant pour la gestion scolaire Academia Helm.
 
-Application mobile Academia Hub destinée aux **PARENTS** et **ÉLÈVES** pour un accès simple et sécurisé aux informations scolaires.
+## 🏗 Architecture
 
-### Caractéristiques
-
-- ✅ **Consultation uniquement** : Pas de gestion administrative
-- ✅ **Parents et Élèves** : Deux profils distincts
-- ✅ **Même API** : Réutilisation de l'infrastructure Web SaaS
-- ✅ **Multi-tenant** : Isolation stricte des données
-- ✅ **Offline limité** : Cache lecture uniquement
-- ✅ **UX simple** : Interface rassurante et accessible
-
----
-
-## 📚 Documentation
-
-### Spécification Fonctionnelle
-
-- **`docs/MOBILE-SPECIFICATION.md`** : Spécification complète
-  - Vision et objectif
-  - Périmètre strict
-  - Cibles utilisateurs
-  - Architecture technique
-  - Fonctionnalités détaillées
-  - Sécurité et multi-tenant
-  - UX et design
-  - API et intégration
-
-### Parcours Utilisateur
-
-- **`docs/USER-JOURNEYS.md`** : Parcours utilisateur détaillés
-  - Parcours parent (5 parcours)
-  - Parcours élève (5 parcours)
-  - Parcours notifications
-  - Matrice des parcours
-  - Objectifs UX
-
-### Limites de Responsabilités
-
-- **`docs/RESPONSIBILITIES.md`** : Responsabilités et limites
-  - Responsabilités de l'application
-  - Responsabilités exclues
-  - Responsabilités établissement
-  - Responsabilités éditeur
-  - Cadre juridique
-
----
-
-## 🏗️ Architecture
-
-### Stack Technologique
-
-- **Framework** : Flutter (Android & iOS)
-- **Langage** : Dart
-- **API** : REST (même backend que Web)
-- **Authentification** : JWT
-- **Cache** : Hive / SQLite
-
-### Structure Projet
+Architecture en 3 couches avec séparation stricte :
 
 ```
-apps/mobile-app/
-├── lib/
-│   ├── main.dart
-│   ├── core/          # Services core (API, auth, cache)
-│   ├── models/        # Modèles de données
-│   ├── screens/       # Écrans de l'application
-│   └── widgets/       # Composants réutilisables
-├── docs/              # Documentation
-├── pubspec.yaml       # Dépendances Flutter
-└── README.md
+lib/
+├── core/                    # Infrastructure transversale
+│   ├── theme/               # Design System (AH palette, typography, spacing)
+│   ├── network/             # Dio client, intercepteurs, API result
+│   ├── auth/                # Authentification JWT + refresh
+│   ├── tenant/              # Multi-tenant (sélection d'école)
+│   ├── router/              # GoRouter + guards
+│   ├── utils/               # Validateurs, formatters, constantes
+│   └── widgets/             # Composants partagés (adaptive scaffold, etc.)
+├── data/                    # Couche Data (implémentations concrètes)
+│   ├── datasources/         # API (Retrofit) + Stockage local (Hive)
+│   ├── dto/                 # Data Transfer Objects (Freezed)
+│   └── repositories/        # Implémentations des repositories
+├── domain/                  # Couche Domain (logique pure)
+│   ├── entities/            # Modèles métier (Freezed)
+│   └── repositories/        # Interfaces abstraites
+├── features/                # Couche Features (UI par module)
+│   ├── auth/                # Connexion, sélection d'école
+│   ├── dashboard/           # Tableau de bord (par rôle)
+│   ├── students/            # Module élèves
+│   ├── parents/             # Module parents
+│   ├── teachers/            # Module enseignants
+│   ├── admin/               # Module administration
+│   ├── profile/             # Profil utilisateur
+│   ├── settings/            # Paramètres
+│   └── notifications/       # Notifications
+└── main.dart                # Point d'entrée (Riverpod + GoRouter)
 ```
 
----
+## 📱 Plateformes supportées
 
-## 🎯 Fonctionnalités Principales
+| Plateforme | Support |
+|-----------|---------|
+| Android Phone | ✅ minSdk 24 (Android 7.0+) |
+| Android Tablet | ✅ Toutes tailles |
+| iPhone | ✅ iOS 12+ |
+| iPad | ✅ Toutes tailles, tous les orientations |
 
-### Pour les Parents
+## 🛠 Stack technique
 
-- ✅ Consultation des notes de leurs enfants
-- ✅ Suivi des paiements et factures
-- ✅ Lecture des messages de l'école
-- ✅ Consultation des absences
-- ✅ Notifications importantes
+| Composant | Technologie |
+|-----------|-------------|
+| State Management | Riverpod |
+| Navigation | GoRouter |
+| Réseau | Dio + Retrofit |
+| Modèles | Freezed + Json Serializable |
+| Stockage local | Hive + Flutter Secure Storage |
+| Notifications | Firebase Cloud Messaging |
+| Thème | Material 3 + Design System AH |
 
-### Pour les Élèves
+## 🎨 Design System
 
-- ✅ Consultation de leurs propres notes
-- ✅ Emploi du temps
-- ✅ Absences et retards
-- ✅ Messages de l'école
-- ✅ Devoirs et évaluations
+Palette Academia Helm :
+- **Navy** : `#0B2F73` (primaire)
+- **Gold** : `#F5B335` (accent)
+- **Blue** : `#1D4FA5`
+- Typographie : Inter
 
----
+## 🚀 Démarrage
 
-## 🔒 Sécurité
+```bash
+# Installer les dépendances
+flutter pub get
 
-### Authentification
+# Générer le code (Freezed, Retrofit, etc.)
+dart run build_runner build --delete-conflicting-outputs
 
-- JWT avec refresh token
-- Stockage sécurisé (Keychain/Keystore)
-- Déconnexion automatique si token expiré
+# Lancer l'app en debug
+flutter run
 
-### Multi-Tenant
+# Lancer sur une tablette Android
+flutter run -d tablet
 
-- Résolution par sous-domaine ou tenant ID
-- Isolation stricte des données
-- Sélection d'établissement si nécessaire
+# Build APK
+flutter build apk --release
 
-### Données
+# Build App Bundle (Play Store)
+flutter build appbundle --release
 
-- Chiffrement en transit (HTTPS)
-- Cache non sensible uniquement
-- Expiration cache : 30 jours maximum
+# Build iOS
+flutter build ios --release
+```
 
----
+## 🔐 Multi-Tenant
 
-## 📋 Statut
+L'application gère le multi-tenant nativement :
+1. Connexion avec email/password
+2. Sélection de l'école (tenant) parmi les disponibles
+3. Toutes les requêtes API incluent le `X-Tenant-Id`
+4. Changement de tenant sans re-login
 
-📝 **Spécification complète** — Prête pour développement
+## 📂 Structure des APIs
 
-### Prochaines Étapes
+L'application consomme exclusivement les APIs existantes :
+- `POST /api/auth/login` — Connexion
+- `POST /api/auth/refresh` — Refresh token
+- `GET /api/auth/available-tenants` — Écoles disponibles
+- `GET /api/auth/me` — Utilisateur courant
+- `GET /api/students` — Liste des élèves
+- `GET /api/tenants/by-subdomain/:slug` — Données tenant
 
-1. Setup projet Flutter
-2. Configuration API client
-3. Implémentation authentification
-4. Développement écrans principaux
-5. Tests et validation
+## 🧪 Tests
 
----
-
-## 📞 Contact
-
-Pour toute question sur l'application mobile :
-
-**YEHI OR Tech**  
-Email : contact@academiahub.com
-
----
-
-**Version** : 1.0  
-**Dernière mise à jour** : 2025
-
+```bash
+flutter test
+```

@@ -796,7 +796,7 @@ export default function BeninMap({
 
           {/* ── ACADEMIA HELM PANEL (under map, left of gov panel) ── */}
           {schoolPins.length > 0 && (
-            <div className="mt-3 rounded-2xl border border-slate-200/80 bg-white shadow-lg overflow-hidden">
+            <div className="mt-3 rounded-2xl border border-slate-200/80 bg-white shadow-lg overflow-hidden max-h-[420px] flex flex-col">
               <AnimatePresence mode="wait">
                 {ahSelectedSchool ? (
                   /* ── SCHOOL DETAIL VIEW ── */
@@ -807,6 +807,7 @@ export default function BeninMap({
                     animate="animate"
                     exit="exit"
                     transition={panelTransition}
+                    className="flex flex-col overflow-hidden"
                   >
                     {/* En-tête école — navy gradient (cohérent avec les autres en-têtes AH) */}
                     <div
@@ -848,8 +849,8 @@ export default function BeninMap({
                       </div>
                     </div>
 
-                    {/* School details */}
-                    <div className="p-4 space-y-3">
+                    {/* School details — scrollable */}
+                    <div className="p-4 space-y-2.5 overflow-y-auto flex-1">
                       {/* Logo + Type */}
                       <div className="flex items-center gap-3">
                         {ahSelectedSchool.logoUrl ? (
@@ -969,6 +970,7 @@ export default function BeninMap({
                     animate="animate"
                     exit="exit"
                     transition={panelTransition}
+                    className="flex flex-col overflow-hidden"
                   >
                     {/* En-tête département AH */}
                     <div
@@ -1003,13 +1005,12 @@ export default function BeninMap({
                       </div>
                     </div>
 
-                    {/* Department AH content */}
+                    {/* Department AH content — scrollable */}
                     {(() => {
                       const deptPins = schoolPins.filter(
                         (p) => p.department === panelDept.name || p.deptCode === panelDept.code
                       );
                       const ahCommunes = [...new Set(deptPins.map((p) => p.city).filter(Boolean))];
-                      // School type distribution
                       const typeCounts: Record<string, number> = {};
                       deptPins.forEach((p) => {
                         const t = p.schoolType || 'Autre';
@@ -1017,122 +1018,108 @@ export default function BeninMap({
                       });
 
                       return (
-                        <div className="p-4 space-y-3">
-                          {/* AH school count */}
-                          <div
-                            className="rounded-lg p-2.5 border border-slate-100"
-                            style={{
-                              background: `linear-gradient(135deg, ${GOLD}08, ${GOLD}03)`,
-                            }}
-                          >
-                            <div className="flex items-center gap-1.5 mb-0.5">
-                              <School className="h-3.5 w-3.5" style={{ color: GOLD }} />
-                              <span className="text-[10px] text-slate-500">Écoles Academia Helm</span>
+                        <div className="p-3 space-y-2 overflow-y-auto flex-1">
+                          {/* Stats row: school count + communes */}
+                          <div className="flex gap-2">
+                            <div
+                              className="flex-1 rounded-lg p-2 border border-slate-100"
+                              style={{ background: `linear-gradient(135deg, ${GOLD}08, ${GOLD}03)` }}
+                            >
+                              <div className="flex items-center gap-1">
+                                <School className="h-3 w-3" style={{ color: GOLD }} />
+                                <span className="text-[9px] text-slate-500">Écoles AH</span>
+                              </div>
+                              <p className="text-sm font-bold" style={{ color: GOLD }}>{deptPins.length}</p>
                             </div>
-                            <p className="text-sm font-bold" style={{ color: GOLD }}>
-                              {deptPins.length}
-                            </p>
+                            <div
+                              className="flex-1 rounded-lg p-2 border border-slate-100"
+                              style={{ background: `${NAVY}06` }}
+                            >
+                              <div className="flex items-center gap-1">
+                                <MapPin className="h-3 w-3" style={{ color: BLUE }} />
+                                <span className="text-[9px] text-slate-500">Communes</span>
+                              </div>
+                              <p className="text-sm font-bold" style={{ color: NAVY }}>{ahCommunes.length}</p>
+                            </div>
                           </div>
 
-                          {/* School type distribution */}
+                          {/* School type distribution — compact inline */}
                           {Object.keys(typeCounts).length > 0 && (
-                            <div className="rounded-xl bg-slate-50 p-2.5 space-y-2">
-                              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                                Types d'établissements
-                              </p>
+                            <div className="space-y-1">
                               {Object.entries(typeCounts).map(([type, count]) => (
-                                <div key={type}>
-                                  <div className="flex justify-between text-[11px] mb-1">
-                                    <span className="font-medium text-slate-700">{type}</span>
-                                    <span className="text-slate-500">
-                                      {count} ({deptPins.length > 0 ? ((count / deptPins.length) * 100).toFixed(0) : 0}%)
-                                    </span>
-                                  </div>
-                                  <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+                                <div key={type} className="flex items-center gap-1.5">
+                                  <span className="text-[10px] font-medium text-slate-600 w-24 truncate">{type}</span>
+                                  <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
                                     <motion.div
                                       className="h-full rounded-full"
                                       style={{ backgroundColor: GOLD }}
                                       initial={{ width: 0 }}
-                                      animate={{
-                                        width: `${deptPins.length > 0 ? (count / deptPins.length) * 100 : 0}%`,
-                                      }}
+                                      animate={{ width: `${deptPins.length > 0 ? (count / deptPins.length) * 100 : 0}%` }}
                                       transition={{ duration: 0.6, ease: 'easeOut' }}
                                     />
                                   </div>
+                                  <span className="text-[9px] text-slate-400 w-7 text-right">{count}</span>
                                 </div>
                               ))}
                             </div>
                           )}
 
-                          {/* Communes with AH schools */}
+                          {/* Commune tags */}
                           {ahCommunes.length > 0 && (
-                            <div>
-                              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
-                                COMMUNES ({ahCommunes.length})
-                              </p>
-                              <div className="flex flex-wrap gap-1">
-                                {ahCommunes.map((commune) => (
-                                  <span
-                                    key={commune}
-                                    className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-slate-700"
-                                    style={{
-                                      backgroundColor: `${NAVY}08`,
-                                      border: `1px solid ${NAVY}18`,
-                                    }}
-                                  >
-                                    <MapPin
-                                      className="h-2.5 w-2.5"
-                                      style={{ color: BLUE }}
-                                    />
-                                    {commune}
-                                  </span>
-                                ))}
-                              </div>
+                            <div className="flex flex-wrap gap-1">
+                              {ahCommunes.map((commune) => (
+                                <span
+                                  key={commune}
+                                  className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[9px] font-medium text-slate-600"
+                                  style={{ backgroundColor: `${NAVY}08`, border: `1px solid ${NAVY}12` }}
+                                >
+                                  <MapPin className="h-2 w-2" style={{ color: BLUE }} />
+                                  {commune}
+                                </span>
+                              ))}
                             </div>
                           )}
 
                           {/* List of AH schools in this department */}
                           <div>
-                            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
+                            <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
                               ÉCOLES PARTENAIRES ({deptPins.length})
                             </p>
-                            <div className="space-y-1 max-h-64 overflow-y-auto pr-0.5">
+                            <div className="space-y-0.5">
                               {deptPins.map((pin) => (
                                 <button
                                   key={pin.id}
                                   onClick={() => setAhSelectedSchool(pin)}
-                                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-slate-50 transition-colors group"
+                                  className="w-full flex items-center gap-1.5 px-1.5 py-1 rounded-md text-left hover:bg-slate-50 transition-colors group"
                                 >
                                   {pin.logoUrl ? (
                                     <img
                                       src={pin.logoUrl}
                                       alt={pin.name}
-                                      className="w-5 h-5 rounded object-contain flex-shrink-0 border border-slate-100"
+                                      className="w-4 h-4 rounded object-contain flex-shrink-0 border border-slate-100"
                                     />
                                   ) : (
                                     <div
-                                      className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0"
+                                      className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0"
                                       style={{ background: `${NAVY}10` }}
                                     >
-                                      <School className="h-3 w-3" style={{ color: NAVY }} />
+                                      <School className="h-2.5 w-2.5" style={{ color: NAVY }} />
                                     </div>
                                   )}
                                   <div className="flex-1 min-w-0">
                                     <p className="text-[10px] font-medium text-slate-700 group-hover:text-slate-900 truncate">
                                       {pin.schoolAcronym || pin.name}
                                     </p>
-                                    <p className="text-[9px] text-slate-400 truncate">
-                                      {pin.city || ''}{pin.schoolType ? ` · ${pin.schoolType}` : ''}
-                                    </p>
                                   </div>
-                                  <ChevronRight className="h-3 w-3 text-slate-300 group-hover:text-slate-500 flex-shrink-0" />
+                                  <span className="text-[8px] text-slate-400 truncate max-w-[60px]">{pin.city || ''}</span>
+                                  <ChevronRight className="h-2.5 w-2.5 text-slate-300 group-hover:text-slate-500 flex-shrink-0" />
                                 </button>
                               ))}
                             </div>
                           </div>
 
                           {/* Source */}
-                          <p className="text-[9px] text-slate-400 text-center pt-1">
+                          <p className="text-[8px] text-slate-400 text-center pt-0.5">
                             Source : Academia Helm
                           </p>
                         </div>
@@ -1148,6 +1135,7 @@ export default function BeninMap({
                     animate="animate"
                     exit="exit"
                     transition={panelTransition}
+                    className="flex flex-col overflow-hidden"
                   >
                     {/* En-tête national AH */}
                     <div
@@ -1177,33 +1165,29 @@ export default function BeninMap({
                       </div>
                     </div>
 
-                    {/* National AH content */}
-                    <div className="p-4 space-y-3">
-                      {/* Total AH schools */}
+                    {/* National AH content — scrollable */}
+                    <div className="p-3 space-y-2 overflow-y-auto flex-1">
+                      {/* Total AH schools — compact */}
                       <div
-                        className="rounded-lg p-2.5 border border-slate-100"
-                        style={{
-                          background: `linear-gradient(135deg, ${GOLD}08, ${GOLD}03)`,
-                        }}
+                        className="rounded-lg p-2 border border-slate-100"
+                        style={{ background: `linear-gradient(135deg, ${GOLD}08, ${GOLD}03)` }}
                       >
-                        <div className="flex items-center gap-1.5 mb-0.5">
-                          <School className="h-3.5 w-3.5" style={{ color: GOLD }} />
-                          <span className="text-[10px] text-slate-500">Écoles Academia Helm</span>
+                        <div className="flex items-center gap-1">
+                          <School className="h-3 w-3" style={{ color: GOLD }} />
+                          <span className="text-[9px] text-slate-500">Écoles Academia Helm</span>
+                          <span className="text-sm font-bold ml-auto" style={{ color: GOLD }}>{schoolPins.length}</span>
                         </div>
-                        <p className="text-sm font-bold" style={{ color: GOLD }}>
-                          {schoolPins.length}
-                        </p>
-                        <p className="text-[9px] text-slate-400 mt-0.5">
+                        <p className="text-[8px] text-slate-400 mt-0.5">
                           Cliquez sur un département pour voir les écoles inscrites
                         </p>
                       </div>
 
                       {/* Department list with AH school counts */}
                       <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
+                        <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
                           DÉPARTEMENTS
                         </p>
-                        <div className="space-y-0.5 max-h-64 overflow-y-auto">
+                        <div className="space-y-0.5">
                           {departments.map((dept) => {
                             const deptPins = schoolPins.filter(
                               (p) => p.department === dept.name || p.deptCode === dept.code
@@ -1212,22 +1196,22 @@ export default function BeninMap({
                               <button
                                 key={dept.code}
                                 onClick={() => onDepartmentSelect?.(dept)}
-                                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-slate-50 transition-colors group"
+                                className="w-full flex items-center gap-1.5 px-1.5 py-1 rounded-md text-left hover:bg-slate-50 transition-colors group"
                               >
                                 <div
-                                  className="h-3 w-3 rounded-sm flex-shrink-0 border border-white/40"
+                                  className="h-2.5 w-2.5 rounded-sm flex-shrink-0 border border-white/40"
                                   style={{ backgroundColor: NAVY }}
                                 />
-                                <span className="flex-1 text-[11px] font-medium text-slate-700 group-hover:text-slate-900">
+                                <span className="flex-1 text-[10px] font-medium text-slate-700 group-hover:text-slate-900">
                                   {dept.name.toUpperCase()}
                                 </span>
                                 <span
-                                  className="text-[11px] font-bold"
+                                  className="text-[10px] font-bold"
                                   style={{ color: deptPins.length > 0 ? GOLD : BLUE }}
                                 >
                                   {deptPins.length}
                                 </span>
-                                <ChevronRight className="h-3 w-3 text-slate-300 group-hover:text-slate-500 flex-shrink-0" />
+                                <ChevronRight className="h-2.5 w-2.5 text-slate-300 group-hover:text-slate-500 flex-shrink-0" />
                               </button>
                             );
                           })}
@@ -1235,7 +1219,7 @@ export default function BeninMap({
                       </div>
 
                       {/* Source */}
-                      <p className="text-[9px] text-slate-400 text-center pt-1">
+                      <p className="text-[8px] text-slate-400 text-center pt-0.5">
                         Source : Academia Helm
                       </p>
                     </div>

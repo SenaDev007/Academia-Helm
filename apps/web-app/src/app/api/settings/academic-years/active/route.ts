@@ -7,8 +7,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import { getServerToken, getServerSession } from '@/lib/auth/session';
 
-export const revalidate = 120;
-
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
 async function getAuthHeaders(request: NextRequest) {
@@ -32,7 +30,7 @@ export async function GET(request: NextRequest) {
     const headers = await getAuthHeaders(request);
     const response = await fetch(`${API_BASE_URL}/settings/academic-years/active`, {
       headers,
-      next: { revalidate: 120 },
+      cache: 'no-store',
     });
     const contentType = response.headers.get('content-type') || '';
     const data = contentType.includes('application/json')

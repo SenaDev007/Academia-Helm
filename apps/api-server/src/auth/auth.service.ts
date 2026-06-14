@@ -15,9 +15,28 @@ export type SessionPersistMeta = {
   userAgent?: string;
 };
 
+/** UUID v4 regex (simplifié) pour distinguer id vs slug */
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+
+  /**
+   * Résout un tenant par id (UUID) ou par slug.
+   * Permet au frontend d'envoyer soit l'id soit le slug comme tenant_id.
+   * @returns L'UUID du tenant ou null si non trouvé
+   */
+  private async resolveTenantId(tenantIdOrSlug: string): Promise<string | null> {
+    const trimmed = tenantIdOrSlug.trim();
+    const isUuid = UUID_REGEX.test(trimmed);
+    if (isUuid) {
+      return trimmed;
+    }
+    // C'est un slug → chercher l'UUID correspondant
+    const tenant = await this.prisma.tenant.findUnique({ where: { slug: trimmed } });
+    return tenant?.id || null;
+  }
 
   constructor(
     private usersService: UsersService,
@@ -153,9 +172,15 @@ export class AuthService {
         throw new ForbiddenException('Tenant ID is required for this portal type');
       }
 
+      // Résoudre le tenant par id (UUID) ou par slug (compatibilité frontend)
+      const resolvedTenantId = await this.resolveTenantId(loginDto.tenant_id);
+      if (!resolvedTenantId) {
+        throw new ForbiddenException('Tenant not found or inactive');
+      }
+
       // Vérifier que le tenant existe et est actif
       const tenant = await this.prisma.tenant.findUnique({
-        where: { id: loginDto.tenant_id },
+        where: { id: resolvedTenantId },
       });
 
       if (!tenant || tenant.status !== 'active') {
@@ -163,15 +188,24 @@ export class AuthService {
       }
 
       // Vérifier que l'utilisateur appartient à ce tenant
-      if (user.tenantId !== loginDto.tenant_id) {
+      if (user.tenantId !== resolvedTenantId) {
         throw new ForbiddenException('User does not belong to the specified tenant');
       }
+
+      // Remplacer le tenant_id par l'UUID résolu pour la suite du traitement
+      loginDto.tenant_id = resolvedTenantId;
     }
 
     // Si tenant_id est fourni sans portal_type, vérifier l'appartenance au tenant
     if (loginDto.tenant_id && !loginDto.portal_type) {
+      // Résoudre le tenant par id (UUID) ou par slug
+      const resolvedTenantId = await this.resolveTenantId(loginDto.tenant_id);
+      if (!resolvedTenantId) {
+        throw new ForbiddenException('Tenant not found or inactive');
+      }
+
       const tenant = await this.prisma.tenant.findUnique({
-        where: { id: loginDto.tenant_id },
+        where: { id: resolvedTenantId },
       });
 
       if (!tenant || tenant.status !== 'active') {
@@ -179,9 +213,12 @@ export class AuthService {
       }
 
       // Vérifier que l'utilisateur appartient à ce tenant
-      if (user.tenantId !== loginDto.tenant_id) {
+      if (user.tenantId !== resolvedTenantId) {
         throw new ForbiddenException('User does not belong to the specified tenant');
       }
+
+      // Remplacer le tenant_id par l'UUID résolu
+      loginDto.tenant_id = resolvedTenantId;
     }
 
     // Update last login

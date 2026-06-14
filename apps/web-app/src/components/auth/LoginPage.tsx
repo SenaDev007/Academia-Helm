@@ -434,11 +434,12 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     e.preventDefault();
     setError(null);
 
-    // ── Cloudflare Turnstile : vérification du token avant connexion ──
-    if (process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken && portalType !== 'public') {
-      setError('Veuillez compléter la vérification de sécurité avant de continuer.');
-      return;
-    }
+    // ── Turnstile désactivé — pas de vérification d'humanité requise ──
+    // Pour réactiver : décommenter le bloc ci-dessous
+    // if (process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken && portalType !== 'public') {
+    //   setError('Veuillez compléter la vérification de sécurité avant de continuer.');
+    //   return;
+    // }
 
     setIsLoading(true);
 

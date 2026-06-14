@@ -7,11 +7,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchSettingsBackend } from '@/lib/api/settings-proxy-fetch';
 
-export const revalidate = 300;
-
 export async function GET(request: NextRequest) {
   try {
-    const response = await fetchSettingsBackend(request, 'settings/general', { revalidate: 300 });
+    const response = await fetchSettingsBackend(request, 'settings/general');
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
@@ -27,6 +25,7 @@ export async function PUT(request: NextRequest) {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      cache: 'no-store',
     });
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });

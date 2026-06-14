@@ -3,10 +3,13 @@
  * TURNSTILE SERVER VERIFICATION — Validation côté serveur Cloudflare Turnstile
  * ============================================================================
  *
- * Vérifie le token Turnstile envoyé par le client auprès de l'API Cloudflare.
- * Doit être appelé dans les routes BFF avant de transmettre au backend.
+ * ⚠️ TURNSTILE ACTUELLEMENT DÉSACTIVÉ — Vérification d'humanité désactivée.
+ * Toutes les vérifications passent automatiquement.
  *
- * Si TURNSTILE_SECRET_KEY n'est pas configuré → skip (mode développement).
+ * Pour réactiver Turnstile :
+ *   1. Définir NEXT_PUBLIC_TURNSTILE_SITE_KEY et TURNSTILE_SECRET_KEY
+ *   2. Remettre ENABLE_TURNSTILE à 'true' dans .env
+ *   3. Réactiver le widget TurnstileWidget dans LoginPage.tsx
  * ============================================================================
  */
 
@@ -17,6 +20,8 @@ const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/sit
 /**
  * Vérifie un token Turnstile côté serveur.
  *
+ * ⚠️ ACTUELLEMENT DÉSACTIVÉ — retourne toujours { success: true }.
+ *
  * @param token - Le token envoyé par le client (depuis le widget Turnstile)
  * @param clientIp - L'IP du client (optionnel, améliore la vérification)
  * @returns true si le token est valide, false sinon
@@ -25,6 +30,11 @@ export async function verifyTurnstile(
   token: string | undefined | null,
   clientIp?: string,
 ): Promise<{ success: boolean; error?: string }> {
+  // ── TURNSTILE DÉSACTIVÉ — Accepter toutes les requêtes sans vérification ──
+  // Pour réactiver : supprimer ce retour anticipé et décommenter le code ci-dessous.
+  return { success: true };
+
+  /* ── Code Turnstile actif (décommenter pour réactiver) ──
   const secretKey = process.env.TURNSTILE_SECRET_KEY;
 
   // Si pas de clé secrète configurée → skip (dev mode)
@@ -70,6 +80,7 @@ export async function verifyTurnstile(
     // En cas d'erreur réseau, on laisse passer (fail-open) pour ne pas bloquer les utilisateurs
     return { success: true };
   }
+  ── Fin du code Turnstile actif ── */
 }
 
 /**

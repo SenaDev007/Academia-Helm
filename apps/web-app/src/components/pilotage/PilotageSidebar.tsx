@@ -90,6 +90,16 @@ function getLandingPageUrl(): string {
 }
 
 /**
+ * URL de la landing page avec marqueur ?from_app=true
+ * pour que le header public affiche "Retourner à l'application".
+ */
+function getLandingPageUrlFromApp(): string {
+  const base = getLandingPageUrl();
+  const sep = base.includes('?') ? '&' : '?';
+  return `${base}${sep}from_app=true`;
+}
+
+/**
  * Filtre un module en fonction de sa visibilité par accréditation.
  * Mapping chemin → catégorie de visibilité.
  */
@@ -502,7 +512,7 @@ export default function PilotageSidebar({
         <div className="mt-auto pt-3 border-t border-white/[0.06]">
           {/* Visiter le site public */}
           <Link
-            href={typeof window !== 'undefined' ? getLandingPageUrl() : '/'}
+            href={typeof window !== 'undefined' ? getLandingPageUrlFromApp() : '/'}
             onClick={onCloseMobileDrawer}
             className="group flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-blue-200/60 hover:bg-white/[0.04] hover:text-white"
             title={!effectiveOpen ? 'Visiter le site' : undefined}
@@ -617,7 +627,7 @@ export default function PilotageSidebar({
         </nav>
         <div className="relative z-10 border-t border-white/[0.06] py-2 space-y-0.5">
           <Link
-            href={typeof window !== 'undefined' ? getLandingPageUrl() : '/'}
+            href={typeof window !== 'undefined' ? getLandingPageUrlFromApp() : '/'}
             className="flex items-center justify-center p-2.5 rounded-xl text-blue-200/60 hover:bg-white/[0.04] hover:text-white min-h-[44px] min-w-[44px]"
             title="Visiter le site"
             {...(typeof window !== 'undefined' && getLandingPageUrl() !== '/' ? { target: '_blank', rel: 'noopener noreferrer' } : {})}

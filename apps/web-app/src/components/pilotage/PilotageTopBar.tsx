@@ -69,6 +69,16 @@ function getLandingPageUrl(): string {
   }
 }
 
+/**
+ * URL de la landing page avec marqueur ?from_app=true
+ * pour que le header public affiche "Retourner à l'application".
+ */
+function getLandingPageUrlFromApp(): string {
+  const base = getLandingPageUrl();
+  const sep = base.includes('?') ? '&' : '?';
+  return `${base}${sep}from_app=true`;
+}
+
 function formatRoleLabel(role?: string) {
   if (!role) return '—';
   const labels: Record<string, string> = {
@@ -327,7 +337,7 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
                       <span>Paramètres</span>
                     </button>
                     <a
-                      href={getLandingPageUrl()}
+                      href={getLandingPageUrlFromApp()}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => setProfileDropdownOpen(false)}

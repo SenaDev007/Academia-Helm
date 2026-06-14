@@ -16,20 +16,33 @@ import { DoorOpen, ArrowRight } from 'lucide-react';
  * Menu mobile : portal overlay avec animation
  */
 
-// --- Vérification auth (cookie non-httpOnly) ---
-function useIsAuthenticated(): boolean {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+// --- Vérification si l'utilisateur vient de l'application ---
+// On détecte le paramètre ?from_app=true dans l'URL (ajouté par le bouton
+// "Visiter le site" dans l'app) et on le persiste en sessionStorage.
+// Ainsi, l'icône DoorOpen est affichée par défaut, et ArrowRight ne s'affiche
+// QUE lorsque l'utilisateur navigue depuis l'application vers le site public.
+function useCameFromApp(): boolean {
+  const [cameFromApp, setCameFromApp] = useState(false);
   useEffect(() => {
     try {
-      const hasToken = document.cookie
-        .split(';')
-        .some((c) => c.trim().startsWith('academia_token='));
-      setIsAuthenticated(hasToken);
+      // 1. Vérifier le paramètre URL ?from_app=true
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('from_app') === 'true') {
+        sessionStorage.setItem('academia_from_app', 'true');
+        // Nettoyer l'URL sans recharger la page
+        params.delete('from_app');
+        const cleanUrl = params.toString()
+          ? `${window.location.pathname}?${params.toString()}`
+          : window.location.pathname;
+        window.history.replaceState({}, '', cleanUrl);
+      }
+      // 2. Vérifier le flag en sessionStorage
+      setCameFromApp(sessionStorage.getItem('academia_from_app') === 'true');
     } catch {
-      // Cookie indisponible (SSR, etc.)
+      // sessionStorage indisponible (SSR, etc.)
     }
   }, []);
-  return isAuthenticated;
+  return cameFromApp;
 }
 
 // --- Items de navigation avec libellés texte ---
@@ -129,7 +142,7 @@ function LimelightTextNav({ items }: { items: typeof navItems }) {
 export function Header() {
   const [open, setOpen] = useState(false);
   const scrolled = useScroll(10);
-  const isAuthenticated = useIsAuthenticated();
+  const cameFromApp = useCameFromApp();
 
   // Bloquer le scroll quand le menu mobile est ouvert
   useEffect(() => {
@@ -169,9 +182,9 @@ export function Header() {
         <div className="hidden lg:flex items-center gap-4">
           <LimelightTextNav items={navItems} />
 
-          {/* CTA Icône dorée */}
+          {/* Icône portail / Retour app */}
           <div className="ml-4 pl-4 border-l border-white/20 flex-shrink-0">
-            {isAuthenticated ? (
+            {cameFromApp ? (
               <Link
                 href="/portal"
                 prefetch={true}
@@ -191,13 +204,13 @@ export function Header() {
                 prefetch={true}
                 aria-label="Accéder au portail"
                 className={cn(
-                  'bg-[#f5b335] text-[#0b2f73] p-2.5 rounded-md min-h-[40px] min-w-[40px]',
-                  'hover:bg-[#f7c359] transition-all duration-200',
-                  'shadow-sm hover:shadow-md transform hover:-translate-y-0.5',
+                  'text-amber-300 hover:text-amber-200',
+                  'transition-all duration-200',
+                  'hover:scale-110',
                   'inline-flex items-center justify-center',
                 )}
               >
-                <DoorOpen className="w-5 h-5" />
+                <DoorOpen className="w-7 h-7" />
               </Link>
             )}
           </div>
@@ -241,7 +254,7 @@ export function Header() {
           ))}
         </div>
         <div className="flex flex-col gap-2 pt-4 mt-4 border-t border-white/20">
-          {isAuthenticated ? (
+          {cameFromApp ? (
             <Link
               href="/portal"
               onClick={() => setOpen(false)}
@@ -262,9 +275,8 @@ export function Header() {
               onClick={() => setOpen(false)}
               aria-label="Accéder au portail"
               className={cn(
-                'bg-[#f5b335] text-[#0b2f73] w-full py-3 rounded-md min-h-[44px]',
-                'font-semibold hover:bg-[#f7c359] transition-all duration-200',
-                'shadow-sm hover:shadow-md',
+                'border border-amber-300/50 text-amber-300 w-full py-3 rounded-md min-h-[44px]',
+                'font-semibold hover:bg-amber-300/10 transition-all duration-200',
                 'inline-flex items-center justify-center space-x-2',
               )}
             >

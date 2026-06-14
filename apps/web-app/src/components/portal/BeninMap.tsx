@@ -393,6 +393,7 @@ export default function BeninMap({
                       strokeWidth={isActive ? 2.5 : 1}
                       className="cursor-pointer transition-all duration-150"
                       style={{
+                        outline: 'none',
                         filter: isActive
                           ? 'drop-shadow(0 2px 8px rgba(245,179,53,0.5))'
                           : 'none',

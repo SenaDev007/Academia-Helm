@@ -34,7 +34,7 @@ import {
   GraduationCap,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-// Turnstile désactivé — le widget Cloudflare ne se chargeait pas (clé non configurée / script bloqué)
+import TurnstileWidget from '@/components/auth/TurnstileWidget';
 import LogoCircle from '@/components/ui/LogoCircle';
 import { BRAND } from '@/lib/brand';
 import { useFetchWithTimeout } from '@/lib/hooks/use-fetch-with-timeout';
@@ -89,7 +89,11 @@ export default function ForgotPasswordPage({ schoolBranding }: ForgotPasswordPag
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Turnstile désactivé — token toujours null
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+
+  // ── Callbacks stables pour Turnstile (évitent les re-rendus du widget) ──
+  const handleTurnstileError = useCallback(() => setTurnstileToken(null), []);
+  const handleTurnstileExpire = useCallback(() => setTurnstileToken(null), []);
 
   const [resendCooldown, setResendCooldown] = useState(0);
   const [emailTouched, setEmailTouched] = useState(false);
@@ -124,7 +128,11 @@ export default function ForgotPasswordPage({ schoolBranding }: ForgotPasswordPag
       return;
     }
 
-    // Turnstile désactivé — plus de vérification côté client
+    // ── Cloudflare Turnstile : vérification du token ──
+    if (process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken) {
+      setError('Veuillez compléter la vérification de sécurité avant de continuer.');
+      return;
+    }
 
     setIsLoading(true);
     setError(null);
@@ -133,7 +141,7 @@ export default function ForgotPasswordPage({ schoolBranding }: ForgotPasswordPag
       const response = await fetchWithTimeout('/api/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), turnstileToken: undefined }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), turnstileToken: turnstileToken || undefined }),
       });
       const data = await response.json();
 
@@ -161,7 +169,7 @@ export default function ForgotPasswordPage({ schoolBranding }: ForgotPasswordPag
       const response = await fetchWithTimeout('/api/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), turnstileToken: undefined }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), turnstileToken: turnstileToken || undefined }),
       });
       const data = await response.json();
 
@@ -564,7 +572,14 @@ export default function ForgotPasswordPage({ schoolBranding }: ForgotPasswordPag
                   </p>
                 </div>
 
-                {/* Turnstile désactivé — vérification Cloudflare retirée (widget ne se chargeait pas) */}
+                {/* ── Cloudflare Turnstile — vérification d'humanité ── */}
+                <div className="flex justify-center">
+                  <TurnstileWidget
+                    onToken={setTurnstileToken}
+                    onError={handleTurnstileError}
+                    onExpire={handleTurnstileExpire}
+                  />
+                </div>
 
                 <motion.button
                   type="submit"

@@ -19,7 +19,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Building2,
   GraduationCap,
@@ -114,6 +114,31 @@ export default function PortalPage() {
   const [mapFilter, setMapFilter] = useState<'all' | 'public' | 'private'>('all');
   const [showSchoolSearch, setShowSchoolSearch] = useState(false);
   const [devPanelOpen, setDevPanelOpen] = useState(false);
+
+  /* ── Mobile floating portal modal ──────────────────────────────────── */
+  const MOBILE_BREAKPOINT = 1024; // lg breakpoint
+  const [mobilePortalModalOpen, setMobilePortalModalOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Detect mobile & auto-show modal on first visit
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < MOBILE_BREAKPOINT;
+      setIsMobile(mobile);
+      // Auto-show on first load if mobile
+      if (mobile && !sessionStorage.getItem('ah_portal_modal_dismissed')) {
+        setMobilePortalModalOpen(true);
+      }
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  const closeMobilePortalModal = useCallback(() => {
+    setMobilePortalModalOpen(false);
+    try { sessionStorage.setItem('ah_portal_modal_dismissed', '1'); } catch { /* ignore */ }
+  }, []);
   const [devTenants, setDevTenants] = useState<DevTenant[]>([]);
   const [devTenantsLoading, setDevTenantsLoading] = useState(false);
   const [selectedDevTenant, setSelectedDevTenant] = useState<DevTenant | null>(null);
@@ -902,6 +927,147 @@ export default function PortalPage() {
           </motion.div>
         ) : null}
       </AnimatePresence>
+
+      {/* ── MOBILE FLOATING PORTAL MODAL ── */}
+      <AnimatePresence>
+        {isMobile && mobilePortalModalOpen ? (
+          <motion.div
+            key="mobile-portal-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Sélection du portail"
+            className="fixed inset-0 z-[60] flex items-end justify-center bg-black/30 backdrop-blur-[2px] sm:items-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={closeMobilePortalModal}
+          >
+            <motion.div
+              key="mobile-portal-modal"
+              className="relative w-full max-w-sm rounded-t-2xl sm:rounded-2xl border bg-white/95 shadow-2xl backdrop-blur-md max-h-[80vh] flex flex-col"
+              style={{
+                borderColor: `${NAVY}18`,
+                boxShadow: `0 24px 48px -12px ${NAVY}20, 0 0 0 1px ${GOLD}14`,
+              }}
+              initial={{ y: 80, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 80, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Handle bar for bottom sheet feel */}
+              <div className="flex justify-center pt-2 pb-1 sm:hidden">
+                <div className="h-1 w-10 rounded-full bg-slate-300" />
+              </div>
+
+              {/* Header */}
+              <div className="px-4 pt-2 pb-2 flex items-center justify-between">
+                <div>
+                  <h2
+                    className="text-base font-bold"
+                    style={{ color: NAVY }}
+                  >
+                    Accéder à votre portail
+                  </h2>
+                  <p className="text-[11px] text-slate-500">
+                    Choisissez un portail pour continuer
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeMobilePortalModal}
+                  className="rounded-lg p-1.5 min-w-[36px] min-h-[36px] flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                  aria-label="Fermer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Portal buttons */}
+              <div className="flex flex-col gap-1.5 px-3 pb-4 overflow-y-auto">
+                {PORTAL_DEFINITIONS.map((portal, index) => {
+                  const Icon = portal.Icon;
+                  const isActive = selectedPortal === portal.type;
+                  return (
+                    <motion.button
+                      key={portal.type}
+                      type="button"
+                      initial={{ opacity: 0, x: 12 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.03 + index * 0.04, duration: 0.25, ease: 'easeOut' }}
+                      whileTap={{ scale: 0.97 }}
+                      onClick={() => {
+                        handlePortalSelect(portal.type);
+                        closeMobilePortalModal();
+                      }}
+                      className="group relative flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left outline-none transition-all min-h-[48px]"
+                      style={{
+                        borderColor: isActive ? GOLD : `${NAVY}12`,
+                        background: isActive
+                          ? `linear-gradient(135deg, ${NAVY}0a, ${BLUE}06, ${GOLD}08)`
+                          : `linear-gradient(135deg, ${NAVY}04, ${BLUE}02)`,
+                        boxShadow: isActive
+                          ? `0 0 0 2px ${GOLD}40, 0 4px 12px ${NAVY}10`
+                          : `0 1px 2px ${NAVY}06`,
+                      }}
+                    >
+                      {/* Icon */}
+                      <div
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+                        style={{
+                          background: `linear-gradient(135deg, ${NAVY}14, ${BLUE}0c)`,
+                        }}
+                      >
+                        <Icon className="h-4 w-4" style={{ color: NAVY }} />
+                      </div>
+
+                      {/* Text */}
+                      <div className="min-w-0 flex-1">
+                        <h3
+                          className="text-sm font-bold leading-tight"
+                          style={{ color: NAVY }}
+                        >
+                          {portal.title}
+                        </h3>
+                        <p className="text-[11px] leading-snug text-slate-500">
+                          {portal.description}
+                        </p>
+                      </div>
+
+                      {/* Arrow */}
+                      <ArrowRight
+                        className="h-4 w-4 shrink-0 text-slate-300 group-hover:text-slate-500 transition-colors"
+                        style={isActive ? { color: GOLD } : undefined}
+                      />
+                    </motion.button>
+                  );
+                })}
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* ── MOBILE FAB: Re-open portal modal ── */}
+      {isMobile && !mobilePortalModalOpen && (
+        <motion.button
+          type="button"
+          initial={{ scale: 0, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: 'spring', stiffness: 400, damping: 22, delay: 0.3 }}
+          whileTap={{ scale: 0.9 }}
+          onClick={() => setMobilePortalModalOpen(true)}
+          className="fixed bottom-5 right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full shadow-lg text-white"
+          style={{
+            background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+            boxShadow: `0 4px 16px ${NAVY}40`,
+          }}
+          aria-label="Ouvrir les portails"
+        >
+          <Shield className="h-5 w-5" />
+        </motion.button>
+      )}
     </div>
   );
 }

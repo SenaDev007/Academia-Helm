@@ -11,7 +11,6 @@ import type { Metadata, Viewport } from 'next';
 import localFont from 'next/font/local';
 import Script from 'next/script';
 import './globals.css';
-import { InstallPromptWrapper } from '@/components/pwa/InstallPromptWrapper';
 import { ServiceWorkerCleanup } from '@/components/pwa/ServiceWorkerCleanup';
 import { BRAND } from '@/lib/brand';
 import { buildSiteVerification, getPublicSiteUrl, DEFAULT_OG_IMAGE_PATH } from '@/lib/seo';
@@ -155,7 +154,6 @@ export default function RootLayout({
       </head>
       <body className={`${inter.className} antialiased overflow-x-hidden`}>
         {children}
-        <InstallPromptWrapper />
         <ServiceWorkerCleanup />
         <ToastContainer />
         <Script

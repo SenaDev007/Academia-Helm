@@ -3,7 +3,7 @@
   "short_name": "Academia Helm",
   "description": "La plateforme de pilotage éducatif nouvelle génération. Prenez le gouvernail de votre institution.",
   "start_url": "/",
-  "display": "standalone",
+  "display": "browser",
   "background_color": "#ffffff",
   "theme_color": "#0A2A5E",
   "orientation": "portrait-primary",

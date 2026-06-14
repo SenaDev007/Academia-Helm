@@ -925,7 +925,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   };
 
   return (
-    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden px-3 py-12 sm:px-6 sm:py-16 lg:px-8">
+    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden px-2 py-6 sm:px-4 sm:py-10 lg:px-6">
       {/* ── Image de fond ── */}
       <div className="pointer-events-none absolute inset-0" aria-hidden>
         <Image
@@ -996,12 +996,12 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       </motion.nav>
 
       {/* ── Main login card ── */}
-      <div className="relative z-10 w-full max-w-md px-1 sm:px-0">
+      <div className="relative z-10 w-full max-w-sm px-0 sm:px-0">
         <motion.div
           initial={shouldReduceMotion ? false : { opacity: 0, y: 20, scale: 0.99 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: dur, ease: 'easeOut' }}
-          className="rounded-2xl border bg-white/95 p-5 shadow-2xl backdrop-blur-md sm:p-8 md:p-10"
+          className="rounded-2xl border bg-white/95 p-4 shadow-2xl backdrop-blur-md sm:p-6"
           style={{
             borderColor: `${NAVY}18`,
             boxShadow: `0 24px 48px -12px ${NAVY}14, 0 0 0 1px ${GOLD}12`,
@@ -1009,7 +1009,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
         >
           {/* ── Header ── */}
           <motion.div
-            className="mb-6 text-center"
+            className="mb-4 text-center"
             variants={heroVariants}
             initial="hidden"
             animate="show"
@@ -1017,7 +1017,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             {/* Logo */}
             <motion.div
               variants={heroItem}
-              className="mb-5 inline-flex items-center justify-center"
+              className="mb-3 inline-flex items-center justify-center"
               animate={shouldReduceMotion ? undefined : { y: [0, -4, 0] }}
               transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
             >
@@ -1045,7 +1045,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             {/* Title */}
             <motion.div
               variants={heroItem}
-              className="mb-2 flex flex-col items-center justify-center gap-2"
+              className="mb-1.5 flex flex-col items-center justify-center gap-1"
             >
               <h1
                 className="text-sm font-semibold tracking-tight sm:text-base"
@@ -1129,9 +1129,9 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 animate={{ opacity: 1, y: 0 }}
                 exit={shouldReduceMotion ? undefined : { opacity: 0, y: -4 }}
                 transition={{ duration: dur * 0.85 }}
-                className="mb-5"
+                className="mb-3"
               >
-                <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50/95 p-4 shadow-sm">
+                <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50/95 p-3 shadow-sm">
                   <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
                   <div>
                     <p className="text-sm text-red-800">{error}</p>
@@ -1155,9 +1155,9 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 animate={{ opacity: 1, y: 0 }}
                 exit={shouldReduceMotion ? undefined : { opacity: 0, y: -4 }}
                 transition={{ duration: dur * 0.85 }}
-                className="mb-5"
+                className="mb-3"
               >
-                <div className="flex items-start gap-3 rounded-xl border bg-amber-50/95 p-4 shadow-sm" style={{ borderColor: `${GOLD}50` }}>
+                <div className="flex items-start gap-2 rounded-xl border bg-amber-50/95 p-3 shadow-sm" style={{ borderColor: `${GOLD}50` }}>
                   <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" style={{ color: GOLD }} />
                   <p className="text-sm" style={{ color: NAVY }}>{idleLogoutMessage}</p>
                 </div>
@@ -1173,7 +1173,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 initial={shouldReduceMotion ? false : { opacity: 0, y: -6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
-                className="mb-6 rounded-xl border bg-amber-50/95 p-4"
+                className="mb-3 rounded-xl border bg-amber-50/95 p-3"
                 style={{ borderColor: `${GOLD}50` }}
               >
                 <p className="mb-1 text-sm font-semibold" style={{ color: NAVY }}>
@@ -1194,9 +1194,9 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 initial={shouldReduceMotion ? false : { opacity: 0, y: -6 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: dur }}
-                className="mb-6"
+                className="mb-3"
               >
-                <div className="flex flex-col items-center gap-4 rounded-xl border bg-green-50/95 p-6 text-center" style={{ borderColor: '#22c55e50' }}>
+                <div className="flex flex-col items-center gap-3 rounded-xl border bg-green-50/95 p-4 text-center" style={{ borderColor: '#22c55e50' }}>
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
                     <FileText className="h-6 w-6 text-green-600" />
                   </div>
@@ -1225,7 +1225,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               Conformes au document academia-helm-portails.md
               ════════════════════════════════════════════════════════════════ */}
 
-          <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
             <AnimatePresence mode="wait">
               <motion.div
                 key={formBlockKey}
@@ -1233,7 +1233,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 animate={{ opacity: 1, x: 0 }}
                 exit={shouldReduceMotion ? undefined : { opacity: 0, x: -12 }}
                 transition={{ duration: dur, ease: 'easeOut' }}
-                className="space-y-4 sm:space-y-5"
+                className="space-y-3 sm:space-y-4"
               >
                 {/* ── PLATFORM + SCHOOL : Email + Mot de passe ── */}
                 {(isStandardLogin || portalType === 'school' || portalType === 'platform') && (
@@ -1242,7 +1242,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                     <div>
                       <label
                         htmlFor={`email-${tenantStorageKey}`}
-                        className="mb-2 block text-sm font-semibold text-slate-900"
+                        className="mb-1.5 block text-sm font-semibold text-slate-900"
                       >
                         Adresse email
                       </label>
@@ -1263,7 +1263,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                               email: e.target.value,
                             })
                           }
-                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2"
+                          className="w-full rounded-xl border-2 border-slate-200 py-2.5 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                           placeholder={
                             portalType === 'platform'
@@ -1290,7 +1290,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
 
                     {/* Password field */}
                     <div>
-                      <div className="mb-2 flex items-center justify-between">
+                      <div className="mb-1.5 flex items-center justify-between">
                         <label
                           htmlFor={`password-${tenantStorageKey}`}
                           className="text-sm font-semibold text-slate-900"
@@ -1322,7 +1322,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                               password: e.target.value,
                             })
                           }}
-                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2"
+                          className="w-full rounded-xl border-2 border-slate-200 py-2.5 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                           placeholder="••••••••"
                         />
@@ -1370,7 +1370,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                     <div>
                       <label
                         htmlFor="teacherIdentifier"
-                        className="mb-2 block text-sm font-semibold text-slate-900"
+                        className="mb-1.5 block text-sm font-semibold text-slate-900"
                       >
                         Matricule / Identifiant
                       </label>
@@ -1389,7 +1389,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                               teacherIdentifier: e.target.value,
                             })
                           }
-                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2"
+                          className="w-full rounded-xl border-2 border-slate-200 py-2.5 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                           placeholder="EMP001"
                         />
@@ -1400,7 +1400,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                     </div>
 
                     <div>
-                      <div className="mb-2 flex items-center justify-between">
+                      <div className="mb-1.5 flex items-center justify-between">
                         <label
                           htmlFor="teacherPassword"
                           className="text-sm font-semibold text-slate-900"
@@ -1430,7 +1430,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                               password: e.target.value,
                             })
                           }}
-                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2"
+                          className="w-full rounded-xl border-2 border-slate-200 py-2.5 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                           placeholder="••••••••"
                         />
@@ -1474,7 +1474,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                     <div>
                       <label
                         htmlFor="phone"
-                        className="mb-2 block text-sm font-semibold text-slate-900"
+                        className="mb-1.5 block text-sm font-semibold text-slate-900"
                       >
                         Numéro de téléphone
                       </label>
@@ -1494,7 +1494,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                               phone: e.target.value,
                             })
                           }
-                          className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2 disabled:bg-slate-100"
+                          className="w-full rounded-xl border-2 border-slate-200 py-2.5 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2 disabled:bg-slate-100"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                           placeholder="+229 90 00 00 00"
                         />
@@ -1524,7 +1524,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                         >
                           <label
                             htmlFor="otp"
-                            className="mb-2 block text-sm font-semibold text-slate-900"
+                            className="mb-1.5 block text-sm font-semibold text-slate-900"
                           >
                             Code OTP
                           </label>
@@ -1543,7 +1543,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                                   otp: e.target.value,
                                 })
                               }
-                              className="w-full rounded-xl border-2 border-slate-200 py-3 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2"
+                              className="w-full rounded-xl border-2 border-slate-200 py-2.5 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2"
                               style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                               placeholder="123456"
                               maxLength={6}
@@ -1577,7 +1577,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                   <>
                     {/* Type de candidat */}
                     <div>
-                      <label className="mb-2 block text-sm font-semibold text-slate-900">
+                      <label className="mb-1.5 block text-sm font-semibold text-slate-900">
                         Vous souhaitez inscrire un enfant en
                       </label>
                       <div className="grid grid-cols-2 gap-2">
@@ -1753,7 +1753,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
 
             {/* ── Cloudflare Turnstile — vérification d'humanité ── */}
             {!(portalType === 'public') && (
-              <div className="flex justify-center mt-3">
+              <div className="flex justify-center mt-2">
                 <TurnstileWidget
                   onToken={setTurnstileToken}
                   onError={() => setTurnstileToken(null)}
@@ -1804,7 +1804,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             initial={shouldReduceMotion ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: shouldReduceMotion ? 0 : 0.12, duration: dur }}
-            className="mt-4 sm:mt-6 space-y-3 text-center"
+            className="mt-3 space-y-2 text-center"
           >
             {!isStandardLogin && portalType !== 'public' ? (
               <Link

@@ -959,7 +959,12 @@ export default function BeninMap({
                           </div>
                         )}
                         {ahSelectedSchool.website && (
-                          <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
+                          <a
+                            href={ahSelectedSchool.website}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-100 bg-slate-50/50 hover:bg-slate-100/70 transition-colors"
+                          >
                             <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: `${NAVY}10` }}>
                               <Globe className="h-3 w-3" style={{ color: NAVY }} />
                             </div>
@@ -967,14 +972,14 @@ export default function BeninMap({
                               <p className="text-[9px] text-slate-400 uppercase tracking-wide">Site web</p>
                               <p className="text-[11px] font-medium truncate" style={{ color: BLUE }}>{ahSelectedSchool.website}</p>
                             </div>
-                          </div>
+                          </a>
                         )}
                       </div>
 
-                      {/* Visiter le site button */}
-                      {ahSelectedSchool.website && (
+                      {/* Sous-domaine Academia Helm button */}
+                      {ahSelectedSchool.subdomain && (
                         <a
-                          href={ahSelectedSchool.website}
+                          href={`https://${ahSelectedSchool.subdomain}.academiahelm.com`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-[11px] font-semibold text-white transition-all hover:opacity-90"
@@ -984,7 +989,7 @@ export default function BeninMap({
                           }}
                         >
                           <ExternalLink className="h-3 w-3" />
-                          Visiter le site
+                          {ahSelectedSchool.subdomain}.academiahelm.com
                         </a>
                       )}
 

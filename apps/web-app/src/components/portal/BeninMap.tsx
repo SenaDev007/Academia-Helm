@@ -524,9 +524,9 @@ export default function BeninMap({
                       />
                     </circle>
 
-                    {/* Logo Academia Helm comme pin (sans fond blanc) */}
+                    {/* Logo Academia Helm SVG comme pin (sans fond blanc) */}
                     <image
-                      href="/images/logo-pin.png"
+                      href="/images/logo-Academia-Helm.svg"
                       x={pin.x - pinR}
                       y={pin.y - pinR}
                       width={pinR * 2}

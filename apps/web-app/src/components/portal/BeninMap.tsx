@@ -43,6 +43,7 @@ import {
   type DepartmentData,
 } from '@/data/benin-departments';
 import { useGovData } from '@/lib/hooks/use-gov-data';
+import { useSchoolsMap, type SchoolPin } from '@/lib/hooks/use-schools-map';
 
 /* ── Palette Academia Helm ────────────────────────────────────────────── */
 const NAVY = '#0b2f73';
@@ -137,12 +138,16 @@ export default function BeninMap({
   className = '',
 }: BeninMapProps) {
   const [hoveredDept, setHoveredDept] = useState<string | null>(null);
+  const [hoveredPin, setHoveredPin] = useState<SchoolPin | null>(null);
   const [educationLevel, setEducationLevel] = useState<EducationLevel>('primaire');
   const [primaireCycle, setPrimaireCycle] = useState<PrimaireCycle>('all');
   const [circumscriptionOpen, setCircumscriptionOpen] = useState(false);
 
   /* ── Données gouvernementales en temps réel ─────────────────────────── */
   const govData = useGovData();
+
+  /* ── Écoles inscrites sur Academia Helm ─────────────────────────────── */
+  const { pins: schoolPins } = useSchoolsMap();
 
   // Utiliser les données live si disponibles, sinon les données statiques
   const departments = govData.departments;
@@ -467,6 +472,219 @@ export default function BeninMap({
                     </g>
                   );
                 })()}
+
+              {/* ── School Pins (écoles inscrites Academia Helm) ────────── */}
+              {schoolPins.length > 0 && schoolPins.map((pin) => {
+                const isHovered = hoveredPin?.id === pin.id;
+                const pinSize = 10;
+
+                return (
+                  <g
+                    key={pin.id}
+                    className="cursor-pointer"
+                    onMouseEnter={() => setHoveredPin(pin)}
+                    onMouseLeave={() => setHoveredPin(null)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                    }}
+                  >
+                    {/* Pulse ring animation */}
+                    <circle
+                      cx={pin.x}
+                      cy={pin.y}
+                      r={pinSize + 2}
+                      fill="none"
+                      stroke={GOLD}
+                      strokeWidth={0.8}
+                      opacity={0.6}
+                    >
+                      <animate
+                        attributeName="r"
+                        from={pinSize}
+                        to={pinSize + 6}
+                        dur="2s"
+                        repeatCount="indefinite"
+                      />
+                      <animate
+                        attributeName="opacity"
+                        from="0.6"
+                        to="0"
+                        dur="2s"
+                        repeatCount="indefinite"
+                      />
+                    </circle>
+
+                    {/* Pin shadow */}
+                    <circle
+                      cx={pin.x}
+                      cy={pin.y + 1}
+                      r={pinSize}
+                      fill="rgba(0,0,0,0.2)"
+                    />
+
+                    {/* Pin circle with logo */}
+                    <circle
+                      cx={pin.x}
+                      cy={pin.y}
+                      r={pinSize}
+                      fill={isHovered ? GOLD : NAVY}
+                      stroke={GOLD}
+                      strokeWidth={isHovered ? 1.5 : 0.8}
+                      style={{
+                        outline: 'none',
+                        transition: 'fill 0.2s, stroke-width 0.2s',
+                        filter: isHovered
+                          ? 'drop-shadow(0 2px 6px rgba(245,179,53,0.7))'
+                          : 'drop-shadow(0 1px 3px rgba(0,0,0,0.4))',
+                      }}
+                    />
+
+                    {/* "AH" text inside pin (Academia Helm initials) */}
+                    <text
+                      x={pin.x}
+                      y={pin.y + 2.5}
+                      textAnchor="middle"
+                      fill={isHovered ? NAVY : 'white'}
+                      fontSize="5.5"
+                      fontWeight="800"
+                      className="pointer-events-none select-none"
+                      style={{ fontFamily: 'system-ui, sans-serif' }}
+                    >
+                      AH
+                    </text>
+                  </g>
+                );
+              })}
+
+              {/* ── Hologram tooltip for hovered school pin ──────────────── */}
+              {hoveredPin && (() => {
+                const pin = hoveredPin;
+                const tipW = 140;
+                const tipH = 62;
+                // Position tooltip above or below the pin depending on space
+                const tipAbove = pin.y > tipH + 15;
+                const tipX = Math.max(5, Math.min(pin.x - tipW / 2, 360 - tipW - 5));
+                const tipY = tipAbove ? pin.y - tipH - 14 : pin.y + 18;
+
+                return (
+                  <g className="pointer-events-none">
+                    {/* Backdrop glow */}
+                    <rect
+                      x={tipX - 2}
+                      y={tipY - 2}
+                      width={tipW + 4}
+                      height={tipH + 4}
+                      rx={8}
+                      fill="rgba(245,179,53,0.08)"
+                    />
+                    {/* Main card */}
+                    <rect
+                      x={tipX}
+                      y={tipY}
+                      width={tipW}
+                      height={tipH}
+                      rx={6}
+                      fill="rgba(7,29,74,0.95)"
+                      stroke={GOLD}
+                      strokeWidth={0.8}
+                    />
+                    {/* Gold top accent line */}
+                    <rect
+                      x={tipX + 6}
+                      y={tipY + 1}
+                      width={tipW - 12}
+                      height={1.2}
+                      rx={0.6}
+                      fill={GOLD}
+                      opacity={0.7}
+                    />
+
+                    {/* School name */}
+                    <text
+                      x={tipX + tipW / 2}
+                      y={tipY + 14}
+                      textAnchor="middle"
+                      fill="white"
+                      fontSize="7"
+                      fontWeight="700"
+                    >
+                      {pin.name.length > 22 ? pin.name.slice(0, 21) + '…' : pin.name}
+                    </text>
+
+                    {/* City */}
+                    <text
+                      x={tipX + tipW / 2}
+                      y={tipY + 24}
+                      textAnchor="middle"
+                      fill={GOLD}
+                      fontSize="5.5"
+                      fontWeight="500"
+                    >
+                      {pin.city || 'Bénin'}
+                    </text>
+
+                    {/* Separator */}
+                    <line
+                      x1={tipX + 10}
+                      y1={tipY + 29}
+                      x2={tipX + tipW - 10}
+                      y2={tipY + 29}
+                      stroke="rgba(255,255,255,0.15)"
+                      strokeWidth={0.5}
+                    />
+
+                    {/* School type badge */}
+                    <rect
+                      x={tipX + 12}
+                      y={tipY + 34}
+                      width={tipW - 24}
+                      height={11}
+                      rx={3}
+                      fill={BLUE}
+                      opacity={0.7}
+                    />
+                    <text
+                      x={tipX + tipW / 2}
+                      y={tipY + 42}
+                      textAnchor="middle"
+                      fill="white"
+                      fontSize="5.5"
+                      fontWeight="600"
+                    >
+                      {pin.schoolType || 'École partenaire'}
+                    </text>
+
+                    {/* "Sur Academia Helm" label */}
+                    <text
+                      x={tipX + tipW / 2}
+                      y={tipY + 55}
+                      textAnchor="middle"
+                      fill="rgba(255,255,255,0.5)"
+                      fontSize="4.5"
+                      fontWeight="400"
+                    >
+                      Sur Academia Helm
+                    </text>
+
+                    {/* Arrow pointing to pin */}
+                    {tipAbove ? (
+                      <polygon
+                        points={`${pin.x - 4},${tipY + tipH} ${pin.x},${tipY + tipH + 6} ${pin.x + 4},${tipY + tipH}`}
+                        fill="rgba(7,29,74,0.95)"
+                        stroke={GOLD}
+                        strokeWidth={0.5}
+                      />
+                    ) : (
+                      <polygon
+                        points={`${pin.x - 4},${tipY} ${pin.x},${tipY - 6} ${pin.x + 4},${tipY}`}
+                        fill="rgba(7,29,74,0.95)"
+                        stroke={GOLD}
+                        strokeWidth={0.5}
+                      />
+                    )}
+                  </g>
+                );
+              })()}
             </svg>
 
             {/* ── Legend (discrete, like government site) ──────────── */}

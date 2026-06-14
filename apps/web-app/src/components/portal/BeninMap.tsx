@@ -521,45 +521,45 @@ export default function BeninMap({
         <div className="flex-1 min-w-0">
           <div className="relative" ref={mapContainerRef}>
             {/* ── Zoom Controls (floating, Google Maps style) ─────── */}
-            <div className="absolute top-2 right-2 z-10 flex flex-col gap-1">
+            <div className="absolute top-2 right-2 sm:top-3 sm:right-3 z-10 flex flex-col gap-1.5">
               <button
                 onClick={zoomIn}
-                className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/90 border border-slate-200 shadow-sm hover:bg-white hover:shadow-md transition-all text-slate-600 hover:text-slate-900"
+                className="w-9 h-9 sm:w-8 sm:h-8 flex items-center justify-center rounded-lg bg-white/90 border border-slate-200 shadow-sm hover:bg-white hover:shadow-md active:scale-95 transition-all text-slate-600 hover:text-slate-900"
                 aria-label="Zoom avant"
                 title="Zoom avant"
               >
-                <ZoomIn className="h-4 w-4" />
+                <ZoomIn className="h-[18px] w-[18px] sm:h-4 sm:w-4" />
               </button>
               <button
                 onClick={zoomOut}
-                className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/90 border border-slate-200 shadow-sm hover:bg-white hover:shadow-md transition-all text-slate-600 hover:text-slate-900"
+                className="w-9 h-9 sm:w-8 sm:h-8 flex items-center justify-center rounded-lg bg-white/90 border border-slate-200 shadow-sm hover:bg-white hover:shadow-md active:scale-95 transition-all text-slate-600 hover:text-slate-900"
                 aria-label="Zoom arrière"
                 title="Zoom arrière"
               >
-                <ZoomOut className="h-4 w-4" />
+                <ZoomOut className="h-[18px] w-[18px] sm:h-4 sm:w-4" />
               </button>
               {zoom > MIN_ZOOM && (
                 <button
                   onClick={resetView}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/90 border border-slate-200 shadow-sm hover:bg-white hover:shadow-md transition-all text-slate-600 hover:text-slate-900"
+                  className="w-9 h-9 sm:w-8 sm:h-8 flex items-center justify-center rounded-lg bg-white/90 border border-slate-200 shadow-sm hover:bg-white hover:shadow-md active:scale-95 transition-all text-slate-600 hover:text-slate-900"
                   aria-label="Réinitialiser la vue"
                   title="Réinitialiser la vue"
                 >
-                  <Maximize2 className="h-4 w-4" />
+                  <Maximize2 className="h-[18px] w-[18px] sm:h-4 sm:w-4" />
                 </button>
               )}
             </div>
 
             {/* ── Zoom level indicator ──────────────────────────────── */}
             {zoom > MIN_ZOOM && (
-              <div className="absolute top-2 left-2 z-10 px-2 py-1 rounded-md bg-white/90 border border-slate-200 shadow-sm text-[10px] text-slate-500 font-medium">
+              <div className="absolute top-2 left-2 sm:top-3 sm:left-3 z-10 px-2 py-1 rounded-md bg-white/90 border border-slate-200 shadow-sm text-[11px] sm:text-[10px] text-slate-500 font-medium">
                 {Math.round(zoom * 100)}%
               </div>
             )}
 
             <svg
               viewBox={viewBox}
-              className={`w-full mx-auto ${isPanning ? 'cursor-grabbing' : zoom > MIN_ZOOM ? 'cursor-grab' : 'cursor-default'}`}
+              className={`w-full mx-auto min-h-[280px] sm:min-h-[320px] md:min-h-[380px] ${isPanning ? 'cursor-grabbing' : zoom > MIN_ZOOM ? 'cursor-grab' : 'cursor-default'}`}
               role="img"
               aria-label="Carte interactive du Bénin par département"
               onMouseLeave={() => {

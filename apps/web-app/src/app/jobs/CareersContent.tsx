@@ -374,7 +374,11 @@ export function CareersContent({
       try {
         setLoading(true);
         setLoadError(null);
-        const res = await fetch('/api/public/schools/with-jobs');
+        // Timeout augmenté — le backend peut avoir un cold start Neon DB
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 35000);
+        const res = await fetch('/api/public/schools/with-jobs', { signal: controller.signal });
+        clearTimeout(timeoutId);
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data)) {
@@ -382,8 +386,12 @@ export function CareersContent({
             return;
           }
         }
+        // Fallback vers /list si /with-jobs échoue
         try {
-          const fallbackRes = await fetch('/api/public/schools/list');
+          const fallbackController = new AbortController();
+          const fallbackTimeout = setTimeout(() => fallbackController.abort(), 30000);
+          const fallbackRes = await fetch('/api/public/schools/list', { signal: fallbackController.signal });
+          clearTimeout(fallbackTimeout);
           if (fallbackRes.ok) {
             const fallbackData = await fallbackRes.json();
             if (Array.isArray(fallbackData)) {
@@ -394,10 +402,18 @@ export function CareersContent({
         } catch {
           // Fallback also failed
         }
-        setLoadError('Impossible de charger les établissements. Vérifiez votre connexion et réessayez.');
-      } catch (err) {
+        const errorBody = await res.json().catch(() => null);
+        const errorMsg = res.status === 504
+          ? 'Le serveur met trop de temps à répondre. Réessayez dans quelques instants.'
+          : 'Impossible de charger les établissements. Vérifiez votre connexion et réessayez.';
+        setLoadError(errorBody?.message || errorMsg);
+      } catch (err: any) {
         console.error('Failed to load schools:', err);
-        setLoadError('Erreur réseau. Vérifiez votre connexion et réessayez.');
+        if (err.name === 'AbortError') {
+          setLoadError('Le serveur met trop de temps à répondre. Réessayez dans quelques instants.');
+        } else {
+          setLoadError('Erreur réseau. Vérifiez votre connexion et réessayez.');
+        }
       } finally {
         setLoading(false);
       }
@@ -803,10 +819,18 @@ export function CareersContent({
               onClick={() => {
                 setLoading(true);
                 setLoadError(null);
-                fetch('/api/public/schools/with-jobs')
-                  .then(res => res.ok ? res.json() : Promise.reject('API error'))
+                const retryController = new AbortController();
+                const retryTimeout = setTimeout(() => retryController.abort(), 35000);
+                fetch('/api/public/schools/with-jobs', { signal: retryController.signal })
+                  .then(res => { clearTimeout(retryTimeout); return res.ok ? res.json() : Promise.reject('API error'); })
                   .then(data => { if (Array.isArray(data)) setSchools(data); })
-                  .catch(() => setLoadError('Impossible de charger les établissements. Vérifiez votre connexion et réessayez.'))
+                  .catch((err) => {
+                    if (err?.name === 'AbortError') {
+                      setLoadError('Le serveur met trop de temps à répondre. Réessayez dans quelques instants.');
+                    } else {
+                      setLoadError('Impossible de charger les établissements. Vérifiez votre connexion et réessayez.');
+                    }
+                  })
                   .finally(() => setLoading(false));
               }}
               className="px-6 py-2.5 bg-[#0b2f73] text-white text-sm font-semibold rounded-xl hover:bg-[#1521a0] transition-colors"

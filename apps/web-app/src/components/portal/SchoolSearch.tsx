@@ -58,7 +58,8 @@ export default function SchoolSearch({
   // Fallback : si /list échoue (403/5xx), essayer /search?q= pour obtenir au moins des résultats
   const loadAllSchools = async () => {
     const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort(), 15000);
+    // Timeout augmenté à 35s — le backend peut avoir un cold start Neon
+    const timeoutId = setTimeout(() => abortController.abort(), 35000);
 
     setIsLoading(true);
     setFetchError(null);
@@ -91,14 +92,20 @@ export default function SchoolSearch({
         const hint = errorBody?._debug?.hint || '';
         const errorMsg = response.status === 403
           ? 'Accès refusé par le serveur. Réessayez dans quelques instants.'
-          : `Erreur ${response.status}: impossible de charger les établissements`;
+          : response.status === 504
+            ? 'Le serveur met trop de temps à répondre. Réessayez dans quelques instants.'
+            : `Erreur ${response.status}: impossible de charger les établissements`;
         setFetchError(hint ? `${errorMsg} ${hint}` : errorMsg);
       }
     } catch (error: any) {
       clearTimeout(timeoutId);
       if (error.name === 'AbortError') {
         console.warn('[SchoolSearch] Schools list fetch timed out');
-        setFetchError('Le serveur met trop de temps à répondre. Réessayez.');
+        // Timeout côté client → essayer le search fallback
+        const fallbackOk = await trySearchFallback().catch(() => false);
+        if (!fallbackOk) {
+          setFetchError('Le serveur met trop de temps à répondre. Réessayez.');
+        }
       } else {
         console.error('[SchoolSearch] Error loading schools list:', error);
         // Dernier recours : essayer le search fallback

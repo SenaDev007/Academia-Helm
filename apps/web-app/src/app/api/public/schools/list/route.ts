@@ -11,10 +11,15 @@
  *   2. Sinon → appel via l'URL publique (api.academiahelm.com)
  *   3. Si l'URL publique est bloquée par Cloudflare (403+HTML) → fallback Railway direct
  *   4. Retry automatique sur erreurs transitoires
+ *
+ * Cache : Réponse mise en cache pendant 60 secondes (Next.js ISR)
  * ============================================================================
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+
+/** ISR: revalidate toutes les 60 secondes — les données changent rarement */
+export const revalidate = 60;
 
 /** Nombre max de tentatives en cas d'erreur transitoire. */
 const MAX_RETRIES = 1;
@@ -25,8 +30,8 @@ const RETRYABLE_STATUS_CODES = new Set([403, 502, 503, 504]);
 /** Délai avant retry (ms). */
 const RETRY_DELAY_MS = 800;
 
-/** Timeout par défaut (ms). */
-const DEFAULT_TIMEOUT = 15000;
+/** Timeout augmenté à 30s — le backend peut avoir un cold start Neon. */
+const DEFAULT_TIMEOUT = 30_000;
 
 /**
  * URL Railway directe — contourne Cloudflare.
@@ -37,19 +42,6 @@ const RAILWAY_INTERNAL_ORIGIN = 'https://8nvfmrrz.up.railway.app';
 
 /** Host original de l'API (pour le header Host envoyé à Railway). */
 const API_PUBLIC_HOST = 'api.academiahelm.com';
-
-/**
- * Construit l'URL API complète en fonction de la stratégie.
- */
-function buildApiUrl(path: string, useInternal: boolean): string {
-  const cleanPath = path.replace(/^\//, '');
-  if (useInternal) {
-    return `${RAILWAY_INTERNAL_ORIGIN}/api/${cleanPath}`;
-  }
-  // URL publique — getApiBaseUrl() inclut déjà /api
-  const base = getApiBaseUrlSync().replace(/\/$/, '');
-  return `${base}/${cleanPath}`;
-}
 
 /**
  * Version synchrone de getApiBaseUrl pour éviter les imports circulaires.
@@ -99,6 +91,7 @@ async function fetchWithTimeout(
       method: 'GET',
       headers,
       signal: controller.signal,
+      next: { revalidate: 60 },
     });
     clearTimeout(timeoutId);
     return response;
@@ -108,9 +101,32 @@ async function fetchWithTimeout(
   }
 }
 
+/**
+ * Tente de récupérer les écoles depuis une URL donnée.
+ * Retourne les données ou null en cas d'échec.
+ */
+async function tryFetchSchools(
+  url: string,
+  headers: Record<string, string>,
+  timeout?: number,
+): Promise<any[] | null> {
+  try {
+    const response = await fetchWithTimeout(url, headers, timeout);
+    if (response.ok) {
+      const data = await response.json();
+      console.log(`[School List API] ✅ Success from ${url}: ${Array.isArray(data) ? data.length : 'unknown'} schools`);
+      return Array.isArray(data) ? data : data?.schools || null;
+    }
+    console.warn(`[School List API] ${url} returned ${response.status}`);
+    return null;
+  } catch (error: any) {
+    console.warn(`[School List API] ${url} failed: ${error.message}`);
+    return null;
+  }
+}
+
 export async function GET(_request: NextRequest) {
-  const apiInternalUrl = process.env.API_INTERNAL_URL;
-  const useInternalFirst = !!apiInternalUrl;
+  const PATH = 'public/schools/list';
 
   // Headers BFF standard
   const bffHeaders: Record<string, string> = {
@@ -125,48 +141,25 @@ export async function GET(_request: NextRequest) {
     'Host': API_PUBLIC_HOST,
   };
 
-  let lastError: { status: number; data: any } | null = null;
-
   // ── Stratégie 1 : URL interne Railway (si API_INTERNAL_URL configuré) ──
-  if (useInternalFirst) {
-    const internalUrl = buildApiUrl('public/schools/list', true);
-    console.log(`[School List API] Strategy 1: Internal URL → ${internalUrl}`);
+  if (process.env.API_INTERNAL_URL) {
+    const internalUrl = `${RAILWAY_INTERNAL_ORIGIN}/api/${PATH}`;
+    console.log(`[School List API] Strategy 1: Internal → ${internalUrl}`);
 
-    try {
-      const response = await fetchWithTimeout(internalUrl, railwayHeaders);
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log(`[School List API] ✅ Success via internal URL: ${Array.isArray(data) ? data.length : 'unknown'} schools`);
-        return NextResponse.json(data);
-      }
-
-      // Erreur non-Cloudflare depuis Railway → retry ou fallback
-      console.warn(`[School List API] Internal URL returned ${response.status}, falling back to public URL`);
-    } catch (error: any) {
-      console.warn(`[School List API] Internal URL failed: ${error.message}, falling back to public URL`);
-    }
+    const data = await tryFetchSchools(internalUrl, railwayHeaders);
+    if (data) return NextResponse.json(data);
 
     // Fallback vers l'URL publique
-    const publicUrl = buildApiUrl('public/schools/list', false);
-    console.log(`[School List API] Fallback: Public URL → ${publicUrl}`);
+    const publicUrl = `${getApiBaseUrlSync().replace(/\/$/, '')}/${PATH}`;
+    console.log(`[School List API] Strategy 1 fallback: Public → ${publicUrl}`);
 
-    try {
-      const response = await fetchWithTimeout(publicUrl, bffHeaders);
-      if (response.ok) {
-        const data = await response.json();
-        console.log(`[School List API] ✅ Success via public URL (fallback): ${Array.isArray(data) ? data.length : 'unknown'} schools`);
-        return NextResponse.json(data);
-      }
-      // Même le public a échoué — on continue vers la stratégie 2
-    } catch {
-      // Le public a aussi échoué — on continue
-    }
+    const pubData = await tryFetchSchools(publicUrl, bffHeaders);
+    if (pubData) return NextResponse.json(pubData);
   }
 
   // ── Stratégie 2 : URL publique avec détection Cloudflare + fallback Railway ──
-  const publicUrl = buildApiUrl('public/schools/list', false);
-  console.log(`[School List API] Strategy 2: Public URL → ${publicUrl}`);
+  const publicUrl = `${getApiBaseUrlSync().replace(/\/$/, '')}/${PATH}`;
+  console.log(`[School List API] Strategy 2: Public → ${publicUrl}`);
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -175,33 +168,17 @@ export async function GET(_request: NextRequest) {
       // Détecter le challenge Cloudflare
       const contentType = response.headers.get('content-type') || '';
       if (isCloudflareChallenge(response.status, contentType, '')) {
-        // Lire le body pour confirmation
         const body = await response.text();
         if (isCloudflareChallenge(response.status, contentType, body)) {
-          console.error('[School List API] Cloudflare challenge detected on public URL. Trying Railway fallback...');
+          console.error('[School List API] Cloudflare challenge detected. Trying Railway fallback...');
 
-          // ── Fallback Railway direct ──
-          const railwayUrl = buildApiUrl('public/schools/list', true);
-          console.log(`[School List API] Railway fallback → ${railwayUrl}`);
+          // Fallback Railway direct
+          const railwayUrl = `${RAILWAY_INTERNAL_ORIGIN}/api/${PATH}`;
+          const data = await tryFetchSchools(railwayUrl, railwayHeaders);
+          if (data) return NextResponse.json(data);
 
-          try {
-            const railwayResponse = await fetchWithTimeout(railwayUrl, railwayHeaders);
-            if (railwayResponse.ok) {
-              const data = await railwayResponse.json();
-              console.log(`[School List API] ✅ Success via Railway fallback: ${Array.isArray(data) ? data.length : 'unknown'} schools`);
-              return NextResponse.json(data);
-            }
-            console.error(`[School List API] Railway fallback also failed: ${railwayResponse.status}`);
-          } catch (railwayError: any) {
-            console.error(`[School List API] Railway fallback error: ${railwayError.message}`);
-          }
-
-          // Ni public ni Railway n'ont fonctionné
           return NextResponse.json(
-            {
-              error: 'Cloudflare challenge',
-              message: 'Accès bloqué par Cloudflare. Le serveur API est inaccessible.',
-            },
+            { error: 'Cloudflare challenge', message: 'Accès bloqué par Cloudflare. Le serveur API est inaccessible.' },
             { status: 502 },
           );
         }
@@ -217,15 +194,18 @@ export async function GET(_request: NextRequest) {
           JSON.stringify(errorData).substring(0, 500),
         );
 
-        lastError = { status: response.status, data: errorData };
-
         if (RETRYABLE_STATUS_CODES.has(response.status) && attempt < MAX_RETRIES) {
           console.log(`[School List API] Retrying in ${RETRY_DELAY_MS}ms...`);
           await sleep(RETRY_DELAY_MS);
           continue;
         }
 
-        break;
+        // Dernier recours : essayer Railway direct même si ce n'est pas Cloudflare
+        const railwayUrl = `${RAILWAY_INTERNAL_ORIGIN}/api/${PATH}`;
+        const data = await tryFetchSchools(railwayUrl, railwayHeaders);
+        if (data) return NextResponse.json(data);
+
+        return NextResponse.json(errorData, { status: response.status });
       }
 
       // ✅ Succès
@@ -235,13 +215,15 @@ export async function GET(_request: NextRequest) {
     } catch (fetchError: any) {
       if (fetchError.name === 'AbortError') {
         console.error(`[School List API] Timeout after ${DEFAULT_TIMEOUT}ms (attempt ${attempt + 1})`);
-        lastError = {
-          status: 504,
-          data: {
-            error: 'Backend timeout',
-            message: 'Le serveur met trop de temps à répondre.',
-          },
-        };
+
+        // Timeout → essayer Railway comme dernier recours
+        if (attempt === 0) {
+          console.log('[School List API] Trying Railway fallback due to timeout...');
+          const railwayUrl = `${RAILWAY_INTERNAL_ORIGIN}/api/${PATH}`;
+          const data = await tryFetchSchools(railwayUrl, railwayHeaders);
+          if (data) return NextResponse.json(data);
+        }
+
         if (attempt < MAX_RETRIES) {
           await sleep(RETRY_DELAY_MS);
           continue;
@@ -250,28 +232,13 @@ export async function GET(_request: NextRequest) {
       }
 
       console.error(`[School List API] Network error (attempt ${attempt + 1}):`, fetchError.message);
-      lastError = {
-        status: 502,
-        data: {
-          error: 'Network error',
-          message: `Impossible de joindre le serveur: ${fetchError.message}`,
-        },
-      };
 
-      // Essayer Railway en fallback si erreur réseau
+      // Erreur réseau → essayer Railway en fallback
       if (attempt === 0) {
         console.log('[School List API] Trying Railway fallback due to network error...');
-        const railwayUrl = buildApiUrl('public/schools/list', true);
-        try {
-          const railwayResponse = await fetchWithTimeout(railwayUrl, railwayHeaders);
-          if (railwayResponse.ok) {
-            const data = await railwayResponse.json();
-            console.log(`[School List API] ✅ Railway fallback success: ${Array.isArray(data) ? data.length : 'unknown'} schools`);
-            return NextResponse.json(data);
-          }
-        } catch {
-          // Railway aussi a échoué
-        }
+        const railwayUrl = `${RAILWAY_INTERNAL_ORIGIN}/api/${PATH}`;
+        const data = await tryFetchSchools(railwayUrl, railwayHeaders);
+        if (data) return NextResponse.json(data);
       }
 
       if (attempt < MAX_RETRIES) {
@@ -283,15 +250,11 @@ export async function GET(_request: NextRequest) {
   }
 
   // Toutes les tentatives ont échoué
-  if (lastError) {
-    return NextResponse.json(lastError.data, { status: lastError.status });
-  }
-
   return NextResponse.json(
     {
       error: 'Failed to fetch schools list',
       message: 'Erreur inattendue lors de la récupération de la liste des établissements',
     },
-    { status: 500 },
+    { status: 502 },
   );
 }

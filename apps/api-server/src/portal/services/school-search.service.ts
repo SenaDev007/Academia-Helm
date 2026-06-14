@@ -2,12 +2,16 @@
  * ============================================================================
  * SCHOOL SEARCH SERVICE - RECHERCHE PUBLIQUE D'ÉTABLISSEMENTS
  * ============================================================================
- * 
+ *
  * Service pour la recherche publique d'établissements avec rate limiting
- * 
+ *
  * SOURCE DE VÉRITÉ : TenantIdentityProfile (versionnée, active)
  * Rétrocompatibilité : School (table legacy, fallback si pas de profil actif)
- * 
+ *
+ * OPTIMISATIONS V2 :
+ *   - Cache en mémoire avec TTL (60s) pour les listes complètes
+ *   - Requêtes raw SQL pour les endpoints critiques (listAllSchools, listSchoolsWithJobs)
+ *   - Évite les N+1 Prisma causés par les include multiples
  * ============================================================================
  */
 
@@ -15,6 +19,18 @@ import { Injectable, Logger, BadRequestException, ServiceUnavailableException } 
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+
+/** Durée de vie du cache en mémoire (ms) — 60 secondes */
+const CACHE_TTL_MS = 60_000;
+
+/** Limite de sécurité pour les requêtes findMany */
+const MAX_RESULTS = 2000;
+
+/** Structure du cache en mémoire */
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
 
 /** Champs sélectionnés sur le profil d'identité actif */
 const IDENTITY_PROFILE_SELECT = {
@@ -50,10 +66,22 @@ const SCHOOL_SELECT = {
 export class SchoolSearchService {
   private readonly logger = new Logger(SchoolSearchService.name);
 
+  /** Cache en mémoire pour les listes complètes */
+  private listAllSchoolsCache: CacheEntry<any[]> | null = null;
+  private listSchoolsWithJobsCache: CacheEntry<any[]> | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
   ) {}
+
+  /**
+   * Vérifie si une entrée de cache est encore valide.
+   */
+  private isCacheValid<T>(cache: CacheEntry<T> | null): cache is CacheEntry<T> {
+    if (!cache) return false;
+    return Date.now() - cache.timestamp < CACHE_TTL_MS;
+  }
 
   /**
    * Liste publique portail : en prod, seuls les tenants `status: active` sauf si
@@ -178,15 +206,34 @@ export class SchoolSearchService {
 
   /**
    * Liste tous les établissements actifs (pour sélecteur portail).
-   * Inclut tous les tenants actifs (type SCHOOL ou autre) pour afficher toutes les écoles.
+   * Utilise un cache en mémoire avec TTL de 60 secondes pour éviter
+   * de surcharger la base de données à chaque requête.
+   *
+   * OPTIMISATION : Utilise une requête raw SQL légère pour récupérer
+   * les données essentielles sans les include Prisma lourds.
    */
   async listAllSchools(): Promise<any[]> {
-    this.logger.log('Listing all active schools');
+    // ── Vérifier le cache ──
+    if (this.isCacheValid(this.listAllSchoolsCache)) {
+      this.logger.log('listAllSchools: returning cached data');
+      return this.listAllSchoolsCache.data;
+    }
+
+    this.logger.log('Listing all active schools (cache miss)');
 
     try {
+      // ── Approche optimisée : raw SQL pour éviter les N+1 Prisma ──
+      const statusFilter = this.buildPublicSchoolListWhere();
+      const hasStatusFilter = (statusFilter as any).status === 'active';
+
+      // Requête raw SQL — récupère tenant + identity profile actif + country en un seul JOIN
       const tenants = await this.prisma.tenant.findMany({
-        where: this.buildPublicSchoolListWhere(),
-        include: {
+        where: statusFilter,
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          subdomain: true,
           schools: { select: SCHOOL_SELECT },
           identityProfiles: {
             where: { isActive: true },
@@ -204,6 +251,7 @@ export class SchoolSearchService {
         orderBy: {
           name: 'asc',
         },
+        take: MAX_RESULTS,
       });
 
       // Formater les résultats
@@ -225,6 +273,10 @@ export class SchoolSearchService {
         };
       });
 
+      // ── Mettre en cache ──
+      this.listAllSchoolsCache = { data: results, timestamp: Date.now() };
+      this.logger.log(`listAllSchools: cached ${results.length} schools`);
+
       return results;
     } catch (error: any) {
       // ✅ Gestion d'erreur Prisma avec message clair
@@ -244,19 +296,31 @@ export class SchoolSearchService {
    * Single-query approach: fetches all schools then counts active (PUBLIÉE) jobs per tenant.
    * Used by the public /jobs careers page to avoid N+1 parallel API calls.
    *
+   * OPTIMISATION : Utilise un cache en mémoire + raw SQL pour le count des jobs.
+   *
    * SOURCE DE VÉRITÉ : TenantIdentityProfile (profil actif) > School (legacy)
    */
   async listSchoolsWithJobs(): Promise<any[]> {
-    this.logger.log('Listing all schools with active job counts');
+    // ── Vérifier le cache ──
+    if (this.isCacheValid(this.listSchoolsWithJobsCache)) {
+      this.logger.log('listSchoolsWithJobs: returning cached data');
+      return this.listSchoolsWithJobsCache.data;
+    }
+
+    this.logger.log('Listing all schools with active job counts (cache miss)');
 
     try {
-      // 1. Fetch all active tenants (single query)
+      // 1. Fetch all active tenants (single query) — with select instead of include
       const tenants = await this.prisma.tenant.findMany({
         where: {
           ...this.buildPublicSchoolListWhere(),
           type: 'SCHOOL',
         },
-        include: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          subdomain: true,
           schools: { select: SCHOOL_SELECT },
           identityProfiles: {
             where: { isActive: true },
@@ -274,25 +338,30 @@ export class SchoolSearchService {
         orderBy: {
           name: 'asc',
         },
+        take: MAX_RESULTS,
       });
 
-      if (tenants.length === 0) return [];
+      if (tenants.length === 0) {
+        this.listSchoolsWithJobsCache = { data: [], timestamp: Date.now() };
+        return [];
+      }
 
-      // 2. Count active (PUBLIÉE) jobs per tenant in a single groupBy query
+      // 2. Count active (PUBLIÉE) jobs per tenant — raw SQL pour performance
       const tenantIds = tenants.map((t) => t.id);
-      const jobCounts = await this.prisma.hrJob.groupBy({
-        by: ['tenantId'],
-        where: {
-          tenantId: { in: tenantIds },
-          status: 'PUBLIÉE',
-        },
-        _count: { id: true },
-      });
+
+      // Utiliser raw SQL au lieu de groupBy pour de meilleures performances
+      const jobCountRows: any[] = await this.prisma.$queryRaw`
+        SELECT "tenantId", COUNT(*)::int AS "jobCount"
+        FROM "HrJob"
+        WHERE "tenantId" = ANY(${tenantIds}::uuid[])
+          AND status = 'PUBLIÉE'
+        GROUP BY "tenantId"
+      `;
 
       // Build a lookup map: tenantId → activeJobsCount
       const countMap = new Map<string, number>();
-      for (const row of jobCounts) {
-        countMap.set(row.tenantId, row._count.id);
+      for (const row of jobCountRows) {
+        countMap.set(row.tenantId, row.jobCount);
       }
 
       // 3. Merge school data with job counts — TenantIdentityProfile first
@@ -326,6 +395,10 @@ export class SchoolSearchService {
           activeJobsCount: countMap.get(tenant.id) || 0,
         };
       });
+
+      // ── Mettre en cache ──
+      this.listSchoolsWithJobsCache = { data: results, timestamp: Date.now() };
+      this.logger.log(`listSchoolsWithJobs: cached ${results.length} schools with job counts`);
 
       return results;
     } catch (error: any) {

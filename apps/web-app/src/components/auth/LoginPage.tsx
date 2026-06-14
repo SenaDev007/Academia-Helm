@@ -51,7 +51,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import TurnstileWidget from '@/components/auth/TurnstileWidget';
+// Turnstile désactivé — le widget Cloudflare ne se chargeait pas (clé non configurée / script bloqué)
 import LogoCircle from '@/components/ui/LogoCircle';
 import { BRAND } from '@/lib/brand';
 import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-email';
@@ -314,11 +314,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
-
-  // ── Callbacks stables pour Turnstile (évitent les re-rendus du widget) ──
-  const handleTurnstileError = useCallback(() => setTurnstileToken(null), [setTurnstileToken]);
-  const handleTurnstileExpire = useCallback(() => setTurnstileToken(null), [setTurnstileToken]);
+  // Turnstile désactivé — token toujours null
 
   // ── Client-side validation state ─────────────────────────────────────
   const [emailTouched, setEmailTouched] = useState(false);
@@ -434,11 +430,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     e.preventDefault();
     setError(null);
 
-    // ── Cloudflare Turnstile : vérification du token avant connexion ──
-    if (process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken && portalType !== 'public') {
-      setError('Veuillez compléter la vérification de sécurité avant de continuer.');
-      return;
-    }
+    // Turnstile désactivé — plus de vérification côté client
 
     setIsLoading(true);
 
@@ -504,7 +496,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
           tenant_id: tenantIdFromUrl || undefined,
           tenantSubdomain: tenantSlug || undefined,
           portal_type: portalTypeAttempt,
-          turnstileToken: turnstileToken || undefined,
+          turnstileToken: undefined,
         }),
       });
     };
@@ -607,7 +599,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
         tenantSubdomain: tenantSlug,
         tenant_id: tenantIdFromUrl || undefined,
         portal_type: portalType?.toUpperCase() || undefined,
-        turnstileToken: turnstileToken || undefined,
+        turnstileToken: undefined,
       }),
     });
 
@@ -693,7 +685,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
           tenant_id: tenantIdForApi,
           tenantSubdomain: tenantSlug || undefined,
           portal_type: portalTypeAttempt,
-          turnstileToken: turnstileToken || undefined,
+          turnstileToken: undefined,
         }),
       });
     };
@@ -790,7 +782,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
         teacherIdentifier: teacherCredentials.teacherIdentifier,
         password: teacherCredentials.password,
         portal_type: 'TEACHER',
-        turnstileToken: turnstileToken || undefined,
+        turnstileToken: undefined,
       }),
     });
 
@@ -832,7 +824,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
           tenantId: tenantIdForApi,
           phone: parentCredentials.phone,
           portal_type: 'PARENT',
-          turnstileToken: turnstileToken || undefined,
+          turnstileToken: undefined,
         }),
       });
 
@@ -858,7 +850,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
         phone: parentCredentials.phone,
         otp: parentCredentials.otp,
         portal_type: 'PARENT',
-        turnstileToken: turnstileToken || undefined,
+        turnstileToken: undefined,
       }),
     });
 
@@ -1740,16 +1732,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               </motion.div>
             </AnimatePresence>
 
-            {/* ── Cloudflare Turnstile — vérification d'humanité ── */}
-            {!(portalType === 'public') && (
-              <div className="flex justify-center mt-2">
-                <TurnstileWidget
-                  onToken={setTurnstileToken}
-                  onError={handleTurnstileError}
-                  onExpire={handleTurnstileExpire}
-                />
-              </div>
-            )}
+            {/* Turnstile désactivé — vérification Cloudflare retirée (widget ne se chargeait pas) */}
 
             {/* ── Submit button — palette Helm unifiée ── */}
             {!(portalType === 'public' && preEnrollmentSubmitted) && (

@@ -61,13 +61,6 @@ function localNestApiConflictsWithNextWeb(nestApiRoot: string): boolean {
  * @throws Error si NEXT_PUBLIC_API_URL n'est pas défini en production
  */
 export function getApiBaseUrl(): string {
-  // PRIORITÉ 0 (serveur uniquement) : URL interne pour contourner Cloudflare
-  // API_INTERNAL_URL est une var d'env côté serveur uniquement (non NEXT_PUBLIC_)
-  // qui pointe vers l'API sans passer par le proxy Cloudflare (ex: Vercel direct URL)
-  if (typeof window === 'undefined' && process.env.API_INTERNAL_URL) {
-    return normalizeToNestApiRoot(process.env.API_INTERNAL_URL);
-  }
-
   // PRIORITÉ 1 : Variable d'environnement explicite (TOUJOURS UTILISÉE SI DÉFINIE)
   const envUrl = process.env.NEXT_PUBLIC_API_URL;
   if (envUrl) {

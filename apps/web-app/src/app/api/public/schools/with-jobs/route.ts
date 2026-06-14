@@ -7,186 +7,72 @@
  * Returns all active schools with their published job counts in one API call,
  * replacing the old N+1 pattern (fetch schools → fetch jobs per school).
  *
- * Stratégie de résolution identique à schools/list :
- *   1. URL interne Railway si API_INTERNAL_URL configuré
- *   2. URL publique avec détection Cloudflare
- *   3. Fallback Railway direct si Cloudflare bloque
- *
- * Cache : Réponse mise en cache pendant 60 secondes (Next.js ISR)
- * Timeout : 30s pour accommoder le cold start Neon DB
+ * Pattern simple : le backend NestJS gère lui-même la résolution des données.
+ * Le BFF ne fait que proxy la réponse.
  * ============================================================================
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-
-/** URL Railway directe — contourne Cloudflare. */
-const RAILWAY_INTERNAL_ORIGIN = 'https://8nvfmrrz.up.railway.app';
-const API_PUBLIC_HOST = 'api.academiahelm.com';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 
 /** ISR: revalidate every 60 seconds — school data changes rarely. */
 export const revalidate = 60;
 
-/** Timeout augmenté à 30s pour le cold start Neon */
-const DEFAULT_TIMEOUT = 30_000;
-
-function getApiBaseUrlSync(): string {
-  if (typeof window === 'undefined' && process.env.API_INTERNAL_URL) {
-    const url = process.env.API_INTERNAL_URL.trim().replace(/\/+$/, '');
-    return url.endsWith('/api') ? url : `${url}/api`;
-  }
-  const envUrl = process.env.NEXT_PUBLIC_API_URL;
-  if (envUrl) {
-    const normalized = envUrl.trim().replace(/\/+$/, '');
-    return normalized.endsWith('/api') ? normalized : `${normalized}/api`;
-  }
-  return 'https://api.academiahelm.com/api';
-}
-
-function isCloudflareChallenge(status: number, contentType: string, body: string): boolean {
-  if (status === 403 && contentType.includes('text/html')) return true;
-  if (status === 403 && (body.includes('Just a moment') || body.includes('cf-challenge'))) return true;
-  return false;
-}
-
-async function fetchWithTimeout(
-  url: string,
-  headers: Record<string, string>,
-  timeout: number = DEFAULT_TIMEOUT,
-): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-  try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers,
-      signal: controller.signal,
-      next: { revalidate: 60 },
-    });
-    clearTimeout(timeoutId);
-    return response;
-  } catch (error: any) {
-    clearTimeout(timeoutId);
-    throw error;
-  }
-}
-
-/**
- * Tente de récupérer les écoles avec jobs depuis une URL donnée.
- */
-async function tryFetchSchoolsWithJobs(
-  url: string,
-  headers: Record<string, string>,
-  timeout?: number,
-): Promise<any[] | null> {
-  try {
-    const response = await fetchWithTimeout(url, headers, timeout);
-    if (response.ok) {
-      const data = await response.json();
-      console.log(`[Schools With Jobs] ✅ Success from ${url}: ${Array.isArray(data) ? data.length : 'unknown'} schools`);
-      return Array.isArray(data) ? data : null;
-    }
-    console.warn(`[Schools With Jobs] ${url} returned ${response.status}`);
-    return null;
-  } catch (error: any) {
-    console.warn(`[Schools With Jobs] ${url} failed: ${error.message}`);
-    return null;
-  }
-}
-
 export async function GET(_request: NextRequest) {
-  const PATH = 'public/schools/with-jobs';
-  const bffHeaders: Record<string, string> = {
-    'User-Agent': 'AcademiaHelm-BFF/1.0 (Next.js server-side)',
-    'Accept': 'application/json',
-    'Content-Type': 'application/json',
-  };
-  const railwayHeaders: Record<string, string> = {
-    ...bffHeaders,
-    'Host': API_PUBLIC_HOST,
-  };
-
-  // ── Stratégie 1 : URL interne Railway ──
-  if (process.env.API_INTERNAL_URL) {
-    const internalUrl = `${RAILWAY_INTERNAL_ORIGIN}/api/${PATH}`;
-    console.log(`[Schools With Jobs] Strategy 1: Internal → ${internalUrl}`);
-
-    const data = await tryFetchSchoolsWithJobs(internalUrl, railwayHeaders);
-    if (data) return NextResponse.json(data);
-
-    // Fallback public
-    const publicUrl = `${getApiBaseUrlSync().replace(/\/$/, '')}/${PATH}`;
-    console.log(`[Schools With Jobs] Strategy 1 fallback: Public → ${publicUrl}`);
-
-    const pubData = await tryFetchSchoolsWithJobs(publicUrl, bffHeaders);
-    if (pubData) return NextResponse.json(pubData);
-  }
-
-  // ── Stratégie 2 : URL publique ──
-  const publicUrl = `${getApiBaseUrlSync().replace(/\/$/, '')}/${PATH}`;
-  console.log(`[Schools With Jobs] Strategy 2: Public → ${publicUrl}`);
-
   try {
-    const response = await fetchWithTimeout(publicUrl, bffHeaders);
+    const API_BASE_URL = getApiBaseUrlForRoutes();
+    const apiUrl = API_BASE_URL.endsWith('/api')
+      ? `${API_BASE_URL}/public/schools/with-jobs`
+      : `${API_BASE_URL}/api/public/schools/with-jobs`;
 
-    // Détecter Cloudflare
-    const contentType = response.headers.get('content-type') || '';
-    if (response.status === 403) {
-      const body = await response.text();
-      if (isCloudflareChallenge(response.status, contentType, body)) {
-        console.error('[Schools With Jobs] Cloudflare challenge detected. Trying Railway fallback...');
+    // Timeout de 30s pour accommoder les cold starts Neon DB
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-        // Fallback Railway
-        const railwayUrl = `${RAILWAY_INTERNAL_ORIGIN}/api/${PATH}`;
-        const data = await tryFetchSchoolsWithJobs(railwayUrl, railwayHeaders);
-        if (data) return NextResponse.json(data);
-
+    let response;
+    try {
+      response = await fetch(normalizeApiUrl(apiUrl), {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        next: { revalidate: 60 },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+      if (fetchError.name === 'AbortError') {
+        console.error('[Schools With Jobs API] Request timed out after 30s');
         return NextResponse.json(
-          { error: 'Cloudflare challenge', message: 'Accès bloqué par Cloudflare.' },
-          { status: 502 },
+          {
+            error: 'Backend timeout',
+            message: 'Le serveur met trop de temps à répondre. Veuillez réessayer dans quelques instants.'
+          },
+          { status: 504 }
         );
       }
-      // Vraie erreur 403 du backend → essayer Railway quand même
-      const railwayUrl = `${RAILWAY_INTERNAL_ORIGIN}/api/${PATH}`;
-      const data = await tryFetchSchoolsWithJobs(railwayUrl, railwayHeaders);
-      if (data) return NextResponse.json(data);
-
-      return NextResponse.json(
-        { error: 'Forbidden', message: 'Accès refusé par le serveur API.' },
-        { status: 403 },
-      );
+      throw fetchError;
     }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({
         message: `Erreur HTTP ${response.status}: ${response.statusText}`,
       }));
-
-      // Dernier recours : essayer Railway
-      const railwayUrl = `${RAILWAY_INTERNAL_ORIGIN}/api/${PATH}`;
-      const data = await tryFetchSchoolsWithJobs(railwayUrl, railwayHeaders);
-      if (data) return NextResponse.json(data);
-
+      console.error('[Schools With Jobs API] Backend error:', errorData);
       return NextResponse.json(errorData, { status: response.status });
     }
 
     const data = await response.json();
     return NextResponse.json(data);
   } catch (error: any) {
-    // Erreur réseau ou timeout → essayer Railway
-    console.error(`[Schools With Jobs] Public URL failed: ${error.message}. Trying Railway fallback...`);
-    const railwayUrl = `${RAILWAY_INTERNAL_ORIGIN}/api/${PATH}`;
-    const data = await tryFetchSchoolsWithJobs(railwayUrl, railwayHeaders);
-    if (data) return NextResponse.json(data);
-
-    const isTimeout = error.name === 'AbortError';
+    console.error('[Schools With Jobs API] Error:', error);
     return NextResponse.json(
       {
-        error: isTimeout ? 'Backend timeout' : 'Network error',
-        message: isTimeout
-          ? 'Le serveur met trop de temps à répondre. Réessayez dans quelques instants.'
-          : 'Impossible de joindre le serveur.',
+        error: 'Failed to fetch schools with jobs',
+        message: error.message || 'Erreur lors de la récupération des établissements',
       },
-      { status: isTimeout ? 504 : 502 },
+      { status: 500 },
     );
   }
 }

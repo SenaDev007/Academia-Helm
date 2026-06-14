@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes, bffHeaders } from '@/lib/utils/api-urls';
 import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
+import { verifyTurnstile, getClientIp } from '@/lib/auth/turnstile';
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,6 +12,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, message: 'Adresse email requise.' },
         { status: 400 },
+      );
+    }
+
+    // ── Vérification Cloudflare Turnstile ──
+    const turnstileResult = await verifyTurnstile(body.turnstileToken, getClientIp(request));
+    if (!turnstileResult.success) {
+      return NextResponse.json(
+        { success: false, message: turnstileResult.error || 'Vérification de sécurité échouée.' },
+        { status: 403 },
       );
     }
 

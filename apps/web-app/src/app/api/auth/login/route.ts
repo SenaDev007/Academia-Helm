@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes, bffHeaders } from '@/lib/utils/api-urls';
 import { setServerSession } from '@/lib/auth/session';
 import { loadTenantFromApi } from '@/lib/utils/load-tenant';
+import { verifyTurnstile, getClientIp } from '@/lib/auth/turnstile';
 
 interface LoginCredentials {
   email: string;
@@ -16,6 +17,7 @@ interface LoginCredentials {
   tenantSubdomain?: string;
   tenant_id?: string;
   portal_type?: string;
+  turnstileToken?: string;
 }
 
 interface BackendLoginResponse {
@@ -42,7 +44,16 @@ interface BackendLoginResponse {
 export async function POST(request: NextRequest) {
   try {
     const body: LoginCredentials = await request.json();
-    
+
+    // ── Vérification Cloudflare Turnstile ──
+    const turnstileResult = await verifyTurnstile(body.turnstileToken, getClientIp(request));
+    if (!turnstileResult.success) {
+      return NextResponse.json(
+        { success: false, message: turnstileResult.error || 'Vérification de sécurité échouée.' },
+        { status: 403 },
+      );
+    }
+
     const apiBaseUrl = getApiBaseUrlForRoutes();
     const loginUrl = apiBaseUrl.endsWith('/api') 
       ? `${apiBaseUrl}/auth/login`

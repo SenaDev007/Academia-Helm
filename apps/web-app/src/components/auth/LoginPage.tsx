@@ -51,6 +51,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import TurnstileWidget from '@/components/auth/TurnstileWidget';
 import { BRAND } from '@/lib/brand';
 import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-email';
 import { persistClientSession, markFreshLogin } from '@/lib/auth/client-access-token';
@@ -312,6 +313,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   // ── Client-side validation state ─────────────────────────────────────
   const [emailTouched, setEmailTouched] = useState(false);
@@ -491,6 +493,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
           tenant_id: tenantIdFromUrl || undefined,
           tenantSubdomain: tenantSlug || undefined,
           portal_type: portalTypeAttempt,
+          turnstileToken: turnstileToken || undefined,
         }),
       });
     };
@@ -593,6 +596,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
         tenantSubdomain: tenantSlug,
         tenant_id: tenantIdFromUrl || undefined,
         portal_type: portalType?.toUpperCase() || undefined,
+        turnstileToken: turnstileToken || undefined,
       }),
     });
 
@@ -678,6 +682,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
           tenant_id: tenantIdForApi,
           tenantSubdomain: tenantSlug || undefined,
           portal_type: portalTypeAttempt,
+          turnstileToken: turnstileToken || undefined,
         }),
       });
     };
@@ -1761,6 +1766,17 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 )}
               </motion.div>
             </AnimatePresence>
+
+            {/* ── Cloudflare Turnstile — vérification d'humanité ── */}
+            {!(portalType === 'public') && (
+              <div className="flex justify-center mt-3">
+                <TurnstileWidget
+                  onToken={setTurnstileToken}
+                  onError={() => setTurnstileToken(null)}
+                  onExpire={() => setTurnstileToken(null)}
+                />
+              </div>
+            )}
 
             {/* ── Submit button — palette Helm unifiée ── */}
             {!(portalType === 'public' && preEnrollmentSubmitted) && (

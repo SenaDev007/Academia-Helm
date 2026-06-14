@@ -34,6 +34,7 @@ import {
   GraduationCap,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import TurnstileWidget from '@/components/auth/TurnstileWidget';
 import { BRAND } from '@/lib/brand';
 import { useFetchWithTimeout } from '@/lib/hooks/use-fetch-with-timeout';
 import { useSchoolBranding, type SchoolBrandingData } from '@/hooks/useSchoolBranding';
@@ -87,6 +88,7 @@ export default function ForgotPasswordPage({ schoolBranding }: ForgotPasswordPag
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [emailTouched, setEmailTouched] = useState(false);
 
@@ -126,7 +128,7 @@ export default function ForgotPasswordPage({ schoolBranding }: ForgotPasswordPag
       const response = await fetchWithTimeout('/api/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), turnstileToken: turnstileToken || undefined }),
       });
       const data = await response.json();
 
@@ -154,7 +156,7 @@ export default function ForgotPasswordPage({ schoolBranding }: ForgotPasswordPag
       const response = await fetchWithTimeout('/api/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), turnstileToken: turnstileToken || undefined }),
       });
       const data = await response.json();
 
@@ -569,6 +571,15 @@ export default function ForgotPasswordPage({ schoolBranding }: ForgotPasswordPag
                   <p className="mt-2 text-xs text-slate-500">
                     Un code de vérification à 6 chiffres sera envoyé à cette adresse.
                   </p>
+                </div>
+
+                {/* ── Cloudflare Turnstile — vérification d'humanité ── */}
+                <div className="flex justify-center">
+                  <TurnstileWidget
+                    onToken={setTurnstileToken}
+                    onError={() => setTurnstileToken(null)}
+                    onExpire={() => setTurnstileToken(null)}
+                  />
                 </div>
 
                 <motion.button

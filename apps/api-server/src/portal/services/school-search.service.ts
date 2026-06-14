@@ -8,17 +8,16 @@
  * SOURCE DE VÉRITÉ : TenantIdentityProfile (versionnée, active)
  * Rétrocompatibilité : School (table legacy, fallback si pas de profil actif)
  *
- * OPTIMISATIONS V4 :
- *   - Raw SQL avec LEFT JOIN pour listAllSchools et listSchoolsWithJobs
- *     (une seule requête au lieu des N+1 de Prisma include/select)
+ * OPTIMISATIONS :
  *   - Cache distribué Redis via CacheService (partagé entre instances)
  *   - TTL configurable (60s par défaut, data change rarement)
- *   - Recherche Prisma (searchSchools) inchangée — take:20 la rend rapide
+ *   - Prisma findMany avec select ciblé (méthode éprouvée du commit 3873d84)
  * ============================================================================
  */
 
 import { Injectable, Logger, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { CacheService } from '../../common/services/cache.service';
 
@@ -28,6 +27,36 @@ const CACHE_TTL_MS = 60_000;
 /** Clés de cache Redis */
 const CACHE_KEY_ALL_SCHOOLS = 'schools:list:all';
 const CACHE_KEY_SCHOOLS_WITH_JOBS = 'schools:list:with-jobs';
+
+/** Champs sélectionnés sur le profil d'identité actif */
+const IDENTITY_PROFILE_SELECT = {
+  schoolName: true,
+  schoolAcronym: true,
+  schoolType: true,
+  logoUrl: true,
+  address: true,
+  city: true,
+  department: true,
+  postalCode: true,
+  phonePrimary: true,
+  phoneSecondary: true,
+  email: true,
+  website: true,
+  slogan: true,
+  country: true,
+  version: true,
+};
+
+/** Champs sélectionnés sur la table School (fallback) */
+const SCHOOL_SELECT = {
+  name: true,
+  logo: true,
+  address: true,
+  city: true,
+  primaryPhone: true,
+  primaryEmail: true,
+  educationLevels: true,
+};
 
 @Injectable()
 export class SchoolSearchService {
@@ -40,257 +69,18 @@ export class SchoolSearchService {
   ) {}
 
   /**
-   * Détermine si on doit filtrer par status = 'active' en production.
+   * Filtre where pour la liste publique : en prod, seuls les tenants actifs
+   * sauf si PLATFORM_OWNER_MODE=true ou environnement non-production.
    */
-  private shouldFilterActive(): boolean {
+  private buildPublicSchoolListWhere(): Prisma.TenantWhereInput {
     const platformOwner =
       this.configService.get<string>('PLATFORM_OWNER_MODE')?.trim().toLowerCase() === 'true';
     const nodeEnv = this.configService.get<string>('NODE_ENV') || 'development';
-    return !platformOwner && nodeEnv === 'production';
+    if (platformOwner || nodeEnv !== 'production') {
+      return {};
+    }
+    return { status: 'active' };
   }
-
-  // ============================================================================
-  // RAW SQL — Liste complète des établissements (ULTRA RAPIDE)
-  // ============================================================================
-
-  /**
-   * Liste tous les établissements actifs (pour sélecteur portail).
-   *
-   * Utilise du raw SQL avec LEFT JOIN pour récupérer toutes les données
-   * en une seule requête, au lieu des N+1 requêtes générées par Prisma.
-   *
-   * Cache distribué Redis — 60s TTL, partagé entre instances.
-   */
-  async listAllSchools(): Promise<any[]> {
-    // ── Vérifier le cache Redis ──
-    const cached = await this.cacheService.get<any[]>(CACHE_KEY_ALL_SCHOOLS);
-    if (cached) {
-      this.logger.log('listAllSchools: returning Redis cached data');
-      return cached;
-    }
-
-    this.logger.log('Listing all active schools (cache miss, raw SQL)');
-
-    try {
-      const statusFilter = this.shouldFilterActive()
-        ? `AND t.status = 'active'`
-        : '';
-
-      const rows: any[] = await this.prisma.$queryRawUnsafe(`
-        SELECT
-          t.id,
-          t.name,
-          t.slug,
-          t.subdomain,
-          COALESCE(ip."schoolName", s.name, t.name) AS "schoolName",
-          ip."schoolAcronym",
-          COALESCE(ip."logoUrl", s.logo) AS "logoUrl",
-          COALESCE(ip.address, s.address) AS address,
-          COALESCE(ip.city, s.city) AS city,
-          ip.department,
-          ip."postalCode",
-          COALESCE(ip."phonePrimary", s."primaryPhone") AS "phonePrimary",
-          ip."phoneSecondary",
-          COALESCE(ip.email, s."primaryEmail") AS "primaryEmail",
-          ip.website,
-          COALESCE(ip."schoolType", s."educationLevels") AS "schoolType",
-          COALESCE(ip.slogan, s.slogan) AS slogan,
-          ip.country AS "identityCountry",
-          c.name AS "countryName",
-          ip.version AS "identityVersion"
-        FROM "Tenant" t
-        LEFT JOIN LATERAL (
-          SELECT ip2.* FROM "TenantIdentityProfile" ip2
-          WHERE ip2."tenantId" = t.id AND ip2."isActive" = true
-          ORDER BY ip2.version DESC
-          LIMIT 1
-        ) ip ON true
-        LEFT JOIN "School" s ON s."tenantId" = t.id
-        LEFT JOIN "Country" c ON c.id = t."countryId"
-        WHERE 1=1 ${statusFilter}
-        ORDER BY t.name ASC
-      `);
-
-      const results = rows.map((row) => {
-        let schoolType = row.schoolType;
-        if (Array.isArray(schoolType)) {
-          schoolType = this.getSchoolTypeFromLevels(schoolType);
-        }
-
-        return {
-          id: row.id,
-          name: row.name,
-          slug: row.slug,
-          subdomain: row.subdomain || null,
-          logoUrl: row.logoUrl || null,
-          city: row.city || this.extractCityFromAddress(row.address || '') || null,
-          primaryPhone: row.phonePrimary || null,
-          primaryEmail: row.primaryEmail || null,
-          address: row.address || null,
-          schoolType: schoolType || null,
-          country: row.countryName || row.identityCountry || null,
-        };
-      });
-
-      // ── Mettre en cache Redis ──
-      await this.cacheService.set(CACHE_KEY_ALL_SCHOOLS, results, CACHE_TTL_MS);
-      this.logger.log(`listAllSchools: cached ${results.length} schools in Redis`);
-
-      return results;
-    } catch (error: any) {
-      if (error?.code === 'P1001' || error?.message?.includes('Can\'t reach database server')) {
-        this.logger.error('Database connection failed:', error.message);
-        throw new ServiceUnavailableException(
-          'Service temporairement indisponible. Veuillez réessayer plus tard.'
-        );
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * Liste tous les établissements actifs avec le nombre d'offres d'emploi publiées.
-   *
-   * Raw SQL avec LEFT JOIN + sous-requête pour le count des jobs.
-   * Cache distribué Redis — 60s TTL.
-   */
-  async listSchoolsWithJobs(): Promise<any[]> {
-    // ── Vérifier le cache Redis ──
-    const cached = await this.cacheService.get<any[]>(CACHE_KEY_SCHOOLS_WITH_JOBS);
-    if (cached) {
-      this.logger.log('listSchoolsWithJobs: returning Redis cached data');
-      return cached;
-    }
-
-    this.logger.log('Listing all schools with active job counts (cache miss, raw SQL)');
-
-    try {
-      const statusFilter = this.shouldFilterActive()
-        ? `AND t.status = 'active'`
-        : '';
-
-      const rows: any[] = await this.prisma.$queryRawUnsafe(`
-        SELECT
-          t.id,
-          t.name,
-          t.slug,
-          t.subdomain,
-          COALESCE(ip."schoolName", s.name, t.name) AS "schoolName",
-          ip."schoolAcronym",
-          COALESCE(ip."logoUrl", s.logo) AS "logoUrl",
-          COALESCE(ip.address, s.address) AS address,
-          COALESCE(ip.city, s.city) AS city,
-          ip.department,
-          ip."postalCode",
-          COALESCE(ip."phonePrimary", s."primaryPhone") AS "phonePrimary",
-          ip."phoneSecondary",
-          COALESCE(ip.email, s."primaryEmail") AS "primaryEmail",
-          ip.website,
-          COALESCE(ip."schoolType", s."educationLevels") AS "schoolType",
-          COALESCE(ip.slogan, s.slogan) AS slogan,
-          ip.country AS "identityCountry",
-          c.name AS "countryName",
-          ip.version AS "identityVersion",
-          COALESCE(jobs."activeJobsCount", 0) AS "activeJobsCount"
-        FROM "Tenant" t
-        LEFT JOIN LATERAL (
-          SELECT ip2.* FROM "TenantIdentityProfile" ip2
-          WHERE ip2."tenantId" = t.id AND ip2."isActive" = true
-          ORDER BY ip2.version DESC
-          LIMIT 1
-        ) ip ON true
-        LEFT JOIN "School" s ON s."tenantId" = t.id
-        LEFT JOIN "Country" c ON c.id = t."countryId"
-        LEFT JOIN LATERAL (
-          SELECT COUNT(*)::int AS "activeJobsCount"
-          FROM "HrJob" j
-          WHERE j."tenantId" = t.id AND j.status = 'PUBLIÉE'
-        ) jobs ON true
-        WHERE t.type = 'SCHOOL' ${statusFilter}
-        ORDER BY t.name ASC
-      `);
-
-      const results = rows.map((row) => {
-        let schoolType = row.schoolType;
-        if (Array.isArray(schoolType)) {
-          schoolType = this.getSchoolTypeFromLevels(schoolType);
-        }
-
-        return {
-          id: row.id,
-          tenantId: row.id,
-          name: row.name,
-          schoolName: row.schoolName,
-          schoolAcronym: row.schoolAcronym || null,
-          tenantName: row.name,
-          slug: row.slug,
-          subdomain: row.subdomain || null,
-          logoUrl: row.logoUrl || null,
-          address: row.address || null,
-          city: row.city || this.extractCityFromAddress(row.address || '') || null,
-          department: row.department || null,
-          postalCode: row.postalCode || null,
-          country: row.countryName || row.identityCountry || null,
-          phonePrimary: row.phonePrimary || null,
-          phoneSecondary: row.phoneSecondary || null,
-          primaryEmail: row.primaryEmail || null,
-          website: row.website || null,
-          schoolType: schoolType || null,
-          slogan: row.slogan || null,
-          identityVersion: row.identityVersion ?? null,
-          activeJobsCount: row.activeJobsCount || 0,
-        };
-      });
-
-      // ── Mettre en cache Redis ──
-      await this.cacheService.set(CACHE_KEY_SCHOOLS_WITH_JOBS, results, CACHE_TTL_MS);
-      this.logger.log(`listSchoolsWithJobs: cached ${results.length} schools with job counts in Redis`);
-
-      return results;
-    } catch (error: any) {
-      if (error?.code === 'P1001' || error?.message?.includes('Can\'t reach database server')) {
-        this.logger.error('Database connection failed:', error.message);
-        throw new ServiceUnavailableException(
-          'Service temporairement indisponible. Veuillez réessayer plus tard.',
-        );
-      }
-      throw error;
-    }
-  }
-
-  // ============================================================================
-  // RECHERCHE — Prisma (take:20 la rend rapide, pas besoin de raw SQL)
-  // ============================================================================
-
-  /** Champs sélectionnés sur le profil d'identité actif */
-  private static readonly IDENTITY_PROFILE_SELECT = {
-    schoolName: true,
-    schoolAcronym: true,
-    schoolType: true,
-    logoUrl: true,
-    address: true,
-    city: true,
-    department: true,
-    postalCode: true,
-    phonePrimary: true,
-    phoneSecondary: true,
-    email: true,
-    website: true,
-    slogan: true,
-    country: true,
-    version: true,
-  };
-
-  /** Champs sélectionnés sur la table School (fallback) */
-  private static readonly SCHOOL_SELECT = {
-    name: true,
-    logo: true,
-    address: true,
-    city: true,
-    primaryPhone: true,
-    primaryEmail: true,
-    educationLevels: true,
-  };
 
   /**
    * Extrait les données d'identité d'un tenant en privilégiant le profil actif
@@ -320,6 +110,185 @@ export class SchoolSearchService {
   }
 
   /**
+   * Liste tous les établissements actifs (pour sélecteur portail).
+   * Utilise Prisma findMany — méthode éprouvée du commit 3873d84.
+   * Cache Redis 60s pour éviter les requêtes répétées.
+   */
+  async listAllSchools(): Promise<any[]> {
+    // ── Vérifier le cache Redis ──
+    const cached = await this.cacheService.get<any[]>(CACHE_KEY_ALL_SCHOOLS);
+    if (cached) {
+      this.logger.log('listAllSchools: returning Redis cached data');
+      return cached;
+    }
+
+    this.logger.log('Listing all active schools (cache miss)');
+
+    try {
+      const tenants = await this.prisma.tenant.findMany({
+        where: this.buildPublicSchoolListWhere(),
+        include: {
+          schools: { select: SCHOOL_SELECT },
+          identityProfiles: {
+            where: { isActive: true },
+            take: 1,
+            orderBy: { version: 'desc' },
+            select: IDENTITY_PROFILE_SELECT,
+          },
+          country: {
+            select: {
+              name: true,
+              code: true,
+            },
+          },
+        },
+        orderBy: {
+          name: 'asc',
+        },
+      });
+
+      const results = tenants.map((tenant) => {
+        const data = this.extractSchoolData(tenant);
+
+        return {
+          id: tenant.id,
+          name: tenant.name,
+          slug: tenant.slug,
+          subdomain: tenant.subdomain || null,
+          logoUrl: data.logoUrl,
+          city: data.city,
+          primaryPhone: data.phonePrimary,
+          primaryEmail: data.primaryEmail,
+          address: data.address,
+          schoolType: data.schoolType,
+          country: tenant.country?.name || data.country || null,
+        };
+      });
+
+      // ── Mettre en cache Redis ──
+      await this.cacheService.set(CACHE_KEY_ALL_SCHOOLS, results, CACHE_TTL_MS);
+      this.logger.log(`listAllSchools: cached ${results.length} schools in Redis`);
+
+      return results;
+    } catch (error: any) {
+      if (error?.code === 'P1001' || error?.message?.includes('Can\'t reach database server')) {
+        this.logger.error('Database connection failed:', error.message);
+        throw new ServiceUnavailableException(
+          'Service temporairement indisponible. Veuillez réessayer plus tard.'
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Liste tous les établissements actifs avec le nombre d'offres d'emploi publiées.
+   * Prisma findMany + groupBy pour les job counts — méthode éprouvée.
+   * Cache Redis 60s.
+   */
+  async listSchoolsWithJobs(): Promise<any[]> {
+    // ── Vérifier le cache Redis ──
+    const cached = await this.cacheService.get<any[]>(CACHE_KEY_SCHOOLS_WITH_JOBS);
+    if (cached) {
+      this.logger.log('listSchoolsWithJobs: returning Redis cached data');
+      return cached;
+    }
+
+    this.logger.log('Listing all schools with active job counts (cache miss)');
+
+    try {
+      // 1. Fetch all active tenants of type SCHOOL
+      const tenants = await this.prisma.tenant.findMany({
+        where: {
+          ...this.buildPublicSchoolListWhere(),
+          type: 'SCHOOL',
+        },
+        include: {
+          schools: { select: SCHOOL_SELECT },
+          identityProfiles: {
+            where: { isActive: true },
+            take: 1,
+            orderBy: { version: 'desc' },
+            select: IDENTITY_PROFILE_SELECT,
+          },
+          country: {
+            select: {
+              name: true,
+              code: true,
+            },
+          },
+        },
+        orderBy: {
+          name: 'asc',
+        },
+      });
+
+      if (tenants.length === 0) return [];
+
+      // 2. Count active (PUBLIÉE) jobs per tenant in a single groupBy query
+      const tenantIds = tenants.map((t) => t.id);
+      const jobCounts = await this.prisma.hrJob.groupBy({
+        by: ['tenantId'],
+        where: {
+          tenantId: { in: tenantIds },
+          status: 'PUBLIÉE',
+        },
+        _count: { id: true },
+      });
+
+      // Build a lookup map: tenantId → activeJobsCount
+      const countMap = new Map<string, number>();
+      for (const row of jobCounts) {
+        countMap.set(row.tenantId, row._count.id);
+      }
+
+      // 3. Merge school data with job counts
+      const results = tenants.map((tenant) => {
+        const data = this.extractSchoolData(tenant);
+
+        return {
+          id: tenant.id,
+          tenantId: tenant.id,
+          name: tenant.name,
+          schoolName: data.schoolName,
+          schoolAcronym: data.schoolAcronym,
+          tenantName: tenant.name,
+          slug: tenant.slug,
+          subdomain: tenant.subdomain || null,
+          logoUrl: data.logoUrl,
+          address: data.address,
+          city: data.city,
+          department: data.department,
+          postalCode: data.postalCode || null,
+          country: tenant.country?.name || data.country || null,
+          phonePrimary: data.phonePrimary,
+          phoneSecondary: data.phoneSecondary,
+          primaryEmail: data.primaryEmail,
+          website: data.website,
+          schoolType: data.schoolType,
+          slogan: data.slogan,
+          identityVersion: data.identityVersion,
+          activeJobsCount: countMap.get(tenant.id) || 0,
+        };
+      });
+
+      // ── Mettre en cache Redis ──
+      await this.cacheService.set(CACHE_KEY_SCHOOLS_WITH_JOBS, results, CACHE_TTL_MS);
+      this.logger.log(`listSchoolsWithJobs: cached ${results.length} schools with job counts in Redis`);
+
+      return results;
+    } catch (error: any) {
+      if (error?.code === 'P1001' || error?.message?.includes('Can\'t reach database server')) {
+        this.logger.error('Database connection failed:', error.message);
+        throw new ServiceUnavailableException(
+          'Service temporairement indisponible. Veuillez réessayer plus tard.',
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Recherche publique d'établissements
    * Rate-limited, sécurisé, audité
    */
@@ -343,12 +312,12 @@ export class SchoolSearchService {
           ],
         },
         include: {
-          schools: { select: SchoolSearchService.SCHOOL_SELECT },
+          schools: { select: SCHOOL_SELECT },
           identityProfiles: {
             where: { isActive: true },
             take: 1,
             orderBy: { version: 'desc' },
-            select: SchoolSearchService.IDENTITY_PROFILE_SELECT,
+            select: IDENTITY_PROFILE_SELECT,
           },
           country: {
             select: {

@@ -793,176 +793,7 @@ export default function BeninMap({
                 );
               })}
 
-              {/* ── Hologram moved to HTML overlay (outside SVG, no viewBox clipping) ── */}
             </svg>
-
-            {/* ── Hologram HTML overlay (no viewBox clipping, works when zoomed) ── */}
-            {hoveredPin && (() => {
-              const pin = hoveredPin;
-              const svgEl = mapContainerRef.current?.querySelector('svg');
-              if (!svgEl) return null;
-
-              const rect = svgEl.getBoundingClientRect();
-              // Parse current viewBox to convert SVG coords → screen coords
-              const vb = viewBox.split(' ').map(Number);
-              const vbX = vb[0], vbY = vb[1], vbW = vb[2], vbH = vb[3];
-
-              // SVG coordinates → screen pixel coordinates
-              const screenX = ((pin.x - vbX) / vbW) * rect.width;
-              const screenY = ((pin.y - vbY) / vbH) * rect.height;
-
-              // Tooltip size
-              const tipWidth = Math.min(280, rect.width - 16);
-              const tipHeight = 160;
-
-              // Position: prefer above, but flip below if near top
-              const showAbove = screenY > tipHeight + 20;
-              const tipLeft = Math.max(8, Math.min(screenX - tipWidth / 2, rect.width - tipWidth - 8));
-              const tipTop = showAbove
-                ? screenY - tipHeight - 12
-                : screenY + 24;
-
-              const displayName = pin.schoolAcronym
-                ? `${pin.schoolAcronym} — ${pin.name}`
-                : pin.name;
-
-              return (
-                <div
-                  className="absolute z-20 pointer-events-none"
-                  style={{
-                    left: tipLeft,
-                    top: tipTop,
-                    width: tipWidth,
-                  }}
-                >
-                  {/* Outer glow pulse */}
-                  <div
-                    className="absolute -inset-1 rounded-xl border opacity-30"
-                    style={{ borderColor: '#00e5ff' }}
-                  />
-
-                  {/* Main hologram card */}
-                  <div
-                    className="relative rounded-xl overflow-hidden"
-                    style={{
-                      background: 'rgba(0,30,50,0.94)',
-                      border: '1px solid rgba(0,229,255,0.7)',
-                      boxShadow: '0 0 20px rgba(0,229,255,0.15), inset 0 0 20px rgba(0,229,255,0.03)',
-                    }}
-                  >
-                    {/* Top energy line */}
-                    <div
-                      className="h-[2px] mx-3 mt-1 rounded-full"
-                      style={{
-                        background: 'linear-gradient(90deg, transparent, #00e5ff, transparent)',
-                        animation: 'holo-pulse 1.8s ease-in-out infinite',
-                      }}
-                    />
-
-                    {/* Scanline animation */}
-                    <div
-                      className="absolute left-0 right-0 h-[1px] pointer-events-none"
-                      style={{
-                        background: 'linear-gradient(90deg, transparent, rgba(0,229,255,0.3), transparent)',
-                        animation: 'holo-scan 3s linear infinite',
-                        top: 0,
-                      }}
-                    />
-
-                    {/* Corner brackets */}
-                    <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox={`0 0 ${tipWidth} ${tipHeight}`} fill="none">
-                      <path d={`M2,14 L2,2 L14,2`} stroke="#00e5ff" strokeWidth="1.5" opacity="0.6" />
-                      <path d={`M${tipWidth - 14},2 L${tipWidth - 2},2 L${tipWidth - 2},14`} stroke="#00e5ff" strokeWidth="1.5" opacity="0.6" />
-                      <path d={`M2,${tipHeight - 14} L2,${tipHeight - 2} L14,${tipHeight - 2}`} stroke="#00e5ff" strokeWidth="1.5" opacity="0.6" />
-                      <path d={`M${tipWidth - 14},${tipHeight - 2} L${tipWidth - 2},${tipHeight - 2} L${tipWidth - 2},${tipHeight - 14}`} stroke="#00e5ff" strokeWidth="1.5" opacity="0.6" />
-                    </svg>
-
-                    {/* Content */}
-                    <div className="px-4 py-3 relative">
-                      {/* School name */}
-                      <p
-                        className="text-sm font-bold text-center truncate"
-                        style={{
-                          color: '#00e5ff',
-                          textShadow: '0 0 8px rgba(0,229,255,0.5)',
-                        }}
-                      >
-                        {displayName}
-                      </p>
-
-                      {/* City */}
-                      <p className="text-[11px] text-center mt-0.5" style={{ color: 'rgba(0,229,255,0.6)' }}>
-                        {pin.city || 'Bénin'}{pin.department ? ` · ${pin.department}` : ''}
-                      </p>
-
-                      {/* Separator */}
-                      <div className="my-2 h-[1px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(0,229,255,0.3), transparent)' }} />
-
-                      {/* School type badge */}
-                      <div className="flex justify-center mb-2">
-                        <span
-                          className="px-3 py-0.5 text-[10px] font-semibold rounded-full"
-                          style={{
-                            background: 'rgba(0,229,255,0.1)',
-                            color: '#00e5ff',
-                            border: '1px solid rgba(0,229,255,0.3)',
-                          }}
-                        >
-                          {pin.schoolType || 'École partenaire'}
-                        </span>
-                      </div>
-
-                      {/* Contact info */}
-                      <div className="space-y-1">
-                        {pin.phone && (
-                          <p className="text-[11px] truncate" style={{ color: 'rgba(0,229,255,0.65)' }}>
-                            📞 {pin.phone}
-                          </p>
-                        )}
-                        {pin.email && (
-                          <p className="text-[11px] truncate" style={{ color: 'rgba(0,229,255,0.55)' }}>
-                            ✉️ {pin.email}
-                          </p>
-                        )}
-                        {pin.address && !pin.email && (
-                          <p className="text-[11px] truncate" style={{ color: 'rgba(0,229,255,0.55)' }}>
-                            📍 {pin.address}
-                          </p>
-                        )}
-                      </div>
-
-                      {/* AH label */}
-                      <p className="text-center text-[8px] tracking-[0.15em] mt-2" style={{ color: 'rgba(0,229,255,0.3)' }}>
-                        SUR ACADEMIA HELM
-                      </p>
-                    </div>
-
-                    {/* Bottom energy line */}
-                    <div
-                      className="h-[1.5px] mx-3 mb-1 rounded-full"
-                      style={{
-                        background: 'linear-gradient(90deg, transparent, #00e5ff, transparent)',
-                        animation: 'holo-pulse 2.2s ease-in-out infinite',
-                        opacity: 0.5,
-                      }}
-                    />
-                  </div>
-
-                  {/* Arrow pointing to pin */}
-                  <div
-                    className="absolute left-1/2 -translate-x-1/2"
-                    style={{
-                      [showAbove ? 'bottom' : 'top']: '-6px',
-                      width: 0,
-                      height: 0,
-                      borderLeft: '7px solid transparent',
-                      borderRight: '7px solid transparent',
-                      [showAbove ? 'borderTop' : 'borderBottom']: '7px solid rgba(0,229,255,0.7)',
-                    }}
-                  />
-                </div>
-              );
-            })()}
 
             {/* ── Legend (discrete, like government site) ──────────── */}
             <div className="mt-2 space-y-1.5">
@@ -1706,6 +1537,185 @@ export default function BeninMap({
           </div>
         </div>
       </div>
+
+      {/* ── Hologram: fixed positioning — never clipped by any parent container (desktop + mobile) ── */}
+      {hoveredPin && (() => {
+        const pin = hoveredPin;
+        const svgEl = mapContainerRef.current?.querySelector('svg');
+        if (!svgEl) return null;
+
+        const rect = svgEl.getBoundingClientRect();
+        // Parse current viewBox to convert SVG coords → screen coords
+        const vb = viewBox.split(' ').map(Number);
+        const vbX = vb[0], vbY = vb[1], vbW = vb[2], vbH = vb[3];
+
+        // SVG coordinates → viewport pixel coordinates (fixed positioning)
+        const screenX = rect.left + ((pin.x - vbX) / vbW) * rect.width;
+        const screenY = rect.top + ((pin.y - vbY) / vbH) * rect.height;
+
+        // Tooltip size
+        const tipWidth = Math.min(280, window.innerWidth - 24);
+        const tipHeight = 180;
+
+        // Viewport boundaries
+        const vpW = window.innerWidth;
+        const vpH = window.innerHeight;
+
+        // Position: prefer above, flip below if near top; clamp to viewport
+        const showAbove = screenY - rect.top > tipHeight + 20;
+        let tipLeft = Math.max(8, Math.min(screenX - tipWidth / 2, vpW - tipWidth - 8));
+        let tipTop = showAbove
+          ? screenY - tipHeight - 14
+          : screenY + 18;
+
+        // Clamp within viewport
+        tipTop = Math.max(8, Math.min(tipTop, vpH - tipHeight - 8));
+        tipLeft = Math.max(8, Math.min(tipLeft, vpW - tipWidth - 8));
+
+        const displayName = pin.schoolAcronym
+          ? `${pin.schoolAcronym} — ${pin.name}`
+          : pin.name;
+
+        return (
+          <div
+            className="fixed z-[9999] pointer-events-none"
+            style={{
+              left: tipLeft,
+              top: tipTop,
+              width: tipWidth,
+            }}
+          >
+            {/* Outer glow pulse */}
+            <div
+              className="absolute -inset-1.5 rounded-xl border opacity-30"
+              style={{
+                borderColor: '#00e5ff',
+                animation: 'holo-pulse 2s ease-in-out infinite',
+              }}
+            />
+
+            {/* Main hologram card */}
+            <div
+              className="relative rounded-xl overflow-hidden"
+              style={{
+                background: 'rgba(0,30,50,0.95)',
+                border: '1.5px solid rgba(0,229,255,0.75)',
+                boxShadow: '0 0 30px rgba(0,229,255,0.2), 0 0 60px rgba(0,229,255,0.06), inset 0 0 30px rgba(0,229,255,0.04)',
+              }}
+            >
+              {/* Top energy line */}
+              <div
+                className="h-[2px] mx-3 mt-1 rounded-full"
+                style={{
+                  background: 'linear-gradient(90deg, transparent, #00e5ff, transparent)',
+                  animation: 'holo-pulse 1.8s ease-in-out infinite',
+                }}
+              />
+
+              {/* Scanline animation */}
+              <div
+                className="absolute left-0 right-0 h-[1px] pointer-events-none"
+                style={{
+                  background: 'linear-gradient(90deg, transparent, rgba(0,229,255,0.35), transparent)',
+                  animation: 'holo-scan 3s linear infinite',
+                  top: 0,
+                }}
+              />
+
+              {/* Corner brackets */}
+              <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox={`0 0 ${tipWidth} ${tipHeight}`} fill="none">
+                <path d={`M2,14 L2,2 L14,2`} stroke="#00e5ff" strokeWidth="1.5" opacity="0.6" />
+                <path d={`M${tipWidth - 14},2 L${tipWidth - 2},2 L${tipWidth - 2},14`} stroke="#00e5ff" strokeWidth="1.5" opacity="0.6" />
+                <path d={`M2,${tipHeight - 14} L2,${tipHeight - 2} L14,${tipHeight - 2}`} stroke="#00e5ff" strokeWidth="1.5" opacity="0.6" />
+                <path d={`M${tipWidth - 14},${tipHeight - 2} L${tipWidth - 2},${tipHeight - 2} L${tipWidth - 2},${tipHeight - 14}`} stroke="#00e5ff" strokeWidth="1.5" opacity="0.6" />
+              </svg>
+
+              {/* Content */}
+              <div className="px-4 py-3 relative">
+                {/* School name */}
+                <p
+                  className="text-sm font-bold text-center truncate"
+                  style={{
+                    color: '#00e5ff',
+                    textShadow: '0 0 8px rgba(0,229,255,0.5)',
+                  }}
+                >
+                  {displayName}
+                </p>
+
+                {/* City */}
+                <p className="text-[11px] text-center mt-0.5" style={{ color: 'rgba(0,229,255,0.6)' }}>
+                  {pin.city || 'Bénin'}{pin.department ? ` · ${pin.department}` : ''}
+                </p>
+
+                {/* Separator */}
+                <div className="my-2 h-[1px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(0,229,255,0.3), transparent)' }} />
+
+                {/* School type badge */}
+                <div className="flex justify-center mb-2">
+                  <span
+                    className="px-3 py-0.5 text-[10px] font-semibold rounded-full"
+                    style={{
+                      background: 'rgba(0,229,255,0.1)',
+                      color: '#00e5ff',
+                      border: '1px solid rgba(0,229,255,0.3)',
+                    }}
+                  >
+                    {pin.schoolType || 'École partenaire'}
+                  </span>
+                </div>
+
+                {/* Contact info */}
+                <div className="space-y-1">
+                  {pin.phone && (
+                    <p className="text-[11px] truncate" style={{ color: 'rgba(0,229,255,0.65)' }}>
+                      📞 {pin.phone}
+                    </p>
+                  )}
+                  {pin.email && (
+                    <p className="text-[11px] truncate" style={{ color: 'rgba(0,229,255,0.55)' }}>
+                      ✉️ {pin.email}
+                    </p>
+                  )}
+                  {pin.address && !pin.email && (
+                    <p className="text-[11px] truncate" style={{ color: 'rgba(0,229,255,0.55)' }}>
+                      📍 {pin.address}
+                    </p>
+                  )}
+                </div>
+
+                {/* AH label */}
+                <p className="text-center text-[8px] tracking-[0.15em] mt-2" style={{ color: 'rgba(0,229,255,0.3)' }}>
+                  SUR ACADEMIA HELM
+                </p>
+              </div>
+
+              {/* Bottom energy line */}
+              <div
+                className="h-[1.5px] mx-3 mb-1 rounded-full"
+                style={{
+                  background: 'linear-gradient(90deg, transparent, #00e5ff, transparent)',
+                  animation: 'holo-pulse 2.2s ease-in-out infinite',
+                  opacity: 0.5,
+                }}
+              />
+            </div>
+
+            {/* Arrow pointing to pin */}
+            <div
+              className="absolute left-1/2 -translate-x-1/2"
+              style={{
+                [showAbove ? 'bottom' : 'top']: '-6px',
+                width: 0,
+                height: 0,
+                borderLeft: '7px solid transparent',
+                borderRight: '7px solid transparent',
+                [showAbove ? 'borderTop' : 'borderBottom']: '7px solid rgba(0,229,255,0.7)',
+              }}
+            />
+          </div>
+        );
+      })()}
     </div>
   );
 }

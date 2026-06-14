@@ -209,12 +209,27 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
   const hasValidLogo = schoolData?.logoUrl && !imgError;
 
   return (
-    <div
-      className="relative flex min-h-screen w-full flex-col items-center"
-      style={{
-        background: `linear-gradient(160deg, ${NAVY_DARK} 0%, ${NAVY} 40%, ${NAVY_LIGHT} 100%)`,
-      }}
-    >
+    <div className="relative flex min-h-screen w-full flex-col items-center overflow-hidden">
+      {/* ── Image de fond ── */}
+      <div className="pointer-events-none absolute inset-0" aria-hidden>
+        <Image
+          src="/images/school-portal.png"
+          alt=""
+          fill
+          className="object-cover object-center"
+          priority
+          quality={85}
+          sizes="100vw"
+        />
+        {/* Overlay sombre pour la lisibilité */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background: `linear-gradient(160deg, ${NAVY_DARK}dd 0%, ${NAVY}cc 40%, ${NAVY_LIGHT}bb 100%)`,
+          }}
+        />
+      </div>
+
       {/* ── Décorations de fond ── */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
         {/* Glow or en haut à droite */}

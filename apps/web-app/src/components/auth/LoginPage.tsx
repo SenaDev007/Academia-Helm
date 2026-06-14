@@ -911,7 +911,22 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   };
 
   return (
-    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-gradient-to-br from-slate-50 via-white to-blue-50/90 px-3 py-12 sm:px-6 sm:py-16 lg:px-8">
+    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden px-3 py-12 sm:px-6 sm:py-16 lg:px-8">
+      {/* ── Image de fond ── */}
+      <div className="pointer-events-none absolute inset-0" aria-hidden>
+        <Image
+          src="/images/login-page.png"
+          alt=""
+          fill
+          className="object-cover object-center"
+          priority
+          quality={85}
+          sizes="100vw"
+        />
+        {/* Overlay clair pour la lisibilité du formulaire */}
+        <div className="absolute inset-0 bg-white/75 backdrop-blur-[2px]" />
+      </div>
+
       {/* ── Background blobs — palette Helm ── */}
       <div className="pointer-events-none absolute inset-0 opacity-40" aria-hidden>
         {!shouldReduceMotion ? (

@@ -3,7 +3,7 @@
  *
  * Résout le branding de l'école (logo, nom, couleurs, slogan)
  * depuis le sous-domaine courant ou le sessionStorage.
- * Utilisé par les pages publiques (LoginPage, PremiumHeader, etc.)
+ * Utilisé par les pages publiques (LoginPage, Header, etc.)
  * pour afficher le branding de l'école au lieu du branding Academia Helm générique.
  *
  * Flux de résolution :

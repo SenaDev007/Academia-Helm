@@ -12,6 +12,7 @@ import Image from 'next/image';
 import { motion, useScroll, useSpring, useTransform } from 'framer-motion';
 import { bgColor, textColor, typo } from '@/lib/design-tokens';
 import { cn } from '@/lib/utils';
+import LogoCircle from '@/components/ui/LogoCircle';
 
 function SocialIcon({ name }: { name: 'Facebook' | 'LinkedIn' | 'X' | 'YouTube' }) {
   if (name === 'Facebook') {
@@ -119,20 +120,11 @@ export default function InstitutionalFooter() {
         <div className="py-10 sm:py-12 md:py-16 relative">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
             <div className="lg:col-span-4">
-              <div className="flex items-center space-x-1 mb-4 sm:mb-5">
-                <Image
-                  src="/images/logo-Academia Hub.png"
-                  alt="Academia Helm - Plateforme de pilotage éducatif"
-                  width={40}
-                  height={40}
-                  className="h-10 md:h-11 w-auto"
-                  loading="lazy"
-                  sizes="(max-width: 768px) 32px, 40px"
-                />
-                <div className={`font-bold leading-none`}>
-                  <span className="text-base sm:text-lg md:text-xl text-white block">Academia</span>
-                  <span className="text-[10px] sm:text-xs md:text-sm text-amber-300 block -mt-1.5">Helm</span>
-                </div>
+              <div className="flex items-center gap-1.5 mb-4 sm:mb-5">
+                <LogoCircle size={40} animated={true} />
+                <span className="font-bold text-base sm:text-lg md:text-xl text-white whitespace-nowrap">
+                  Academia<span className="text-amber-300 ml-1">Helm</span>
+                </span>
               </div>
               <p className={`${typo('small')} text-white/90 mb-4 sm:mb-5 leading-relaxed max-w-md text-[12px] sm:text-sm`}>
                 La plateforme de pilotage éducatif nouvelle génération. Prenez le gouvernail de votre institution.

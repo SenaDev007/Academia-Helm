@@ -8,13 +8,13 @@
 'use client';
 
 import Link from 'next/link';
-import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import AppIcon from '@/components/ui/AppIcon';
 import { bgColor, textColor } from '@/lib/design-tokens';
 import { cn } from '@/lib/utils';
 import { BRAND } from '@/lib/brand';
+import LogoCircle from '@/components/ui/LogoCircle';
 
 /**
  * Vérifie si l'utilisateur est authentifié en lisant le cookie non-httpOnly.
@@ -83,23 +83,12 @@ export default function PremiumHeader() {
           <Link 
             href="/"
             prefetch={true}
-            className="flex items-center space-x-1 group transition-transform duration-200 hover:scale-105 flex-shrink-0"
+            className="flex items-center gap-1.5 group transition-transform duration-200 hover:scale-105 flex-shrink-0"
           >
-            <div className="relative">
-                    <Image
-                      src="/images/logo-Academia Hub.png"
-                      alt={`${BRAND.name} - ${BRAND.subtitle}`}
-                      width={40}
-                      height={40}
-                      className="h-10 md:h-11 w-auto transition-opacity duration-200 group-hover:opacity-90"
-                      priority
-                      sizes="(max-width: 768px) 32px, 40px"
-                    />
-            </div>
-            <div className="font-bold leading-none">
-              <span className="text-base sm:text-lg md:text-xl block text-white">Academia</span>
-              <span className="text-[10px] sm:text-xs md:text-sm block -mt-1.5 text-amber-300">Helm</span>
-            </div>
+            <LogoCircle size={40} animated={true} />
+            <span className="font-bold text-base sm:text-lg md:text-xl text-white whitespace-nowrap">
+              Academia<span className="text-amber-300 ml-1">Helm</span>
+            </span>
           </Link>
 
           {/* Desktop Navigation */}

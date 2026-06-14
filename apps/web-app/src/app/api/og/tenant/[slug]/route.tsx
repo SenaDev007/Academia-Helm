@@ -22,7 +22,7 @@
 import { ImageResponse } from 'next/og';
 import { NextRequest } from 'next/server';
 
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 
 // ── Palette Academia Helm ────────────────────────────────────────────
 const NAVY = '#0b2f73';

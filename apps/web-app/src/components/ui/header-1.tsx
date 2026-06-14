@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import { MenuToggleIcon } from '@/components/ui/menu-toggle-icon';
 import { useScroll } from '@/components/ui/use-scroll';
 import LogoCircle from '@/components/ui/LogoCircle';
-import { DoorOpen, ArrowLeft } from 'lucide-react';
+import { DoorOpen, ArrowRight } from 'lucide-react';
 
 /**
  * Header Premium Academia Helm avec effet Limelight sur les libellés texte
@@ -183,7 +183,7 @@ export function Header() {
                   'inline-flex items-center justify-center',
                 )}
               >
-                <ArrowLeft className="w-5 h-5" />
+                <ArrowRight className="w-5 h-5" />
               </Link>
             ) : (
               <Link
@@ -253,7 +253,7 @@ export function Header() {
                 'inline-flex items-center justify-center space-x-2',
               )}
             >
-              <ArrowLeft className="w-5 h-5" />
+              <ArrowRight className="w-5 h-5" />
               <span>Retourner à l&apos;application</span>
             </Link>
           ) : (

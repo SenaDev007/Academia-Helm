@@ -125,7 +125,8 @@ export default function SchoolSearch({
       const fallbackController = new AbortController();
       const fallbackTimeout = setTimeout(() => fallbackController.abort(), 10000);
       // Recherche large pour obtenir un maximum de résultats
-      const response = await fetch('/api/public/schools/search?q=a', {
+      // ⚠️ Le endpoint /search exige au moins 2 caractères — ne pas utiliser q=a
+      const response = await fetch('/api/public/schools/search?q=aa', {
         signal: fallbackController.signal,
       });
       clearTimeout(fallbackTimeout);

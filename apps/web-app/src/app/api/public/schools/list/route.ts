@@ -6,17 +6,23 @@
  * Proxy BFF (Backend-For-Frontend) vers le endpoint NestJS /api/public/schools/list.
  * Ce endpoint est PUBLIC (@Public) — aucune authentification requise.
  *
- * Pattern simple : le backend NestJS gère lui-même la résolution des données.
- * Le BFF ne fait que proxy la réponse.
+ * Utilise le même pattern que /with-jobs (ISR cache + normalizeApiUrl + bffHeaders)
+ * pour résilience face aux cold starts Neon DB et au blocage Cloudflare.
  * ============================================================================
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { nestControllerUrl } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl, bffHeaders } from '@/lib/utils/api-urls';
+
+/** ISR: revalidate every 60 seconds — school data changes rarely. */
+export const revalidate = 60;
 
 export async function GET(_request: NextRequest) {
   try {
-    const apiUrl = nestControllerUrl('public/schools/list');
+    const API_BASE_URL = getApiBaseUrlForRoutes();
+    const apiUrl = API_BASE_URL.endsWith('/api')
+      ? `${API_BASE_URL}/public/schools/list`
+      : `${API_BASE_URL}/api/public/schools/list`;
 
     console.log('[School List API] Calling backend at:', apiUrl);
 
@@ -26,11 +32,10 @@ export async function GET(_request: NextRequest) {
 
     let response;
     try {
-      response = await fetch(apiUrl, {
+      response = await fetch(normalizeApiUrl(apiUrl), {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: bffHeaders(),
+        next: { revalidate: 60 },
         signal: controller.signal,
       });
       clearTimeout(timeoutId);

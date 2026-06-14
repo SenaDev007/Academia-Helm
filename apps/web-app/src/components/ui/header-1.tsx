@@ -253,9 +253,8 @@ export function Header() {
                   'hover:scale-110',
                   'inline-flex items-center justify-center',
                   'rounded-full p-2',
-                ),
+                )}
                 style={{ animation: 'portalPulse 2s ease-in-out infinite' }}
-              }
               >
                 <DoorOpen className="w-7 h-7" style={{ animation: 'portalIconGlow 2s ease-in-out infinite' }} />
               </Link>

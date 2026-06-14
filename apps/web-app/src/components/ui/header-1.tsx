@@ -96,7 +96,7 @@ const navItems = [
   { label: 'Blog', href: '/blog', isInstitutional: false },
   { label: 'Tarification', href: '/tarification', isInstitutional: false },
   { label: 'Recrutement', href: '/jobs', isInstitutional: false },
-  { label: 'Academia Federis', href: '/federis', isInstitutional: true },
+  { label: 'Academia Federis', href: 'https://academiafederis.academiahelm.com', isInstitutional: true, external: true },
   { label: 'Contact', href: '/contact', isInstitutional: false },
 ];
 

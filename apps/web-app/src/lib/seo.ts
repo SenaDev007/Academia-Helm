@@ -33,11 +33,17 @@ export function buildSiteVerification(): Metadata['verification'] | undefined {
 
 /* ── Open Graph image paths (1200×630) ─────────────────────────────────── */
 
-/** Image OG pour le domaine principal Academia Helm */
-export const OG_IMAGE_MAIN = '/images/OpenGraph-AcademiaHelm.png';
+/**
+ * Image OG pour le domaine principal Academia Helm
+ * JPG optimisé pour WhatsApp (< 200 KB) — WhatsApp ne charge pas les PNG > 1 MB
+ */
+export const OG_IMAGE_MAIN = '/images/OpenGraph-AcademiaHelm.jpg';
 
-/** Image OG pour les sous-domaines des écoles (tenants) */
-export const OG_IMAGE_TENANT = '/images/OpenGraph-AcademiaHelmTenants.png';
+/**
+ * Image OG pour les sous-domaines des écoles (tenants)
+ * JPG optimisé pour WhatsApp (< 200 KB)
+ */
+export const OG_IMAGE_TENANT = '/images/OpenGraph-AcademiaHelmTenants.jpg';
 
 /**
  * @deprecated Use OG_IMAGE_MAIN instead. Kept for backward compatibility.
@@ -138,13 +144,31 @@ function normalizeHostnameForOG(hostname: string): string {
  * Les crawlers (Facebook, WhatsApp, Twitter, etc.) nécessitent des URLs absolues.
  *
  * IMPORTANT : l'URL utilise toujours un domaine public accessible (pas app.academiahelm.com).
+ *
+ * Domaine principal → image statique JPG optimisée pour WhatsApp
+ * Sous-domaine tenant → image dynamique générée par /api/og/tenant/[slug]
+ *   (personnalisée avec le nom, logo et couleurs de l'école)
  */
 export function buildAbsoluteOGImageUrl(hostname?: string): string {
-  const normalizedBase = hostname
-    ? normalizeHostnameForOG(hostname)
-    : 'www.academiahelm.com';
-  const path = getOGImagePath(hostname);
-  return `https://${normalizedBase}${path}`;
+  if (!hostname) {
+    return `https://www.academiahelm.com${OG_IMAGE_MAIN}`;
+  }
+
+  const base = hostname.split(':')[0];
+
+  if (isMainDomain(base)) {
+    // Domaine principal → image statique sur www.academiahelm.com
+    return `https://www.academiahelm.com${OG_IMAGE_MAIN}`;
+  }
+
+  // Sous-domaine tenant → image dynamique avec branding de l'école
+  const tenantSlug = extractTenantSubdomainFromHost(base);
+  if (tenantSlug) {
+    return `https://www.academiahelm.com/api/og/tenant/${encodeURIComponent(tenantSlug)}`;
+  }
+
+  // Fallback (ne devrait pas arriver)
+  return `https://www.academiahelm.com${OG_IMAGE_TENANT}`;
 }
 
 /**
@@ -216,8 +240,11 @@ export function generateSEOMetadata(config: SEOConfig): Metadata {
   } = config;
 
   // Résolution de l'image OG : explicite > auto-détection > défaut
-  const ogImageRelative = image || getOGImagePath(hostname);
   const ogImageAbsolute = buildAbsoluteOGImageUrl(hostname);
+
+  // Type MIME : JPG pour image statique (domaine principal), PNG pour image dynamique (tenant)
+  const isTenantOG = hostname ? !isMainDomain(hostname) : false;
+  const ogImageType = isTenantOG ? 'image/png' : 'image/jpeg';
 
   // URL de la page — normalisée pour les crawlers (pas app.academiahelm.com)
   const pathSegment = path === '' || path.startsWith('/') ? path : `/${path}`;
@@ -254,6 +281,7 @@ export function generateSEOMetadata(config: SEOConfig): Metadata {
           width: 1200,
           height: 630,
           alt: title,
+          type: ogImageType,
         },
       ],
       locale: 'fr_FR',

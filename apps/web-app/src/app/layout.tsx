@@ -110,6 +110,9 @@ export async function generateMetadata(): Promise<Metadata> {
     ? 'https://www.academiahelm.com'
     : `https://${hostname.split(':')[0]}`;
 
+  // Type MIME : JPG pour image statique, PNG pour image dynamique tenant
+  const ogImageType = mainDomain ? 'image/jpeg' : 'image/png';
+
   return {
     metadataBase: new URL('https://www.academiahelm.com'),
     title,
@@ -154,6 +157,7 @@ export async function generateMetadata(): Promise<Metadata> {
           width: 1200,
           height: 630,
           alt: title,
+          type: ogImageType,
         },
       ],
     },

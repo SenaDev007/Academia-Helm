@@ -208,7 +208,7 @@ export default function SchoolSearch({
         initial={reduceMotion ? false : { opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: reduceMotion ? 0 : 0.22, ease: 'easeOut' }}
-        className="rounded-xl border-2 p-4"
+        className="rounded-xl border-2 p-3 mt-2"
         style={{
           borderColor: `${NAVY}25`,
           background: `linear-gradient(135deg, ${NAVY}06, ${BLUE}08)`,
@@ -271,7 +271,7 @@ export default function SchoolSearch({
   return (
     <div className="flex flex-col min-h-0 flex-1">
       {/* Barre de recherche */}
-      <div className="shrink-0 px-4 pt-4 pb-2">
+      <div className="shrink-0 pt-3 pb-2">
         <div
           className="w-full px-3 py-2.5 rounded-xl flex items-center gap-2 bg-white"
           style={{ border: `2px solid ${NAVY}25` }}
@@ -296,7 +296,7 @@ export default function SchoolSearch({
 
       {/* Compteur de résultats */}
       <div
-        className="shrink-0 px-4 py-1.5 flex items-center justify-between text-xs"
+        className="shrink-0 py-1.5 flex items-center justify-between text-xs"
         style={{ color: NAVY }}
       >
         <span className="font-medium">
@@ -309,7 +309,7 @@ export default function SchoolSearch({
       </div>
 
       {/* Liste des écoles — scrollable, occupe tout l'espace restant */}
-      <div className="flex-1 overflow-y-auto min-h-0 px-2 pb-2">
+      <div className="flex-1 overflow-y-auto min-h-0 pb-2 -mx-1">
         {fetchError && allSchools.length === 0 ? (
           /* Erreur de chargement avec retry */
           <div className="px-4 py-8 text-center">

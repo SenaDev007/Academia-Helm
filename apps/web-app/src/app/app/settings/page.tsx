@@ -528,9 +528,12 @@ export default function SettingsPage() {
     let cancelled = false;
     setDevicesLoading(true);
     settingsService.getDevices(effectiveTenantId)
-      .then((r) => r.json())
       .then((data) => {
-        if (!cancelled && data?.devices) setDevicesList(data.devices);
+        if (!cancelled) {
+          // fetchWithAuth returns parsed JSON, not a Response object
+          const devices = data?.devices ?? (Array.isArray(data) ? data : []);
+          setDevicesList(devices);
+        }
       })
       .catch(() => { if (!cancelled) setDevicesList([]); })
       .finally(() => { if (!cancelled) setDevicesLoading(false); });
@@ -4553,12 +4556,14 @@ export default function SettingsPage() {
                                 const ok = await confirmDialog.warning('Les sessions et la sync offline de cet appareil seront invalidées. Voulez-vous continuer ?', 'Révoquer l\'appareil');
                                 if (!ok) return;
                                 try {
-                                  const res = await settingsService.revokeDevice(d.id);
-                                  const data = await res.json().catch(() => ({}));
-                                  if (res.ok) {
-                                    showToast('success', data?.message || 'Appareil révoqué');
+                                  // fetchWithAuth returns parsed JSON, not a Response object
+                                  const data = await settingsService.revokeDevice(d.id) as any;
+                                  if (data?.success || data?.message) {
+                                    showToast('success', data?.message || 'Appareil révoqué avec succès');
                                     setDevicesList((prev) => prev.filter((x) => x.id !== d.id));
-                                  } else showToast('error', data?.message || 'Erreur');
+                                  } else {
+                                    showToast('error', data?.message || data?.error || 'Erreur lors de la révocation');
+                                  }
                                 } catch {
                                   showToast('error', 'Erreur lors de la révocation');
                                 }

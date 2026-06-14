@@ -669,26 +669,29 @@ export default function BeninMap({
                 })()}
 
               {/* ── School Pins (écoles inscrites Academia Helm) ────────── */}
-              {/* Définition du logo pin réutilisable (logo Academia Helm sans fond) */}
+              {/* Définitions SVG pour les pins */}
               <defs>
-                <filter id="pin-shadow" x="-30%" y="-30%" width="160%" height="160%">
-                  <feDropShadow dx="0" dy="0.8" stdDeviation="1.2" floodColor="rgba(0,0,0,0.35)" />
-                </filter>
-                <filter id="pin-glow" x="-40%" y="-40%" width="180%" height="180%">
-                  <feDropShadow dx="0" dy="0.5" stdDeviation="2" floodColor="rgba(245,179,53,0.7)" />
+                <filter id="pin-glow" x="-50%" y="-50%" width="200%" height="200%">
+                  <feDropShadow dx="0" dy="0" stdDeviation="2.5" floodColor="rgba(245,179,53,0.8)" />
                 </filter>
               </defs>
 
-              {schoolPins.length > 0 && schoolPins.map((pin) => {
+              {schoolPins.length > 0 && schoolPins.map((pin, idx) => {
                 const isHovered = hoveredPin?.id === pin.id;
-                const pinR = 9; // rayon du logo pin
+                const pinR = 6; // rayon du pin (plus petit pour éviter la surcharge)
 
                 return (
                   <g
                     key={pin.id}
-                    className="cursor-pointer"
-                    onMouseEnter={() => setHoveredPin(pin)}
-                    onMouseLeave={() => setHoveredPin(null)}
+                    style={{ cursor: 'pointer' }}
+                    onMouseEnter={(e) => {
+                      e.stopPropagation();
+                      setHoveredPin(pin);
+                    }}
+                    onMouseLeave={(e) => {
+                      e.stopPropagation();
+                      setHoveredPin(null);
+                    }}
                     onClick={(e) => {
                       e.stopPropagation();
                     }}
@@ -700,38 +703,67 @@ export default function BeninMap({
                       r={pinR + 2}
                       fill="none"
                       stroke={GOLD}
-                      strokeWidth={0.8}
-                      opacity={0.6}
+                      strokeWidth={0.6}
+                      opacity={0.5}
+                      pointerEvents="none"
                     >
                       <animate
                         attributeName="r"
                         from={pinR}
-                        to={pinR + 6}
+                        to={pinR + 5}
                         dur="2s"
                         repeatCount="indefinite"
                       />
                       <animate
                         attributeName="opacity"
-                        from="0.6"
+                        from="0.5"
                         to="0"
                         dur="2s"
                         repeatCount="indefinite"
                       />
                     </circle>
 
-                    {/* Logo Academia Helm SVG comme pin (sans fond blanc) */}
-                    <image
-                      href="/images/logo-Academia-Helm.svg"
-                      x={pin.x - pinR}
-                      y={pin.y - pinR}
-                      width={pinR * 2}
-                      height={pinR * 2}
-                      preserveAspectRatio="xMidYMid meet"
-                      className="pointer-events-none select-none"
+                    {/* Hit area invisible (plus grande pour faciliter le survol) */}
+                    <circle
+                      cx={pin.x}
+                      cy={pin.y}
+                      r={pinR + 4}
+                      fill="transparent"
+                      stroke="none"
+                    />
+
+                    {/* Pin : cercle bleu (palette Academia Helm) */}
+                    <circle
+                      cx={pin.x}
+                      cy={pin.y}
+                      r={pinR}
+                      fill={isHovered ? GOLD : NAVY}
+                      stroke={GOLD}
+                      strokeWidth={isHovered ? 1.2 : 0.6}
+                      pointerEvents="none"
                       style={{
                         outline: 'none',
-                        transition: 'filter 0.2s ease',
-                        filter: isHovered ? 'url(#pin-glow)' : 'url(#pin-shadow)',
+                        transition: 'fill 0.15s ease, stroke-width 0.15s ease, filter 0.15s ease',
+                        filter: isHovered
+                          ? 'drop-shadow(0 0 4px rgba(245,179,53,0.7))'
+                          : 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))',
+                      }}
+                    />
+
+                    {/* Logo SVG à l'intérieur du pin (blanc sur fond bleu, masqué si trop petit) */}
+                    <image
+                      href="/images/logo-Academia-Helm.svg"
+                      x={pin.x - pinR + 1}
+                      y={pin.y - pinR + 1}
+                      width={(pinR - 1) * 2}
+                      height={(pinR - 1) * 2}
+                      preserveAspectRatio="xMidYMid meet"
+                      pointerEvents="none"
+                      style={{
+                        outline: 'none',
+                        opacity: isHovered ? 0.9 : 0.7,
+                        filter: 'brightness(0) invert(1)', // Rend le logo blanc
+                        transition: 'opacity 0.15s ease',
                       }}
                     />
                   </g>

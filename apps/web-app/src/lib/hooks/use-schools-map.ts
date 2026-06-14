@@ -100,10 +100,28 @@ export function useSchoolsMap() {
   const pins: SchoolPin[] = useMemo(() => {
     const result: SchoolPin[] = [];
 
+    // Grouper les écoles par position (même coordonnées SVG)
+    const positionMap = new Map<string, number>();
+
     for (const school of schools) {
       const cityName = school.city || school.address || '';
       const coord = findCityCoord(cityName, undefined);
       if (!coord) continue; // École non localisable → ignorée
+
+      // Clé de position pour détecter les chevauchements
+      const posKey = `${coord.x},${coord.y}`;
+      const overlapIdx = positionMap.get(posKey) || 0;
+      positionMap.set(posKey, overlapIdx + 1);
+
+      // Décalage spiral si plusieurs écoles au même endroit
+      let offsetX = 0;
+      let offsetY = 0;
+      if (overlapIdx > 0) {
+        const angle = (overlapIdx * 2.4) % (2 * Math.PI); // répartition en spirale
+        const dist = 8 + overlapIdx * 3; // distance croissante
+        offsetX = Math.round(Math.cos(angle) * dist * 10) / 10;
+        offsetY = Math.round(Math.sin(angle) * dist * 10) / 10;
+      }
 
       result.push({
         id: school.id,
@@ -113,8 +131,8 @@ export function useSchoolsMap() {
         schoolType: school.schoolType || null,
         logoUrl: school.logoUrl || null,
         subdomain: school.subdomain || null,
-        x: coord.x,
-        y: coord.y,
+        x: coord.x + offsetX,
+        y: coord.y + offsetY,
         deptCode: coord.dept,
       });
     }

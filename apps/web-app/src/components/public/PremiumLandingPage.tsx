@@ -349,6 +349,22 @@ function RecruitmentBanner() {
           0% { transform: translateX(0); }
           100% { transform: translateX(-50%); }
         }
+        @keyframes heroPortalPulse {
+          0%, 100% {
+            box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.3), 0 0 0 0 rgba(245, 179, 53, 0.4);
+          }
+          50% {
+            box-shadow: 0 0 16px 4px rgba(255, 255, 255, 0.15), 0 0 24px 6px rgba(245, 179, 53, 0.3);
+          }
+        }
+        @keyframes heroPortalGlow {
+          0%, 100% {
+            filter: drop-shadow(0 0 2px rgba(245, 179, 53, 0.4));
+          }
+          50% {
+            filter: drop-shadow(0 0 10px rgba(245, 179, 53, 0.8));
+          }
+        }
       `}</style>
     </div>
   );
@@ -560,10 +576,11 @@ export default function PremiumLandingPage() {
                 <motion.div whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }}>
                   <Link
                     href="/portal"
-                    className="inline-flex w-full sm:w-auto items-center justify-center rounded-xl border border-white/40 bg-white/10 px-7 py-3.5 font-semibold text-white hover:bg-white/20 transition-colors min-h-[48px]"
+                    className="inline-flex w-full sm:w-auto items-center justify-center rounded-xl border border-amber-300/40 bg-white/10 px-7 py-3.5 font-semibold text-white hover:bg-white/20 transition-colors min-h-[48px]"
+                    style={{ animation: 'heroPortalPulse 2.5s ease-in-out infinite' }}
                   >
                     Accéder au portail
-                    <DoorOpen className="ml-2 w-4 h-4" />
+                    <DoorOpen className="ml-2 w-4 h-4" style={{ animation: 'heroPortalGlow 2.5s ease-in-out infinite' }} />
                   </Link>
                 </motion.div>
               </motion.div>

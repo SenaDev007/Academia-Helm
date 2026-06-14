@@ -8,6 +8,31 @@ import { useScroll } from '@/components/ui/use-scroll';
 import LogoCircle from '@/components/ui/LogoCircle';
 import { DoorOpen, ArrowRight } from 'lucide-react';
 
+// ── Keyframe injectée pour la pulsation dorée du bouton portail ──
+if (typeof document !== 'undefined' && !document.getElementById('portal-pulse-style')) {
+  const style = document.createElement('style');
+  style.id = 'portal-pulse-style';
+  style.textContent = `
+    @keyframes portalPulse {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(245, 179, 53, 0.5);
+      }
+      50% {
+        box-shadow: 0 0 12px 4px rgba(245, 179, 53, 0.35);
+      }
+    }
+    @keyframes portalIconGlow {
+      0%, 100% {
+        filter: drop-shadow(0 0 2px rgba(245, 179, 53, 0.3));
+      }
+      50% {
+        filter: drop-shadow(0 0 8px rgba(245, 179, 53, 0.7));
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 /**
  * Header Premium Academia Helm avec effet Limelight sur les libellés texte
  * 
@@ -227,9 +252,12 @@ export function Header() {
                   'transition-all duration-200',
                   'hover:scale-110',
                   'inline-flex items-center justify-center',
-                )}
+                  'rounded-full p-2',
+                ),
+                style={{ animation: 'portalPulse 2s ease-in-out infinite' }}
+              }
               >
-                <DoorOpen className="w-7 h-7" />
+                <DoorOpen className="w-7 h-7" style={{ animation: 'portalIconGlow 2s ease-in-out infinite' }} />
               </Link>
             )}
           </div>
@@ -298,8 +326,9 @@ export function Header() {
                 'font-semibold hover:bg-amber-300/10 transition-all duration-200',
                 'inline-flex items-center justify-center space-x-2',
               )}
+              style={{ animation: 'portalPulse 2s ease-in-out infinite' }}
             >
-              <DoorOpen className="w-5 h-5" />
+              <DoorOpen className="w-5 h-5" style={{ animation: 'portalIconGlow 2s ease-in-out infinite' }} />
               <span>Accéder au portail</span>
             </Link>
           )}

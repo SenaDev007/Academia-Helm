@@ -89,6 +89,11 @@ export default function ForgotPasswordPage({ schoolBranding }: ForgotPasswordPag
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+
+  // ── Callbacks stables pour Turnstile (évitent les re-rendus du widget) ──
+  const handleTurnstileError = useCallback(() => setTurnstileToken(null), [setTurnstileToken]);
+  const handleTurnstileExpire = useCallback(() => setTurnstileToken(null), [setTurnstileToken]);
+
   const [resendCooldown, setResendCooldown] = useState(0);
   const [emailTouched, setEmailTouched] = useState(false);
 
@@ -584,8 +589,8 @@ export default function ForgotPasswordPage({ schoolBranding }: ForgotPasswordPag
                 <div className="flex justify-center">
                   <TurnstileWidget
                     onToken={setTurnstileToken}
-                    onError={() => setTurnstileToken(null)}
-                    onExpire={() => setTurnstileToken(null)}
+                    onError={handleTurnstileError}
+                    onExpire={handleTurnstileExpire}
                   />
                 </div>
 

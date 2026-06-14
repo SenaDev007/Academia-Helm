@@ -315,6 +315,10 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   const [showPassword, setShowPassword] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
+  // ── Callbacks stables pour Turnstile (évitent les re-rendus du widget) ──
+  const handleTurnstileError = useCallback(() => setTurnstileToken(null), [setTurnstileToken]);
+  const handleTurnstileExpire = useCallback(() => setTurnstileToken(null), [setTurnstileToken]);
+
   // ── Client-side validation state ─────────────────────────────────────
   const [emailTouched, setEmailTouched] = useState(false);
   const [phoneTouched, setPhoneTouched] = useState(false);
@@ -1756,8 +1760,8 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               <div className="flex justify-center mt-2">
                 <TurnstileWidget
                   onToken={setTurnstileToken}
-                  onError={() => setTurnstileToken(null)}
-                  onExpire={() => setTurnstileToken(null)}
+                  onError={handleTurnstileError}
+                  onExpire={handleTurnstileExpire}
                 />
               </div>
             )}

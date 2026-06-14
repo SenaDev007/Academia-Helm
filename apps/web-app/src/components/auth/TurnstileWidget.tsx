@@ -4,14 +4,17 @@
  * ============================================================================
  *
  * Composant réutilisable qui intègre Cloudflare Turnstile.
- * Le widget natif Turnstile s'affiche directement avec sa checkbox intégrée,
- * sans bouton intermédiaire. L'utilisateur coche directement dans le widget.
  *
- * Utilisé sur les pages sensibles (login, forgot-password) pour
- * protéger contre le credential stuffing et le spam.
- *
- * Le token généré est validé côté serveur (BFF) avant de transmettre
- * la requête au backend NestJS.
+ * OPTIMISATIONS ANTI-CLIGNOTEMENT :
+ *   - appearance: 'interaction-only' → le widget n'apparaît que lorsque
+ *     l'utilisateur interagit avec le formulaire (évite le cycle
+ *     charge/recharge/charge/recharge au montage de la page)
+ *   - refresh-expired: 'manual' → empêche le refresh automatique qui crée
+ *     le cycle "apparaît / disparaît / réapparaît"
+ *   - Callbacks via refs → évite les re-rendus React qui détruisent et
+ *     recréent le widget en boucle
+ *   - renderWidget stable → le widget n'est détruit/recréé que si siteKey
+ *     ou theme change réellement
  *
  * Variable d'environnement requise :
  *   NEXT_PUBLIC_TURNSTILE_SITE_KEY — Clé publique Cloudflare Turnstile
@@ -50,6 +53,22 @@ export default function TurnstileWidget({
   const [status, setStatus] = useState<'loading' | 'success' | 'error' | 'idle'>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // ── Refs stables pour les callbacks → évitent les re-rendus du widget ──
+  const onTokenRef = useRef(onToken);
+  const onErrorRef = useRef(onError);
+  const onExpireRef = useRef(onExpire);
+
+  // Mettre à jour les refs sans déclencher de re-rendu
+  useEffect(() => {
+    onTokenRef.current = onToken;
+  }, [onToken]);
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
+  useEffect(() => {
+    onExpireRef.current = onExpire;
+  }, [onExpire]);
+
   // Si pas de clé configurée, on skip silencieusement
   if (!siteKey) {
     // En dev sans clé, on passe directement le token comme "skip"
@@ -68,20 +87,23 @@ export default function TurnstileWidget({
   const handleSuccess = useCallback((token: string) => {
     setStatus('success');
     setErrorMessage(null);
-    onToken(token);
-  }, [onToken]);
+    onTokenRef.current(token);
+  }, []);
 
   const handleError = useCallback((code: string) => {
     setStatus('error');
     setErrorMessage('Échec de la vérification. Réessayez.');
-    onError?.(code);
-  }, [onError]);
+    onErrorRef.current?.(code);
+  }, []);
 
   const handleExpire = useCallback(() => {
     setStatus('idle');
-    onExpire?.();
-  }, [onExpire]);
+    onExpireRef.current?.();
+  }, []);
 
+  // ── renderWidget stable : ne dépend que de siteKey et theme ──
+  // Les callbacks sont accédés via refs, donc le widget n'est pas
+  // détruit/recréé quand les props callback changent.
   const renderWidget = useCallback(() => {
     const turnstile = (window as any).turnstile;
     if (!turnstile || !widgetRef.current) return;
@@ -90,6 +112,7 @@ export default function TurnstileWidget({
     try {
       if (widgetIdRef.current) {
         turnstile.remove(widgetIdRef.current);
+        widgetIdRef.current = undefined;
       } else if (widgetRef.current) {
         turnstile.remove(widgetRef.current);
       }
@@ -105,7 +128,15 @@ export default function TurnstileWidget({
         theme,
         size: 'normal',
         'response-field': false,
-        appearance: 'always',
+        // ── CLÉ : n'afficher le widget que lors de l'interaction ──
+        // Empêche le cycle charge/recharge au montage de la page
+        appearance: 'interaction-only',
+        // ── CLÉ : pas de refresh automatique quand le token expire ──
+        // Empêche le cycle apparaît/disparaît/réapparaît
+        'refresh-expired': 'manual',
+        // Réessayer automatiquement en cas d'erreur réseau (1 tentative, 2s)
+        'retry': 'auto',
+        'retry-interval': 2000,
       });
       widgetIdRef.current = id;
     } catch {
@@ -159,6 +190,7 @@ export default function TurnstileWidget({
         const turnstile = (window as any).turnstile;
         if (widgetIdRef.current && turnstile) {
           turnstile.remove(widgetIdRef.current);
+          widgetIdRef.current = undefined;
         }
       } catch {}
     };
@@ -166,14 +198,15 @@ export default function TurnstileWidget({
 
   return (
     <div className="flex flex-col items-center gap-1.5">
-      {/* Placeholder pendant le chargement du script */}
+      {/* Placeholder discret — le widget Turnstile apparaîtra uniquement
+          quand l'utilisateur interagit avec le formulaire */}
       {status === 'idle' && (
         <div
           className="flex items-center gap-2 h-[65px] px-4 rounded-lg border border-dashed"
           style={{ borderColor: `${NAVY}30`, color: NAVY }}
         >
           <Shield className="w-4 h-4" />
-          <span className="text-xs">Chargement de la vérification...</span>
+          <span className="text-xs">Vérification de sécurité (activez en interagissant)</span>
         </div>
       )}
 

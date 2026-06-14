@@ -423,7 +423,6 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
 
   // ── Portal definition for current portal ──
   const portalDef = portalType ? PORTAL_LOGIN_DEFS[portalType] : null;
-  const PortalIcon = portalDef?.Icon || null;
 
   // ── Form submit handlers ──
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1043,23 +1042,11 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               )}
             </motion.div>
 
-            {/* Portal icon + title */}
+            {/* Title */}
             <motion.div
               variants={heroItem}
               className="mb-2 flex flex-col items-center justify-center gap-2"
             >
-              {PortalIcon && (
-                <motion.div
-                  className="flex h-12 w-12 items-center justify-center rounded-2xl ring-1 ring-white/70"
-                  style={{
-                    background: `linear-gradient(135deg, ${NAVY}18, ${BLUE}12)`,
-                  }}
-                  whileHover={shouldReduceMotion ? undefined : { scale: 1.05, rotate: -2 }}
-                  transition={springSoft}
-                >
-                  <PortalIcon className="h-6 w-6" />
-                </motion.div>
-              )}
               <h1
                 className="text-sm font-semibold tracking-tight sm:text-base"
                 style={{ color: NAVY }}
@@ -1071,22 +1058,6 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             <motion.p variants={heroItem} className="text-sm text-slate-600">
               {portalDef?.subtitle || clientBranding?.slogan || BRAND.subtitle}
             </motion.p>
-
-            {/* Role count badge — conforme au document */}
-            {portalDef && (
-              <motion.div variants={heroItem} className="mt-2">
-                <span
-                  className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] sm:text-[10px] font-semibold uppercase tracking-wide"
-                  style={{
-                    color: NAVY,
-                    background: `${GOLD}20`,
-                    border: `1px solid ${GOLD}35`,
-                  }}
-                >
-                  {portalDef.authMethod}
-                </span>
-              </motion.div>
-            )}
 
             {/* Tenant display — multi-tenant strict */}
             {(clientBranding?.name || tenantSlug || schoolNameFromUrl) && portalType !== 'public' && (

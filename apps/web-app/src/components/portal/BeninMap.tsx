@@ -796,7 +796,7 @@ export default function BeninMap({
 
           {/* ── ACADEMIA HELM PANEL (under map, left of gov panel) ── */}
           {schoolPins.length > 0 && (
-            <div className="mt-3 rounded-2xl border border-slate-200/80 bg-white shadow-lg overflow-hidden max-h-[420px] flex flex-col">
+            <div className="mt-3 rounded-2xl border border-slate-200/80 bg-white shadow-lg overflow-hidden max-h-[320px] sm:max-h-[380px] lg:max-h-[420px] flex flex-col">
               <AnimatePresence mode="wait">
                 {ahSelectedSchool ? (
                   /* ── SCHOOL DETAIL VIEW ── */
@@ -811,7 +811,7 @@ export default function BeninMap({
                   >
                     {/* En-tête école — navy gradient (cohérent avec les autres en-têtes AH) */}
                     <div
-                      className="px-4 py-3.5 relative overflow-hidden"
+                      className="px-3 sm:px-4 py-2.5 sm:py-3.5 relative overflow-hidden"
                       style={{
                         background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
                       }}
@@ -823,18 +823,18 @@ export default function BeninMap({
                       <div className="relative flex items-start justify-between">
                         <div className="flex-1 min-w-0">
                           <p
-                            className="text-[10px] font-medium uppercase tracking-wider"
+                            className="text-[9px] sm:text-[10px] font-medium uppercase tracking-wider"
                             style={{ color: GOLD_LIGHT }}
                           >
                             ÉCOLE INSCRITE
                           </p>
-                          <h3 className="mt-0.5 text-sm font-bold text-white leading-tight truncate">
+                          <h3 className="mt-0.5 text-xs sm:text-sm font-bold text-white leading-tight truncate">
                             {ahSelectedSchool.schoolAcronym
                               ? `${ahSelectedSchool.schoolAcronym} — ${ahSelectedSchool.name}`
                               : ahSelectedSchool.name}
                           </h3>
                           {ahSelectedSchool.slogan && (
-                            <p className="mt-0.5 text-[11px] text-blue-200 italic">
+                            <p className="mt-0.5 text-[10px] sm:text-[11px] text-blue-200 italic truncate">
                               {ahSelectedSchool.slogan}
                             </p>
                           )}
@@ -850,26 +850,26 @@ export default function BeninMap({
                     </div>
 
                     {/* School details — scrollable */}
-                    <div className="p-4 space-y-2.5 overflow-y-auto flex-1">
+                    <div className="p-3 sm:p-4 space-y-2 overflow-y-auto flex-1">
                       {/* Logo + Type */}
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2 sm:gap-3">
                         {ahSelectedSchool.logoUrl ? (
                           <img
                             src={ahSelectedSchool.logoUrl}
                             alt={ahSelectedSchool.name}
-                            className="w-12 h-12 rounded-lg object-contain border border-slate-200"
+                            className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg object-contain border border-slate-200"
                           />
                         ) : (
                           <div
-                            className="w-12 h-12 rounded-lg flex items-center justify-center"
+                            className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center"
                             style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
                           >
-                            <School className="h-6 w-6 text-white" />
+                            <School className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
                           </div>
                         )}
                         <div className="flex-1 min-w-0">
                           <span
-                            className="inline-block px-2 py-0.5 text-[10px] font-semibold rounded-full"
+                            className="inline-block px-1.5 sm:px-2 py-0.5 text-[9px] sm:text-[10px] font-semibold rounded-full"
                             style={{
                               background: `${NAVY}12`,
                               color: NAVY,
@@ -878,7 +878,7 @@ export default function BeninMap({
                           >
                             {ahSelectedSchool.schoolType || 'École partenaire'}
                           </span>
-                          <p className="mt-1 text-[11px] text-slate-500 flex items-center gap-1">
+                          <p className="mt-1 text-[10px] sm:text-[11px] text-slate-500 flex items-center gap-1">
                             <MapPin className="h-3 w-3" style={{ color: BLUE }} />
                             {ahSelectedSchool.city || 'Bénin'}{ahSelectedSchool.department ? ` · ${ahSelectedSchool.department}` : ''}
                           </p>
@@ -886,37 +886,37 @@ export default function BeninMap({
                       </div>
 
                       {/* Contact info cards */}
-                      <div className="space-y-2">
+                      <div className="space-y-1.5 sm:space-y-2">
                         {ahSelectedSchool.phone && (
-                          <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
-                            <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: `${NAVY}10` }}>
-                              <Phone className="h-3 w-3" style={{ color: NAVY }} />
+                          <div className="flex items-center gap-2 px-2 py-1.5 sm:py-2 rounded-lg border border-slate-100 bg-slate-50/50">
+                            <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: `${NAVY}10` }}>
+                              <Phone className="h-2.5 w-2.5 sm:h-3 sm:w-3" style={{ color: NAVY }} />
                             </div>
                             <div className="min-w-0">
-                              <p className="text-[9px] text-slate-400 uppercase tracking-wide">Téléphone</p>
-                              <p className="text-[11px] font-medium text-slate-700 truncate">{ahSelectedSchool.phone}</p>
+                              <p className="text-[8px] sm:text-[9px] text-slate-400 uppercase tracking-wide">Téléphone</p>
+                              <p className="text-[10px] sm:text-[11px] font-medium text-slate-700 truncate">{ahSelectedSchool.phone}</p>
                             </div>
                           </div>
                         )}
                         {ahSelectedSchool.email && (
-                          <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
-                            <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: `${NAVY}10` }}>
-                              <Mail className="h-3 w-3" style={{ color: NAVY }} />
+                          <div className="flex items-center gap-2 px-2 py-1.5 sm:py-2 rounded-lg border border-slate-100 bg-slate-50/50">
+                            <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: `${NAVY}10` }}>
+                              <Mail className="h-2.5 w-2.5 sm:h-3 sm:w-3" style={{ color: NAVY }} />
                             </div>
                             <div className="min-w-0">
-                              <p className="text-[9px] text-slate-400 uppercase tracking-wide">Email</p>
-                              <p className="text-[11px] font-medium text-slate-700 truncate">{ahSelectedSchool.email}</p>
+                              <p className="text-[8px] sm:text-[9px] text-slate-400 uppercase tracking-wide">Email</p>
+                              <p className="text-[10px] sm:text-[11px] font-medium text-slate-700 truncate">{ahSelectedSchool.email}</p>
                             </div>
                           </div>
                         )}
                         {ahSelectedSchool.address && (
-                          <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
-                            <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: `${NAVY}10` }}>
-                              <MapPin className="h-3 w-3" style={{ color: NAVY }} />
+                          <div className="flex items-center gap-2 px-2 py-1.5 sm:py-2 rounded-lg border border-slate-100 bg-slate-50/50">
+                            <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: `${NAVY}10` }}>
+                              <MapPin className="h-2.5 w-2.5 sm:h-3 sm:w-3" style={{ color: NAVY }} />
                             </div>
                             <div className="min-w-0">
-                              <p className="text-[9px] text-slate-400 uppercase tracking-wide">Adresse</p>
-                              <p className="text-[11px] font-medium text-slate-700 truncate">{ahSelectedSchool.address}</p>
+                              <p className="text-[8px] sm:text-[9px] text-slate-400 uppercase tracking-wide">Adresse</p>
+                              <p className="text-[10px] sm:text-[11px] font-medium text-slate-700 truncate">{ahSelectedSchool.address}</p>
                             </div>
                           </div>
                         )}
@@ -925,14 +925,14 @@ export default function BeninMap({
                             href={ahSelectedSchool.website}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-100 bg-slate-50/50 hover:bg-slate-100/70 transition-colors"
+                            className="flex items-center gap-2 px-2 py-1.5 sm:py-2 rounded-lg border border-slate-100 bg-slate-50/50 hover:bg-slate-100/70 transition-colors"
                           >
-                            <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: `${NAVY}10` }}>
-                              <Globe className="h-3 w-3" style={{ color: NAVY }} />
+                            <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: `${NAVY}10` }}>
+                              <Globe className="h-2.5 w-2.5 sm:h-3 sm:w-3" style={{ color: NAVY }} />
                             </div>
                             <div className="min-w-0">
-                              <p className="text-[9px] text-slate-400 uppercase tracking-wide">Site web</p>
-                              <p className="text-[11px] font-medium truncate" style={{ color: BLUE }}>{ahSelectedSchool.website}</p>
+                              <p className="text-[8px] sm:text-[9px] text-slate-400 uppercase tracking-wide">Site web</p>
+                              <p className="text-[10px] sm:text-[11px] font-medium truncate" style={{ color: BLUE }}>{ahSelectedSchool.website}</p>
                             </div>
                           </a>
                         )}
@@ -944,14 +944,14 @@ export default function BeninMap({
                           href={`https://${ahSelectedSchool.subdomain}.academiahelm.com`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-[11px] font-semibold text-white transition-all hover:opacity-90"
+                          className="flex items-center justify-center gap-1.5 w-full px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-[9px] sm:text-[11px] font-semibold text-white transition-all hover:opacity-90 truncate"
                           style={{
                             background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
                             border: `1px solid ${NAVY}40`,
                           }}
                         >
-                          <ExternalLink className="h-3 w-3" />
-                          {ahSelectedSchool.subdomain}.academiahelm.com
+                          <ExternalLink className="h-3 w-3 flex-shrink-0" />
+                          <span className="truncate">{ahSelectedSchool.subdomain}.academiahelm.com</span>
                         </a>
                       )}
 
@@ -974,7 +974,7 @@ export default function BeninMap({
                   >
                     {/* En-tête département AH */}
                     <div
-                      className="px-4 py-3.5 relative overflow-hidden"
+                      className="px-3 sm:px-4 py-2.5 sm:py-3.5 relative overflow-hidden"
                       style={{
                         background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
                       }}
@@ -986,12 +986,12 @@ export default function BeninMap({
                       <div className="relative flex items-start justify-between">
                         <div>
                           <p
-                            className="text-[10px] font-medium uppercase tracking-wider"
+                            className="text-[9px] sm:text-[10px] font-medium uppercase tracking-wider"
                             style={{ color: GOLD_LIGHT }}
                           >
                             ÉCOLES ACADEMIA HELM
                           </p>
-                          <h3 className="mt-0.5 text-base font-bold text-white leading-tight">
+                          <h3 className="mt-0.5 text-sm sm:text-base font-bold text-white leading-tight">
                             {panelDept.name.toUpperCase()}
                           </h3>
                         </div>
@@ -1139,7 +1139,7 @@ export default function BeninMap({
                   >
                     {/* En-tête national AH */}
                     <div
-                      className="px-4 py-3.5 relative overflow-hidden"
+                      className="px-3 sm:px-4 py-2.5 sm:py-3.5 relative overflow-hidden"
                       style={{
                         background: `linear-gradient(135deg, ${NAVY_DARK}, ${NAVY})`,
                       }}
@@ -1150,15 +1150,15 @@ export default function BeninMap({
                       />
                       <div className="relative">
                         <p
-                          className="text-[10px] font-medium uppercase tracking-wider"
+                          className="text-[9px] sm:text-[10px] font-medium uppercase tracking-wider"
                           style={{ color: GOLD_LIGHT }}
                         >
                           Réseau d'écoles partenaires
                         </p>
-                        <h3 className="mt-0.5 text-base font-bold text-white leading-tight">
+                        <h3 className="mt-0.5 text-sm sm:text-base font-bold text-white leading-tight">
                           ÉCOLES ACADEMIA HELM
                         </h3>
-                        <p className="mt-0.5 text-[11px] text-blue-200 flex items-center gap-1">
+                        <p className="mt-0.5 text-[10px] sm:text-[11px] text-blue-200 flex items-center gap-1">
                           <School className="h-3 w-3" style={{ color: GOLD }} />
                           {schoolPins.length} écoles inscrites · Bénin
                         </p>

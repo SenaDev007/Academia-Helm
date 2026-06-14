@@ -343,6 +343,12 @@ export class StaffPrismaService {
       }
     }
 
+    // Resolve EducationLevel ID → SchoolLevel ID if schoolLevelId is provided (non-null)
+    // The frontend may send an EducationLevel ID from /settings/education/structure
+    if (updateData.schoolLevelId && typeof updateData.schoolLevelId === 'string') {
+      updateData.schoolLevelId = await this.resolveSchoolLevelId(updateData.schoolLevelId);
+    }
+
     // Do NOT allow changing employeeNumber, globalMatricule, or tenantMatricule via update
     delete updateData.employeeNumber;
     delete updateData.globalMatricule;
@@ -939,22 +945,22 @@ export class StaffPrismaService {
 
   /**
    * Affecte un niveau scolaire à plusieurs membres du personnel en une seule opération
+   *
+   * Accepte soit un SchoolLevel.id, soit un EducationLevel.id.
+   * Le frontend utilise EducationLevel (via /settings/education/structure),
+   * mais Staff.schoolLevelId FK référence SchoolLevel.
+   * On résout automatiquement EducationLevel → SchoolLevel si nécessaire.
    */
   async batchAssignLevel(dto: BatchAssignLevelDto) {
     const { staffIds, schoolLevelId, academicYearId } = dto;
 
-    // Validate that the school level exists
-    const schoolLevel = await this.prisma.schoolLevel.findUnique({
-      where: { id: schoolLevelId },
-    });
-    if (!schoolLevel) {
-      throw new NotFoundException(`Niveau scolaire introuvable`);
-    }
+    // Resolve the actual SchoolLevel — may receive an EducationLevel ID from the frontend
+    const resolvedSchoolLevelId = await this.resolveSchoolLevelId(schoolLevelId);
 
     // Update all staff members
     const result = await this.prisma.staff.updateMany({
       where: { id: { in: staffIds } },
-      data: { schoolLevelId },
+      data: { schoolLevelId: resolvedSchoolLevelId },
     });
 
     // Also create/update StaffAssignment records for each teacher
@@ -973,7 +979,7 @@ export class StaffPrismaService {
         // Update existing assignment
         const updated = await this.prisma.staffAssignment.update({
           where: { id: existing.id },
-          data: { schoolLevelId, role: 'TEACHER' },
+          data: { schoolLevelId: resolvedSchoolLevelId, role: 'TEACHER' },
         });
         assignments.push(updated);
       } else {
@@ -986,7 +992,7 @@ export class StaffPrismaService {
           const created = await this.prisma.staffAssignment.create({
             data: {
               staffId,
-              schoolLevelId,
+              schoolLevelId: resolvedSchoolLevelId,
               tenantId: staff.tenantId,
               academicYearId: academicYearId || undefined,
               role: 'TEACHER',
@@ -999,11 +1005,65 @@ export class StaffPrismaService {
       }
     }
 
+    const schoolLevel = await this.prisma.schoolLevel.findUnique({
+      where: { id: resolvedSchoolLevelId },
+    });
+
     return {
       updated: result.count,
       assignments: assignments.length,
-      message: `${result.count} personnel(s) affecté(s) au niveau ${schoolLevel.name}`,
+      message: `${result.count} personnel(s) affecté(s) au niveau ${schoolLevel?.name || resolvedSchoolLevelId}`,
     };
+  }
+
+  /**
+   * Résout un ID de niveau scolaire vers un SchoolLevel.id valide.
+   *
+   * Le frontend peut envoyer soit :
+   * - un SchoolLevel.id (table school_levels) — utilisé directement
+   * - un EducationLevel.id (table education_levels) — résolu en SchoolLevel via (tenantId + code)
+   *
+   * EducationLevel.name (MATERNELLE, PRIMAIRE, SECONDAIRE) correspond à SchoolLevel.code.
+   */
+  private async resolveSchoolLevelId(levelId: string): Promise<string> {
+    // 1) Try direct SchoolLevel lookup
+    const schoolLevel = await this.prisma.schoolLevel.findUnique({
+      where: { id: levelId },
+    });
+    if (schoolLevel) {
+      return schoolLevel.id;
+    }
+
+    // 2) Try EducationLevel lookup and map to SchoolLevel
+    const educationLevel = await this.prisma.educationLevel.findUnique({
+      where: { id: levelId },
+    });
+    if (educationLevel) {
+      // EducationLevel.name (e.g. "MATERNELLE") matches SchoolLevel.code
+      const mappedSchoolLevel = await this.prisma.schoolLevel.findFirst({
+        where: {
+          tenantId: educationLevel.tenantId,
+          code: educationLevel.name,
+        },
+      });
+      if (mappedSchoolLevel) {
+        return mappedSchoolLevel.id;
+      }
+
+      // SchoolLevel not found for this tenant+code — create it on the fly
+      const created = await this.prisma.schoolLevel.create({
+        data: {
+          tenantId: educationLevel.tenantId,
+          code: educationLevel.name,
+          name: educationLevel.name.charAt(0) + educationLevel.name.slice(1).toLowerCase(),
+          label: educationLevel.name.charAt(0) + educationLevel.name.slice(1).toLowerCase(),
+          order: educationLevel.order,
+        },
+      });
+      return created.id;
+    }
+
+    throw new NotFoundException(`Niveau scolaire introuvable`);
   }
 
   /**

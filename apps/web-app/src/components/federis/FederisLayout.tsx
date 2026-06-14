@@ -17,6 +17,7 @@ import type { User, Tenant } from '@/types';
 import OfflineIndicator from '@/components/offline/OfflineIndicator';
 import OfflineGuard from '@/components/offline/OfflineGuard';
 import { offlineBootstrapService } from '@/lib/offline/offline-bootstrap.service';
+import { useFederisPath } from '@/lib/federis/useFederisPath';
 
 interface FederisLayoutProps {
   children: React.ReactNode;
@@ -28,55 +29,57 @@ interface FederisLayoutProps {
   };
 }
 
-const federisNavigation = [
+// Navigation items use relative sub-paths (e.g. '/dashboard' not '/federis/dashboard')
+// The useFederisPath hook prepends the correct base path depending on the domain.
+const federisNavItems = [
   {
     category: 'GOUVERNANCE',
     items: [
-      { name: 'Tableau de bord', href: '/federis/dashboard', icon: 'dashboard' as const },
-      { name: 'Bureau & Membres', href: '/federis/bureau', icon: 'building' as const },
-      { name: 'Réseau d\'Écoles', href: '/federis/schools', icon: 'building' as const },
-      { name: 'Classes d\'Examen', href: '/federis/exam-classes', icon: 'classes' as const },
-      { name: 'Federis Connect', href: '/federis/connect', icon: 'bell' as const },
+      { name: 'Tableau de bord', subPath: '/dashboard', icon: 'dashboard' as const },
+      { name: 'Bureau & Membres', subPath: '/bureau', icon: 'building' as const },
+      { name: 'Réseau d\'Écoles', subPath: '/schools', icon: 'building' as const },
+      { name: 'Classes d\'Examen', subPath: '/exam-classes', icon: 'classes' as const },
+      { name: 'Federis Connect', subPath: '/connect', icon: 'bell' as const },
     ]
   },
   {
     category: 'EXAMENS',
     items: [
-      { name: 'Session d\'Examens', href: '/federis/exams', icon: 'exams' as const },
-      { name: 'Centres d\'Examen', href: '/federis/centers', icon: 'classes' as const },
-      { name: 'Candidats', href: '/federis/candidates', icon: 'scolarite' as const },
-      { name: 'Épreuves & Sujets', href: '/federis/question-bank', icon: 'document' as const },
-      { name: 'Surveillance', href: '/federis/surveillance', icon: 'warning' as const },
+      { name: 'Session d\'Examens', subPath: '/exams', icon: 'exams' as const },
+      { name: 'Centres d\'Examen', subPath: '/centers', icon: 'classes' as const },
+      { name: 'Candidats', subPath: '/candidates', icon: 'scolarite' as const },
+      { name: 'Épreuves & Sujets', subPath: '/question-bank', icon: 'document' as const },
+      { name: 'Surveillance', subPath: '/surveillance', icon: 'warning' as const },
     ]
   },
   {
     category: 'DÉROULEMENT',
     items: [
-      { name: 'Composition', href: '/federis/compositions', icon: 'exams' as const },
-      { name: 'Correction', href: '/federis/correction', icon: 'document' as const },
-      { name: 'Saisie des Notes', href: '/federis/grading', icon: 'document' as const },
-      { name: 'Délibérations', href: '/federis/deliberations', icon: 'dashboard' as const },
-      { name: 'Résultats', href: '/federis/results', icon: 'bell' as const },
+      { name: 'Composition', subPath: '/compositions', icon: 'exams' as const },
+      { name: 'Correction', subPath: '/correction', icon: 'document' as const },
+      { name: 'Saisie des Notes', subPath: '/grading', icon: 'document' as const },
+      { name: 'Délibérations', subPath: '/deliberations', icon: 'dashboard' as const },
+      { name: 'Résultats', subPath: '/results', icon: 'bell' as const },
     ]
   },
   {
     category: 'PILOTAGE & FINANCE',
     items: [
-      { name: 'Notifications', href: '/federis/notifications', icon: 'bell' as const },
-      { name: 'Statistiques', href: '/federis/stats', icon: 'finance' as const },
-      { name: 'Rapports', href: '/federis/reports', icon: 'document' as const },
-      { name: 'Finances', href: '/federis/billing', icon: 'finance' as const },
-      { name: 'Archives & Diplômes', href: '/federis/archives', icon: 'document' as const },
+      { name: 'Notifications', subPath: '/notifications', icon: 'bell' as const },
+      { name: 'Statistiques', subPath: '/stats', icon: 'finance' as const },
+      { name: 'Rapports', subPath: '/reports', icon: 'document' as const },
+      { name: 'Finances', subPath: '/billing', icon: 'finance' as const },
+      { name: 'Archives & Diplômes', subPath: '/archives', icon: 'document' as const },
     ]
   },
   {
     category: 'SYSTÈME',
     items: [
-      { name: 'Sara AI', href: '/federis/sara', icon: 'sparkles' as const },
-      { name: 'ORION', href: '/federis/orion', icon: 'sparkles' as const },
-      { name: 'Gestion des Conflits', href: '/federis/conflicts', icon: 'warning' as const },
-      { name: 'Paramètres', href: '/federis/settings', icon: 'settings' as const },
-      { name: 'Admin Plateforme', href: '/federis/platform-admin', icon: 'settings' as const },
+      { name: 'Sara AI', subPath: '/sara', icon: 'sparkles' as const },
+      { name: 'ORION', subPath: '/orion', icon: 'sparkles' as const },
+      { name: 'Gestion des Conflits', subPath: '/conflicts', icon: 'warning' as const },
+      { name: 'Paramètres', subPath: '/settings', icon: 'settings' as const },
+      { name: 'Admin Plateforme', subPath: '/platform-admin', icon: 'settings' as const },
     ]
   }
 ];
@@ -89,6 +92,7 @@ export default function FederisLayout({
 }: FederisLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const pathname = usePathname();
+  const { path: federisPath } = useFederisPath();
 
   const userRole = user.role || 'FEDERIS_VIEWER';
 
@@ -172,27 +176,30 @@ export default function FederisLayout({
             'lg:translate-x-0'
           )}>
             <nav className="h-full overflow-y-auto py-6 scrollbar-hide">
-              {federisNavigation.map((group) => (
+              {federisNavItems.map((group) => (
                 <div key={group.category} className="mb-6">
                   <h3 className="px-6 text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
                     {group.category}
                   </h3>
                   <div className="px-3 space-y-0.5">
-                    {group.items.map((item) => (
+                    {group.items.map((item) => {
+                      const itemHref = federisPath(item.subPath);
+                      return (
                       <Link
-                        key={item.href}
-                        href={item.href}
+                        key={item.subPath}
+                        href={itemHref}
                         className={cn(
                           'flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-all',
-                          isActive(item.href)
+                          isActive(itemHref)
                             ? 'bg-blue-900 text-white shadow-sm'
                             : 'text-gray-600 hover:bg-gray-50 hover:text-blue-900'
                         )}
                       >
-                        <AppIcon name={item.icon} size="menu" className={cn(isActive(item.href) ? 'text-white' : 'text-gray-400')} />
+                        <AppIcon name={item.icon} size="menu" className={cn(isActive(itemHref) ? 'text-white' : 'text-gray-400')} />
                         <span>{item.name}</span>
                       </Link>
-                    ))}
+                    );
+                    })}
                   </div>
                 </div>
               ))}

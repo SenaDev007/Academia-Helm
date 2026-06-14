@@ -11,6 +11,7 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import FederisHeader from '@/components/federis/FederisHeader';
 import AppIcon from '@/components/ui/AppIcon';
+import { federisLink } from '@/lib/federis/useFederisPath';
 
 export default function CheckoutSuccessPage() {
   const searchParams = useSearchParams();
@@ -61,7 +62,7 @@ export default function CheckoutSuccessPage() {
                 Votre compte Federis a été activé avec succès.
               </p>
               <Link
-                href="/federis/dashboard"
+                href={federisLink('/dashboard')}
                 className="inline-flex items-center gap-2 px-6 py-3 bg-blue-700 text-white rounded-md font-semibold hover:bg-blue-800 transition-colors"
               >
                 Accéder au tableau de bord
@@ -80,7 +81,7 @@ export default function CheckoutSuccessPage() {
                 Une erreur est survenue lors du paiement. Veuillez réessayer.
               </p>
               <Link
-                href="/federis/checkout"
+                href={federisLink('/checkout')}
                 className="inline-flex items-center gap-2 px-6 py-3 bg-blue-700 text-white rounded-md font-semibold hover:bg-blue-800 transition-colors"
               >
                 Réessayer

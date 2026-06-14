@@ -9,9 +9,11 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import FederisHeader from '@/components/federis/FederisHeader';
+import { getFederisBasePath } from '@/lib/federis/useFederisPath';
 
 export default function FederisLoginPage() {
   const router = useRouter();
+  const federisBase = getFederisBasePath();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -68,7 +70,7 @@ export default function FederisLoginPage() {
         sessionStorage.setItem('federis_session', JSON.stringify(sessionData));
         
         // Rediriger vers le dashboard
-        router.push('/federis/dashboard');
+        router.push(`${federisBase}/dashboard`);
         return;
       }
 
@@ -171,7 +173,7 @@ export default function FederisLoginPage() {
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-600">
               Pas encore de compte ?{' '}
-              <Link href="/federis/register" className="text-blue-700 font-semibold hover:text-blue-800">
+              <Link href={`${federisBase}/register`} className="text-blue-700 font-semibold hover:text-blue-800">
                 Créer un compte Federis
               </Link>
             </p>

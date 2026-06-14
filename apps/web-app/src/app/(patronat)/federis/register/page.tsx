@@ -12,6 +12,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import FederisHeader from '@/components/federis/FederisHeader';
+import { getFederisBasePath } from '@/lib/federis/useFederisPath';
 
 import { cn } from '@/lib/utils';
 
@@ -84,7 +85,7 @@ export default function FederisRegisterPage() {
       // const response = await fetch('/api/federis/register', { ... });
       
       // Redirection vers checkout
-      router.push('/federis/checkout');
+      router.push(`${getFederisBasePath()}/checkout`);
     } catch (error) {
       console.error('Registration error:', error);
       setErrors({ submit: 'Une erreur est survenue. Veuillez réessayer.' });
@@ -376,7 +377,7 @@ export default function FederisRegisterPage() {
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-600">
               Vous avez déjà un compte ?{' '}
-              <Link href="/federis/login" className="text-blue-700 font-semibold hover:text-blue-800">
+              <Link href={`${getFederisBasePath()}/login`} className="text-blue-700 font-semibold hover:text-blue-800">
                 Se connecter
               </Link>
             </p>

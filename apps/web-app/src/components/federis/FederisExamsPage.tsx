@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import AppIcon from '@/components/ui/AppIcon';
 import { cn } from '@/lib/utils';
+import { federisLink } from '@/lib/federis/useFederisPath';
 
 interface Exam {
   id: string;
@@ -56,7 +57,7 @@ export default function FederisExamsPage({ tenantId }: { tenantId: string }) {
           <p className="text-gray-600 mt-1">Gérez vos examens nationaux</p>
         </div>
         <Link
-          href="/federis/exams/create"
+          href={federisLink('/exams/create')}
           className="px-4 py-2 bg-blue-700 text-white rounded-md font-semibold hover:bg-blue-800 transition-colors inline-flex items-center gap-2"
         >
           <AppIcon name="add" size="submenu" className="text-white" />

@@ -249,8 +249,17 @@ export async function middleware(request: NextRequest) {
     // ── Academia Federis satellite app ──
     if (hostParts[0] === 'academiafederis') {
       // Rewrite academiafederis.academiahelm.com/* → /federis/*
-      // Root path → /federis, sub-paths → /federis/<path>
-      const federisPath = pathname === '/' ? '/federis' : `/federis${pathname}`;
+      // Root path → /federis
+      // Sub-paths → /federis/<path> (unless already prefixed)
+      let federisPath: string;
+      if (pathname === '/') {
+        federisPath = '/federis';
+      } else if (pathname.startsWith('/federis')) {
+        // Already has /federis prefix — use as-is (e.g. old bookmark)
+        federisPath = pathname;
+      } else {
+        federisPath = `/federis${pathname}`;
+      }
       const rewriteUrl = new URL(federisPath + request.nextUrl.search, request.nextUrl.origin);
       const federisResponse = withAntiCacheHeaders(NextResponse.rewrite(rewriteUrl));
       // Set header so downstream knows this came from the satellite subdomain

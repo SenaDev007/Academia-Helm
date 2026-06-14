@@ -25,7 +25,6 @@ import {
   MapPin,
   Phone,
   ChevronRight,
-  Compass,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import Image from 'next/image';
@@ -373,18 +372,14 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
                 onClick={() => handlePortalClick(portal.type)}
                 onMouseEnter={() => setHoveredPortal(portal.type)}
                 onMouseLeave={() => setHoveredPortal(null)}
-                className="group relative flex flex-col overflow-hidden rounded-2xl text-left transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-transparent"
+                className="group relative flex flex-col overflow-hidden rounded-2xl text-left transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-transparent bg-white/95 backdrop-blur-sm"
                 style={{
-                  background: isHovered
-                    ? `linear-gradient(135deg, ${portal.accentFrom}18, rgba(255,255,255,0.12))`
-                    : `linear-gradient(135deg, ${portal.accentFrom}12, rgba(255,255,255,0.08))`,
                   border: isHovered
-                    ? `1.5px solid ${portal.accentFrom}50`
-                    : `1.5px solid ${portal.accentFrom}30`,
+                    ? `2px solid ${portal.accentFrom}70`
+                    : `1.5px solid ${portal.accentFrom}35`,
                   boxShadow: isHovered
-                    ? `0 12px 40px rgba(0,0,0,0.4), 0 0 30px ${portal.accentFrom}20`
-                    : `0 4px 20px ${portal.accentFrom}10, 0 2px 8px rgba(0,0,0,0.2)`,
-                  backdropFilter: 'blur(12px)',
+                    ? `0 8px 32px rgba(0,0,0,0.3), 0 0 20px ${portal.accentFrom}15`
+                    : `0 2px 12px rgba(0,0,0,0.15)`,
                 }}
                 whileHover={shouldReduceMotion ? undefined : { y: -3, scale: 1.01 }}
                 whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
@@ -401,12 +396,15 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
                 <div className="p-4 sm:p-5">
                   {/* Titre + sous-titre */}
                   <div>
-                    <h3 className="text-sm font-bold text-white sm:text-base">
+                    <h3
+                      className="text-sm font-bold sm:text-base"
+                      style={{ color: NAVY }}
+                    >
                       {portal.title}
                     </h3>
                     <p
                       className="mt-0.5 text-[11px] font-medium sm:text-xs"
-                      style={{ color: `${portal.accentFrom}cc` }}
+                      style={{ color: `${portal.accentTo}` }}
                     >
                       {portal.subtitle}
                     </p>
@@ -438,10 +436,10 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
         >
           <Link
             href="/"
-            className="group inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium text-white/50 transition-all duration-200 hover:text-white/80"
+            className="group inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium transition-all duration-200 bg-white/90 backdrop-blur-sm hover:bg-white"
             style={{
-              background: 'rgba(255,255,255,0.04)',
-              border: '1px solid rgba(255,255,255,0.08)',
+              color: NAVY,
+              border: `1.5px solid ${NAVY}20`,
             }}
           >
             <span className="transition-transform duration-200 group-hover:-translate-x-0.5">&larr;</span>
@@ -451,10 +449,10 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
             href="/portal"
             target="_blank"
             rel="noopener noreferrer"
-            className="group inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium text-white/50 transition-all duration-200 hover:text-white/80"
+            className="group inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium transition-all duration-200 bg-white/90 backdrop-blur-sm hover:bg-white"
             style={{
-              background: 'rgba(255,255,255,0.04)',
-              border: '1px solid rgba(255,255,255,0.08)',
+              color: NAVY,
+              border: `1.5px solid ${NAVY}20`,
             }}
           >
             Tous les portails
@@ -467,16 +465,18 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
           <div
             className="inline-flex items-center gap-1.5 rounded-full px-3 py-1"
             style={{
-              background: 'rgba(255,255,255,0.03)',
-              border: '1px solid rgba(255,255,255,0.06)',
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.10)',
             }}
           >
-            <Compass className="h-3 w-3" style={{ color: GOLD }} />
-            <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-white/30">
+            <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-white/40">
               Propulsé par
             </span>
+            <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-white">
+              {BRAND.name.split(' ')[0]}
+            </span>
             <span className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: GOLD }}>
-              {BRAND.name}
+              {BRAND.name.split(' ')[1]}
             </span>
           </div>
         </motion.div>

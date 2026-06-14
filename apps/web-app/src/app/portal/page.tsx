@@ -274,6 +274,7 @@ export default function PortalPage() {
             password: devPassword,
             tenant_id: tenantId,
             portal_type: portalType,
+            turnstileToken: 'skip-development',
           }),
         });
       };

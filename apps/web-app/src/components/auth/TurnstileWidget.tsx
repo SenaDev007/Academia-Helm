@@ -5,12 +5,16 @@
  *
  * Composant réutilisable qui intègre Cloudflare Turnstile.
  *
+ * SÉCURITÉ — INTERACTION MANUELLE OBLIGATOIRE :
+ *   - appearance: 'always' → le widget est toujours visible
+ *   - execution: 'render' → rendu explicite, pas d'exécution automatique
+ *   - userInteractedRef → le token n'est accepté QUE si l'utilisateur a
+ *     cliqué manuellement sur la checkbox (empêche l'auto-vérification
+ *     du mode Managed de Cloudflare)
+ *   - Si Turnstile auto-valide sans clic → reset du widget
+ *
  * OPTIMISATIONS ANTI-CLIGNOTEMENT :
- *   - appearance: 'interaction-only' → le widget n'apparaît que lorsque
- *     l'utilisateur interagit avec le formulaire (évite le cycle
- *     charge/recharge/charge/recharge au montage de la page)
- *   - refresh-expired: 'manual' → empêche le refresh automatique qui crée
- *     le cycle "apparaît / disparaît / réapparaît"
+ *   - refresh-expired: 'manual' → empêche le refresh automatique
  *   - Callbacks via refs → évite les re-rendus React qui détruisent et
  *     recréent le widget en boucle
  *   - renderWidget stable → le widget n'est détruit/recréé que si siteKey
@@ -53,6 +57,11 @@ export default function TurnstileWidget({
   const [status, setStatus] = useState<'loading' | 'success' | 'error' | 'idle'>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // ── Suivi de l'interaction utilisateur ──
+  // Turnstile Managed peut auto-valider sans clic. On suit si l'utilisateur
+  // a cliqué sur le widget pour n'accepter que les validations manuelles.
+  const userInteractedRef = useRef(false);
+
   // ── Refs stables pour les callbacks → évitent les re-rendus du widget ──
   const onTokenRef = useRef(onToken);
   const onErrorRef = useRef(onError);
@@ -85,6 +94,19 @@ export default function TurnstileWidget({
   }
 
   const handleSuccess = useCallback((token: string) => {
+    // ── PROTECTION : n'accepter que si l'utilisateur a interagi ──
+    // Si Turnstile auto-valide (Managed), on ignore le token.
+    // L'utilisateur DOIT cliquer sur la checkbox manuellement.
+    if (!userInteractedRef.current) {
+      // Reset le widget pour forcer l'interaction manuelle
+      const turnstile = (window as any).turnstile;
+      if (turnstile && widgetIdRef.current) {
+        try {
+          turnstile.reset(widgetIdRef.current);
+        } catch {}
+      }
+      return;
+    }
     setStatus('success');
     setErrorMessage(null);
     onTokenRef.current(token);
@@ -120,6 +142,16 @@ export default function TurnstileWidget({
 
     setStatus('loading');
     try {
+      // ── Détecter le clic utilisateur sur le widget Turnstile ──
+      // Turnstile Managed peut auto-valider ; on exige un clic manuel.
+      const handleWidgetClick = () => {
+        userInteractedRef.current = true;
+      };
+      // Stocker la ref pour le cleanup
+      (widgetRef.current as any)._clickHandler = handleWidgetClick;
+      widgetRef.current.addEventListener('mousedown', handleWidgetClick);
+      widgetRef.current.addEventListener('touchstart', handleWidgetClick);
+
       const id = turnstile.render(widgetRef.current, {
         sitekey: siteKey!,
         callback: handleSuccess,
@@ -131,6 +163,9 @@ export default function TurnstileWidget({
         // ── CLÉ : toujours afficher le widget pour forcer l'interaction ──
         // L'utilisateur DOIT cocher la checkbox manuellement (sécurité)
         appearance: 'always',
+        // ── CLÉ : rendu explicite, pas d'exécution automatique ──
+        // Empêche Turnstile de se valider tout seul sans interaction
+        execution: 'render',
         // ── CLÉ : pas de refresh automatique quand le token expire ──
         // Empêche le cycle apparaît/disparaît/réapparaît
         'refresh-expired': 'manual',
@@ -144,6 +179,20 @@ export default function TurnstileWidget({
       setErrorMessage('Impossible de charger la vérification.');
     }
   }, [siteKey, handleSuccess, handleError, handleExpire, theme]);
+
+  // ── Nettoyer les event listeners du widget ──
+  useEffect(() => {
+    const el = widgetRef.current;
+    return () => {
+      if (el) {
+        const handler = (el as any)._clickHandler;
+        if (handler) {
+          el.removeEventListener('mousedown', handler);
+          el.removeEventListener('touchstart', handler);
+        }
+      }
+    };
+  }, []);
 
   // Charger le script Turnstile automatiquement au montage
   useEffect(() => {
@@ -160,7 +209,7 @@ export default function TurnstileWidget({
 
     // Vérifier si un script est déjà en cours de chargement
     const existingScript = document.querySelector(
-      'script[src="https://challenges.cloudflare.com/turnstile/v0/api.js"]'
+      'script[src*="challenges.cloudflare.com/turnstile/v0/api.js"]'
     );
     if (existingScript) {
       // Attendre que le script soit chargé
@@ -174,7 +223,7 @@ export default function TurnstileWidget({
     }
 
     const script = document.createElement('script');
-    script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+    script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
     script.async = true;
     script.defer = true;
     script.onload = () => renderWidget();

@@ -42,6 +42,7 @@ import {
   Mail,
   Globe,
   ExternalLink,
+  ArrowLeft,
 } from 'lucide-react';
 import {
   BENIN_DEPARTMENTS,
@@ -146,7 +147,7 @@ export default function BeninMap({
 }: BeninMapProps) {
   const [hoveredDept, setHoveredDept] = useState<string | null>(null);
   const [hoveredPin, setHoveredPin] = useState<SchoolPin | null>(null);
-  const [selectedPin, setSelectedPin] = useState<SchoolPin | null>(null);
+  const [ahSelectedSchool, setAhSelectedSchool] = useState<SchoolPin | null>(null);
   const [educationLevel, setEducationLevel] = useState<EducationLevel>('primaire');
   const [primaireCycle, setPrimaireCycle] = useState<PrimaireCycle>('all');
   const [circumscriptionOpen, setCircumscriptionOpen] = useState(false);
@@ -448,6 +449,11 @@ export default function BeninMap({
   /* ── The selected department for the panel ── */
   const panelDept = selectedDepartment ?? null;
 
+  // Clear AH selected school when department is deselected on map
+  useEffect(() => {
+    if (!panelDept) setAhSelectedSchool(null);
+  }, [panelDept]);
+
   return (
     <div className={className}>
       {/* ── CSS keyframes for holographic animations ── */}
@@ -719,8 +725,8 @@ export default function BeninMap({
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      const newPin = selectedPin?.id === pin.id ? null : pin;
-                      setSelectedPin(newPin);
+                      const newPin = ahSelectedSchool?.id === pin.id ? null : pin;
+                      setAhSelectedSchool(newPin);
                       // Mobile: tap also triggers hologram (simulates hover)
                       if ('ontouchstart' in window) {
                         setHoveredPin(newPin);
@@ -828,168 +834,7 @@ export default function BeninMap({
         <div className="w-full lg:w-[290px] lg:flex-shrink-0">
           <div className="rounded-2xl border border-slate-200/80 bg-white shadow-lg overflow-hidden">
             <AnimatePresence mode="wait">
-              {selectedPin ? (
-                /* ── SCHOOL PIN SELECTED: Show school info (holographic style) ─── */
-                <motion.div
-                  key={`school-${selectedPin.id}`}
-                  variants={panelVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  transition={panelTransition}
-                >
-                  {/* En-tête école — holographic cyan gradient */}
-                  <div
-                    className="px-4 py-3.5 relative overflow-hidden"
-                    style={{
-                      background: 'linear-gradient(135deg, #001e32, #003a52)',
-                    }}
-                  >
-                    {/* Animated scan line */}
-                    <div
-                      className="absolute left-0 right-0 h-[1.5px] opacity-50"
-                      style={{
-                        background: 'linear-gradient(90deg, transparent, #00e5ff, transparent)',
-                        animation: 'hologram-scan 3s ease-in-out infinite',
-                      }}
-                    />
-                    <div className="relative flex items-start justify-between">
-                      <div className="flex-1 min-w-0">
-                        <p
-                          className="text-[10px] font-medium uppercase tracking-wider"
-                          style={{ color: '#00e5ff' }}
-                        >
-                          École inscrite
-                        </p>
-                        <h3 className="mt-0.5 text-sm font-bold text-white leading-tight truncate">
-                          {selectedPin.schoolAcronym
-                            ? `${selectedPin.schoolAcronym} — ${selectedPin.name}`
-                            : selectedPin.name}
-                        </h3>
-                        {selectedPin.slogan && (
-                          <p className="mt-0.5 text-[10px] italic" style={{ color: 'rgba(0,229,255,0.6)' }}>
-                            {selectedPin.slogan}
-                          </p>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => setSelectedPin(null)}
-                        className="rounded-lg p-1 text-white/70 hover:text-white hover:bg-white/10 transition-colors ml-2"
-                        aria-label="Fermer"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* School details */}
-                  <div className="p-3 space-y-3">
-                    {/* Logo + Type */}
-                    <div className="flex items-center gap-3">
-                      {selectedPin.logoUrl ? (
-                        <img
-                          src={selectedPin.logoUrl}
-                          alt={selectedPin.name}
-                          className="w-12 h-12 rounded-lg object-contain border border-slate-200"
-                        />
-                      ) : (
-                        <div
-                          className="w-12 h-12 rounded-lg flex items-center justify-center"
-                          style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
-                        >
-                          <School className="h-6 w-6 text-white" />
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <span
-                          className="inline-block px-2 py-0.5 text-[10px] font-semibold rounded-full"
-                          style={{
-                            background: `${NAVY}12`,
-                            color: NAVY,
-                            border: `1px solid ${NAVY}30`,
-                          }}
-                        >
-                          {selectedPin.schoolType || 'École partenaire'}
-                        </span>
-                        <p className="mt-1 text-[11px] text-slate-500 flex items-center gap-1">
-                          <MapPin className="h-3 w-3" style={{ color: BLUE }} />
-                          {selectedPin.city || 'Bénin'}{selectedPin.department ? ` · ${selectedPin.department}` : ''}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Contact info cards */}
-                    <div className="space-y-2">
-                      {selectedPin.phone && (
-                        <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
-                          <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: `${NAVY}10` }}>
-                            <Phone className="h-3 w-3" style={{ color: NAVY }} />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-[9px] text-slate-400 uppercase tracking-wide">Téléphone</p>
-                            <p className="text-[11px] font-medium text-slate-700 truncate">{selectedPin.phone}</p>
-                          </div>
-                        </div>
-                      )}
-                      {selectedPin.email && (
-                        <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
-                          <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: `${NAVY}10` }}>
-                            <Mail className="h-3 w-3" style={{ color: NAVY }} />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-[9px] text-slate-400 uppercase tracking-wide">Email</p>
-                            <p className="text-[11px] font-medium text-slate-700 truncate">{selectedPin.email}</p>
-                          </div>
-                        </div>
-                      )}
-                      {selectedPin.address && (
-                        <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
-                          <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: `${NAVY}10` }}>
-                            <MapPin className="h-3 w-3" style={{ color: NAVY }} />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-[9px] text-slate-400 uppercase tracking-wide">Adresse</p>
-                            <p className="text-[11px] font-medium text-slate-700 truncate">{selectedPin.address}</p>
-                          </div>
-                        </div>
-                      )}
-                      {selectedPin.website && (
-                        <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
-                          <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: `${NAVY}10` }}>
-                            <Globe className="h-3 w-3" style={{ color: NAVY }} />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-[9px] text-slate-400 uppercase tracking-wide">Site web</p>
-                            <p className="text-[11px] font-medium truncate" style={{ color: BLUE }}>{selectedPin.website}</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Subdomain link */}
-                    {selectedPin.subdomain && (
-                      <a
-                        href={`https://${selectedPin.subdomain}.academiahelm.com`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-[11px] font-semibold text-white transition-all hover:opacity-90"
-                        style={{
-                          background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
-                          border: `1px solid ${NAVY}40`,
-                        }}
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                        Visiter le portail → {selectedPin.subdomain}.academiahelm.com
-                      </a>
-                    )}
-
-                    {/* AH label */}
-                    <p className="text-center text-[9px] tracking-wider text-slate-400">
-                      SUR ACADEMIA HELM
-                    </p>
-                  </div>
-                </motion.div>
-              ) : panelDept ? (
+              {panelDept ? (
                 /* ── DEPARTMENT SELECTED: Show department stats ───── */
                 <motion.div
                   key={panelDept.code}
@@ -1298,58 +1143,6 @@ export default function BeninMap({
                       </div>
                     </div>
 
-                    {/* Écoles Academia Helm dans ce département */}
-                    {(() => {
-                      const deptPins = schoolPins.filter(
-                        (p) => p.department === panelDept.name || p.deptCode === panelDept.code
-                      );
-                      if (deptPins.length === 0) return null;
-                      return (
-                        <div>
-                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5 flex items-center gap-1.5">
-                            <School className="h-3 w-3" style={{ color: GOLD }} />
-                            Écoles Academia Helm ({deptPins.length})
-                          </p>
-                          <div className="space-y-1 max-h-52 overflow-y-auto pr-0.5">
-                            {deptPins.map((pin) => (
-                              <button
-                                key={pin.id}
-                                onClick={() => setSelectedPin(pin)}
-                                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-slate-50 transition-colors group"
-                              >
-                                {pin.logoUrl ? (
-                                  <img
-                                    src={pin.logoUrl}
-                                    alt={pin.name}
-                                    className="w-5 h-5 rounded object-contain flex-shrink-0 border border-slate-100"
-                                  />
-                                ) : (
-                                  <div
-                                    className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0"
-                                    style={{ background: `${NAVY}10` }}
-                                  >
-                                    <School className="h-3 w-3" style={{ color: NAVY }} />
-                                  </div>
-                                )}
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-[10px] font-medium text-slate-700 group-hover:text-slate-900 truncate">
-                                    {pin.schoolAcronym || pin.name}
-                                  </p>
-                                  <p className="text-[9px] text-slate-400 truncate">
-                                    {pin.city || ''}{pin.schoolType ? ` · ${pin.schoolType}` : ''}
-                                  </p>
-                                </div>
-                                {pin.phone && (
-                                  <Phone className="h-2.5 w-2.5 text-slate-300 group-hover:text-slate-500 flex-shrink-0" />
-                                )}
-                                <ChevronRight className="h-3 w-3 text-slate-300 group-hover:text-slate-500 flex-shrink-0" />
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })()}
-
                     {/* Source */}
                     <p className="text-[9px] text-slate-400 text-center pt-1">
                       Source :{' '}
@@ -1582,27 +1375,6 @@ export default function BeninMap({
                       </div>
                     </div>
 
-                    {/* Écoles Academia Helm — simple counter at national level */}
-                    {schoolPins.length > 0 && (
-                      <div
-                        className="rounded-lg p-2.5 border border-slate-100"
-                        style={{
-                          background: `linear-gradient(135deg, ${GOLD}08, ${GOLD}03)`,
-                        }}
-                      >
-                        <div className="flex items-center gap-1.5 mb-0.5">
-                          <School className="h-3.5 w-3.5" style={{ color: GOLD }} />
-                          <span className="text-[10px] text-slate-500">Écoles Academia Helm</span>
-                        </div>
-                        <p className="text-sm font-bold" style={{ color: GOLD }}>
-                          {schoolPins.length}
-                        </p>
-                        <p className="text-[9px] text-slate-400 mt-0.5">
-                          Cliquez sur un département pour voir les écoles inscrites
-                        </p>
-                      </div>
-                    )}
-
                     {/* Source */}
                     <p className="text-[9px] text-slate-400 text-center pt-1">
                       Source :{' '}
@@ -1618,6 +1390,456 @@ export default function BeninMap({
           </div>
         </div>
       </div>
+
+      {/* ── ACADEMIA HELM BOTTOM PANEL ──────────────────────────────── */}
+      {schoolPins.length > 0 && (
+        <div className="mt-4 rounded-2xl border border-slate-200/80 bg-white shadow-lg overflow-hidden">
+          <AnimatePresence mode="wait">
+            {ahSelectedSchool ? (
+              /* ── SCHOOL DETAIL VIEW ── */
+              <motion.div
+                key={`ah-school-${ahSelectedSchool.id}`}
+                variants={panelVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={panelTransition}
+              >
+                {/* En-tête école — holographic cyan gradient */}
+                <div
+                  className="px-4 py-3.5 relative overflow-hidden"
+                  style={{
+                    background: 'linear-gradient(135deg, #001e32, #003a52)',
+                  }}
+                >
+                  {/* Animated scan line */}
+                  <div
+                    className="absolute left-0 right-0 h-[1.5px] opacity-50"
+                    style={{
+                      background: 'linear-gradient(90deg, transparent, #00e5ff, transparent)',
+                      animation: 'hologram-scan 3s ease-in-out infinite',
+                    }}
+                  />
+                  <div className="relative flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className="text-[10px] font-medium uppercase tracking-wider"
+                        style={{ color: '#00e5ff' }}
+                      >
+                        ÉCOLE INSCRITE
+                      </p>
+                      <h3 className="mt-0.5 text-sm font-bold text-white leading-tight truncate">
+                        {ahSelectedSchool.schoolAcronym
+                          ? `${ahSelectedSchool.schoolAcronym} — ${ahSelectedSchool.name}`
+                          : ahSelectedSchool.name}
+                      </h3>
+                      {ahSelectedSchool.slogan && (
+                        <p className="mt-0.5 text-[10px] italic" style={{ color: 'rgba(0,229,255,0.6)' }}>
+                          {ahSelectedSchool.slogan}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => setAhSelectedSchool(null)}
+                      className="rounded-lg p-1 text-white/70 hover:text-white hover:bg-white/10 transition-colors ml-2"
+                      aria-label="Retour"
+                    >
+                      <ArrowLeft className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* School details */}
+                <div className="p-4 space-y-3">
+                  {/* Logo + Type */}
+                  <div className="flex items-center gap-3">
+                    {ahSelectedSchool.logoUrl ? (
+                      <img
+                        src={ahSelectedSchool.logoUrl}
+                        alt={ahSelectedSchool.name}
+                        className="w-12 h-12 rounded-lg object-contain border border-slate-200"
+                      />
+                    ) : (
+                      <div
+                        className="w-12 h-12 rounded-lg flex items-center justify-center"
+                        style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+                      >
+                        <School className="h-6 w-6 text-white" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <span
+                        className="inline-block px-2 py-0.5 text-[10px] font-semibold rounded-full"
+                        style={{
+                          background: `${NAVY}12`,
+                          color: NAVY,
+                          border: `1px solid ${NAVY}30`,
+                        }}
+                      >
+                        {ahSelectedSchool.schoolType || 'École partenaire'}
+                      </span>
+                      <p className="mt-1 text-[11px] text-slate-500 flex items-center gap-1">
+                        <MapPin className="h-3 w-3" style={{ color: BLUE }} />
+                        {ahSelectedSchool.city || 'Bénin'}{ahSelectedSchool.department ? ` · ${ahSelectedSchool.department}` : ''}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Contact info cards */}
+                  <div className="space-y-2">
+                    {ahSelectedSchool.phone && (
+                      <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
+                        <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: `${NAVY}10` }}>
+                          <Phone className="h-3 w-3" style={{ color: NAVY }} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[9px] text-slate-400 uppercase tracking-wide">Téléphone</p>
+                          <p className="text-[11px] font-medium text-slate-700 truncate">{ahSelectedSchool.phone}</p>
+                        </div>
+                      </div>
+                    )}
+                    {ahSelectedSchool.email && (
+                      <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
+                        <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: `${NAVY}10` }}>
+                          <Mail className="h-3 w-3" style={{ color: NAVY }} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[9px] text-slate-400 uppercase tracking-wide">Email</p>
+                          <p className="text-[11px] font-medium text-slate-700 truncate">{ahSelectedSchool.email}</p>
+                        </div>
+                      </div>
+                    )}
+                    {ahSelectedSchool.address && (
+                      <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
+                        <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: `${NAVY}10` }}>
+                          <MapPin className="h-3 w-3" style={{ color: NAVY }} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[9px] text-slate-400 uppercase tracking-wide">Adresse</p>
+                          <p className="text-[11px] font-medium text-slate-700 truncate">{ahSelectedSchool.address}</p>
+                        </div>
+                      </div>
+                    )}
+                    {ahSelectedSchool.website && (
+                      <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
+                        <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: `${NAVY}10` }}>
+                          <Globe className="h-3 w-3" style={{ color: NAVY }} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[9px] text-slate-400 uppercase tracking-wide">Site web</p>
+                          <p className="text-[11px] font-medium truncate" style={{ color: BLUE }}>{ahSelectedSchool.website}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Visiter le site button */}
+                  {ahSelectedSchool.website && (
+                    <a
+                      href={ahSelectedSchool.website}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-[11px] font-semibold text-white transition-all hover:opacity-90"
+                      style={{
+                        background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+                        border: `1px solid ${NAVY}40`,
+                      }}
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      Visiter le site
+                    </a>
+                  )}
+
+                  {/* Source */}
+                  <p className="text-[9px] text-slate-400 text-center pt-1">
+                    Source : Academia Helm
+                  </p>
+                </div>
+              </motion.div>
+            ) : panelDept ? (
+              /* ── DEPARTMENT VIEW ── */
+              <motion.div
+                key={`ah-dept-${panelDept.code}`}
+                variants={panelVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={panelTransition}
+              >
+                {/* En-tête département AH */}
+                <div
+                  className="px-4 py-3.5 relative overflow-hidden"
+                  style={{
+                    background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+                  }}
+                >
+                  <div
+                    className="absolute -right-6 -top-6 h-20 w-20 rounded-full opacity-10"
+                    style={{ backgroundColor: GOLD }}
+                  />
+                  <div className="relative flex items-start justify-between">
+                    <div>
+                      <p
+                        className="text-[10px] font-medium uppercase tracking-wider"
+                        style={{ color: GOLD_LIGHT }}
+                      >
+                        ÉCOLES ACADEMIA HELM
+                      </p>
+                      <h3 className="mt-0.5 text-base font-bold text-white leading-tight">
+                        {panelDept.name.toUpperCase()}
+                      </h3>
+                    </div>
+                    <button
+                      onClick={() => onDepartmentSelect?.(null)}
+                      className="rounded-lg p-1 text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                      aria-label="Retour"
+                    >
+                      <ArrowLeft className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Department AH content */}
+                {(() => {
+                  const deptPins = schoolPins.filter(
+                    (p) => p.department === panelDept.name || p.deptCode === panelDept.code
+                  );
+                  const ahCommunes = [...new Set(deptPins.map((p) => p.city).filter(Boolean))];
+                  // School type distribution
+                  const typeCounts: Record<string, number> = {};
+                  deptPins.forEach((p) => {
+                    const t = p.schoolType || 'Autre';
+                    typeCounts[t] = (typeCounts[t] || 0) + 1;
+                  });
+
+                  return (
+                    <div className="p-4 space-y-3">
+                      {/* AH school count */}
+                      <div
+                        className="rounded-lg p-2.5 border border-slate-100"
+                        style={{
+                          background: `linear-gradient(135deg, ${GOLD}08, ${GOLD}03)`,
+                        }}
+                      >
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <School className="h-3.5 w-3.5" style={{ color: GOLD }} />
+                          <span className="text-[10px] text-slate-500">Écoles Academia Helm</span>
+                        </div>
+                        <p className="text-sm font-bold" style={{ color: GOLD }}>
+                          {deptPins.length}
+                        </p>
+                      </div>
+
+                      {/* School type distribution */}
+                      {Object.keys(typeCounts).length > 0 && (
+                        <div className="rounded-xl bg-slate-50 p-2.5 space-y-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                            Types d'établissements
+                          </p>
+                          {Object.entries(typeCounts).map(([type, count]) => (
+                            <div key={type}>
+                              <div className="flex justify-between text-[11px] mb-1">
+                                <span className="font-medium text-slate-700">{type}</span>
+                                <span className="text-slate-500">
+                                  {count} ({deptPins.length > 0 ? ((count / deptPins.length) * 100).toFixed(0) : 0}%)
+                                </span>
+                              </div>
+                              <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+                                <motion.div
+                                  className="h-full rounded-full"
+                                  style={{ backgroundColor: GOLD }}
+                                  initial={{ width: 0 }}
+                                  animate={{
+                                    width: `${deptPins.length > 0 ? (count / deptPins.length) * 100 : 0}%`,
+                                  }}
+                                  transition={{ duration: 0.6, ease: 'easeOut' }}
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Communes with AH schools */}
+                      {ahCommunes.length > 0 && (
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
+                            COMMUNES ({ahCommunes.length})
+                          </p>
+                          <div className="flex flex-wrap gap-1">
+                            {ahCommunes.map((commune) => (
+                              <span
+                                key={commune}
+                                className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-slate-700"
+                                style={{
+                                  backgroundColor: `${NAVY}08`,
+                                  border: `1px solid ${NAVY}18`,
+                                }}
+                              >
+                                <MapPin
+                                  className="h-2.5 w-2.5"
+                                  style={{ color: BLUE }}
+                                />
+                                {commune}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* List of AH schools in this department */}
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
+                          ÉCOLES PARTENAIRES ({deptPins.length})
+                        </p>
+                        <div className="space-y-1 max-h-64 overflow-y-auto pr-0.5">
+                          {deptPins.map((pin) => (
+                            <button
+                              key={pin.id}
+                              onClick={() => setAhSelectedSchool(pin)}
+                              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-slate-50 transition-colors group"
+                            >
+                              {pin.logoUrl ? (
+                                <img
+                                  src={pin.logoUrl}
+                                  alt={pin.name}
+                                  className="w-5 h-5 rounded object-contain flex-shrink-0 border border-slate-100"
+                                />
+                              ) : (
+                                <div
+                                  className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0"
+                                  style={{ background: `${NAVY}10` }}
+                                >
+                                  <School className="h-3 w-3" style={{ color: NAVY }} />
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[10px] font-medium text-slate-700 group-hover:text-slate-900 truncate">
+                                  {pin.schoolAcronym || pin.name}
+                                </p>
+                                <p className="text-[9px] text-slate-400 truncate">
+                                  {pin.city || ''}{pin.schoolType ? ` · ${pin.schoolType}` : ''}
+                                </p>
+                              </div>
+                              <ChevronRight className="h-3 w-3 text-slate-300 group-hover:text-slate-500 flex-shrink-0" />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Source */}
+                      <p className="text-[9px] text-slate-400 text-center pt-1">
+                        Source : Academia Helm
+                      </p>
+                    </div>
+                  );
+                })()}
+              </motion.div>
+            ) : (
+              /* ── NATIONAL VIEW ── */
+              <motion.div
+                key="ah-national"
+                variants={panelVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={panelTransition}
+              >
+                {/* En-tête national AH */}
+                <div
+                  className="px-4 py-3.5 relative overflow-hidden"
+                  style={{
+                    background: `linear-gradient(135deg, ${NAVY_DARK}, ${NAVY})`,
+                  }}
+                >
+                  <div
+                    className="absolute -right-6 -top-6 h-20 w-20 rounded-full opacity-10"
+                    style={{ backgroundColor: GOLD }}
+                  />
+                  <div className="relative">
+                    <p
+                      className="text-[10px] font-medium uppercase tracking-wider"
+                      style={{ color: GOLD_LIGHT }}
+                    >
+                      Réseau d'écoles partenaires
+                    </p>
+                    <h3 className="mt-0.5 text-base font-bold text-white leading-tight">
+                      ÉCOLES ACADEMIA HELM
+                    </h3>
+                    <p className="mt-0.5 text-[11px] text-blue-200 flex items-center gap-1">
+                      <School className="h-3 w-3" style={{ color: GOLD }} />
+                      {schoolPins.length} écoles inscrites · Bénin
+                    </p>
+                  </div>
+                </div>
+
+                {/* National AH content */}
+                <div className="p-4 space-y-3">
+                  {/* Total AH schools */}
+                  <div
+                    className="rounded-lg p-2.5 border border-slate-100"
+                    style={{
+                      background: `linear-gradient(135deg, ${GOLD}08, ${GOLD}03)`,
+                    }}
+                  >
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <School className="h-3.5 w-3.5" style={{ color: GOLD }} />
+                      <span className="text-[10px] text-slate-500">Écoles Academia Helm</span>
+                    </div>
+                    <p className="text-sm font-bold" style={{ color: GOLD }}>
+                      {schoolPins.length}
+                    </p>
+                    <p className="text-[9px] text-slate-400 mt-0.5">
+                      Cliquez sur un département pour voir les écoles inscrites
+                    </p>
+                  </div>
+
+                  {/* Department list with AH school counts */}
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
+                      DÉPARTEMENTS
+                    </p>
+                    <div className="space-y-0.5 max-h-64 overflow-y-auto">
+                      {departments.map((dept) => {
+                        const deptPins = schoolPins.filter(
+                          (p) => p.department === dept.name || p.deptCode === dept.code
+                        );
+                        return (
+                          <button
+                            key={dept.code}
+                            onClick={() => onDepartmentSelect?.(dept)}
+                            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-slate-50 transition-colors group"
+                          >
+                            <div
+                              className="h-3 w-3 rounded-sm flex-shrink-0 border border-white/40"
+                              style={{ backgroundColor: NAVY }}
+                            />
+                            <span className="flex-1 text-[11px] font-medium text-slate-700 group-hover:text-slate-900">
+                              {dept.name.toUpperCase()}
+                            </span>
+                            <span
+                              className="text-[11px] font-bold"
+                              style={{ color: deptPins.length > 0 ? GOLD : BLUE }}
+                            >
+                              {deptPins.length}
+                            </span>
+                            <ChevronRight className="h-3 w-3 text-slate-300 group-hover:text-slate-500 flex-shrink-0" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Source */}
+                  <p className="text-[9px] text-slate-400 text-center pt-1">
+                    Source : Academia Helm
+                  </p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
 
       {/* ── Hologram: fixed positioning — never clipped by any parent container (desktop + mobile) ── */}
       {hoveredPin && (() => {

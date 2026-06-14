@@ -37,7 +37,7 @@ const navItems = [
   { label: 'Accueil', href: '/', isInstitutional: false },
   { label: 'Modules', href: '/modules', isInstitutional: false },
   { label: 'Blog', href: '/blog', isInstitutional: false },
-  { label: 'Tarification', href: '/#tarification', isInstitutional: false },
+  { label: 'Tarification', href: '/tarification', isInstitutional: false },
   { label: 'Recrutement', href: '/jobs', isInstitutional: false },
   { label: 'Academia Federis', href: '/federis', isInstitutional: true },
   { label: 'Contact', href: '/contact', isInstitutional: false },

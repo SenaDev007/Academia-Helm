@@ -121,6 +121,13 @@ export default function ForgotPasswordPage({ schoolBranding }: ForgotPasswordPag
       setEmailTouched(true);
       return;
     }
+
+    // ── Cloudflare Turnstile : vérification du token ──
+    if (process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken) {
+      setError('Veuillez compléter la vérification de sécurité avant de continuer.');
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 

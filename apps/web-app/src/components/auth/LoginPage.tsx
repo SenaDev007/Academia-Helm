@@ -429,6 +429,13 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    // ── Cloudflare Turnstile : vérification du token avant connexion ──
+    if (process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken && portalType !== 'public') {
+      setError('Veuillez compléter la vérification de sécurité avant de continuer.');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -779,6 +786,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
         teacherIdentifier: teacherCredentials.teacherIdentifier,
         password: teacherCredentials.password,
         portal_type: 'TEACHER',
+        turnstileToken: turnstileToken || undefined,
       }),
     });
 
@@ -820,6 +828,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
           tenantId: tenantIdForApi,
           phone: parentCredentials.phone,
           portal_type: 'PARENT',
+          turnstileToken: turnstileToken || undefined,
         }),
       });
 
@@ -845,6 +854,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
         phone: parentCredentials.phone,
         otp: parentCredentials.otp,
         portal_type: 'PARENT',
+        turnstileToken: turnstileToken || undefined,
       }),
     });
 

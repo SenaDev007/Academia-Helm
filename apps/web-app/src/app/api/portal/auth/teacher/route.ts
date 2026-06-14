@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes, bffHeaders } from '@/lib/utils/api-urls';
 import { setServerSession } from '@/lib/auth/session';
 import { loadTenantFromApi } from '@/lib/utils/load-tenant';
+import { verifyTurnstile, getClientIp } from '@/lib/auth/turnstile';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
@@ -30,10 +31,22 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
+    // ── Vérification Cloudflare Turnstile ──
+    const turnstileResult = await verifyTurnstile(body.turnstileToken, getClientIp(request));
+    if (!turnstileResult.success) {
+      return NextResponse.json(
+        { success: false, message: turnstileResult.error || 'Vérification de sécurité échouée.' },
+        { status: 403 },
+      );
+    }
+
+    // Ne pas transmettre le token Turnstile au backend NestJS
+    const { turnstileToken, ...proxyBody } = body;
+
     const response = await fetch(`${API_BASE_URL}/portal/auth/teacher`, {
       method: 'POST',
       headers: bffHeaders(),
-      body: JSON.stringify(body),
+      body: JSON.stringify(proxyBody),
     });
 
     const data: BackendResponse = await response.json();

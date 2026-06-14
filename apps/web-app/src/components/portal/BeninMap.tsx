@@ -474,9 +474,19 @@ export default function BeninMap({
                 })()}
 
               {/* ── School Pins (écoles inscrites Academia Helm) ────────── */}
+              {/* Définition du logo pin réutilisable (logo Academia Helm sans fond) */}
+              <defs>
+                <filter id="pin-shadow" x="-30%" y="-30%" width="160%" height="160%">
+                  <feDropShadow dx="0" dy="0.8" stdDeviation="1.2" floodColor="rgba(0,0,0,0.35)" />
+                </filter>
+                <filter id="pin-glow" x="-40%" y="-40%" width="180%" height="180%">
+                  <feDropShadow dx="0" dy="0.5" stdDeviation="2" floodColor="rgba(245,179,53,0.7)" />
+                </filter>
+              </defs>
+
               {schoolPins.length > 0 && schoolPins.map((pin) => {
                 const isHovered = hoveredPin?.id === pin.id;
-                const pinSize = 10;
+                const pinR = 9; // rayon du logo pin
 
                 return (
                   <g
@@ -492,7 +502,7 @@ export default function BeninMap({
                     <circle
                       cx={pin.x}
                       cy={pin.y}
-                      r={pinSize + 2}
+                      r={pinR + 2}
                       fill="none"
                       stroke={GOLD}
                       strokeWidth={0.8}
@@ -500,8 +510,8 @@ export default function BeninMap({
                     >
                       <animate
                         attributeName="r"
-                        from={pinSize}
-                        to={pinSize + 6}
+                        from={pinR}
+                        to={pinR + 6}
                         dur="2s"
                         repeatCount="indefinite"
                       />
@@ -514,44 +524,21 @@ export default function BeninMap({
                       />
                     </circle>
 
-                    {/* Pin shadow */}
-                    <circle
-                      cx={pin.x}
-                      cy={pin.y + 1}
-                      r={pinSize}
-                      fill="rgba(0,0,0,0.2)"
-                    />
-
-                    {/* Pin circle with logo */}
-                    <circle
-                      cx={pin.x}
-                      cy={pin.y}
-                      r={pinSize}
-                      fill={isHovered ? GOLD : NAVY}
-                      stroke={GOLD}
-                      strokeWidth={isHovered ? 1.5 : 0.8}
+                    {/* Logo Academia Helm comme pin (sans fond blanc) */}
+                    <image
+                      href="/images/logo-pin.png"
+                      x={pin.x - pinR}
+                      y={pin.y - pinR}
+                      width={pinR * 2}
+                      height={pinR * 2}
+                      preserveAspectRatio="xMidYMid meet"
+                      className="pointer-events-none select-none"
                       style={{
                         outline: 'none',
-                        transition: 'fill 0.2s, stroke-width 0.2s',
-                        filter: isHovered
-                          ? 'drop-shadow(0 2px 6px rgba(245,179,53,0.7))'
-                          : 'drop-shadow(0 1px 3px rgba(0,0,0,0.4))',
+                        transition: 'filter 0.2s ease',
+                        filter: isHovered ? 'url(#pin-glow)' : 'url(#pin-shadow)',
                       }}
                     />
-
-                    {/* "AH" text inside pin (Academia Helm initials) */}
-                    <text
-                      x={pin.x}
-                      y={pin.y + 2.5}
-                      textAnchor="middle"
-                      fill={isHovered ? NAVY : 'white'}
-                      fontSize="5.5"
-                      fontWeight="800"
-                      className="pointer-events-none select-none"
-                      style={{ fontFamily: 'system-ui, sans-serif' }}
-                    >
-                      AH
-                    </text>
                   </g>
                 );
               })}

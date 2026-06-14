@@ -28,7 +28,6 @@ import {
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import Image from 'next/image';
-import Link from 'next/link';
 import { BRAND } from '@/lib/brand';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getMotionDuration } from '@/lib/motion/presets';
@@ -266,43 +265,60 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
       >
         {/* ── En-tête — Branding de l'école ── */}
         <motion.div variants={itemVariants} className="mb-8 flex flex-col items-center text-center sm:mb-10">
-          {/* Logo de l'école */}
-          <div className="relative mb-4">
+          {/* Logo de l'école — cercle parfait + jeu lumineux */}
+          <div className="relative mb-4 flex justify-center">
+            {/* Halo doré pulsant */}
+            <div
+              className="absolute inset-0 -m-6 rounded-full blur-xl"
+              style={{
+                background: `radial-gradient(circle, ${GOLD}12, transparent 70%)`,
+                animation: 'academiaPulse 3s ease-in-out infinite',
+              }}
+            />
+            {/* Anneau rotatif doré */}
+            <div
+              className="absolute inset-0 -m-3 rounded-full border-2 border-white/10 border-t-[#f5b335]"
+              style={{ animation: 'academiaOrbit 1.2s linear infinite' }}
+            />
+            {/* Conteneur circulaire pour le logo */}
             {hasValidLogo ? (
               <div
-                className="rounded-2xl p-1"
+                className="relative z-10 w-20 h-20 rounded-full overflow-hidden flex items-center justify-center"
                 style={{
-                  background: `linear-gradient(135deg, ${GOLD}40, ${GOLD}10)`,
+                  background: 'rgba(255,255,255,0.12)',
+                  border: `2px solid rgba(255,255,255,0.3)`,
+                  backdropFilter: 'blur(4px)',
                   boxShadow: `0 8px 32px rgba(0,0,0,0.3), 0 0 0 1px ${GOLD}20`,
                 }}
               >
                 <Image
                   src={schoolData!.logoUrl!}
                   alt={displayName}
-                  width={80}
-                  height={80}
-                  className="rounded-xl object-cover"
-                  style={{ boxShadow: `0 2px 8px rgba(0,0,0,0.2)` }}
+                  width={52}
+                  height={52}
+                  className="rounded-full object-cover"
+                  style={{ animation: 'academiaPulse 3s ease-in-out infinite' }}
                   priority
                   onError={() => setImgError(true)}
                 />
               </div>
             ) : (
               <div
-                className="rounded-2xl p-1"
+                className="relative z-10 w-20 h-20 rounded-full overflow-hidden flex items-center justify-center"
                 style={{
-                  background: `linear-gradient(135deg, ${GOLD}30, ${GOLD}08)`,
-                  border: `1.5px solid ${GOLD}25`,
+                  background: 'rgba(255,255,255,0.10)',
+                  border: `2px solid rgba(255,255,255,0.25)`,
+                  backdropFilter: 'blur(4px)',
                   boxShadow: `0 8px 32px rgba(0,0,0,0.3)`,
                 }}
               >
                 <Image
-                  src="/images/logo-Academia Hub.png"
+                  src={BRAND.logoPath}
                   alt={BRAND.name}
-                  width={72}
-                  height={72}
-                  className="rounded-xl object-contain"
-                  style={{ boxShadow: `0 2px 8px rgba(0,0,0,0.2)` }}
+                  width={48}
+                  height={48}
+                  className="rounded-full object-contain"
+                  style={{ animation: 'academiaPulse 3s ease-in-out infinite' }}
                   priority
                 />
               </div>
@@ -434,8 +450,8 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
           variants={itemVariants}
           className="mt-8 flex flex-col items-center gap-3 sm:mt-10 sm:flex-row sm:gap-4"
         >
-          <Link
-            href="/"
+          <a
+            href="https://www.academiahelm.com"
             className="group inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium transition-all duration-200 bg-white/90 backdrop-blur-sm hover:bg-white"
             style={{
               color: NAVY,
@@ -444,9 +460,9 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
           >
             <span className="transition-transform duration-200 group-hover:-translate-x-0.5">&larr;</span>
             Accueil
-          </Link>
-          <Link
-            href="/portal"
+          </a>
+          <a
+            href="https://www.academiahelm.com/portal"
             target="_blank"
             rel="noopener noreferrer"
             className="group inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium transition-all duration-200 bg-white/90 backdrop-blur-sm hover:bg-white"
@@ -457,7 +473,7 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
           >
             Tous les portails
             <ChevronRight className="h-3 w-3 transition-transform duration-200 group-hover:translate-x-0.5" />
-          </Link>
+          </a>
         </motion.div>
 
         {/* ── Propulsé par ── */}

@@ -938,8 +938,11 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
           quality={85}
           sizes="100vw"
         />
-        {/* Overlay clair pour la lisibilité du formulaire */}
-        <div className="absolute inset-0 bg-white/75 backdrop-blur-[2px]" />
+        {/* Overlay pour la lisibilité du formulaire */}
+        <div
+          className="absolute inset-0 backdrop-blur-[2px]"
+          style={{ backgroundColor: `${NAVY}B3` }}
+        />
       </div>
 
       {/* ── Background blobs — palette Helm ── */}

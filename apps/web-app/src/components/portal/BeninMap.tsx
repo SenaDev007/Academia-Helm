@@ -38,6 +38,10 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
+  Phone,
+  Mail,
+  Globe,
+  ExternalLink,
 } from 'lucide-react';
 import {
   BENIN_DEPARTMENTS,
@@ -449,17 +453,21 @@ export default function BeninMap({
       {/* ── CSS keyframes for holographic animations ── */}
       <style jsx>{`
         @keyframes holo-pulse {
-          0%, 100% { opacity: 0.8; }
-          50% { opacity: 0.3; }
+          0%, 100% { opacity: 0.9; }
+          50% { opacity: 0.5; }
         }
         @keyframes holo-scan {
-          0% { top: 0; opacity: 0.3; }
-          50% { opacity: 0.08; }
-          100% { top: 100%; opacity: 0.3; }
+          0% { top: 0; opacity: 0.7; }
+          50% { opacity: 0.25; }
+          100% { top: 100%; opacity: 0.7; }
         }
         @keyframes hologram-scan {
           0%, 100% { transform: translateY(0); }
           50% { transform: translateY(40px); }
+        }
+        @keyframes holo-halo-pulse {
+          0%, 100% { opacity: 0.7; transform: scale(1); }
+          50% { opacity: 0.3; transform: scale(1.02); }
         }
       `}</style>
       {/* ── Level tabs: Primaire / Secondaire ─────────────────────── */}
@@ -839,7 +847,7 @@ export default function BeninMap({
                   >
                     {/* Animated scan line */}
                     <div
-                      className="absolute left-0 right-0 h-[1px] opacity-40"
+                      className="absolute left-0 right-0 h-[1.5px] opacity-50"
                       style={{
                         background: 'linear-gradient(90deg, transparent, #00e5ff, transparent)',
                         animation: 'hologram-scan 3s ease-in-out infinite',
@@ -882,30 +890,29 @@ export default function BeninMap({
                         <img
                           src={selectedPin.logoUrl}
                           alt={selectedPin.name}
-                          className="w-12 h-12 rounded-lg object-contain border"
-                          style={{ borderColor: 'rgba(0,229,255,0.3)' }}
+                          className="w-12 h-12 rounded-lg object-contain border border-slate-200"
                         />
                       ) : (
                         <div
                           className="w-12 h-12 rounded-lg flex items-center justify-center"
-                          style={{ background: 'linear-gradient(135deg, #001e32, #003a52)' }}
+                          style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
                         >
-                          <School className="h-6 w-6" style={{ color: '#00e5ff' }} />
+                          <School className="h-6 w-6 text-white" />
                         </div>
                       )}
                       <div className="flex-1 min-w-0">
                         <span
                           className="inline-block px-2 py-0.5 text-[10px] font-semibold rounded-full"
                           style={{
-                            background: 'rgba(0,229,255,0.12)',
-                            color: '#00e5ff',
-                            border: '1px solid rgba(0,229,255,0.3)',
+                            background: `${NAVY}12`,
+                            color: NAVY,
+                            border: `1px solid ${NAVY}30`,
                           }}
                         >
                           {selectedPin.schoolType || 'École partenaire'}
                         </span>
                         <p className="mt-1 text-[11px] text-slate-500 flex items-center gap-1">
-                          <MapPin className="h-3 w-3" style={{ color: '#00e5ff' }} />
+                          <MapPin className="h-3 w-3" style={{ color: BLUE }} />
                           {selectedPin.city || 'Bénin'}{selectedPin.department ? ` · ${selectedPin.department}` : ''}
                         </p>
                       </div>
@@ -915,8 +922,8 @@ export default function BeninMap({
                     <div className="space-y-2">
                       {selectedPin.phone && (
                         <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
-                          <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(0,229,255,0.1)' }}>
-                            <span className="text-xs" style={{ color: '#00e5ff' }}>📞</span>
+                          <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: `${NAVY}10` }}>
+                            <Phone className="h-3 w-3" style={{ color: NAVY }} />
                           </div>
                           <div className="min-w-0">
                             <p className="text-[9px] text-slate-400 uppercase tracking-wide">Téléphone</p>
@@ -926,8 +933,8 @@ export default function BeninMap({
                       )}
                       {selectedPin.email && (
                         <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
-                          <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(0,229,255,0.1)' }}>
-                            <span className="text-xs" style={{ color: '#00e5ff' }}>✉️</span>
+                          <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: `${NAVY}10` }}>
+                            <Mail className="h-3 w-3" style={{ color: NAVY }} />
                           </div>
                           <div className="min-w-0">
                             <p className="text-[9px] text-slate-400 uppercase tracking-wide">Email</p>
@@ -937,8 +944,8 @@ export default function BeninMap({
                       )}
                       {selectedPin.address && (
                         <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
-                          <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(0,229,255,0.1)' }}>
-                            <MapPin className="h-3 w-3" style={{ color: '#00e5ff' }} />
+                          <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: `${NAVY}10` }}>
+                            <MapPin className="h-3 w-3" style={{ color: NAVY }} />
                           </div>
                           <div className="min-w-0">
                             <p className="text-[9px] text-slate-400 uppercase tracking-wide">Adresse</p>
@@ -948,12 +955,12 @@ export default function BeninMap({
                       )}
                       {selectedPin.website && (
                         <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
-                          <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(0,229,255,0.1)' }}>
-                            <span className="text-xs" style={{ color: '#00e5ff' }}>🌐</span>
+                          <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: `${NAVY}10` }}>
+                            <Globe className="h-3 w-3" style={{ color: NAVY }} />
                           </div>
                           <div className="min-w-0">
                             <p className="text-[9px] text-slate-400 uppercase tracking-wide">Site web</p>
-                            <p className="text-[11px] font-medium truncate" style={{ color: '#00e5ff' }}>{selectedPin.website}</p>
+                            <p className="text-[11px] font-medium truncate" style={{ color: BLUE }}>{selectedPin.website}</p>
                           </div>
                         </div>
                       )}
@@ -965,18 +972,19 @@ export default function BeninMap({
                         href={`https://${selectedPin.subdomain}.academiahelm.com`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="block w-full text-center px-3 py-2 rounded-lg text-[11px] font-semibold text-white transition-all hover:opacity-90"
+                        className="flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-[11px] font-semibold text-white transition-all hover:opacity-90"
                         style={{
-                          background: 'linear-gradient(135deg, #001e32, #003a52)',
-                          border: '1px solid rgba(0,229,255,0.4)',
+                          background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+                          border: `1px solid ${NAVY}40`,
                         }}
                       >
+                        <ExternalLink className="h-3 w-3" />
                         Visiter le portail → {selectedPin.subdomain}.academiahelm.com
                       </a>
                     )}
 
                     {/* AH label */}
-                    <p className="text-center text-[9px] tracking-wider" style={{ color: 'rgba(0,229,255,0.4)' }}>
+                    <p className="text-center text-[9px] tracking-wider text-slate-400">
                       SUR ACADEMIA HELM
                     </p>
                   </div>
@@ -1522,6 +1530,71 @@ export default function BeninMap({
                       </div>
                     </div>
 
+                    {/* Écoles Academia Helm — registered schools legend */}
+                    {schoolPins.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5 flex items-center gap-1.5">
+                          <School className="h-3 w-3" style={{ color: GOLD }} />
+                          Écoles Academia Helm ({schoolPins.length})
+                        </p>
+                        <div className="space-y-1 max-h-72 overflow-y-auto pr-0.5">
+                          {(() => {
+                            // Group schools by department
+                            const grouped = schoolPins.reduce<Record<string, SchoolPin[]>>((acc, pin) => {
+                              const dept = pin.department || 'Autre';
+                              if (!acc[dept]) acc[dept] = [];
+                              acc[dept].push(pin);
+                              return acc;
+                            }, {});
+                            return Object.entries(grouped).map(([dept, pins]) => (
+                              <div key={dept}>
+                                <p className="text-[9px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: NAVY }}>
+                                  {dept}
+                                </p>
+                                {pins.map((pin) => (
+                                  <button
+                                    key={pin.id}
+                                    onClick={() => {
+                                      setSelectedPin(pin);
+                                      onDepartmentSelect?.(null);
+                                    }}
+                                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-slate-50 transition-colors group"
+                                  >
+                                    {pin.logoUrl ? (
+                                      <img
+                                        src={pin.logoUrl}
+                                        alt={pin.name}
+                                        className="w-5 h-5 rounded object-contain flex-shrink-0 border border-slate-100"
+                                      />
+                                    ) : (
+                                      <div
+                                        className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0"
+                                        style={{ background: `${NAVY}10` }}
+                                      >
+                                        <School className="h-3 w-3" style={{ color: NAVY }} />
+                                      </div>
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-[10px] font-medium text-slate-700 group-hover:text-slate-900 truncate">
+                                        {pin.schoolAcronym || pin.name}
+                                      </p>
+                                      <p className="text-[9px] text-slate-400 truncate">
+                                        {pin.city || ''}{pin.schoolType ? ` · ${pin.schoolType}` : ''}
+                                      </p>
+                                    </div>
+                                    {pin.phone && (
+                                      <Phone className="h-2.5 w-2.5 text-slate-300 group-hover:text-slate-500 flex-shrink-0" />
+                                    )}
+                                    <ChevronRight className="h-3 w-3 text-slate-300 group-hover:text-slate-500 flex-shrink-0" />
+                                  </button>
+                                ))}
+                              </div>
+                            ));
+                          })()}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Source */}
                     <p className="text-[9px] text-slate-400 text-center pt-1">
                       Source :{' '}
@@ -1585,12 +1658,13 @@ export default function BeninMap({
               width: tipWidth,
             }}
           >
-            {/* Outer glow pulse */}
+            {/* Outer glow pulse — enhanced visibility */}
             <div
-              className="absolute -inset-1.5 rounded-xl border opacity-30"
+              className="absolute -inset-2 rounded-xl border-2"
               style={{
                 borderColor: '#00e5ff',
-                animation: 'holo-pulse 2s ease-in-out infinite',
+                animation: 'holo-halo-pulse 2.5s ease-in-out infinite',
+                boxShadow: '0 0 20px rgba(0,229,255,0.25), 0 0 40px rgba(0,229,255,0.1)',
               }}
             />
 
@@ -1598,27 +1672,29 @@ export default function BeninMap({
             <div
               className="relative rounded-xl overflow-hidden"
               style={{
-                background: 'rgba(0,30,50,0.95)',
-                border: '1.5px solid rgba(0,229,255,0.75)',
-                boxShadow: '0 0 30px rgba(0,229,255,0.2), 0 0 60px rgba(0,229,255,0.06), inset 0 0 30px rgba(0,229,255,0.04)',
+                background: 'rgba(0,18,35,0.97)',
+                border: '2px solid rgba(0,229,255,0.85)',
+                boxShadow: '0 0 40px rgba(0,229,255,0.3), 0 0 80px rgba(0,229,255,0.1), inset 0 0 40px rgba(0,229,255,0.06)',
               }}
             >
-              {/* Top energy line */}
+              {/* Top energy line — enhanced */}
               <div
-                className="h-[2px] mx-3 mt-1 rounded-full"
+                className="h-[2.5px] mx-3 mt-1 rounded-full"
                 style={{
                   background: 'linear-gradient(90deg, transparent, #00e5ff, transparent)',
                   animation: 'holo-pulse 1.8s ease-in-out infinite',
+                  boxShadow: '0 0 8px rgba(0,229,255,0.5)',
                 }}
               />
 
-              {/* Scanline animation */}
+              {/* Scanline animation — enhanced visibility */}
               <div
-                className="absolute left-0 right-0 h-[1px] pointer-events-none"
+                className="absolute left-0 right-0 h-[2px] pointer-events-none"
                 style={{
-                  background: 'linear-gradient(90deg, transparent, rgba(0,229,255,0.35), transparent)',
+                  background: 'linear-gradient(90deg, transparent, rgba(0,229,255,0.7), transparent)',
                   animation: 'holo-scan 3s linear infinite',
                   top: 0,
+                  boxShadow: '0 0 6px rgba(0,229,255,0.4)',
                 }}
               />
 
@@ -1632,21 +1708,38 @@ export default function BeninMap({
 
               {/* Content */}
               <div className="px-4 py-3 relative">
-                {/* School name */}
-                <p
-                  className="text-sm font-bold text-center truncate"
-                  style={{
-                    color: '#00e5ff',
-                    textShadow: '0 0 8px rgba(0,229,255,0.5)',
-                  }}
-                >
-                  {displayName}
-                </p>
-
-                {/* City */}
-                <p className="text-[11px] text-center mt-0.5" style={{ color: 'rgba(0,229,255,0.6)' }}>
-                  {pin.city || 'Bénin'}{pin.department ? ` · ${pin.department}` : ''}
-                </p>
+                {/* School logo + name row */}
+                <div className="flex items-center gap-2.5">
+                  {pin.logoUrl ? (
+                    <img
+                      src={pin.logoUrl}
+                      alt={pin.name}
+                      className="w-9 h-9 rounded-md object-contain flex-shrink-0"
+                      style={{ border: '1px solid rgba(0,229,255,0.4)', background: 'rgba(0,20,40,0.6)' }}
+                    />
+                  ) : (
+                    <div
+                      className="w-9 h-9 rounded-md flex items-center justify-center flex-shrink-0"
+                      style={{ background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.3)' }}
+                    >
+                      <School className="h-4.5 w-4.5" style={{ color: '#00e5ff' }} />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p
+                      className="text-sm font-bold truncate"
+                      style={{
+                        color: '#ffffff',
+                        textShadow: '0 0 6px rgba(0,229,255,0.3)',
+                      }}
+                    >
+                      {displayName}
+                    </p>
+                    <p className="text-[10px] mt-0.5" style={{ color: 'rgba(0,229,255,0.7)' }}>
+                      {pin.city || 'Bénin'}{pin.department ? ` · ${pin.department}` : ''}
+                    </p>
+                  </div>
+                </div>
 
                 {/* Separator */}
                 <div className="my-2 h-[1px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(0,229,255,0.3), transparent)' }} />
@@ -1665,22 +1758,31 @@ export default function BeninMap({
                   </span>
                 </div>
 
-                {/* Contact info */}
-                <div className="space-y-1">
+                {/* Contact info — professional icons */}
+                <div className="space-y-1.5">
                   {pin.phone && (
-                    <p className="text-[11px] truncate" style={{ color: 'rgba(0,229,255,0.65)' }}>
-                      📞 {pin.phone}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <Phone className="h-3 w-3 flex-shrink-0" style={{ color: '#00e5ff' }} />
+                      <span className="text-[11px] truncate" style={{ color: 'rgba(255,255,255,0.8)' }}>{pin.phone}</span>
+                    </div>
                   )}
                   {pin.email && (
-                    <p className="text-[11px] truncate" style={{ color: 'rgba(0,229,255,0.55)' }}>
-                      ✉️ {pin.email}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <Mail className="h-3 w-3 flex-shrink-0" style={{ color: '#00e5ff' }} />
+                      <span className="text-[11px] truncate" style={{ color: 'rgba(255,255,255,0.75)' }}>{pin.email}</span>
+                    </div>
                   )}
                   {pin.address && !pin.email && (
-                    <p className="text-[11px] truncate" style={{ color: 'rgba(0,229,255,0.55)' }}>
-                      📍 {pin.address}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-3 w-3 flex-shrink-0" style={{ color: '#00e5ff' }} />
+                      <span className="text-[11px] truncate" style={{ color: 'rgba(255,255,255,0.75)' }}>{pin.address}</span>
+                    </div>
+                  )}
+                  {pin.website && (
+                    <div className="flex items-center gap-2">
+                      <Globe className="h-3 w-3 flex-shrink-0" style={{ color: '#00e5ff' }} />
+                      <span className="text-[11px] truncate" style={{ color: 'rgba(255,255,255,0.75)' }}>{pin.website}</span>
+                    </div>
                   )}
                 </div>
 
@@ -1690,13 +1792,13 @@ export default function BeninMap({
                 </p>
               </div>
 
-              {/* Bottom energy line */}
+              {/* Bottom energy line — enhanced */}
               <div
-                className="h-[1.5px] mx-3 mb-1 rounded-full"
+                className="h-[2px] mx-3 mb-1 rounded-full"
                 style={{
                   background: 'linear-gradient(90deg, transparent, #00e5ff, transparent)',
                   animation: 'holo-pulse 2.2s ease-in-out infinite',
-                  opacity: 0.5,
+                  boxShadow: '0 0 6px rgba(0,229,255,0.3)',
                 }}
               />
             </div>

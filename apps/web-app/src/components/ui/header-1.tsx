@@ -204,9 +204,8 @@ export function Header() {
     <header
       className={cn(
         'fixed top-0 left-0 right-0 z-50 w-full transition-all duration-300',
-        scrolled
-          ? 'bg-[#0b2f73]/92 backdrop-blur-lg shadow-xl border-b border-amber-300/20'
-          : 'bg-[#0b2f73] border-b border-[#144798] shadow-sm',
+        'bg-[#0b2f73] border-b border-[#144798] shadow-md',
+        scrolled ? 'mx-2 rounded-b-xl' : '',
       )}
     >
       <nav className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">

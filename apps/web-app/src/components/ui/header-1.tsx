@@ -300,21 +300,20 @@ export function Header() {
             </Link>
           ))}
         </div>
-        <div className="flex flex-col gap-2 pt-4 mt-4 border-t border-white/20">
+        <div className="flex items-center justify-center pt-4 mt-4 border-t border-white/20">
           {cameFromApp ? (
             <Link
               href={appReturnUrl}
               onClick={() => setOpen(false)}
               aria-label="Retourner à l'application"
               className={cn(
-                'bg-[#f5b335] text-[#0b2f73] w-full py-3 rounded-md min-h-[44px]',
-                'font-semibold hover:bg-[#f7c359] transition-all duration-200',
-                'shadow-sm hover:shadow-md',
-                'inline-flex items-center justify-center space-x-2',
+                'bg-[#f5b335] text-[#0b2f73] p-2.5 rounded-md min-h-[44px] min-w-[44px]',
+                'hover:bg-[#f7c359] transition-all duration-200',
+                'shadow-sm hover:shadow-md transform hover:-translate-y-0.5',
+                'inline-flex items-center justify-center',
               )}
             >
-              <ArrowRight className="w-5 h-5" />
-              <span>Retourner à l&apos;application</span>
+              <ArrowRight className="w-6 h-6" />
             </Link>
           ) : (
             <Link
@@ -322,14 +321,15 @@ export function Header() {
               onClick={() => setOpen(false)}
               aria-label="Accéder au portail"
               className={cn(
-                'border border-amber-300/50 text-amber-300 w-full py-3 rounded-md min-h-[44px]',
-                'font-semibold hover:bg-amber-300/10 transition-all duration-200',
-                'inline-flex items-center justify-center space-x-2',
+                'text-amber-300 hover:text-amber-200',
+                'transition-all duration-200',
+                'hover:scale-110',
+                'inline-flex items-center justify-center',
+                'rounded-full p-2.5',
               )}
               style={{ animation: 'portalPulse 2s ease-in-out infinite' }}
             >
-              <DoorOpen className="w-5 h-5" style={{ animation: 'portalIconGlow 2s ease-in-out infinite' }} />
-              <span>Accéder au portail</span>
+              <DoorOpen className="w-7 h-7" style={{ animation: 'portalIconGlow 2s ease-in-out infinite' }} />
             </Link>
           )}
         </div>

@@ -265,7 +265,7 @@ export default function BlogGrid({ posts }: { posts: PostSummary[] }) {
   return (
     <>
       {/* ── Category pills ── */}
-      <div className="mb-10 flex flex-wrap items-center gap-2">
+      <div className="mb-6 flex flex-wrap items-center gap-2">
         {CATEGORIES.map(({ id, label, icon: Icon }) => {
           const isActive = activeCategory === id;
           return (
@@ -287,7 +287,7 @@ export default function BlogGrid({ posts }: { posts: PostSummary[] }) {
       </div>
 
       {/* ── Results count ── */}
-      <p className="mb-6 text-sm text-gray-400">
+      <p className="mb-4 text-sm text-gray-400">
         {filtered.length} article{filtered.length !== 1 ? 's' : ''}{' '}
         {activeCategory !== 'all' && (
           <span>
@@ -317,7 +317,7 @@ export default function BlogGrid({ posts }: { posts: PostSummary[] }) {
 
           {/* Remaining posts grid */}
           {rest.length > 0 && (
-            <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {rest.map((post, i) => (
                 <BlogCard key={post.slug} post={post} index={i} />
               ))}

@@ -49,7 +49,7 @@ const footerLinks = [
       { href: "/contact", label: "Centre d'aide" },
       { href: "/blog", label: "Guide de démarrage" },
       { href: "/contact", label: "Documentation API" },
-      { href: "/contact", label: "FAQ" },
+      { href: "/tarification#faq", label: "FAQ" },
       { href: "/contact", label: "Signaler un problème" },
     ],
   },

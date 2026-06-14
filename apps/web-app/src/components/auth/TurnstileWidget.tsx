@@ -128,9 +128,9 @@ export default function TurnstileWidget({
         theme,
         size: 'normal',
         'response-field': false,
-        // ── CLÉ : n'afficher le widget que lors de l'interaction ──
-        // Empêche le cycle charge/recharge au montage de la page
-        appearance: 'interaction-only',
+        // ── CLÉ : toujours afficher le widget pour forcer l'interaction ──
+        // L'utilisateur DOIT cocher la checkbox manuellement (sécurité)
+        appearance: 'always',
         // ── CLÉ : pas de refresh automatique quand le token expire ──
         // Empêche le cycle apparaît/disparaît/réapparaît
         'refresh-expired': 'manual',
@@ -206,14 +206,13 @@ export default function TurnstileWidget({
           style={{ borderColor: `${NAVY}30`, color: NAVY }}
         >
           <Shield className="w-4 h-4" />
-          <span className="text-xs">Vérification de sécurité (activez en interagissant)</span>
+          <span className="text-xs">Cochez la case ci-dessous pour vérifier que vous êtes humain</span>
         </div>
       )}
 
-      {/* Container pour le widget Turnstile natif */}
+      {/* Container pour le widget Turnstile natif — toujours visible */}
       <div
         ref={widgetRef}
-        className={status === 'idle' ? 'hidden' : ''}
       />
 
       {/* Indicateur de statut complémentaire */}

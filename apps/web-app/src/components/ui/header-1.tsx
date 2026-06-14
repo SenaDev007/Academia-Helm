@@ -173,7 +173,7 @@ export function Header() {
           <div className="ml-4 pl-4 border-l border-white/20 flex-shrink-0">
             {isAuthenticated ? (
               <Link
-                href="/app"
+                href="/portal"
                 prefetch={true}
                 aria-label="Retourner à l'application"
                 className={cn(
@@ -243,7 +243,7 @@ export function Header() {
         <div className="flex flex-col gap-2 pt-4 mt-4 border-t border-white/20">
           {isAuthenticated ? (
             <Link
-              href="/app"
+              href="/portal"
               onClick={() => setOpen(false)}
               aria-label="Retourner à l'application"
               className={cn(

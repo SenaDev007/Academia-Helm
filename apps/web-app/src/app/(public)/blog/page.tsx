@@ -65,9 +65,9 @@ export default async function BlogIndexPage() {
           />
         </div>
 
-        <div className="relative mx-auto max-w-7xl px-4 pb-20 pt-16 sm:px-6 sm:pb-28 sm:pt-24 lg:px-8">
+        <div className="relative mx-auto max-w-7xl px-4 pb-12 pt-10 sm:px-6 sm:pb-16 sm:pt-16 lg:px-8">
           {/* Breadcrumbs — light-on-dark override */}
-          <div className="mb-8 [&_a]:text-white/60 [&_a]:hover:text-white [&_span]:text-white/40 [&_span[aria-current]]:text-white/80">
+          <div className="mb-5 [&_a]:text-white/60 [&_a]:hover:text-white [&_span]:text-white/40 [&_span[aria-current]]:text-white/80">
             <Breadcrumbs
               items={[
                 { label: 'Accueil', href: '/' },
@@ -104,7 +104,7 @@ export default async function BlogIndexPage() {
             </p>
 
             {/* Stats row */}
-            <div className="mt-10 flex flex-wrap items-center gap-8 border-t border-white/10 pt-8">
+            <div className="mt-6 flex flex-wrap items-center gap-6 border-t border-white/10 pt-5">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#f5b335]/15">
                   <svg className="h-5 w-5 text-[#f5b335]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -152,7 +152,7 @@ export default async function BlogIndexPage() {
           BLOG GRID SECTION
       ═══════════════════════════════════════════════════════════════════ */}
       <section className="bg-gray-50/80">
-        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-24 lg:px-8">
+        <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-14 lg:px-8">
           <BlogGrid posts={posts} />
         </div>
       </section>
@@ -167,7 +167,7 @@ export default async function BlogIndexPage() {
           <div className="absolute -bottom-16 -left-16 h-48 w-48 rounded-full bg-[#0b2f73]/5" />
         </div>
 
-        <div className="relative mx-auto max-w-4xl px-4 py-20 sm:px-6 sm:py-28 lg:px-8">
+        <div className="relative mx-auto max-w-4xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
           <div className="rounded-3xl bg-gradient-to-br from-[#0b2f73] to-[#1d4fa5] p-8 shadow-2xl sm:p-12 lg:p-16">
             {/* Decorative elements inside card */}
             <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-[#f5b335]/10" />

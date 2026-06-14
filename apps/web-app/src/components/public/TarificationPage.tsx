@@ -263,7 +263,7 @@ export default function TarificationPage() {
         <div className="absolute top-10 right-10 w-72 h-72 rounded-full opacity-[0.06]" style={{ background: '#f5b335' }} />
         <div className="absolute -bottom-20 -left-20 w-96 h-96 rounded-full opacity-[0.04]" style={{ background: '#f5b335' }} />
 
-        <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-28 text-center">
+        <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16 text-center">
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full mb-6 border border-white/20 bg-white/10 backdrop-blur-sm">
             <Sparkles className="w-4 h-4" style={{ color: '#f5b335' }} />
@@ -273,14 +273,14 @@ export default function TarificationPage() {
           </div>
 
           <h1
-            className="text-4xl sm:text-5xl md:text-6xl font-bold text-white leading-tight mb-6"
+            className="text-4xl sm:text-5xl md:text-6xl font-bold text-white leading-tight mb-4"
             style={{ fontFamily: 'Montserrat, system-ui, sans-serif' }}
           >
             Un prix. Neuf modules.{' '}
             <span style={{ color: '#f5b335' }}>Zéro surprise.</span>
           </h1>
 
-          <p className="text-lg md:text-xl text-blue-100/80 max-w-3xl mx-auto leading-relaxed mb-4">
+          <p className="text-lg md:text-xl text-blue-100/80 max-w-3xl mx-auto leading-relaxed mb-2">
             Avec Academia Helm, vous ne choisissez pas entre les fonctionnalités — elles sont
             toutes incluses, du premier jour. Seule la taille de votre établissement détermine
             votre plan.
@@ -305,10 +305,10 @@ export default function TarificationPage() {
       {/* ============================================================ */}
       {/*  BILLING TOGGLE + PLAN CARDS                                 */}
       {/* ============================================================ */}
-      <section className="py-16 md:py-20 bg-white px-4 sm:px-6 lg:px-8">
+      <section className="py-10 md:py-12 bg-white px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           {/* Section header */}
-          <div className="text-center mb-12">
+          <div className="text-center mb-8">
             <div className="inline-flex items-center gap-2 mb-3">
               <Users className="w-5 h-5" style={{ color: '#0b2f73' }} />
               <span
@@ -331,7 +331,7 @@ export default function TarificationPage() {
           </div>
 
           {/* Billing toggle */}
-          <div className="flex justify-center mb-12">
+          <div className="flex justify-center mb-6">
             <div
               className="inline-flex items-center gap-2 p-1.5 rounded-full border-2"
               style={{ borderColor: '#e2e8f0', background: '#f8fafc' }}
@@ -370,7 +370,7 @@ export default function TarificationPage() {
           </div>
 
           {/* Plan cards grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 lg:gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 lg:gap-6">
             {PLAN_META.map((meta) => {
               const plan = HELM_PLANS[meta.code];
               const isHighlighted = plan.highlighted;
@@ -409,7 +409,7 @@ export default function TarificationPage() {
                   )}
 
                   {/* Card header */}
-                  <div className="p-6 pb-4">
+                  <div className="p-5 pb-3">
                     {/* Student range pill */}
                     <span
                       className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide mb-3"
@@ -447,7 +447,7 @@ export default function TarificationPage() {
                   </div>
 
                   {/* Pricing */}
-                  <div className="px-6 pb-4">
+                  <div className="px-5 pb-3">
                     <div
                       className="p-4 rounded-xl"
                       style={{
@@ -508,7 +508,7 @@ export default function TarificationPage() {
                   </div>
 
                   {/* Features list */}
-                  <div className="flex-1 px-6 pb-4">
+                  <div className="flex-1 px-5 pb-3">
                     <div
                       className="pt-4 border-t"
                       style={{ borderColor: isNetwork ? 'rgba(255,255,255,0.1)' : '#f1f5f9' }}
@@ -536,7 +536,7 @@ export default function TarificationPage() {
                   </div>
 
                   {/* CTA */}
-                  <div className="p-6 pt-2">
+                  <div className="p-5 pt-2">
                     <Link
                       href={
                         isNetwork
@@ -568,12 +568,12 @@ export default function TarificationPage() {
       {/*  ALL-PLANS COMPARISON SECTION                                */}
       {/* ============================================================ */}
       <section
-        className="py-16 md:py-20 px-4 sm:px-6 lg:px-8"
+        className="py-10 md:py-12 px-4 sm:px-6 lg:px-8"
         style={{ background: 'linear-gradient(180deg, #f8fafc 0%, #ffffff 100%)' }}
       >
         <div className="max-w-6xl mx-auto">
           {/* Section header */}
-          <div className="text-center mb-12">
+          <div className="text-center mb-8">
             <div className="inline-flex items-center gap-2 mb-3">
               <Building2 className="w-5 h-5" style={{ color: '#f5b335' }} />
               <span
@@ -672,9 +672,9 @@ export default function TarificationPage() {
       {/* ============================================================ */}
       {/*  TRUST BADGES SECTION                                        */}
       {/* ============================================================ */}
-      <section className="py-14 md:py-16 bg-white px-4 sm:px-6 lg:px-8">
+      <section className="py-10 md:py-12 bg-white px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-10">
+          <div className="text-center mb-6">
             <h2
               className="text-2xl md:text-3xl font-bold mb-3"
               style={{ color: '#0b2f73', fontFamily: 'Montserrat, system-ui, sans-serif' }}
@@ -719,12 +719,13 @@ export default function TarificationPage() {
       {/*  FAQ SECTION                                                 */}
       {/* ============================================================ */}
       <section
-        className="py-16 md:py-20 px-4 sm:px-6 lg:px-8"
+        id="faq"
+        className="py-10 md:py-12 px-4 sm:px-6 lg:px-8"
         style={{ background: '#f8fafc' }}
       >
         <div className="max-w-3xl mx-auto">
           {/* Section header */}
-          <div className="text-center mb-12">
+          <div className="text-center mb-8">
             <div className="inline-flex items-center gap-2 mb-3">
               <BookOpen className="w-5 h-5" style={{ color: '#1d4fa5' }} />
               <span
@@ -803,10 +804,10 @@ export default function TarificationPage() {
       {/* ============================================================ */}
       {/*  CTA BAND                                                    */}
       {/* ============================================================ */}
-      <section className="py-16 md:py-20 bg-white px-4 sm:px-6 lg:px-8">
+      <section className="py-10 md:py-12 bg-white px-4 sm:px-6 lg:px-8">
         <div className="max-w-4xl mx-auto text-center">
           <div
-            className="p-10 md:p-14 rounded-2xl relative overflow-hidden"
+            className="p-8 md:p-10 rounded-2xl relative overflow-hidden"
             style={{
               background: 'linear-gradient(165deg, #0b2f73 0%, #1d4fa5 100%)',
             }}
@@ -824,7 +825,7 @@ export default function TarificationPage() {
               >
                 Prêt à transformer la gestion de votre école ?
               </h2>
-              <p className="text-base text-blue-100/70 max-w-2xl mx-auto mb-8">
+              <p className="text-base text-blue-100/70 max-w-2xl mx-auto mb-5">
                 Rejoignez les établissements qui ont choisi l&apos;excellence opérationnelle.
                 Démarrez votre essai — aucun engagement, aucune carte bancaire requise.
               </p>

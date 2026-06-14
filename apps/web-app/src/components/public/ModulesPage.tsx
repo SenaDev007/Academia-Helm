@@ -303,7 +303,7 @@ function ModuleCard({ module: m, index }: { module: ModuleData; index: number })
     <div
       className={cn(
         'group relative bg-white rounded-2xl border border-gray-200/80',
-        'p-6 sm:p-7',
+        'p-5 sm:p-6',
         'shadow-[0_1px_3px_rgba(0,0,0,0.04),0_4px_12px_rgba(0,0,0,0.03)]',
         'hover:shadow-[0_4px_16px_rgba(0,0,0,0.08),0_12px_40px_rgba(0,0,0,0.06)]',
         colors.border,
@@ -316,7 +316,7 @@ function ModuleCard({ module: m, index }: { module: ModuleData; index: number })
       {/* Icon */}
       <div
         className={cn(
-          'w-12 h-12 rounded-xl flex items-center justify-center mb-5',
+          'w-12 h-12 rounded-xl flex items-center justify-center mb-3',
           'shadow-sm group-hover:shadow-md',
           'group-hover:scale-110',
           'transition-all duration-300',
@@ -364,8 +364,8 @@ function ModuleCard({ module: m, index }: { module: ModuleData; index: number })
 
 function SectionHeading({ title, subtitle }: { title: string; subtitle: string }) {
   return (
-    <div className="text-center mb-14">
-      <div className="inline-flex items-center justify-center px-4 py-1.5 bg-[#0b2f73]/5 rounded-full mb-5">
+    <div className="text-center mb-8">
+      <div className="inline-flex items-center justify-center px-4 py-1.5 bg-[#0b2f73]/5 rounded-full mb-3">
         <span className="text-[#0b2f73] text-xs font-semibold uppercase tracking-widest">
           {subtitle}
         </span>
@@ -385,7 +385,7 @@ export default function ModulesPage() {
       <Header />
 
       {/* ── Hero Section ───────────────────────────────────────────────── */}
-      <section className="relative pt-28 pb-20 sm:pt-36 sm:pb-28 overflow-hidden">
+      <section className="relative pt-20 pb-12 sm:pt-24 sm:pb-16 overflow-hidden">
         {/* Navy gradient background */}
         <div className="absolute inset-0 bg-gradient-to-br from-[#0b2f73] via-[#123f8a] to-[#1d4fa5]" />
 
@@ -407,7 +407,7 @@ export default function ModulesPage() {
 
         <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           {/* Gold badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#f5b335]/15 border border-[#f5b335]/30 rounded-full mb-8 backdrop-blur-sm">
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#f5b335]/15 border border-[#f5b335]/30 rounded-full mb-5 backdrop-blur-sm">
             <Sparkles className="w-4 h-4 text-[#f5b335]" />
             <span className="text-[#f5b335] text-sm font-semibold tracking-wide">
               Plateforme tout-en-un
@@ -415,14 +415,14 @@ export default function ModulesPage() {
           </div>
 
           {/* Headline */}
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white leading-[1.1] mb-6">
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white leading-[1.1] mb-4">
             15 modules. Zéro compromis.
             <br />
             <span className="text-[#f5b335]">Tout ce dont votre établissement a besoin.</span>
           </h1>
 
           {/* Sub-headline */}
-          <p className="text-lg sm:text-xl text-blue-100/80 max-w-3xl mx-auto mb-10 leading-relaxed">
+          <p className="text-lg sm:text-xl text-blue-100/80 max-w-3xl mx-auto mb-6 leading-relaxed">
             Academia Helm unifie l&apos;administration, la pédagogie, la finance et la communication
             au sein d&apos;une plateforme unique et cohérente. Chaque module est conçu pour
             fonctionner en synergie — pas en silot.
@@ -448,8 +448,8 @@ export default function ModulesPage() {
       </section>
 
       {/* ── Stats Section ──────────────────────────────────────────────── */}
-      <section className="relative -mt-12 z-20 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-white rounded-2xl shadow-xl shadow-gray-200/60 border border-gray-100 p-6 sm:p-8 grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-8">
+      <section className="relative -mt-8 z-20 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="bg-white rounded-2xl shadow-xl shadow-gray-200/60 border border-gray-100 p-5 sm:p-6 grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-8">
           {stats.map((stat) => {
             const StatIcon = stat.icon;
             return (
@@ -470,13 +470,13 @@ export default function ModulesPage() {
       </section>
 
       {/* ── Modules Principaux ─────────────────────────────────────────── */}
-      <section className="py-20 sm:py-28 bg-white px-4 sm:px-6 lg:px-8">
+      <section className="py-12 sm:py-16 bg-white px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto">
           <SectionHeading
             subtitle="Cœur de la plateforme"
             title="Modules Principaux"
           />
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
             {mainModules.map((m, i) => (
               <ModuleCard key={m.name} module={m} index={i} />
             ))}
@@ -485,13 +485,13 @@ export default function ModulesPage() {
       </section>
 
       {/* ── Modules Complémentaires ────────────────────────────────────── */}
-      <section className="py-20 sm:py-28 bg-gradient-to-b from-gray-50/80 to-white px-4 sm:px-6 lg:px-8">
+      <section className="py-12 sm:py-16 bg-gradient-to-b from-gray-50/80 to-white px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto">
           <SectionHeading
             subtitle="Et allez plus loin"
             title="Modules Complémentaires"
           />
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
             {complementaryModules.map((m, i) => (
               <ModuleCard key={m.name} module={m} index={i} />
             ))}
@@ -500,7 +500,7 @@ export default function ModulesPage() {
       </section>
 
       {/* ── CTA Section ────────────────────────────────────────────────── */}
-      <section className="relative py-24 sm:py-32 overflow-hidden">
+      <section className="relative py-14 sm:py-20 overflow-hidden">
         {/* Navy background */}
         <div className="absolute inset-0 bg-gradient-to-br from-[#0b2f73] via-[#0f3a8a] to-[#1d4fa5]" />
 
@@ -512,17 +512,17 @@ export default function ModulesPage() {
 
         <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           {/* Gold icon badge */}
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-[#f5b335]/15 border border-[#f5b335]/25 rounded-2xl mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-[#f5b335]/15 border border-[#f5b335]/25 rounded-2xl mb-5">
             <CheckCircle2 className="w-8 h-8 text-[#f5b335]" />
           </div>
 
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white leading-tight mb-6">
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white leading-tight mb-4">
             Tous les modules sont inclus.
             <br />
             <span className="text-[#f5b335]">Aucune option cachée. Aucun bridage.</span>
           </h2>
 
-          <p className="text-lg text-blue-100/70 max-w-2xl mx-auto mb-10 leading-relaxed">
+          <p className="text-lg text-blue-100/70 max-w-2xl mx-auto mb-6 leading-relaxed">
             Lorsque vous activez Academia Helm, vous obtenez immédiatement accès aux 15 modules.
             Aucun supplément, aucune limitation. Accès complet dès le premier jour —
             parce que gérer un établissement demande déjà assez de compromis.

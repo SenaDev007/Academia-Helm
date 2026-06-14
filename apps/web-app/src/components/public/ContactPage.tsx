@@ -130,7 +130,7 @@ export default function ContactPage() {
 
       {/* ── A. Hero Section ── */}
       <section
-        className="relative overflow-hidden py-20 md:py-28 px-4 sm:px-6 lg:px-8"
+        className="relative overflow-hidden py-12 md:py-16 px-4 sm:px-6 lg:px-8"
         style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 100%)` }}
       >
         {/* Decorative circles */}
@@ -140,14 +140,14 @@ export default function ContactPage() {
         <div className="relative z-10 max-w-4xl mx-auto text-center">
           {/* Gold accent badge */}
           <span
-            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-semibold mb-6 shadow-lg"
+            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-semibold mb-4 shadow-lg"
             style={{ backgroundColor: GOLD, color: NAVY }}
           >
             <MessageCircle className="w-4 h-4" />
             Nous sommes là pour vous
           </span>
 
-          <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight">
+          <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-4 leading-tight">
             Parlons de votre projet{' '}
             <span style={{ color: GOLD }}>éducatif</span>
           </h1>
@@ -160,9 +160,9 @@ export default function ContactPage() {
       </section>
 
       {/* ── B. Contact Info Cards ── */}
-      <section className="py-12 md:py-16 px-4 sm:px-6 lg:px-8 bg-gray-50">
+      <section className="py-8 md:py-10 px-4 sm:px-6 lg:px-8 bg-gray-50">
         <div className="max-w-6xl mx-auto">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
             {/* Email */}
             <div
               className="group relative bg-white rounded-2xl p-6 border border-gray-100 shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 text-center overflow-hidden"
@@ -235,14 +235,14 @@ export default function ContactPage() {
       </section>
 
       {/* ── C. Main Content Area ── */}
-      <section className="py-12 md:py-20 px-4 sm:px-6 lg:px-8 bg-white">
+      <section className="py-8 md:py-12 px-4 sm:px-6 lg:px-8 bg-white">
         <div className="max-w-6xl mx-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-10 lg:gap-12">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 lg:gap-10">
 
             {/* ── Left Column: Contact Form (3 cols) ── */}
             <div className="lg:col-span-3">
               <div className="bg-white rounded-2xl border border-gray-100 shadow-lg p-6 sm:p-8 md:p-10">
-                <div className="mb-8">
+                <div className="mb-5">
                   <h2 className="text-2xl md:text-3xl font-bold mb-2" style={{ color: NAVY }}>
                     Envoyez-nous un message
                   </h2>

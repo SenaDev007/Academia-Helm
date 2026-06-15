@@ -261,16 +261,25 @@ export default function ReviewRequestModal({
               />
             </label>
             <label className="mt-3 block">
-              <span className="text-sm font-medium text-slate-700">Rôle</span>
-              <input
-                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#C9A84C] focus:ring-1 focus:ring-[#C9A84C]/40"
+              <span className="text-sm font-medium text-slate-700">Votre profil *</span>
+              <select
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#C9A84C] focus:ring-1 focus:ring-[#C9A84C]/40 bg-white"
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
-              />
+              >
+                <option value="">Sélectionnez votre profil</option>
+                <option value="Directeur">Directeur / Directrice</option>
+                <option value="Promoteur">Promoteur / Promotrice</option>
+                <option value="Enseignant">Enseignant(e)</option>
+                <option value="Parent">Parent d'élève</option>
+                <option value="Élève">Élève / Étudiant(e)</option>
+                <option value="Comptable">Comptable</option>
+                <option value="Autre">Autre</option>
+              </select>
             </label>
             <label className="mt-3 block">
               <span className="text-sm font-medium text-slate-700">
-                Établissement *
+                Établissement (ou école de votre enfant)
               </span>
               <input
                 className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#C9A84C] focus:ring-1 focus:ring-[#C9A84C]/40"
@@ -331,7 +340,7 @@ export default function ReviewRequestModal({
             </h2>
             <p className="mt-2 text-sm text-slate-600">
               Notre équipe le traitera sous peu. Vous contribuez à améliorer
-              Academia Helm pour tous les établissements.
+              Academia Helm pour tous les utilisateurs — directeurs, enseignants, parents et élèves.
             </p>
             <button
               type="button"

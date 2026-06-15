@@ -31,10 +31,18 @@ export function ReviewPromptHost({ user, tenant, children }: Props) {
           authorName={buildAuthorName(user)}
           authorRole={
             user.role === 'director' || user.role === 'SUPER_DIRECTOR'
-              ? 'Direction'
+              ? 'Directeur'
               : user.role === 'admin'
                 ? 'Administration'
-                : undefined
+                : user.role === 'teacher' || user.role === 'ENSEIGNANT'
+                  ? 'Enseignant'
+                  : user.role === 'parent' || user.role === 'PARENT'
+                    ? 'Parent'
+                    : user.role === 'student' || user.role === 'ELEVE'
+                      ? 'Élève'
+                      : user.role === 'accountant' || user.role === 'COMPTABLE'
+                        ? 'Comptable'
+                        : undefined
           }
           onClose={dismiss}
         />

@@ -185,18 +185,25 @@ export default function InAppReviewModal({
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Votre rôle</label>
-              <input
-                type="text"
+              <label className="block text-sm font-medium text-gray-700 mb-1">Votre profil</label>
+              <select
                 value={form.authorRole}
                 onChange={(e) => setForm(f => ({ ...f, authorRole: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                placeholder="Ex: Directeur, Comptable..."
-              />
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
+              >
+                <option value="">Sélectionnez votre profil</option>
+                <option value="Directeur">Directeur / Directrice</option>
+                <option value="Promoteur">Promoteur / Promotrice</option>
+                <option value="Enseignant">Enseignant(e)</option>
+                <option value="Parent">Parent d'élève</option>
+                <option value="Élève">Élève / Étudiant(e)</option>
+                <option value="Comptable">Comptable</option>
+                <option value="Autre">Autre</option>
+              </select>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">École *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">École (ou école de votre enfant) *</label>
                 <input
                   type="text"
                   value={form.schoolName}

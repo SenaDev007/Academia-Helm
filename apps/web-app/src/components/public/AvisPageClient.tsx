@@ -52,8 +52,8 @@ export default function AvisPageClient() {
             Donnez votre avis sur Academia Helm
           </h1>
           <p className="mt-3 text-lg" style={{ color: HELM_TEXT_MUTED }}>
-            Notez l’outil et décrivez votre expérience. Les avis sont modérés
-            avant d’apparaître sur le site.
+            Que vous soyez directeur, enseignant, parent ou élève — votre avis compte.
+            Les avis sont modérés avant d’apparaître sur le site.
           </p>
         </header>
 
@@ -64,7 +64,7 @@ export default function AvisPageClient() {
 
         <p className="mt-10 text-center text-sm" style={{ color: HELM_TEXT_MUTED }}>
           Vous utilisez déjà le portail ? Une invitation peut aussi s’afficher
-          dans l’application après environ 30 jours d’utilisation.
+          dans l’application après environ 30 jours d’utilisation — pour tous les profils.
         </p>
         <p className="mt-4 text-center text-sm">
           <Link

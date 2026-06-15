@@ -60,17 +60,24 @@ function detectOutputLanguage(lastUserMessage: string): 'FR' | 'EN' {
   return score >= 2 ? 'EN' : 'FR';
 }
 
-function buildPolicyPrompt(outputLanguage: 'FR' | 'EN'): string {
+function buildLandingPolicyPrompt(outputLanguage: 'FR' | 'EN'): string {
   const langRule =
     outputLanguage === 'EN'
       ? 'Reply ONLY in English.'
       : 'Réponds UNIQUEMENT en français.';
 
   return (
-    `POLICY (non négociable)\n` +
-    `- You are SARA for Academia Helm only. Refuse topics unrelated to Academia Helm.\n` +
-    `- Never invent pricing/offers. Use only the official Helm pricing grid.\n` +
-    `- Maximum 4 sentences. End with exactly ONE question.\n` +
+    `POLICY LANDING PAGE — CLOSER MODE (non négociable)\n` +
+    `- You are SARA, Closer Senior #1 for Academia Helm. Your goal: CONVERT every prospect into a client.\n` +
+    `- Refuse topics unrelated to Academia Helm. Redirect politely.\n` +
+    `- Never invent pricing/offers. Use ONLY the official Helm pricing grid from the system prompt.\n` +
+    `- Maximum 4 sentences. End with exactly ONE question or clear call-to-action.\n` +
+    `- Apply closing techniques: assumptive close, urgency close, alternative close, summary close.\n` +
+    `- After answering a question, ALWAYS guide toward conversion (demo, trial, plan selection, advisor contact).\n` +
+    `- When a prospect hesitates, use the puppy dog close: invite them to try.\n` +
+    `- When they object on price, reframe as daily cost and ROI.\n` +
+    `- When they ask about features, summarize value then close.\n` +
+    `- NEVER let a conversation end without a clear next step toward conversion.\n` +
     `- ${langRule}\n`
   );
 }
@@ -89,7 +96,7 @@ function normalizeSaraOutput(raw: string): string {
   const limited = parts.slice(0, 4).join(' ').trim();
   text = limited || text;
 
-  if (!/[?]\s*$/.test(text)) {
+  if (!/[?！?]\s*$/.test(text)) {
     if (!/[.!?]\s*$/.test(text)) text += '.';
     text += ' Souhaitez-vous que je vous propose le plan le plus adapté à votre effectif ?';
   }
@@ -101,43 +108,13 @@ function detectUnsafeTopic(text: string): boolean {
   const t = (text || '').toLowerCase();
   if (!t) return false;
 
-  // Liste noire pragmatique (éviter débats sensibles / illégaux)
   const blocked = [
-    // politique / religion
-    'politique',
-    'élection',
-    'président',
-    'gouvernement',
-    'parti',
-    'religion',
-    'islam',
-    'christianisme',
-    'église',
-    'mosquée',
-    // haine / violence
-    'haine',
-    'racisme',
-    'xénophobie',
-    'tuer',
-    'arme',
-    'bombe',
-    // illégal
-    'pirater',
-    'hacker',
-    'arnaque',
-    'fraude',
-    'carte volée',
-    'drogue',
-    // médical / juridique perso
-    'diagnostic',
-    'symptôme',
-    'traitement',
-    'avocat',
-    'tribunal',
-    'plainte',
-    // contenus sexuels explicites
-    'porno',
-    'sexuel',
+    'politique', 'élection', 'président', 'gouvernement', 'parti',
+    'religion', 'islam', 'christianisme', 'église', 'mosquée',
+    'haine', 'racisme', 'xénophobie', 'tuer', 'arme', 'bombe',
+    'pirater', 'hacker', 'arnaque', 'fraude', 'carte volée', 'drogue',
+    'diagnostic', 'symptôme', 'traitement', 'avocat', 'tribunal', 'plainte',
+    'porno', 'sexuel',
   ];
 
   return blocked.some((k) => t.includes(k));
@@ -146,12 +123,12 @@ function detectUnsafeTopic(text: string): boolean {
 function buildRefusalMessage(outputLanguage: 'FR' | 'EN'): string {
   if (outputLanguage === 'EN') {
     return normalizeSaraOutput(
-      "I can’t help with that topic. I’m here only to answer questions about Academia Helm (modules, pricing, onboarding, security) and help you choose the right plan. What’s your school size (number of students)?",
+      "I can't help with that topic. I'm SARA, your Academia Helm advisor — modules, pricing, onboarding, security, I cover it all. What's your school size (number of students)? Let me find the perfect plan for you.",
     );
   }
 
   return normalizeSaraOutput(
-    "Je ne peux pas vous aider sur ce sujet. Je suis là uniquement pour Academia Helm (modules, tarification, onboarding, sécurité) et pour vous orienter vers le bon plan. Quel est l'effectif de votre école (nombre d'élèves) ?",
+    "Je ne peux pas vous aider sur ce sujet. Je suis SARA, votre conseillère Academia Helm — modules, tarification, onboarding, sécurité, je réponds à tout. Quel est l'effectif de votre école ? Laissez-moi vous trouver le plan idéal.",
   );
 }
 
@@ -171,16 +148,14 @@ export async function POST(request: NextRequest) {
     const systemPrompt = await readSaraSystemPrompt();
     const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content || '';
     const outputLanguage = detectOutputLanguage(lastUser);
-    const policy = buildPolicyPrompt(outputLanguage);
+    const policy = buildLandingPolicyPrompt(outputLanguage);
 
-    // Refus server-side si sujet interdit (ne dépend pas du modèle)
+    // Refus server-side si sujet interdit
     if (detectUnsafeTopic(lastUser)) {
       return NextResponse.json({ text: buildRefusalMessage(outputLanguage) });
     }
 
-    // Anthropic Messages API (version utilisée ailleurs dans le repo)
-    // NB: on passe le contexte système en "user" initial pour rester compatible
-    // avec l'usage actuel (anthropic-version 2023-06-01).
+    // Anthropic Messages API
     const anthropicMessages: ChatMessage[] = [
       {
         role: 'user',
@@ -189,7 +164,7 @@ export async function POST(request: NextRequest) {
           `---\n` +
           `${policy}\n` +
           `---\n` +
-          `RÈGLE DE SORTIE : Réponds directement au prospect (max 4 phrases), puis termine par UNE question.\n` +
+          `RÈGLE DE SORTIE : Réponds directement au prospect (max 4 phrases), applique une technique de closing, puis termine par UNE question ou un call-to-action clair vers la conversion.\n` +
           `---`,
       },
       ...messages,
@@ -244,4 +219,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

@@ -1020,6 +1020,84 @@ export interface AtlasMessage {
 }
 
 /**
+ * SARA AI — Message de conversation
+ * Utilisé par le widget landing et le guide in-app
+ */
+export interface SaraMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  isAiEnhanced?: boolean;
+  isStreaming?: boolean;
+  timestamp: string;
+  /** Closing technique appliquée (landing mode only) */
+  closingTechnique?: 'assumptive' | 'urgency' | 'alternative' | 'summary' | 'puppy_dog' | 'pain' | 'social_proof';
+}
+
+/**
+ * SARA AI — Session de conversation
+ */
+export interface SaraConversationSession {
+  id: string;
+  visitorId?: string;
+  userId?: string;
+  schoolId?: string;
+  mode: 'landing' | 'inapp';
+  userRole?: string;
+  currentModule?: string;
+  startedAt: string;
+  lastActivityAt: string;
+  messageCount: number;
+  /** Whether a conversion action was completed */
+  conversionAction?: 'demo_requested' | 'trial_started' | 'plan_selected' | 'advisor_contacted';
+}
+
+/**
+ * AI Agent — Type d'agent
+ */
+export type AIAgentType = 'ORION' | 'SARA' | 'ATLAS';
+
+/**
+ * AI Agent — Statut de santé
+ */
+export interface AIAgentHealth {
+  agent: AIAgentType;
+  isConfigured: boolean;
+  model: string;
+  lastUsedAt?: string;
+  totalRequests: number;
+  isPlaceholder: boolean;
+}
+
+/**
+ * ORION — Type d'alerte
+ */
+export type OrionAlertLevel = 'INFO' | 'ATTENTION' | 'CRITIQUE';
+
+/**
+ * ORION — Domaine d'analyse
+ */
+export type OrionDomain = 'academic' | 'finance' | 'hr' | 'compliance' | 'security' | 'pedagogy';
+
+/**
+ * ORION — Score global
+ */
+export interface OrionGlobalScore {
+  schoolId: string;
+  calculatedAt: string;
+  globalScore: number; // 0-100
+  subScores: {
+    academic: number;    // pondération : 35%
+    finance: number;     // pondération : 30%
+    hr: number;          // pondération : 15%
+    compliance: number;  // pondération : 10%
+    security: number;    // pondération : 10%
+  };
+  trend: 'IMPROVING' | 'STABLE' | 'DECLINING';
+  grade: 'A' | 'B' | 'C' | 'D' | 'F';
+}
+
+/**
  * Structure Académique & Cycles
  */
 

@@ -62,6 +62,36 @@ class ApiClient {
 
   final Dio _dio;
 
+  // ── Convenience singleton for services that don't use Riverpod ────────────
+
+  /// Singleton instance for use outside of the Riverpod tree.
+  ///
+  /// Prefer using [apiClientProvider] via Riverpod when possible.
+  static ApiClient get instance => _instance ??= ApiClient(_createDio());
+  static ApiClient? _instance;
+
+  static Dio _createDio() {
+    final Dio dio = Dio(
+      BaseOptions(
+        baseUrl: ApiConfig.versionedBaseUrl,
+        connectTimeout: ApiConfig.connectTimeout,
+        receiveTimeout: ApiConfig.receiveTimeout,
+        sendTimeout: ApiConfig.sendTimeout,
+        headers: <String, dynamic>{
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        responseType: ResponseType.json,
+        validateStatus: (int? status) =>
+            status != null && status >= 200 && status < 400,
+      ),
+    );
+    dio.interceptors.addAll(<Interceptor>[
+      LoggingInterceptor(enabled: !ApiConfig.isProduction),
+    ]);
+    return dio;
+  }
+
   // ── GET ───────────────────────────────────────────────────────────────
 
   Future<ApiResult<T>> get<T>(
@@ -235,10 +265,13 @@ class ApiClient {
         fromJson(<String, dynamic>{}),
       );
     } on DioException catch (e) {
-      return ApiResult<T>.failure(_mapDioError(e));
+      return ApiResult<T>.failure(ApiError.fromDioException(e));
     } catch (e) {
       return ApiResult<T>.failure(
-        ApiError.unknown(e.toString()),
+        ApiError(
+          message: e.toString(),
+          type: ApiErrorType.unknown,
+        ),
       );
     }
   }
@@ -250,27 +283,44 @@ class ApiClient {
       case DioExceptionType.connectionTimeout:
       case DioExceptionType.sendTimeout:
       case DioExceptionType.receiveTimeout:
-        return const ApiError.timeout();
+        return const ApiError(
+          message: 'Délai d\'attente dépassé. Veuillez réessayer.',
+          type: ApiErrorType.timeout,
+        );
 
       case DioExceptionType.connectionError:
-        return ApiError.network(
-          e.message ?? 'No internet connection. Please check your network.',
+        return ApiError(
+          message: e.message ?? 'Pas de connexion internet. Vérifiez votre réseau.',
+          type: ApiErrorType.network,
+          isOffline: true,
         );
 
       case DioExceptionType.badResponse:
         return _mapStatusCode(e.response);
 
       case DioExceptionType.cancel:
-        return const ApiError.unknown('Request was cancelled.');
+        return const ApiError(
+          message: 'Requête annulée.',
+          type: ApiErrorType.cancelled,
+        );
 
       case DioExceptionType.badCertificate:
-        return const ApiError.network('SSL certificate verification failed.');
+        return const ApiError(
+          message: 'Échec de la vérification du certificat SSL.',
+          type: ApiErrorType.network,
+        );
 
       case DioExceptionType.unknown:
         if (e.error is UnauthorizedException) {
-          return ApiError.unauthorized((e.error as UnauthorizedException).message);
+          return ApiError(
+            message: (e.error as UnauthorizedException).message,
+            type: ApiErrorType.unauthorized,
+          );
         }
-        return ApiError.unknown(e.message ?? 'An unexpected error occurred.');
+        return ApiError(
+          message: e.message ?? 'Une erreur inattendue est survenue.',
+          type: ApiErrorType.unknown,
+        );
     }
   }
 
@@ -279,20 +329,36 @@ class ApiClient {
     final String message = _extractErrorMessage(response?.data);
 
     if (statusCode == null) {
-      return ApiError.unknown(message);
+      return ApiError(message: message, type: ApiErrorType.unknown);
     }
 
     switch (statusCode) {
       case 401:
-        return ApiError.unauthorized(message);
+        return ApiError(
+          message: message,
+          type: ApiErrorType.unauthorized,
+          statusCode: statusCode,
+        );
       case 403:
-        return ApiError.forbidden(message);
+        return ApiError(
+          message: message,
+          type: ApiErrorType.forbidden,
+          statusCode: statusCode,
+        );
       case 404:
-        return ApiError.notFound(message);
+        return ApiError(
+          message: message,
+          type: ApiErrorType.notFound,
+          statusCode: statusCode,
+        );
       case 422:
         return _extractValidationErrors(response!.data);
       default:
-        return ApiError.server(statusCode, message);
+        return ApiError(
+          message: message,
+          type: ApiErrorType.server,
+          statusCode: statusCode,
+        );
     }
   }
 
@@ -300,9 +366,9 @@ class ApiClient {
     if (data is Map<String, dynamic>) {
       return data['message'] as String? ??
           data['error'] as String? ??
-          'An error occurred.';
+          'Une erreur est survenue.';
     }
-    return 'An error occurred.';
+    return 'Une erreur est survenue.';
   }
 
   ApiError _extractValidationErrors(dynamic data) {
@@ -313,9 +379,16 @@ class ApiClient {
         errors.forEach((String key, dynamic value) {
           validationErrors[key] = value.toString();
         });
-        return ApiError.validation(validationErrors);
+        return ApiError(
+          message: 'Erreurs de validation',
+          type: ApiErrorType.validation,
+          fieldErrors: validationErrors,
+        );
       }
     }
-    return const ApiError.validation(<String, String>{});
+    return const ApiError(
+      message: 'Erreurs de validation',
+      type: ApiErrorType.validation,
+    );
   }
 }

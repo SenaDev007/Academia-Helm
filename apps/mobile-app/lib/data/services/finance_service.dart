@@ -41,12 +41,23 @@ class FinanceService extends BaseCrudService {
     Map<String, dynamic>? params,
   }) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.financeFeeRegimes,
         queryParameters: params,
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -57,15 +68,10 @@ class FinanceService extends BaseCrudService {
   Future<ApiResult<Map<String, dynamic>>> createStudentFeeProfile(
     Map<String, dynamic> data,
   ) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.financeStudentFeeProfiles,
-        data: data,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.financeStudentFeeProfiles,
+      data: data,
+    );
   }
 
   // ─── Structures de frais ─────────────────────────────────────────────────
@@ -118,30 +124,20 @@ class FinanceService extends BaseCrudService {
   Future<ApiResult<Map<String, dynamic>>> copyFeeStructuresToYear(
     Map<String, dynamic> data,
   ) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.financeFeeStructuresCopyToYear,
-        data: data,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.financeFeeStructuresCopyToYear,
+      data: data,
+    );
   }
 
   /// Surcharge une structure de frais.
   Future<ApiResult<Map<String, dynamic>>> overrideFeeStructure(
     Map<String, dynamic> data,
   ) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.financeFeeStructuresOverride,
-        data: data,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.financeFeeStructuresOverride,
+      data: data,
+    );
   }
 
   // ─── Dépenses ────────────────────────────────────────────────────────────
@@ -161,24 +157,30 @@ class FinanceService extends BaseCrudService {
   Future<ApiResult<Map<String, dynamic>>> getExpenseBudgets(
     String academicYearId,
   ) async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.financeExpenseBudgets(academicYearId),
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.financeExpenseBudgets(academicYearId),
+    );
   }
 
   /// Récupère les catégories de dépenses.
   Future<ApiResult<List<Map<String, dynamic>>>> getExpenseCategories() async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.financeExpenseCategories,
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -198,40 +200,27 @@ class FinanceService extends BaseCrudService {
 
   /// Approuve une dépense.
   Future<ApiResult<Map<String, dynamic>>> approveExpense(String id) async {
-    try {
-      final response = await ApiClient.instance.patch(
-        ApiConfig.financeExpenseApprove(id),
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.patch(
+      ApiConfig.financeExpenseApprove(id),
+      fromJson: (json) => json,
+    );
   }
 
   /// Rejette une dépense.
   Future<ApiResult<Map<String, dynamic>>> rejectExpense(String id) async {
-    try {
-      final response = await ApiClient.instance.patch(
-        ApiConfig.financeExpenseReject(id),
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.patch(
+      ApiConfig.financeExpenseReject(id),
+      fromJson: (json) => json,
+    );
   }
 
   // ─── Paramètres ──────────────────────────────────────────────────────────
 
   /// Récupère les paramètres finance.
   Future<ApiResult<Map<String, dynamic>>> getSettings() async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.financeSettings,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.financeSettings,
+    );
   }
 
   /// Met à jour les paramètres finance.
@@ -253,12 +242,23 @@ class FinanceService extends BaseCrudService {
     String academicYearId,
   ) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.financeTreasuryClosures,
         queryParameters: {'academicYearId': academicYearId},
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -269,29 +269,20 @@ class FinanceService extends BaseCrudService {
   Future<ApiResult<Map<String, dynamic>>> createTreasuryClosure(
     Map<String, dynamic> data,
   ) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.financeTreasuryClosures,
-        data: data,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.financeTreasuryClosures,
+      data: data,
+    );
   }
 
   /// Valide une clôture de trésorerie.
   Future<ApiResult<Map<String, dynamic>>> validateTreasuryClosure(
     String id,
   ) async {
-    try {
-      final response = await ApiClient.instance.patch(
-        ApiConfig.financeTreasuryClosureValidate(id),
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.patch(
+      ApiConfig.financeTreasuryClosureValidate(id),
+      fromJson: (json) => json,
+    );
   }
 
   // ─── Comptes élèves ─────────────────────────────────────────────────────
@@ -301,12 +292,23 @@ class FinanceService extends BaseCrudService {
     Map<String, dynamic>? params,
   }) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.financeStudentAccounts,
         queryParameters: params,
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -317,14 +319,9 @@ class FinanceService extends BaseCrudService {
   Future<ApiResult<Map<String, dynamic>>> getStudentAccountDetails(
     String id,
   ) async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.financeStudentAccountById(id),
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.financeStudentAccountById(id),
+    );
   }
 
   /// Débloque un compte élève.
@@ -332,15 +329,10 @@ class FinanceService extends BaseCrudService {
     String id,
     Map<String, dynamic> data,
   ) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.financeStudentAccountUnblock(id),
-        data: data,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.financeStudentAccountUnblock(id),
+      data: data,
+    );
   }
 
   // ─── Transactions ────────────────────────────────────────────────────────
@@ -350,12 +342,23 @@ class FinanceService extends BaseCrudService {
     Map<String, dynamic>? params,
   }) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.financeTransactions,
         queryParameters: params,
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -394,11 +397,22 @@ class FinanceService extends BaseCrudService {
     String academicYearId,
   ) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.financeRecoveryReminders(academicYearId),
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -409,30 +423,20 @@ class FinanceService extends BaseCrudService {
   Future<ApiResult<Map<String, dynamic>>> sendManualRecoveryReminder(
     Map<String, dynamic> data,
   ) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.financeRecoveryRemindersManual,
-        data: data,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.financeRecoveryRemindersManual,
+      data: data,
+    );
   }
 
   /// Lance les rappels nocturnes de recouvrement.
   Future<ApiResult<Map<String, dynamic>>> runNightlyRecoveryReminders(
     Map<String, dynamic> data,
   ) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.financeRecoveryRemindersNightly,
-        data: data,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.financeRecoveryRemindersNightly,
+      data: data,
+    );
   }
 
   // ─── Rapports & Tableaux de bord ─────────────────────────────────────────
@@ -441,15 +445,10 @@ class FinanceService extends BaseCrudService {
   Future<ApiResult<Map<String, dynamic>>> getKpiReports({
     Map<String, dynamic>? params,
   }) async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.financeKpiReports,
-        queryParameters: params,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.financeKpiReports,
+      queryParameters: params,
+    );
   }
 
   /// Encaissements par classe.
@@ -457,12 +456,23 @@ class FinanceService extends BaseCrudService {
     Map<String, dynamic>? params,
   }) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.financeClassEncaissements,
         queryParameters: params,
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -474,12 +484,23 @@ class FinanceService extends BaseCrudService {
     Map<String, dynamic>? params,
   }) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.financeExpenseByCategory,
         queryParameters: params,
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -491,12 +512,23 @@ class FinanceService extends BaseCrudService {
     Map<String, dynamic>? params,
   }) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.financeMonthlyEncaissements,
         queryParameters: params,
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -508,12 +540,23 @@ class FinanceService extends BaseCrudService {
     Map<String, dynamic>? params,
   }) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.financeArrears,
         queryParameters: params,
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -524,15 +567,10 @@ class FinanceService extends BaseCrudService {
   Future<ApiResult<Map<String, dynamic>>> exportReports(
     Map<String, dynamic> data,
   ) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.financeExportReports,
-        data: data,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.financeExportReports,
+      data: data,
+    );
   }
 
   // ─── Audit ───────────────────────────────────────────────────────────────
@@ -542,11 +580,22 @@ class FinanceService extends BaseCrudService {
     int limit = 30,
   }) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.financeAnomalies(limit: limit),
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -558,11 +607,22 @@ class FinanceService extends BaseCrudService {
     int limit = 30,
   }) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.financeAuditLogs(limit: limit),
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));

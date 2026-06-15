@@ -62,14 +62,14 @@ class FlowProgress {
 /// Matches the web app's usePostLoginFlow hook.
 class PostLoginFlow {
   PostLoginFlow({
-    required User user,
+    required AuthUser user,
     Map<String, dynamic>? tenant,
     required ApiClient apiClient,
   })  : _user = user,
         _tenant = tenant,
         _apiClient = apiClient;
 
-  final User _user;
+  final AuthUser _user;
   final Map<String, dynamic>? _tenant;
   final ApiClient _apiClient;
 

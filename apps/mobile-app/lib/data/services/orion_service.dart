@@ -57,15 +57,10 @@ class OrionService extends BaseCrudService {
       ));
     }
 
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.orionQuery,
-        data: request,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.orionQuery,
+      data: request,
+    );
   }
 
   // ─── Résumé mensuel ──────────────────────────────────────────────────────
@@ -131,10 +126,14 @@ class OrionService extends BaseCrudService {
     }
 
     try {
-      await ApiClient.instance.post(
+      final result = await ApiClient.instance.postRaw(
         ApiConfig.orionAlertAcknowledge(alertId),
       );
-      return const ApiSuccess(null);
+      return result.when(
+        success: (_) => const ApiSuccess(null),
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
+      );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
     }
@@ -189,15 +188,11 @@ class OrionService extends BaseCrudService {
       ));
     }
 
-    try {
-      final response = await ApiClient.instance.put(
-        ApiConfig.orionConfig,
-        data: config,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.put(
+      ApiConfig.orionConfig,
+      data: config,
+      fromJson: (json) => json,
+    );
   }
 
   // ─── KPIs ────────────────────────────────────────────────────────────────
@@ -257,23 +252,24 @@ class OrionService extends BaseCrudService {
 
     // En ligne : essayer le réseau, fallback local si échec
     try {
-      final response = await ApiClient.instance.get(path);
-      final data = response.data;
+      final result = await ApiClient.instance.getRaw(path);
+      return result.when(
+        success: (data) {
+          // Mettre en cache les données réussies (non bloquant)
+          _cacheResponse(path, cacheStore, data, tenantId).catchError((_) {});
 
-      // Mettre en cache les données réussies (non bloquant)
-      if (data != null) {
-        _cacheResponse(path, cacheStore, data, tenantId).catchError((_) {});
-      }
-
-      // Transformer la réponse
-      if (data is List) {
-        return ApiSuccess(
-          data.map((e) => e as Map<String, dynamic>).toList() as T,
-        );
-      } else if (data is Map<String, dynamic>) {
-        return ApiSuccess(data as T);
-      }
-      return ApiSuccess(data as T);
+          // Transformer la réponse — getRaw returns Map<String, dynamic>
+          if (data.containsKey('data') && data['data'] is List) {
+            final listData = (data['data'] as List)
+                .map((e) => e as Map<String, dynamic>)
+                .toList();
+            return ApiSuccess(listData as T);
+          }
+          return ApiSuccess(data as T);
+        },
+        failure: (error) => _localFallback<T>(cacheStore, tenantId),
+        loading: () => const ApiResult.loading(),
+      );
     } catch (e) {
       // Fallback vers les données locales
       return _localFallback<T>(cacheStore, tenantId);
@@ -337,8 +333,10 @@ class OrionService extends BaseCrudService {
               'tenantId': item['tenantId'] ?? tenantId,
               '_cachedAt': DateTime.now().toIso8601String(),
             };
-            final box = await OfflineService.instance._openCollectionBox(cacheStore);
-            await box.put(id, itemWithMeta);
+            await OfflineService.instance.cacheData(
+              '$cacheStore/$id',
+              itemWithMeta,
+            );
           }
         }
       } else if (data is Map<String, dynamic>) {
@@ -348,8 +346,10 @@ class OrionService extends BaseCrudService {
           'tenantId': data['tenantId'] ?? tenantId,
           '_cachedAt': DateTime.now().toIso8601String(),
         };
-        final box = await OfflineService.instance._openCollectionBox(cacheStore);
-        await box.put(id, itemWithMeta);
+        await OfflineService.instance.cacheData(
+          '$cacheStore/$id',
+          itemWithMeta,
+        );
       }
     } catch (_) {
       // Erreur de cache non bloquante

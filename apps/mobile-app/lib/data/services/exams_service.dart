@@ -42,14 +42,9 @@ class ExamsService extends BaseCrudService {
 
   /// Récupère une évaluation par ID.
   Future<ApiResult<Map<String, dynamic>>> getEvaluationById(String id) async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.examEvaluationById(id),
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.examEvaluationById(id),
+    );
   }
 
   /// Crée une évaluation.
@@ -90,15 +85,10 @@ class ExamsService extends BaseCrudService {
   Future<ApiResult<Map<String, dynamic>>> saveGrades(
     List<Map<String, dynamic>> grades,
   ) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.examSaveGrades,
-        data: {'grades': grades},
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.examSaveGrades,
+      data: {'grades': grades},
+    );
   }
 
   /// Sauvegarde une note individuelle (offline-first).
@@ -128,15 +118,10 @@ class ExamsService extends BaseCrudService {
   Future<ApiResult<Map<String, dynamic>>> generateBulletin(
     Map<String, dynamic> data,
   ) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.examBulletins,
-        data: data,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.examBulletins,
+      data: data,
+    );
   }
 
   // ─── Conseils de classe ──────────────────────────────────────────────────
@@ -146,12 +131,23 @@ class ExamsService extends BaseCrudService {
     Map<String, dynamic>? params,
   }) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.examCouncils,
         queryParameters: params,
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -162,56 +158,37 @@ class ExamsService extends BaseCrudService {
   Future<ApiResult<Map<String, dynamic>>> createCouncil(
     Map<String, dynamic> data,
   ) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.examCouncils,
-        data: data,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.examCouncils,
+      data: data,
+    );
   }
 
   /// Récupère un conseil de classe par ID.
   Future<ApiResult<Map<String, dynamic>>> getCouncilById(String id) async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.examCouncilById(id),
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.examCouncilById(id),
+    );
   }
 
   // ─── Configuration ───────────────────────────────────────────────────────
 
   /// Récupère la configuration des examens.
   Future<ApiResult<Map<String, dynamic>>> getConfig() async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.examConfig,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.examConfig,
+    );
   }
 
   /// Met à jour la configuration des examens.
   Future<ApiResult<Map<String, dynamic>>> updateConfig(
     Map<String, dynamic> data,
   ) async {
-    try {
-      final response = await ApiClient.instance.put(
-        ApiConfig.examConfig,
-        data: data,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.put(
+      ApiConfig.examConfig,
+      data: data,
+      fromJson: (json) => json,
+    );
   }
 
   // ─── Tableau de bord ─────────────────────────────────────────────────────
@@ -220,14 +197,9 @@ class ExamsService extends BaseCrudService {
   Future<ApiResult<Map<String, dynamic>>> getDashboard(
     String academicYearId,
   ) async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.examDashboard(academicYearId),
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.examDashboard(academicYearId),
+    );
   }
 
   // ─── Examens institutionnels ─────────────────────────────────────────────
@@ -237,12 +209,23 @@ class ExamsService extends BaseCrudService {
     Map<String, dynamic>? params,
   }) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.institutionalExams,
         queryParameters: params,
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));

@@ -57,7 +57,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
 
     return result.when(
       success: (Map<String, dynamic> data) {
-        final User user = User.fromJson(data);
+        final AuthUser user = AuthUser.fromJson(data);
         final String? accessToken = _cachedAccessToken;
 
         // Restore tenant selection from secure storage.
@@ -145,7 +145,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           final Map<String, dynamic> userData =
               data['user'] as Map<String, dynamic>? ?? data;
 
-          final User user = User.fromJson(userData);
+          final AuthUser user = AuthUser.fromJson(userData);
 
           // Parse available tenants from the response.
           final List<TenantBasic> availableTenants = _parseTenants(data);
@@ -380,7 +380,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
   // ── Update User Profile ───────────────────────────────────────────────
 
   /// Updates the current user in the state (e.g. after profile edit).
-  void updateUser(User user) {
+  void updateUser(AuthUser user) {
     final AuthState current = state.valueOrNull ?? const AuthState.initial();
     current.when(
       initial: () {},

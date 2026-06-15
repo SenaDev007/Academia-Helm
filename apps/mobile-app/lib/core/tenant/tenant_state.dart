@@ -4,7 +4,7 @@
 
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-part 'tenant_state.g.dart';
+part 'tenant_state.freezed.dart';
 
 /// Represents a tenant (school/institution) in the multi-tenant system.
 @freezed

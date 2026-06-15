@@ -399,12 +399,23 @@ class PedagogyService extends BaseCrudService {
     Map<String, dynamic>? params,
   }) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.timetables,
         queryParameters: params,
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -427,10 +438,19 @@ class PedagogyService extends BaseCrudService {
       return ApiSuccess(results.isNotEmpty ? results.first : null);
     }
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         '${ApiConfig.semainier}/current?academicYearId=$academicYearId&schoolLevelId=$schoolLevelId',
       );
-      return ApiSuccess(response.data as Map<String, dynamic>?);
+      return result.when(
+        success: (data) => ApiSuccess(data),
+        failure: (error) async {
+          final results = await searchLocal(
+            filters: {'academicYearId': academicYearId},
+          );
+          return ApiSuccess(results.isNotEmpty ? results.first : null);
+        },
+        loading: () => const ApiResult.loading(),
+      );
     } catch (e) {
       final results = await searchLocal(
         filters: {'academicYearId': academicYearId},
@@ -585,28 +605,18 @@ class PedagogyService extends BaseCrudService {
   Future<ApiResult<Map<String, dynamic>>> getKpiDashboard(
     String academicYearId,
   ) async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.pedagogyKpiDashboard(academicYearId),
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.pedagogyKpiDashboard(academicYearId),
+    );
   }
 
   /// Tableau de bord ORION pédagogie.
   Future<ApiResult<Map<String, dynamic>>> getOrionDashboard(
     String academicYearId,
   ) async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.pedagogyOrionDashboard(academicYearId),
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.pedagogyOrionDashboard(academicYearId),
+    );
   }
 
   // ─── Alias pour createAssignment ─────────────────────────────────────────

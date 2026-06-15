@@ -65,6 +65,23 @@ class ApiConfig {
 
   static const int maxRetryAttempts = 3;
   static const Duration retryDelay = Duration(seconds: 2);
+
+  // ── Cache Configuration (mirror of TanStack Query) ────────────────────
+
+  /// Durée pendant laquelle les données sont considérées fraîches.
+  /// Miroir de staleTime=60s.
+  static const Duration staleTime = Duration(seconds: 60);
+
+  /// Durée avant que les données soient supprimées du cache.
+  /// Miroir de gcTime=30min.
+  static const Duration gcTime = Duration(minutes: 30);
+
+  /// Nombre de tentatives en cas d'erreur.
+  /// Miroir de retry=1.
+  static const int retryCount = 1;
+
+  /// TTL du cache local.
+  static const Duration defaultCacheTTL = Duration(minutes: 5);
 }
 
 /// Enum representing the API environment.

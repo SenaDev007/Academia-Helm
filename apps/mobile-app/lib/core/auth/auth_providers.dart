@@ -21,8 +21,8 @@ final isAuthenticatedProvider = Provider<bool>((Ref ref) {
   return authState?.isAuthenticated ?? false;
 });
 
-/// The current [User] if authenticated, otherwise `null`.
-final currentUserProvider = Provider<User?>((Ref ref) {
+/// The current [AuthUser] if authenticated, otherwise `null`.
+final currentUserProvider = Provider<AuthUser?>((Ref ref) {
   final authState = ref.watch(authNotifierProvider).valueOrNull;
   return authState?.userOrNull;
 });

@@ -326,3 +326,9 @@ class _OrionContent extends ConsumerWidget {
 }
 
 StatusBadgeType _statusType(dynamic status) {
+  final String s = status?.toString().toUpperCase() ?? '';
+  if (s.contains('PAID') || s.contains('ACTIVE')) return StatusBadgeType.success;
+  if (s.contains('PENDING')) return StatusBadgeType.warning;
+  if (s.contains('OVERDUE') || s.contains('BLOCKED')) return StatusBadgeType.error;
+  return StatusBadgeType.info;
+}

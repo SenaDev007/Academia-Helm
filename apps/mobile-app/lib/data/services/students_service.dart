@@ -19,6 +19,8 @@
 /// - uploadPhoto (Photo)
 /// ============================================================================
 
+import 'package:dio/dio.dart';
+
 import '../../core/crud/base_crud_service.dart';
 import '../../core/network/api_config.dart';
 import '../../core/network/api_result.dart';
@@ -75,14 +77,9 @@ class StudentsService extends BaseCrudService {
 
   /// Soumet une admission pour validation.
   Future<ApiResult<Map<String, dynamic>>> submitAdmission(String id) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.studentAdmissionSubmit(id),
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.studentAdmissionSubmit(id),
+    );
   }
 
   /// Prend une décision sur une admission (ACCEPTED / REJECTED).
@@ -91,27 +88,17 @@ class StudentsService extends BaseCrudService {
     required String decision,
     required String comment,
   }) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.studentAdmissionDecide(id),
-        data: {'decision': decision, 'comment': comment},
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.studentAdmissionDecide(id),
+      data: {'decision': decision, 'comment': comment},
+    );
   }
 
   /// Convertit une admission en inscription.
   Future<ApiResult<Map<String, dynamic>>> convertAdmission(String id) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.studentAdmissionConvert(id),
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.studentAdmissionConvert(id),
+    );
   }
 
   // ─── Inscriptions ────────────────────────────────────────────────────────
@@ -141,15 +128,10 @@ class StudentsService extends BaseCrudService {
   Future<ApiResult<Map<String, dynamic>>> preRegister(
     Map<String, dynamic> data,
   ) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.studentPreRegister,
-        data: data,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.studentPreRegister,
+      data: data,
+    );
   }
 
   /// Ajoute des tuteurs à un élève.
@@ -157,15 +139,10 @@ class StudentsService extends BaseCrudService {
     String studentId,
     List<Map<String, dynamic>> guardians,
   ) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.studentGuardians(studentId),
-        data: {'guardians': guardians},
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.studentGuardians(studentId),
+      data: {'guardians': guardians},
+    );
   }
 
   /// Finalise l'inscription d'un élève.
@@ -173,15 +150,10 @@ class StudentsService extends BaseCrudService {
     String studentId,
     Map<String, dynamic> data,
   ) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.studentEnroll(studentId),
-        data: data,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.studentEnroll(studentId),
+      data: data,
+    );
   }
 
   // ─── Cartes d'identité ──────────────────────────────────────────────────
@@ -190,15 +162,10 @@ class StudentsService extends BaseCrudService {
   Future<ApiResult<Map<String, dynamic>>> getIdCardStats(
     String academicYearId,
   ) async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.studentIdCardStats,
-        queryParameters: {'academicYearId': academicYearId},
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.studentIdCardStats,
+      queryParameters: {'academicYearId': academicYearId},
+    );
   }
 
   /// Génération par lot de cartes d'identité.
@@ -206,18 +173,13 @@ class StudentsService extends BaseCrudService {
     required String academicYearId,
     required String schoolLevelId,
   }) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.studentGenerateBulkIdCards,
-        data: {
-          'academicYearId': academicYearId,
-          'schoolLevelId': schoolLevelId,
-        },
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.studentGenerateBulkIdCards,
+      data: {
+        'academicYearId': academicYearId,
+        'schoolLevelId': schoolLevelId,
+      },
+    );
   }
 
   /// Révoque une carte d'identité.
@@ -225,29 +187,20 @@ class StudentsService extends BaseCrudService {
     String id,
     String reason,
   ) async {
-    try {
-      final response = await ApiClient.instance.put(
-        ApiConfig.studentRevokeIdCard(id),
-        data: {'reason': reason},
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.put(
+      ApiConfig.studentRevokeIdCard(id),
+      data: {'reason': reason},
+      fromJson: (json) => json,
+    );
   }
 
   // ─── Matricules ─────────────────────────────────────────────────────────
 
   /// Statistiques des matricules.
   Future<ApiResult<Map<String, dynamic>>> getMatriculeStats() async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.studentIdentifiersStats,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.studentIdentifiersStats,
+    );
   }
 
   /// Génération par lot de matricules.
@@ -256,49 +209,34 @@ class StudentsService extends BaseCrudService {
     required String schoolLevelId,
     String? status,
   }) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.studentGenerateBulkMatricules,
-        data: {
-          'academicYearId': academicYearId,
-          'schoolLevelId': schoolLevelId,
-          if (status != null) 'status': status,
-        },
-        queryParameters: {'countryCode': 'BJ'},
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.studentGenerateBulkMatricules,
+      data: {
+        'academicYearId': academicYearId,
+        'schoolLevelId': schoolLevelId,
+        if (status != null) 'status': status,
+      },
+      queryParameters: {'countryCode': 'BJ'},
+    );
   }
 
   /// Génère un matricule individuel.
   Future<ApiResult<Map<String, dynamic>>> generateMatricule(
     String studentId,
   ) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.studentGenerateMatricule(studentId),
-        queryParameters: {'countryCode': 'BJ'},
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.studentGenerateMatricule(studentId),
+      queryParameters: {'countryCode': 'BJ'},
+    );
   }
 
   /// Recherche par matricule.
   Future<ApiResult<Map<String, dynamic>>> searchByMatricule(
     String matricule,
   ) async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.studentSearchByMatricule(matricule),
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.studentSearchByMatricule(matricule),
+    );
   }
 
   // ─── Dossier & Historique ────────────────────────────────────────────────
@@ -308,27 +246,33 @@ class StudentsService extends BaseCrudService {
     String id, {
     String? academicYearId,
   }) async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.studentDossier(id),
-        queryParameters: academicYearId != null
-            ? {'academicYearId': academicYearId}
-            : null,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.studentDossier(id),
+      queryParameters: academicYearId != null
+          ? {'academicYearId': academicYearId}
+          : null,
+    );
   }
 
   /// Récupère l'historique d'un élève.
   Future<ApiResult<List<Map<String, dynamic>>>> getHistory(String id) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.studentHistory(id),
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -340,15 +284,10 @@ class StudentsService extends BaseCrudService {
     String id,
     String academicYearId,
   ) async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.studentVerificationQR(id),
-        queryParameters: {'academicYearId': academicYearId},
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.studentVerificationQR(id),
+      queryParameters: {'academicYearId': academicYearId},
+    );
   }
 
   /// Régénère le token de vérification.
@@ -356,15 +295,10 @@ class StudentsService extends BaseCrudService {
     String id,
     String academicYearId,
   ) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.studentRegenerateQR(id),
-        data: {'academicYearId': academicYearId},
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.studentRegenerateQR(id),
+      data: {'academicYearId': academicYearId},
+    );
   }
 
   // ─── Statistiques ───────────────────────────────────────────────────────
@@ -374,28 +308,18 @@ class StudentsService extends BaseCrudService {
     String academicYearId,
     String schoolLevelId,
   ) async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.studentStatistics(academicYearId, schoolLevelId),
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.studentStatistics(academicYearId, schoolLevelId),
+    );
   }
 
   /// KPIs ORION pour les élèves.
   Future<ApiResult<Map<String, dynamic>>> getOrionKpis(
     String academicYearId,
   ) async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.studentOrionKpis(academicYearId),
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.studentOrionKpis(academicYearId),
+    );
   }
 
   /// Alertes ORION pour les élèves.
@@ -403,11 +327,22 @@ class StudentsService extends BaseCrudService {
     String academicYearId,
   ) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.studentOrionAlerts(academicYearId),
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -421,15 +356,9 @@ class StudentsService extends BaseCrudService {
     String studentId,
     FormData formData,
   ) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.studentUploadPhoto(studentId),
-        data: formData,
-        options: Options(headers: {'Content-Type': 'multipart/form-data'}),
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.studentUploadPhoto(studentId),
+      data: formData,
+    );
   }
 }

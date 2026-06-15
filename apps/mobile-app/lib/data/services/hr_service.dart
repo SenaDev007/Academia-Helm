@@ -43,10 +43,9 @@ class HrService extends BaseCrudService {
   /// Récupère un membre du personnel par ID.
   Future<ApiResult<Map<String, dynamic>>> getStaffById(String id) async {
     try {
-      final response = await ApiClient.instance.get(
+      return ApiClient.instance.getRaw(
         ApiConfig.hrStaffById(id),
       );
-      return ApiSuccess(response.data as Map<String, dynamic>);
     } catch (e) {
       // Fallback local
       final local = await getById(id);
@@ -93,14 +92,9 @@ class HrService extends BaseCrudService {
 
   /// Récupère un contrat par ID.
   Future<ApiResult<Map<String, dynamic>>> getContractById(String id) async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.hrContractById(id),
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.hrContractById(id),
+    );
   }
 
   /// Crée un contrat.
@@ -134,12 +128,23 @@ class HrService extends BaseCrudService {
     Map<String, dynamic>? params,
   }) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.hrPayroll,
         queryParameters: params,
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -148,14 +153,9 @@ class HrService extends BaseCrudService {
 
   /// Récupère une fiche de paie par ID.
   Future<ApiResult<Map<String, dynamic>>> getPayrollById(String id) async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.hrPayrollById(id),
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.hrPayrollById(id),
+    );
   }
 
   // ─── Congés ──────────────────────────────────────────────────────────────
@@ -165,12 +165,23 @@ class HrService extends BaseCrudService {
     Map<String, dynamic>? params,
   }) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.hrLeaves,
         queryParameters: params,
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -220,12 +231,23 @@ class HrService extends BaseCrudService {
     Map<String, dynamic>? params,
   }) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.hrCredentials,
         queryParameters: params,
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));

@@ -53,7 +53,7 @@ enum PostLoginResult {
 /// then navigates to the appropriate screen on completion.
 class PostLoginLoadingScreen extends StatefulWidget {
   /// The authenticated user.
-  final User user;
+  final AuthUser user;
 
   /// The selected tenant data (may be null for multi-tenant selection).
   final Map<String, dynamic>? tenant;

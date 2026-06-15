@@ -33,29 +33,20 @@ class SettingsService extends BaseCrudService {
 
   /// Récupère les paramètres généraux.
   Future<ApiResult<Map<String, dynamic>>> getGeneral() async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.settingsGeneral,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.settingsGeneral,
+    );
   }
 
   /// Met à jour les paramètres généraux.
   Future<ApiResult<Map<String, dynamic>>> updateGeneral(
     Map<String, dynamic> data,
   ) async {
-    try {
-      final response = await ApiClient.instance.put(
-        ApiConfig.settingsGeneral,
-        data: data,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.put(
+      ApiConfig.settingsGeneral,
+      data: data,
+      fromJson: (json) => json,
+    );
   }
 
   // ─── Années scolaires ────────────────────────────────────────────────────
@@ -63,11 +54,22 @@ class SettingsService extends BaseCrudService {
   /// Récupère les années scolaires.
   Future<ApiResult<List<Map<String, dynamic>>>> getAcademicYears() async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.settingsAcademicYear,
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -77,22 +79,28 @@ class SettingsService extends BaseCrudService {
   /// Récupère l'année scolaire courante.
   Future<ApiResult<Map<String, dynamic>>> getCurrentAcademicYear() async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.settingsAcademicYear,
         queryParameters: {'current': 'true'},
       );
-      // Peut retourner une liste ou un objet unique
-      if (response.data is List) {
-        final list = response.data as List;
-        if (list.isNotEmpty) {
-          return ApiSuccess(list.first as Map<String, dynamic>);
-        }
-        return ApiFailure(ApiError(
-          message: 'Aucune année scolaire courante trouvée',
-          type: ApiErrorType.notFound,
-        ));
-      }
-      return ApiSuccess(response.data as Map<String, dynamic>);
+      return result.when(
+        success: (data) {
+          // Peut retourner une liste dans 'data' ou un objet unique
+          if (data.containsKey('data') && data['data'] is List) {
+            final list = data['data'] as List;
+            if (list.isNotEmpty) {
+              return ApiSuccess(list.first as Map<String, dynamic>);
+            }
+            return ApiFailure(ApiError(
+              message: 'Aucune année scolaire courante trouvée',
+              type: ApiErrorType.notFound,
+            ));
+          }
+          return ApiSuccess(data);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
+      );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
     }
@@ -173,11 +181,22 @@ class SettingsService extends BaseCrudService {
   /// Récupère les rôles.
   Future<ApiResult<List<Map<String, dynamic>>>> getRoles() async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.settingsRoles,
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -187,11 +206,22 @@ class SettingsService extends BaseCrudService {
   /// Récupère les permissions.
   Future<ApiResult<List<Map<String, dynamic>>>> getPermissions() async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.settingsPermissions,
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -203,11 +233,22 @@ class SettingsService extends BaseCrudService {
   /// Récupère les feature flags.
   Future<ApiResult<List<Map<String, dynamic>>>> getFeatures() async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.settingsFeatureFlags,
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -216,83 +257,55 @@ class SettingsService extends BaseCrudService {
 
   /// Active une fonctionnalité.
   Future<ApiResult<Map<String, dynamic>>> enableFeature(String featureId) async {
-    try {
-      final response = await ApiClient.instance.patch(
-        '${ApiConfig.settingsFeatureFlags}/$featureId',
-        data: {'enabled': true},
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.patch(
+      '${ApiConfig.settingsFeatureFlags}/$featureId',
+      data: {'enabled': true},
+      fromJson: (json) => json,
+    );
   }
 
   /// Désactive une fonctionnalité.
   Future<ApiResult<Map<String, dynamic>>> disableFeature(String featureId) async {
-    try {
-      final response = await ApiClient.instance.patch(
-        '${ApiConfig.settingsFeatureFlags}/$featureId',
-        data: {'enabled': false},
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.patch(
+      '${ApiConfig.settingsFeatureFlags}/$featureId',
+      data: {'enabled': false},
+      fromJson: (json) => json,
+    );
   }
 
   // ─── Sécurité ────────────────────────────────────────────────────────────
 
   /// Récupère les paramètres de sécurité.
   Future<ApiResult<Map<String, dynamic>>> getSecuritySettings() async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.settingsSecurity,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.settingsSecurity,
+    );
   }
 
   // ─── Facturation ─────────────────────────────────────────────────────────
 
   /// Récupère les paramètres de facturation.
   Future<ApiResult<Map<String, dynamic>>> getBillingSettings() async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.settingsBilling,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.settingsBilling,
+    );
   }
 
   // ─── Communication ───────────────────────────────────────────────────────
 
   /// Récupère les paramètres de communication.
   Future<ApiResult<Map<String, dynamic>>> getCommunicationSettings() async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.settingsCommunication,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.settingsCommunication,
+    );
   }
 
   // ─── Sceaux & Signatures ─────────────────────────────────────────────────
 
   /// Récupère les sceaux et signatures.
   Future<ApiResult<Map<String, dynamic>>> getSeals() async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.settingsSeals,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.settingsSeals,
+    );
   }
 }

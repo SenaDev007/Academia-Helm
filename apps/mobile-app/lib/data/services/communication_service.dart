@@ -42,10 +42,9 @@ class CommunicationService extends BaseCrudService {
   /// Récupère un message par ID.
   Future<ApiResult<Map<String, dynamic>>> getMessageById(String id) async {
     try {
-      final response = await ApiClient.instance.get(
+      return ApiClient.instance.getRaw(
         ApiConfig.communicationMessageById(id),
       );
-      return ApiSuccess(response.data as Map<String, dynamic>);
     } catch (e) {
       // Fallback local
       final local = await getById(id);
@@ -107,15 +106,10 @@ class CommunicationService extends BaseCrudService {
   Future<ApiResult<Map<String, dynamic>>> sendEmail(
     Map<String, dynamic> data,
   ) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.communicationEmails,
-        data: data,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.communicationEmails,
+      data: data,
+    );
   }
 
   // ─── SMS ─────────────────────────────────────────────────────────────────
@@ -124,15 +118,10 @@ class CommunicationService extends BaseCrudService {
   Future<ApiResult<Map<String, dynamic>>> sendSms(
     Map<String, dynamic> data,
   ) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.communicationSms,
-        data: data,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.communicationSms,
+      data: data,
+    );
   }
 
   /// Récupère l'historique SMS.
@@ -140,12 +129,23 @@ class CommunicationService extends BaseCrudService {
     Map<String, dynamic>? params,
   }) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.communicationSms,
         queryParameters: params,
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -158,15 +158,10 @@ class CommunicationService extends BaseCrudService {
   Future<ApiResult<Map<String, dynamic>>> sendWhatsApp(
     Map<String, dynamic> data,
   ) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.communicationWhatsApp,
-        data: data,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.communicationWhatsApp,
+      data: data,
+    );
   }
 
   // ─── Campagnes ───────────────────────────────────────────────────────────
@@ -176,12 +171,23 @@ class CommunicationService extends BaseCrudService {
     Map<String, dynamic>? params,
   }) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.communicationCampaigns,
         queryParameters: params,
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -206,12 +212,23 @@ class CommunicationService extends BaseCrudService {
     Map<String, dynamic>? params,
   }) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.communicationTemplates,
         queryParameters: params,
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));

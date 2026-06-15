@@ -133,33 +133,39 @@ class BaseCrudService {
 
     // En ligne → appel API
     try {
-      final response = await _apiClient.get<List<dynamic>>(
+      final result = await _apiClient.getRaw(
         endpoint,
         queryParameters: params,
       );
 
-      final data = (response.data as List<dynamic>)
-          .map((item) => item as Map<String, dynamic>)
-          .toList();
-
-      // Mettre en cache
-      _setMemoryCache(cacheKey, data);
-      await _cacheResponseLocally(data);
-
-      return ApiSuccess(data);
-    } on DioException catch (e) {
-      // Erreur API → fallback vers stockage local
+      return result.when(
+        success: (data) {
+          final List<Map<String, dynamic>> list;
+          if (data is Map<String, dynamic> && data.containsKey('data') && data['data'] is List) {
+            list = (data['data'] as List)
+                .map((item) => item as Map<String, dynamic>)
+                .toList();
+          } else {
+            // Fallback: wrap the raw response
+            list = [data];
+          }
+          _setMemoryCache(cacheKey, list);
+          _cacheResponseLocally(list).catchError((_) {});
+          return ApiSuccess(list);
+        },
+        failure: (error) {
+          if (kDebugMode) {
+            debugPrint('[$runtimeType] API échouée pour $endpoint, fallback local : ${error.message}');
+          }
+          return _getAllFromLocal(params);
+        },
+        loading: () => const ApiResult.loading(),
+      );
+    } catch (e) {
       if (kDebugMode) {
-        debugPrint(
-          '[$runtimeType] API échouée pour $endpoint, fallback local : ${e.message}',
-        );
+        debugPrint('[$runtimeType] API échouée pour $endpoint, fallback local : $e');
       }
       return _getAllFromLocal(params);
-    } catch (e) {
-      return ApiFailure(ApiError(
-        message: 'Erreur lors de la récupération des données : $e',
-        type: ApiErrorType.unknown,
-      ));
     }
   }
 
@@ -184,32 +190,28 @@ class BaseCrudService {
     }
 
     try {
-      final response = await _apiClient.get<Map<String, dynamic>>(
-        '$endpoint/$id',
+      final result = await _apiClient.getRaw('$endpoint/$id');
+
+      return result.when(
+        success: (data) {
+          _setMemoryCache(cacheKey, data);
+          _offlineService.cacheData(
+            '$collection/$id',
+            data,
+            ttl: cacheConfig.localCacheTTL,
+          ).catchError((_) {});
+          return ApiSuccess(data);
+        },
+        failure: (error) {
+          if (kDebugMode) {
+            debugPrint('[$runtimeType] API échouée pour $endpoint/$id, fallback local : ${error.message}');
+          }
+          return _getByIdFromLocal(id);
+        },
+        loading: () => const ApiResult.loading(),
       );
-
-      final data = response.data as Map<String, dynamic>;
-
-      _setMemoryCache(cacheKey, data);
-      await _offlineService.cacheData(
-        '$collection/$id',
-        data,
-        ttl: cacheConfig.localCacheTTL,
-      );
-
-      return ApiSuccess(data);
-    } on DioException catch (e) {
-      if (kDebugMode) {
-        debugPrint(
-          '[$runtimeType] API échouée pour $endpoint/$id, fallback local : ${e.message}',
-        );
-      }
-      return _getByIdFromLocal(id);
     } catch (e) {
-      return ApiFailure(ApiError(
-        message: 'Erreur lors de la récupération : $e',
-        type: ApiErrorType.unknown,
-      ));
+      return _getByIdFromLocal(id);
     }
   }
 
@@ -247,43 +249,38 @@ class BaseCrudService {
 
     // En ligne → appel API
     try {
-      final response = await _apiClient.post<Map<String, dynamic>>(
-        endpoint,
-        data: data,
-      );
+      final apiResult = await _apiClient.postRaw(endpoint, data: data);
 
-      final result = response.data as Map<String, dynamic>;
-      _invalidateMemoryCache();
-
-      // Mettre en cache local
-      if (tenantId != null) {
-        await _offlineService.cacheData(
-          '$collection/${result['id']}',
-          result,
-          ttl: cacheConfig.localCacheTTL,
-        );
-      }
-
-      return ApiSuccess(result);
-    } on DioException catch (e) {
-      final apiError = ApiError.fromDioException(e);
-
-      // Si erreur réseau, tenter le fallback offline
-      if (apiError.isOffline && tenantId != null) {
-        try {
-          final result = await _offlineService.createEntityOffline(
-            tenantId,
-            entityType,
-            data,
-          );
-          _invalidateMemoryCache();
-          return ApiSuccess(result);
-        } catch (_) {
-          // Fallback échoué aussi
+      if (apiResult is ApiSuccess<Map<String, dynamic>>) {
+        _invalidateMemoryCache();
+        if (tenantId != null) {
+          _offlineService.cacheData(
+            '$collection/${apiResult.data['id']}',
+            apiResult.data,
+            ttl: cacheConfig.localCacheTTL,
+          ).catchError((_) {});
         }
+        return ApiSuccess(apiResult.data);
       }
 
-      return ApiFailure(apiError);
+      if (apiResult is ApiFailure<Map<String, dynamic>>) {
+        final error = apiResult.error;
+        // Si erreur réseau, tenter le fallback offline
+        if (error.isOffline && tenantId != null) {
+          try {
+            final offlineResult = await _offlineService.createEntityOffline(
+              tenantId,
+              entityType,
+              data,
+            );
+            _invalidateMemoryCache();
+            return ApiSuccess(offlineResult);
+          } catch (_) {}
+        }
+        return ApiFailure(error);
+      }
+
+      return const ApiResult.loading();
     } catch (e) {
       return ApiFailure(ApiError(
         message: 'Erreur lors de la création : $e',
@@ -324,32 +321,35 @@ class BaseCrudService {
     }
 
     try {
-      final response = await _apiClient.patch<Map<String, dynamic>>(
+      final apiResult = await _apiClient.patch<Map<String, dynamic>>(
         '$endpoint/$id',
         data: data,
+        fromJson: (json) => json,
       );
 
-      final result = response.data as Map<String, dynamic>;
-      _invalidateMemoryCache();
-
-      return ApiSuccess(result);
-    } on DioException catch (e) {
-      final apiError = ApiError.fromDioException(e);
-
-      if (apiError.isOffline && tenantId != null) {
-        try {
-          final result = await _offlineService.updateEntityOffline(
-            tenantId,
-            entityType,
-            id,
-            data,
-          );
-          _invalidateMemoryCache();
-          return ApiSuccess(result);
-        } catch (_) {}
+      if (apiResult is ApiSuccess<Map<String, dynamic>>) {
+        _invalidateMemoryCache();
+        return ApiSuccess(apiResult.data);
       }
 
-      return ApiFailure(apiError);
+      if (apiResult is ApiFailure<Map<String, dynamic>>) {
+        final error = apiResult.error;
+        if (error.isOffline && tenantId != null) {
+          try {
+            final offlineResult = await _offlineService.updateEntityOffline(
+              tenantId,
+              entityType,
+              id,
+              data,
+            );
+            _invalidateMemoryCache();
+            return ApiSuccess(offlineResult);
+          } catch (_) {}
+        }
+        return ApiFailure(error);
+      }
+
+      return const ApiResult.loading();
     } catch (e) {
       return ApiFailure(ApiError(
         message: 'Erreur lors de la mise à jour : $e',
@@ -386,25 +386,33 @@ class BaseCrudService {
     }
 
     try {
-      await _apiClient.delete('$endpoint/$id');
-      _invalidateMemoryCache();
-      return const ApiSuccess(null);
-    } on DioException catch (e) {
-      final apiError = ApiError.fromDioException(e);
+      final apiResult = await _apiClient.delete<Map<String, dynamic>>(
+        '$endpoint/$id',
+        fromJson: (json) => json,
+      );
 
-      if (apiError.isOffline && tenantId != null) {
-        try {
-          await _offlineService.deleteEntityOffline(
-            tenantId,
-            entityType,
-            id,
-          );
-          _invalidateMemoryCache();
-          return const ApiSuccess(null);
-        } catch (_) {}
+      if (apiResult is ApiSuccess<Map<String, dynamic>>) {
+        _invalidateMemoryCache();
+        return const ApiSuccess(null);
       }
 
-      return ApiFailure(apiError);
+      if (apiResult is ApiFailure<Map<String, dynamic>>) {
+        final error = apiResult.error;
+        if (error.isOffline && tenantId != null) {
+          try {
+            await _offlineService.deleteEntityOffline(
+              tenantId,
+              entityType,
+              id,
+            );
+            _invalidateMemoryCache();
+            return const ApiSuccess(null);
+          } catch (_) {}
+        }
+        return ApiFailure(error);
+      }
+
+      return const ApiResult.loading();
     } catch (e) {
       return ApiFailure(ApiError(
         message: 'Erreur lors de la suppression : $e',
@@ -455,15 +463,23 @@ class BaseCrudService {
     }
 
     try {
-      final response = await _apiClient.get<T>(path, queryParameters: params);
-      return ApiSuccess(response.data as T);
-    } on DioException catch (_) {
-      return _localFallback<T>(effectiveCollection, localFilters);
+      final result = await _apiClient.getRaw(path, queryParameters: params);
+      return result.when(
+        success: (data) {
+          if (T == List<Map<String, dynamic>>) {
+            if (data is Map<String, dynamic> && data.containsKey('data') && data['data'] is List) {
+              return ApiSuccess((data['data'] as List).map((e) => e as Map<String, dynamic>).toList() as T);
+            }
+            // If data itself is a list wrapped differently
+            return ApiSuccess([data] as T);
+          }
+          return ApiSuccess(data as T);
+        },
+        failure: (_) => _localFallback<T>(effectiveCollection, localFilters),
+        loading: () => const ApiResult.loading(),
+      );
     } catch (e) {
-      return ApiFailure(ApiError(
-        message: 'Erreur : $e',
-        type: ApiErrorType.unknown,
-      ));
+      return _localFallback<T>(effectiveCollection, localFilters);
     }
   }
 
@@ -495,21 +511,24 @@ class BaseCrudService {
     }
 
     try {
-      final response = await _apiClient.post<T>(path, data: data);
-      return ApiSuccess(response.data as T);
-    } on DioException catch (e) {
-      final apiError = ApiError.fromDioException(e);
-      if (apiError.isOffline && tenantId != null) {
-        try {
-          final result = await _offlineService.createEntityOffline(
-            tenantId,
-            effectiveEntityType,
-            data,
-          );
-          return ApiSuccess(result as T);
-        } catch (_) {}
-      }
-      return ApiFailure(apiError);
+      final apiResult = await _apiClient.postRaw(path, data: data);
+      return apiResult.when(
+        success: (result) => ApiSuccess(result as T),
+        failure: (error) {
+          if (error.isOffline && tenantId != null) {
+            try {
+              final offlineResult = _offlineService.createEntityOffline(
+                tenantId,
+                effectiveEntityType,
+                data,
+              );
+              return ApiSuccess(offlineResult as T);
+            } catch (_) {}
+          }
+          return ApiFailure(error);
+        },
+        loading: () => const ApiResult.loading(),
+      );
     } catch (e) {
       return ApiFailure(ApiError(message: 'Erreur : $e'));
     }
@@ -544,22 +563,29 @@ class BaseCrudService {
     }
 
     try {
-      final response = await _apiClient.patch<T>(path, data: data);
-      return ApiSuccess(response.data as T);
-    } on DioException catch (e) {
-      final apiError = ApiError.fromDioException(e);
-      if (apiError.isOffline && tenantId != null) {
-        try {
-          final result = await _offlineService.updateEntityOffline(
-            tenantId,
-            effectiveEntityType,
-            id,
-            data,
-          );
-          return ApiSuccess(result as T);
-        } catch (_) {}
-      }
-      return ApiFailure(apiError);
+      final apiResult = await _apiClient.patch<Map<String, dynamic>>(
+        path,
+        data: data,
+        fromJson: (json) => json,
+      );
+      return apiResult.when(
+        success: (result) => ApiSuccess(result as T),
+        failure: (error) {
+          if (error.isOffline && tenantId != null) {
+            try {
+              final offlineResult = _offlineService.updateEntityOffline(
+                tenantId,
+                effectiveEntityType,
+                id,
+                data,
+              );
+              return ApiSuccess(offlineResult as T);
+            } catch (_) {}
+          }
+          return ApiFailure(error);
+        },
+        loading: () => const ApiResult.loading(),
+      );
     } catch (e) {
       return ApiFailure(ApiError(message: 'Erreur : $e'));
     }
@@ -592,21 +618,27 @@ class BaseCrudService {
     }
 
     try {
-      await _apiClient.delete(path);
-      return const ApiSuccess(null);
-    } on DioException catch (e) {
-      final apiError = ApiError.fromDioException(e);
-      if (apiError.isOffline && tenantId != null) {
-        try {
-          await _offlineService.deleteEntityOffline(
-            tenantId,
-            effectiveEntityType,
-            id,
-          );
-          return const ApiSuccess(null);
-        } catch (_) {}
-      }
-      return ApiFailure(apiError);
+      final apiResult = await _apiClient.delete<Map<String, dynamic>>(
+        path,
+        fromJson: (json) => json,
+      );
+      return apiResult.when(
+        success: (_) => const ApiSuccess(null),
+        failure: (error) {
+          if (error.isOffline && tenantId != null) {
+            try {
+              _offlineService.deleteEntityOffline(
+                tenantId,
+                effectiveEntityType,
+                id,
+              );
+              return const ApiSuccess(null);
+            } catch (_) {}
+          }
+          return ApiFailure(error);
+        },
+        loading: () => const ApiResult.loading(),
+      );
     } catch (e) {
       return ApiFailure(ApiError(message: 'Erreur : $e'));
     }
@@ -669,7 +701,17 @@ class BaseCrudService {
           filters: localFilters,
         ),
       );
-      return ApiSuccess(results as T);
+      if (T == List<Map<String, dynamic>>) {
+        return ApiSuccess(results as T);
+      }
+      if (results.isNotEmpty) {
+        return ApiSuccess(results.first as T);
+      }
+      return ApiFailure(ApiError(
+        message: 'Aucune donnée locale disponible',
+        type: ApiErrorType.notFound,
+        isOffline: true,
+      ));
     } catch (e) {
       return ApiFailure(ApiError(
         message: 'Aucune donnée locale disponible',
@@ -735,13 +777,16 @@ class BaseCrudService {
     for (final item in data) {
       final id = item['id'];
       if (id != null) {
-        final box = await OfflineService.instance._openCollectionBox(collection);
         final itemWithMeta = {
           ...item,
           'tenantId': item['tenantId'] ?? tenantId,
           '_cachedAt': DateTime.now().toIso8601String(),
         };
-        await box.put(id, itemWithMeta);
+        await _offlineService.cacheData(
+          '$collection/$id',
+          itemWithMeta,
+          ttl: cacheConfig.localCacheTTL,
+        );
       }
     }
   }

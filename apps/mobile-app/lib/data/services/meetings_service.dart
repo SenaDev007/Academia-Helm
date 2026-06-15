@@ -54,10 +54,9 @@ class MeetingsService extends BaseCrudService {
   /// Récupère une réunion par ID.
   Future<ApiResult<Map<String, dynamic>>> getById(String id) async {
     try {
-      final response = await ApiClient.instance.get(
+      return ApiClient.instance.getRaw(
         ApiConfig.meetingById(id),
       );
-      return ApiSuccess(response.data as Map<String, dynamic>);
     } catch (e) {
       // Fallback local
       final local = await super.getById(id);
@@ -105,11 +104,22 @@ class MeetingsService extends BaseCrudService {
     String meetingId,
   ) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.meetingAgenda(meetingId),
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -121,15 +131,11 @@ class MeetingsService extends BaseCrudService {
     String meetingId,
     List<Map<String, dynamic>> items,
   ) async {
-    try {
-      final response = await ApiClient.instance.put(
-        ApiConfig.meetingAgenda(meetingId),
-        data: {'items': items},
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.put(
+      ApiConfig.meetingAgenda(meetingId),
+      data: {'items': items},
+      fromJson: (json) => json,
+    );
   }
 
   // ─── Procès-verbal ───────────────────────────────────────────────────────
@@ -138,14 +144,9 @@ class MeetingsService extends BaseCrudService {
   Future<ApiResult<Map<String, dynamic>>> getMinutes(
     String meetingId,
   ) async {
-    try {
-      final response = await ApiClient.instance.get(
-        ApiConfig.meetingMinutes(meetingId),
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.getRaw(
+      ApiConfig.meetingMinutes(meetingId),
+    );
   }
 
   /// Génère le procès-verbal d'une réunion.
@@ -153,15 +154,10 @@ class MeetingsService extends BaseCrudService {
     String meetingId,
     Map<String, dynamic> data,
   ) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.meetingMinutes(meetingId),
-        data: data,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.meetingMinutes(meetingId),
+      data: data,
+    );
   }
 
   // ─── Participants ────────────────────────────────────────────────────────
@@ -171,11 +167,22 @@ class MeetingsService extends BaseCrudService {
     String meetingId,
   ) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.meetingParticipants(meetingId),
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -187,15 +194,10 @@ class MeetingsService extends BaseCrudService {
     String meetingId,
     Map<String, dynamic> data,
   ) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.meetingParticipants(meetingId),
-        data: data,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.meetingParticipants(meetingId),
+      data: data,
+    );
   }
 
   /// Retire un participant d'une réunion.
@@ -204,10 +206,15 @@ class MeetingsService extends BaseCrudService {
     String participantId,
   ) async {
     try {
-      await ApiClient.instance.delete(
+      final result = await ApiClient.instance.delete(
         '${ApiConfig.meetingParticipants(meetingId)}/$participantId',
+        fromJson: (json) => json,
       );
-      return const ApiSuccess(null);
+      return result.when(
+        success: (_) => const ApiSuccess(null),
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
+      );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
     }
@@ -220,11 +227,22 @@ class MeetingsService extends BaseCrudService {
     String meetingId,
   ) async {
     try {
-      final response = await ApiClient.instance.get(
+      final result = await ApiClient.instance.getRaw(
         ApiConfig.meetingDecisions(meetingId),
       );
-      return ApiSuccess(
-        (response.data as List).map((e) => e as Map<String, dynamic>).toList(),
+      return result.when(
+        success: (data) {
+          if (data.containsKey('data') && data['data'] is List) {
+            return ApiSuccess(
+              (data['data'] as List)
+                  .map((e) => e as Map<String, dynamic>)
+                  .toList(),
+            );
+          }
+          return ApiSuccess([data]);
+        },
+        failure: (error) => ApiFailure(error),
+        loading: () => const ApiResult.loading(),
       );
     } catch (e) {
       return ApiFailure(ApiError.fromDioException(e));
@@ -236,14 +254,9 @@ class MeetingsService extends BaseCrudService {
     String meetingId,
     Map<String, dynamic> data,
   ) async {
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.meetingDecisions(meetingId),
-        data: data,
-      );
-      return ApiSuccess(response.data as Map<String, dynamic>);
-    } catch (e) {
-      return ApiFailure(ApiError.fromDioException(e));
-    }
+    return ApiClient.instance.postRaw(
+      ApiConfig.meetingDecisions(meetingId),
+      data: data,
+    );
   }
 }

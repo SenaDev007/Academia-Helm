@@ -1,15 +1,16 @@
 // NOTE: This file uses @freezed annotations. Run `build_runner` to generate
-// the .g.dart companion file:
+// the .freezed.dart and .g.dart companion files:
 //   dart run build_runner build --delete-conflicting-outputs
 
 import 'package:freezed_annotation/freezed_annotation.dart';
 
 import '../enums/user_role.dart' show PortalType;
 
+part 'auth_state.freezed.dart';
 part 'auth_state.g.dart';
 
 /// Basic tenant info returned during login alongside the user profile.
-@freezed
+@Freezed(toJson: true)
 class TenantBasic with _$TenantBasic {
   const factory TenantBasic({
     required String id,
@@ -24,12 +25,19 @@ class TenantBasic with _$TenantBasic {
 
   /// Display-friendly short name.
   String get shortName => acronym ?? name.split(' ').first;
+
+  factory TenantBasic.fromJson(Map<String, dynamic> json) =>
+      _$TenantBasicFromJson(json);
 }
 
-/// Represents an authenticated user.
-@freezed
-class User with _$User {
-  const factory User({
+/// Represents an authenticated user in the auth context.
+///
+/// This is distinct from [User] in `domain/entities/user.dart` which
+/// represents a user entity in the data layer. [AuthUser] is used
+/// exclusively in the authentication state machine.
+@Freezed(toJson: true)
+class AuthUser with _$AuthUser {
+  const factory AuthUser({
     required String id,
     required String email,
     required String firstName,
@@ -42,9 +50,9 @@ class User with _$User {
     DateTime? lastLoginAt,
     DateTime? createdAt,
     DateTime? updatedAt,
-  }) = _User;
+  }) = _AuthUser;
 
-  const User._();
+  const AuthUser._();
 
   /// Full display name.
   String get displayName => '$firstName $lastName';
@@ -55,6 +63,9 @@ class User with _$User {
     final String last = lastName.isNotEmpty ? lastName[0].toUpperCase() : '';
     return '$first$last';
   }
+
+  factory AuthUser.fromJson(Map<String, dynamic> json) =>
+      _$AuthUserFromJson(json);
 }
 
 /// Sealed class representing the authentication state of the app.
@@ -65,7 +76,7 @@ sealed class AuthState with _$AuthState {
 
   /// The user is authenticated with a valid access token.
   const factory AuthState.authenticated(
-    User user,
+    AuthUser user,
     String accessToken, {
     @Default([]) List<TenantBasic> availableTenants,
     String? selectedTenantId,
@@ -94,10 +105,10 @@ extension AuthStateX on AuthState {
   /// Returns `true` when login is specifically in progress.
   bool get isLoginLoading => this is AuthLoginLoading;
 
-  /// Returns the [User] if authenticated, otherwise `null`.
-  User? get userOrNull => when<User?>(
+  /// Returns the [AuthUser] if authenticated, otherwise `null`.
+  AuthUser? get userOrNull => when<AuthUser?>(
         initial: () => null,
-        authenticated: (User user, _, __, ___, ____) => user,
+        authenticated: (AuthUser user, _, __, ___, ____) => user,
         unauthenticated: () => null,
         loading: () => null,
         loginLoading: () => null,

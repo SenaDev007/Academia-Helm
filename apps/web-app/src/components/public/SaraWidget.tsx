@@ -3,15 +3,15 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { saraApi, SaraStreamChunk } from '@/lib/api/sara';
 import { cn } from '@/lib/utils';
-import { Flower2 } from 'lucide-react';
+import { Crown } from 'lucide-react';
 
 /**
  * ============================================================================
  * SARAH WIDGET — Holographic AI Assistant
  * ============================================================================
  *
- * Widget flottant holographique avec icône Fleur-de-lys.
- * "Sarah" = Princesse en hébreu — la fleur-de-lys est le symbole royal.
+ * Widget flottant holographique avec couronne animée.
+ * "Sarah" = Princesse en hébreu — la couronne est le symbole de royauté.
  *
  * Design : Couleurs Academia Helm (Navy/Gold) + Bleu tech sci-fi
  * Lisibilité : Texte blanc sur fond navy, contraste élevé
@@ -62,9 +62,9 @@ function generateParticles(count: number): Particle[] {
   }));
 }
 
-// ─── FLOWER ICON ────────────────────────────────────────────────────────
-// Lucide Flower2 — icône moderne et élégante pour Sarah
-// "Sarah" = Princesse en hébreu — la fleur est le symbole de grâce et royauté
+// ─── CROWN ICON ────────────────────────────────────────────────────────
+// Lucide Crown — couronne animée, symbole de Sarah la Princesse
+// Pas de cercle — la couronne flotte librement avec effets holographiques
 
 // ─── SARAH WIDGET COMPONENT ──────────────────────────────────────────────
 
@@ -227,25 +227,20 @@ export default function SaraWidget() {
             />
 
             <div className="relative flex items-center gap-3">
-              {/* Fleur-de-lys Avatar */}
-              <div className="relative w-11 h-11 flex items-center justify-center">
-                <div className="absolute inset-0 rounded-full"
+              {/* Couronne animée — pas de cercle */}
+              <div className="relative flex items-center justify-center" style={{ animation: 'crownFloat 3s ease-in-out infinite' }}>
+                {/* Glow derrière la couronne */}
+                <div className="absolute inset-0"
                   style={{
-                    background: `radial-gradient(circle, rgba(245,179,53,0.12) 0%, rgba(28,111,232,0.08) 50%, transparent 70%)`,
-                    animation: 'holoPulse 3s ease-in-out infinite',
+                    background: `radial-gradient(circle, rgba(245,179,53,0.2) 0%, rgba(28,111,232,0.08) 40%, transparent 65%)`,
+                    filter: 'blur(6px)',
+                    animation: 'crownGlow 3s ease-in-out infinite',
                   }}
                 />
-                <div className="absolute inset-[3px] rounded-full flex items-center justify-center"
-                  style={{
-                    background: `linear-gradient(135deg, ${C.navyDeep}, ${C.navy})`,
-                    border: '1px solid rgba(245,179,53,0.25)',
-                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 0 12px rgba(245,179,53,0.1)',
-                  }}
-                >
-                  <div style={{ animation: 'fleurFloat 3s ease-in-out infinite' }}>
-                    <Flower2 size={22} strokeWidth={1.8} className="drop-shadow-[0_0_4px_rgba(245,179,53,0.4)]" style={{ color: C.gold }} />
-                  </div>
-                </div>
+                <Crown size={26} strokeWidth={1.8}
+                  className="drop-shadow-[0_0_8px_rgba(245,179,53,0.5)]"
+                  style={{ color: C.gold, animation: 'crownShimmer 4s ease-in-out infinite' }}
+                />
               </div>
 
               <div>
@@ -475,47 +470,47 @@ export default function SaraWidget() {
           </form>
         </div>
       ) : (
-        // ─── CLOSED STATE — Floating Fleur-de-Lys Button ─────────
+        // ─── CLOSED STATE — Couronne animée flottante (pas de cercle) ──
         <button
           onClick={() => setIsOpen(true)}
-          className="group relative w-[68px] h-[68px] rounded-full flex items-center justify-center transition-all duration-500 hover:scale-110"
+          className="group relative flex items-center justify-center transition-all duration-500 hover:scale-110 cursor-pointer"
+          style={{ width: '72px', height: '72px' }}
           aria-label="Ouvrir le chat Sarah"
         >
-          {/* Outer pulsing glow */}
-          <div className="absolute inset-0 rounded-full"
+          {/* Fond glow diffus derrière la couronne */}
+          <div className="absolute inset-0"
             style={{
-              background: `radial-gradient(circle, rgba(28,111,232,0.18) 0%, rgba(245,179,53,0.08) 50%, transparent 70%)`,
-              animation: 'holoPulse 3s ease-in-out infinite',
+              background: `radial-gradient(circle, rgba(245,179,53,0.15) 0%, rgba(28,111,232,0.1) 30%, rgba(7,29,73,0.06) 55%, transparent 70%)`,
+              filter: 'blur(8px)',
+              animation: 'crownGlow 3s ease-in-out infinite',
             }}
           />
-          {/* Rotating holographic aura */}
-          <div className="absolute inset-[-3px] rounded-full"
+
+          {/* Anneau holographique tournant — aura subtile autour */}
+          <div className="absolute inset-[-2px] rounded-full"
             style={{
-              background: 'conic-gradient(from 0deg, rgba(28,111,232,0.35), transparent 25%, rgba(245,179,53,0.25), transparent 50%, rgba(34,211,238,0.25), transparent 75%, rgba(28,111,232,0.35))',
+              background: 'conic-gradient(from 0deg, rgba(245,179,53,0.3), transparent 20%, rgba(28,111,232,0.2), transparent 40%, rgba(34,211,238,0.2), transparent 60%, rgba(245,179,53,0.25), transparent 80%, rgba(245,179,53,0.3))',
               mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
               maskComposite: 'exclude',
               WebkitMaskComposite: 'xor',
-              padding: '2px',
+              padding: '1.5px',
               borderRadius: '50%',
               animation: 'holoBorderSpin 6s linear infinite',
+              opacity: 0.7,
             }}
           />
-          {/* Main button disc */}
-          <div className="absolute inset-[2px] rounded-full flex items-center justify-center"
-            style={{
-              background: `linear-gradient(135deg, ${C.navyDeep}, ${C.navy})`,
-              border: '1px solid rgba(28,111,232,0.25)',
-              boxShadow: `0 0 25px rgba(28,111,232,0.15), 0 0 50px rgba(11,47,115,0.12), inset 0 1px 0 rgba(255,255,255,0.04)`,
-            }}
-          >
-            <div style={{ animation: 'fleurFloat 3s ease-in-out infinite' }}>
-              <Flower2 size={30} strokeWidth={1.6} className="drop-shadow-[0_0_8px_rgba(245,179,53,0.4)]" style={{ color: C.gold }} />
-            </div>
+
+          {/* Couronne animée — PAS de cercle de fond */}
+          <div className="relative" style={{ animation: 'crownFloat 3s ease-in-out infinite' }}>
+            <Crown size={40} strokeWidth={1.4}
+              className="drop-shadow-[0_0_12px_rgba(245,179,53,0.6)]"
+              style={{ color: C.gold, animation: 'crownShimmer 4s ease-in-out infinite' }}
+            />
           </div>
 
-          {/* Ping ring */}
-          <div className="absolute inset-0 rounded-full animate-ping opacity-15"
-            style={{ border: `1.5px solid ${C.techBlue}` }}
+          {/* Ping subtil — anneau diffus */}
+          <div className="absolute inset-0 rounded-full animate-ping opacity-10"
+            style={{ border: `1.5px solid ${C.gold}` }}
           />
 
           {/* Badge "IA" */}
@@ -533,7 +528,7 @@ export default function SaraWidget() {
           <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full border-2 animate-pulse"
             style={{
               background: `linear-gradient(135deg, ${C.green}, ${C.greenGlow})`,
-              borderColor: C.navyDeep,
+              borderColor: 'transparent',
               boxShadow: `0 0 8px ${C.green}`,
             }}
           />
@@ -595,14 +590,38 @@ export default function SaraWidget() {
           }
         }
 
-        @keyframes fleurFloat {
+        @keyframes crownFloat {
           0%, 100% {
             transform: translateY(0);
-            filter: drop-shadow(0 0 6px rgba(245,179,53,0.35));
           }
           50% {
-            transform: translateY(-2px);
-            filter: drop-shadow(0 0 10px rgba(245,179,53,0.55));
+            transform: translateY(-4px);
+          }
+        }
+
+        @keyframes crownGlow {
+          0%, 100% {
+            opacity: 0.5;
+            transform: scale(1);
+          }
+          50% {
+            opacity: 1;
+            transform: scale(1.08);
+          }
+        }
+
+        @keyframes crownShimmer {
+          0%, 100% {
+            filter: drop-shadow(0 0 6px rgba(245,179,53,0.4));
+            color: #f5b335;
+          }
+          33% {
+            filter: drop-shadow(0 0 14px rgba(245,179,53,0.7)) drop-shadow(0 0 20px rgba(245,179,53,0.3));
+            color: #f7c76e;
+          }
+          66% {
+            filter: drop-shadow(0 0 10px rgba(28,111,232,0.4)) drop-shadow(0 0 16px rgba(34,211,238,0.2));
+            color: #f5b335;
           }
         }
 

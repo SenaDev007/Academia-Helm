@@ -7,35 +7,30 @@ import { Crown } from 'lucide-react';
 
 /**
  * ============================================================================
- * SARAH WIDGET — Holographic AI Assistant
+ * SARAH WIDGET — Holographic AI Assistant (Style Carte du Bénin)
  * ============================================================================
  *
  * Widget flottant holographique avec couronne animée.
+ * Style holographique identique à la carte du Bénin sur /portal :
+ *   - Cyan #00e5ff comme couleur principale
+ *   - Fond rgba(0,18,35,0.97) noir-bleu profond
+ *   - Scanline animée, corner brackets, energy lines
+ *   - Bordure cyan lumineuse, triple box-shadow
+ *
  * "Sarah" = Princesse en hébreu — la couronne est le symbole de royauté.
- *
- * Design : Couleurs Academia Helm (Navy/Gold) + Bleu tech sci-fi
- * Lisibilité : Texte blanc sur fond navy, contraste élevé
- * Effets : Hologramme avec scan lines, bordure lumineuse, particules
- *
- * Palette :
- *   Navy #0b2f73 / Deep #071d49 / Blue #1d4fa5
- *   Gold #f5b335 / Light #f7c76e
- *   Tech blue #1C6FE8 / Cyan glow #22d3ee
- *   Vert en-ligne #22c55e
  */
 
-// ─── BRAND COLORS ─────────────────────────────────────────────────────────
-const C = {
-  navy: '#0b2f73',
-  navyDeep: '#071d49',
-  navyMid: '#103e91',
-  navyBright: '#144798',
-  blue: '#1d4fa5',
+// ─── HOLO COLORS (Carte du Bénin palette) ─────────────────────────────────
+const H = {
+  cyan: '#00e5ff',
+  cyanDim: 'rgba(0,229,255,0.7)',
+  cyanFaint: 'rgba(0,229,255,0.3)',
+  cyanGhost: 'rgba(0,229,255,0.1)',
+  cyanBorder: 'rgba(0,229,255,0.85)',
+  darkBg: 'rgba(0,18,35,0.97)',
+  darkBg95: 'rgba(0,18,35,0.95)',
   gold: '#f5b335',
   goldLight: '#f7c76e',
-  goldDark: '#C9A84C',
-  techBlue: '#1C6FE8',
-  cyanGlow: '#22d3ee',
   green: '#22c55e',
   greenGlow: '#4ade80',
 } as const;
@@ -61,10 +56,6 @@ function generateParticles(count: number): Particle[] {
     speed: Math.random() * 0.4 + 0.1,
   }));
 }
-
-// ─── CROWN ICON ────────────────────────────────────────────────────────
-// Lucide Crown — couronne animée, symbole de Sarah la Princesse
-// Pas de cercle — la couronne flotte librement avec effets holographiques
 
 // ─── SARAH WIDGET COMPONENT ──────────────────────────────────────────────
 
@@ -164,95 +155,95 @@ export default function SaraWidget() {
   return (
     <div className="fixed bottom-6 right-6 z-[1000] font-sans">
       {isOpen ? (
+        // ─── OPEN STATE — Holographic Chat Panel (Carte du Bénin style) ──
         <div
           className={cn(
             'w-[400px] max-h-[600px] flex flex-col overflow-hidden',
             'animate-in slide-in-from-bottom-4 duration-500',
-            'rounded-2xl',
-            // Holographic container — deep navy base
+            'rounded-xl',
             'sara-holo-scroll',
           )}
           style={{
-            background: `linear-gradient(180deg, ${C.navyDeep}ee 0%, ${C.navy}f2 40%, ${C.navyDeep}f5 100%)`,
-            border: '1px solid rgba(28,111,232,0.25)',
-            boxShadow: `
-              0 0 30px rgba(28,111,232,0.12),
-              0 0 60px rgba(11,47,115,0.15),
-              0 0 100px rgba(245,179,53,0.04),
-              inset 0 1px 0 rgba(255,255,255,0.06)
-            `,
+            background: H.darkBg,
+            border: `2px solid ${H.cyanBorder}`,
+            boxShadow: `0 0 40px rgba(0,229,255,0.3), 0 0 80px rgba(0,229,255,0.1), inset 0 0 40px rgba(0,229,255,0.06)`,
             backdropFilter: 'blur(20px)',
           }}
         >
-          {/* ─── ANIMATED HOLOGRAPHIC BORDER ─────────────────── */}
-          <div className="absolute inset-0 rounded-2xl pointer-events-none overflow-hidden">
-            <div className="absolute inset-0 rounded-2xl"
+          {/* ─── OUTER GLOW PULSE ─────────────────────────────── */}
+          <div
+            className="absolute -inset-2 rounded-xl border-2 pointer-events-none"
+            style={{
+              borderColor: H.cyan,
+              animation: 'holo-halo-pulse 2.5s ease-in-out infinite',
+              boxShadow: '0 0 20px rgba(0,229,255,0.25), 0 0 40px rgba(0,229,255,0.1)',
+            }}
+          />
+
+          {/* ─── TOP ENERGY LINE ──────────────────────────────── */}
+          <div
+            className="relative h-[2.5px] mx-3 mt-2 rounded-full shrink-0"
+            style={{
+              background: `linear-gradient(90deg, transparent, ${H.cyan}, transparent)`,
+              animation: 'holo-pulse 1.8s ease-in-out infinite',
+              boxShadow: '0 0 8px rgba(0,229,255,0.5)',
+            }}
+          />
+
+          {/* ─── SCANLINE ──────────────────────────────────────── */}
+          <div className="absolute inset-0 rounded-xl pointer-events-none overflow-hidden z-20">
+            <div
+              className="absolute left-0 right-0 h-[2px]"
               style={{
-                background: 'conic-gradient(from 0deg, transparent, rgba(28,111,232,0.25), transparent, rgba(245,179,53,0.15), transparent, rgba(34,211,238,0.15), transparent)',
-                mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-                maskComposite: 'exclude',
-                WebkitMaskComposite: 'xor',
-                padding: '1.5px',
-                borderRadius: '1rem',
-                animation: 'holoBorderSpin 6s linear infinite',
+                background: `linear-gradient(90deg, transparent, rgba(0,229,255,0.7), transparent)`,
+                boxShadow: '0 0 6px rgba(0,229,255,0.4)',
+                animation: 'holo-scan 3s linear infinite',
+                top: 0,
               }}
             />
           </div>
 
-          {/* ─── SCAN LINE ──────────────────────────────────────── */}
-          <div className="absolute inset-0 rounded-2xl pointer-events-none overflow-hidden z-20">
-            <div className="absolute w-full h-[2px]"
-              style={{
-                background: 'linear-gradient(90deg, transparent, rgba(34,211,238,0.2), rgba(28,111,232,0.1), transparent)',
-                boxShadow: '0 0 20px rgba(34,211,238,0.1)',
-                animation: 'holoScan 4s linear infinite',
-              }}
-            />
-            {/* Faint grid texture */}
-            <div className="absolute inset-0 opacity-[0.015]"
-              style={{
-                backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.5) 2px, rgba(255,255,255,0.5) 3px)',
-              }}
-            />
-          </div>
+          {/* ─── CORNER BRACKETS ──────────────────────────────── */}
+          <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 400 600" fill="none">
+            <path d="M2,16 L2,2 L16,2" stroke={H.cyan} strokeWidth="1.5" opacity="0.6" />
+            <path d="M384,2 L398,2 L398,16" stroke={H.cyan} strokeWidth="1.5" opacity="0.6" />
+            <path d="M2,584 L2,598 L16,598" stroke={H.cyan} strokeWidth="1.5" opacity="0.6" />
+            <path d="M384,598 L398,598 L398,584" stroke={H.cyan} strokeWidth="1.5" opacity="0.6" />
+          </svg>
 
           {/* ─── HEADER ──────────────────────────────────────────── */}
-          <div className="relative p-4 flex items-center justify-between shrink-0 overflow-hidden">
-            <div className="absolute inset-0"
-              style={{ background: `linear-gradient(135deg, ${C.navy}cc, ${C.navyDeep}cc)` }}
-            />
-            {/* Gold accent line */}
+          <div className="relative p-4 flex items-center justify-between shrink-0">
+            {/* Separator line under header */}
             <div className="absolute bottom-0 left-0 right-0 h-[1px]"
-              style={{ background: `linear-gradient(90deg, transparent, ${C.gold}40, transparent)` }}
+              style={{ background: `linear-gradient(90deg, transparent, ${H.cyanFaint}, transparent)` }}
             />
 
             <div className="relative flex items-center gap-3">
               {/* Couronne animée — pas de cercle */}
               <div className="relative flex items-center justify-center" style={{ animation: 'crownFloat 3s ease-in-out infinite' }}>
-                {/* Glow derrière la couronne */}
                 <div className="absolute inset-0"
                   style={{
-                    background: `radial-gradient(circle, rgba(245,179,53,0.2) 0%, rgba(28,111,232,0.08) 40%, transparent 65%)`,
+                    background: `radial-gradient(circle, rgba(0,229,255,0.15) 0%, rgba(245,179,53,0.08) 40%, transparent 65%)`,
                     filter: 'blur(6px)',
                     animation: 'crownGlow 3s ease-in-out infinite',
                   }}
                 />
                 <Crown size={26} strokeWidth={1.8}
-                  className="drop-shadow-[0_0_8px_rgba(245,179,53,0.5)]"
-                  style={{ color: C.gold, animation: 'crownShimmer 4s ease-in-out infinite' }}
+                  className="drop-shadow-[0_0_8px_rgba(0,229,255,0.5)]"
+                  style={{ color: H.gold, animation: 'crownShimmer 4s ease-in-out infinite' }}
                 />
               </div>
 
               <div>
                 <h4 className="font-bold text-sm text-white"
                   style={{
-                    textShadow: '0 0 12px rgba(245,179,53,0.25)',
+                    textShadow: '0 0 6px rgba(0,229,255,0.3)',
                   }}
                 >
                   Sarah
                 </h4>
                 <p className="text-[10px] font-medium tracking-[0.1em] uppercase"
-                  style={{ color: 'rgba(255,255,255,0.45)' }}
+                  style={{ color: H.cyanDim }}
                 >
                   Conseillère Academia Helm
                 </p>
@@ -263,10 +254,10 @@ export default function SaraWidget() {
               {/* GREEN online indicator */}
               <div className="relative flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full animate-pulse"
-                  style={{ backgroundColor: C.green, boxShadow: `0 0 6px ${C.green}` }}
+                  style={{ backgroundColor: H.green, boxShadow: `0 0 6px ${H.green}` }}
                 />
                 <span className="text-[9px] font-semibold"
-                  style={{ color: C.green }}
+                  style={{ color: H.green }}
                 >
                   En ligne
                 </span>
@@ -297,10 +288,10 @@ export default function SaraWidget() {
                     width: `${p.size}px`,
                     height: `${p.size}px`,
                     opacity: p.opacity,
-                    background: p.id % 3 === 0 ? C.gold : C.cyanGlow,
+                    background: p.id % 3 === 0 ? H.gold : H.cyan,
                     animation: `holoFloat ${4 + p.speed * 8}s ease-in-out infinite`,
                     animationDelay: `${p.id * 0.15}s`,
-                    boxShadow: `0 0 ${p.size * 2}px ${p.id % 3 === 0 ? 'rgba(245,179,53,0.2)' : 'rgba(34,211,238,0.2)'}`,
+                    boxShadow: `0 0 ${p.size * 2}px ${p.id % 3 === 0 ? 'rgba(245,179,53,0.2)' : 'rgba(0,229,255,0.2)'}`,
                   }}
                 />
               ))}
@@ -310,19 +301,19 @@ export default function SaraWidget() {
               <div key={i} className={cn('flex', m.role === 'user' ? 'justify-end' : 'justify-start', 'relative z-10')}>
                 <div
                   className={cn(
-                    'max-w-[85%] p-3 rounded-2xl text-[13px] leading-relaxed',
+                    'max-w-[85%] p-3 rounded-xl text-[13px] leading-relaxed',
                     m.role === 'user' ? 'rounded-tr-sm' : 'rounded-tl-sm',
                   )}
                   style={m.role === 'user' ? {
-                    background: `linear-gradient(135deg, rgba(28,111,232,0.2), rgba(11,47,115,0.3))`,
-                    border: '1px solid rgba(28,111,232,0.3)',
+                    background: `linear-gradient(135deg, rgba(0,229,255,0.12), rgba(0,18,35,0.6))`,
+                    border: `1px solid rgba(0,229,255,0.3)`,
                     color: '#ffffff',
-                    boxShadow: '0 0 12px rgba(28,111,232,0.06)',
+                    boxShadow: '0 0 12px rgba(0,229,255,0.08)',
                   } : {
-                    background: `linear-gradient(135deg, rgba(11,47,115,0.35), rgba(7,29,73,0.45))`,
-                    border: '1px solid rgba(245,179,53,0.12)',
+                    background: `linear-gradient(135deg, rgba(0,18,35,0.6), rgba(0,18,35,0.8))`,
+                    border: `1px solid ${H.cyanFaint}`,
                     color: '#ffffff',
-                    boxShadow: '0 0 12px rgba(245,179,53,0.03)',
+                    boxShadow: '0 0 12px rgba(0,229,255,0.04)',
                   }}
                 >
                   {m.content}
@@ -334,17 +325,17 @@ export default function SaraWidget() {
             {isTyping && streamingText && (
               <div className="flex justify-start relative z-10">
                 <div
-                  className="max-w-[85%] p-3 rounded-2xl rounded-tl-sm text-[13px] leading-relaxed"
+                  className="max-w-[85%] p-3 rounded-xl rounded-tl-sm text-[13px] leading-relaxed"
                   style={{
-                    background: `linear-gradient(135deg, rgba(11,47,115,0.35), rgba(7,29,73,0.45))`,
-                    border: '1px solid rgba(245,179,53,0.12)',
+                    background: `linear-gradient(135deg, rgba(0,18,35,0.6), rgba(0,18,35,0.8))`,
+                    border: `1px solid ${H.cyanFaint}`,
                     color: '#ffffff',
-                    boxShadow: '0 0 12px rgba(245,179,53,0.03)',
+                    boxShadow: '0 0 12px rgba(0,229,255,0.04)',
                   }}
                 >
                   {streamingText}
                   <span className="inline-block w-[2px] h-4 ml-0.5 animate-pulse align-middle"
-                    style={{ backgroundColor: C.gold, boxShadow: `0 0 6px ${C.gold}` }}
+                    style={{ backgroundColor: H.cyan, boxShadow: `0 0 6px ${H.cyan}` }}
                   />
                 </div>
               </div>
@@ -354,29 +345,29 @@ export default function SaraWidget() {
             {isTyping && !streamingText && (
               <div className="flex justify-start relative z-10">
                 <div
-                  className="p-3 rounded-2xl rounded-tl-sm flex gap-2 items-center"
+                  className="p-3 rounded-xl rounded-tl-sm flex gap-2 items-center"
                   style={{
-                    background: `linear-gradient(135deg, rgba(11,47,115,0.35), rgba(7,29,73,0.45))`,
-                    border: '1px solid rgba(245,179,53,0.12)',
+                    background: `linear-gradient(135deg, rgba(0,18,35,0.6), rgba(0,18,35,0.8))`,
+                    border: `1px solid ${H.cyanFaint}`,
                   }}
                 >
                   <span className="w-2 h-2 rounded-full animate-bounce [animation-delay:-0.3s]"
-                    style={{ backgroundColor: C.techBlue, boxShadow: `0 0 4px ${C.techBlue}` }} />
+                    style={{ backgroundColor: H.cyan, boxShadow: `0 0 4px ${H.cyan}` }} />
                   <span className="w-2 h-2 rounded-full animate-bounce [animation-delay:-0.15s]"
-                    style={{ backgroundColor: C.gold, boxShadow: `0 0 4px ${C.gold}` }} />
+                    style={{ backgroundColor: H.gold, boxShadow: `0 0 4px ${H.gold}` }} />
                   <span className="w-2 h-2 rounded-full animate-bounce"
-                    style={{ backgroundColor: C.cyanGlow, boxShadow: `0 0 4px ${C.cyanGlow}` }} />
+                    style={{ backgroundColor: H.cyan, boxShadow: `0 0 4px ${H.cyan}` }} />
                 </div>
               </div>
             )}
             <div ref={messagesEndRef} />
           </div>
 
-          {/* ─── QUICK SUGGESTIONS ── VISIBLE, WHITE TEXT ──────────── */}
+          {/* ─── QUICK SUGGESTIONS ── CYAN STYLE ──────────── */}
           {showSuggestions && messages.length <= 1 && (
             <div className="px-4 pb-2 shrink-0 relative">
               <p className="text-[10px] mb-2 font-semibold uppercase tracking-[0.12em]"
-                style={{ color: 'rgba(255,255,255,0.4)' }}
+                style={{ color: H.cyanFaint }}
               >
                 Questions fréquentes
               </p>
@@ -387,19 +378,21 @@ export default function SaraWidget() {
                     onClick={() => handleSend(suggestion)}
                     className="text-[11px] px-3 py-1.5 rounded-full transition-all duration-300 cursor-pointer"
                     style={{
-                      background: 'rgba(255,255,255,0.08)',
-                      border: '1px solid rgba(255,255,255,0.15)',
-                      color: '#ffffff',
+                      background: H.cyanGhost,
+                      border: `1px solid ${H.cyanFaint}`,
+                      color: H.cyanDim,
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'rgba(255,255,255,0.15)';
-                      e.currentTarget.style.borderColor = 'rgba(28,111,232,0.5)';
-                      e.currentTarget.style.boxShadow = '0 0 12px rgba(28,111,232,0.2)';
+                      e.currentTarget.style.background = 'rgba(0,229,255,0.2)';
+                      e.currentTarget.style.borderColor = H.cyanDim;
+                      e.currentTarget.style.boxShadow = '0 0 12px rgba(0,229,255,0.25)';
+                      e.currentTarget.style.color = '#ffffff';
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
-                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)';
+                      e.currentTarget.style.background = H.cyanGhost;
+                      e.currentTarget.style.borderColor = H.cyanFaint;
                       e.currentTarget.style.boxShadow = 'none';
+                      e.currentTarget.style.color = H.cyanDim;
                     }}
                   >
                     {suggestion}
@@ -409,7 +402,12 @@ export default function SaraWidget() {
             </div>
           )}
 
-          {/* ─── INPUT ── WHITE BACKGROUND, HOLOGRAPHIC BORDER ─────── */}
+          {/* ─── SEPARATOR ──────────────────────────────────────── */}
+          <div className="mx-4 h-[1px] shrink-0"
+            style={{ background: `linear-gradient(90deg, transparent, ${H.cyanFaint}, transparent)` }}
+          />
+
+          {/* ─── INPUT ── WHITE BACKGROUND, CYAN HOLOGRAPHIC BORDER ── */}
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -417,11 +415,6 @@ export default function SaraWidget() {
             }}
             className="p-3 shrink-0 relative"
           >
-            {/* Holographic separator */}
-            <div className="absolute top-0 left-4 right-4 h-[1px]"
-              style={{ background: `linear-gradient(90deg, transparent, ${C.gold}25, ${C.techBlue}20, transparent)` }}
-            />
-
             <div className="relative">
               <input
                 ref={inputRef}
@@ -433,32 +426,32 @@ export default function SaraWidget() {
                 className="w-full py-2.5 pl-4 pr-12 text-sm rounded-full outline-none transition-all duration-300"
                 style={{
                   background: '#ffffff',
-                  border: '1px solid rgba(28,111,232,0.25)',
-                  color: C.navyDeep,
+                  border: `1px solid ${H.cyanFaint}`,
+                  color: '#001223',
                   boxShadow: '0 0 0 0 transparent',
                 }}
                 onFocus={(e) => {
-                  e.currentTarget.style.borderColor = `${C.techBlue}60`;
-                  e.currentTarget.style.boxShadow = `0 0 20px rgba(28,111,232,0.15), 0 0 40px rgba(34,211,238,0.08)`;
+                  e.currentTarget.style.borderColor = H.cyan;
+                  e.currentTarget.style.boxShadow = `0 0 20px rgba(0,229,255,0.2), 0 0 40px rgba(0,229,255,0.08)`;
                 }}
                 onBlur={(e) => {
-                  e.currentTarget.style.borderColor = 'rgba(28,111,232,0.25)';
+                  e.currentTarget.style.borderColor = H.cyanFaint;
                   e.currentTarget.style.boxShadow = '0 0 0 0 transparent';
                 }}
                 disabled={isTyping}
               />
-              <style>{`input::placeholder { color: rgba(11,47,115,0.35) !important; }`}</style>
+              <style>{`input::placeholder { color: rgba(0,18,35,0.35) !important; }`}</style>
               <button
                 type="submit"
                 disabled={!input.trim() || isTyping}
                 className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300"
                 style={input.trim() && !isTyping ? {
-                  background: `linear-gradient(135deg, ${C.techBlue}, ${C.navyBright})`,
+                  background: `linear-gradient(135deg, ${H.cyan}, #009bb8)`,
                   color: '#fff',
-                  boxShadow: `0 0 12px rgba(28,111,232,0.3)`,
+                  boxShadow: `0 0 12px rgba(0,229,255,0.4)`,
                 } : {
-                  background: 'rgba(28,111,232,0.1)',
-                  color: 'rgba(28,111,232,0.3)',
+                  background: 'rgba(0,229,255,0.1)',
+                  color: 'rgba(0,229,255,0.3)',
                   cursor: 'not-allowed',
                 }}
               >
@@ -468,6 +461,21 @@ export default function SaraWidget() {
               </button>
             </div>
           </form>
+
+          {/* ─── BOTTOM ENERGY LINE ──────────────────────────── */}
+          <div
+            className="h-[2px] mx-3 mb-2 rounded-full shrink-0"
+            style={{
+              background: `linear-gradient(90deg, transparent, ${H.cyan}, transparent)`,
+              animation: 'holo-pulse 2.2s ease-in-out infinite',
+              boxShadow: '0 0 6px rgba(0,229,255,0.3)',
+            }}
+          />
+
+          {/* ─── ACADEMIA HELM LABEL ─────────────────────────── */}
+          <p className="text-center text-[7px] tracking-[0.15em] pb-2" style={{ color: 'rgba(0,229,255,0.2)' }}>
+            ACADEMIA HELM
+          </p>
         </div>
       ) : (
         // ─── CLOSED STATE — Couronne animée flottante (pas de cercle) ──
@@ -480,7 +488,7 @@ export default function SaraWidget() {
           {/* Fond glow diffus derrière la couronne */}
           <div className="absolute inset-0"
             style={{
-              background: `radial-gradient(circle, rgba(245,179,53,0.15) 0%, rgba(28,111,232,0.1) 30%, rgba(7,29,73,0.06) 55%, transparent 70%)`,
+              background: `radial-gradient(circle, rgba(0,229,255,0.12) 0%, rgba(245,179,53,0.06) 35%, transparent 65%)`,
               filter: 'blur(8px)',
               animation: 'crownGlow 3s ease-in-out infinite',
             }}
@@ -489,7 +497,7 @@ export default function SaraWidget() {
           {/* Anneau holographique tournant — aura subtile autour */}
           <div className="absolute inset-[-2px] rounded-full"
             style={{
-              background: 'conic-gradient(from 0deg, rgba(245,179,53,0.3), transparent 20%, rgba(28,111,232,0.2), transparent 40%, rgba(34,211,238,0.2), transparent 60%, rgba(245,179,53,0.25), transparent 80%, rgba(245,179,53,0.3))',
+              background: 'conic-gradient(from 0deg, rgba(0,229,255,0.35), transparent 20%, rgba(245,179,53,0.2), transparent 40%, rgba(0,229,255,0.25), transparent 60%, rgba(245,179,53,0.15), transparent 80%, rgba(0,229,255,0.35))',
               mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
               maskComposite: 'exclude',
               WebkitMaskComposite: 'xor',
@@ -503,22 +511,22 @@ export default function SaraWidget() {
           {/* Couronne animée — PAS de cercle de fond */}
           <div className="relative" style={{ animation: 'crownFloat 3s ease-in-out infinite' }}>
             <Crown size={40} strokeWidth={1.4}
-              className="drop-shadow-[0_0_12px_rgba(245,179,53,0.6)]"
-              style={{ color: C.gold, animation: 'crownShimmer 4s ease-in-out infinite' }}
+              className="drop-shadow-[0_0_12px_rgba(0,229,255,0.5)]"
+              style={{ color: H.gold, animation: 'crownShimmer 4s ease-in-out infinite' }}
             />
           </div>
 
           {/* Ping subtil — anneau diffus */}
           <div className="absolute inset-0 rounded-full animate-ping opacity-10"
-            style={{ border: `1.5px solid ${C.gold}` }}
+            style={{ border: `1.5px solid ${H.cyan}` }}
           />
 
           {/* Badge "IA" */}
           <div className="absolute -top-2 left-1/2 -translate-x-1/2 text-white text-[9px] font-bold px-2.5 py-0.5 rounded-full"
             style={{
-              background: `linear-gradient(135deg, ${C.techBlue}, ${C.navyBright})`,
+              background: `linear-gradient(135deg, ${H.cyan}, #009bb8)`,
               border: '1px solid rgba(255,255,255,0.15)',
-              boxShadow: `0 0 8px rgba(28,111,232,0.25)`,
+              boxShadow: `0 0 8px rgba(0,229,255,0.3)`,
             }}
           >
             IA
@@ -527,19 +535,19 @@ export default function SaraWidget() {
           {/* Green notification dot */}
           <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full border-2 animate-pulse"
             style={{
-              background: `linear-gradient(135deg, ${C.green}, ${C.greenGlow})`,
+              background: `linear-gradient(135deg, ${H.green}, ${H.greenGlow})`,
               borderColor: 'transparent',
-              boxShadow: `0 0 8px ${C.green}`,
+              boxShadow: `0 0 8px ${H.green}`,
             }}
           />
 
           {/* Hover tooltip */}
           <div className="absolute right-full mr-3 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none px-3 py-2 rounded-lg text-xs font-semibold"
             style={{
-              background: `${C.navyDeep}ee`,
-              border: '1px solid rgba(28,111,232,0.2)',
+              background: H.darkBg,
+              border: `1px solid ${H.cyanFaint}`,
               color: '#ffffff',
-              boxShadow: '0 0 15px rgba(28,111,232,0.08)',
+              boxShadow: `0 0 15px rgba(0,229,255,0.1)`,
               backdropFilter: 'blur(10px)',
             }}
           >
@@ -550,11 +558,24 @@ export default function SaraWidget() {
 
       {/* ─── ANIMATIONS ──────────────────────────────────────────────────── */}
       <style jsx global>{`
-        @keyframes holoScan {
-          0% { top: -2px; opacity: 1; }
-          100% { top: 100%; opacity: 0.3; }
+        /* ── Carte du Bénin keyframes ── */
+        @keyframes holo-pulse {
+          0%, 100% { opacity: 0.9; }
+          50% { opacity: 0.5; }
         }
 
+        @keyframes holo-scan {
+          0% { top: 0; opacity: 0.7; }
+          50% { opacity: 0.25; }
+          100% { top: 100%; opacity: 0.7; }
+        }
+
+        @keyframes holo-halo-pulse {
+          0%, 100% { opacity: 0.7; transform: scale(1); }
+          50% { opacity: 0.3; transform: scale(1.02); }
+        }
+
+        /* ── Floating particles ── */
         @keyframes holoFloat {
           0%, 100% {
             transform: translateY(0) translateX(0);
@@ -574,22 +595,13 @@ export default function SaraWidget() {
           }
         }
 
+        /* ── Rotating border ── */
         @keyframes holoBorderSpin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
         }
 
-        @keyframes holoPulse {
-          0%, 100% {
-            opacity: 0.6;
-            transform: scale(1);
-          }
-          50% {
-            opacity: 1;
-            transform: scale(1.05);
-          }
-        }
-
+        /* ── Crown animations ── */
         @keyframes crownFloat {
           0%, 100% {
             transform: translateY(0);
@@ -612,15 +624,15 @@ export default function SaraWidget() {
 
         @keyframes crownShimmer {
           0%, 100% {
-            filter: drop-shadow(0 0 6px rgba(245,179,53,0.4));
+            filter: drop-shadow(0 0 6px rgba(0,229,255,0.4));
             color: #f5b335;
           }
           33% {
-            filter: drop-shadow(0 0 14px rgba(245,179,53,0.7)) drop-shadow(0 0 20px rgba(245,179,53,0.3));
+            filter: drop-shadow(0 0 14px rgba(0,229,255,0.6)) drop-shadow(0 0 20px rgba(245,179,53,0.3));
             color: #f7c76e;
           }
           66% {
-            filter: drop-shadow(0 0 10px rgba(28,111,232,0.4)) drop-shadow(0 0 16px rgba(34,211,238,0.2));
+            filter: drop-shadow(0 0 10px rgba(245,179,53,0.4)) drop-shadow(0 0 16px rgba(0,229,255,0.2));
             color: #f5b335;
           }
         }
@@ -633,11 +645,11 @@ export default function SaraWidget() {
           background: transparent;
         }
         .sara-holo-scroll::-webkit-scrollbar-thumb {
-          background: rgba(28,111,232,0.15);
+          background: rgba(0,229,255,0.15);
           border-radius: 4px;
         }
         .sara-holo-scroll::-webkit-scrollbar-thumb:hover {
-          background: rgba(28,111,232,0.3);
+          background: rgba(0,229,255,0.3);
         }
       `}</style>
     </div>

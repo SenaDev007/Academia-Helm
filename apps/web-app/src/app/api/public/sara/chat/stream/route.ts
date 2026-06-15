@@ -35,20 +35,24 @@ function sanitizeMessages(messages: unknown): ChatMessage[] {
 }
 
 function normalizeSaraOutput(raw: string): string {
-  let text = raw.replace(/\s+/g, ' ').trim();
+  let text = String(raw || '').trim();
   if (!text) return text;
 
+  // Remplacer les références à d'autres IA
   text = text
     .replace(/\b(ChatGPT|OpenAI|Gemini|Google|Microsoft|Bard)\b/gi, 'SARA')
-    .replace(/\bAnthropic\b/gi, 'notre IA');
+    .replace(/\bAnthropic\b/gi, 'notre IA')
+    .replace(/\s+/g, ' ')
+    .trim();
 
+  // Limiter à 6 phrases maximum (au lieu de 4 — permet un vrai raisonnement)
   const parts = text.split(/(?<=[.!?])\s+/).filter(Boolean);
-  const limited = parts.slice(0, 4).join(' ').trim();
+  const limited = parts.slice(0, 6).join(' ').trim();
   text = limited || text;
 
-  if (!/[?]\s*$/.test(text)) {
-    if (!/[.!?]\s*$/.test(text)) text += '.';
-    text += ' Souhaitez-vous que je vous propose le plan le plus adapté à votre effectif ?';
+  // Ne PAS ajouter de question figée — laisser le modèle terminer naturellement
+  if (!/[.!?]\s*$/.test(text)) {
+    text += '.';
   }
 
   return text.trim();
@@ -105,7 +109,10 @@ function buildPolicyPrompt(outputLanguage: 'FR' | 'EN'): string {
     `POLICY (non négociable)\n` +
     `- You are SARA for Academia Helm only. Refuse topics unrelated to Academia Helm.\n` +
     `- Never invent pricing/offers. Use only the official Helm pricing grid.\n` +
-    `- Maximum 4 sentences. End with exactly ONE question.\n` +
+    `- Reason step-by-step before answering. Think about what the prospect REALLY needs.\n` +
+    `- Be conversational, warm, natural — like a real human advisor, not a script.\n` +
+    `- Adapt each response to the specific question asked. Never repeat the same generic answer.\n` +
+    `- End with a relevant follow-up question (not always the same one).\n` +
     `- ${langRule}\n`
   );
 }
@@ -191,7 +198,11 @@ export async function POST(request: NextRequest) {
                 `---\n` +
                 `${policy}\n` +
                 `---\n` +
-                `RÈGLE DE SORTIE : Réponds directement au prospect (max 4 phrases), puis termine par UNE question.\n` +
+                `INSTRUCTIONS DE RÉPONSE :\n` +
+                `- Analyse la question du prospect et réfléchis avant de répondre.\n` +
+                `- Adapte ta réponse au contexte spécifique de chaque question.\n` +
+                `- Sois naturel, chaleureux et persuasif — pas robotique.\n` +
+                `- Termine par une question pertinente et différente à chaque fois.\n` +
                 `---`,
             },
             ...messages,
@@ -206,8 +217,8 @@ export async function POST(request: NextRequest) {
             body: JSON.stringify({
               model,
               messages: chatMessages,
-              max_tokens: 600,
-              temperature: 0.6,
+              max_tokens: 800,
+              temperature: 0.85,
               stream: true,
             }),
             signal: AbortSignal.timeout(60000),
@@ -275,7 +286,11 @@ export async function POST(request: NextRequest) {
                 `---\n` +
                 `${policy}\n` +
                 `---\n` +
-                `RÈGLE DE SORTIE : Réponds directement au prospect (max 4 phrases), puis termine par UNE question.\n` +
+                `INSTRUCTIONS DE RÉPONSE :\n` +
+                `- Analyse la question du prospect et réfléchis avant de répondre.\n` +
+                `- Adapte ta réponse au contexte spécifique de chaque question.\n` +
+                `- Sois naturel, chaleureux et persuasif — pas robotique.\n` +
+                `- Termine par une question pertinente et différente à chaque fois.\n` +
                 `---`,
             },
             ...messages,
@@ -290,8 +305,8 @@ export async function POST(request: NextRequest) {
             },
             body: JSON.stringify({
               model,
-              max_tokens: 600,
-              temperature: 0.6,
+              max_tokens: 800,
+              temperature: 0.85,
               stream: true,
               messages: anthropicMessages,
             }),

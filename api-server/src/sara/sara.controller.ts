@@ -7,13 +7,13 @@ export class SaraController {
   constructor(private readonly saraService: SaraService) {}
 
   /**
-   * Landing page SARA query (public, Closer Senior mode)
+   * Landing page SARA query (public, Closer Senior #1 mode)
    * Used by the SaraWidget on the landing page
    */
   @Public()
   @Post('query')
   async query(@Body() body: { query: string; visitorId?: string; messages?: Array<{ role: string; content: string }> }) {
-    return this.saraService.handleVisitorQuery(body.query, body.visitorId);
+    return this.saraService.handleVisitorQuery(body.query, body.visitorId, body.messages);
   }
 
   /**

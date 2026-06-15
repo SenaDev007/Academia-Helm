@@ -8,17 +8,17 @@ export class SaraController {
   constructor(private readonly saraService: SaraService) {}
 
   /**
-   * Landing page — public, no auth
+   * Landing page — public, Closer Senior #1 mode
    * POST /sara/query
    */
   @Public()
   @Post('query')
-  async query(@Body() body: { query: string; visitorId?: string }) {
-    return this.saraService.handleVisitorQuery(body.query, body.visitorId);
+  async query(@Body() body: { query: string; visitorId?: string; messages?: Array<{ role: string; content: string }> }) {
+    return this.saraService.handleVisitorQuery(body.query, body.visitorId, body.messages);
   }
 
   /**
-   * In-app chat — authenticated, context-aware
+   * In-app chat — authenticated, context-aware Guide + Stratégique mode
    * POST /sara/chat
    */
   @UseGuards(JwtAuthGuard)
@@ -44,5 +44,17 @@ export class SaraController {
       req.user.id,
       sessionId,
     );
+  }
+
+  /**
+   * Get contextual suggestions based on user role and current module
+   * POST /sara/suggestions
+   */
+  @Public()
+  @Post('suggestions')
+  async getSuggestions(
+    @Body() body: { userRole?: string; currentModule?: string },
+  ) {
+    return this.saraService.getContextualSuggestions(body.userRole, body.currentModule);
   }
 }

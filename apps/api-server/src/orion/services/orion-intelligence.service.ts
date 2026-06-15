@@ -9,16 +9,16 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '../database/prisma.service';
-import { OpenRouterService } from '../common/services/openrouter.service';
-import { AIGateway } from '../ai/gateway/ai-gateway';
+import { PrismaService } from '../../database/prisma.service';
+import { OpenRouterService } from '../../common/services/openrouter.service';
+import { AIGateway } from '../../ai/gateway/ai-gateway';
 import {
   OrionDomain,
   ORIONScore,
   ORIONAlertItem,
   ORIONRecommendation,
   RiskLevel,
-} from '../ai/types/ai.types';
+} from '../../ai/types/ai.types';
 
 @Injectable()
 export class OrionIntelligenceService {

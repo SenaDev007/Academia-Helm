@@ -20,6 +20,8 @@ const nextConfig = {
   
   // ✅ Optimisation des images — PageSpeed-optimized
   images: {
+    // ✅ Vercel gère l'optimisation via son CDN — pas besoin de double traitement
+    unoptimized: isVercel ? true : false,
     formats: ['image/avif', 'image/webp'],
     // Tailles optimisées pour réduire le poids sans sacrifier la qualité
     deviceSizes: [640, 828, 1080, 1200, 1920],

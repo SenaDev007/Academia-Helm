@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { OpenRouterService } from '../common/services/openrouter.service';
+import { AIGateway } from '../ai/gateway/ai-gateway';
 
 /**
  * ============================================================================
@@ -9,6 +10,8 @@ import { OpenRouterService } from '../common/services/openrouter.service';
  *
  * ATLAS est le bras opérationnel de la plateforme. Là où ORION analyse
  * et SARA dialogue, ATLAS agit.
+ *
+ * Modèle : z-ai/glm-5.1 via OpenRouter
  *
  * Missions :
  *   1. Assistance quotidienne : aide à la gestion de l'établissement
@@ -23,6 +26,7 @@ export class AtlasService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly openRouter: OpenRouterService,
+    private readonly aiGateway: AIGateway,
   ) {}
 
   /**
@@ -81,7 +85,7 @@ MISSIONS
    - Notifications : SMS, WhatsApp, email, push
    - Workflows : campagne recouvrement, génération bulletins, rapport mensuel, inscription élève
    - Exports : PDF, Excel, statistiques
-   - ⚠️ Toute action critique nécessite confirmation humaine avant exécution
+   - Toute action critique nécessite confirmation humaine avant exécution
 
 3. NAVIGATION : Guider l'utilisateur dans l'interface Academia Helm
    - Où trouver une fonctionnalité
@@ -173,11 +177,24 @@ RÈGLES STRICTES
         metadata: {
           model: response.model,
           isPlaceholder: response.isPlaceholder,
+          reasoningTokens: response.usage?.reasoningTokens,
         } as any,
       },
     });
 
     return savedResponse;
+  }
+
+  /**
+   * Envoie un message à ATLAS via l'AI Gateway (mode avancé avec contexte MCP)
+   */
+  async sendMessageViaGateway(tenantId: string, userId: string, message: string) {
+    return this.aiGateway.processRequest({
+      agent: 'ATLAS',
+      userId,
+      tenantId,
+      message,
+    });
   }
 
   /**

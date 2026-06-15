@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OpenRouterService } from '../common/services/openrouter.service';
+import { AIGateway } from '../ai/gateway/ai-gateway';
 
 /**
  * ============================================================================
@@ -19,12 +20,17 @@ import { OpenRouterService } from '../common/services/openrouter.service';
  *   - Guide Utilisateur : navigation, onboarding, prise en main
  *   - Assistante Stratégique : réponses contextualisées par rôle
  *   - Pont vers ORION (analyse) et ATLAS (exécution)
+ *
+ * Modèle : z-ai/glm-5.1 via OpenRouter
  */
 @Injectable()
 export class SaraService {
   private readonly logger = new Logger(SaraService.name);
 
-  constructor(private readonly openRouter: OpenRouterService) {}
+  constructor(
+    private readonly openRouter: OpenRouterService,
+    private readonly aiGateway: AIGateway,
+  ) {}
 
   // ─── LANDING PAGE SARA (Public, Closer Senior #1) ────────────────────────
 
@@ -57,7 +63,7 @@ PRODUIT : ACADEMIA HELM
 Academia Helm est un ERP éducatif SaaS multi-tenant, offline-first, mobile-first.
 - CIBLE : Écoles privées (maternelle, primaire, secondaire) — Bénin et Afrique de l'Ouest
 - ÉDITEUR : YEHI OR Tech
-- ARCHITECTURE : Cloud (Next.js + NestJS + PostgreSQL/Neon + Supabase) + Mobile (Flutter) + IA (3 agents)
+- ARCHITECTURE : Cloud (Next.js + NestJS + PostgreSQL/Neon + Supabase) + Mobile (Flutter) + IA (3 agents via GLM 5.1)
 
 ═══════════════════════════════════════════════════════════
 GRILLE TARIFAIRE
@@ -82,7 +88,7 @@ PHILOSOPHIE : Tous les plans incluent les 9 modules. Aucun module verrouillé. "
 9. Modules Complémentaires : Federis (Patronat), EducMaster, exports, intégrations
 
 ═══════════════════════════════════════════════════════════
-3 AGENTS IA INCLUS
+3 AGENTS IA INCLUS (POWERED BY GLM 5.1)
 ═══════════════════════════════════════════════════════════
 - ORION : L'Analyste — observe, analyse, prédit, recommande (lecture seule, institutionnel)
 - ATLAS : L'Exécutant — génère documents, automatise workflows, notifications
@@ -91,16 +97,16 @@ PHILOSOPHIE : Tous les plans incluent les 9 modules. Aucun module verrouillé. "
 ═══════════════════════════════════════════════════════════
 AVANTAGES CONCURRENTIELS (À METTRE EN AVANT)
 ═══════════════════════════════════════════════════════════
-✅ Multi-tenant : Gérez plusieurs campus depuis une seule plateforme
-✅ Offline-first : Fonctionne même sans Internet, synchronisation automatique
-✅ Mobile-first : Application Flutter native (Android + iOS)
-✅ 3 Agents IA intégrés : ORION, ATLAS, SARA
-✅ 9 modules inclus quel que soit le plan
-✅ Export Educmaster natif (conformité ministérielle Bénin)
-✅ Sécurité bancaire : chiffrement, RBAC, audit logs
-✅ Support dédié : assistance réactive, formation incluse
-✅ Déploiement rapide : opérationnel en 48h
-✅ Rapport qualité-prix imbattable sur le marché
+- Multi-tenant : Gérez plusieurs campus depuis une seule plateforme
+- Offline-first : Fonctionne même sans Internet, synchronisation automatique
+- Mobile-first : Application Flutter native (Android + iOS)
+- 3 Agents IA intégrés : ORION, ATLAS, SARA (GLM 5.1 avec raisonnement)
+- 9 modules inclus quel que soit le plan
+- Export Educmaster natif (conformité ministérielle Bénin)
+- Sécurité bancaire : chiffrement, RBAC, audit logs
+- Support dédié : assistance réactive, formation incluse
+- Déploiement rapide : opérationnel en 48h
+- Rapport qualité-prix imbattable sur le marché
 
 ═══════════════════════════════════════════════════════════
 TECHNIQUES DE CLOSING (UTILISE-LES ACTIVEMENT)
@@ -154,6 +160,7 @@ RÈGLES STRICTES
       visitorId,
       timestamp: new Date(),
       isAiEnhanced: !result.isPlaceholder,
+      model: result.model,
     };
   }
 
@@ -271,7 +278,26 @@ RÈGLES STRICTES
       reply: result.content,
       isAiEnhanced: !result.isPlaceholder,
       timestamp: new Date(),
+      model: result.model,
     };
+  }
+
+  /**
+   * Répond via l'AI Gateway (mode avancé avec contexte MCP et outils)
+   */
+  async handleInAppQueryViaGateway(
+    query: string,
+    userId: string,
+    tenantId: string,
+    schoolId?: string,
+  ) {
+    return this.aiGateway.processRequest({
+      agent: 'SARA',
+      userId,
+      tenantId,
+      schoolId: schoolId || tenantId,
+      message: query,
+    });
   }
 
   /**

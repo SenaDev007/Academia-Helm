@@ -1,28 +1,48 @@
 ---
 Task ID: 1
 Agent: Main Agent
-Task: Review and perfect AI agents (Orion, Atlas, Sara) implementation in Academia Helm
+Task: Intégrer l'infrastructure IA et les 3 agents (Orion, Atlas, Sara) avec GLM 5.1 via OpenRouter
 
 Work Log:
-- Explored entire project structure to find all AI agent related files
-- Identified 2 api-server versions: primary (api-server/) and enhanced (apps/api-server/)
-- Found critical bug: orion-intelligence.service.ts had wrong relative import paths (../ instead of ../../)
-- Fixed import paths in apps/api-server/src/orion/services/orion-intelligence.service.ts
-- Fixed Vercel OOM build error by increasing heap from 3072MB to 6144MB
-- Enhanced SARA in primary api-server with comprehensive Closer Senior #1 system prompt
-- Enhanced SARA in apps/api-server with same professional closer capabilities
-- Enhanced ATLAS in primary api-server with detailed execution engine prompt
-- Enhanced AI Gateway prompts for all 3 agents with structured sections
-- Enhanced SaraWidget on web app landing page with conversation history, quick suggestions, better UX
-- Updated Sara API client to support conversation history and in-app guide endpoint
-- Removed redundant PrismaService from AtlasModule (it's global via DatabaseModule)
+- Explored full codebase structure (api-server, apps/api-server, web-app)
+- Identified that AI infrastructure (AIGateway, MCP, ToolRegistry) only existed in apps/api-server/ and needed migration to main api-server/
+- Created /api-server/src/ai/ module with:
+  - ai.types.ts — Types partagés (AIRequest, AIResponse, MCPContext, ToolDefinition, etc.)
+  - ai-gateway.ts — Gateway central (routing, rate limiting, audit, security)
+  - mcp-context-composer.ts — Model Context Protocol (school, user, permission, session contexts)
+  - tool-registry.ts — Registre central des outils IA (RBAC, versioning)
+  - tool-definitions.ts — Outils concrets (Student, Finance, HR, Orion, Pedagogy, Atlas, Knowledge)
+  - ai.controller.ts — API Routes unifiées (/ai/chat, /ai/orion, /ai/sara, /ai/atlas)
+  - ai.module.ts — NestJS module avec auto-registration des tools
+- Updated OpenRouterService for GLM 5.1:
+  - Default model changed from z-ai/glm-4.5-air:free to z-ai/glm-5.1
+  - Added reasoning parameter support (OpenRouter reasoning API)
+  - Added chatWithReasoning() method for Orion predictions
+  - Added streaming reasoning support (reasoning_content delta)
+  - Added reasoningTokens tracking in usage
+  - Increased timeout to 60s for reasoning calls
+- Created OrionIntelligenceService in main api-server:
+  - Correct import paths: ../../database/prisma.service, ../../common/services/openrouter.service
+  - Fixed the original MODULE_NOT_FOUND bug
+  - Added predictWithReasoning() using GLM 5.1 reasoning parameter
+  - OrionIntelligenceController with /orion/intelligence/score, /predict, /analyze
+- Updated Orion Module to import AIModule
+- Updated Atlas Service and Module:
+  - Added AIGateway dependency
+  - Added sendMessageViaGateway() method
+  - Added /atlas/gateway route
+- Updated Sara Service and Module:
+  - Added AIGateway dependency
+  - Added handleInAppQueryViaGateway() method
+  - Added /sara/gateway route
+  - Updated system prompt to mention GLM 5.1
+- Updated app.module.ts to include AIModule
+- Updated .env.example with GLM 5.1 model reference
 
 Stage Summary:
-- Fixed critical deployment crash (wrong import paths causing MODULE_NOT_FOUND)
-- Fixed Vercel OOM by increasing Node.js heap from 3GB to 6GB
-- SARA now has comprehensive Closer Senior #1 prompts with closing techniques, pricing, product knowledge
-- ATLAS now has detailed execution capabilities with document types and workflows
-- ORION system prompt enhanced with structured analysis domains
-- AI Gateway prompts completely rewritten with structured sections for all 3 agents
-- SaraWidget enhanced with quick suggestions, conversation history, better animations
-- Ready for commit and push
+- AI infrastructure fully migrated from apps/api-server to main api-server
+- All 3 agents (Orion, Atlas, Sara) now connected to real OpenRouter API
+- GLM 5.1 with reasoning support integrated
+- Original orion-intelligence.service.ts import bug fixed (correct relative paths)
+- Tool definitions give AI agents real data access via PrismaService
+- Knowledge base tool for Sara (product info, pricing, modules, etc.)

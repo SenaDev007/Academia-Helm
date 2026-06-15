@@ -69,6 +69,7 @@ import { ScolariteModule } from './modules/scolarite/scolarite.module';
 import { FinancesModule } from './modules/finances/finances.module';
 import { CommonModule } from './common/common.module';
 import { SecurityModule } from './security/security.module';
+import { AIModule } from './ai/ai.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { TenantValidationGuard } from './common/guards/tenant-validation.guard';
 import { TenantIsolationGuard } from './common/guards/tenant-isolation.guard';
@@ -253,6 +254,9 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
 
     // Patronat Module
     FederisModule,
+
+    // AI Infrastructure Module (AIGateway, MCP, ToolRegistry — GLM 5.1)
+    AIModule,
 
     // IA ATLAS Module
     AtlasModule,

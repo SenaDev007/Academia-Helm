@@ -42,6 +42,26 @@ export class SaraController {
   }
 
   /**
+   * In-App SARA query via AI Gateway (mode avancé avec contexte MCP et outils)
+   */
+  @Post('gateway')
+  async gatewayQuery(
+    @Body() body: {
+      query: string;
+      userId: string;
+      tenantId: string;
+      schoolId?: string;
+    },
+  ) {
+    return this.saraService.handleInAppQueryViaGateway(
+      body.query,
+      body.userId,
+      body.tenantId,
+      body.schoolId,
+    );
+  }
+
+  /**
    * Get contextual suggestions based on user role and current module
    */
   @Post('suggestions')

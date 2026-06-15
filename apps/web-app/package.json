@@ -13,7 +13,7 @@
     "optimize-images": "node scripts/optimize-images.js",
     "check-seo": "node scripts/check-seo.js",
     "generate-sitemap": "node scripts/generate-sitemap.js",
-    "prebuild": "npm run optimize-images || true",
+    "prebuild": "if [ -z \"$VERCEL\" ]; then npm run optimize-images || true; fi",
     "lighthouse": "lighthouse ${NEXT_PUBLIC_APP_URL:-http://localhost:3001} --view --output=html --output-path=./lighthouse-report.html",
     "seo:generate-article": "npx --yes tsx scripts/generate-articles.ts",
     "seo:auto-publish": "npx --yes tsx scripts/auto-publish.ts"

@@ -4,7 +4,7 @@
  * ============================================================================
  *
  * Service partagé pour toutes les intégrations IA du système.
- * Utilise l'API OpenRouter (compatible OpenAI) avec le modèle GLM 4.5 Air.
+ * Utilise l'API OpenRouter (compatible OpenAI) avec le modèle GLM 5.1.
  *
  * Personnalités IA supportées :
  *   - ORION : Assistant de direction (lecture seule, institutionnel)
@@ -14,12 +14,13 @@
  * Architecture :
  *   - OpenRouter API compatible OpenAI (POST /v1/chat/completions)
  *   - Streaming SSE supporté pour les interfaces conversationnelles
+ *   - Reasoning support (GLM 5.1) pour les analyses approfondies
  *   - Fallback gracieux quand l'API n'est pas configurée
- *   - Rate limiting intégré (respect des limites gratuites)
+ *   - Rate limiting intégré
  *
  * Variables d'environnement :
  *   - OPENROUTER_API_KEY : Clé API OpenRouter (obligatoire pour IA réelle)
- *   - OPENROUTER_MODEL   : Modèle à utiliser (défaut: z-ai/glm-4.5-air:free)
+ *   - OPENROUTER_MODEL   : Modèle à utiliser (défaut: z-ai/glm-5.1)
  *   - OPENROUTER_BASE_URL: URL de base (défaut: https://openrouter.ai/api/v1)
  * ============================================================================
  */
@@ -33,6 +34,7 @@ export interface OpenRouterChatOptions {
   messages: Array<{
     role: 'system' | 'user' | 'assistant';
     content: string;
+    reasoning_details?: unknown;
   }>;
   /** Température (0.0 - 2.0), défaut 0.6 */
   temperature?: number;
@@ -46,6 +48,12 @@ export interface OpenRouterChatOptions {
   persona?: 'ORION' | 'ATLAS' | 'SARA' | 'HDIE' | 'SCE' | 'GENERAL';
   /** Timeout en ms, défaut 30000 */
   timeout?: number;
+  /** Activer le raisonnement (GLM 5.1 reasoning tokens) */
+  reasoning?: boolean;
+  /** Effort de raisonnement : low, medium, high */
+  reasoningEffort?: 'low' | 'medium' | 'high';
+  /** Max tokens de raisonnement */
+  maxReasoningTokens?: number;
 }
 
 /** Réponse d'un appel IA (non-streaming) */
@@ -56,18 +64,22 @@ export interface OpenRouterChatResponse {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
+    reasoningTokens?: number;
   };
   isPlaceholder: boolean;
+  reasoning_details?: unknown;
 }
 
 /** Chunk d'un appel IA (streaming) */
 export interface OpenRouterStreamChunk {
-  type: 'delta' | 'final' | 'error' | 'status';
+  type: 'delta' | 'final' | 'error' | 'status' | 'reasoning';
   text?: string;
+  reasoningText?: string;
   usage?: {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
+    reasoningTokens?: number;
   };
 }
 
@@ -82,12 +94,12 @@ export class OpenRouterService {
 
   /** Rate limiting : timestamp du dernier appel */
   private lastCallTimestamp = 0;
-  /** Intervalle minimum entre 2 appels (ms) - 500ms pour le plan gratuit */
-  private readonly minCallInterval = 500;
+  /** Intervalle minimum entre 2 appels (ms) */
+  private readonly minCallInterval = 300;
 
   constructor(private readonly configService: ConfigService) {
     this.apiKey = this.configService.get<string>('OPENROUTER_API_KEY') || '';
-    this.model = this.configService.get<string>('OPENROUTER_MODEL') || 'z-ai/glm-4.5-air:free';
+    this.model = this.configService.get<string>('OPENROUTER_MODEL') || 'z-ai/glm-5.1';
     this.baseUrl = this.configService.get<string>('OPENROUTER_BASE_URL') || 'https://openrouter.ai/api/v1';
     this.siteUrl = this.configService.get<string>('NEXT_PUBLIC_APP_URL') || 'https://academiahelm.com';
     this.siteName = 'Academia Helm';
@@ -115,6 +127,7 @@ export class OpenRouterService {
 
   /**
    * Appel IA non-streaming - Retourne la réponse complète
+   * Support du reasoning pour GLM 5.1
    */
   async chat(options: OpenRouterChatOptions): Promise<OpenRouterChatResponse> {
     const persona = options.persona || 'GENERAL';
@@ -134,11 +147,29 @@ export class OpenRouterService {
     const model = options.model || this.model;
     const temperature = options.temperature ?? 0.6;
     const maxTokens = options.maxTokens ?? 1000;
-    const timeout = options.timeout ?? 30000;
+    const timeout = options.timeout ?? 60000;
+    const enableReasoning = options.reasoning ?? false;
 
-    this.logger.log(`[${persona}] Calling OpenRouter (${model}), temp=${temperature}, maxTokens=${maxTokens}`);
+    this.logger.log(`[${persona}] Calling OpenRouter (${model}), temp=${temperature}, maxTokens=${maxTokens}, reasoning=${enableReasoning}`);
 
     try {
+      // Construire le body de la requête
+      const body: Record<string, unknown> = {
+        model,
+        messages: options.messages,
+        temperature,
+        max_tokens: maxTokens,
+      };
+
+      // Ajouter le support du reasoning pour GLM 5.1
+      if (enableReasoning) {
+        body.reasoning = {
+          enabled: true,
+          ...(options.reasoningEffort ? { effort: options.reasoningEffort } : {}),
+          ...(options.maxReasoningTokens ? { max_tokens: options.maxReasoningTokens } : {}),
+        };
+      }
+
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -147,12 +178,7 @@ export class OpenRouterService {
           'HTTP-Referer': this.siteUrl,
           'X-Title': this.siteName,
         },
-        body: JSON.stringify({
-          model,
-          messages: options.messages,
-          temperature,
-          max_tokens: maxTokens,
-        }),
+        body: JSON.stringify(body),
         signal: AbortSignal.timeout(timeout),
       });
 
@@ -167,8 +193,9 @@ export class OpenRouterService {
       }
 
       const data = await response.json();
+      const choice = data?.choices?.[0];
+      const content = choice?.message?.content || '';
 
-      const content = data?.choices?.[0]?.message?.content || '';
       if (!content.trim()) {
         this.logger.warn(`[${persona}] Empty response from OpenRouter`);
         return {
@@ -178,15 +205,24 @@ export class OpenRouterService {
         };
       }
 
+      // Extraire les reasoning details si disponibles
+      const reasoningDetails = choice?.message?.reasoning_details;
+
+      // Extraire les tokens de raisonnement du usage
+      const usageData = data?.usage;
+      const reasoningTokens = usageData?.completion_tokens_details?.reasoning_tokens;
+
       return {
         content,
         model: data?.model || model,
-        usage: data?.usage ? {
-          promptTokens: data.usage.prompt_tokens || 0,
-          completionTokens: data.usage.completion_tokens || 0,
-          totalTokens: data.usage.total_tokens || 0,
+        usage: usageData ? {
+          promptTokens: usageData.prompt_tokens || 0,
+          completionTokens: usageData.completion_tokens || 0,
+          totalTokens: usageData.total_tokens || 0,
+          reasoningTokens: reasoningTokens || undefined,
         } : undefined,
         isPlaceholder: false,
+        reasoning_details: reasoningDetails,
       };
     } catch (error: any) {
       this.logger.error(`[${persona}] OpenRouter call failed: ${error?.message}`);
@@ -201,6 +237,7 @@ export class OpenRouterService {
   /**
    * Appel IA streaming - Retourne un AsyncGenerator de chunks
    * Compatible avec le format SSE OpenAI utilisé par OpenRouter
+   * Support du reasoning streaming pour GLM 5.1
    */
   async *chatStream(options: OpenRouterChatOptions): AsyncGenerator<OpenRouterStreamChunk> {
     const persona = options.persona || 'SARA';
@@ -216,11 +253,28 @@ export class OpenRouterService {
     const model = options.model || this.model;
     const temperature = options.temperature ?? 0.6;
     const maxTokens = options.maxTokens ?? 600;
-    const timeout = options.timeout ?? 30000;
+    const timeout = options.timeout ?? 60000;
+    const enableReasoning = options.reasoning ?? false;
 
-    this.logger.log(`[${persona}] Streaming from OpenRouter (${model})`);
+    this.logger.log(`[${persona}] Streaming from OpenRouter (${model}), reasoning=${enableReasoning}`);
 
     try {
+      // Construire le body de la requête
+      const body: Record<string, unknown> = {
+        model,
+        messages: options.messages,
+        temperature,
+        max_tokens: maxTokens,
+        stream: true,
+      };
+
+      if (enableReasoning) {
+        body.reasoning = {
+          enabled: true,
+          ...(options.reasoningEffort ? { effort: options.reasoningEffort } : {}),
+        };
+      }
+
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -229,13 +283,7 @@ export class OpenRouterService {
           'HTTP-Referer': this.siteUrl,
           'X-Title': this.siteName,
         },
-        body: JSON.stringify({
-          model,
-          messages: options.messages,
-          temperature,
-          max_tokens: maxTokens,
-          stream: true,
-        }),
+        body: JSON.stringify(body),
         signal: AbortSignal.timeout(timeout),
       });
 
@@ -252,6 +300,7 @@ export class OpenRouterService {
       const decoder = new TextDecoder();
       let buffer = '';
       let totalContent = '';
+      let reasoningContent = '';
 
       while (true) {
         const { value, done } = await reader.read();
@@ -274,15 +323,38 @@ export class OpenRouterService {
             const evt = JSON.parse(jsonStr);
 
             // OpenAI-compatible delta format (used by OpenRouter)
-            const delta = evt?.choices?.[0]?.delta?.content;
-            if (typeof delta === 'string') {
-              totalContent += delta;
-              yield { type: 'delta', text: delta };
+            const delta = evt?.choices?.[0]?.delta;
+
+            // Reasoning delta (GLM 5.1 specific)
+            if (delta?.reasoning_content) {
+              reasoningContent += delta.reasoning_content;
+              yield { type: 'reasoning', reasoningText: delta.reasoning_content };
+            }
+
+            // Content delta
+            if (typeof delta?.content === 'string') {
+              totalContent += delta.content;
+              yield { type: 'delta', text: delta.content };
             }
 
             // Check for finish
             if (evt?.choices?.[0]?.finish_reason === 'stop') {
-              yield { type: 'final', text: totalContent };
+              // Usage info comes in the final chunk for streaming
+              if (evt.usage) {
+                const reasoningTokens = evt.usage.completion_tokens_details?.reasoning_tokens;
+                yield {
+                  type: 'final',
+                  text: totalContent,
+                  usage: {
+                    promptTokens: evt.usage.prompt_tokens || 0,
+                    completionTokens: evt.usage.completion_tokens || 0,
+                    totalTokens: evt.usage.total_tokens || 0,
+                    reasoningTokens: reasoningTokens || undefined,
+                  },
+                };
+              } else {
+                yield { type: 'final', text: totalContent };
+              }
               return;
             }
           } catch {
@@ -362,11 +434,39 @@ export class OpenRouterService {
     return { data: null, isPlaceholder: true, raw: result.content };
   }
 
+  /**
+   * Appel IA avec raisonnement - Utilise le paramètre reasoning de GLM 5.1
+   * Idéal pour ORION (analyses approfondies) et les prédictions
+   */
+  async chatWithReasoning(
+    userMessage: string,
+    systemPrompt: string,
+    persona?: OpenRouterChatOptions['persona'],
+    options?: {
+      temperature?: number;
+      maxTokens?: number;
+      reasoningEffort?: 'low' | 'medium' | 'high';
+      maxReasoningTokens?: number;
+    },
+  ): Promise<OpenRouterChatResponse> {
+    return this.chat({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage },
+      ],
+      temperature: options?.temperature ?? 0.3,
+      maxTokens: options?.maxTokens ?? 1500,
+      persona,
+      reasoning: true,
+      reasoningEffort: options?.reasoningEffort ?? 'medium',
+      maxReasoningTokens: options?.maxReasoningTokens,
+    });
+  }
+
   // ─── RATE LIMITING ─────────────────────────────────────────────────────────
 
   /**
    * Assure un intervalle minimum entre les appels API
-   * pour respecter les limites du plan gratuit OpenRouter
    */
   private async enforceRateLimit(): Promise<void> {
     const now = Date.now();
